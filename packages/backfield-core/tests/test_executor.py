@@ -82,37 +82,6 @@ async def _fake_run_geocoding_agent(*_a, **_k):
     }
 
 
-def test_place_filter_after_extract_mock_llm():
-    extract_llm = _mock_place_extract_json("Chicago", "Illinois", "IL")
-    filter_llm = json.dumps([{"index": 0, "relevant": True, "reason": ""}])
-    spec = GraphSpec(
-        name="filter-pipeline",
-        nodes=[
-            NodeConfig(id="n1", type="TextInput", params={"text": "News from Chicago, IL today."}),
-            NodeConfig(id="n2", type="PlaceExtract", params={}),
-            NodeConfig(id="n3", type="PlaceFilter", params={}),
-        ],
-        edges=[
-            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
-            Edge(source="n2", target="n3", sourceHandle="locations", targetHandle="locations"),
-        ],
-    )
-    with (
-        patch(
-            "agate_nodes.place_extract.node_port.call_llm",
-            return_value=extract_llm,
-        ),
-        patch(
-            "agate_nodes.place_filter.node_port.call_llm",
-            return_value=filter_llm,
-        ),
-    ):
-        out = execute_graph(spec)
-    loc = out["n3"]["locations"][0]["location"]
-    full = loc["full"] if isinstance(loc, dict) else loc
-    assert "Chicago" in full
-
-
 def test_four_node_pipeline_mock_geocode():
     spec = GraphSpec(
         name="pipeline",

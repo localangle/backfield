@@ -2,7 +2,7 @@
   "type": "PlaceExtract",
   "name": "PlaceExtract",
   "label": "Place Extract",
-  "description": "Extract place information from text using LLM.",
+  "description": "Extract editorially relevant, geocodable place information from text using an LLM (single pass).",
   "category": "extraction",
   "icon": "MapPin",
   "color": "bg-purple-500",

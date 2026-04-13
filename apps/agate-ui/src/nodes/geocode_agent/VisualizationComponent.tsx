@@ -7,8 +7,7 @@ const nodeMetadata = {
   "description": "Intelligent geocoding using LLM reasoning (ported from agate-ai-platform).",
   "category": "enrichment",
   "requiredUpstreamNodes": [
-    "PlaceExtract",
-    "PlaceFilter"
+    "PlaceExtract"
   ],
   "dependencyHelperText": "Requires extracted places as input.",
   "inputs": [

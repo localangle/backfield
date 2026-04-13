@@ -372,7 +372,10 @@ class PlaceExtractNode:
                     call_llm,
                     prompt=prompt,
                     model=params.model,
-                    system_message="You are a specialized AI assistant for extracting place information from text. Return only valid JSON.",
+                    system_message=(
+                        "You are a specialized AI assistant for extracting editorially relevant, "
+                        "literal physical place information from news text. Return only valid JSON."
+                    ),
                     force_json=True,
                     temperature=0.0,
                     timeout=effective_timeout,  # Pass timeout to call_llm as well

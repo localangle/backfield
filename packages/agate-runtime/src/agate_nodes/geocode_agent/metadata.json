@@ -44,7 +44,7 @@
       ]
     }
   },
-  "requiredUpstreamNodes": ["PlaceExtract", "PlaceFilter"],
+  "requiredUpstreamNodes": ["PlaceExtract"],
   "dependencyHelperText": "Requires extracted places as input."
 }
 

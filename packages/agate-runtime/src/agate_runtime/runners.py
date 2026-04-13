@@ -18,11 +18,6 @@ from agate_nodes.place_extract.node_port import (
     PlaceExtractNode,
     PlaceExtractParams,
 )
-from agate_nodes.place_filter.node_port import (
-    PlaceFilterInput,
-    PlaceFilterNode,
-    PlaceFilterParams,
-)
 
 
 def default_context() -> AgateEnvContext:
@@ -48,27 +43,6 @@ def run_place_extract_runtime(
 ) -> dict[str, Any]:
     ctx = ctx or default_context()
     return asyncio.run(_place_extract_async(params, input_state, ctx))
-
-
-async def _place_filter_async(
-    params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
-) -> dict[str, Any]:
-    node = PlaceFilterNode()
-    out = await node.run(
-        PlaceFilterInput.model_validate(input_state),
-        PlaceFilterParams.model_validate(params),
-        ctx,
-    )
-    return out.model_dump()
-
-
-def run_place_filter_runtime(
-    params: dict[str, Any],
-    input_state: dict[str, Any],
-    ctx: AgateEnvContext | None = None,
-) -> dict[str, Any]:
-    ctx = ctx or default_context()
-    return asyncio.run(_place_filter_async(params, input_state, ctx))
 
 
 async def _geocode_async(

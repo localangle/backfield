@@ -17,7 +17,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 
 - `packages/backfield-core`
   - Owns `GraphSpec`, graph execution, thin node runner entrypoints, node metadata, and node UI source files.
-  - Delegates heavy node logic to `agate-runtime` for LLM PlaceExtract, LLM PlaceFilter, and LangGraph GeocodeAgent.
+  - Delegates heavy node logic to `agate-runtime` for LLM PlaceExtract and LangGraph GeocodeAgent.
   - Should stay free of API routing, database persistence, and frontend app state concerns.
 - `packages/agate-runtime`
   - Vendored execution glue (`agate_runtime`), shared helpers (`agate_utils`), and ported nodes under **`agate_nodes/`** (e.g. `geocode_agent`, `place_extract` — no `backfield_` prefix on each node package).

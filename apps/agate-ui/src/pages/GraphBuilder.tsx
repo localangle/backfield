@@ -298,10 +298,6 @@ export default function GraphBuilder() {
         const meta = nodeMetadata.find((m) => m.type === 'PlaceExtract')
         return meta?.defaultParams ?? { model: 'gpt-4o-mini' }
       }
-      case 'PlaceFilter': {
-        const meta = nodeMetadata.find((m) => m.type === 'PlaceFilter')
-        return meta?.defaultParams ?? { model: 'gpt-5' }
-      }
       case 'GeocodeAgent': {
         const meta = nodeMetadata.find((m) => m.type === 'GeocodeAgent')
         return meta?.defaultParams ?? {}
