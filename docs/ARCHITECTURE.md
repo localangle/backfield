@@ -8,8 +8,12 @@ Backfield is a small monorepo centered on two product surfaces:
 ## Package and app boundaries
 
 - `packages/backfield-core`
-  - Owns `GraphSpec`, graph execution, node runners, node metadata, and node UI source files.
+  - Owns `GraphSpec`, graph execution, thin node runner entrypoints, node metadata, and node UI source files.
+  - Delegates heavy node logic to `agate-runtime` for LLM PlaceExtract and LangGraph GeocodeAgent.
   - Should stay free of API routing, database persistence, and frontend app state concerns.
+- `packages/agate-runtime`
+  - Vendored execution glue (`agate_runtime`), shared helpers (`agate_utils`), and ported nodes under **`agate_nodes/`** (e.g. `geocode_agent`, `place_extract` — no `backfield_` prefix on each node package).
+  - Excluded from default Ruff scope in the workspace root config; treat as third-party-style surface when editing.
 - `packages/backfield-db`
   - Owns SQLModel models, DB session helpers, encryption helpers, and Alembic migrations.
   - Is the only package that should define DB table names and schema-level conventions.
@@ -32,7 +36,8 @@ Backfield is a small monorepo centered on two product surfaces:
 - UI apps may depend on their own components, shared client helpers, and published API contracts.
 - `agate-api` may depend on `backfield-core` and `backfield-db`.
 - `worker` may depend on `backfield-core` and `backfield-db`.
-- `backfield-core` must not depend on app code.
+- `backfield-core` may depend on `agate-runtime` and must not depend on app code.
+- `agate-runtime` must not depend on app code or `backfield-db`.
 - `backfield-db` must not depend on app code.
 
 ## Runtime flow
@@ -45,7 +50,9 @@ flowchart LR
     Redis --> Worker[Worker]
     Worker -->|load graph and secrets| Postgres
     Worker -->|execute_graph| Core[backfield_core]
-    Core -->|geocode calls| StylebookAPI[StylebookAPI]
+    Core --> Runtime[agate_runtime]
+    Runtime -->|optional cache / match| StylebookAPI[StylebookAPI]
+    Runtime -->|LLM and external geocoders| ExternalAPIs[ExternalAPIs]
     Worker -->|write result| Postgres
     AgateUI -->|poll run| AgateAPI
     AgateAPI -->|read status/result| Postgres

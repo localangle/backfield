@@ -16,10 +16,10 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 
 ## Starter Agate nodes
 
-1. **TextInput** — parameter text out  
-2. **PlaceExtract** — City, `ST` heuristic (no LLM)  
-3. **GeocodeAgent** — HTTP to Stylebook `/v1/geocode/resolve`  
-4. **JsonOutput** — wraps upstream as `consolidated` JSON  
+1. **TextInput** — parameter text out (non-empty validation)  
+2. **PlaceExtract** — LLM extraction (ported from agate-ai-platform; needs `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` on the worker)  
+3. **GeocodeAgent** — LangGraph + external geocoders / LLM (ported; optional Stylebook cache)  
+4. **Output** (JSON Output in the palette) — agate-style merge into `consolidated` JSON  
 
 ## Quick start
 

@@ -3,9 +3,18 @@
   "label": "Place Extract",
   "icon": "MapPin",
   "color": "bg-purple-500",
-  "description": "Extract place-like mentions (starter: City, ST heuristic).",
+  "description": "Extract place mentions from text using an LLM (ported from agate-ai-platform).",
   "category": "extraction",
   "inputs": [{ "id": "text", "label": "Text", "type": "string", "required": true }],
-  "outputs": [{ "id": "locations", "label": "Locations", "type": "array" }],
-  "defaultParams": {}
+  "outputs": [
+    { "id": "text", "label": "Text", "type": "string" },
+    { "id": "locations", "label": "Locations", "type": "array" }
+  ],
+  "defaultParams": {
+    "model": "gpt-4o-mini",
+    "prompt_file": "prompts/extract.md",
+    "prompt": "",
+    "llmTimeout": 600,
+    "json_format": ""
+  }
 }

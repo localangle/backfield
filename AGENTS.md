@@ -9,7 +9,8 @@ Use this file as the entry point for working in this repository. Keep it short, 
 - `apps/worker`: Celery worker that executes Agate runs from the `agate` queue.
 - `apps/stylebook-api`: Companion FastAPI service for geocode and future Stylebook entities.
 - `apps/stylebook-ui`: Minimal Stylebook shell UI.
-- `packages/backfield-core`: Graph types, executor, starter node implementations, and node metadata.
+- `packages/backfield-core`: Graph types, executor, thin node runners, node metadata, and node UI sources.
+- `packages/agate-runtime`: Vendored LLM PlaceExtract, LangGraph GeocodeAgent, and geocoding/LLM utilities (ported from agate-ai-platform).
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
 - `infra/docker-compose.yml`: Local multi-service stack.
 
@@ -65,6 +66,7 @@ Use this file as the entry point for working in this repository. Keep it short, 
 
 ## Git workflow
 
-- Work from a clean branch for each task.
+- **Start a new branch for each task**—especially for large or unrelated changes. Do not pile new work onto whatever branch happens to be checked out (for example another feature or setup branch) unless it is explicitly the same task.
+- Work from a clean working tree when you branch; keep one coherent task per branch and per diff.
 - Prefer short-lived branches and small diffs over stacking unrelated changes.
-- Use git status and diff frequently to confirm the task boundary before finishing.
+- Use `git status` and `git diff` frequently to confirm the task boundary before finishing.

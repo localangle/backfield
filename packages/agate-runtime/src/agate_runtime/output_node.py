@@ -1,0 +1,77 @@
+"""Output node — consolidated from agate-ai-platform flowbuilder (no flowbuilder_core)."""
+
+from __future__ import annotations
+
+from collections import OrderedDict
+from typing import Any
+
+from pydantic import BaseModel
+
+
+PREFERRED_KEY_ORDER = [
+    "publication",
+    "headline",
+    "url",
+    "author",
+    "pub_date",
+    "updated",
+    "text",
+    "images",
+]
+
+
+class OutputParams(BaseModel):
+    exclude: list[str] | None = None
+    include: list[str] | None = None
+
+
+class OutputConsolidator:
+    """Same behavior as flowbuilder Output node."""
+
+    def _unwrap_node_data(self, data: dict[str, Any], target: dict[str, Any]) -> None:
+        for key, value in data.items():
+            is_node_key = key.startswith("node-") and len(key) > 5 and key[5:].isdigit()
+
+            if is_node_key:
+                if isinstance(value, dict):
+                    self._unwrap_node_data(value, target)
+                else:
+                    target[key] = value
+            else:
+                if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+                    self._unwrap_node_data(value, target[key])
+                else:
+                    target[key] = value
+
+    def _apply_filters(self, data: dict[str, Any], params: OutputParams) -> dict[str, Any]:
+        exclude_set = set(params.exclude) if params.exclude else set()
+        include_set = set(params.include) if params.include else None
+
+        filtered: dict[str, Any] = {}
+        for key, value in data.items():
+            if key in exclude_set:
+                continue
+            if include_set is not None and key not in include_set:
+                continue
+            filtered[key] = value
+
+        return filtered
+
+    def _reorder_keys(self, data: dict[str, Any]) -> dict[str, Any]:
+        ordered: OrderedDict[str, Any] = OrderedDict()
+        for key in PREFERRED_KEY_ORDER:
+            if key in data:
+                ordered[key] = data[key]
+        for key, value in data.items():
+            if key not in ordered:
+                ordered[key] = value
+        return dict(ordered)
+
+    def run(self, merged_input: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
+        p = OutputParams.model_validate(params)
+        filtered_data: dict[str, Any] = {}
+        self._unwrap_node_data(dict(merged_input), filtered_data)
+        if p.exclude or p.include:
+            filtered_data = self._apply_filters(filtered_data, p)
+        filtered_data = self._reorder_keys(filtered_data)
+        return filtered_data

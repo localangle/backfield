@@ -12,7 +12,8 @@ import httpx
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
 STYLEBOOK_API_BASE = os.environ.get("STYLEBOOK_API_BASE", "http://localhost:8003")
-POLL_TIMEOUT_SECONDS = float(os.environ.get("SMOKE_POLL_TIMEOUT_SECONDS", "45"))
+# LLM PlaceExtract + GeocodeAgent can exceed 45s on cold starts.
+POLL_TIMEOUT_SECONDS = float(os.environ.get("SMOKE_POLL_TIMEOUT_SECONDS", "180"))
 POLL_INTERVAL_SECONDS = float(os.environ.get("SMOKE_POLL_INTERVAL_SECONDS", "1.5"))
 
 
