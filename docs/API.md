@@ -27,7 +27,8 @@ This document covers the Agate API in `apps/agate-api`.
 
 ## Boundary rules
 
-- Parse data at the route boundary.
+- Parse data at the route boundary with **Pydantic** models (`BaseModel` or shared types like `GraphSpec` from `backfield-core`). Prefer explicit request/response models over untyped dicts.
+- Prefer **strict typing** in router modules: annotated handlers and helpers, minimal use of `Any`.
 - Keep DB table details in `backfield-db`, not duplicated in routers.
 - Keep worker task names, queue names, and response statuses aligned with the worker implementation.
 - Avoid hiding complex route logic in oversized handlers. Extract helpers when a route gets hard to scan.

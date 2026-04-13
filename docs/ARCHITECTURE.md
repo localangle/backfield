@@ -51,6 +51,8 @@ flowchart LR
     AgateAPI -->|read status/result| Postgres
 ```
 
+
+
 ## Important conventions
 
 - `GraphSpec` is the canonical stored graph shape.
@@ -64,3 +66,4 @@ flowchart LR
 - Keep business logic near its owning layer.
 - Prefer explicit orchestration over hidden coupling between API, worker, and frontend.
 - When a change touches multiple layers, keep naming and payload shapes aligned across all of them.
+

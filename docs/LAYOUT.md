@@ -8,7 +8,7 @@ Backfield keeps a **tightly coupled monorepo** similar in spirit to Agate: multi
 | Directory       | Product name | Role                                                  |
 | --------------- | ------------ | ----------------------------------------------------- |
 | `agate-api`     | Agate        | Graph CRUD, run enqueue, node metadata API            |
-| `agate-ui`    | Agate        | React + React Flow editor                             |
+| `agate-ui`      | Agate        | React + React Flow editor                             |
 | `worker`        | Agate        | Celery consumer; executes graphs via `backfield-core` |
 | `stylebook-api` | Stylebook    | Geocode stub + future entity APIs                     |
 | `stylebook-ui`  | Stylebook    | Thin shell; links to Agate                            |
@@ -22,7 +22,7 @@ Dashboard / core-api are intentionally absent in this slice.
 | Package          | Responsibility                                                                                |
 | ---------------- | --------------------------------------------------------------------------------------------- |
 | `backfield-core` | `GraphSpec`, synchronous executor, starter node implementations + `metadata.json` for UI sync |
-| `backfield-db`   | SQLModel models (`agate_*` tables), Alembic migrations, session helpers                       |
+| `backfield-db`   | SQLModel models (`agate_`* tables), Alembic migrations, session helpers                       |
 
 
 ## Infrastructure
@@ -33,4 +33,4 @@ Dashboard / core-api are intentionally absent in this slice.
 
 ## Naming
 
-User-facing and code branding: **Agate**. Internal Python package names use `backfield_*` to avoid clashing with any legacy `flowbuilder` installs.
+User-facing and code branding: **Agate**. Internal Python package names use `backfield_`* to avoid clashing with any legacy `flowbuilder` installs.

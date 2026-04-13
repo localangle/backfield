@@ -6,6 +6,9 @@ alwaysApply: false
 
 # Python Standards
 
+- Prefer **strict typing**: type hints on public functions, methods, and module-level values where the type is not obvious from context. Avoid `Any` unless unavoidable; prefer concrete types, unions, generics, or `TypedDict` when a full Pydantic model is not warranted.
+- Prefer **Pydantic** for structured data: use `BaseModel` (or existing project models such as `GraphSpec` and SQLModel row types) for HTTP bodies, validated JSON, and config shapes. Parse at boundaries; do not thread raw untyped `dict`/`list` through multiple layers when a model fits.
+- Use `from __future__ import annotations` in new modules when it keeps forward references and annotations readable (match surrounding files in the same package).
 - Put imports at the top of the file unless a local import is needed to avoid a circular import or heavy optional dependency.
 - If you use a local import, add a short comment explaining why.
 - Prefer human readability over idiomatic cleverness.
