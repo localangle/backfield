@@ -77,6 +77,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 
 ## Git workflow
 
+- **When you begin writing code, use a fresh branch** (cut from the agreed base, usually `main`) unless the task explicitly says to continue on an existing branch. This is the default for humans and agents alike.
 - **Start a new branch for each task**—especially for large or unrelated changes. Do not pile new work onto whatever branch happens to be checked out (for example another feature or setup branch) unless it is explicitly the same task.
 - Work from a clean working tree when you branch; keep one coherent task per branch and per diff.
 - Prefer short-lived branches and small diffs over stacking unrelated changes.
