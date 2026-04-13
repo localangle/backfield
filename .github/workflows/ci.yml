@@ -47,7 +47,19 @@ jobs:
       - name: Install workspace dependencies
         run: uv sync --all-packages
       - name: Start runtime services
-        run: docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api agate-api worker
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::CI smoke needs at least one repository secret: OPENAI_API_KEY or ANTHROPIC_API_KEY (Compose loads repo-root .env into agate-api/worker)."
+            exit 1
+          fi
+          : > .env
+          [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
+          [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
+          docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api agate-api worker
       - name: Wait for API health
         run: |
           for _ in $(seq 1 60); do
@@ -58,8 +70,9 @@ jobs:
           done
           docker compose -f infra/docker-compose.yml logs
           exit 1
+      # Run the script directly so the job exit code matches Python (make maps recipe failures to exit 2).
       - name: Golden-path smoke
-        run: make smoke
+        run: uv run python -u scripts/smoke_agate_stack.py
       - name: Dump compose logs on failure
         if: failure()
         run: docker compose -f infra/docker-compose.yml logs

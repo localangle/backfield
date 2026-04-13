@@ -24,14 +24,17 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 ## Quick start
 
 ```bash
-make bootstrap   # once: uv sync --all-packages (Python tooling + libs)
-make up          # Docker Compose (foreground; Ctrl+C stops all services)
+cp .env.example .env   # optional: add OPENAI_API_KEY / ANTHROPIC_API_KEY (gitignored)
+make bootstrap         # once: uv sync --all-packages (Python tooling + libs)
+make up                # Docker Compose (foreground; Ctrl+C stops all services)
 ```
 
-- Agate: http://localhost:5173 — use **Run pipeline** (saves graph, enqueues Celery run, polls result).  
+- Agate: http://localhost:5173 — home opens the **General** project; a **Starter flow** graph is created on first API boot when `BACKFIELD_LOCAL_BOOTSTRAP=1` (default in Compose).  
 - Stylebook UI: http://localhost:5175  
 
-`agate-api` runs `alembic upgrade head` on container start so migrations apply.
+`agate-api` runs `alembic upgrade head` on container start so migrations apply, then (when bootstrap is enabled) syncs API keys from the repo-root `.env` into encrypted **General** project secrets and ensures the starter graph exists.
+
+`make bootstrap` installs Python dependencies only; it does **not** seed the database (that happens when the stack starts).
 
 ## Validation
 
@@ -43,7 +46,8 @@ make smoke   # requires a live local stack
 
 ### Environment
 
-Optional shared secret for service calls (set the same value on agate-api, worker, stylebook-api):
+- **LLM / geocoder keys**: add to repo-root `.env` (see [.env.example](.env.example)). Compose loads that file into `agate-api` and `worker` so PlaceExtract and GeocodeAgent can run. The same values are copied into **General** project secrets when local bootstrap runs (Fernet-encrypted in Postgres).
+- **Shared service token** (optional): set the same value on agate-api, worker, and stylebook-api:
 
 ```bash
 export SERVICE_API_TOKEN=your-token
@@ -57,10 +61,11 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 | Target | Purpose |
 |--------|---------|
 | `make help` | List commands |
-| `make up` / `make down` | Compose |
+| `make up` / `make down` | Compose (`down` then prunes build cache and unused volumes) |
 | `make logs` | Tail logs |
 | `make migrate` | Re-run Alembic inside `agate-api` |
-| `make reset-db` | `docker compose down -v` |
+| `make reset-db` | `docker compose down -v` (removes Postgres volume) |
+| `make docker-trim` | Prune build cache + unused volumes when Docker is low on disk |
 | `make test` | All tests |
 | `make lint` / `make format` | Ruff |
 
@@ -82,6 +87,6 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 ```
 apps/agate-api    apps/agate-ui
 apps/worker       apps/stylebook-api    apps/stylebook-ui
-packages/backfield-core   packages/backfield-db
-infra/docker-compose.yml
+packages/backfield-core   packages/backfield-db   packages/agate-runtime
+infra/docker-compose.yml   .env.example
 ```

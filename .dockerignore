@@ -1,0 +1,18 @@
+# Build context is the repo root (see infra/docker-compose.yml build.context).
+
+.git
+.venv
+.env
+.env.local
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/node_modules
+**/dist
+**/*.egg-info
+
+# Who's On First SQLite (multi-GB; not in git — see geocoding/data/README.md).
+# Excluding prevents "no space left on device" during image build if present locally.
+packages/agate-runtime/src/agate_utils/geocoding/data/*.db
