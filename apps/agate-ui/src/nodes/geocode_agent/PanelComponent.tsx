@@ -4,8 +4,13 @@ const nodeMetadata = {
   "label": "Geocode Agent",
   "icon": "MapPin",
   "color": "bg-emerald-500",
-  "description": "Geocode locations via Stylebook API.",
+  "description": "Intelligent geocoding using LLM reasoning (ported from agate-ai-platform).",
   "category": "enrichment",
+  "requiredUpstreamNodes": [
+    "PlaceExtract",
+    "PlaceFilter"
+  ],
+  "dependencyHelperText": "Requires extracted places as input.",
   "inputs": [
     {
       "id": "locations",
@@ -16,12 +21,24 @@ const nodeMetadata = {
   ],
   "outputs": [
     {
-      "id": "locations",
-      "label": "Geocoded Locations",
-      "type": "array"
+      "id": "places",
+      "label": "Places",
+      "type": "object"
+    },
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
     }
   ],
-  "defaultParams": {}
+  "defaultParams": {
+    "calculateParents": false,
+    "maxLocations": 100,
+    "perLocationTimeout": 300,
+    "useCache": false,
+    "stylebookApiUrl": "",
+    "projectSlug": ""
+  }
 };
 
 import React from 'react'
@@ -49,11 +66,13 @@ export default function GeocodeAgentPanel({
   editMode,
   setNodes
 }: GeocodeAgentPanelProps) {
-  const params = node.data || { 
+  const params = node.data || {
     calculateParents: false,
+    maxLocations: 100,
+    perLocationTimeout: 300,
     useCache: false,
     stylebookApiUrl: '',
-    projectSlug: ''
+    projectSlug: '',
   }
   
   const isDisabled = !(editMode && setNodes)
@@ -109,7 +128,27 @@ export default function GeocodeAgentPanel({
   // Get latest run data - only show if we have specific node output
   const nodeOutput = currentRun?.node_outputs?.[node.id]
   const latestData = nodeOutput || null
-  const locationCount = latestData?.locations?.length || 0
+  const places = latestData?.places as
+    | {
+        areas?: Record<string, unknown[]>
+        points?: unknown[]
+        needs_review?: unknown[]
+      }
+    | undefined
+  const areaTotal =
+    places?.areas != null
+      ? Object.values(places.areas).reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0)
+      : 0
+  const pointCount = Array.isArray(places?.points) ? places.points.length : 0
+  const reviewCount = Array.isArray(places?.needs_review) ? places.needs_review.length : 0
+  const locationCount =
+    areaTotal + pointCount + reviewCount || (Array.isArray(latestData?.locations) ? latestData.locations.length : 0)
+  const sampleSnippet =
+    places != null
+      ? JSON.stringify(places, null, 2)
+      : latestData?.locations?.[0] != null
+        ? JSON.stringify(latestData.locations[0], null, 2)
+        : ''
 
   return (
     <>
@@ -210,12 +249,12 @@ export default function GeocodeAgentPanel({
               <div>Geocoded {locationCount} location{locationCount !== 1 ? 's' : ''}</div>
             </div>
             
-            {locationCount > 0 && (
+            {locationCount > 0 && sampleSnippet && (
               <div>
                 <Label className="text-xs font-medium">Sample Output:</Label>
                 <div className="text-xs font-mono p-2 bg-muted rounded mt-1 max-h-32 overflow-y-auto">
-                  {JSON.stringify(latestData.locations[0], null, 2).substring(0, 200)}
-                  {JSON.stringify(latestData.locations[0], null, 2).length > 200 ? '...' : ''}
+                  {sampleSnippet.substring(0, 200)}
+                  {sampleSnippet.length > 200 ? '...' : ''}
                 </div>
               </div>
             )}

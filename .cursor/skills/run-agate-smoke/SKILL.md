@@ -7,9 +7,10 @@ description: Validate the Backfield golden path against a live stack. Use when r
 
 ## Quick Start
 
-1. Ensure the stack is running.
-2. Run `make smoke`.
-3. If it fails, inspect `make logs` and the relevant service logs.
+1. Ensure the stack is running (`make up` or `make up-detached`).
+2. Export `OPENAI_API_KEY` (and optional geocoder keys) on the host so Compose can pass them into the `worker` service; the starter flow runs LLM PlaceExtract and GeocodeAgent.
+3. Run `make smoke` (uses `SMOKE_POLL_TIMEOUT_SECONDS`, default 180s).
+4. If it fails, inspect `make logs` and the relevant service logs.
 
 ## What The Smoke Covers
 

@@ -4,8 +4,13 @@ const nodeMetadata = {
   "label": "Geocode Agent",
   "icon": "MapPin",
   "color": "bg-emerald-500",
-  "description": "Geocode locations via Stylebook API.",
+  "description": "Intelligent geocoding using LLM reasoning (ported from agate-ai-platform).",
   "category": "enrichment",
+  "requiredUpstreamNodes": [
+    "PlaceExtract",
+    "PlaceFilter"
+  ],
+  "dependencyHelperText": "Requires extracted places as input.",
   "inputs": [
     {
       "id": "locations",
@@ -16,12 +21,24 @@ const nodeMetadata = {
   ],
   "outputs": [
     {
-      "id": "locations",
-      "label": "Geocoded Locations",
-      "type": "array"
+      "id": "places",
+      "label": "Places",
+      "type": "object"
+    },
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
     }
   ],
-  "defaultParams": {}
+  "defaultParams": {
+    "calculateParents": false,
+    "maxLocations": 100,
+    "perLocationTimeout": 300,
+    "useCache": false,
+    "stylebookApiUrl": "",
+    "projectSlug": ""
+  }
 };
 
 import React from 'react'

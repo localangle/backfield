@@ -71,6 +71,15 @@ services:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
+      # LLM / geocoding (optional; required for PlaceExtract + GeocodeAgent in real runs)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PELIAS_API_KEY: ${PELIAS_API_KEY:-}
+      GEOCODIO_API_KEY: ${GEOCODIO_API_KEY:-}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+      PROJECT_SLUG: ${PROJECT_SLUG:-}
+      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}
+      TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-4200}
     depends_on:
       postgres:
         condition: service_healthy

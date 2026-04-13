@@ -10,3 +10,6 @@ node_modules/
 .env
 .env.local
 apps/*/src/**/nodes/registry.ts
+
+# Who's On First SQLite (multi-GB; obtain separately — see geocoding/data/README.md)
+packages/backfield-agate-runtime/src/backfield_agate_utils/geocoding/data/*.db

@@ -294,14 +294,18 @@ export default function GraphBuilder() {
         const meta = nodeMetadata.find((m) => m.type === 'PeopleExtract')
         return meta?.defaultParams ?? { model: 'gpt-4o-mini' }
       }
-      case 'PlaceExtract':
-        return {
-          model: 'gpt-4o-mini',
-        }
+      case 'PlaceExtract': {
+        const meta = nodeMetadata.find((m) => m.type === 'PlaceExtract')
+        return meta?.defaultParams ?? { model: 'gpt-4o-mini' }
+      }
       case 'PlaceFilter':
         return {
           model: 'gpt-4o-mini',
         }
+      case 'GeocodeAgent': {
+        const meta = nodeMetadata.find((m) => m.type === 'GeocodeAgent')
+        return meta?.defaultParams ?? {}
+      }
       case 'GeocodeSimple':
         return {
           user_agent: 'agate-ai-platform/1.0',

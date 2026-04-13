@@ -8,8 +8,12 @@ Backfield is a small monorepo centered on two product surfaces:
 ## Package and app boundaries
 
 - `packages/backfield-core`
-  - Owns `GraphSpec`, graph execution, node runners, node metadata, and node UI source files.
+  - Owns `GraphSpec`, graph execution, thin node runner entrypoints, node metadata, and node UI source files.
+  - Delegates heavy node logic to `backfield-agate-runtime` for LLM PlaceExtract and LangGraph GeocodeAgent.
   - Should stay free of API routing, database persistence, and frontend app state concerns.
+- `packages/backfield-agate-runtime`
+  - Vendored node runtime and `agate_utils` geocoding/LLM helpers (ported from agate-ai-platform flowbuilder).
+  - Excluded from default Ruff scope in the workspace root config; treat as third-party-style surface when editing.
 - `packages/backfield-db`
   - Owns SQLModel models, DB session helpers, encryption helpers, and Alembic migrations.
   - Is the only package that should define DB table names and schema-level conventions.
@@ -32,7 +36,8 @@ Backfield is a small monorepo centered on two product surfaces:
 - UI apps may depend on their own components, shared client helpers, and published API contracts.
 - `agate-api` may depend on `backfield-core` and `backfield-db`.
 - `worker` may depend on `backfield-core` and `backfield-db`.
-- `backfield-core` must not depend on app code.
+- `backfield-core` may depend on `backfield-agate-runtime` and must not depend on app code.
+- `backfield-agate-runtime` must not depend on app code or `backfield-db`.
 - `backfield-db` must not depend on app code.
 
 ## Runtime flow
@@ -45,7 +50,9 @@ flowchart LR
     Redis --> Worker[Worker]
     Worker -->|load graph and secrets| Postgres
     Worker -->|execute_graph| Core[backfield_core]
-    Core -->|geocode calls| StylebookAPI[StylebookAPI]
+    Core --> Runtime[backfield_agate_runtime]
+    Runtime -->|optional cache / match| StylebookAPI[StylebookAPI]
+    Runtime -->|LLM and external geocoders| ExternalAPIs[ExternalAPIs]
     Worker -->|write result| Postgres
     AgateUI -->|poll run| AgateAPI
     AgateAPI -->|read status/result| Postgres

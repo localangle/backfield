@@ -13,6 +13,7 @@ dependencies = [
 [tool.uv.workspace]
 members = [
     "packages/backfield-core",
+    "packages/backfield-agate-runtime",
     "packages/backfield-db",
     "apps/agate-api",
     "apps/worker",
@@ -21,12 +22,14 @@ members = [
 
 [tool.uv.sources]
 backfield-core = { workspace = true }
+backfield-agate-runtime = { workspace = true }
 backfield-db = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages/backfield-core/tests", "tests"]
 pythonpath = [
     "packages/backfield-core/src",
+    "packages/backfield-agate-runtime/src",
     "packages/backfield-db/src",
     "apps/agate-api/src",
     "apps/worker/src",
@@ -36,7 +39,11 @@ pythonpath = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["packages/backfield-db/alembic", "**/node_modules"]
+extend-exclude = [
+    "packages/backfield-db/alembic",
+    "**/node_modules",
+    "packages/backfield-agate-runtime",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

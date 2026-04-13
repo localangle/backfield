@@ -7,7 +7,7 @@
 2. **Integration / API smoke**
   FastAPI apps mounted via `TestClient` where no Docker is required. Run: `make test-integration`.
 3. **End-to-end (manual or CI)**
-  `make up`, then run `make smoke` or open Agate UI and **Run pipeline**. Validates Postgres, Redis, Celery, Stylebook geocode, and the four starter nodes together.
+  `make up`, then run `make smoke` or open Agate UI and **Run pipeline**. Validates Postgres, Redis, Celery, and the four starter nodes together. The starter flow uses LLM PlaceExtract and GeocodeAgent; export `OPENAI_API_KEY` (and optional geocoder keys) for the worker before `make smoke`, or the run will fail when those nodes call external APIs.
 
 ## Validation ladder
 
@@ -17,7 +17,7 @@
 2. **Structural checks**
   Runtime contract and schema-prefix assertions live in the test suite and run as part of `make test`.
 3. **Golden-path smoke**
-  `make smoke` against a live stack. This checks Agate and Stylebook health, creates a temp project, instantiates the starter template, enqueues a run, and polls for completion.
+  `make smoke` against a live stack. This checks Agate and Stylebook health, creates a temp project, instantiates the starter template, enqueues a run, and polls for completion (default poll window allows slow LLM/geocode; override with `SMOKE_POLL_TIMEOUT_SECONDS`).
 4. **Manual UI pass**
   Use the Agate UI when the task changes browser-facing behavior or flowbuilder interactions.
 

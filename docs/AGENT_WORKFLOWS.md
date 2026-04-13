@@ -2,6 +2,12 @@
 
 Use this file to decide what to read and which checks to run for common task types.
 
+## Git and branches
+
+- Create a **new branch** for each distinct task. Large or unrelated work (new packages, migrations, multi-app changes) should not ride on an unrelated existing branch.
+- Name branches so the intent is obvious (for example `feat/agate-runtime-port`, `fix/worker-timeout`).
+- See `AGENTS.md` → **Git workflow** for the full convention.
+
 ## Docs-only changes
 
 - Read the matching source-of-truth doc before editing.

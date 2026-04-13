@@ -6,7 +6,7 @@ from collections import defaultdict, deque
 from typing import Any
 
 from backfield_core.nodes import NODE_RUNNERS
-from backfield_core.types import GraphSpec
+from backfield_core.types import Edge, GraphSpec, NodeConfig
 
 
 class GraphExecutionError(Exception):
@@ -41,14 +41,39 @@ def _topo_order(spec: GraphSpec) -> list[str]:
     return order
 
 
-def _pick_output_port(outputs: dict[str, Any], handle: str | None) -> Any:
-    if handle and handle in outputs:
-        return outputs[handle]
-    if len(outputs) == 1:
-        return next(iter(outputs.values()))
-    if handle is None and outputs:
-        return next(iter(outputs.values()))
-    raise GraphExecutionError(f"Cannot resolve output port {handle!r} from {outputs!r}")
+def _namespaced_upstream_inputs(
+    target_id: str,
+    edges: list[Edge],
+    node_outputs: dict[str, dict[str, Any]],
+    by_id: dict[str, NodeConfig],
+) -> dict[str, Any]:
+    """Match agate-ai-platform worker: one namespace key per direct upstream node id."""
+    state: dict[str, Any] = {}
+    for e in edges:
+        if e.target != target_id:
+            continue
+        src = e.source
+        if src not in node_outputs:
+            raise GraphExecutionError(f"Missing outputs for source node {src}")
+        src_node = by_id.get(src)
+        if src_node and src_node.type == "ArraySplitter":
+            continue
+        state[src] = dict(node_outputs[src])
+    return state
+
+
+def _merged_outputs_for_output(
+    node_outputs: dict[str, dict[str, Any]],
+    by_id: dict[str, NodeConfig],
+) -> dict[str, Any]:
+    """Match agate Output node: shallow-merge all completed node outputs."""
+    merged: dict[str, Any] = {}
+    for source_id, out in node_outputs.items():
+        src_node = by_id.get(source_id)
+        if src_node and src_node.type == "ArraySplitter":
+            continue
+        merged.update(dict(out))
+    return merged
 
 
 def execute_graph(spec: GraphSpec) -> dict[str, Any]:
@@ -60,25 +85,16 @@ def execute_graph(spec: GraphSpec) -> dict[str, Any]:
     order = _topo_order(spec)
     node_outputs: dict[str, dict[str, Any]] = {}
 
-    # incoming edges per target
-    incoming: dict[str, list[tuple[str, str | None, str | None]]] = defaultdict(list)
-    for e in spec.edges:
-        incoming[e.target].append((e.source, e.sourceHandle, e.targetHandle))
-
     for nid in order:
         node = by_id[nid]
         runner = NODE_RUNNERS.get(node.type)
         if not runner:
             raise GraphExecutionError(f"Unknown node type: {node.type}")
 
-        inputs: dict[str, Any] = {}
-        for src, src_handle, tgt_handle in incoming[nid]:
-            src_out = node_outputs.get(src)
-            if not src_out:
-                raise GraphExecutionError(f"Missing outputs for source node {src}")
-            val = _pick_output_port(src_out, src_handle)
-            port = tgt_handle or src_handle or "data"
-            inputs[port] = val
+        if node.type == "Output":
+            inputs = _merged_outputs_for_output(node_outputs, by_id)
+        else:
+            inputs = _namespaced_upstream_inputs(nid, spec.edges, node_outputs, by_id)
 
         try:
             result = runner(node.params, inputs)
