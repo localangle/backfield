@@ -7,7 +7,8 @@ import os
 from datetime import datetime
 
 from api.deps import get_session
-from backfield_db import AgateGraph, AgateRun
+from backfield_db import AgateGraph, AgateProjectSecret, AgateRun
+from backfield_db.crypto import decrypt_secret
 from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,6 +16,26 @@ from sqlalchemy import desc
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+
+_MAPBOX_SECRET_KEY = "MAPBOX_API_TOKEN"
+
+
+def _mapbox_api_token_for_project(session: Session, project_id: int) -> str | None:
+    """Decrypt MAPBOX_API_TOKEN for map UIs (browser-side Mapbox GL)."""
+    if project_id <= 0:
+        return None
+    row = session.exec(
+        select(AgateProjectSecret).where(
+            AgateProjectSecret.project_id == project_id,
+            AgateProjectSecret.key == _MAPBOX_SECRET_KEY,
+        )
+    ).first()
+    if row is None:
+        return None
+    try:
+        return decrypt_secret(row.value_encrypted)
+    except (RuntimeError, ValueError):
+        return None
 
 celery_app = Celery(
     "agate_worker",
@@ -34,6 +55,7 @@ class RunOut(BaseModel):
     status: str
     result: dict | list | None = None
     error_message: str | None = None
+    mapbox_api_token: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -62,6 +84,7 @@ def create_run(body: RunCreate, session: Session = Depends(get_session)):
         graph_id=run.graph_id,
         project_id=g.project_id,
         status=run.status,
+        mapbox_api_token=_mapbox_api_token_for_project(session, g.project_id),
         created_at=run.created_at,
         updated_at=run.updated_at,
     )
@@ -81,14 +104,16 @@ def list_runs(graph_id: str | None = None, session: Session = Depends(get_sessio
                 result = json.loads(r.result_json)
             except json.JSONDecodeError:
                 result = {"raw": r.result_json}
+        pid = _graph_project_id(session, r.graph_id)
         out.append(
             RunOut(
                 id=r.id,
                 graph_id=r.graph_id,
-                project_id=_graph_project_id(session, r.graph_id),
+                project_id=pid,
                 status=r.status,
                 result=result,
                 error_message=r.error_message,
+                mapbox_api_token=_mapbox_api_token_for_project(session, pid),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
             )
@@ -107,13 +132,15 @@ def get_run(run_id: str, session: Session = Depends(get_session)):
             result = json.loads(r.result_json)
         except json.JSONDecodeError:
             result = {"raw": r.result_json}
+    pid = _graph_project_id(session, r.graph_id)
     return RunOut(
         id=r.id,
         graph_id=r.graph_id,
-        project_id=_graph_project_id(session, r.graph_id),
+        project_id=pid,
         status=r.status,
         result=result,
         error_message=r.error_message,
+        mapbox_api_token=_mapbox_api_token_for_project(session, pid),
         created_at=r.created_at,
         updated_at=r.updated_at,
     )

@@ -8,6 +8,7 @@ import pytest
 from api.deps import get_session
 from api.main import app
 from api.routers import runs
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -112,3 +113,31 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     list_response = client.get("/graphs")
     assert list_response.status_code == 200
     assert len(list_response.json()) == 1
+
+
+def test_run_includes_mapbox_api_token_from_project_secrets(monkeypatch, client: TestClient):
+    def fake_send_task(*_a, **_k):
+        pass
+
+    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    project = client.post("/projects", json={"name": "Mapbox Project", "slug": "mapbox-p"}).json()
+    assert (
+        client.put(
+            f"/projects/{project['id']}/secrets/MAPBOX_API_TOKEN",
+            json={"value": "pk.test_mapbox_token"},
+        ).status_code
+        == 200
+    )
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Empty",
+            "project_id": project["id"],
+            "spec": {"name": "empty", "nodes": [], "edges": []},
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert run.get("mapbox_api_token") == "pk.test_mapbox_token"
+    assert client.get(f"/runs/{run['id']}").json().get("mapbox_api_token") == "pk.test_mapbox_token"
