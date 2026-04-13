@@ -15,11 +15,16 @@ Primary local services are defined in `infra/docker-compose.yml`:
 ## Canonical commands
 
 - `make up`: bring up the local stack in the foreground.
-- `make down`: stop the stack and remove orphans.
+- `make down`: stop the stack and remove orphans, then run `docker-trim` (build-cache and unused-volume prune).
 - `make logs`: inspect compose logs.
 - `make migrate`: run Alembic inside `agate-api`.
 - `make reset-db`: tear down containers and volumes.
 - `make smoke`: run the HTTP golden-path smoke against a live stack.
+- `make docker-prune-build`: reclaim disk from Docker build cache (`docker builder prune -f`).
+- `make docker-prune-volumes`: remove **unused** anonymous volumes (`docker volume prune -f`); does not remove named volumes while containers still reference them.
+- `make docker-trim`: runs both prunes above (handy before `make up` when the daemon is low on disk).
+
+Docker builds use the repo root as context; [.dockerignore](../.dockerignore) excludes large local files such as Who's On First `*.db` under `packages/agate-runtime/.../geocoding/data/` so images do not try to copy multi-gigabyte databases.
 
 ## Runtime contracts
 
@@ -71,3 +76,4 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 - If secrets calls fail, verify `MASTER_ENCRYPTION_KEY`.
 - If geocode calls fail, check `stylebook-api`, `STYLEBOOK_API_URL`, and `SERVICE_API_TOKEN`.
 - If PlaceExtract or GeocodeAgent fail with auth errors, verify LLM and geocoder keys on the worker (Compose env or project secrets).
+- If `make up` / image build fails with **no space left on device**, run `make docker-trim` (and remove any huge local `.db` under `packages/agate-runtime/.../geocoding/data/` if you do not need it). The WOF database must not live in the image; [.dockerignore](../.dockerignore) keeps it out of the build context.

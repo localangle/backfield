@@ -17,7 +17,7 @@ Use this file as the entry point for working in this repository. Keep it short, 
 ## Canonical commands
 
 - `make bootstrap`: install Python workspace dependencies with `uv` (does not seed DB data; local seeding runs when the stack starts — see `BACKFIELD_LOCAL_BOOTSTRAP` in [docs/OPERATIONS.md](docs/OPERATIONS.md)).
-- `make up` / `make down`: start and stop the local stack.
+- `make up` / `make down`: start and stop the local stack (`down` also runs Docker build-cache and unused-volume prune).
 - `make logs`: follow compose logs.
 - `make migrate`: run Alembic in the `agate-api` container.
 - `make lint`: run Ruff checks.
