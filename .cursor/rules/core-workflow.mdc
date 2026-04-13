@@ -13,4 +13,4 @@ alwaysApply: true
 - Run relevant validation before finishing:
   - default: `make lint` and `make test`
   - runtime changes: also run `make smoke`
-- Work in short-lived branches and keep one coherent task per diff; create a **new** branch for large or unrelated changes instead of continuing on whatever branch is checked out.
+- When implementation starts, **branch fresh** from the task’s base (usually `main`) unless directed otherwise. Work in short-lived branches and keep one coherent task per diff; create a **new** branch for large or unrelated changes instead of continuing on whatever branch is checked out.

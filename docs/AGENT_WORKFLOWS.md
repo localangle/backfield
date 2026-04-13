@@ -8,6 +8,7 @@ Backfield is a refactor of **agate-ai-platform** (`/Users/cjdd3b/apps/agate-ai-p
 
 ## Git and branches
 
+- **Default:** when you start writing code, check out a **fresh branch** from the task base (typically `main`) unless the instructions explicitly say to use or extend an existing branch.
 - Create a **new branch** for each distinct task. Large or unrelated work (new packages, migrations, multi-app changes) should not ride on an unrelated existing branch.
 - Name branches so the intent is obvious (for example `feat/agate-runtime-port`, `fix/worker-timeout`).
 - See `AGENTS.md` → **Git workflow** for the full convention.
