@@ -17,6 +17,18 @@ POLL_TIMEOUT_SECONDS = float(os.environ.get("SMOKE_POLL_TIMEOUT_SECONDS", "180")
 POLL_INTERVAL_SECONDS = float(os.environ.get("SMOKE_POLL_INTERVAL_SECONDS", "1.5"))
 
 
+def _log(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def _http_error_detail(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        r = exc.response
+        body = (r.text or "")[:4000]
+        return f"{r.status_code} {r.request.method} {r.request.url!s}\n{body}"
+    return str(exc)
+
+
 def _assert_ok(response: httpx.Response, context: str) -> dict:
     response.raise_for_status()
     payload = response.json()
@@ -37,6 +49,7 @@ def _wait_for_terminal_run(client: httpx.Client, run_id: str) -> dict:
 
 
 def main() -> int:
+    _log(f"Smoke: AGATE_API_BASE={AGATE_API_BASE} STYLEBOOK_API_BASE={STYLEBOOK_API_BASE}")
     with httpx.Client(base_url=AGATE_API_BASE, timeout=10.0) as agate_client:
         stylebook_client = httpx.Client(base_url=STYLEBOOK_API_BASE, timeout=10.0)
         try:
@@ -94,10 +107,10 @@ def main() -> int:
                     f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
                 )
 
-            print("Smoke passed.")
-            print(f"Project: {project_id} (general)")
-            print(f"Graph: {graph_id} ({STARTER_FLOW_GRAPH_DISPLAY_NAME})")
-            print(f"Run: {terminal_run['id']}")
+            _log("Smoke passed.")
+            _log(f"Project: {project_id} (general)")
+            _log(f"Graph: {graph_id} ({STARTER_FLOW_GRAPH_DISPLAY_NAME})")
+            _log(f"Run: {terminal_run['id']}")
             return 0
         finally:
             stylebook_client.close()
@@ -107,8 +120,8 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except httpx.HTTPError as exc:
-        print(f"HTTP smoke failure: {exc}", file=sys.stderr)
+        print(f"HTTP smoke failure: {_http_error_detail(exc)}", file=sys.stderr, flush=True)
         raise SystemExit(1) from exc
     except Exception as exc:
-        print(f"Smoke failure: {exc}", file=sys.stderr)
+        print(f"Smoke failure: {exc}", file=sys.stderr, flush=True)
         raise SystemExit(1) from exc

@@ -36,4 +36,6 @@ make lint
 make test
 ```
 
-Recommended follow-up job: bring up the runtime stack in CI and run `make smoke`.
+The GitHub Actions **smoke** job brings up Compose and runs `scripts/smoke_agate_stack.py`. Configure at least one of **`OPENAI_API_KEY`** or **`ANTHROPIC_API_KEY`** as a [repository secret](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions); the workflow writes a short-lived repo-root `.env` so `agate-api` / `worker` receive keys (same mechanism as local dev). Fork PRs from outside contributors typically cannot read those secrets, so smoke may be skipped or failed by policy.
+
+**Note:** `make smoke` runs the same script; GNU Make reports **exit code 2** when the recipe fails even if Python exited 1, which can obscure logs in some UIs—prefer invoking `uv run python -u scripts/smoke_agate_stack.py` in automation when you need a clear process exit code.

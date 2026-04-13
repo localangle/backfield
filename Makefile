@@ -75,4 +75,4 @@ format:
 	uv run ruff format packages apps tests
 
 smoke:
-	uv run python scripts/smoke_agate_stack.py
+	uv run python -u scripts/smoke_agate_stack.py
