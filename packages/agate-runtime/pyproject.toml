@@ -1,0 +1,29 @@
+[project]
+name = "agate-runtime"
+version = "0.1.0"
+description = "Vendored Agate flowbuilder node runtime (LLM PlaceExtract, LangGraph GeocodeAgent, utilities)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0.0",
+    "anthropic>=0.18.0",
+    "openai>=1.12.0",
+    "duckduckgo-search>=7.0.0",
+    "geopy>=2.4.0",
+    "h3>=4.3.1",
+    "httpx>=0.27.0",
+    "langgraph>=0.2.0",
+    "overpy>=0.7",
+    "requests>=2.31.0",
+    "shapely>=2.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/agate_runtime",
+    "src/agate_utils",
+    "src/agate_nodes",
+]

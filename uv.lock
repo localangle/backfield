@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 members = [
     "agate-api",
     "agate-worker",
-    "backfield-agate-runtime",
+    "agate-runtime",
     "backfield-core",
     "backfield-db",
     "backfield-workspace",
@@ -143,9 +143,9 @@ wheels = [
 ]
 
 [[package]]
-name = "backfield-agate-runtime"
+name = "agate-runtime"
 version = "0.1.0"
-source = { editable = "packages/backfield-agate-runtime" }
+source = { editable = "packages/agate-runtime" }
 dependencies = [
     { name = "anthropic" },
     { name = "duckduckgo-search" },
@@ -180,14 +180,14 @@ name = "backfield-core"
 version = "0.1.0"
 source = { editable = "packages/backfield-core" }
 dependencies = [
-    { name = "backfield-agate-runtime" },
+    { name = "agate-runtime" },
     { name = "httpx" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "backfield-agate-runtime", editable = "packages/backfield-agate-runtime" },
+    { name = "agate-runtime", editable = "packages/agate-runtime" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
 ]

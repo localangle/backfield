@@ -10,7 +10,7 @@ Use this file as the entry point for working in this repository. Keep it short, 
 - `apps/stylebook-api`: Companion FastAPI service for geocode and future Stylebook entities.
 - `apps/stylebook-ui`: Minimal Stylebook shell UI.
 - `packages/backfield-core`: Graph types, executor, thin node runners, node metadata, and node UI sources.
-- `packages/backfield-agate-runtime`: Vendored LLM PlaceExtract, LangGraph GeocodeAgent, and geocoding/LLM utilities (ported from agate-ai-platform).
+- `packages/agate-runtime`: Vendored LLM PlaceExtract, LangGraph GeocodeAgent, and geocoding/LLM utilities (ported from agate-ai-platform).
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
 - `infra/docker-compose.yml`: Local multi-service stack.
 

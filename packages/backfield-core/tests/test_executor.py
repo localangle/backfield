@@ -46,7 +46,7 @@ def test_text_to_place_extract():
         ],
     )
     with patch(
-        "backfield_place_extract.node_port.call_llm",
+        "agate_nodes.place_extract.node_port.call_llm",
         return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
     ):
         out = execute_graph(spec)
@@ -100,11 +100,11 @@ def test_four_node_pipeline_mock_geocode():
 
     with (
         patch(
-            "backfield_place_extract.node_port.call_llm",
+            "agate_nodes.place_extract.node_port.call_llm",
             return_value=_mock_place_extract_json("Austin", "Texas", "TX"),
         ),
         patch(
-            "backfield_geocode_agent.node.run_geocoding_agent",
+            "agate_nodes.geocode_agent.node.run_geocoding_agent",
             side_effect=_fake_run_geocoding_agent,
         ),
     ):
