@@ -1,4 +1,4 @@
-"""Backfield vendored Agate node runtime (PlaceExtract, GeocodeAgent, Output consolidation)."""
+"""Backfield vendored Agate node runtime (PlaceExtract, PlaceFilter, GeocodeAgent, Output consolidation)."""
 
 from agate_runtime.context import AgateEnvContext
 

@@ -447,10 +447,10 @@ export default function RunGraph() {
         return {
           model: 'gpt-4o-mini',
         }
-      case 'PlaceFilter':
-        return {
-          model: 'gpt-4o-mini',
-        }
+      case 'PlaceFilter': {
+        const meta = nodeMetadata.find((m) => m.type === 'PlaceFilter')
+        return meta?.defaultParams ?? { model: 'gpt-5' }
+      }
       case 'GeocodeSimple':
         return {
           user_agent: 'agate-ai-platform/1.0',
