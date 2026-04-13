@@ -12,6 +12,23 @@ interface PlaceExtractPanelProps {
   setNodes?: (nodes: any) => void
 }
 
+function formatSamplePlaceTitle(location: {
+  location?: unknown
+  original_text?: string
+}): string {
+  const loc = location.location
+  if (typeof loc === 'string') {
+    return loc
+  }
+  if (loc && typeof loc === 'object' && 'full' in loc) {
+    const full = (loc as { full?: unknown }).full
+    if (typeof full === 'string' && full.length > 0) {
+      return full
+    }
+  }
+  return typeof location.original_text === 'string' ? location.original_text : ''
+}
+
 export default function PlaceExtractPanel({
   node,
   onChange,
@@ -21,37 +38,55 @@ export default function PlaceExtractPanel({
   editMode,
   setNodes
 }: PlaceExtractPanelProps) {
-  // Debug: Log what we're getting
-  if (currentRun?.node_outputs) {
-    console.log('PlaceExtract Panel Debug:', {
-      nodeId: node.id,
-      nodeType: node.type,
-      nodeOutputs: currentRun.node_outputs,
-      specificNodeOutput: currentRun.node_outputs[node.id],
-      allNodeIds: Object.keys(currentRun.node_outputs)
-    })
-  }
-  
-  // Get latest run data - only show if we have specific node output
   const nodeOutput = currentRun?.node_outputs?.[node.id]
   const latestData = nodeOutput || null
 
+  const modelOptions =
+    nodeMetadata.availableModels && nodeMetadata.availableModels.length > 0
+      ? nodeMetadata.availableModels
+      : [{ value: 'gpt-4o-mini', label: 'GPT-4o Mini' }]
+
   return (
     <>
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div>
-          <Label className="text-sm font-medium">Description</Label>
+          <Label className="text-sm font-medium">About</Label>
+          <p className="text-sm text-muted-foreground mt-1">{nodeMetadata.description}</p>
+          {nodeMetadata.dependencyHelperText ? (
+            <p className="text-sm text-muted-foreground mt-2 border-l-2 border-muted pl-3">
+              {nodeMetadata.dependencyHelperText}
+            </p>
+          ) : null}
+        </div>
+
+        <div>
+          <Label className="text-sm font-medium">Input placeholders</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            This node uses an LLM to process JSON according to your custom prompt and returns structured place data. Use JSON path placeholders in your prompt to extract specific fields:
-            <ul className="list-disc list-inside text-xs mt-2 space-y-1">
-              <li><code className="bg-muted px-1 rounded">{'{text}'}</code> - extracts the text field</li>
-              <li><code className="bg-muted px-1 rounded">{'{url}'}</code> - extracts the url field</li>
-              <li><code className="bg-muted px-1 rounded">{'{results.images}'}</code> - extracts nested results.images object/array</li>
-              <li><code className="bg-muted px-1 rounded">{'{results.caption}'}</code> - extracts only caption field from array elements</li>
-              <li><code className="bg-muted px-1 rounded">{'{results.caption, id}'}</code> - extracts multiple fields from array elements</li>
-              <li><code className="bg-muted px-1 rounded">{'{raw}'}</code> - passes entire input JSON</li>
-            </ul>
+            Pull fields from upstream JSON into the prompt using these tokens (same behavior as the original
+            Flowbuilder Place Extract node):
           </p>
+          <ul className="list-disc list-inside text-xs mt-2 space-y-1 text-muted-foreground">
+            <li>
+              <code className="bg-muted px-1 rounded">{'{text}'}</code> — plain text or the <code className="bg-muted px-1 rounded">text</code>{' '}
+              field from JSON input
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{url}'}</code> — <code className="bg-muted px-1 rounded">url</code> field
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{results.images}'}</code> — nested paths (e.g.{' '}
+              <code className="bg-muted px-1 rounded">results.images</code>)
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{results.caption}'}</code> — one field from each item in an array
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{results.caption, id}'}</code> — multiple fields per array element
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{raw}'}</code> — entire input object as JSON
+            </li>
+          </ul>
         </div>
       </div>
 
@@ -59,19 +94,17 @@ export default function PlaceExtractPanel({
         <div>
           <Label className="text-sm font-medium">Parameters</Label>
         </div>
-        
+
         <div className="space-y-2 text-sm mt-2">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Model</Label>
             {editMode && setNodes ? (
               <Select
-                value={node.data.model || 'gpt-4o-mini'}
+                value={node.data.model || nodeMetadata.defaultParams?.model || 'gpt-4o-mini'}
                 onValueChange={(value) => {
                   setNodes((nds: any[]) =>
                     nds.map((n: any) =>
-                      n.id === node.id
-                        ? { ...n, data: { ...n.data, model: value } }
-                        : n
+                      n.id === node.id ? { ...n, data: { ...n.data, model: value } } : n
                     )
                   )
                 }}
@@ -80,7 +113,7 @@ export default function PlaceExtractPanel({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {nodeMetadata.availableModels?.map((model) => (
+                  {modelOptions.map((model) => (
                     <SelectItem key={model.value} value={model.value}>
                       {model.label}
                     </SelectItem>
@@ -90,7 +123,9 @@ export default function PlaceExtractPanel({
             ) : (
               <div className="flex justify-between items-center p-2 bg-muted rounded">
                 <span className="text-muted-foreground">Model</span>
-                <span className="font-medium text-xs">{node.data.model || 'gpt-4o-mini'}</span>
+                <span className="font-medium text-xs">
+                  {node.data.model || nodeMetadata.defaultParams?.model || 'gpt-4o-mini'}
+                </span>
               </div>
             )}
           </div>
@@ -121,12 +156,18 @@ export default function PlaceExtractPanel({
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-1">
-            Customize the prompt for extracting locations. Use placeholders like {`{text}`}, {`{location}`}, {`{url}`}, {`{results.images}`}, {`{results.caption}`}, {`{results.caption, id}`}, {`{raw}`}.
+            Tune extraction instructions. Placeholders:{' '}
+            <code className="bg-muted px-1 rounded">{'{text}'}</code>,{' '}
+            <code className="bg-muted px-1 rounded">{'{url}'}</code>,{' '}
+            <code className="bg-muted px-1 rounded">{'{results.images}'}</code>,{' '}
+            <code className="bg-muted px-1 rounded">{'{results.caption}'}</code>,{' '}
+            <code className="bg-muted px-1 rounded">{'{results.caption, id}'}</code>,{' '}
+            <code className="bg-muted px-1 rounded">{'{raw}'}</code>.
           </p>
         </div>
 
         <div className="pt-2">
-          <Label className="text-sm font-medium">Output Format</Label>
+          <Label className="text-sm font-medium">Output format</Label>
           {editMode && setNodes ? (
             <Textarea
               value={node.data?.json_format || nodeMetadata.defaultParams?.json_format || ''}
@@ -145,31 +186,33 @@ export default function PlaceExtractPanel({
           ) : (
             <div className="mt-2 p-2 bg-muted rounded max-h-48 overflow-y-auto">
               <pre className="text-xs whitespace-pre-wrap font-mono">
-                {node.data?.json_format || nodeMetadata.defaultParams?.json_format || '{ "locations": [] }'}
+                {node.data?.json_format ||
+                  nodeMetadata.defaultParams?.json_format ||
+                  '{ "locations": [] }'}
               </pre>
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-1">
-            Example output JSON. Braces are escaped automatically in the prompt.
+            Example JSON shape the model should return. Braces are escaped when this is merged into the prompt.
           </p>
         </div>
       </div>
 
       {latestData && latestData.locations && (
         <div className="pt-4 border-t">
-          <Label className="text-sm font-medium">Latest Run</Label>
+          <Label className="text-sm font-medium">Latest run</Label>
           <div className="mt-2 space-y-2">
             <div className="text-xs text-muted-foreground">
               <div>Places found: {latestData.locations.length}</div>
             </div>
-            
+
             {latestData.locations.length > 0 && (
               <div>
-                <Label className="text-xs font-medium">Sample Places:</Label>
+                <Label className="text-xs font-medium">Sample places</Label>
                 <div className="mt-1 space-y-1 max-h-32 overflow-y-auto">
                   {latestData.locations.slice(0, 3).map((location: any, index: number) => (
                     <div key={index} className="text-xs p-2 bg-muted rounded">
-                      <div className="font-medium">{location.location?.full || location.original_text}</div>
+                      <div className="font-medium">{formatSamplePlaceTitle(location)}</div>
                       {location.description && (
                         <div className="text-muted-foreground">{location.description}</div>
                       )}

@@ -5,6 +5,14 @@ Backfield is a small monorepo centered on two product surfaces:
 - `Agate`: visual flows, run orchestration, and node execution.
 - `Stylebook`: companion APIs and UI for geocode today, broader entities later.
 
+## Reference: agate-ai-platform
+
+This app is **derived from** and is being **refactored from** **agate-ai-platform**. The canonical local checkout used for parity work is:
+
+`/Users/cjdd3b/apps/agate-ai-platform`
+
+When porting features, fixing bugs, or matching UX, **compare against that tree** (same paths under `apps/`, `packages/`, etc., where applicable). Prefer **high-fidelity ports**—copy structure and logic, then adjust imports and Backfield-specific boundaries—rather than reimplementing from memory. Document intentional differences in this repo’s docs or in the change description.
+
 ## Package and app boundaries
 
 - `packages/backfield-core`

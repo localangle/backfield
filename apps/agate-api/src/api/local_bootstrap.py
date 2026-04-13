@@ -26,6 +26,7 @@ _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
     "PELIAS_API_KEY",
     "GEOCODIO_API_KEY",
     "BRAVE_SEARCH_API_KEY",
+    "MAPBOX_API_TOKEN",
 )
 
 
