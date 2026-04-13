@@ -1,0 +1,279 @@
+import { useCallback, useEffect, useState, useRef } from 'react'
+import { useParams } from 'react-router-dom'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import ProjectSettings from '@/components/ProjectSettings'
+import ProjectDetailFlowsTab from '@/components/project/ProjectDetailFlowsTab'
+import ProjectDetailRunsTab from '@/components/project/ProjectDetailRunsTab'
+import {
+  getProjectBySlug,
+  getProjectStatsBySlug,
+  updateProject,
+  type Project,
+  type ProjectStats,
+} from '@/lib/api'
+import { formatDurationMs } from '@/lib/formatDuration'
+import { Loader2, Pencil, Check, X } from 'lucide-react'
+
+export default function ProjectDetailPage() {
+  const { projectSlug: projectSlugParam } = useParams<{ projectSlug: string }>()
+  const slug = projectSlugParam ? decodeURIComponent(projectSlugParam) : ''
+  const [project, setProject] = useState<Project | null>(null)
+  const [stats, setStats] = useState<ProjectStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const reload = useCallback(async () => {
+    if (!slug) return
+    try {
+      setError(null)
+      const [p, s] = await Promise.all([getProjectBySlug(slug), getProjectStatsBySlug(slug)])
+      setProject(p)
+      setStats(s)
+      setNameDraft(p.name)
+    } catch (e) {
+      console.error(e)
+      setError('Failed to load project')
+      setProject(null)
+      setStats(null)
+    }
+  }, [slug])
+
+  useEffect(() => {
+    if (!slug) {
+      setLoading(false)
+      setError('Invalid project')
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      try {
+        await reload()
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [slug, reload])
+
+  useEffect(() => {
+    if (editingName) inputRef.current?.focus()
+  }, [editingName])
+
+  const cancelNameEdit = () => {
+    setNameDraft(project?.name ?? '')
+    setEditingName(false)
+  }
+
+  const saveName = async () => {
+    if (!project) return
+    const next = nameDraft.trim()
+    if (!next || next === project.name) {
+      cancelNameEdit()
+      return
+    }
+    try {
+      setSavingName(true)
+      await updateProject(project.id, { name: next })
+      setEditingName(false)
+      await reload()
+      window.dispatchEvent(new CustomEvent('agate:projects-changed'))
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  if (!slug) {
+    return <p className="text-muted-foreground">Invalid project.</p>
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error || !project || !stats) {
+    return <p className="text-muted-foreground">{error || 'Project not found.'}</p>
+  }
+
+  return (
+    <div className="w-full max-w-none min-w-0 space-y-10">
+      <div className="flex items-start gap-3 min-h-[2.5rem]">
+        {editingName ? (
+          <div className="flex flex-1 items-center gap-2 flex-wrap">
+            <Input
+              ref={inputRef}
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveName()
+                if (e.key === 'Escape') cancelNameEdit()
+              }}
+              disabled={savingName}
+              className="text-3xl font-bold h-auto py-2 px-3 max-w-xl"
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="default"
+              className="shrink-0"
+              disabled={savingName || !nameDraft.trim()}
+              onClick={() => void saveName()}
+              aria-label="Save name"
+            >
+              <Check className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="shrink-0"
+              disabled={savingName}
+              onClick={cancelNameEdit}
+              aria-label="Cancel"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <>
+            <h1 className="text-3xl font-bold flex-1">{project.name}</h1>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setNameDraft(project.name)
+                setEditingName(true)
+              }}
+              aria-label="Edit project name"
+            >
+              <Pencil className="h-5 w-5" />
+            </Button>
+          </>
+        )}
+      </div>
+
+      <div className="w-full min-w-0">
+        <h2 className="text-lg font-semibold mb-4">Overview</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Runs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold tabular-nums">{stats.total_runs}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Articles processed
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold tabular-nums">{stats.articles_processed}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Successful runs (one unit per run in Agate today)
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Avg time per run
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold tabular-nums">
+                {formatDurationMs(stats.avg_duration_ms_per_run)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Finished runs only</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Avg time per item
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold tabular-nums">
+                {formatDurationMs(stats.avg_duration_ms_per_item)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Per successful run</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div className="w-full min-w-0">
+        <h2 className="text-lg font-semibold mb-2">Project workspace</h2>
+        <p className="text-sm text-muted-foreground mb-6">
+          Flows, runs, defaults, and API credentials for this project.
+        </p>
+        <Tabs defaultValue="flows" className="w-full min-w-0">
+          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-4">
+            <TabsTrigger value="flows" className="w-full">
+              Flows
+            </TabsTrigger>
+            <TabsTrigger value="runs" className="w-full">
+              Runs
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="w-full">
+              Settings
+            </TabsTrigger>
+            <TabsTrigger value="credentials" className="w-full">
+              Credentials
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="flows" className="mt-6 w-full min-w-0 outline-none">
+            <ProjectDetailFlowsTab
+              projectId={project.id}
+              projectSlug={slug}
+              onDataChanged={() => void reload()}
+            />
+          </TabsContent>
+          <TabsContent value="runs" className="mt-6 w-full min-w-0 outline-none">
+            <ProjectDetailRunsTab projectId={project.id} onDataChanged={() => void reload()} />
+          </TabsContent>
+          <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
+            <ProjectSettings
+              project={project}
+              open={true}
+              onOpenChange={() => {}}
+              variant="inline"
+              inlineScope="system"
+              onRemoteUpdated={reload}
+            />
+          </TabsContent>
+          <TabsContent value="credentials" className="mt-6 w-full min-w-0 outline-none">
+            <ProjectSettings
+              project={project}
+              open={true}
+              onOpenChange={() => {}}
+              variant="inline"
+              inlineScope="credentials"
+              onRemoteUpdated={reload}
+            />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  )
+}

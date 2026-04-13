@@ -1,0 +1,15 @@
+---
+description: Core Backfield workflow expectations for every task
+alwaysApply: true
+---
+
+# Core Workflow
+
+- Use `Makefile` targets when they exist instead of inventing new command flows.
+- Keep diffs surgical and tied to the request.
+- Update the matching source-of-truth doc when behavior, architecture, or operations change.
+- Prefer readable, explicit code over cleverness.
+- Run relevant validation before finishing:
+  - default: `make lint` and `make test`
+  - runtime changes: also run `make smoke`
+- Work in short-lived branches and keep one coherent task per diff.

@@ -1,0 +1,109 @@
+# Shared dev token (override: export SERVICE_API_TOKEN=...)
+x-shared-env: &shared-env
+  SERVICE_API_TOKEN: ${SERVICE_API_TOKEN:-backfield-dev}
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: backfield
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  stylebook-api:
+    build:
+      context: ..
+      dockerfile: apps/stylebook-api/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      <<: *shared-env
+      UI_ORIGIN: http://localhost:5175
+
+  agate-api:
+    build:
+      context: ..
+      dockerfile: apps/agate-api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *shared-env
+      UI_ORIGIN: http://localhost:5173
+      REDIS_URL: redis://redis:6379/0
+      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      STYLEBOOK_API_URL: http://stylebook-api:8003
+      # Dev-only Fernet key for encrypting agate_project_secret; override in production.
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      stylebook-api:
+        condition: service_started
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      <<: *shared-env
+      REDIS_URL: redis://redis:6379/0
+      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      STYLEBOOK_API_URL: http://stylebook-api:8003
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      stylebook-api:
+        condition: service_started
+      agate-api:
+        condition: service_started
+
+  agate-ui:
+    build:
+      context: ../apps/agate-ui
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE: http://localhost:8000
+      VITE_AGATE_API_BASE: http://localhost:8000
+      VITE_STYLEBOOK_API_BASE: http://localhost:8003
+    volumes:
+      - ../apps/agate-ui:/app
+      - ../packages:/app/packages
+      - /app/node_modules
+
+  stylebook-ui:
+    build:
+      context: ../apps/stylebook-ui
+      dockerfile: Dockerfile
+    ports:
+      - "5175:5175"
+    environment:
+      VITE_STYLEBOOK_API_BASE: http://localhost:8003
+    volumes:
+      - ../apps/stylebook-ui:/app
+      - /app/node_modules

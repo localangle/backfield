@@ -1,0 +1,13 @@
+---
+description: Frontend conventions for Agate UI TypeScript and React files
+globs: apps/agate-ui/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Frontend Standards
+
+- Keep components readable and explicit; extract smaller helpers or components when files become hard to scan.
+- Prefer typed props and API response shapes over `any`.
+- Reuse shared API helpers, UI primitives, and existing patterns before adding a new abstraction.
+- Keep browser storage keys and custom event names consistent with existing prefixes and docs.
+- Do not hand-edit generated node registry output unless the generation flow itself is changing.

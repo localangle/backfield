@@ -1,0 +1,29 @@
+{
+  "type": "Output",
+  "label": "JSON Output",
+  "icon": "Braces",
+  "color": "bg-slate-500",
+  "description": "Consolidate results from multiple nodes",
+  "category": "output",
+  "requiredUpstreamNodes": [],
+  "dependencyHelperText": "Consolidates results from multiple nodes into a single JSON object.",
+  "inputs": [
+    {
+      "id": "data",
+      "label": "Any Data",
+      "type": "any",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "consolidated",
+      "label": "Consolidated",
+      "type": "object"
+    }
+  ],
+  "defaultParams": {
+    "exclude": null,
+    "include": null
+  }
+}

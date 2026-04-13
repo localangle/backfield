@@ -1,0 +1,11 @@
+{
+  "type": "GeocodeAgent",
+  "label": "Geocode Agent",
+  "icon": "MapPin",
+  "color": "bg-emerald-500",
+  "description": "Geocode locations via Stylebook API.",
+  "category": "enrichment",
+  "inputs": [{ "id": "locations", "label": "Locations", "type": "array", "required": true }],
+  "outputs": [{ "id": "locations", "label": "Geocoded Locations", "type": "array" }],
+  "defaultParams": {}
+}

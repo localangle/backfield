@@ -1,0 +1,23 @@
+---
+name: update-repo-docs
+description: Keep Backfield repository docs in sync with code and workflows. Use when behavior, architecture, operations, testing, or developer workflows change.
+---
+
+# Update Repo Docs
+
+## Quick Start
+
+1. Identify the source-of-truth doc for the change.
+2. Update that doc first instead of only patching `README.md`.
+3. Keep terminology aligned with `AGENTS.md`.
+4. Add concise guidance, not a long narrative.
+
+## Source-Of-Truth Map
+
+- `docs/ARCHITECTURE.md`: package boundaries and runtime flow
+- `docs/API.md`: route and orchestration behavior
+- `docs/FRONTEND.md`: UI patterns and node sync flow
+- `docs/DATABASE.md`: schema, migrations, indexing
+- `docs/OPERATIONS.md`: compose, env vars, troubleshooting
+- `docs/TESTING.md`: validation ladder and smoke flow
+- `docs/AGENT_WORKFLOWS.md`: task-based checklists

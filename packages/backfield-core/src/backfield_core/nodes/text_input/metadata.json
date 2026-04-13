@@ -1,0 +1,11 @@
+{
+  "type": "TextInput",
+  "label": "Text Input",
+  "icon": "FileText",
+  "color": "bg-blue-500",
+  "description": "Input text for Agate pipelines.",
+  "category": "input",
+  "inputs": [],
+  "outputs": [{ "id": "text", "label": "Text", "type": "string" }],
+  "defaultParams": { "text": "" }
+}

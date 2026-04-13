@@ -1,0 +1,14 @@
+---
+description: Python readability and structure conventions for Backfield
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python Standards
+
+- Put imports at the top of the file unless a local import is needed to avoid a circular import or heavy optional dependency.
+- If you use a local import, add a short comment explaining why.
+- Prefer human readability over idiomatic cleverness.
+- Split large functions into smaller focused helpers, including private helpers, when that improves scanning the file.
+- Use descriptive names for functions, classes, variables, and tests.
+- Avoid speculative abstraction or generic helpers that only serve one call site.

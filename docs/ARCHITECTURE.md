@@ -1,0 +1,66 @@
+# Architecture
+
+Backfield is a small monorepo centered on two product surfaces:
+
+- `Agate`: visual flows, run orchestration, and node execution.
+- `Stylebook`: companion APIs and UI for geocode today, broader entities later.
+
+## Package and app boundaries
+
+- `packages/backfield-core`
+  - Owns `GraphSpec`, graph execution, node runners, node metadata, and node UI source files.
+  - Should stay free of API routing, database persistence, and frontend app state concerns.
+- `packages/backfield-db`
+  - Owns SQLModel models, DB session helpers, encryption helpers, and Alembic migrations.
+  - Is the only package that should define DB table names and schema-level conventions.
+- `apps/agate-api`
+  - Owns HTTP routes for health, projects, graphs, templates, runs, and node metadata.
+  - Validates request/response shapes, persists state, and enqueues worker tasks.
+- `apps/worker`
+  - Owns Celery task execution and runtime concerns for processing runs.
+  - Reads from DB, executes `backfield-core`, and writes status/results back to DB.
+- `apps/agate-ui`
+  - Owns the flowbuilder UI, API client, and browser-facing interaction patterns.
+  - Consumes node metadata and synced node UI generated from `backfield-core`.
+- `apps/stylebook-api`
+  - Owns Stylebook-only HTTP endpoints such as geocode resolution.
+- `apps/stylebook-ui`
+  - Owns the minimal Stylebook browser shell.
+
+## Dependency direction
+
+- UI apps may depend on their own components, shared client helpers, and published API contracts.
+- `agate-api` may depend on `backfield-core` and `backfield-db`.
+- `worker` may depend on `backfield-core` and `backfield-db`.
+- `backfield-core` must not depend on app code.
+- `backfield-db` must not depend on app code.
+
+## Runtime flow
+
+```mermaid
+flowchart LR
+    AgateUI[AgateUI] -->|create graph / create run| AgateAPI[AgateAPI]
+    AgateAPI -->|persist state| Postgres[Postgres]
+    AgateAPI -->|enqueue run| Redis[Redis]
+    Redis --> Worker[Worker]
+    Worker -->|load graph and secrets| Postgres
+    Worker -->|execute_graph| Core[backfield_core]
+    Core -->|geocode calls| StylebookAPI[StylebookAPI]
+    Worker -->|write result| Postgres
+    AgateUI -->|poll run| AgateAPI
+    AgateAPI -->|read status/result| Postgres
+```
+
+## Important conventions
+
+- `GraphSpec` is the canonical stored graph shape.
+- Agate DB tables use the `agate_` prefix.
+- Celery queue and worker name use `agate`.
+- Node metadata and optional node UI live in `packages/backfield-core/src/backfield_core/nodes`.
+- `apps/agate-ui/scripts/sync-nodes.js` copies node UI and generates the frontend registry.
+
+## Design guidance
+
+- Keep business logic near its owning layer.
+- Prefer explicit orchestration over hidden coupling between API, worker, and frontend.
+- When a change touches multiple layers, keep naming and payload shapes aligned across all of them.

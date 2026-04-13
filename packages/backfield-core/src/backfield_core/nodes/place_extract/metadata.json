@@ -1,0 +1,11 @@
+{
+  "type": "PlaceExtract",
+  "label": "Place Extract",
+  "icon": "MapPin",
+  "color": "bg-purple-500",
+  "description": "Extract place-like mentions (starter: City, ST heuristic).",
+  "category": "extraction",
+  "inputs": [{ "id": "text", "label": "Text", "type": "string", "required": true }],
+  "outputs": [{ "id": "locations", "label": "Locations", "type": "array" }],
+  "defaultParams": {}
+}
