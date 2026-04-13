@@ -140,5 +140,3 @@ Generally, write this as though you are describing the events of the story for r
 ## Output Format
 
 **IMPORTANT**: Return ONLY valid JSON. Do not include any explanatory text before or after the JSON.
-
-The results should be returned in a JSON that looks like the following.
