@@ -1,6 +1,6 @@
 # Database strategy (Backfield)
 
-Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix** so each app’s data is namespaced in Postgres (e.g. future Stylebook tables as `stylebook_`*).
+Backfield uses a **fresh schema**. Agate-owned tables use the `**agate_` prefix** so each app’s data is namespaced in Postgres (e.g. future Stylebook tables as `stylebook_`*).
 
 ## Ownership
 
@@ -21,9 +21,9 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 - `agate_template` — curated template flows (`spec_json`); instantiated as new `agate_graph` rows.
 - `agate_project_secret` — per-project encrypted env-style secrets (`key` + `value_encrypted`); decrypted by the worker at run time when `MASTER_ENCRYPTION_KEY` is set.
 
-Schema is defined by a single baseline revision, `001_agate_baseline`, which creates the `agate_*` tables and seed rows (General project, Geocode pipeline template).
+Schema is defined by a single baseline revision, `001_agate_baseline`, which creates the `agate_`* tables and seed rows (General project, Geocode pipeline template).
 
-**Existing databases** that already applied the old `001`–`004` chain: if the live schema already matches the `agate_*` layout above, point `alembic_version` at the new head. Alembic cannot `stamp` from a revision id that no longer exists in the repo, so use SQL once:
+**Existing databases** that already applied the old `001`–`004` chain: if the live schema already matches the `agate_`* layout above, point `alembic_version` at the new head. Alembic cannot `stamp` from a revision id that no longer exists in the repo, so use SQL once:
 
 ```sql
 UPDATE alembic_version SET version_num = '001_agate_baseline';
@@ -46,3 +46,4 @@ UPDATE alembic_version SET version_num = '001_agate_baseline';
 
 - Prefer additive migrations early; rename columns via explicit migrations once naming stabilizes.
 - When adding another app’s tables, use that app’s prefix and document it here.
+

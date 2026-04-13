@@ -45,6 +45,8 @@ Use this file as the entry point for working in this repository. Keep it short, 
 
 ## Style constraints
 
+- Prefer **strict typing** in Python: annotate public functions, methods, and non-obvious variables; avoid untyped payloads and `Any` unless there is a clear reason.
+- Prefer **Pydantic** (and SQLModel where that is already the layer) for structured data at boundaries: request/response bodies, JSON blobs, and settings that cross layers. Parse at the boundary instead of passing loose `dict`/`list` through the stack.
 - Put Python imports at the top of the file unless a local import is needed to avoid a circular import or heavy optional dependency. Add a short comment when making that exception.
 - Prefer human readability over clever or heavily idiomatic code.
 - Break large functions into smaller focused helpers, including private helpers, when that improves readability.
