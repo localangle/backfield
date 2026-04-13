@@ -41,6 +41,9 @@ services:
     build:
       context: ..
       dockerfile: apps/agate-api/Dockerfile
+    env_file:
+      - path: ../.env
+        required: false
     ports:
       - "8000:8000"
     environment:
@@ -52,6 +55,9 @@ services:
       STYLEBOOK_API_URL: http://stylebook-api:8003
       # Dev-only Fernet key for encrypting agate_project_secret; override in production.
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
+      # After migrations: sync .env API keys into General + create Starter flow graph.
+      BACKFIELD_LOCAL_BOOTSTRAP: ${BACKFIELD_LOCAL_BOOTSTRAP:-1}
+      # LLM / geocoder keys: set in repo-root .env (see .env.example); loaded via env_file above.
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,6 +70,9 @@ services:
     build:
       context: ..
       dockerfile: apps/worker/Dockerfile
+    env_file:
+      - path: ../.env
+        required: false
     environment:
       <<: *shared-env
       REDIS_URL: redis://redis:6379/0
@@ -71,12 +80,7 @@ services:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
-      # LLM / geocoding (optional; required for PlaceExtract + GeocodeAgent in real runs)
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      PELIAS_API_KEY: ${PELIAS_API_KEY:-}
-      GEOCODIO_API_KEY: ${GEOCODIO_API_KEY:-}
-      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+      # LLM / geocoder keys: repo-root .env via env_file above.
       PROJECT_SLUG: ${PROJECT_SLUG:-}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}
       TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-4200}

@@ -8,7 +8,7 @@ description: Validate the Backfield golden path against a live stack. Use when r
 ## Quick Start
 
 1. Ensure the stack is running (`make up` or `make up-detached`).
-2. Export `OPENAI_API_KEY` (and optional geocoder keys) on the host so Compose can pass them into the `worker` service; the starter flow runs LLM PlaceExtract and GeocodeAgent.
+2. Put `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` (and optional geocoder keys) in **repo-root `.env`** so Compose loads them into `worker` and `agate-api` (and into General project secrets when `BACKFIELD_LOCAL_BOOTSTRAP=1`).
 3. Run `make smoke` (uses `SMOKE_POLL_TIMEOUT_SECONDS`, default 180s).
 4. If it fails, inspect `make logs` and the relevant service logs.
 
@@ -16,11 +16,10 @@ description: Validate the Backfield golden path against a live stack. Use when r
 
 - Agate API health
 - Stylebook API health
-- Temp project creation
-- Template instantiation into a graph
-- Run enqueue on the `agate` queue
+- **General** project (slug `general`) and **Starter flow** graph present
+- Run enqueue on the `agate` queue for that graph
 - Worker completion and terminal run status
-- Cleanup of smoke-created resources
+- Does **not** delete General or the starter graph
 
 ## When To Use It
 

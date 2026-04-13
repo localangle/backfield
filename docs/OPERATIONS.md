@@ -38,6 +38,11 @@ Primary local services are defined in `infra/docker-compose.yml`:
 - `SERVICE_API_TOKEN`: optional shared token between Agate and Stylebook services.
 - `MASTER_ENCRYPTION_KEY`: required for encrypted project-secret storage.
 - `UI_ORIGIN`: allowed browser origin for local UI access.
+- `BACKFIELD_LOCAL_BOOTSTRAP`: when `1`, `agate-api` entrypoint (after Alembic) syncs allowlisted keys from the container environment into **General** (`agate_project_secret`) and creates the **Starter flow** graph if missing. Default in Compose is `1`; set `0` to disable (see repo-root `.env.example`).
+
+### Repo-root `.env` (local only)
+
+`agate-api` and `worker` use Compose `env_file: ../.env` (relative to `infra/docker-compose.yml`, i.e. the repository root). Copy [.env.example](../.env.example) to `.env` and add keys there; the file is gitignored. Variables are injected into the containers (Compose `required: false` so a missing `.env` does not fail the bring-up).
 
 ### Flow execution (PlaceExtract, GeocodeAgent)
 
@@ -48,9 +53,9 @@ Graph nodes are executed in the worker using the vendored `agate-runtime` packag
 - **Who's On First SQLite** (parent lookups in `wof.py`): the database file is not in git (size). Install under `packages/agate-runtime/.../geocoding/data/` or set **`WOF_SQLITE_DB_PATH`** to the `.db` file. See `packages/agate-runtime/src/agate_utils/geocoding/data/README.md`.
 - **Celery limits**: `TASK_SOFT_TIME_LIMIT` / `TASK_HARD_TIME_LIMIT` (defaults `3600` / `4200` seconds on the worker service in Compose) mirror agate-ai-platform worker defaults for long-running geocode flows.
 
-For `make smoke`, export at least `OPENAI_API_KEY` if the golden-path graph includes PlaceExtract, or the run will fail when the LLM is invoked.
+For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in repo-root `.env` (or ensure they exist in the worker environment) so PlaceExtract can call the LLM; otherwise the run fails when those nodes execute.
 
-Docker Compose passes through `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `PROJECT_SLUG` from the host environment into the `worker` service.
+`PROJECT_SLUG` can still be set via Compose interpolation on the worker service for Stylebook cache scoping.
 
 ## Database guidance
 

@@ -21,7 +21,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 - `agate_template` — curated template flows (`spec_json`); instantiated as new `agate_graph` rows.
 - `agate_project_secret` — per-project encrypted env-style secrets (`key` + `value_encrypted`); decrypted by the worker at run time when `MASTER_ENCRYPTION_KEY` is set.
 
-Schema is defined by a single baseline revision, `001_agate_baseline`, which creates the `agate_`* tables and seed rows (General project, Geocode pipeline template).
+Schema is defined by a single baseline revision, `001_agate_baseline`, which creates the `agate_`* tables and seed rows (General project, Geocode pipeline template). The **Starter flow** graph row for General is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration.
 
 **Existing databases** that already applied the old `001`–`004` chain: if the live schema already matches the `agate_`* layout above, point `alembic_version` at the new head. Alembic cannot `stamp` from a revision id that no longer exists in the repo, so use SQL once:
 

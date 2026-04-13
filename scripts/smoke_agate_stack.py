@@ -6,9 +6,9 @@ from __future__ import annotations
 import os
 import sys
 import time
-import uuid
 
 import httpx
+from backfield_core import STARTER_FLOW_GRAPH_DISPLAY_NAME, starter_geocode_flow_graph_spec
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
 STYLEBOOK_API_BASE = os.environ.get("STYLEBOOK_API_BASE", "http://localhost:8003")
@@ -36,58 +36,7 @@ def _wait_for_terminal_run(client: httpx.Client, run_id: str) -> dict:
     raise RuntimeError(f"Timed out waiting for run {run_id} to finish")
 
 
-def _fallback_graph_spec() -> dict:
-    return {
-        "name": "smoke_flow",
-        "nodes": [
-            {
-                "id": "n1",
-                "type": "TextInput",
-                "params": {"text": "We visited Chicago, IL and Austin, TX."},
-                "position": {"x": 0, "y": 0},
-            },
-            {
-                "id": "n2",
-                "type": "PlaceExtract",
-                "params": {},
-                "position": {"x": 220, "y": 0},
-            },
-            {
-                "id": "n3",
-                "type": "GeocodeAgent",
-                "params": {},
-                "position": {"x": 440, "y": 0},
-            },
-            {
-                "id": "n4",
-                "type": "Output",
-                "params": {},
-                "position": {"x": 660, "y": 0},
-            },
-        ],
-        "edges": [
-            {"source": "n1", "target": "n2", "sourceHandle": "text", "targetHandle": "text"},
-            {
-                "source": "n2",
-                "target": "n3",
-                "sourceHandle": "locations",
-                "targetHandle": "locations",
-            },
-            {
-                "source": "n3",
-                "target": "n4",
-                "sourceHandle": "locations",
-                "targetHandle": "data",
-            },
-        ],
-    }
-
-
 def main() -> int:
-    slug = f"smoke-{uuid.uuid4().hex[:8]}"
-    created_project_id: int | None = None
-    created_graph_id: str | None = None
-
     with httpx.Client(base_url=AGATE_API_BASE, timeout=10.0) as agate_client:
         stylebook_client = httpx.Client(base_url=STYLEBOOK_API_BASE, timeout=10.0)
         try:
@@ -98,40 +47,44 @@ def main() -> int:
             if stylebook_health.get("ok") is not True:
                 raise RuntimeError(f"Stylebook health failed: {stylebook_health}")
 
-            project = _assert_ok(
-                agate_client.post("/projects", json={"name": "Smoke Project", "slug": slug}),
-                "create project",
-            )
-            created_project_id = int(project["id"])
+            projects = agate_client.get("/projects")
+            projects.raise_for_status()
+            plist = projects.json()
+            if not isinstance(plist, list):
+                raise RuntimeError(f"list projects: expected list, got {type(plist)}")
+            general = next((p for p in plist if p.get("slug") == "general"), None)
+            if general is None:
+                raise RuntimeError(
+                    "Smoke needs the seeded 'General' project (slug general). "
+                    "Run migrations (agate-api entrypoint or make migrate)."
+                )
+            project_id = int(general["id"])
 
-            templates_response = agate_client.get("/templates")
-            templates_response.raise_for_status()
-            templates = templates_response.json()
-            if templates:
-                template_id = templates[0]["id"]
-                graph = _assert_ok(
-                    agate_client.post(
-                        f"/templates/{template_id}/instantiate",
-                        json={"project_id": created_project_id, "name": "Smoke Flow"},
-                    ),
-                    "instantiate template",
+            graphs = agate_client.get("/graphs")
+            graphs.raise_for_status()
+            glist = graphs.json()
+            if not isinstance(glist, list):
+                raise RuntimeError(f"list graphs: expected list, got {type(glist)}")
+            starter = next(
+                (
+                    g
+                    for g in glist
+                    if g.get("project_id") == project_id
+                    and g.get("name") == STARTER_FLOW_GRAPH_DISPLAY_NAME
+                ),
+                None,
+            )
+            if starter is None:
+                spec = starter_geocode_flow_graph_spec()
+                raise RuntimeError(
+                    f"Smoke needs graph named {STARTER_FLOW_GRAPH_DISPLAY_NAME!r} on General. "
+                    "Start the stack with BACKFIELD_LOCAL_BOOTSTRAP=1 (see docker-compose) "
+                    f"or create it with spec name {spec.name!r}."
                 )
-            else:
-                graph = _assert_ok(
-                    agate_client.post(
-                        "/graphs",
-                        json={
-                            "name": "Smoke Flow",
-                            "project_id": created_project_id,
-                            "spec": _fallback_graph_spec(),
-                        },
-                    ),
-                    "create fallback graph",
-                )
-            created_graph_id = str(graph["id"])
+            graph_id = str(starter["id"])
 
             run = _assert_ok(
-                agate_client.post("/runs", json={"graph_id": created_graph_id}),
+                agate_client.post("/runs", json={"graph_id": graph_id}),
                 "create run",
             )
             terminal_run = _wait_for_terminal_run(agate_client, str(run["id"]))
@@ -142,15 +95,11 @@ def main() -> int:
                 )
 
             print("Smoke passed.")
-            print(f"Project: {created_project_id}")
-            print(f"Graph: {created_graph_id}")
+            print(f"Project: {project_id} (general)")
+            print(f"Graph: {graph_id} ({STARTER_FLOW_GRAPH_DISPLAY_NAME})")
             print(f"Run: {terminal_run['id']}")
             return 0
         finally:
-            if created_graph_id is not None:
-                agate_client.delete(f"/graphs/{created_graph_id}")
-            if created_project_id is not None:
-                agate_client.delete(f"/projects/{created_project_id}")
             stylebook_client.close()
 
 
