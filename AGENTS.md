@@ -2,6 +2,17 @@
 
 Use this file as the entry point for working in this repository. Keep it short, then follow the linked docs for details.
 
+## Reference implementation: agate-ai-platform
+
+Backfield is **based on** and is an ongoing **refactor** of the **agate-ai-platform** codebase. Treat that repository as the primary source of truth for behavior, structure, and UX unless this repo’s docs or an explicit task say otherwise.
+
+- **Location (canonical on this machine):** `/Users/cjdd3b/apps/agate-ai-platform`  
+  If your clone lives elsewhere, use your local path; the intent is always “the sibling agate-ai-platform repo,” not a vague memory of it.
+- **Default assumption:** When adding or changing flows, nodes, API shapes, worker behavior, or UI patterns, **look up the corresponding area in agate-ai-platform first**. Prefer **copying and then adapting** (with imports and package names fixed for Backfield) over reimplementing from scratch when parity matters.
+- **Fidelity:** Aim for **maximum fidelity** to agate-ai-platform—file layout, naming, algorithms, prompts, and user-visible behavior—except where Backfield intentionally differs (monorepo layout, `agate_*` tables, `packages/backfield-*`, etc.). When you must diverge, say so in the PR or doc update.
+
+See also `docs/ARCHITECTURE.md` (reference section).
+
 ## Repo map
 
 - `apps/agate-api`: FastAPI control plane for projects, graphs, runs, templates, and node metadata.

@@ -2,6 +2,10 @@
 
 Use this file to decide what to read and which checks to run for common task types.
 
+## agate-ai-platform parity
+
+Backfield is a refactor of **agate-ai-platform** (`/Users/cjdd3b/apps/agate-ai-platform` on this machine, or your local clone). For non-trivial features and fixes, **open the corresponding files there** and aim for **maximum fidelity** when copying or adapting. See `AGENTS.md` → **Reference implementation**.
+
 ## Git and branches
 
 - Create a **new branch** for each distinct task. Large or unrelated work (new packages, migrations, multi-app changes) should not ride on an unrelated existing branch.

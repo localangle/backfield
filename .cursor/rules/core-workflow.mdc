@@ -5,6 +5,7 @@ alwaysApply: true
 
 # Core Workflow
 
+- Backfield refactors **agate-ai-platform**. Assume parallel code exists there: consult `/Users/cjdd3b/apps/agate-ai-platform` (or the contributor’s clone path) before inventing new behavior. Prefer copy-then-adapt for **maximum fidelity** unless this repo’s docs or the task explicitly define a different shape.
 - Use `Makefile` targets when they exist instead of inventing new command flows.
 - Keep diffs surgical and tied to the request.
 - Update the matching source-of-truth doc when behavior, architecture, or operations change.
