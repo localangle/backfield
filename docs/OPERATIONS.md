@@ -43,7 +43,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 - `SERVICE_API_TOKEN`: optional shared token between Agate and Stylebook services.
 - `MASTER_ENCRYPTION_KEY`: required for encrypted project-secret storage.
 - `UI_ORIGIN`: allowed browser origin for local UI access.
-- `BACKFIELD_LOCAL_BOOTSTRAP`: when `1`, `agate-api` entrypoint (after Alembic) syncs allowlisted keys from the container environment into **General** (`agate_project_secret`) and creates the **Starter flow** graph if missing. Default in Compose is `1`; set `0` to disable (see repo-root `.env.example`).
+- `BACKFIELD_LOCAL_BOOTSTRAP`: when `1`, `agate-api` entrypoint (after Alembic) syncs allowlisted keys from the container environment into **General** (`agate_project_secret`) and creates the **Starter flow** graph if missing. Default in Compose is `1`; set `0` to disable (see repo-root `.env.example`). Allowlisted keys include `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `MAPBOX_API_TOKEN`.
 
 ### Repo-root `.env` (local only)
 

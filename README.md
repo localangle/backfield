@@ -46,7 +46,7 @@ make smoke   # requires a live local stack
 
 ### Environment
 
-- **LLM / geocoder keys**: add to repo-root `.env` (see [.env.example](.env.example)). Compose loads that file into `agate-api` and `worker` so PlaceExtract and GeocodeAgent can run. The same values are copied into **General** project secrets when local bootstrap runs (Fernet-encrypted in Postgres).
+- **LLM / geocoder / Mapbox keys**: add to repo-root `.env` (see [.env.example](.env.example)). Compose loads that file into `agate-api` and `worker` so PlaceExtract and GeocodeAgent can run. The same values are copied into **General** project secrets when local bootstrap runs (Fernet-encrypted in Postgres), including optional **`MAPBOX_API_TOKEN`** for map visualizations.
 - **Shared service token** (optional): set the same value on agate-api, worker, and stylebook-api:
 
 ```bash
