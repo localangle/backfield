@@ -196,3 +196,26 @@ def test_run_env_bootstrap_org_missing_exits(
     with pytest.raises(SystemExit) as excinfo:
         run_env_bootstrap_if_configured()
     assert excinfo.value.code == 1
+
+
+def test_run_env_bootstrap_skips_when_identity_table_undefined(
+    monkeypatch: pytest.MonkeyPatch,
+    sqlite_engine_with_org,
+) -> None:
+    """When migrations are not applied yet (UndefinedTable), do not crash startup."""
+    from sqlalchemy.exc import ProgrammingError
+
+    UndefinedTable = type("UndefinedTable", (Exception,), {})
+
+    def fake_ensure(_session, *_a, **_k):
+        raise ProgrammingError("stmt", {}, UndefinedTable())
+
+    monkeypatch.setenv("BACKFIELD_BOOTSTRAP_ADMIN_FROM_ENV", "1")
+    monkeypatch.setenv("BACKFIELD_BOOTSTRAP_ADMIN_EMAIL", "a@b.c")
+    monkeypatch.setenv("BACKFIELD_BOOTSTRAP_ADMIN_PASSWORD", "pw")
+    monkeypatch.setattr(
+        "core_api.env_bootstrap.get_engine",
+        lambda: sqlite_engine_with_org,
+    )
+    monkeypatch.setattr("core_api.env_bootstrap.ensure_first_org_admin", fake_ensure)
+    run_env_bootstrap_if_configured()

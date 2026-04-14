@@ -7,6 +7,7 @@ import os
 import sys
 
 from backfield_db.session import get_engine
+from sqlalchemy.exc import ProgrammingError
 from sqlmodel import Session
 
 from core_api.bootstrap_users import BootstrapOrgMissingError, ensure_first_org_admin
@@ -25,6 +26,15 @@ def _env_truthy(value: str | None) -> bool:
     if value is None:
         return False
     return value.strip().lower() in ("1", "true", "yes")
+
+
+def _is_missing_identity_schema_error(exc: Exception) -> bool:
+    """True when DB exists but Alembic identity tables (e.g. backfield_user) are not applied yet."""
+    orig = getattr(exc, "orig", None)
+    if orig is not None and type(orig).__name__ == "UndefinedTable":
+        return True
+    text = f"{orig or exc}".lower()
+    return "does not exist" in text and "backfield_" in text
 
 
 def resolve_bootstrap_password_from_env() -> str | None:
@@ -78,6 +88,14 @@ def run_env_bootstrap_if_configured() -> None:
             if strict:
                 sys.exit(1)
             return
+        except ProgrammingError as e:
+            if _is_missing_identity_schema_error(e):
+                logger.warning(
+                    "Env bootstrap skipped: identity tables missing; run `make migrate` "
+                    "(or start agate-api so Alembic applies), then restart core-api."
+                )
+                return
+            raise
 
     if result is not None:
         logger.info("Env bootstrap: created first org admin (user_id=%s)", result["user_id"])
