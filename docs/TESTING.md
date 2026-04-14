@@ -28,6 +28,17 @@
 - When adding nodes, add a focused unit test under `packages/backfield-core/tests/`.
 - When changing API or worker contracts, add or update a test that guards the naming, queue, status, or schema assumption.
 
+### Root `tests/` layout
+
+- **Packages:** unit and tight library tests live under `packages/*/tests/` (for example `packages/backfield-core/tests/`).
+- **Repo root `tests/`:** integration and contract tests, grouped by surface so the tree stays navigable:
+  - `tests/core_api/` — `core-api` HTTP tests and core-api-only bootstrap/env behavior.
+  - `tests/agate_api/` — Agate API `TestClient` tests.
+  - `tests/stylebook_api/` — Stylebook API tests.
+  - `tests/contracts/` — cross-cutting structural checks (schema prefixes, indexes, shared runtime contracts) that are not tied to a single HTTP app.
+- Shared pytest defaults for these tests live in `tests/conftest.py` at the repo `tests/` root.
+- Add new FastAPI integration tests under the folder that matches the app; add new structural or schema-wide assertions under `tests/contracts/`.
+
 ## CI suggestion
 
 ```bash

@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 def _load_stylebook_app():
     module_path = (
-        Path(__file__).resolve().parents[1] / "apps" / "stylebook-api" / "src" / "api" / "main.py"
+        Path(__file__).resolve().parents[2] / "apps" / "stylebook-api" / "src" / "api" / "main.py"
     )
     spec = spec_from_file_location("stylebook_api_main", module_path)
     assert spec is not None and spec.loader is not None
