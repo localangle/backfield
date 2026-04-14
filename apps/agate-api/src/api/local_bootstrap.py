@@ -10,7 +10,13 @@ import os
 from datetime import UTC, datetime
 
 from backfield_core import STARTER_FLOW_GRAPH_DISPLAY_NAME, starter_geocode_flow_graph_spec
-from backfield_db import AgateGraph, BackfieldProject, BackfieldProjectSecret
+from backfield_db import (
+    AgateGraph,
+    BackfieldOrganization,
+    BackfieldProject,
+    BackfieldProjectSecret,
+    BackfieldWorkspace,
+)
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
 from sqlmodel import Session, select
@@ -18,6 +24,8 @@ from sqlmodel import Session, select
 logger = logging.getLogger(__name__)
 
 GENERAL_SLUG = "general"
+DEFAULT_ORG_SLUG = "default"
+DEFAULT_WORKSPACE_SLUG = "default"
 
 # Keys mirrored from host/.env into backfield_project_secret for the General project.
 _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
@@ -28,6 +36,39 @@ _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
     "BRAVE_SEARCH_API_KEY",
     "MAPBOX_API_TOKEN",
 )
+
+
+def _ensure_default_workspace_and_general(session: Session) -> None:
+    """Idempotent: Default workspace under Default org; General project uses that workspace."""
+    org = session.exec(
+        select(BackfieldOrganization).where(BackfieldOrganization.slug == DEFAULT_ORG_SLUG)
+    ).first()
+    if org is None or org.id is None:
+        return
+    oid = int(org.id)
+    ws = session.exec(
+        select(BackfieldWorkspace).where(
+            BackfieldWorkspace.organization_id == oid,
+            BackfieldWorkspace.slug == DEFAULT_WORKSPACE_SLUG,
+        )
+    ).first()
+    if ws is None:
+        ws = BackfieldWorkspace(
+            organization_id=oid,
+            name="Default",
+            slug=DEFAULT_WORKSPACE_SLUG,
+        )
+        session.add(ws)
+        session.flush()
+
+    project = session.exec(
+        select(BackfieldProject).where(BackfieldProject.slug == GENERAL_SLUG)
+    ).first()
+    if project is None or project.id is None or ws.id is None:
+        return
+    if project.workspace_id is None:
+        project.workspace_id = int(ws.id)
+        session.add(project)
 
 
 def _sync_secrets(session: Session, project_id: int) -> int:
@@ -96,6 +137,7 @@ def run_local_bootstrap() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     engine = get_engine()
     with Session(engine) as session:
+        _ensure_default_workspace_and_general(session)
         project = session.exec(
             select(BackfieldProject).where(BackfieldProject.slug == GENERAL_SLUG)
         ).first()

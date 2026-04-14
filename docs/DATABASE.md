@@ -19,7 +19,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 ### Identity and projects (`backfield_*`)
 
 - `backfield_organization` — tenant; migration seeds a `default` org for single-org installs.
-- `backfield_workspace` — optional sub-org grouping under an organization (generic naming; many projects per workspace).
+- `backfield_workspace` — optional sub-org grouping under an organization (generic naming; many projects per workspace). Revision **`003_default_workspace_for_general`** seeds a **`default`** workspace under the **`default`** org and sets the **General** project’s `workspace_id` to that row (so General lives under Organization → Workspace → Project).
 - `backfield_user` — user identity (email, password hash, `disabled_at`).
 - `backfield_organization_membership` — `(user_id, organization_id)` with `role` (`org_admin`, `member`, …).
 - `backfield_project` — canonical project for Agate graphs, encrypted vault keys, Stylebook scoping, and future Core import APIs (`organization_id` required; `workspace_id` optional).
@@ -36,7 +36,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 
 - `backfield_project_secret` — per-project encrypted env-style secrets (`key` + `value_encrypted`); decrypted by the worker at run time when `MASTER_ENCRYPTION_KEY` is set.
 
-Baseline revision `001_agate_baseline` creates initial `agate_*` tables and seed rows. Revision **`002_backfield_identity`** adds identity tables, renames `agate_project` → `backfield_project` (adds `organization_id`, optional `workspace_id`), and renames `agate_project_secret` → `backfield_project_secret`.
+Baseline revision `001_agate_baseline` creates initial `agate_*` tables and seed rows. Revision **`002_backfield_identity`** adds identity tables, renames `agate_project` → `backfield_project` (adds `organization_id`, optional `workspace_id`), and renames `agate_project_secret` → `backfield_project_secret`. Revision **`003_default_workspace_for_general`** inserts the Default workspace and links General to it.
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 
