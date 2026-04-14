@@ -86,6 +86,66 @@ def test_secure_whoami_service_token(client: TestClient) -> None:
     assert r.json().get("auth_type") == "service"
 
 
+def test_change_password(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "pw@example.com", "password": "original-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "pw@example.com", "password": "original-secret"},
+    )
+    bad = client.post(
+        "/v1/auth/change-password",
+        json={"current_password": "wrong", "new_password": "new-secret"},
+    )
+    assert bad.status_code == 401
+    ok = client.post(
+        "/v1/auth/change-password",
+        json={"current_password": "original-secret", "new_password": "new-secret"},
+    )
+    assert ok.status_code == 200
+    client.post("/v1/auth/logout")
+    fail_login = client.post(
+        "/v1/auth/login",
+        json={"email": "pw@example.com", "password": "original-secret"},
+    )
+    assert fail_login.status_code == 401
+    good_login = client.post(
+        "/v1/auth/login",
+        json={"email": "pw@example.com", "password": "new-secret"},
+    )
+    assert good_login.status_code == 200
+
+
+def test_org_admin_list_projects_and_users_detail(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "admin@example.com", "password": "admin-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "admin@example.com", "password": "admin-secret"},
+    )
+    me = client.get("/v1/auth/me").json()
+    org_id = me["organization_id"]
+    assert org_id is not None
+
+    pr = client.get(f"/v1/organizations/{org_id}/projects")
+    assert pr.status_code == 200
+    projects = pr.json()
+    assert len(projects) >= 1
+    assert projects[0]["slug"] == "general"
+
+    users = client.get(f"/v1/organizations/{org_id}/users?detail=true")
+    assert users.status_code == 200
+    rows = users.json()
+    assert len(rows) == 1
+    assert rows[0]["email"] == "admin@example.com"
+    assert rows[0]["role"] == "org_admin"
+    assert rows[0]["project_memberships"] is not None
+
+
 def test_project_api_key_bearer(client: TestClient) -> None:
     client.post(
         "/v1/bootstrap/first-user",

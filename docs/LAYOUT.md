@@ -23,6 +23,7 @@ Backfield keeps a **tightly coupled monorepo** similar in spirit to Agate: multi
 | `backfield-core`   | `GraphSpec`, synchronous executor, starter node implementations + `metadata.json` for UI sync |
 | `backfield-auth`   | Session signing, service tokens, FastAPI dependencies (`require_auth_or_service`, etc.)          |
 | `backfield-db`     | SQLModel models (`agate_`* tables), Alembic migrations, session helpers                          |
+| `backfield-ui`     | Shared React UI (`@backfield/ui`), e.g. account menu; consumed by Agate UI and future apps     |
 
 
 ## Infrastructure

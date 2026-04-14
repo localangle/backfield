@@ -1,6 +1,19 @@
 # API
 
-This document covers the Agate API in `apps/agate-api`.
+This document covers the Agate API in `apps/agate-api` and summarizes **Core API** routes used by the Agate UI for auth and org administration (`apps/core-api`).
+
+## Core API (session and org admin)
+
+- **Auth:** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password` (body: `current_password`, `new_password`; session cookie required).
+- **Org admin** (session `org_role` = `org_admin` for the same `organization_id` as the path):
+  - `GET /v1/organizations/{org_id}/projects` — projects in the org (`id`, `name`, `slug`).
+  - `GET /v1/organizations/{org_id}/users` — optional query `detail=true` to include `project_memberships` per user.
+  - `POST /v1/organizations/{org_id}/users` — create user (email, password, display_name, role).
+  - `PATCH /v1/organizations/{org_id}/users/{user_id}` — `display_name`, `role` (`org_admin` | `member`); cannot demote the last org admin.
+  - `DELETE /v1/organizations/{org_id}/users/{user_id}` — disables the user (`disabled_at`); cannot disable self or the last org admin.
+  - `PUT /v1/organizations/{org_id}/users/{user_id}/project-memberships` — body `{ "memberships": [ { "project_id", "role" } ] }` replaces explicit `backfield_project_membership` rows for projects in that org.
+
+Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `admin_org.py`).
 
 ## Authentication
 

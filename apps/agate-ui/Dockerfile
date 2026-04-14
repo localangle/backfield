@@ -1,19 +1,16 @@
 FROM node:18-alpine
 
+# Repository-root build context (see infra/docker-compose.yml) so workspace dep
+# `file:../../packages/backfield-ui` resolves.
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json* ./
+COPY packages/backfield-ui ./packages/backfield-ui
+COPY apps/agate-ui/package.json apps/agate-ui/package-lock.json* ./apps/agate-ui/
 
-# Install dependencies
+WORKDIR /app/apps/agate-ui
 RUN npm install
 
-# Copy source
-COPY . .
+COPY apps/agate-ui .
 
-# Expose port
 EXPOSE 5173
-
-# Start dev server
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
-

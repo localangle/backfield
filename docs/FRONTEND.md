@@ -11,9 +11,15 @@ This document covers frontend conventions for `apps/agate-ui` and the lighter `a
 
 ## Auth and API bases (Agate UI)
 
-- **Core API (login / session):** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`. Use **`VITE_AUTH_API_BASE`** (empty string for same-origin).
+- **Core API (login / session):** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password`. Organization admin routes under `/v1/organizations/{org_id}/…` (users, projects, project memberships). Use **`VITE_AUTH_API_BASE`** (empty string for same-origin). Typed fetch helpers live in **`src/lib/core-api.ts`** (session cookie, `credentials: 'include'`).
 - **Agate API:** project/graph/run calls go through **`src/lib/api.ts`**. Default **`VITE_API_BASE`** is `/api/agate` so the Vite dev server can proxy to `agate-api` on one browser origin with `credentials: 'include'`.
 - **Local dev proxy:** [`apps/agate-ui/vite.config.ts`](../apps/agate-ui/vite.config.ts) proxies `/v1` → Core API and `/api/agate` → Agate API. Override targets with `VITE_CORE_API_PROXY_TARGET` / `VITE_AGATE_API_PROXY_TARGET` (e.g. in Docker Compose).
+
+## Shared UI package (`@backfield/ui`)
+
+- Reusable shell components for multiple Backfield apps (Agate UI now; Stylebook UI later) live in [`packages/backfield-ui`](../packages/backfield-ui).
+- **Tailwind:** add `../../packages/backfield-ui/src/**/*.{ts,tsx}` to the app’s Tailwind `content` array (see [`apps/agate-ui/tailwind.config.js`](../apps/agate-ui/tailwind.config.js)).
+- **Exports:** e.g. `UserAccountMenu` (account icon + dropdown: change password, optional manage users for org admins, log out). Navigation is via callbacks so hosts keep their own router.
 
 ## User-facing copy
 

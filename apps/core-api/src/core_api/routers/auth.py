@@ -15,8 +15,8 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from core_api.authz import session_project_ids_for_user
-from core_api.deps import get_session
-from core_api.security import verify_password
+from core_api.deps import get_auth, get_session
+from core_api.security import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -32,6 +32,11 @@ class UserResponse(BaseModel):
     user_id: int | None = None
     organization_id: int | None = None
     org_role: str | None = None
+
+
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -119,6 +124,25 @@ def me(session: Session = Depends(get_session), cookie: str | None = Cookie(None
         organization_id=data.get("organization_id"),
         org_role=data.get("org_role"),
     )
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> dict[str, bool]:
+    if auth["type"] != "session":
+        raise HTTPException(status_code=403, detail="Session required")
+    user = auth["user"]
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if len(body.new_password) < 1:
+        raise HTTPException(status_code=400, detail="New password is required")
+    user.password_hash = hash_password(body.new_password)
+    session.add(user)
+    session.commit()
+    return {"ok": True}
 
 
 @router.post("/logout")

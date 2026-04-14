@@ -116,8 +116,12 @@ services:
 
   agate-ui:
     build:
-      context: ../apps/agate-ui
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: apps/agate-ui/Dockerfile
+    # Must match apps/agate-ui/Dockerfile WORKDIR (/app/apps/agate-ui) so node_modules
+    # from the image and the anonymous volume align; mounting only agate-ui at /app left
+    # /app/node_modules empty (vite missing).
+    working_dir: /app/apps/agate-ui
     ports:
       - "5173:5173"
     environment:
@@ -128,9 +132,9 @@ services:
       VITE_CORE_API_PROXY_TARGET: http://core-api:8004
       VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
     volumes:
-      - ../apps/agate-ui:/app
+      - ../apps/agate-ui:/app/apps/agate-ui
       - ../packages:/app/packages
-      - /app/node_modules
+      - /app/apps/agate-ui/node_modules
     depends_on:
       core-api:
         condition: service_started

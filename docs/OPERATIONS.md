@@ -84,4 +84,5 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 - If secrets calls fail, verify `MASTER_ENCRYPTION_KEY`.
 - If geocode calls fail, check `stylebook-api`, `STYLEBOOK_API_URL`, and `SERVICE_API_TOKEN`.
 - If PlaceExtract or GeocodeAgent fail with auth errors, verify LLM and geocoder keys on the worker (Compose env or project secrets).
+- If **`agate-ui` fails with `vite: not found`**, the image may be stale or an old anonymous `node_modules` volume may be wrong: rebuild the service (`docker compose build agate-ui --no-cache`) and bring the stack up again. Compose mounts `apps/agate-ui` at `/app/apps/agate-ui` to match the Dockerfile `WORKDIR` so `node_modules` (including Vite) resolves correctly.
 - If `make up` / image build fails with **no space left on device**, run `make docker-trim` (and remove any huge local `.db` under `packages/agate-runtime/.../geocoding/data/` if you do not need it). The WOF database must not live in the image; [.dockerignore](../.dockerignore) keeps it out of the build context.
