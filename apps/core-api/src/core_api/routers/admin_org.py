@@ -9,6 +9,8 @@ from backfield_db import (
     BackfieldProject,
     BackfieldProjectMembership,
     BackfieldUser,
+    BackfieldWorkspace,
+    BackfieldWorkspaceMembership,
 )
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -35,6 +37,12 @@ class ProjectMembershipOut(BaseModel):
     role: str | None = None
 
 
+class WorkspaceMembershipOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+
+
 class UserOut(BaseModel):
     id: int
     email: str
@@ -42,6 +50,7 @@ class UserOut(BaseModel):
     role: str
     disabled_at: datetime | None = None
     project_memberships: list[ProjectMembershipOut] | None = None
+    workspace_memberships: list[WorkspaceMembershipOut] | None = None
 
 
 class ProjectSummaryOut(BaseModel):
@@ -64,11 +73,50 @@ class ReplaceProjectMembershipsBody(BaseModel):
     memberships: list[MembershipRow]
 
 
+class ReplaceWorkspaceMembershipsBody(BaseModel):
+    workspace_ids: list[int]
+
+
+class WorkspaceWithProjectsOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    projects: list[ProjectSummaryOut]
+
+
 def _org_project_ids(session: Session, org_id: int) -> list[int]:
     rows = session.exec(
         select(BackfieldProject.id).where(BackfieldProject.organization_id == org_id)
     ).all()
     return [int(r) for r in rows if r is not None]
+
+
+def _org_workspace_ids(session: Session, org_id: int) -> list[int]:
+    rows = session.exec(
+        select(BackfieldWorkspace.id).where(BackfieldWorkspace.organization_id == org_id)
+    ).all()
+    return [int(r) for r in rows if r is not None]
+
+
+def _workspace_memberships_for_user_org(
+    session: Session, org_id: int, user_id: int
+) -> list[WorkspaceMembershipOut]:
+    wm_rows = session.exec(
+        select(BackfieldWorkspaceMembership).where(
+            BackfieldWorkspaceMembership.user_id == user_id,
+        )
+    ).all()
+    out: list[WorkspaceMembershipOut] = []
+    for wm in wm_rows:
+        if wm.workspace_id is None:
+            continue
+        ws = session.get(BackfieldWorkspace, wm.workspace_id)
+        if ws is None or int(ws.organization_id) != org_id:
+            continue
+        out.append(
+            WorkspaceMembershipOut(id=int(ws.id), name=str(ws.name), slug=str(ws.slug))
+        )
+    return sorted(out, key=lambda x: x.slug)
 
 
 def _membership_for_user_org(
@@ -122,12 +170,56 @@ def list_org_projects(
     return sorted(out, key=lambda x: x.slug)
 
 
+@router.get("/{org_id}/workspaces", response_model=list[WorkspaceWithProjectsOut])
+def list_org_workspaces(
+    org_id: int,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+):
+    require_org_admin(session, auth, org_id)
+    ws_rows = session.exec(
+        select(BackfieldWorkspace).where(BackfieldWorkspace.organization_id == org_id)
+    ).all()
+    proj_rows = session.exec(
+        select(BackfieldProject).where(BackfieldProject.organization_id == org_id)
+    ).all()
+    projects_by_ws: dict[int, list[BackfieldProject]] = {}
+    for p in proj_rows:
+        if p.workspace_id is None:
+            continue
+        wid = int(p.workspace_id)
+        projects_by_ws.setdefault(wid, []).append(p)
+    out: list[WorkspaceWithProjectsOut] = []
+    for ws in ws_rows:
+        if ws.id is None:
+            continue
+        plist = projects_by_ws.get(int(ws.id), [])
+        projects_out = [
+            ProjectSummaryOut(id=int(p.id), name=str(p.name), slug=str(p.slug))
+            for p in plist
+            if p.id is not None
+        ]
+        projects_out.sort(key=lambda x: x.slug)
+        out.append(
+            WorkspaceWithProjectsOut(
+                id=int(ws.id),
+                name=str(ws.name),
+                slug=str(ws.slug),
+                projects=projects_out,
+            )
+        )
+    return sorted(out, key=lambda x: x.slug)
+
+
 @router.get("/{org_id}/users", response_model=list[UserOut])
 def list_users(
     org_id: int,
     session: Session = Depends(get_session),
     auth: dict = Depends(get_auth),
-    detail: bool = Query(False, description="Include per-project memberships for admin UI"),
+    detail: bool = Query(
+        False,
+        description="Include legacy project memberships and workspace memberships for admin UI",
+    ),
 ):
     require_org_admin(session, auth, org_id)
     proj_ids = _org_project_ids(session, org_id)
@@ -148,6 +240,7 @@ def list_users(
         if u is None:
             continue
         pm_out: list[ProjectMembershipOut] | None = None
+        ws_out: list[WorkspaceMembershipOut] | None = None
         if detail:
             pm_out = []
             if proj_ids:
@@ -172,6 +265,7 @@ def list_users(
                         )
                     )
                 pm_out.sort(key=lambda x: x.slug)
+            ws_out = _workspace_memberships_for_user_org(session, org_id, int(u.id))
 
         out.append(
             UserOut(
@@ -181,6 +275,7 @@ def list_users(
                 role=str(m.role),
                 disabled_at=u.disabled_at,
                 project_memberships=pm_out,
+                workspace_memberships=ws_out,
             )
         )
     return out
@@ -228,6 +323,7 @@ def create_user(
         role=role,
         disabled_at=user.disabled_at,
         project_memberships=None,
+        workspace_memberships=None,
     )
 
 
@@ -257,6 +353,7 @@ def patch_user(
             role=str(mem.role),
             disabled_at=user.disabled_at,
             project_memberships=None,
+            workspace_memberships=None,
         )
 
     if body.role is not None:
@@ -284,6 +381,7 @@ def patch_user(
         role=str(mem.role),
         disabled_at=user.disabled_at,
         project_memberships=None,
+        workspace_memberships=None,
     )
 
 
@@ -313,6 +411,65 @@ def disable_user(
 
 
 @router.put(
+    "/{org_id}/users/{user_id}/workspace-memberships",
+    response_model=list[WorkspaceMembershipOut],
+)
+def replace_workspace_memberships(
+    org_id: int,
+    user_id: int,
+    body: ReplaceWorkspaceMembershipsBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+):
+    """Assign workspaces for a user; member gets all projects in those workspaces."""
+    require_org_admin(session, auth, org_id)
+    mem = _membership_for_user_org(session, org_id, user_id)
+    if mem is None:
+        raise HTTPException(status_code=404, detail="User not in organization")
+    user = session.get(BackfieldUser, user_id)
+    if user is None or user.disabled_at is not None:
+        raise HTTPException(status_code=400, detail="User is disabled or missing")
+    if str(mem.role) == "org_admin":
+        raise HTTPException(
+            status_code=400,
+            detail="Organization admins already have access to all projects",
+        )
+
+    org_ws = set(_org_workspace_ids(session, org_id))
+    for wid in body.workspace_ids:
+        if wid not in org_ws:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workspace {wid} is not in this organization",
+            )
+
+    existing = session.exec(
+        select(BackfieldWorkspaceMembership).where(
+            BackfieldWorkspaceMembership.user_id == user_id,
+        )
+    ).all()
+    for wm in existing:
+        if wm.workspace_id is None:
+            continue
+        ws = session.get(BackfieldWorkspace, wm.workspace_id)
+        if ws is not None and int(ws.organization_id) == org_id:
+            session.delete(wm)
+
+    now = datetime.now(UTC)
+    for wid in body.workspace_ids:
+        session.add(
+            BackfieldWorkspaceMembership(
+                user_id=user_id,
+                workspace_id=wid,
+                created_at=now,
+            )
+        )
+    session.commit()
+
+    return _workspace_memberships_for_user_org(session, org_id, user_id)
+
+
+@router.put(
     "/{org_id}/users/{user_id}/project-memberships",
     response_model=list[ProjectMembershipOut],
 )
@@ -323,6 +480,7 @@ def replace_project_memberships(
     session: Session = Depends(get_session),
     auth: dict = Depends(get_auth),
 ):
+    """Legacy explicit per-project grants; prefer ``workspace-memberships`` for new admin flows."""
     require_org_admin(session, auth, org_id)
     mem = _membership_for_user_org(session, org_id, user_id)
     if mem is None:

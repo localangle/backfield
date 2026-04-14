@@ -67,11 +67,23 @@ export async function listOrgProjects(orgId: number): Promise<ProjectSummary[]> 
   return jsonFetch(`/v1/organizations/${orgId}/projects`)
 }
 
+export async function listOrgWorkspaces(
+  orgId: number,
+): Promise<WorkspaceWithProjects[]> {
+  return jsonFetch(`/v1/organizations/${orgId}/workspaces`)
+}
+
 export interface ProjectMembershipRow {
   project_id: number
   slug: string
   name: string
   role: string | null
+}
+
+export interface WorkspaceMembershipRow {
+  id: number
+  name: string
+  slug: string
 }
 
 export interface OrgUserRow {
@@ -81,6 +93,14 @@ export interface OrgUserRow {
   role: string
   disabled_at: string | null
   project_memberships: ProjectMembershipRow[] | null
+  workspace_memberships: WorkspaceMembershipRow[] | null
+}
+
+export interface WorkspaceWithProjects {
+  id: number
+  name: string
+  slug: string
+  projects: ProjectSummary[]
 }
 
 export async function listOrgUsers(
@@ -126,6 +146,7 @@ export async function disableOrgUser(
   })
 }
 
+/** @deprecated Prefer workspace-based access via replaceWorkspaceMemberships. */
 export async function replaceProjectMemberships(
   orgId: number,
   userId: number,
@@ -136,6 +157,20 @@ export async function replaceProjectMemberships(
     {
       method: "PUT",
       body: JSON.stringify({ memberships }),
+    },
+  )
+}
+
+export async function replaceWorkspaceMemberships(
+  orgId: number,
+  userId: number,
+  workspaceIds: number[],
+): Promise<WorkspaceMembershipRow[]> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/users/${userId}/workspace-memberships`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ workspace_ids: workspaceIds }),
     },
   )
 }

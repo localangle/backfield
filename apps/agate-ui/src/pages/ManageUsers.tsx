@@ -28,18 +28,18 @@ import { useAuth } from "@/lib/auth"
 import {
   createOrgUser,
   disableOrgUser,
-  listOrgProjects,
   listOrgUsers,
+  listOrgWorkspaces,
   patchOrgUser,
-  replaceProjectMemberships,
+  replaceWorkspaceMemberships,
   type OrgUserRow,
-  type ProjectSummary,
+  type WorkspaceWithProjects,
 } from "@/lib/core-api"
 
 export default function ManageUsersPage() {
   const { organizationId } = useAuth()
   const [users, setUsers] = useState<OrgUserRow[]>([])
-  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [workspaces, setWorkspaces] = useState<WorkspaceWithProjects[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
@@ -47,8 +47,10 @@ export default function ManageUsersPage() {
   const [createPassword, setCreatePassword] = useState("")
   const [createDisplay, setCreateDisplay] = useState("")
   const [createRole, setCreateRole] = useState("member")
-  const [projectsUser, setProjectsUser] = useState<OrgUserRow | null>(null)
-  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number>>(new Set())
+  const [accessUser, setAccessUser] = useState<OrgUserRow | null>(null)
+  const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<Set<number>>(
+    new Set(),
+  )
 
   const orgId = organizationId ?? 0
 
@@ -57,12 +59,12 @@ export default function ManageUsersPage() {
       return
     }
     setError("")
-    const [u, p] = await Promise.all([
+    const [u, w] = await Promise.all([
       listOrgUsers(organizationId, true),
-      listOrgProjects(organizationId),
+      listOrgWorkspaces(organizationId),
     ])
     setUsers(u)
-    setProjects(p)
+    setWorkspaces(w)
   }, [organizationId])
 
   useEffect(() => {
@@ -90,29 +92,30 @@ export default function ManageUsersPage() {
     }
   }, [organizationId, reload])
 
-  const openProjects = (u: OrgUserRow) => {
-    setProjectsUser(u)
+  const openWorkspaceAccess = (u: OrgUserRow) => {
+    setAccessUser(u)
     const selected = new Set<number>()
-    for (const m of u.project_memberships ?? []) {
-      selected.add(m.project_id)
+    for (const m of u.workspace_memberships ?? []) {
+      selected.add(m.id)
     }
-    setSelectedProjectIds(selected)
+    setSelectedWorkspaceIds(selected)
   }
 
-  const saveProjects = async () => {
-    if (!projectsUser || !organizationId) {
+  const saveWorkspaceAccess = async () => {
+    if (!accessUser || !organizationId) {
       return
     }
-    const memberships = projects
-      .filter((p) => selectedProjectIds.has(p.id))
-      .map((p) => ({ project_id: p.id, role: "member" as string | null }))
-    await replaceProjectMemberships(organizationId, projectsUser.id, memberships)
-    setProjectsUser(null)
+    await replaceWorkspaceMemberships(
+      organizationId,
+      accessUser.id,
+      [...selectedWorkspaceIds],
+    )
+    setAccessUser(null)
     await reload()
   }
 
-  const toggleProject = (id: number) => {
-    setSelectedProjectIds((prev) => {
+  const toggleWorkspace = (id: number) => {
+    setSelectedWorkspaceIds((prev) => {
       const n = new Set(prev)
       if (n.has(id)) {
         n.delete(id)
@@ -155,7 +158,7 @@ export default function ManageUsersPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
           <p className="text-sm text-muted-foreground">
-            Manage people and project access in your organization.
+            Manage people and workspace access in your organization.
           </p>
         </div>
         <Button type="button" onClick={() => setCreateOpen(true)}>
@@ -203,14 +206,14 @@ export default function ManageUsersPage() {
                     variant="outline"
                     size="sm"
                     disabled={!!u.disabled_at || u.role === "org_admin"}
-                    onClick={() => openProjects(u)}
+                    onClick={() => openWorkspaceAccess(u)}
                     title={
                       u.role === "org_admin"
                         ? "Organization admins have access to all projects"
                         : undefined
                     }
                   >
-                    Projects
+                    Workspaces
                   </Button>
                   <Button
                     type="button"
@@ -297,38 +300,49 @@ export default function ManageUsersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!projectsUser} onOpenChange={(o) => !o && setProjectsUser(null)}>
+      <Dialog open={!!accessUser} onOpenChange={(o) => !o && setAccessUser(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Project access</DialogTitle>
+            <DialogTitle>Workspace access</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              {projectsUser?.email} — select projects this user can access.
+              {accessUser?.email} — members get all projects in each selected workspace.
             </p>
           </DialogHeader>
-          <div className="space-y-2">
-            {projects.map((p) => (
-              <label
-                key={p.id}
-                className="flex items-center gap-2 text-sm cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  className="rounded border-input"
-                  checked={selectedProjectIds.has(p.id)}
-                  onChange={() => toggleProject(p.id)}
-                />
-                <span>
-                  {p.name}{" "}
-                  <span className="text-muted-foreground">({p.slug})</span>
-                </span>
-              </label>
+          <div className="space-y-4">
+            {workspaces.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No workspaces in this organization.</p>
+            ) : null}
+            {workspaces.map((ws) => (
+              <div key={ws.id} className="space-y-1 border-b border-border pb-3 last:border-0">
+                <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="rounded border-input"
+                    checked={selectedWorkspaceIds.has(ws.id)}
+                    onChange={() => toggleWorkspace(ws.id)}
+                  />
+                  <span>
+                    {ws.name}{" "}
+                    <span className="text-muted-foreground font-normal">({ws.slug})</span>
+                  </span>
+                </label>
+                <p className="text-xs text-muted-foreground pl-6">
+                  Projects:{" "}
+                  {ws.projects.length
+                    ? ws.projects.map((p) => p.name).join(", ")
+                    : "None yet"}
+                </p>
+              </div>
             ))}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setProjectsUser(null)}>
+            <Button type="button" variant="outline" onClick={() => setAccessUser(null)}>
               Cancel
             </Button>
-            <Button type="button" onClick={() => void saveProjects().catch((e) => setError(String(e)))}>
+            <Button
+              type="button"
+              onClick={() => void saveWorkspaceAccess().catch((e) => setError(String(e)))}
+            >
               Save
             </Button>
           </DialogFooter>

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
-from backfield_db import BackfieldOrganization, BackfieldProject
+from backfield_db import BackfieldOrganization, BackfieldProject, BackfieldWorkspace
 from core_api.deps import get_session
 from core_api.main import app
 from fastapi.testclient import TestClient
@@ -26,11 +26,20 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
         s.add(org)
         s.commit()
         s.refresh(org)
+        ws = BackfieldWorkspace(
+            organization_id=int(org.id),
+            name="Default",
+            slug="default",
+        )
+        s.add(ws)
+        s.commit()
+        s.refresh(ws)
         s.add(
             BackfieldProject(
                 name="General",
                 slug="general",
                 organization_id=int(org.id),
+                workspace_id=int(ws.id),
             )
         )
         s.commit()
@@ -144,6 +153,61 @@ def test_org_admin_list_projects_and_users_detail(client: TestClient) -> None:
     assert rows[0]["email"] == "admin@example.com"
     assert rows[0]["role"] == "org_admin"
     assert rows[0]["project_memberships"] is not None
+    assert rows[0]["workspace_memberships"] is not None
+
+    wlist = client.get(f"/v1/organizations/{org_id}/workspaces")
+    assert wlist.status_code == 200
+    wdata = wlist.json()
+    assert len(wdata) >= 1
+    assert wdata[0]["slug"] == "default"
+    assert len(wdata[0]["projects"]) >= 1
+
+
+def test_member_workspace_memberships_grant_project_access(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "wsadmin@example.com", "password": "ws-admin-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "wsadmin@example.com", "password": "ws-admin-secret"},
+    )
+    me = client.get("/v1/auth/me").json()
+    org_id = me["organization_id"]
+
+    create = client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={
+            "email": "member@example.com",
+            "password": "member-secret",
+            "role": "member",
+        },
+    )
+    assert create.status_code == 200
+    member_id = create.json()["id"]
+
+    ws_list = client.get(f"/v1/organizations/{org_id}/workspaces").json()
+    ws_id = ws_list[0]["id"]
+
+    put = client.put(
+        f"/v1/organizations/{org_id}/users/{member_id}/workspace-memberships",
+        json={"workspace_ids": [ws_id]},
+    )
+    assert put.status_code == 200
+    assert len(put.json()) == 1
+
+    users = client.get(f"/v1/organizations/{org_id}/users?detail=true").json()
+    member_row = next(r for r in users if r["email"] == "member@example.com")
+    assert len(member_row["workspace_memberships"]) == 1
+    assert member_row["workspace_memberships"][0]["id"] == ws_id
+
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "member@example.com", "password": "member-secret"},
+    )
+    keys = client.get("/v1/projects/1/api-keys")
+    assert keys.status_code == 200
 
 
 def test_project_api_key_bearer(client: TestClient) -> None:

@@ -10,6 +10,7 @@ from backfield_db.models import (
     BackfieldProjectSecret,
     BackfieldUser,
     BackfieldWorkspace,
+    BackfieldWorkspaceMembership,
 )
 from backfield_db.session import get_engine, get_session_factory, get_session_generator, init_db
 
@@ -25,6 +26,7 @@ __all__ = [
     "BackfieldProjectSecret",
     "BackfieldUser",
     "BackfieldWorkspace",
+    "BackfieldWorkspaceMembership",
     "get_engine",
     "get_session_factory",
     "get_session_generator",

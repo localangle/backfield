@@ -21,6 +21,7 @@ from backfield_db.models import (  # noqa: F401
     BackfieldProjectSecret,
     BackfieldUser,
     BackfieldWorkspace,
+    BackfieldWorkspaceMembership,
 )
 
 config = context.config

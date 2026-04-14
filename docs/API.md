@@ -7,11 +7,15 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
 - **Auth:** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password` (body: `current_password`, `new_password`; session cookie required).
 - **Org admin** (session `org_role` = `org_admin` for the same `organization_id` as the path):
   - `GET /v1/organizations/{org_id}/projects` — projects in the org (`id`, `name`, `slug`).
-  - `GET /v1/organizations/{org_id}/users` — optional query `detail=true` to include `project_memberships` per user.
+  - `GET /v1/organizations/{org_id}/workspaces` — workspaces in the org, each with nested `projects` (`id`, `name`, `slug`) for admin UI context.
+  - `GET /v1/organizations/{org_id}/users` — optional query `detail=true` to include `project_memberships` (legacy explicit grants) and `workspace_memberships` (`id`, `name`, `slug`) per user.
   - `POST /v1/organizations/{org_id}/users` — create user (email, password, display_name, role).
   - `PATCH /v1/organizations/{org_id}/users/{user_id}` — `display_name`, `role` (`org_admin` | `member`); cannot demote the last org admin.
   - `DELETE /v1/organizations/{org_id}/users/{user_id}` — disables the user (`disabled_at`); cannot disable self or the last org admin.
-  - `PUT /v1/organizations/{org_id}/users/{user_id}/project-memberships` — body `{ "memberships": [ { "project_id", "role" } ] }` replaces explicit `backfield_project_membership` rows for projects in that org.
+  - `PUT /v1/organizations/{org_id}/users/{user_id}/workspace-memberships` — body `{ "workspace_ids": [ … ] }` replaces workspace assignments for that user (workspaces must belong to `org_id`). Members get access to **all** projects in each assigned workspace. Not applicable to `org_admin` users (they already have every project).
+  - `PUT /v1/organizations/{org_id}/users/{user_id}/project-memberships` — **legacy:** body `{ "memberships": [ { "project_id", "role" } ] }` replaces explicit `backfield_project_membership` rows for projects in that org. Prefer `workspace-memberships` for new admin flows; `backfield_auth.gate` still unions legacy explicit rows with workspace-derived project access for members.
+
+**Member project access (sessions / API keys):** `org_admin` sees all org projects. Other members see projects in their assigned workspaces plus any legacy explicit `backfield_project_membership` rows for that org (see `session_project_ids_for_user` in `packages/backfield-auth`).
 
 Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `admin_org.py`).
 

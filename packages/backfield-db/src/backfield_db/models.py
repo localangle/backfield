@@ -122,6 +122,22 @@ class BackfieldProjectMembership(SQLModel, table=True):
     )
 
 
+class BackfieldWorkspaceMembership(SQLModel, table=True):
+    """User access to a workspace (implies all projects in that workspace for members)."""
+
+    __tablename__ = "backfield_workspace_membership"
+    __table_args__ = (
+        UniqueConstraint("user_id", "workspace_id", name="uq_backfield_ws_member_user_ws"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="backfield_user.id", index=True)
+    workspace_id: int = Field(foreign_key="backfield_workspace.id", index=True)
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class BackfieldApiCredential(SQLModel, table=True):
     __tablename__ = "backfield_api_credential"
     __table_args__ = (UniqueConstraint("key_prefix", name="uq_backfield_api_cred_prefix"),)

@@ -13,9 +13,11 @@ from backfield_db import (
     BackfieldProject,
     BackfieldProjectMembership,
     BackfieldUser,
+    BackfieldWorkspace,
+    BackfieldWorkspaceMembership,
 )
 from fastapi import Cookie, Header, HTTPException, status
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from backfield_auth.service_tokens import verify_service_token
 from backfield_auth.session_tokens import verify_session_token
@@ -54,25 +56,55 @@ def session_project_ids_for_user(
     organization_id: int,
     org_role: str,
 ) -> list[int]:
-    """Project ids the user may access (explicit membership or org_admin = all projects in org)."""
+    """Project ids the user may access (org_admin = all org projects).
+
+    Members: projects in assigned workspaces (same org) plus legacy explicit
+    ``backfield_project_membership`` rows scoped to this org.
+    """
     if org_role == "org_admin":
         rows = session.exec(
             select(BackfieldProject.id).where(BackfieldProject.organization_id == organization_id)
         ).all()
         return [int(r) for r in rows if r is not None]
+
+    explicit: list[int] = []
     rows = session.exec(
         select(BackfieldProjectMembership.project_id).where(
             BackfieldProjectMembership.user_id == user_id
         )
     ).all()
-    out: list[int] = []
     for pid in rows:
         if pid is None:
             continue
         proj = session.get(BackfieldProject, pid)
         if proj and proj.organization_id == organization_id:
-            out.append(int(pid))
-    return out
+            explicit.append(int(pid))
+
+    ws_id_rows = session.exec(
+        select(BackfieldWorkspaceMembership.workspace_id).where(
+            BackfieldWorkspaceMembership.user_id == user_id
+        )
+    ).all()
+    ws_ids = [int(w) for w in ws_id_rows if w is not None]
+    from_workspaces: list[int] = []
+    if ws_ids:
+        ws_in_org = session.exec(
+            select(BackfieldWorkspace.id).where(
+                col(BackfieldWorkspace.id).in_(ws_ids),
+                BackfieldWorkspace.organization_id == organization_id,
+            )
+        ).all()
+        allowed_ws = [int(x) for x in ws_in_org if x is not None]
+        if allowed_ws:
+            pr = session.exec(
+                select(BackfieldProject.id).where(
+                    BackfieldProject.organization_id == organization_id,
+                    col(BackfieldProject.workspace_id).in_(allowed_ws),
+                )
+            ).all()
+            from_workspaces = [int(r) for r in pr if r is not None]
+
+    return sorted(set(explicit) | set(from_workspaces))
 
 
 def visible_project_ids(session: Session, auth: dict[str, Any]) -> list[int] | None:

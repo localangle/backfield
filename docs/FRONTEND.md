@@ -11,7 +11,7 @@ This document covers frontend conventions for `apps/agate-ui` and the lighter `a
 
 ## Auth and API bases (Agate UI)
 
-- **Core API (login / session):** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password`. Organization admin routes under `/v1/organizations/{org_id}/…` (users, projects, project memberships). Use **`VITE_AUTH_API_BASE`** (empty string for same-origin). Typed fetch helpers live in **`src/lib/core-api.ts`** (session cookie, `credentials: 'include'`).
+- **Core API (login / session):** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password`. Organization admin routes under `/v1/organizations/{org_id}/…` (users, workspaces, workspace memberships for access control). Use **`VITE_AUTH_API_BASE`** (empty string for same-origin). Typed fetch helpers live in **`src/lib/core-api.ts`** (session cookie, `credentials: 'include'`).
 - **Agate API:** project/graph/run calls go through **`src/lib/api.ts`**. Default **`VITE_API_BASE`** is `/api/agate` so the Vite dev server can proxy to `agate-api` on one browser origin with `credentials: 'include'`.
 - **Local dev proxy:** [`apps/agate-ui/vite.config.ts`](../apps/agate-ui/vite.config.ts) proxies `/v1` → Core API and `/api/agate` → Agate API. Override targets with `VITE_CORE_API_PROXY_TARGET` / `VITE_AGATE_API_PROXY_TARGET` (e.g. in Docker Compose).
 

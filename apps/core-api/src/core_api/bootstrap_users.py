@@ -5,8 +5,6 @@ from __future__ import annotations
 from backfield_db import (
     BackfieldOrganization,
     BackfieldOrganizationMembership,
-    BackfieldProject,
-    BackfieldProjectMembership,
     BackfieldUser,
 )
 from sqlmodel import Session, select
@@ -51,18 +49,6 @@ def ensure_first_org_admin(
             role="org_admin",
         )
     )
-
-    projects = session.exec(
-        select(BackfieldProject).where(BackfieldProject.organization_id == org.id)
-    ).all()
-    for p in projects:
-        session.add(
-            BackfieldProjectMembership(
-                user_id=int(user.id),
-                project_id=int(p.id),
-                role="member",
-            )
-        )
 
     session.commit()
     return {"ok": True, "user_id": int(user.id), "organization_id": int(org.id)}
