@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from core_api.env_bootstrap import run_env_bootstrap_if_configured
 from core_api.routers import admin_org as admin_org_router
 from core_api.routers import auth as auth_router
 from core_api.routers import bootstrap as bootstrap_router
@@ -14,7 +16,14 @@ from core_api.routers import credentials as credentials_router
 from core_api.routers import public as public_router
 from core_api.routers import secure as secure_router
 
-app = FastAPI(title="Backfield Core API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    run_env_bootstrap_if_configured()
+    yield
+
+
+app = FastAPI(title="Backfield Core API", version="0.1.0", lifespan=lifespan)
 
 UI_ORIGINS = os.getenv("UI_ORIGINS", "http://localhost:5173,http://localhost:5175").split(",")
 ALLOWED: list[str] = []

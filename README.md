@@ -62,11 +62,11 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 | Target | Purpose |
 |--------|---------|
 | `make help` | List commands |
-| `make up` / `make down` | Compose (`down` then prunes build cache and unused volumes) |
+| `make up` / `make down` | Compose (`down` then `docker system prune` + `docker volume prune`, same idea as agate-ai-platform) |
 | `make logs` | Tail logs |
 | `make migrate` | Re-run Alembic inside `agate-api` |
 | `make reset-db` | `docker compose down -v` (removes Postgres volume) |
-| `make docker-trim` | Prune build cache + unused volumes when Docker is low on disk |
+| `make docker-trim` | `docker system prune -f` then `docker volume prune -f` when Docker is low on disk |
 | `make test` | All tests |
 | `make lint` / `make format` | Ruff |
 

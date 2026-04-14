@@ -16,14 +16,15 @@ Primary local services are defined in `infra/docker-compose.yml`:
 ## Canonical commands
 
 - `make up`: bring up the local stack in the foreground.
-- `make down`: stop the stack and remove orphans, then run `docker-trim` (build-cache and unused-volume prune).
+- `make down`: stop the stack and remove orphans, then run `docker-trim` (same pattern as agate-ai-platform: `docker system prune -f` then `docker volume prune -f`).
 - `make logs`: inspect compose logs.
 - `make migrate`: run Alembic inside `agate-api`.
 - `make reset-db`: tear down containers and volumes.
 - `make smoke`: run the HTTP golden-path smoke against a live stack.
-- `make docker-prune-build`: reclaim disk from Docker build cache (`docker builder prune -f`).
+- `make docker-prune-build`: reclaim disk from Docker build cache only (`docker builder prune -f`).
+- `make docker-prune-system`: remove stopped containers, dangling images, unused networks, and build cache (`docker system prune -f`).
 - `make docker-prune-volumes`: remove **unused** anonymous volumes (`docker volume prune -f`); does not remove named volumes while containers still reference them.
-- `make docker-trim`: runs both prunes above (handy before `make up` when the daemon is low on disk).
+- `make docker-trim`: runs `docker-prune-system` then `docker-prune-volumes` (aligned with agate-ai-platform `make down` cleanup; use before `make up` when the daemon is low on disk).
 
 Docker builds use the repo root as context; [.dockerignore](../.dockerignore) excludes large local files such as Who's On First `*.db` under `packages/agate-runtime/.../geocoding/data/` so images do not try to copy multi-gigabyte databases.
 
@@ -47,10 +48,11 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 - `MASTER_ENCRYPTION_KEY`: required for encrypted project-secret storage.
 - `UI_ORIGIN`: allowed browser origin for local UI access.
 - `BACKFIELD_LOCAL_BOOTSTRAP`: when `1`, `agate-api` entrypoint (after Alembic) syncs allowlisted keys from the container environment into **General** (`backfield_project_secret`) and creates the **Starter flow** graph if missing. Default in Compose is `1`; set `0` to disable (see repo-root `.env.example`). Allowlisted keys include `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `MAPBOX_API_TOKEN`.
+- **Core API — env bootstrap (local/demo/CI only; not for production):** when `BACKFIELD_BOOTSTRAP_ADMIN_FROM_ENV` is `1`/`true`/`yes`, `core-api` creates the first org admin on **process startup** (same rules as `POST /v1/bootstrap/first-user`: only when no users exist; attaches to org `default` and existing projects). Set `BACKFIELD_BOOTSTRAP_ADMIN_EMAIL` and either `BACKFIELD_BOOTSTRAP_ADMIN_PASSWORD` or `BACKFIELD_BOOTSTRAP_ADMIN_PASSWORD_FILE`. Optional: `BACKFIELD_BOOTSTRAP_ADMIN_DISPLAY_NAME`. If the flag is on but email/password are missing, `core-api` exits non-zero by default (`BACKFIELD_BOOTSTRAP_ADMIN_STRICT`, default `1`) so the stack fails fast. After `make up`, with these variables in repo-root `.env`, the admin is created on first start without calling the HTTP bootstrap endpoint.
 
 ### Repo-root `.env` (local only)
 
-`agate-api` and `worker` use Compose `env_file: ../.env` (relative to `infra/docker-compose.yml`, i.e. the repository root). Copy [.env.example](../.env.example) to `.env` and add keys there; the file is gitignored. Variables are injected into the containers (Compose `required: false` so a missing `.env` does not fail the bring-up).
+`agate-api`, **`core-api`**, and `worker` use Compose `env_file: ../.env` (relative to `infra/docker-compose.yml`, i.e. the repository root). Copy [.env.example](../.env.example) to `.env` and add keys there; the file is gitignored. Variables are injected into the containers (Compose `required: false` so a missing `.env` does not fail the bring-up).
 
 ### Flow execution (PlaceExtract, GeocodeAgent)
 
@@ -73,7 +75,7 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 
 ### Core API auth (local)
 
-- `core-api` uses the same DB as Agate (`DATABASE_URL` / `BACKFIELD_DATABASE_URL` in Compose). After migrations, register the first user with **`POST /v1/bootstrap/first-user`** when no users exist, or create users via org-admin routes under **`/v1/organizations/{org_id}/users`** (session + `org_admin` role).
+- `core-api` uses the same DB as Agate (`DATABASE_URL` / `BACKFIELD_DATABASE_URL` in Compose). After migrations, either opt in to **env bootstrap** (see `BACKFIELD_BOOTSTRAP_ADMIN_*` above) so the first admin is created on **`make up`**, or register the first user with **`POST /v1/bootstrap/first-user`** when no users exist, or create users via org-admin routes under **`/v1/organizations/{org_id}/users`** (session + `org_admin` role).
 
 ## Troubleshooting
 

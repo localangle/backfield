@@ -43,6 +43,9 @@ services:
     build:
       context: ..
       dockerfile: apps/core-api/Dockerfile
+    env_file:
+      - path: ../.env
+        required: false
     ports:
       - "8004:8004"
     environment:
