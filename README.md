@@ -10,6 +10,7 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 | **Agate API** | 8000 | Graphs, runs, node metadata |
 | **Worker** | — | Celery executes runs (`agate` queue) |
 | **Stylebook API** | 8003 | Geocode helper for `GeocodeAgent` |
+| **Core API** | 8004 | Shared domain API (auth + future import routes) |
 | **Stylebook UI** | 5175 | Shell + health check |
 | **Postgres** | 5433 | `agate_*` application tables (see [docs/DATABASE.md](docs/DATABASE.md)) |
 | **Redis** | 6379 | Celery broker |
@@ -86,7 +87,7 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 
 ```
 apps/agate-api    apps/agate-ui
-apps/worker       apps/stylebook-api    apps/stylebook-ui
-packages/backfield-core   packages/backfield-db   packages/agate-runtime
+apps/worker       apps/stylebook-api    apps/stylebook-ui    apps/core-api
+packages/backfield-core   packages/backfield-auth   packages/backfield-db   packages/agate-runtime
 infra/docker-compose.yml   .env.example
 ```

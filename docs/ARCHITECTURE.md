@@ -38,12 +38,17 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
   - Owns Stylebook-only HTTP endpoints such as geocode resolution.
 - `apps/stylebook-ui`
   - Owns the minimal Stylebook browser shell.
+- `packages/backfield-auth`
+  - Owns signed session tokens, service Bearer validation, and FastAPI dependencies shared by HTTP services (no database).
+- `apps/core-api`
+  - Owns Core domain HTTP routes (future article import); uses `backfield-auth` for session and service authentication.
 
 ## Dependency direction
 
 - UI apps may depend on their own components, shared client helpers, and published API contracts.
-- `agate-api` may depend on `backfield-core` and `backfield-db`.
+- `agate-api` may depend on `backfield-core`, `backfield-db`, and `backfield-auth` (when wiring shared auth).
 - `worker` may depend on `backfield-core` and `backfield-db`.
+- `core-api` may depend on `backfield-auth` and eventually `backfield-db` for imports.
 - `backfield-core` may depend on `agate-runtime` and must not depend on app code.
 - `agate-runtime` must not depend on app code or `backfield-db`.
 - `backfield-db` must not depend on app code.

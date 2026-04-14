@@ -63,7 +63,7 @@ docker-trim: docker-prune-build docker-prune-volumes
 test: test-unit test-integration
 
 test-unit:
-	uv run pytest packages/backfield-core/tests -q
+	uv run pytest packages/backfield-core/tests packages/backfield-auth/tests -q
 
 test-integration:
 	uv run pytest tests -q

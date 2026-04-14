@@ -14,22 +14,27 @@ dependencies = [
 [tool.uv.workspace]
 members = [
     "packages/backfield-core",
+    "packages/backfield-auth",
     "packages/agate-runtime",
     "packages/backfield-db",
     "apps/agate-api",
     "apps/worker",
     "apps/stylebook-api",
+    "apps/core-api",
 ]
 
 [tool.uv.sources]
 backfield-core = { workspace = true }
+backfield-auth = { workspace = true }
 agate-runtime = { workspace = true }
 backfield-db = { workspace = true }
+core-api = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["packages/backfield-core/tests", "tests"]
+testpaths = ["packages/backfield-core/tests", "packages/backfield-auth/tests", "tests"]
 pythonpath = [
     "packages/backfield-core/src",
+    "packages/backfield-auth/src",
     "packages/agate-runtime/src",
     "packages/backfield-db/src",
     "apps/agate-api/src",

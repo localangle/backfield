@@ -12,17 +12,17 @@ Backfield keeps a **tightly coupled monorepo** similar in spirit to Agate: multi
 | `worker`        | Agate        | Celery consumer; executes graphs via `backfield-core` |
 | `stylebook-api` | Stylebook    | Geocode stub + future entity APIs                     |
 | `stylebook-ui`  | Stylebook    | Thin shell; links to Agate                            |
+| `core-api`      | Core API     | Domain HTTP API (article import later); auth testing now |
 
-
-Dashboard / core-api are intentionally absent in this slice.
 
 ## Shared packages (`packages/`)
 
 
-| Package          | Responsibility                                                                                |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| `backfield-core` | `GraphSpec`, synchronous executor, starter node implementations + `metadata.json` for UI sync |
-| `backfield-db`   | SQLModel models (`agate_`* tables), Alembic migrations, session helpers                       |
+| Package            | Responsibility                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------- |
+| `backfield-core`   | `GraphSpec`, synchronous executor, starter node implementations + `metadata.json` for UI sync |
+| `backfield-auth`   | Session signing, service tokens, FastAPI dependencies (`require_auth_or_service`, etc.)          |
+| `backfield-db`     | SQLModel models (`agate_`* tables), Alembic migrations, session helpers                          |
 
 
 ## Infrastructure

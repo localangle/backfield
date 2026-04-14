@@ -8,6 +8,7 @@ Primary local services are defined in `infra/docker-compose.yml`:
 - `redis` on `localhost:6379`
 - `agate-api` on `localhost:8000`
 - `stylebook-api` on `localhost:8003`
+- `core-api` on `localhost:8004`
 - `agate-ui` on `localhost:5173`
 - `stylebook-ui` on `localhost:5175`
 - `worker` as the background Celery consumer
@@ -34,13 +35,15 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 - Health endpoints:
   - Agate API: `GET /health`
   - Stylebook API: `GET /health`
+  - Core API: `GET /health`
 
 ## Environment variables
 
 - `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: database connection string.
 - `REDIS_URL`: Celery broker and backend.
 - `STYLEBOOK_API_URL`: worker/node access to Stylebook API.
-- `SERVICE_API_TOKEN`: optional shared token between Agate and Stylebook services.
+- `SERVICE_API_TOKEN`: optional shared token between Agate, Stylebook, and Core API (Bearer auth for service-to-service calls).
+- `SESSION_SECRET`: signing key for session cookies (`itsdangerous`); shared across services that verify the same `session` cookie (Compose default `dev-session-secret`).
 - `MASTER_ENCRYPTION_KEY`: required for encrypted project-secret storage.
 - `UI_ORIGIN`: allowed browser origin for local UI access.
 - `BACKFIELD_LOCAL_BOOTSTRAP`: when `1`, `agate-api` entrypoint (after Alembic) syncs allowlisted keys from the container environment into **General** (`agate_project_secret`) and creates the **Starter flow** graph if missing. Default in Compose is `1`; set `0` to disable (see repo-root `.env.example`). Allowlisted keys include `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `MAPBOX_API_TOKEN`.

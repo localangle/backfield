@@ -1,0 +1,52 @@
+"""Core API — shared domain endpoints (import, entities). Auth testing routes included."""
+
+from __future__ import annotations
+
+import os
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from core_api.routers import auth as auth_router
+from core_api.routers import public as public_router
+from core_api.routers import secure as secure_router
+
+app = FastAPI(title="Backfield Core API", version="0.1.0")
+
+UI_ORIGINS = os.getenv("UI_ORIGINS", "http://localhost:5173,http://localhost:5175").split(",")
+ALLOWED: list[str] = []
+for origin in UI_ORIGINS:
+    o = origin.strip()
+    if not o:
+        continue
+    ALLOWED.append(o)
+    if o.startswith("http://localhost") or o.startswith("http://127.0.0.1"):
+        if ":5173" in o:
+            ALLOWED.append(o.replace("localhost", "127.0.0.1"))
+            ALLOWED.append(o.replace("127.0.0.1", "localhost"))
+        if ":5175" in o:
+            ALLOWED.append(o.replace("localhost", "127.0.0.1"))
+            ALLOWED.append(o.replace("127.0.0.1", "localhost"))
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED or ["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Content-Type", "Authorization", "Cookie"],
+    expose_headers=["Set-Cookie"],
+)
+
+app.include_router(public_router.router, prefix="/v1")
+app.include_router(secure_router.router, prefix="/v1")
+app.include_router(auth_router.router)
+
+
+@app.get("/health")
+def health() -> dict[str, str | bool]:
+    return {"ok": True, "service": "core-api"}
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"name": "Backfield Core API", "version": "0.1.0"}

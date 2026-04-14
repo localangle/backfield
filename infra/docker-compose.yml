@@ -1,6 +1,8 @@
 # Shared dev token (override: export SERVICE_API_TOKEN=...)
+# SESSION_SECRET: signed session cookies (Core API auth); keep in sync across services that verify sessions.
 x-shared-env: &shared-env
   SERVICE_API_TOKEN: ${SERVICE_API_TOKEN:-backfield-dev}
+  SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret}
 
 services:
   postgres:
@@ -36,6 +38,16 @@ services:
     environment:
       <<: *shared-env
       UI_ORIGIN: http://localhost:5175
+
+  core-api:
+    build:
+      context: ..
+      dockerfile: apps/core-api/Dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      <<: *shared-env
+      UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:8004
 
   agate-api:
     build:

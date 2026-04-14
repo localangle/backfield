@@ -2,8 +2,8 @@
 
 ## Layers
 
-1. **Unit (backfield-core)**
-  Graph execution, node behavior, and wiring. Run: `make test-unit` or `uv run pytest packages/backfield-core/tests`.
+1. **Unit (backfield-core, backfield-auth)**
+  Graph execution, node behavior, and wiring; session/service token helpers. Run: `make test-unit` or `uv run pytest packages/backfield-core/tests packages/backfield-auth/tests`.
 2. **Integration / API smoke**
   FastAPI apps mounted via `TestClient` where no Docker is required. Run: `make test-integration`.
 3. **End-to-end (manual or CI)**

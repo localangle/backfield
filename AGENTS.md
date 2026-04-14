@@ -20,7 +20,9 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - `apps/worker`: Celery worker that executes Agate runs from the `agate` queue.
 - `apps/stylebook-api`: Companion FastAPI service for geocode and future Stylebook entities.
 - `apps/stylebook-ui`: Minimal Stylebook shell UI.
+- `apps/core-api`: Core domain HTTP API (article import and shared endpoints later); auth/session testing today.
 - `packages/backfield-core`: Graph types, executor, thin node runners, node metadata, and node UI sources.
+- `packages/backfield-auth`: Shared session cookies and service Bearer token dependencies for FastAPI apps.
 - `packages/agate-runtime`: Vendored LLM PlaceExtract, LangGraph GeocodeAgent, and geocoding/LLM utilities (ported from agate-ai-platform).
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
 - `infra/docker-compose.yml`: Local multi-service stack.
