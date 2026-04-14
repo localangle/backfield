@@ -51,10 +51,6 @@ class PlaceExtractParams(BaseModel):
         le=1800,
         description="Timeout in seconds for the LLM call (default: 10 minutes, max: 30 minutes)"
     )
-    json_format: str = Field(
-        default='{\n  "locations": [\n    {\n      "location": "100 Fake St., Minneapolis, MN",\n      "type": "address_intersection",\n      "original_text": "The car crash occurred on the 100 block of Fake St.",\n      "description": "A car crash happened at the 100 block of Fake St.",\n      "components": {\n        "place": {},\n        "street_road": {},\n        "span": {},\n        "address": "100 Fake St.",\n        "neighborhood": "",\n        "city": "Minneapolis",\n        "county": "",\n        "state": {\n          "name": "Minnesota",\n          "abbr": "MN"\n        },\n        "country": {\n          "name": "United States",\n          "abbr": "US"\n        }\n      }\n    },\n    {\n      "location": "Joe\'s Department Store, Chicago, IL",\n      "type": "city",\n      "original_text": "Bob Smith, who visiting at Joe\'s Department Store in Chicago, said he supported better agriculture policy.",\n      "description": "Bob Smith, a farmer who supports better agriculture policy, was visiting at Joe\'s Department Store in Chicago.",\n      "components": {\n        "place": {\n          "name": "Joe\'s Department Store",\n          "natural": false,\n          "addressable": true\n        },\n        "street_road": {},\n        "span": {},\n        "address": "",\n        "neighborhood": "",\n        "city": "Chicago",\n        "county": "",\n        "state": {\n          "name": "Illinois",\n          "abbr": "IL"\n        },\n        "country": {\n          "name": "United States",\n          "abbr": "US"\n        }\n      }\n    },\n    {\n      "location": "8th Ave S., Chicago, IL",\n      "type": "street_road",\n      "original_text": "The robberies occurred in several places along 8th Ave S. in Chicago",\n      "description": "8th Ave S. was the location of several robberies",\n      "components": {\n        "place": {},\n        "street_road": {\n          "name": "8th Ave. S.",\n          "boundary": "Chicago, IL"\n        },\n        "span": {},\n        "address": "8th Ave S.",\n        "neighborhood": "",\n        "city": "Chicago",\n        "county": "",\n        "state": {\n          "name": "Illinois",\n          "abbr": "IL"\n        },\n        "country": {\n          "name": "United States",\n          "abbr": "US"\n        }\n      }\n    },\n    {\n      "location": "Phoenix, AZ",\n      "type": "city",\n      "original_text": "It was warmer in Phoenix than in Minneapolis this week.",\n      "description": "Phoenix was warmer than Minneapolis during the week of July 5.",\n      "components": {\n        "place": {},\n        "street_road": {},\n        "address": "",\n        "neighborhood": "",\n        "city": "Phoenix",\n        "county": "",\n        "state": {\n          "name": "Arizona",\n          "abbr": "AZ"\n        },\n        "country": {\n          "name": "United States",\n          "abbr": "US"\n        }\n      }\n    },\n    {\n      "location": "Hennepin Ave. between W. 26th St. and W. 28th St.",\n      "type": "city",\n      "original_text": "The parade will happen on Hennepin Ave. between W. 26th St. and W. 28th St.",\n      "description": "A parade is happening along this stretch of Hennepin Ave.",\n      "components": {\n        "place": {},\n        "street_road": {},\n        "span": {\n          "start": {\n            "type": "intersection",\n            "location": "Hennepin Ave. and W. 26th St., Minneapolis, MN"\n          },\n          "end": {\n            "type": "intersection",\n            "location": "Hennepin Ave. and W. 28th St., Minneapolis, MN"\n          }\n        },\n        "address": "",\n        "neighborhood": "",\n        "city": "Phoenix",\n        "county": "",\n        "state": {\n          "name": "Arizona",\n          "abbr": "AZ"\n        },\n        "country": {\n          "name": "United States",\n          "abbr": "US"\n        }\n      }\n    }\n  ]\n}',
-        description="Example output JSON format. Braces will be escaped automatically in the prompt."
-    )
 
 
 class StateInfo(BaseModel):
@@ -326,10 +322,14 @@ class PlaceExtractNode:
         # Build prompt using JSON path placeholders
         prompt = self._build_prompt(flattened_input, prompt_template)
         
-        # Append escaped output format example to avoid placeholder parsing
-        if params.json_format:
-            escaped_format = self._escape_braces(params.json_format)
-            prompt = f"{prompt}\n\nExpected output format:\n{escaped_format}"
+        # Concrete JSON example (prompts/_output_format.json), after framing not kept in extract.md
+        output_format = self._load_output_format_template()
+        escaped_format = self._escape_braces(output_format)
+        prompt = (
+            f"{prompt}\n\n"
+            "The results should be returned in a JSON that looks like the following.\n\n"
+            f"{escaped_format}"
+        )
         
         # Log the prompt for debugging
         print(f"[PlaceExtract] Prompt:\n{prompt}")
@@ -372,7 +372,10 @@ class PlaceExtractNode:
                     call_llm,
                     prompt=prompt,
                     model=params.model,
-                    system_message="You are a specialized AI assistant for extracting place information from text. Return only valid JSON.",
+                    system_message=(
+                        "You are a specialized AI assistant for extracting editorially relevant, "
+                        "literal physical place information from news text. Return only valid JSON."
+                    ),
                     force_json=True,
                     temperature=0.0,
                     timeout=effective_timeout,  # Pass timeout to call_llm as well
@@ -590,3 +593,13 @@ class PlaceExtractNode:
             raise FileNotFoundError(f"Prompt template not found at {prompt_file}")
         except Exception as e:
             raise Exception(f"Failed to load prompt template: {e}")
+
+    def _load_output_format_template(self) -> str:
+        """Load the canonical JSON output example appended to every PlaceExtract prompt."""
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(current_dir, "prompts", "_output_format.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Output format template not found at {path}") from None

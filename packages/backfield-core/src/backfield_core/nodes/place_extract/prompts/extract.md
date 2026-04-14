@@ -1,18 +1,42 @@
 # Location Extraction Service
 
-Acting as a state-of-the-art entity extraction service, identify and extract all locations mentioned in the following text. Be maximalist in your approach, but only include things that can be considered physical locations. Any location mentioned in the text, for any reason, should be extracted here.
+Extract **editorially relevant, literal, physical locations** from the following text. Do **not** be maximalist: omit places that are only figurative, institutional shorthand, overly generic, or otherwise not useful as real-world geography for this story.
 
 ## Text to Analyze
 
 {text}
 
+## Editorial relevance (apply before extracting)
+
+**Include** locations that matter to the narrative as geography, for example:
+- Where key events occurred, or where affected places are described (venues, parks, public spaces residents would recognize).
+- Where sources or characters are **from**, or biographical context (lived, worked, grew up, went to school) when tied to a real place.
+- Scene-setting or dateline-style places when they indicate where reporting or events occur.
+- **Lawmaker districts**: e.g. for "Joe Smith, R-Maple Grove," include **Maple Grove, MN** as a relevant place.
+
+**Exclude** (do not output) mentions that are not literal geography for this story, including:
+- **Metonyms** (e.g. "Washington" for the federal government; "City Hall" for city government; a city name for a sports team).
+- **Synecdoche, metaphor, idiom, cliché, hyperbole, allegory**, or **historical/cultural** uses where the place is not the physical setting.
+- **Generic or ambiguous** sites when a specific location cannot be identified (e.g. "Target, Minneapolis, MN" without a specific store; unnamed "bank" or "gas station" unless the story pins down a distinct site).
+- **Countries and continents** as standalone items when they are too broad to geocode usefully (e.g. "United States," "North America") unless the story truly hinges on that geography at country scale.
+- **Duplicates**: each distinct real-world location should appear **once** in the output. If the same place appears at multiple levels of detail, keep the **most detailed** instance and omit redundant broader or narrower duplicates that repeat the same site.
+- **Streets as components**: if a street is already represented inside an **intersection** or **span**, do not also emit it as a separate **street_road** object for the same coverage.
+
+**Institutions and organizations** (special case):
+- If an organization is named **without** a specific site (headquarters, campus, building, address), **omit** it as a location (e.g. "The ACLU protested" — not a mappable place).
+- **Agencies** (city/county/state departments, unions, associations): omit unless the story places an event at their **building or property**.
+- **Small businesses** named in a real-world context are often relevant; **large corporate HQs** are usually irrelevant unless an event occurred there (contrast "Target Corp. objected" vs "employees gathered at Target headquarters").
+- **High school sports and contests**: schools and contest-related locations mentioned in that context should be **included**.
+
+**Regions and ambiguity**:
+- Prefer **specific** geographies. Omit vague "store, Minneapolis, MN" or "rooftop, St. Cloud, MN" when the same area is already covered by clearer objects.
+- **Named regions** (e.g. "Southwest Missouri," "the Pacific Northwest," "Northern Arizona") can be relevant; when you include a sub-region, also include the **containing** city/state/county objects when the text supports them (e.g. "Northern Arizona" and "Arizona"; "South Los Angeles" and "Los Angeles").
+
 ## Overview
 
-In addition to geographic boundaries, streets and roads, regions and neighborhoods, and other common location types, locations you extract should also include the names of businesses, landmarks and other named places.
+Geographic boundaries, streets, neighborhoods, regions, and **named** businesses and landmarks may appear when they pass the editorial rules above. If multiple distinct relevant places appear in a passage, extract each qualifying one.
 
-If more than one location cited in a paragraph, extract them all.
-
-As you extract the locations, classify and format them according to the following rules:
+Classify and format every **included** location according to the following rules.
 
 ## Classification Rules
 
@@ -53,7 +77,7 @@ Classify each location by the type of geography it represents. Valid types are:
 
 - If a story describes the location of an incident in imprecise terms, such as happening "near" a town, but a precise place/landmark, intersection or location is not given, return only the name of the town. For instance "Highway 61 near Grand Marais" should just return "Grand Marais, MN"
 
-- If a story includes a list of locations, like "Freeborn, Faribault, Blue Earth, Brown, Waseca, Nicollet, Le Sueur, Rock and Sibley counties all received snow," return each item in the list as a separate location (for instance, "Freeborn County, MN", "Faribault County, MN", etc.)
+- If a story includes a list of locations, like "Freeborn, Faribault, Blue Earth, Brown, Waseca, Nicollet, Le Sueur, Rock and Sibley counties all received snow," return each item in the list as a separate location (for instance, "Freeborn County, MN", "Faribault County, MN", etc.) **only when each is editorially relevant** under the rules above.
 
 - Identifiable places and landmarks should be included with as much geographic information as can be inferred from the story. For instance, if a story mentions "Memorial Hospital," and later the context makes it clear that the hospital in question is located in "Minneapolis," return "Memorial Hospital, Minneapolis, MN". This also applies to places that are not proper nouns. A reference to something like "Monticello nuclear power plant" should be returned as "Nuclear power plant, Monticello, MN."
 
@@ -75,7 +99,7 @@ You should also separate each location into components where possible. The types
   - **addressable**: Return True if the place is likely to have a findable street address, such as a business, building, school or landmark. Pay special attention to proper nouns, which often indicate addressable locations. Return False in all other cases.
 - **street_road**: Only fill this out for street_road types, where a street or highway is named without a specific address.
   - **name**: The name of the street
-  - **boundary**: A geocodable string representing the most specific neighborhood, city, county or state boundary that contains the segement of street or road in question, inferred by the context of the article.
+  - **boundary**: A geocodable string representing the most specific neighborhood, city, county or state boundary that contains the segment of street or road in question, inferred by the context of the article.
 - **span**: Only fill this out for span types, describing a section of road from one place to another. For example, "Hennepin Ave. from W. 26th St. to W. 28th St.
   - **start**: The starting point of the span. This is an object containing a "type" and "location" attribute.
     - **type**: Either city or intersection. City would be used in cases like "I-35 from Pine City to Duluth".
@@ -116,5 +140,3 @@ Generally, write this as though you are describing the events of the story for r
 ## Output Format
 
 **IMPORTANT**: Return ONLY valid JSON. Do not include any explanatory text before or after the JSON.
-
-The results should be returned in a JSON that looks like the following.

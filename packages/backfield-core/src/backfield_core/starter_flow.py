@@ -9,7 +9,18 @@ STARTER_FLOW_GRAPH_DISPLAY_NAME = "Starter flow"
 
 
 def starter_geocode_flow_graph_spec() -> GraphSpec:
-    """Same topology as the golden-path smoke flow (includes edge handles)."""
+    """Same topology as the golden-path smoke flow (includes edge handles).
+
+    Horizontal spacing matches Agate UI node card widths (TextInput ~280px, others ~200px)
+    so nodes do not overlap when positions are interpreted as top-left in React Flow.
+    """
+    gap = 48
+    # n1 TextInput w-[280px]; then 200px-wide nodes with a gap between each.
+    x1 = 0.0
+    x2 = x1 + 280 + gap
+    x3 = x2 + 200 + gap
+    x4 = x3 + 200 + gap
+    y = 0.0
     return GraphSpec(
         name="starter_geocode_flow",
         nodes=[
@@ -17,25 +28,25 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
                 id="n1",
                 type="TextInput",
                 params={"text": "We visited Chicago, IL and Austin, TX."},
-                position={"x": 0, "y": 0},
+                position={"x": x1, "y": y},
             ),
             NodeConfig(
                 id="n2",
                 type="PlaceExtract",
                 params={},
-                position={"x": 220, "y": 0},
+                position={"x": x2, "y": y},
             ),
             NodeConfig(
                 id="n3",
                 type="GeocodeAgent",
                 params={},
-                position={"x": 440, "y": 0},
+                position={"x": x3, "y": y},
             ),
             NodeConfig(
                 id="n4",
                 type="Output",
                 params={},
-                position={"x": 660, "y": 0},
+                position={"x": x4, "y": y},
             ),
         ],
         edges=[
