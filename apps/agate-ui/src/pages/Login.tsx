@@ -6,10 +6,10 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/lib/auth'
 
-const AUTH_API_BASE = import.meta.env.VITE_AUTH_API_BASE || 'http://localhost:8002'
+const AUTH_API_BASE = import.meta.env.VITE_AUTH_API_BASE ?? ''
 
 export default function Login() {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,26 +22,24 @@ export default function Login() {
     setLoading(true)
 
     try {
-      // Login through auth-api
-      const response = await fetch(`${AUTH_API_BASE}/auth/login`, {
+      const response = await fetch(`${AUTH_API_BASE}/v1/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       })
 
       if (!response.ok) {
-        const data = await response.json()
-        setError(data.detail || 'Invalid username or password')
+        const data = (await response.json()) as { detail?: string }
+        setError(typeof data.detail === 'string' ? data.detail : 'Invalid email or password')
         return
       }
 
-      // Update auth state and redirect to home on success
       await checkAuth()
       navigate('/')
-    } catch (err) {
+    } catch {
       setError('Failed to connect to server')
     } finally {
       setLoading(false)
@@ -53,17 +51,18 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Agate</CardTitle>
-          <CardDescription>Backfield — sign in is optional when running locally without auth-api</CardDescription>
+          <CardDescription>Sign in with your Backfield account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
                 autoFocus
               />
@@ -73,6 +72,7 @@ export default function Login() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -92,4 +92,3 @@ export default function Login() {
     </div>
   )
 }
-

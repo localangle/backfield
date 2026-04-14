@@ -118,13 +118,21 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_API_BASE: http://localhost:8000
-      VITE_AGATE_API_BASE: http://localhost:8000
+      # Same-origin dev: browser calls /api/agate and /v1 on :5173; Vite proxies to backend services.
+      VITE_API_BASE: /api/agate
+      VITE_AUTH_API_BASE: ""
       VITE_STYLEBOOK_API_BASE: http://localhost:8003
+      VITE_CORE_API_PROXY_TARGET: http://core-api:8004
+      VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
     volumes:
       - ../apps/agate-ui:/app
       - ../packages:/app/packages
       - /app/node_modules
+    depends_on:
+      core-api:
+        condition: service_started
+      agate-api:
+        condition: service_started
 
   stylebook-ui:
     build:

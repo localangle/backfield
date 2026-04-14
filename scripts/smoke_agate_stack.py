@@ -12,6 +12,10 @@ from backfield_core import STARTER_FLOW_GRAPH_DISPLAY_NAME, starter_geocode_flow
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
 STYLEBOOK_API_BASE = os.environ.get("STYLEBOOK_API_BASE", "http://localhost:8003")
+# Agate API requires auth; use shared service token or set SMOKE_AGATE_BEARER to a project API key.
+SMOKE_AGATE_BEARER = os.environ.get("SMOKE_AGATE_BEARER") or os.environ.get(
+    "SERVICE_API_TOKEN", "backfield-dev"
+)
 # LLM PlaceExtract + GeocodeAgent can exceed 45s on cold starts.
 POLL_TIMEOUT_SECONDS = float(os.environ.get("SMOKE_POLL_TIMEOUT_SECONDS", "180"))
 POLL_INTERVAL_SECONDS = float(os.environ.get("SMOKE_POLL_INTERVAL_SECONDS", "1.5"))
@@ -49,8 +53,12 @@ def _wait_for_terminal_run(client: httpx.Client, run_id: str) -> dict:
 
 
 def main() -> int:
-    _log(f"Smoke: AGATE_API_BASE={AGATE_API_BASE} STYLEBOOK_API_BASE={STYLEBOOK_API_BASE}")
-    with httpx.Client(base_url=AGATE_API_BASE, timeout=10.0) as agate_client:
+    _log(
+        f"Smoke: AGATE_API_BASE={AGATE_API_BASE} STYLEBOOK_API_BASE={STYLEBOOK_API_BASE} "
+        f"(Agate Bearer: {'set' if SMOKE_AGATE_BEARER else 'missing'})"
+    )
+    agate_headers = {"Authorization": f"Bearer {SMOKE_AGATE_BEARER}"} if SMOKE_AGATE_BEARER else {}
+    with httpx.Client(base_url=AGATE_API_BASE, timeout=10.0, headers=agate_headers) as agate_client:
         stylebook_client = httpx.Client(base_url=STYLEBOOK_API_BASE, timeout=10.0)
         try:
             agate_health = _assert_ok(agate_client.get("/health"), "Agate health")

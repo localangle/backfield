@@ -2,6 +2,15 @@
 
 This document covers the Agate API in `apps/agate-api`.
 
+## Authentication
+
+All routes except `GET /health` and `GET /nodes/metadata` require authentication:
+
+- **Browser / UI:** `session` cookie (signed with `SESSION_SECRET`, issued by Core API login).
+- **Automation:** `Authorization: Bearer <token>` where `<token>` is `SERVICE_API_TOKEN` and/or a project API key (`bfk_…` from `backfield_api_credential`).
+
+Authorization is enforced in-process with the same Postgres tables as Core (`backfield_auth.gate`); Core remains the issuer for API keys.
+
 ## Responsibilities
 
 - Expose health, project, graph, template, run, and node metadata routes.

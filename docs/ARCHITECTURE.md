@@ -39,7 +39,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `apps/stylebook-ui`
   - Owns the minimal Stylebook browser shell.
 - `packages/backfield-auth`
-  - Owns signed session tokens, service Bearer validation, and FastAPI dependencies shared by HTTP services (no database).
+  - Owns signed session tokens, service Bearer validation, FastAPI dependencies, and **`gate.py`** (DB-backed session + project API key resolution against `backfield-db`) shared by Core API and Agate API.
 - `apps/core-api`
   - Owns Core domain HTTP routes (auth, org admin, project API credentials, future article import); uses `backfield-db` for users and credentials and `backfield-auth` for session and service authentication.
 

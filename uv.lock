@@ -20,6 +20,7 @@ name = "agate-api"
 version = "0.1.0"
 source = { editable = "apps/agate-api" }
 dependencies = [
+    { name = "backfield-auth" },
     { name = "backfield-core" },
     { name = "backfield-db" },
     { name = "celery" },
@@ -31,6 +32,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backfield-auth", editable = "packages/backfield-auth" },
     { name = "backfield-core", editable = "packages/backfield-core" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "celery", specifier = ">=5.3.0" },
@@ -182,12 +184,14 @@ name = "backfield-auth"
 version = "0.1.0"
 source = { editable = "packages/backfield-auth" }
 dependencies = [
+    { name = "backfield-db" },
     { name = "fastapi" },
     { name = "itsdangerous" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "itsdangerous", specifier = ">=2.1.0" },
 ]

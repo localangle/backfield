@@ -98,13 +98,13 @@ def require_auth_or_service(
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
-def require_project_access(project_id: int):
+def require_project_allowlist_dependency(project_id: int):
     """
-    Factory: dependency that requires auth and session project membership.
+    Factory: dependency that requires auth and session project membership (token allowlist).
 
     Service tokens may access any project. Sessions must list `project_id` in token
-    `projects` or be admin. When user/project tables land in backfield-db, this can
-    query membership instead of trusting the cookie list.
+    `projects` or be admin. Prefer :func:`backfield_auth.gate.require_project_access` with DB
+    membership when using core-api/agate-api patterns.
     """
 
     def _dep(
@@ -132,6 +132,6 @@ __all__ = [
     "ADMIN_USERNAME",
     "require_auth",
     "require_auth_or_service",
-    "require_project_access",
+    "require_project_allowlist_dependency",
     "require_service_auth",
 ]

@@ -17,7 +17,7 @@
 2. **Structural checks**
   Runtime contract and schema-prefix assertions live in the test suite and run as part of `make test`.
 3. **Golden-path smoke**
-  `make smoke` against a live stack. This checks Agate and Stylebook health, finds the seeded **General** project and **Starter flow** graph, enqueues a run, and polls for completion (default poll window allows slow LLM/geocode; override with `SMOKE_POLL_TIMEOUT_SECONDS`). It does not delete General or the starter graph.
+  `make smoke` against a live stack. This checks Agate and Stylebook health, calls Agate with **`Authorization: Bearer`** (defaults to `SERVICE_API_TOKEN`, or `SMOKE_AGATE_BEARER` / a project API key), finds the seeded **General** project and **Starter flow** graph, enqueues a run, and polls for completion (default poll window allows slow LLM/geocode; override with `SMOKE_POLL_TIMEOUT_SECONDS`). It does not delete General or the starter graph.
 4. **Manual UI pass**
   Use the Agate UI when the task changes browser-facing behavior or flowbuilder interactions.
 

@@ -42,7 +42,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 - `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: database connection string (required for `agate-api`, `worker`, and **`core-api`** — Core API reads users and API credentials from the same Postgres database).
 - `REDIS_URL`: Celery broker and backend.
 - `STYLEBOOK_API_URL`: worker/node access to Stylebook API.
-- `SERVICE_API_TOKEN`: optional shared token between Agate, Stylebook, and Core API (Bearer auth for service-to-service calls).
+- `SERVICE_API_TOKEN`: shared Bearer token for service-to-service calls. **Agate API** requires `Authorization: Bearer` (this token or a project `bfk_` key) on protected routes; `make smoke` sends it automatically (override with `SMOKE_AGATE_BEARER` if needed).
 - `SESSION_SECRET`: signing key for session cookies (`itsdangerous`); shared across services that verify the same `session` cookie (Compose default `dev-session-secret`).
 - `MASTER_ENCRYPTION_KEY`: required for encrypted project-secret storage.
 - `UI_ORIGIN`: allowed browser origin for local UI access.

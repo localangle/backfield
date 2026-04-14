@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109.0",
     "itsdangerous>=2.1.0",
+    "backfield-db",
 ]
 
 [build-system]

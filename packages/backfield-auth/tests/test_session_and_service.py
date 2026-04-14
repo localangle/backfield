@@ -13,6 +13,9 @@ def test_service_token_roundtrip(monkeypatch):
     importlib.reload(st)
     assert st.verify_service_token("secret-one") is True
     assert st.verify_service_token("wrong") is False
+    # Restore token set for integration tests that run later in the same pytest process.
+    monkeypatch.setenv("SERVICE_API_TOKEN", "backfield-dev")
+    importlib.reload(st)
 
 
 def test_session_token_roundtrip(monkeypatch):

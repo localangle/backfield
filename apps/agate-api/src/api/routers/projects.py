@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
+from typing import Any
 
-from api.deps import get_session
+from api.deps import get_auth, get_session
+from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
     AgateGraph,
     AgateRun,
@@ -82,13 +84,28 @@ def _slugify(name: str) -> str:
 
 
 @router.get("", response_model=list[ProjectOut])
-def list_projects(session: Session = Depends(get_session)):
-    rows = session.exec(select(BackfieldProject).order_by(BackfieldProject.id)).all()
+def list_projects(
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    visible = visible_project_ids(session, auth)
+    q = select(BackfieldProject).order_by(BackfieldProject.id)
+    if visible is not None:
+        if not visible:
+            return []
+        q = q.where(BackfieldProject.id.in_(visible))
+    rows = session.exec(q).all()
     return [ProjectOut.from_row(r) for r in rows]
 
 
 @router.post("", response_model=ProjectOut)
-def create_project(body: ProjectCreate, session: Session = Depends(get_session)):
+def create_project(
+    body: ProjectCreate,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    if auth["type"] == "api_key":
+        raise HTTPException(403, "Cannot create projects with an API key")
     slug = body.slug.strip() if body.slug else _slugify(body.name)
     existing = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
     if existing:
@@ -147,23 +164,38 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
 
 
 @router.get("/by-slug/{slug}/stats", response_model=ProjectStatsOut)
-def project_stats_by_slug(slug: str, session: Session = Depends(get_session)):
+def project_stats_by_slug(
+    slug: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
     p = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
     if not p:
         raise HTTPException(404, "Project not found")
+    require_project_access(session, auth, int(p.id))
     return _project_stats(session, p)
 
 
 @router.get("/by-slug/{slug}", response_model=ProjectOut)
-def get_project_by_slug(slug: str, session: Session = Depends(get_session)):
+def get_project_by_slug(
+    slug: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
     p = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
     if not p:
         raise HTTPException(404, "Project not found")
+    require_project_access(session, auth, int(p.id))
     return ProjectOut.from_row(p)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-def get_project(project_id: int, session: Session = Depends(get_session)):
+def get_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
@@ -171,7 +203,12 @@ def get_project(project_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/{project_id}/stats", response_model=ProjectStatsOut)
-def project_stats(project_id: int, session: Session = Depends(get_session)):
+def project_stats(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
@@ -180,8 +217,12 @@ def project_stats(project_id: int, session: Session = Depends(get_session)):
 
 @router.patch("/{project_id}", response_model=ProjectOut)
 def update_project(
-    project_id: int, body: ProjectUpdate, session: Session = Depends(get_session)
+    project_id: int,
+    body: ProjectUpdate,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
 ):
+    require_project_access(session, auth, project_id)
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
@@ -207,7 +248,12 @@ def update_project(
 
 
 @router.delete("/{project_id}", status_code=204)
-def delete_project(project_id: int, session: Session = Depends(get_session)):
+def delete_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
@@ -234,7 +280,12 @@ class SecretSetBody(BaseModel):
 
 
 @router.get("/{project_id}/secrets", response_model=list[SecretOut])
-def list_secrets(project_id: int, session: Session = Depends(get_session)):
+def list_secrets(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
@@ -254,7 +305,9 @@ def set_secret(
     key_name: str,
     body: SecretSetBody,
     session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
 ):
+    require_project_access(session, auth, project_id)
     if not _KEY_RE.match(key_name):
         raise HTTPException(400, "Invalid key name; use A-Z, digits, underscore")
     if fernet_from_env() is None:
@@ -296,7 +349,13 @@ def set_secret(
 
 
 @router.delete("/{project_id}/secrets/{key_name}", status_code=204)
-def delete_secret(project_id: int, key_name: str, session: Session = Depends(get_session)):
+def delete_secret(
+    project_id: int,
+    key_name: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")

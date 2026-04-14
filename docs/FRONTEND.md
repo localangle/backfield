@@ -9,6 +9,18 @@ This document covers frontend conventions for `apps/agate-ui` and the lighter `a
 - Consume generated node registry output from `src/nodes/registry.ts`.
 - Keep page and component code readable, explicit, and easy to scan.
 
+## Auth and API bases (Agate UI)
+
+- **Core API (login / session):** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`. Use **`VITE_AUTH_API_BASE`** (empty string for same-origin).
+- **Agate API:** project/graph/run calls go through **`src/lib/api.ts`**. Default **`VITE_API_BASE`** is `/api/agate` so the Vite dev server can proxy to `agate-api` on one browser origin with `credentials: 'include'`.
+- **Local dev proxy:** [`apps/agate-ui/vite.config.ts`](../apps/agate-ui/vite.config.ts) proxies `/v1` → Core API and `/api/agate` → Agate API. Override targets with `VITE_CORE_API_PROXY_TARGET` / `VITE_AGATE_API_PROXY_TARGET` (e.g. in Docker Compose).
+
+## User-facing copy
+
+- Write UI strings for a **general audience**, including people who are **not** developers.
+- Avoid internal product names for infrastructure (services, ports, proxies, cookies, paths) unless the user must act on them—and even then, prefer plain language or hide details behind help links.
+- Technical detail belongs in developer docs (this file’s other sections, `docs/API.md`, `docs/OPERATIONS.md`), not in labels, descriptions, or empty states shown to typical users.
+
 ## Key conventions
 
 - Prefer clear React components over clever abstractions.

@@ -32,7 +32,10 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides[get_session] = get_test_session
     try:
-        yield TestClient(app)
+        yield TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -41,6 +44,30 @@ def test_health(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+def test_projects_require_auth(tmp_path):
+    """Unauthenticated requests to protected routes return 401."""
+    database_path = tmp_path / "agate-noauth.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Default", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        anon = TestClient(app)
+        assert anon.get("/projects").status_code == 401
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_project_graph_and_run_creation(monkeypatch, client: TestClient):

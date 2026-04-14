@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
-from api.deps import get_session
+from api.deps import get_auth, get_session
 from api.routers.graphs import GraphOut
+from backfield_auth.gate import require_project_access
 from backfield_core import GraphSpec
 from backfield_core.types import Edge, NodeConfig
 from backfield_db import AgateGraph, AgateTemplate, BackfieldProject
@@ -56,7 +58,10 @@ def _remap_spec(spec: GraphSpec) -> GraphSpec:
 
 
 @router.get("", response_model=list[TemplateOut])
-def list_templates(session: Session = Depends(get_session)):
+def list_templates(
+    session: Session = Depends(get_session),
+    _auth: dict[str, Any] = Depends(get_auth),
+):
     rows = session.exec(select(AgateTemplate).order_by(AgateTemplate.name)).all()
     return [
         TemplateOut(
@@ -74,7 +79,9 @@ def instantiate(
     template_id: str,
     body: InstantiateBody,
     session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
 ):
+    require_project_access(session, auth, body.project_id)
     t = session.get(AgateTemplate, template_id)
     if not t:
         raise HTTPException(404, "Template not found")
