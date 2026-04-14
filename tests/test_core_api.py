@@ -208,6 +208,17 @@ def test_member_workspace_memberships_grant_project_access(client: TestClient) -
     )
     keys = client.get("/v1/projects/1/api-keys")
     assert keys.status_code == 200
+    assert keys.json() == []
+
+    mk = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "label": "member-key"},
+    )
+    assert mk.status_code == 200
+    assert mk.json().get("user_id") == member_id
+    listed = client.get("/v1/projects/1/api-keys").json()
+    assert len(listed) == 1
+    assert listed[0]["user_id"] == member_id
 
 
 def test_project_api_key_bearer(client: TestClient) -> None:
@@ -224,7 +235,9 @@ def test_project_api_key_bearer(client: TestClient) -> None:
         json={"credential_type": "user", "label": "ci"},
     )
     assert create.status_code == 200
-    raw_key = create.json()["raw_key"]
+    created = create.json()
+    raw_key = created["raw_key"]
+    assert created.get("user_id") == 1
 
     listed = client.get(
         "/v1/projects/1/api-keys",
@@ -234,6 +247,7 @@ def test_project_api_key_bearer(client: TestClient) -> None:
     rows = listed.json()
     assert len(rows) == 1
     assert rows[0]["key_prefix"] == raw_key[:22]
+    assert rows[0].get("user_id") == 1
 
     who = client.get(
         "/v1/secure/whoami",

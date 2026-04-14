@@ -33,6 +33,7 @@ class CredentialOut(BaseModel):
     label: str | None
     created_at: datetime
     revoked_at: datetime | None
+    user_id: int | None = None
 
 
 class CreateCredentialResponse(CredentialOut):
@@ -81,6 +82,7 @@ def create_api_key(
         label=row.label,
         created_at=row.created_at,
         revoked_at=row.revoked_at,
+        user_id=int(row.user_id) if row.user_id is not None else None,
         raw_key=raw,
     )
 
@@ -104,6 +106,7 @@ def list_api_keys(
             label=r.label,
             created_at=r.created_at,
             revoked_at=r.revoked_at,
+            user_id=int(r.user_id) if r.user_id is not None else None,
         )
         for r in active
     ]

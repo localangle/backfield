@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Trash2, Plus, Key, AlertCircle, Edit } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { listProjectApiKeys, setProjectApiKey, deleteProjectApiKey, updateProject, type ApiKey, type ApiKeyCreate, type Project } from '@/lib/api'
+import ProjectAccessKeysPanel from '@/components/ProjectAccessKeysPanel'
 import { format } from 'date-fns'
 
 interface ProjectSettingsProps {
@@ -410,6 +411,12 @@ export default function ProjectSettings({
       {showCredentialsHeading && (
         <h3 className="text-lg font-semibold mb-4">Credentials</h3>
       )}
+      {project ? <ProjectAccessKeysPanel projectId={project.id} /> : null}
+      <h4 className="text-base font-semibold mb-1">Integration secrets</h4>
+      <p className="text-sm text-muted-foreground mb-4">
+        Keys for OpenAI, Mapbox, AWS, and other providers used by flows in this project (stored
+        encrypted on the server).
+      </p>
       {loading ? (
         <div className="text-center py-4">
           <div className="text-sm text-muted-foreground">Loading...</div>
@@ -424,16 +431,16 @@ export default function ProjectSettings({
               disabled={saving}
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add API key
+              Add provider secret
             </Button>
           </div>
           {providerKeys.length === 0 ? (
             <Card>
               <CardContent className="text-center py-8">
                 <Key className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h4 className="font-medium mb-2">No API keys</h4>
+                <h4 className="font-medium mb-2">No provider secrets</h4>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Add keys for OpenAI, Mapbox, AWS, and other integrated providers.
+                  Add secrets for OpenAI, Mapbox, AWS, and other integrated providers.
                 </p>
               </CardContent>
             </Card>
@@ -528,7 +535,7 @@ export default function ProjectSettings({
           {showAddForm && (
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle className="text-base">Add API key</CardTitle>
+                <CardTitle className="text-base">Add provider secret</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
@@ -631,7 +638,7 @@ export default function ProjectSettings({
             Project Settings - {project.name}
           </DialogTitle>
           <DialogDescription>
-            Manage API keys for integrated providers (OpenAI, Mapbox, AWS, and others).
+            Manage project settings, API access keys, and provider integration secrets.
           </DialogDescription>
         </DialogHeader>
 

@@ -174,3 +174,46 @@ export async function replaceWorkspaceMemberships(
     },
   )
 }
+
+/** Core API project Bearer keys (`bfk_…`) — distinct from Agate project secrets. */
+export interface ProjectAccessCredential {
+  id: number
+  credential_type: string
+  key_prefix: string
+  label: string | null
+  created_at: string
+  revoked_at: string | null
+  user_id: number | null
+}
+
+export interface ProjectAccessCredentialCreated extends ProjectAccessCredential {
+  raw_key: string
+}
+
+export async function listProjectAccessKeys(
+  projectId: number,
+): Promise<ProjectAccessCredential[]> {
+  return jsonFetch(`/v1/projects/${projectId}/api-keys`)
+}
+
+export async function createProjectAccessKey(
+  projectId: number,
+  body: { credential_type: "user" | "service"; label?: string | null },
+): Promise<ProjectAccessCredentialCreated> {
+  return jsonFetch(`/v1/projects/${projectId}/api-keys`, {
+    method: "POST",
+    body: JSON.stringify({
+      credential_type: body.credential_type,
+      label: body.label ?? null,
+    }),
+  })
+}
+
+export async function revokeProjectAccessKey(
+  projectId: number,
+  credentialId: number,
+): Promise<void> {
+  await jsonFetch(`/v1/projects/${projectId}/api-keys/${credentialId}`, {
+    method: "DELETE",
+  })
+}
