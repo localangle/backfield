@@ -42,6 +42,14 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
                 workspace_id=int(ws.id),
             )
         )
+        s.add(
+            BackfieldProject(
+                name="Other",
+                slug="other",
+                organization_id=int(org.id),
+                workspace_id=int(ws.id),
+            )
+        )
         s.commit()
 
     def get_test_session() -> Generator[Session, None, None]:
@@ -143,8 +151,10 @@ def test_org_admin_list_projects_and_users_detail(client: TestClient) -> None:
     pr = client.get(f"/v1/organizations/{org_id}/projects")
     assert pr.status_code == 200
     projects = pr.json()
-    assert len(projects) >= 1
-    assert projects[0]["slug"] == "general"
+    assert len(projects) >= 2
+    slugs = {p["slug"] for p in projects}
+    assert "general" in slugs
+    assert "other" in slugs
 
     users = client.get(f"/v1/organizations/{org_id}/users?detail=true")
     assert users.status_code == 200
@@ -255,3 +265,300 @@ def test_project_api_key_bearer(client: TestClient) -> None:
     )
     assert who.status_code == 200
     assert who.json().get("auth_type") == "api_key"
+
+
+def test_api_keys_no_auth_returns_401(client: TestClient) -> None:
+    r = client.get("/v1/projects/1/api-keys")
+    assert r.status_code == 401
+
+
+def test_api_keys_invalid_bearer_returns_401(client: TestClient) -> None:
+    r = client.get(
+        "/v1/projects/1/api-keys",
+        headers={"Authorization": "Bearer bfk_notvalidtokenatall"},
+    )
+    assert r.status_code == 401
+
+
+def test_api_keys_wrong_project_bearer_returns_403(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "wp@example.com", "password": "wp-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "wp@example.com", "password": "wp-secret"},
+    )
+    create = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "label": "p1"},
+    )
+    assert create.status_code == 200
+    raw_key = create.json()["raw_key"]
+
+    r = client.get(
+        "/v1/projects/2/api-keys",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    assert r.status_code == 403
+    assert "project" in r.json().get("detail", "").lower()
+
+
+def test_api_keys_revoked_bearer_returns_401(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "rv@example.com", "password": "rv-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "rv@example.com", "password": "rv-secret"},
+    )
+    created = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "label": "revoke-me"},
+    ).json()
+    raw_key = created["raw_key"]
+    cid = created["id"]
+
+    assert (
+        client.get(
+            "/v1/projects/1/api-keys",
+            headers={"Authorization": f"Bearer {raw_key}"},
+        ).status_code
+        == 200
+    )
+
+    client.delete(f"/v1/projects/1/api-keys/{cid}")
+    client.post("/v1/auth/logout")
+
+    r = client.get(
+        "/v1/projects/1/api-keys",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    assert r.status_code == 401
+
+
+def test_api_keys_post_user_key_requires_session_not_bearer(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "sess@example.com", "password": "sess-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "sess@example.com", "password": "sess-secret"},
+    )
+    raw = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "label": "a"},
+    ).json()["raw_key"]
+    client.post("/v1/auth/logout")
+
+    r = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "label": "b"},
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert r.status_code == 400
+    assert "session" in r.json()["detail"].lower()
+
+
+def test_api_keys_post_service_key_forbidden_for_member(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "oadmin@example.com", "password": "oa-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "oadmin@example.com", "password": "oa-secret"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={
+            "email": "plain@example.com",
+            "password": "plain-secret",
+            "role": "member",
+        },
+    )
+    ws_id = client.get(f"/v1/organizations/{org_id}/workspaces").json()[0]["id"]
+    mid = client.get(f"/v1/organizations/{org_id}/users?detail=true").json()
+    member_id = next(u["id"] for u in mid if u["email"] == "plain@example.com")
+    client.put(
+        f"/v1/organizations/{org_id}/users/{member_id}/workspace-memberships",
+        json={"workspace_ids": [ws_id]},
+    )
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "plain@example.com", "password": "plain-secret"},
+    )
+
+    r = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "service", "label": "ci"},
+    )
+    assert r.status_code == 403
+
+
+def test_api_keys_member_cannot_revoke_another_users_key(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "adm2@example.com", "password": "adm2-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "adm2@example.com", "password": "adm2-secret"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    ws_id = client.get(f"/v1/organizations/{org_id}/workspaces").json()[0]["id"]
+    for email, pw in (
+        ("alice@example.com", "alice-secret"),
+        ("bob@example.com", "bob-secret"),
+    ):
+        client.post(
+            f"/v1/organizations/{org_id}/users",
+            json={"email": email, "password": pw, "role": "member"},
+        )
+    users = client.get(f"/v1/organizations/{org_id}/users?detail=true").json()
+    alice_id = next(u["id"] for u in users if u["email"] == "alice@example.com")
+    bob_id = next(u["id"] for u in users if u["email"] == "bob@example.com")
+    client.put(
+        f"/v1/organizations/{org_id}/users/{alice_id}/workspace-memberships",
+        json={"workspace_ids": [ws_id]},
+    )
+    client.put(
+        f"/v1/organizations/{org_id}/users/{bob_id}/workspace-memberships",
+        json={"workspace_ids": [ws_id]},
+    )
+
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "alice@example.com", "password": "alice-secret"},
+    )
+    cred_id = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "label": "alice-key"},
+    ).json()["id"]
+
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "bob@example.com", "password": "bob-secret"},
+    )
+
+    r = client.delete(f"/v1/projects/1/api-keys/{cred_id}")
+    assert r.status_code == 403
+
+
+def test_api_keys_revoke_with_bearer_forbidden_even_for_own_row(client: TestClient) -> None:
+    """Project API key must not be able to revoke credentials (no session identity)."""
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "br@example.com", "password": "br-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "br@example.com", "password": "br-secret"},
+    )
+    created = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "label": "self"},
+    ).json()
+    raw_key = created["raw_key"]
+    cid = created["id"]
+    client.post("/v1/auth/logout")
+
+    r = client.delete(
+        f"/v1/projects/1/api-keys/{cid}",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    assert r.status_code == 403
+    assert "session" in r.json()["detail"].lower()
+
+
+def test_api_keys_org_admin_creates_revokes_service_key(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "svc@example.com", "password": "svc-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "svc@example.com", "password": "svc-secret"},
+    )
+    created = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "service", "label": "deploy"},
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body["credential_type"] == "service"
+    assert body.get("user_id") is None
+    raw_key = body["raw_key"]
+
+    listed = client.get("/v1/projects/1/api-keys").json()
+    assert len(listed) == 1
+    assert listed[0]["credential_type"] == "service"
+
+    assert (
+        client.get(
+            "/v1/projects/1/api-keys",
+            headers={"Authorization": f"Bearer {raw_key}"},
+        ).status_code
+        == 200
+    )
+
+    cid = body["id"]
+    dr = client.delete(f"/v1/projects/1/api-keys/{cid}")
+    assert dr.status_code == 204
+    client.post("/v1/auth/logout")
+
+    assert (
+        client.get(
+            "/v1/projects/1/api-keys",
+            headers={"Authorization": f"Bearer {raw_key}"},
+        ).status_code
+        == 401
+    )
+
+
+def test_api_keys_org_admin_revokes_other_users_user_key(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "adm3@example.com", "password": "adm3-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "adm3@example.com", "password": "adm3-secret"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    ws_id = client.get(f"/v1/organizations/{org_id}/workspaces").json()[0]["id"]
+    client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={"email": "target@example.com", "password": "t-secret", "role": "member"},
+    )
+    uid = client.get(f"/v1/organizations/{org_id}/users?detail=true").json()
+    target_id = next(u["id"] for u in uid if u["email"] == "target@example.com")
+    client.put(
+        f"/v1/organizations/{org_id}/users/{target_id}/workspace-memberships",
+        json={"workspace_ids": [ws_id]},
+    )
+
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "target@example.com", "password": "t-secret"},
+    )
+    cred_id = client.post(
+        "/v1/projects/1/api-keys",
+        json={"credential_type": "user", "label": "member"},
+    ).json()["id"]
+
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "adm3@example.com", "password": "adm3-secret"},
+    )
+
+    assert client.delete(f"/v1/projects/1/api-keys/{cred_id}").status_code == 204
+    assert client.get("/v1/projects/1/api-keys").json() == []

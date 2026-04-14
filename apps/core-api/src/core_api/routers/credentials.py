@@ -7,7 +7,7 @@ import secrets
 from datetime import UTC, datetime
 
 from backfield_db import BackfieldApiCredential
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -123,6 +123,11 @@ def revoke_api_key(
     row = session.get(BackfieldApiCredential, credential_id)
     if row is None or row.project_id != project_id:
         raise HTTPException(status_code=404, detail="Credential not found")
+    if auth["type"] == "api_key":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Revoking API keys requires a browser session",
+        )
     if auth["type"] == "session":
         uid = int(auth["user"].id)  # type: ignore[union-attr]
         org_id = int(proj.organization_id)
