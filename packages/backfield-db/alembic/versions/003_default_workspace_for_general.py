@@ -1,6 +1,6 @@
 """Seed Default workspace under Default org; attach General project.
 
-Revision ID: 003_default_workspace_for_general
+Revision ID: 003_def_ws_general (must be <=32 chars for alembic_version.version_num).
 Revises: 002_backfield_identity
 """
 
@@ -11,7 +11,7 @@ from typing import Sequence, Union
 from alembic import op
 from sqlalchemy import text
 
-revision: str = "003_default_workspace_for_general"
+revision: str = "003_def_ws_general"
 down_revision: Union[str, None] = "002_backfield_identity"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
