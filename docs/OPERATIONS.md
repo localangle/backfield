@@ -39,14 +39,14 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 ## Environment variables
 
-- `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: database connection string.
+- `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: database connection string (required for `agate-api`, `worker`, and **`core-api`** — Core API reads users and API credentials from the same Postgres database).
 - `REDIS_URL`: Celery broker and backend.
 - `STYLEBOOK_API_URL`: worker/node access to Stylebook API.
 - `SERVICE_API_TOKEN`: optional shared token between Agate, Stylebook, and Core API (Bearer auth for service-to-service calls).
 - `SESSION_SECRET`: signing key for session cookies (`itsdangerous`); shared across services that verify the same `session` cookie (Compose default `dev-session-secret`).
 - `MASTER_ENCRYPTION_KEY`: required for encrypted project-secret storage.
 - `UI_ORIGIN`: allowed browser origin for local UI access.
-- `BACKFIELD_LOCAL_BOOTSTRAP`: when `1`, `agate-api` entrypoint (after Alembic) syncs allowlisted keys from the container environment into **General** (`agate_project_secret`) and creates the **Starter flow** graph if missing. Default in Compose is `1`; set `0` to disable (see repo-root `.env.example`). Allowlisted keys include `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `MAPBOX_API_TOKEN`.
+- `BACKFIELD_LOCAL_BOOTSTRAP`: when `1`, `agate-api` entrypoint (after Alembic) syncs allowlisted keys from the container environment into **General** (`backfield_project_secret`) and creates the **Starter flow** graph if missing. Default in Compose is `1`; set `0` to disable (see repo-root `.env.example`). Allowlisted keys include `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and `MAPBOX_API_TOKEN`.
 
 ### Repo-root `.env` (local only)
 
@@ -54,7 +54,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 ### Flow execution (PlaceExtract, GeocodeAgent)
 
-Graph nodes are executed in the worker using the vendored `agate-runtime` package (ported from agate-ai-platform). The worker reads API keys from the process environment after applying decrypted `agate_project_secret` rows for the graph’s project.
+Graph nodes are executed in the worker using the vendored `agate-runtime` package (ported from agate-ai-platform). The worker reads API keys from the process environment after applying decrypted `backfield_project_secret` rows for the graph’s project.
 
 - **Required for LLM PlaceExtract**: `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` (see `agate_utils.llm.call_llm`).
 - **GeocodeAgent** may use `OPENAI_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and optional Stylebook cache via `STYLEBOOK_API_URL` + `PROJECT_SLUG` + `SERVICE_API_TOKEN`.
@@ -67,10 +67,13 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 
 ## Database guidance
 
-- Use Alembic for schema changes.
-- Agate tables use the `agate_` prefix.
-- Existing upgraded databases should point `alembic_version` at `001_agate_baseline`.
+- Use Alembic for schema changes (single chain in `packages/backfield-db`; **`make migrate` runs inside `agate-api`** — do not also auto-migrate from `core-api` on startup).
+- Agate execution tables use the `agate_` prefix; tenancy and project tables use `backfield_`.
 - Do not let multiple services race to run migrations for the same revision path.
+
+### Core API auth (local)
+
+- `core-api` uses the same DB as Agate (`DATABASE_URL` / `BACKFIELD_DATABASE_URL` in Compose). After migrations, register the first user with **`POST /v1/bootstrap/first-user`** when no users exist, or create users via org-admin routes under **`/v1/organizations/{org_id}/users`** (session + `org_admin` role).
 
 ## Troubleshooting
 

@@ -41,14 +41,14 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `packages/backfield-auth`
   - Owns signed session tokens, service Bearer validation, and FastAPI dependencies shared by HTTP services (no database).
 - `apps/core-api`
-  - Owns Core domain HTTP routes (future article import); uses `backfield-auth` for session and service authentication.
+  - Owns Core domain HTTP routes (auth, org admin, project API credentials, future article import); uses `backfield-db` for users and credentials and `backfield-auth` for session and service authentication.
 
 ## Dependency direction
 
 - UI apps may depend on their own components, shared client helpers, and published API contracts.
 - `agate-api` may depend on `backfield-core`, `backfield-db`, and `backfield-auth` (when wiring shared auth).
 - `worker` may depend on `backfield-core` and `backfield-db`.
-- `core-api` may depend on `backfield-auth` and eventually `backfield-db` for imports.
+- `core-api` may depend on `backfield-auth` and `backfield-db`.
 - `backfield-core` may depend on `agate-runtime` and must not depend on app code.
 - `agate-runtime` must not depend on app code or `backfield-db`.
 - `backfield-db` must not depend on app code.
@@ -76,7 +76,7 @@ flowchart LR
 ## Important conventions
 
 - `GraphSpec` is the canonical stored graph shape.
-- Agate DB tables use the `agate_` prefix.
+- Agate execution tables use the `agate_` prefix; shared tenancy and project tables use `backfield_` (e.g. `backfield_project`).
 - Celery queue and worker name use `agate`.
 - Node metadata and optional node UI live in `packages/backfield-core/src/backfield_core/nodes`.
 - `apps/agate-ui/scripts/sync-nodes.js` copies node UI and generates the frontend registry.

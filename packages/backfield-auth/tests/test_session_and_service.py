@@ -22,9 +22,16 @@ def test_session_token_roundtrip(monkeypatch):
     import backfield_auth.session_tokens as s
 
     importlib.reload(s)
-    tok = s.create_session_token("alice", user_id=1, projects=[10, 20], is_admin=False)
+    tok = s.create_session_token(
+        user_id=1,
+        email="alice@example.com",
+        projects=[10, 20],
+        organization_id=1,
+        org_role="member",
+        is_admin=False,
+    )
     data = s.verify_session_token(tok)
     assert data is not None
-    assert data["username"] == "alice"
+    assert data["username"] == "alice@example.com"
     assert data["user_id"] == 1
     assert data["projects"] == [10, 20]

@@ -14,17 +14,22 @@ SESSION_MAX_AGE = 7 * 24 * 60 * 60
 
 
 def create_session_token(
-    username: str,
-    user_id: int,
-    projects: list[int],
     *,
+    user_id: int,
+    email: str,
+    projects: list[int],
+    organization_id: int,
+    org_role: str,
     is_admin: bool = False,
 ) -> str:
-    """Create a signed session token with embedded project ids (for future RBAC)."""
+    """Create a signed session token with org scope and project ids."""
     token_data: dict[str, Any] = {
-        "username": username,
+        "username": email,
+        "email": email,
         "user_id": user_id,
         "projects": projects,
+        "organization_id": organization_id,
+        "org_role": org_role,
         "is_admin": is_admin,
         "exp": int((datetime.now(UTC) + timedelta(days=7)).timestamp()),
     }

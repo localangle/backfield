@@ -1,8 +1,4 @@
-"""
-Dev-oriented session endpoints (env admin). Replaced by real user management later.
-
-Mirrors agate-ai-platform auth-api login/me/logout enough to test cookies against Core API.
-"""
+"""Login, logout, session — DB-backed users."""
 
 from __future__ import annotations
 
@@ -10,38 +6,35 @@ import os
 
 from backfield_auth import create_session_token, verify_session_token
 from backfield_auth.deps import require_auth
+from backfield_db import (
+    BackfieldOrganizationMembership,
+    BackfieldUser,
+)
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel
+from sqlmodel import Session, select
+
+from core_api.authz import session_project_ids_for_user
+from core_api.deps import get_session
+from core_api.security import verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
-
 
 class LoginRequest(BaseModel):
-    username: str
+    email: str
     password: str
 
 
 class UserResponse(BaseModel):
-    username: str
+    email: str
     authenticated: bool
+    user_id: int | None = None
+    organization_id: int | None = None
+    org_role: str | None = None
 
 
-@router.post("/login")
-def login(login_request: LoginRequest, response: Response) -> dict[str, bool | str]:
-    """Set session cookie when credentials match env admin (until user tables exist)."""
-    if login_request.username != ADMIN_USERNAME or login_request.password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    session_token = create_session_token(
-        username=ADMIN_USERNAME,
-        user_id=1,
-        projects=[],
-        is_admin=True,
-    )
-
+def _set_session_cookie(response: Response, token: str) -> None:
     is_production = os.getenv("ENVIRONMENT") == "production"
     if is_production:
         samesite_setting = "none"
@@ -51,10 +44,9 @@ def login(login_request: LoginRequest, response: Response) -> dict[str, bool | s
         samesite_setting = "lax"
         cookie_domain = None
         secure_setting = False
-
     response.set_cookie(
         key="session",
-        value=session_token,
+        value=token,
         httponly=True,
         secure=secure_setting,
         samesite=samesite_setting,
@@ -62,17 +54,71 @@ def login(login_request: LoginRequest, response: Response) -> dict[str, bool | s
         domain=cookie_domain,
         max_age=7 * 24 * 60 * 60,
     )
-    return {"success": True, "username": ADMIN_USERNAME}
+
+
+@router.post("/login")
+def login(
+    body: LoginRequest,
+    response: Response,
+    session: Session = Depends(get_session),
+) -> dict[str, bool | str]:
+    email_norm = body.email.strip().lower()
+    user = session.exec(select(BackfieldUser).where(BackfieldUser.email == email_norm)).first()
+    if user is None or user.disabled_at is not None:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not verify_password(body.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    mem = session.exec(
+        select(BackfieldOrganizationMembership).where(
+            BackfieldOrganizationMembership.user_id == user.id
+        )
+    ).first()
+    if mem is None:
+        raise HTTPException(status_code=403, detail="User has no organization membership")
+
+    org_id = int(mem.organization_id)
+    org_role = str(mem.role)
+    project_ids = session_project_ids_for_user(
+        session,
+        user_id=int(user.id),
+        organization_id=org_id,
+        org_role=org_role,
+    )
+    is_admin = org_role == "org_admin"
+
+    token = create_session_token(
+        user_id=int(user.id),
+        email=str(user.email),
+        projects=project_ids,
+        organization_id=org_id,
+        org_role=org_role,
+        is_admin=is_admin,
+    )
+    _set_session_cookie(response, token)
+    return {"success": True, "email": str(user.email)}
 
 
 @router.get("/me", response_model=UserResponse)
-def me(session: str | None = Cookie(None, alias="session")) -> UserResponse:
-    if not session:
-        return UserResponse(username="", authenticated=False)
-    token_data = verify_session_token(session)
-    if not token_data:
-        return UserResponse(username="", authenticated=False)
-    return UserResponse(username=str(token_data.get("username", "")), authenticated=True)
+def me(session: Session = Depends(get_session), cookie: str | None = Cookie(None, alias="session")):
+    if not cookie:
+        return UserResponse(email="", authenticated=False)
+    data = verify_session_token(cookie)
+    if not data:
+        return UserResponse(email="", authenticated=False)
+    uid = data.get("user_id")
+    if uid is None:
+        return UserResponse(email="", authenticated=False)
+    user = session.get(BackfieldUser, int(uid))
+    if user is None or user.disabled_at is not None:
+        return UserResponse(email="", authenticated=False)
+    return UserResponse(
+        email=str(user.email),
+        authenticated=True,
+        user_id=int(user.id),
+        organization_id=data.get("organization_id"),
+        org_role=data.get("org_role"),
+    )
 
 
 @router.post("/logout")
@@ -80,7 +126,6 @@ def logout(response: Response) -> dict[str, bool | str]:
     is_production = os.getenv("ENVIRONMENT") == "production"
     cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN") if is_production else None
     secure_setting = bool(is_production)
-
     response.delete_cookie(
         key="session",
         path="/",
@@ -93,5 +138,4 @@ def logout(response: Response) -> dict[str, bool | str]:
 
 @router.get("/session-check")
 def session_check(username: str = Depends(require_auth)) -> dict[str, str]:
-    """Requires session cookie (not service token) — for integration tests."""
     return {"username": username}

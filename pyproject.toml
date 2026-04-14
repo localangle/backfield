@@ -40,6 +40,7 @@ pythonpath = [
     "apps/agate-api/src",
     "apps/worker/src",
     "apps/stylebook-api/src",
+    "apps/core-api/src",
 ]
 
 [tool.ruff]

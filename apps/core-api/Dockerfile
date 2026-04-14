@@ -6,9 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 RUN pip install --no-cache-dir uv
 
 COPY packages/backfield-auth /app/packages/backfield-auth
+COPY packages/backfield-db /app/packages/backfield-db
 COPY apps/core-api /app/apps/core-api
 
 RUN cd /app/packages/backfield-auth && uv pip install --system -e . \
+    && cd /app/packages/backfield-db && uv pip install --system -e . \
     && cd /app/apps/core-api && uv pip install --system -e .
 
 ENV PYTHONPATH=/app/apps/core-api/src

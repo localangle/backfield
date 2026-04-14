@@ -7,6 +7,10 @@ dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
     "backfield-auth",
+    "backfield-db",
+    "passlib[bcrypt]>=1.7.4",
+    # passlib 1.7.x is incompatible with bcrypt 5.x (backend detection / 72-byte checks).
+    "bcrypt>=4.0,<5",
 ]
 
 [build-system]

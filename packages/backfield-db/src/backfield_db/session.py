@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
@@ -32,6 +33,12 @@ def get_session_factory():
         return Session(get_engine())
 
     return _session
+
+
+def get_session_generator() -> Generator[Session, None, None]:
+    """FastAPI dependency: one session per request."""
+    with Session(get_engine()) as session:
+        yield session
 
 
 def init_db() -> None:

@@ -8,6 +8,7 @@ import pytest
 from api.deps import get_session
 from api.main import app
 from api.routers import runs
+from backfield_db import BackfieldOrganization
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -20,6 +21,10 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
         connect_args={"check_same_thread": False},
     )
     SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Default", slug="default"))
+        s.commit()
 
     def get_test_session() -> Generator[Session, None, None]:
         with Session(engine) as session:

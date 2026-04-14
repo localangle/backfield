@@ -4,25 +4,35 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_auth import require_auth_or_service
 from fastapi import APIRouter, Depends
+
+from core_api.deps import get_auth
 
 router = APIRouter(tags=["secure"])
 
 
 @router.get("/secure/whoami")
-def whoami(auth: dict[str, Any] = Depends(require_auth_or_service)) -> dict[str, Any]:
-    """Return auth mode; same contract for browser sessions and service calls."""
+def whoami(auth: dict[str, Any] = Depends(get_auth)) -> dict[str, Any]:
+    """Return auth mode (DB-validated session or service token)."""
     out: dict[str, Any] = {
         "authenticated": True,
         "auth_type": auth["type"],
-        "is_admin": auth.get("is_admin", False),
     }
-    if auth["type"] == "session" and auth.get("token_data"):
-        td = auth["token_data"]
-        out["username"] = td.get("username")
-        out["user_id"] = td.get("user_id")
-        out["projects"] = td.get("projects") or []
-    else:
+    if auth["type"] == "service":
         out["principal"] = "service"
+        out["is_admin"] = True
+        return out
+    if auth["type"] == "api_key":
+        out["principal"] = "api_key"
+        out["project_id"] = auth.get("project_id")
+        out["credential_type"] = auth.get("credential_type")
+        return out
+    user = auth["user"]
+    td = auth.get("token_data") or {}
+    out["email"] = str(user.email)
+    out["user_id"] = int(user.id)
+    out["organization_id"] = auth.get("organization_id")
+    out["org_role"] = auth.get("org_role")
+    out["projects"] = td.get("projects") or []
+    out["is_admin"] = bool(auth.get("is_admin"))
     return out

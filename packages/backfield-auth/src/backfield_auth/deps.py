@@ -91,6 +91,8 @@ def require_auth_or_service(
                 "type": "session",
                 "token_data": token_data,
                 "is_admin": is_admin,
+                "organization_id": token_data.get("organization_id"),
+                "org_role": token_data.get("org_role"),
             }
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")

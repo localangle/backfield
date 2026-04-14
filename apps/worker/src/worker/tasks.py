@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from backfield_core import GraphSpec, execute_graph
-from backfield_db import AgateGraph, AgateProjectSecret, AgateRun
+from backfield_db import AgateGraph, AgateRun, BackfieldProjectSecret
 from backfield_db.crypto import decrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
 from celery import Celery
@@ -43,7 +43,7 @@ def _project_env_map(session: Session, project_id: int) -> dict[str, str]:
     if f is None:
         return {}
     rows = session.exec(
-        select(AgateProjectSecret).where(AgateProjectSecret.project_id == project_id)
+        select(BackfieldProjectSecret).where(BackfieldProjectSecret.project_id == project_id)
     ).all()
     out: dict[str, str] = {}
     for r in rows:

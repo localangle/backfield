@@ -8,7 +8,7 @@ from api.deps import get_session
 from api.routers.graphs import GraphOut
 from backfield_core import GraphSpec
 from backfield_core.types import Edge, NodeConfig
-from backfield_db import AgateGraph, AgateProject, AgateTemplate
+from backfield_db import AgateGraph, AgateTemplate, BackfieldProject
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -78,7 +78,7 @@ def instantiate(
     t = session.get(AgateTemplate, template_id)
     if not t:
         raise HTTPException(404, "Template not found")
-    proj = session.get(AgateProject, body.project_id)
+    proj = session.get(BackfieldProject, body.project_id)
     if not proj:
         raise HTTPException(404, "Project not found")
     try:

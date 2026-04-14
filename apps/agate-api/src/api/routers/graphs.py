@@ -6,7 +6,7 @@ from datetime import datetime
 
 from api.deps import get_session
 from backfield_core import GraphSpec
-from backfield_db import AgateGraph, AgateProject, AgateRun
+from backfield_db import AgateGraph, AgateRun, BackfieldProject
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import desc
@@ -31,7 +31,7 @@ class GraphOut(BaseModel):
 
 @router.post("", response_model=GraphOut)
 def create_graph(body: GraphCreate, session: Session = Depends(get_session)):
-    p = session.get(AgateProject, body.project_id)
+    p = session.get(BackfieldProject, body.project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     g = AgateGraph(
@@ -87,7 +87,7 @@ def update_graph(
     g = session.get(AgateGraph, graph_id)
     if not g:
         raise HTTPException(404, "Graph not found")
-    p = session.get(AgateProject, body.project_id)
+    p = session.get(BackfieldProject, body.project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     g.name = body.name

@@ -48,6 +48,11 @@ services:
     environment:
       <<: *shared-env
       UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:8004
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   agate-api:
     build:
@@ -65,7 +70,7 @@ services:
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       STYLEBOOK_API_URL: http://stylebook-api:8003
-      # Dev-only Fernet key for encrypting agate_project_secret; override in production.
+      # Dev-only Fernet key for encrypting backfield_project_secret; override in production.
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # After migrations: sync .env API keys into General + create Starter flow graph.
       BACKFIELD_LOCAL_BOOTSTRAP: ${BACKFIELD_LOCAL_BOOTSTRAP:-1}

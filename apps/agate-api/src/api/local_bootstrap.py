@@ -10,7 +10,7 @@ import os
 from datetime import UTC, datetime
 
 from backfield_core import STARTER_FLOW_GRAPH_DISPLAY_NAME, starter_geocode_flow_graph_spec
-from backfield_db import AgateGraph, AgateProject, AgateProjectSecret
+from backfield_db import AgateGraph, BackfieldProject, BackfieldProjectSecret
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
 from sqlmodel import Session, select
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 GENERAL_SLUG = "general"
 
-# Keys mirrored from host/.env into agate_project_secret for the General project.
+# Keys mirrored from host/.env into backfield_project_secret for the General project.
 _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -49,9 +49,9 @@ def _sync_secrets(session: Session, project_id: int) -> int:
             logger.warning("local_bootstrap: encrypt failed for %s: %s", key, e)
             continue
         existing = session.exec(
-            select(AgateProjectSecret).where(
-                AgateProjectSecret.project_id == project_id,
-                AgateProjectSecret.key == key,
+            select(BackfieldProjectSecret).where(
+                BackfieldProjectSecret.project_id == project_id,
+                BackfieldProjectSecret.key == key,
             )
         ).first()
         if existing:
@@ -60,7 +60,7 @@ def _sync_secrets(session: Session, project_id: int) -> int:
             session.add(existing)
         else:
             session.add(
-                AgateProjectSecret(
+                BackfieldProjectSecret(
                     project_id=project_id,
                     key=key,
                     value_encrypted=enc,
@@ -97,7 +97,7 @@ def run_local_bootstrap() -> int:
     engine = get_engine()
     with Session(engine) as session:
         project = session.exec(
-            select(AgateProject).where(AgateProject.slug == GENERAL_SLUG)
+            select(BackfieldProject).where(BackfieldProject.slug == GENERAL_SLUG)
         ).first()
         if project is None or project.id is None:
             logger.warning(

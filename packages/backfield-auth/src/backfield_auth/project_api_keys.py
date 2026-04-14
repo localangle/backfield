@@ -8,6 +8,6 @@ map the key to a project id + scopes without treating it as the global service t
 
 from __future__ import annotations
 
-# Intentionally minimal: implement when `agate_project_api_key` (or similar) exists.
+# Intentionally minimal: project API keys live in `backfield_api_credential` (Core API).
 
 __all__: list[str] = []
