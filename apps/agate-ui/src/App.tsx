@@ -1,20 +1,23 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import HomeRedirect from './pages/HomeRedirect'
+import type { ReactNode } from "react"
+import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import ProjectDetailPage from './pages/ProjectDetailPage'
+import WorkspacesHomePage from './pages/WorkspacesHomePage'
+import WorkspaceDetailPage from './pages/WorkspaceDetailPage'
 import FlowsPage from './pages/FlowsPage'
 import RunsList from './pages/RunsList'
 import TemplatesPage from './pages/TemplatesPage'
-import SettingsPlaceholderPage from './pages/SettingsPlaceholderPage'
 import HelpPlaceholderPage from './pages/HelpPlaceholderPage'
 import RunGraph from './pages/RunGraph'
 import GraphBuilder from './pages/GraphBuilder'
 import RunDetail from './pages/RunDetail'
 import ProcessedItemDetail from './pages/ProcessedItemDetail'
 import Login from './pages/Login'
+import ChangePasswordPage from './pages/ChangePassword'
+import ManageUsers from './pages/ManageUsers'
 import HubLayout from './components/HubLayout'
 import { AuthProvider, useAuth } from './lib/auth'
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
   const location = useLocation()
 
@@ -28,6 +31,29 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  return <>{children}</>
+}
+
+function OrgAdminRoute({ children }: { children: ReactNode }) {
+  const { isOrgAdmin, loading, isAuthenticated } = useAuth()
+  const location = useLocation()
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  if (!isOrgAdmin) {
+    return <Navigate to="/" replace />
   }
 
   return <>{children}</>
@@ -57,7 +83,19 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <HomeRedirect />
+            <HubLayout>
+              <WorkspacesHomePage />
+            </HubLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspace/:workspaceSlug"
+        element={
+          <ProtectedRoute>
+            <HubLayout>
+              <WorkspaceDetailPage />
+            </HubLayout>
           </ProtectedRoute>
         }
       />
@@ -102,22 +140,34 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/settings"
-        element={
-          <ProtectedRoute>
-            <HubLayout>
-              <SettingsPlaceholderPage />
-            </HubLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
         path="/help"
         element={
           <ProtectedRoute>
             <HubLayout>
               <HelpPlaceholderPage />
             </HubLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/account/password"
+        element={
+          <ProtectedRoute>
+            <HubLayout>
+              <ChangePasswordPage />
+            </HubLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          <ProtectedRoute>
+            <OrgAdminRoute>
+              <HubLayout>
+                <ManageUsers />
+              </HubLayout>
+            </OrgAdminRoute>
           </ProtectedRoute>
         }
       />

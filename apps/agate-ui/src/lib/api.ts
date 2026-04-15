@@ -2,11 +2,12 @@
  * Agate API client — Backfield agate-api.
  */
 
+/** Agate API base. Default `/api/agate` uses Vite dev proxy to the Agate service (same-origin cookies). */
 export const API_BASE =
   import.meta.env.VITE_API_BASE ||
   import.meta.env.VITE_AGATE_API_BASE ||
   import.meta.env.VITE_REWRITE_API_BASE ||
-  'http://localhost:8000'
+  '/api/agate'
 
 export interface Project {
   id: number
@@ -138,6 +139,7 @@ export interface RunCreate {
 export interface ProjectCreate {
   name: string
   slug?: string
+  workspace_id?: number | null
 }
 
 export interface ProjectUpdate {
@@ -380,6 +382,7 @@ export async function createProject(data: ProjectCreate): Promise<Project> {
     body: JSON.stringify({
       name: data.name,
       slug: data.slug,
+      workspace_id: data.workspace_id ?? null,
     }),
   }) as Promise<Project>
 }

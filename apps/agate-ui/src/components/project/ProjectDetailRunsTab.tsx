@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -17,7 +17,6 @@ import {
   CheckCircle,
   Clock,
   ArrowRight,
-  RefreshCw,
   AlertTriangle,
   StopCircle,
 } from 'lucide-react'
@@ -27,11 +26,15 @@ interface ProjectDetailRunsTabProps {
   onDataChanged?: () => void
 }
 
-export default function ProjectDetailRunsTab({ projectId, onDataChanged }: ProjectDetailRunsTabProps) {
+export type ProjectDetailRunsTabHandle = {
+  refresh: () => Promise<void>
+}
+
+const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetailRunsTabProps>(
+  function ProjectDetailRunsTab({ projectId, onDataChanged }, ref) {
   const [runs, setRuns] = useState<Run[]>([])
   const [graphs, setGraphs] = useState<Graph[]>([])
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [selectedFlow, setSelectedFlow] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [cancellingRuns, setCancellingRuns] = useState<Set<string>>(new Set())
@@ -59,18 +62,17 @@ export default function ProjectDetailRunsTab({ projectId, onDataChanged }: Proje
     void loadData()
   }, [loadData])
 
-  const handleRefresh = async () => {
-    setRefreshing(true)
+  const handleRefresh = useCallback(async () => {
     try {
       const runsData = await listRuns()
       setRuns(runsData.filter((r) => r.project_id === projectId))
       onDataChanged?.()
     } catch (e) {
       console.error(e)
-    } finally {
-      setRefreshing(false)
     }
-  }
+  }, [projectId, onDataChanged])
+
+  useImperativeHandle(ref, () => ({ refresh: handleRefresh }), [handleRefresh])
 
   const handleCancelRun = async (runId: string, event: React.MouseEvent) => {
     event.stopPropagation()
@@ -164,15 +166,9 @@ export default function ProjectDetailRunsTab({ projectId, onDataChanged }: Proje
 
   return (
     <div className="space-y-4 w-full min-w-0">
-      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          Runs for flows in this project.
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={refreshing}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+      <p className="text-sm text-muted-foreground mb-1">
+        Runs for flows in this project.
+      </p>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <div className="flex flex-col gap-1 min-w-0 sm:min-w-[10rem]">
@@ -302,4 +298,7 @@ export default function ProjectDetailRunsTab({ projectId, onDataChanged }: Proje
       )}
     </div>
   )
-}
+},
+)
+
+export default ProjectDetailRunsTab

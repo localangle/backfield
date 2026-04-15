@@ -10,6 +10,7 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 | **Agate API** | 8000 | Graphs, runs, node metadata |
 | **Worker** | — | Celery executes runs (`agate` queue) |
 | **Stylebook API** | 8003 | Geocode helper for `GeocodeAgent` |
+| **Core API** | 8004 | Shared domain API (auth + future import routes) |
 | **Stylebook UI** | 5175 | Shell + health check |
 | **Postgres** | 5433 | `agate_*` application tables (see [docs/DATABASE.md](docs/DATABASE.md)) |
 | **Redis** | 6379 | Celery broker |
@@ -41,7 +42,7 @@ make up                # Docker Compose (foreground; Ctrl+C stops all services)
 ```bash
 make lint
 make test
-make smoke   # requires a live local stack
+make smoke   # live stack; see docs/TESTING.md (session vs service-token modes)
 ```
 
 ### Environment
@@ -61,11 +62,11 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 | Target | Purpose |
 |--------|---------|
 | `make help` | List commands |
-| `make up` / `make down` | Compose (`down` then prunes build cache and unused volumes) |
+| `make up` / `make down` | Compose (`down` then `docker system prune` + `docker volume prune`, same idea as agate-ai-platform) |
 | `make logs` | Tail logs |
 | `make migrate` | Re-run Alembic inside `agate-api` |
 | `make reset-db` | `docker compose down -v` (removes Postgres volume) |
-| `make docker-trim` | Prune build cache + unused volumes when Docker is low on disk |
+| `make docker-trim` | `docker system prune -f` then `docker volume prune -f` when Docker is low on disk |
 | `make test` | All tests |
 | `make lint` / `make format` | Ruff |
 
@@ -86,7 +87,7 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 
 ```
 apps/agate-api    apps/agate-ui
-apps/worker       apps/stylebook-api    apps/stylebook-ui
-packages/backfield-core   packages/backfield-db   packages/agate-runtime
+apps/worker       apps/stylebook-api    apps/stylebook-ui    apps/core-api
+packages/backfield-core   packages/backfield-auth   packages/backfield-db   packages/agate-runtime
 infra/docker-compose.yml   .env.example
 ```

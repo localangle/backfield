@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import ProjectSettings from '@/components/ProjectSettings'
+import ProjectSettings, { type ProjectSettingsHandle } from '@/components/ProjectSettings'
 import ProjectDetailFlowsTab from '@/components/project/ProjectDetailFlowsTab'
-import ProjectDetailRunsTab from '@/components/project/ProjectDetailRunsTab'
+import ProjectDetailRunsTab, {
+  type ProjectDetailRunsTabHandle,
+} from '@/components/project/ProjectDetailRunsTab'
 import {
   getProjectBySlug,
   getProjectStatsBySlug,
@@ -15,9 +17,10 @@ import {
   type ProjectStats,
 } from '@/lib/api'
 import { formatDurationMs } from '@/lib/formatDuration'
-import { Loader2, Pencil, Check, X } from 'lucide-react'
+import { Edit, Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
 
 export default function ProjectDetailPage() {
+  const navigate = useNavigate()
   const { projectSlug: projectSlugParam } = useParams<{ projectSlug: string }>()
   const slug = projectSlugParam ? decodeURIComponent(projectSlugParam) : ''
   const [project, setProject] = useState<Project | null>(null)
@@ -28,6 +31,11 @@ export default function ProjectDetailPage() {
   const [nameDraft, setNameDraft] = useState('')
   const [savingName, setSavingName] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [workspaceTab, setWorkspaceTab] = useState('flows')
+  const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
+  const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
+  const systemSettingsRef = useRef<ProjectSettingsHandle>(null)
+  const credentialsSettingsRef = useRef<ProjectSettingsHandle>(null)
 
   const reload = useCallback(async () => {
     if (!slug) return
@@ -112,9 +120,9 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="w-full max-w-none min-w-0 space-y-10">
-      <div className="flex items-start gap-3 min-h-[2.5rem]">
+      <div className="min-h-[2.5rem]">
         {editingName ? (
-          <div className="flex flex-1 items-center gap-2 flex-wrap">
+          <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
             <Input
               ref={inputRef}
               value={nameDraft}
@@ -124,7 +132,7 @@ export default function ProjectDetailPage() {
                 if (e.key === 'Escape') cancelNameEdit()
               }}
               disabled={savingName}
-              className="text-3xl font-bold h-auto py-2 px-3 max-w-xl"
+              className="min-w-0 flex-1 max-w-xl text-3xl font-bold h-auto py-2 px-3"
             />
             <Button
               type="button"
@@ -150,8 +158,10 @@ export default function ProjectDetailPage() {
             </Button>
           </div>
         ) : (
-          <>
-            <h1 className="text-3xl font-bold flex-1">{project.name}</h1>
+          <div className="inline-flex max-w-full items-center gap-2">
+            <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-3xl font-bold">
+              {project.name}
+            </h1>
             <Button
               type="button"
               variant="ghost"
@@ -165,7 +175,7 @@ export default function ProjectDetailPage() {
             >
               <Pencil className="h-5 w-5" />
             </Button>
-          </>
+          </div>
         )}
       </div>
 
@@ -223,11 +233,88 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="w-full min-w-0">
-        <h2 className="text-lg font-semibold mb-2">Project workspace</h2>
-        <p className="text-sm text-muted-foreground mb-6">
-          Flows, runs, defaults, and API credentials for this project.
-        </p>
-        <Tabs defaultValue="flows" className="w-full min-w-0">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold">Project workspace</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Flows, runs, defaults, and API credentials for this project.
+            </p>
+          </div>
+          <div className="flex flex-shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+            {workspaceTab === 'flows' ? (
+              <Button
+                type="button"
+                onClick={() =>
+                  navigate(`/flow/new?project=${encodeURIComponent(slug)}`)
+                }
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New flow
+              </Button>
+            ) : null}
+            {workspaceTab === 'runs' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={runsRefreshBusy}
+                onClick={() => {
+                  void (async () => {
+                    setRunsRefreshBusy(true)
+                    try {
+                      await runsTabRef.current?.refresh()
+                    } finally {
+                      setRunsRefreshBusy(false)
+                    }
+                  })()
+                }}
+              >
+                <RefreshCw
+                  className={`mr-2 h-4 w-4 ${runsRefreshBusy ? 'animate-spin' : ''}`}
+                />
+                Refresh
+              </Button>
+            ) : null}
+            {workspaceTab === 'settings' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => systemSettingsRef.current?.openSystemPromptEdit?.()}
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Edit system prompt
+              </Button>
+            ) : null}
+            {workspaceTab === 'credentials' ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => credentialsSettingsRef.current?.openAccessKeyCreate?.()}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  New access key
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => credentialsSettingsRef.current?.openAddProviderSecret?.()}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add provider secret
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </div>
+        <Tabs
+          value={workspaceTab}
+          onValueChange={setWorkspaceTab}
+          className="w-full min-w-0"
+        >
           <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-4">
             <TabsTrigger value="flows" className="w-full">
               Flows
@@ -250,25 +337,33 @@ export default function ProjectDetailPage() {
             />
           </TabsContent>
           <TabsContent value="runs" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailRunsTab projectId={project.id} onDataChanged={() => void reload()} />
+            <ProjectDetailRunsTab
+              ref={runsTabRef}
+              projectId={project.id}
+              onDataChanged={() => void reload()}
+            />
           </TabsContent>
           <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
             <ProjectSettings
+              ref={systemSettingsRef}
               project={project}
               open={true}
               onOpenChange={() => {}}
               variant="inline"
               inlineScope="system"
+              primaryActionsInToolbar
               onRemoteUpdated={reload}
             />
           </TabsContent>
           <TabsContent value="credentials" className="mt-6 w-full min-w-0 outline-none">
             <ProjectSettings
+              ref={credentialsSettingsRef}
               project={project}
               open={true}
               onOpenChange={() => {}}
               variant="inline"
               inlineScope="credentials"
+              primaryActionsInToolbar
               onRemoteUpdated={reload}
             />
           </TabsContent>

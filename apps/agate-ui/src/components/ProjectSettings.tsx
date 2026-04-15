@@ -1,4 +1,11 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +16,16 @@ import { Badge } from '@/components/ui/badge'
 import { Trash2, Plus, Key, AlertCircle, Edit } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { listProjectApiKeys, setProjectApiKey, deleteProjectApiKey, updateProject, type ApiKey, type ApiKeyCreate, type Project } from '@/lib/api'
+import ProjectAccessKeysPanel, {
+  type ProjectAccessKeysPanelHandle,
+} from '@/components/ProjectAccessKeysPanel'
 import { format } from 'date-fns'
+
+export type ProjectSettingsHandle = {
+  openSystemPromptEdit?: () => void
+  openAccessKeyCreate?: () => void
+  openAddProviderSecret?: () => void
+}
 
 interface ProjectSettingsProps {
   project: Project | null
@@ -21,6 +37,8 @@ interface ProjectSettingsProps {
   inlineScope?: 'system' | 'credentials'
   /** Called after project metadata changes (name, slug, system prompt). */
   onRemoteUpdated?: () => void
+  /** When true with `variant="inline"`, primary actions render in the project page toolbar. */
+  primaryActionsInToolbar?: boolean
 }
 
 const AVAILABLE_KEY_TYPES = [
@@ -37,14 +55,18 @@ const AVAILABLE_KEY_TYPES = [
 
 const KNOWN_PROVIDER_KEYS = new Set(AVAILABLE_KEY_TYPES.map((t) => t.value))
 
-export default function ProjectSettings({
-  project,
-  open,
-  onOpenChange,
-  variant = 'dialog',
-  inlineScope,
-  onRemoteUpdated,
-}: ProjectSettingsProps) {
+const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(function ProjectSettings(
+  {
+    project,
+    open,
+    onOpenChange,
+    variant = 'dialog',
+    inlineScope,
+    onRemoteUpdated,
+    primaryActionsInToolbar = false,
+  },
+  ref,
+) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -66,6 +88,23 @@ export default function ProjectSettings({
   // Form state for system prompt editing
   const [systemPrompt, setSystemPrompt] = useState('')
   const [editingSystemPrompt, setEditingSystemPrompt] = useState(false)
+
+  const accessKeysPanelRef = useRef<ProjectAccessKeysPanelHandle>(null)
+
+  useImperativeHandle(ref, () => {
+    if (variant === 'inline' && inlineScope === 'system') {
+      return {
+        openSystemPromptEdit: () => setEditingSystemPrompt(true),
+      }
+    }
+    if (variant === 'inline' && inlineScope === 'credentials') {
+      return {
+        openAccessKeyCreate: () => accessKeysPanelRef.current?.openCreateDialog(),
+        openAddProviderSecret: () => setShowAddForm(true),
+      }
+    }
+    return {}
+  })
 
   useEffect(() => {
     if (variant !== 'inline' && !open) {
@@ -327,7 +366,8 @@ export default function ProjectSettings({
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">System Prompt</h3>
-              {!editingSystemPrompt && (
+              {!editingSystemPrompt &&
+                !(variant === 'inline' && inlineScope === 'system' && primaryActionsInToolbar) && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -410,30 +450,44 @@ export default function ProjectSettings({
       {showCredentialsHeading && (
         <h3 className="text-lg font-semibold mb-4">Credentials</h3>
       )}
+      {project ? (
+        <ProjectAccessKeysPanel
+          ref={accessKeysPanelRef}
+          projectId={project.id}
+          primaryActionsInToolbar={primaryActionsInToolbar}
+        />
+      ) : null}
+      <h4 className="text-base font-semibold mb-1">Integration secrets</h4>
+      <p className="text-sm text-muted-foreground mb-4">
+        Keys for OpenAI, Mapbox, AWS, and other providers used by flows in this project (stored
+        encrypted on the server).
+      </p>
       {loading ? (
         <div className="text-center py-4">
           <div className="text-sm text-muted-foreground">Loading...</div>
         </div>
       ) : (
         <div className="space-y-4 w-full min-w-0">
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowAddForm(true)}
-              disabled={saving}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add API key
-            </Button>
-          </div>
+          {!primaryActionsInToolbar ? (
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddForm(true)}
+                disabled={saving}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add provider secret
+              </Button>
+            </div>
+          ) : null}
           {providerKeys.length === 0 ? (
             <Card>
               <CardContent className="text-center py-8">
                 <Key className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h4 className="font-medium mb-2">No API keys</h4>
+                <h4 className="font-medium mb-2">No provider secrets</h4>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Add keys for OpenAI, Mapbox, AWS, and other integrated providers.
+                  Add secrets for OpenAI, Mapbox, AWS, and other integrated providers.
                 </p>
               </CardContent>
             </Card>
@@ -528,7 +582,7 @@ export default function ProjectSettings({
           {showAddForm && (
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle className="text-base">Add API key</CardTitle>
+                <CardTitle className="text-base">Add provider secret</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
@@ -631,7 +685,7 @@ export default function ProjectSettings({
             Project Settings - {project.name}
           </DialogTitle>
           <DialogDescription>
-            Manage API keys for integrated providers (OpenAI, Mapbox, AWS, and others).
+            Manage project settings, API access keys, and provider integration secrets.
           </DialogDescription>
         </DialogHeader>
 
@@ -645,4 +699,6 @@ export default function ProjectSettings({
       </DialogContent>
     </Dialog>
   )
-}
+})
+
+export default ProjectSettings

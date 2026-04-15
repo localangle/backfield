@@ -1,15 +1,16 @@
-import { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import { Button } from './ui/button'
-import { useAuth } from '@/lib/auth'
-import AppSidebar from './AppSidebar'
+import { ReactNode } from "react"
+import { Link, useNavigate } from "react-router-dom"
+import { UserAccountMenu } from "@backfield/ui"
+import AppSidebar from "./AppSidebar"
+import { useAuth } from "@/lib/auth"
 
 interface HubLayoutProps {
   children: ReactNode
 }
 
 export default function HubLayout({ children }: HubLayoutProps) {
-  const { username, logout } = useAuth()
+  const navigate = useNavigate()
+  const { username, logout, isOrgAdmin } = useAuth()
 
   return (
     <div className="h-dvh min-h-0 bg-background flex flex-col overflow-hidden">
@@ -21,13 +22,18 @@ export default function HubLayout({ children }: HubLayoutProps) {
             </Link>
             <p className="text-sm text-muted-foreground mt-1">Backfield Platform</p>
           </div>
-          <div className="flex items-center gap-4">
-            {username && (
-              <span className="text-sm text-muted-foreground">{username}</span>
-            )}
-            <Button variant="outline" size="sm" onClick={logout}>
-              Sign out
-            </Button>
+          <div className="flex items-center gap-2">
+            {username ? (
+              <UserAccountMenu
+                userLabel={username}
+                isOrgAdmin={isOrgAdmin}
+                onChangePassword={() => navigate("/account/password")}
+                onManageUsers={
+                  isOrgAdmin ? () => navigate("/admin/users") : undefined
+                }
+                onLogout={() => void logout()}
+              />
+            ) : null}
           </div>
         </div>
       </header>

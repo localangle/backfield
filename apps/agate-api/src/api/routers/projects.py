@@ -5,9 +5,22 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
+from typing import Any
 
-from api.deps import get_session
-from backfield_db import AgateGraph, AgateProject, AgateProjectSecret, AgateRun
+from api.deps import get_auth, get_session
+from backfield_auth.gate import (
+    require_project_access,
+    require_session_may_assign_project_to_workspace,
+    visible_project_ids,
+)
+from backfield_db import (
+    AgateGraph,
+    AgateRun,
+    BackfieldOrganization,
+    BackfieldProject,
+    BackfieldProjectSecret,
+    BackfieldWorkspace,
+)
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -18,7 +31,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 _KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
-def _settings_dict(project: AgateProject) -> dict:
+def _settings_dict(project: BackfieldProject) -> dict:
     if not project.settings_json:
         return {}
     try:
@@ -27,7 +40,7 @@ def _settings_dict(project: AgateProject) -> dict:
         return {}
 
 
-def _set_system_prompt(project: AgateProject, value: str | None) -> None:
+def _set_system_prompt(project: BackfieldProject, value: str | None) -> None:
     d = _settings_dict(project)
     if value is None or value == "":
         d.pop("system_prompt", None)
@@ -39,6 +52,7 @@ def _set_system_prompt(project: AgateProject, value: str | None) -> None:
 class ProjectCreate(BaseModel):
     name: str
     slug: str | None = None
+    workspace_id: int | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -56,7 +70,7 @@ class ProjectOut(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_row(cls, p: AgateProject) -> ProjectOut:
+    def from_row(cls, p: BackfieldProject) -> ProjectOut:
         d = _settings_dict(p)
         return cls(
             id=p.id,
@@ -76,18 +90,58 @@ def _slugify(name: str) -> str:
 
 
 @router.get("", response_model=list[ProjectOut])
-def list_projects(session: Session = Depends(get_session)):
-    rows = session.exec(select(AgateProject).order_by(AgateProject.id)).all()
+def list_projects(
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    visible = visible_project_ids(session, auth)
+    q = select(BackfieldProject).order_by(BackfieldProject.id)
+    if visible is not None:
+        if not visible:
+            return []
+        q = q.where(BackfieldProject.id.in_(visible))
+    rows = session.exec(q).all()
     return [ProjectOut.from_row(r) for r in rows]
 
 
 @router.post("", response_model=ProjectOut)
-def create_project(body: ProjectCreate, session: Session = Depends(get_session)):
+def create_project(
+    body: ProjectCreate,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    if auth["type"] == "api_key":
+        raise HTTPException(403, "Cannot create projects with an API key")
     slug = body.slug.strip() if body.slug else _slugify(body.name)
-    existing = session.exec(select(AgateProject).where(AgateProject.slug == slug)).first()
+    existing = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
     if existing:
         raise HTTPException(409, "Slug already exists")
-    p = AgateProject(name=body.name.strip(), slug=slug)
+    org = session.exec(
+        select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+    ).first()
+    if org is None:
+        raise HTTPException(500, "Default organization missing; run migrations")
+    workspace_id: int | None = None
+    if body.workspace_id is not None:
+        ws = session.get(BackfieldWorkspace, int(body.workspace_id))
+        if ws is None or ws.id is None:
+            raise HTTPException(400, "Workspace not found")
+        if int(ws.organization_id) != int(org.id):
+            raise HTTPException(400, "Workspace is not in the default organization")
+        workspace_id = int(ws.id)
+        require_session_may_assign_project_to_workspace(
+            session,
+            auth,
+            workspace_id=workspace_id,
+            organization_id=int(org.id),
+        )
+
+    p = BackfieldProject(
+        organization_id=org.id,
+        name=body.name.strip(),
+        slug=slug,
+        workspace_id=workspace_id,
+    )
     session.add(p)
     session.commit()
     session.refresh(p)
@@ -104,7 +158,7 @@ class ProjectStatsOut(BaseModel):
 _TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed"})
 
 
-def _project_stats(session: Session, p: AgateProject) -> ProjectStatsOut:
+def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
     graphs = session.exec(
         select(AgateGraph).where(AgateGraph.project_id == p.id)
     ).all()
@@ -136,32 +190,52 @@ def _project_stats(session: Session, p: AgateProject) -> ProjectStatsOut:
 
 
 @router.get("/by-slug/{slug}/stats", response_model=ProjectStatsOut)
-def project_stats_by_slug(slug: str, session: Session = Depends(get_session)):
-    p = session.exec(select(AgateProject).where(AgateProject.slug == slug)).first()
+def project_stats_by_slug(
+    slug: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    p = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
     if not p:
         raise HTTPException(404, "Project not found")
+    require_project_access(session, auth, int(p.id))
     return _project_stats(session, p)
 
 
 @router.get("/by-slug/{slug}", response_model=ProjectOut)
-def get_project_by_slug(slug: str, session: Session = Depends(get_session)):
-    p = session.exec(select(AgateProject).where(AgateProject.slug == slug)).first()
+def get_project_by_slug(
+    slug: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    p = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
     if not p:
         raise HTTPException(404, "Project not found")
+    require_project_access(session, auth, int(p.id))
     return ProjectOut.from_row(p)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-def get_project(project_id: int, session: Session = Depends(get_session)):
-    p = session.get(AgateProject, project_id)
+def get_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
+    p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     return ProjectOut.from_row(p)
 
 
 @router.get("/{project_id}/stats", response_model=ProjectStatsOut)
-def project_stats(project_id: int, session: Session = Depends(get_session)):
-    p = session.get(AgateProject, project_id)
+def project_stats(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
+    p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     return _project_stats(session, p)
@@ -169,9 +243,13 @@ def project_stats(project_id: int, session: Session = Depends(get_session)):
 
 @router.patch("/{project_id}", response_model=ProjectOut)
 def update_project(
-    project_id: int, body: ProjectUpdate, session: Session = Depends(get_session)
+    project_id: int,
+    body: ProjectUpdate,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
 ):
-    p = session.get(AgateProject, project_id)
+    require_project_access(session, auth, project_id)
+    p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     patch = body.model_dump(exclude_unset=True)
@@ -181,7 +259,7 @@ def update_project(
         new_slug = patch["slug"].strip()
         if new_slug != p.slug:
             clash = session.exec(
-                select(AgateProject).where(AgateProject.slug == new_slug)
+                select(BackfieldProject).where(BackfieldProject.slug == new_slug)
             ).first()
             if clash and clash.id != p.id:
                 raise HTTPException(409, "Slug already exists")
@@ -196,8 +274,13 @@ def update_project(
 
 
 @router.delete("/{project_id}", status_code=204)
-def delete_project(project_id: int, session: Session = Depends(get_session)):
-    p = session.get(AgateProject, project_id)
+def delete_project(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
+    p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     if p.slug == "general":
@@ -223,14 +306,19 @@ class SecretSetBody(BaseModel):
 
 
 @router.get("/{project_id}/secrets", response_model=list[SecretOut])
-def list_secrets(project_id: int, session: Session = Depends(get_session)):
-    p = session.get(AgateProject, project_id)
+def list_secrets(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
+    p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     rows = session.exec(
-        select(AgateProjectSecret)
-        .where(AgateProjectSecret.project_id == project_id)
-        .order_by(AgateProjectSecret.key)
+        select(BackfieldProjectSecret)
+        .where(BackfieldProjectSecret.project_id == project_id)
+        .order_by(BackfieldProjectSecret.key)
     ).all()
     return [
         SecretOut(key_name=r.key, created_at=r.created_at, updated_at=r.updated_at) for r in rows
@@ -243,14 +331,16 @@ def set_secret(
     key_name: str,
     body: SecretSetBody,
     session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
 ):
+    require_project_access(session, auth, project_id)
     if not _KEY_RE.match(key_name):
         raise HTTPException(400, "Invalid key name; use A-Z, digits, underscore")
     if fernet_from_env() is None:
         raise HTTPException(
             503, "MASTER_ENCRYPTION_KEY is not configured; cannot store secrets"
         )
-    p = session.get(AgateProject, project_id)
+    p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     try:
@@ -259,9 +349,9 @@ def set_secret(
         raise HTTPException(503, str(e)) from e
     now = datetime.now(UTC)
     existing = session.exec(
-        select(AgateProjectSecret).where(
-            AgateProjectSecret.project_id == project_id,
-            AgateProjectSecret.key == key_name,
+        select(BackfieldProjectSecret).where(
+            BackfieldProjectSecret.project_id == project_id,
+            BackfieldProjectSecret.key == key_name,
         )
     ).first()
     if existing:
@@ -275,7 +365,7 @@ def set_secret(
             created_at=existing.created_at,
             updated_at=existing.updated_at,
         )
-    row = AgateProjectSecret(
+    row = BackfieldProjectSecret(
         project_id=project_id, key=key_name, value_encrypted=enc, created_at=now, updated_at=now
     )
     session.add(row)
@@ -285,14 +375,20 @@ def set_secret(
 
 
 @router.delete("/{project_id}/secrets/{key_name}", status_code=204)
-def delete_secret(project_id: int, key_name: str, session: Session = Depends(get_session)):
-    p = session.get(AgateProject, project_id)
+def delete_secret(
+    project_id: int,
+    key_name: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
+    p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
     row = session.exec(
-        select(AgateProjectSecret).where(
-            AgateProjectSecret.project_id == project_id,
-            AgateProjectSecret.key == key_name,
+        select(BackfieldProjectSecret).where(
+            BackfieldProjectSecret.project_id == project_id,
+            BackfieldProjectSecret.key == key_name,
         )
     ).first()
     if not row:

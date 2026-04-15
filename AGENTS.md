@@ -7,9 +7,9 @@ Use this file as the entry point for working in this repository. Keep it short, 
 Backfield is **based on** and is an ongoing **refactor** of the **agate-ai-platform** codebase. Treat that repository as the primary source of truth for behavior, structure, and UX unless this repo’s docs or an explicit task say otherwise.
 
 - **Location (canonical on this machine):** `/Users/cjdd3b/apps/agate-ai-platform`  
-  If your clone lives elsewhere, use your local path; the intent is always “the sibling agate-ai-platform repo,” not a vague memory of it.
+If your clone lives elsewhere, use your local path; the intent is always “the sibling agate-ai-platform repo,” not a vague memory of it.
 - **Default assumption:** When adding or changing flows, nodes, API shapes, worker behavior, or UI patterns, **look up the corresponding area in agate-ai-platform first**. Prefer **copying and then adapting** (with imports and package names fixed for Backfield) over reimplementing from scratch when parity matters.
-- **Fidelity:** Aim for **maximum fidelity** to agate-ai-platform—file layout, naming, algorithms, prompts, and user-visible behavior—except where Backfield intentionally differs (monorepo layout, `agate_*` tables, `packages/backfield-*`, etc.). When you must diverge, say so in the PR or doc update.
+- **Fidelity:** Aim for **maximum fidelity** to agate-ai-platform—file layout, naming, algorithms, prompts, and user-visible behavior—except where Backfield intentionally differs (monorepo layout, `agate_`* tables, `packages/backfield-*`, etc.). When you must diverge, say so in the PR or doc update.
 
 See also `docs/ARCHITECTURE.md` (reference section).
 
@@ -20,7 +20,9 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - `apps/worker`: Celery worker that executes Agate runs from the `agate` queue.
 - `apps/stylebook-api`: Companion FastAPI service for geocode and future Stylebook entities.
 - `apps/stylebook-ui`: Minimal Stylebook shell UI.
+- `apps/core-api`: Core domain HTTP API (article import and shared endpoints later); auth/session testing today.
 - `packages/backfield-core`: Graph types, executor, thin node runners, node metadata, and node UI sources.
+- `packages/backfield-auth`: Shared session cookies and service Bearer token dependencies for FastAPI apps.
 - `packages/agate-runtime`: Vendored LLM PlaceExtract, LangGraph GeocodeAgent, and geocoding/LLM utilities (ported from agate-ai-platform).
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
 - `infra/docker-compose.yml`: Local multi-service stack.
@@ -28,7 +30,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 ## Canonical commands
 
 - `make bootstrap`: install Python workspace dependencies with `uv` (does not seed DB data; local seeding runs when the stack starts — see `BACKFIELD_LOCAL_BOOTSTRAP` in [docs/OPERATIONS.md](docs/OPERATIONS.md)).
-- `make up` / `make down`: start and stop the local stack (`down` also runs Docker build-cache and unused-volume prune).
+- `make up` / `make down`: start and stop the local stack (`down` also runs `docker system prune` and `docker volume prune`, matching agate-ai-platform).
 - `make logs`: follow compose logs.
 - `make migrate`: run Alembic in the `agate-api` container.
 - `make lint`: run Ruff checks.

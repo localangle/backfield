@@ -1,6 +1,8 @@
 # Shared dev token (override: export SERVICE_API_TOKEN=...)
+# SESSION_SECRET: signed session cookies (Core API auth); keep in sync across services that verify sessions.
 x-shared-env: &shared-env
   SERVICE_API_TOKEN: ${SERVICE_API_TOKEN:-backfield-dev}
+  SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret}
 
 services:
   postgres:
@@ -37,6 +39,36 @@ services:
       <<: *shared-env
       UI_ORIGIN: http://localhost:5175
 
+  core-api:
+    build:
+      context: ..
+      dockerfile: apps/core-api/Dockerfile
+    env_file:
+      - path: ../.env
+        required: false
+    ports:
+      - "8004:8004"
+    environment:
+      <<: *shared-env
+      UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:8004
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8004/health', timeout=5)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   agate-api:
     build:
       context: ..
@@ -53,11 +85,17 @@ services:
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       STYLEBOOK_API_URL: http://stylebook-api:8003
-      # Dev-only Fernet key for encrypting agate_project_secret; override in production.
+      # Dev-only Fernet key for encrypting backfield_project_secret; override in production.
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # After migrations: sync .env API keys into General + create Starter flow graph.
       BACKFIELD_LOCAL_BOOTSTRAP: ${BACKFIELD_LOCAL_BOOTSTRAP:-1}
       # LLM / geocoder keys: set in repo-root .env (see .env.example); loaded via env_file above.
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,18 +134,30 @@ services:
 
   agate-ui:
     build:
-      context: ../apps/agate-ui
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: apps/agate-ui/Dockerfile
+    # Must match apps/agate-ui/Dockerfile WORKDIR (/app/apps/agate-ui) so node_modules
+    # from the image and the anonymous volume align; mounting only agate-ui at /app left
+    # /app/node_modules empty (vite missing).
+    working_dir: /app/apps/agate-ui
     ports:
       - "5173:5173"
     environment:
-      VITE_API_BASE: http://localhost:8000
-      VITE_AGATE_API_BASE: http://localhost:8000
+      # Same-origin dev: browser calls /api/agate and /v1 on :5173; Vite proxies to backend services.
+      VITE_API_BASE: /api/agate
+      VITE_AUTH_API_BASE: ""
       VITE_STYLEBOOK_API_BASE: http://localhost:8003
+      VITE_CORE_API_PROXY_TARGET: http://core-api:8004
+      VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
     volumes:
-      - ../apps/agate-ui:/app
+      - ../apps/agate-ui:/app/apps/agate-ui
       - ../packages:/app/packages
-      - /app/node_modules
+      - /app/apps/agate-ui/node_modules
+    depends_on:
+      core-api:
+        condition: service_healthy
+      agate-api:
+        condition: service_healthy
 
   stylebook-ui:
     build:

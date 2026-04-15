@@ -1,7 +1,7 @@
 """Fix horizontal node positions for Starter flow graphs and Geocode template.
 
 Revision ID: 002_starter_flow_layout
-Revises: 001_agate_baseline
+Revises: 002_backfield_identity
 Create Date: 2026-04-13
 
 React Flow uses top-left positions. The previous 220px step overlapped TextInput
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy import text
 
 revision: str = "002_starter_flow_layout"
-down_revision: Union[str, None] = "001_agate_baseline"
+down_revision: Union[str, None] = "002_backfield_identity"
 branch_labels = None
 depends_on = None
 

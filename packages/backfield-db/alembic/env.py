@@ -11,10 +11,17 @@ from sqlmodel import SQLModel
 
 from backfield_db.models import (  # noqa: F401
     AgateGraph,
-    AgateProject,
-    AgateProjectSecret,
     AgateRun,
     AgateTemplate,
+    BackfieldApiCredential,
+    BackfieldOrganization,
+    BackfieldOrganizationMembership,
+    BackfieldProject,
+    BackfieldProjectMembership,
+    BackfieldProjectSecret,
+    BackfieldUser,
+    BackfieldWorkspace,
+    BackfieldWorkspaceMembership,
 )
 
 config = context.config
