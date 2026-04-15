@@ -8,7 +8,7 @@ import pytest
 from api.deps import get_session
 from api.main import app
 from api.routers import runs
-from backfield_db import BackfieldOrganization
+from backfield_db import BackfieldOrganization, BackfieldProject, BackfieldWorkspace
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -144,3 +144,43 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     list_response = client.get("/graphs")
     assert list_response.status_code == 200
     assert len(list_response.json()) == 1
+
+
+def test_create_project_with_workspace_id(tmp_path):
+    """Project create accepts workspace_id and persists it."""
+    database_path = tmp_path / "agate-project-ws.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        org = BackfieldOrganization(name="Default", slug="default")
+        s.add(org)
+        s.commit()
+        s.refresh(org)
+        ws = BackfieldWorkspace(organization_id=int(org.id), name="Default", slug="default")
+        s.add(ws)
+        s.commit()
+        s.refresh(ws)
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        c = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        r = c.post(
+            "/projects",
+            json={"name": "WS Project", "slug": "wsproj", "workspace_id": int(ws.id)},
+        )
+        assert r.status_code == 200
+        pid = int(r.json()["id"])
+        with Session(engine) as s:
+            p = s.get(BackfieldProject, pid)
+            assert p is not None
+            assert p.workspace_id == int(ws.id)
+    finally:
+        app.dependency_overrides.clear()

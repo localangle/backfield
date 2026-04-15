@@ -1,7 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -11,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { Project, ProjectCreate } from '@/lib/api'
+import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 
 interface ProjectDialogProps {
   open: boolean
@@ -30,9 +38,27 @@ export default function ProjectDialog({
   const [name, setName] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [workspaces, setWorkspaces] = useState<WorkspaceWithProjects[]>([])
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('') // string for Select
 
   const isEditing = !!project
   const isDefaultProject = project?.slug === 'general'
+
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const rows = await listMyWorkspaces()
+      // Exclude synthetic grouping (e.g. _ungrouped).
+      const real = rows.filter((w) => w.id > 0 && w.slug !== '_ungrouped')
+      setWorkspaces(real)
+      if (!isEditing && !selectedWorkspaceId) {
+        const def = real.find((w) => w.slug === 'default') ?? real[0]
+        if (def) setSelectedWorkspaceId(String(def.id))
+      }
+    } catch (e) {
+      console.error(e)
+      setWorkspaces([])
+    }
+  }, [isEditing, selectedWorkspaceId])
 
   useEffect(() => {
     if (project) {
@@ -40,14 +66,19 @@ export default function ProjectDialog({
     } else {
       setName('')
     }
-  }, [project, open])
+    if (open && !project) {
+      void loadWorkspaces()
+    }
+  }, [project, open, loadWorkspaces])
 
   const handleSave = async () => {
     if (!name.trim()) return
 
     try {
       setIsLoading(true)
-      await onSave({ name: name.trim() })
+      const wid =
+        selectedWorkspaceId && workspaces.length > 0 ? parseInt(selectedWorkspaceId, 10) : null
+      await onSave({ name: name.trim(), workspace_id: Number.isFinite(wid) ? wid : null })
       onOpenChange(false)
       setName('')
     } catch (error) {
@@ -107,6 +138,27 @@ export default function ProjectDialog({
               disabled={isLoading || isDeleting}
             />
           </div>
+          {!isEditing && workspaces.length > 0 ? (
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="workspace" className="text-right">
+                Workspace
+              </Label>
+              <div className="col-span-3">
+                <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+                  <SelectTrigger id="workspace">
+                    <SelectValue placeholder="Select a workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map((ws) => (
+                      <SelectItem key={ws.id} value={String(ws.id)}>
+                        {ws.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter className="flex justify-between">

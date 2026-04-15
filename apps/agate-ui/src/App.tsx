@@ -1,11 +1,10 @@
 import type { ReactNode } from "react"
 import { Routes, Route, Navigate, useLocation } from "react-router-dom"
-import HomeRedirect from './pages/HomeRedirect'
 import ProjectDetailPage from './pages/ProjectDetailPage'
+import WorkspacesHomePage from './pages/WorkspacesHomePage'
 import FlowsPage from './pages/FlowsPage'
 import RunsList from './pages/RunsList'
 import TemplatesPage from './pages/TemplatesPage'
-import SettingsPlaceholderPage from './pages/SettingsPlaceholderPage'
 import HelpPlaceholderPage from './pages/HelpPlaceholderPage'
 import RunGraph from './pages/RunGraph'
 import GraphBuilder from './pages/GraphBuilder'
@@ -83,7 +82,9 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <HomeRedirect />
+            <HubLayout>
+              <WorkspacesHomePage />
+            </HubLayout>
           </ProtectedRoute>
         }
       />
@@ -123,16 +124,6 @@ function AppRoutes() {
           <ProtectedRoute>
             <HubLayout>
               <TemplatesPage />
-            </HubLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <ProtectedRoute>
-            <HubLayout>
-              <SettingsPlaceholderPage />
             </HubLayout>
           </ProtectedRoute>
         }

@@ -15,6 +15,7 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
     BackfieldProjectSecret,
+    BackfieldWorkspace,
 )
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import APIRouter, Depends, HTTPException
@@ -47,6 +48,7 @@ def _set_system_prompt(project: BackfieldProject, value: str | None) -> None:
 class ProjectCreate(BaseModel):
     name: str
     slug: str | None = None
+    workspace_id: int | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -115,7 +117,21 @@ def create_project(
     ).first()
     if org is None:
         raise HTTPException(500, "Default organization missing; run migrations")
-    p = BackfieldProject(organization_id=org.id, name=body.name.strip(), slug=slug)
+    workspace_id: int | None = None
+    if body.workspace_id is not None:
+        ws = session.get(BackfieldWorkspace, int(body.workspace_id))
+        if ws is None or ws.id is None:
+            raise HTTPException(400, "Workspace not found")
+        if int(ws.organization_id) != int(org.id):
+            raise HTTPException(400, "Workspace is not in the default organization")
+        workspace_id = int(ws.id)
+
+    p = BackfieldProject(
+        organization_id=org.id,
+        name=body.name.strip(),
+        slug=slug,
+        workspace_id=workspace_id,
+    )
     session.add(p)
     session.commit()
     session.refresh(p)

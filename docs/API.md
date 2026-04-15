@@ -5,6 +5,7 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
 ## Core API (session and org admin)
 
 - **Auth:** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password` (body: `current_password`, `new_password`; session cookie required).
+- **Session home (any signed-in user):** `GET /v1/me/workspaces` — workspaces with nested `projects` (`id`, `name`, `slug`) the user may access (filtered like Agate’s project list; includes a synthetic **Other projects** workspace with `slug` `_ungrouped` when the user has projects without a `workspace_id`). **Session cookie only** (returns 403 for service token or project API key).
 - **Org admin** (session `org_role` = `org_admin` for the same `organization_id` as the path):
   - `GET /v1/organizations/{org_id}/projects` — projects in the org (`id`, `name`, `slug`).
   - `GET /v1/organizations/{org_id}/workspaces` — workspaces in the org, each with nested `projects` (`id`, `name`, `slug`) for admin UI context.
@@ -22,7 +23,7 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
   - `POST /v1/projects/{project_id}/api-keys` — body `{ "credential_type": "user" | "service", "label"?: string }`. Returns `raw_key` **once** on create. `user` keys require a browser session; `service` keys require org admin. Response includes `user_id` for `user` keys.
   - `DELETE /v1/projects/{project_id}/api-keys/{credential_id}` — revoke (session rules: org admin for `service` or another user’s `user` key; owner for own `user` key).
 
-Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `admin_org.py`, `credentials.py`).
+Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `me.py`, `admin_org.py`, `credentials.py`).
 
 ## Authentication
 

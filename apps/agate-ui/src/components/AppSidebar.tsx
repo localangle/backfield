@@ -9,7 +9,6 @@ import {
   LayoutTemplate,
   Pencil,
   Plus,
-  Settings,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -22,37 +21,76 @@ import {
   type ProjectCreate,
 } from '@/lib/api'
 import ProjectDialog from '@/components/ProjectDialog'
+import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 
 const STORAGE_EXPANDED = 'agate-sidebar-expanded'
-const STORAGE_PROJECTS_OPEN = 'agate-sidebar-projects-open'
+const STORAGE_WORKSPACES_OPEN = 'agate-sidebar-workspaces-open'
+
+function summaryToProject(p: { id: number; name: string; slug: string }): Project {
+  return {
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    created_at: '',
+    updated_at: '',
+  }
+}
+
+function flattenProjects(rows: WorkspaceWithProjects[]) {
+  return rows.flatMap((ws) => ws.projects)
+}
 
 export default function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState(() => readBool(STORAGE_EXPANDED, true))
-  const [projectsOpen, setProjectsOpen] = useState(() => readBool(STORAGE_PROJECTS_OPEN, true))
-  const [projects, setProjects] = useState<Project[]>([])
+  const [workspacesOpen, setWorkspacesOpen] = useState(() =>
+    readBool(STORAGE_WORKSPACES_OPEN, true),
+  )
+  const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>([])
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
 
-  const loadProjects = useCallback(async () => {
+  const loadWorkspaces = useCallback(async (): Promise<WorkspaceWithProjects[]> => {
     try {
-      const rows = await listProjects()
-      setProjects(rows)
+      const rows = await listMyWorkspaces()
+      setWorkspaceRows(rows)
+      return rows
     } catch (e) {
       console.error(e)
+      try {
+        const fallback = await listProjects()
+        const rows: WorkspaceWithProjects[] = [
+          {
+            id: 0,
+            name: 'Projects',
+            slug: '_flat',
+            projects: fallback.map((p) => ({
+              id: p.id,
+              name: p.name,
+              slug: p.slug,
+            })),
+          },
+        ]
+        setWorkspaceRows(rows)
+        return rows
+      } catch (e2) {
+        console.error(e2)
+        setWorkspaceRows([])
+        return []
+      }
     }
   }, [])
 
   useEffect(() => {
-    loadProjects()
-  }, [loadProjects, location.pathname])
+    void loadWorkspaces()
+  }, [loadWorkspaces, location.pathname])
 
   useEffect(() => {
-    const onChanged = () => loadProjects()
+    const onChanged = () => void loadWorkspaces()
     window.addEventListener('agate:projects-changed', onChanged)
     return () => window.removeEventListener('agate:projects-changed', onChanged)
-  }, [loadProjects])
+  }, [loadWorkspaces])
 
   useEffect(() => {
     try {
@@ -64,14 +102,14 @@ export default function AppSidebar() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_PROJECTS_OPEN, String(projectsOpen))
+      localStorage.setItem(STORAGE_WORKSPACES_OPEN, String(workspacesOpen))
     } catch {
       /* ignore */
     }
-  }, [projectsOpen])
+  }, [workspacesOpen])
 
   const toggleSidebar = useCallback(() => setExpanded((e) => !e), [])
-  const toggleProjects = useCallback(() => setProjectsOpen((o) => !o), [])
+  const toggleWorkspaces = useCallback(() => setWorkspacesOpen((o) => !o), [])
 
   const openNewProject = () => {
     setEditingProject(null)
@@ -86,11 +124,11 @@ export default function AppSidebar() {
   const handleSaveProject = async (data: ProjectCreate) => {
     if (editingProject) {
       await updateProject(editingProject.id, { name: data.name })
-      await loadProjects()
+      await loadWorkspaces()
       window.dispatchEvent(new CustomEvent('agate:projects-changed'))
     } else {
       const p = await createProject(data)
-      await loadProjects()
+      await loadWorkspaces()
       window.dispatchEvent(new CustomEvent('agate:projects-changed'))
       navigate(`/project/${encodeURIComponent(p.slug)}`)
     }
@@ -98,14 +136,14 @@ export default function AppSidebar() {
 
   const handleDeleteProject = async (p: Project) => {
     await deleteProject(p.id)
-    await loadProjects()
+    const rows = await loadWorkspaces()
     window.dispatchEvent(new CustomEvent('agate:projects-changed'))
     const m = matchPath({ path: '/project/:projectSlug', end: true }, location.pathname)
     const routeSlug =
       m?.params.projectSlug != null ? decodeURIComponent(m.params.projectSlug) : null
     if (routeSlug === p.slug) {
-      const next = await listProjects()
-      const def = next.find((x) => x.slug === 'general') ?? next[0]
+      const all = flattenProjects(rows)
+      const def = all.find((x) => x.slug === 'general') ?? all[0]
       navigate(def ? `/project/${encodeURIComponent(def.slug)}` : '/')
     }
   }
@@ -114,12 +152,12 @@ export default function AppSidebar() {
     cn(
       'flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors',
       'hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-      isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
+      isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
     )
 
   const projectRouteMatch = matchPath(
     { path: '/project/:projectSlug', end: true },
-    location.pathname
+    location.pathname,
   )
   const activeProjectSlug =
     projectRouteMatch?.params.projectSlug != null
@@ -131,7 +169,7 @@ export default function AppSidebar() {
       <aside
         className={cn(
           'flex flex-col border-r bg-muted/30 shrink-0 min-h-0 self-stretch transition-[width] duration-200 ease-out',
-          expanded ? 'w-56' : 'w-14'
+          expanded ? 'w-56' : 'w-14',
         )}
         aria-label="Main navigation"
       >
@@ -154,19 +192,19 @@ export default function AppSidebar() {
             {expanded ? (
               <button
                 type="button"
-                onClick={toggleProjects}
+                onClick={toggleWorkspaces}
                 className={cn(
                   'flex items-center justify-between w-full rounded-md px-2 py-2 text-sm font-medium',
-                  'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
-                aria-expanded={projectsOpen}
+                aria-expanded={workspacesOpen}
               >
                 <span className="flex items-center gap-2">
                   <Building2 className="h-5 w-5 shrink-0" aria-hidden />
-                  Projects
+                  Workspaces
                 </span>
                 <ChevronDown
-                  className={cn('h-4 w-4 transition-transform', !projectsOpen && '-rotate-90')}
+                  className={cn('h-4 w-4 transition-transform', !workspacesOpen && '-rotate-90')}
                 />
               </button>
             ) : (
@@ -177,42 +215,54 @@ export default function AppSidebar() {
                 className="w-full h-9"
                 onClick={() => {
                   setExpanded(true)
-                  setProjectsOpen(true)
+                  setWorkspacesOpen(true)
                 }}
-                title="Projects"
+                title="Workspaces"
               >
                 <Building2 className="h-5 w-5" />
               </Button>
             )}
 
-            {expanded && projectsOpen && (
-              <div className="mt-1 ml-1 space-y-0.5 max-h-[40vh] overflow-y-auto pr-1">
-                {projects.map((p) => (
-                  <div key={p.id} className="flex items-center gap-0.5 group">
-                    <NavLink
-                      to={`/project/${encodeURIComponent(p.slug)}`}
-                      className={() =>
-                        cn(
-                          'flex-1 truncate rounded-md px-2 py-1.5 text-sm transition-colors',
-                          activeProjectSlug === p.slug
-                            ? 'bg-background text-foreground font-medium shadow-sm'
-                            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                        )
-                      }
-                      title={p.name}
+            {expanded && workspacesOpen && (
+              <div className="mt-1 space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                {workspaceRows.map((ws) => (
+                  <div key={`${ws.slug}-${ws.id}`}>
+                    <div
+                      className="px-2 py-0.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate"
+                      title={ws.name}
                     >
-                      {p.name}
-                    </NavLink>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground"
-                      title="Rename project"
-                      onClick={() => openEditProject(p)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
+                      {ws.name}
+                    </div>
+                    <div className="mt-0.5 ml-1 space-y-0.5 border-l border-border/50 pl-2">
+                      {ws.projects.map((p) => (
+                        <div key={p.id} className="flex items-center gap-0.5 group">
+                          <NavLink
+                            to={`/project/${encodeURIComponent(p.slug)}`}
+                            className={() =>
+                              cn(
+                                'flex-1 truncate rounded-md px-2 py-1.5 text-sm transition-colors',
+                                activeProjectSlug === p.slug
+                                  ? 'bg-background text-foreground font-medium shadow-sm'
+                                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                              )
+                            }
+                            title={p.name}
+                          >
+                            {p.name}
+                          </NavLink>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground"
+                            title="Rename project"
+                            onClick={() => openEditProject(summaryToProject(p))}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
                 <Button
@@ -247,14 +297,6 @@ export default function AppSidebar() {
             >
               <HelpCircle className="h-5 w-5 shrink-0" aria-hidden />
               {expanded && <span>Help</span>}
-            </NavLink>
-            <NavLink
-              to="/settings"
-              className={hubLinkClass}
-              title={!expanded ? 'Settings' : undefined}
-            >
-              <Settings className="h-5 w-5 shrink-0" aria-hidden />
-              {expanded && <span>Settings</span>}
             </NavLink>
           </div>
         </nav>

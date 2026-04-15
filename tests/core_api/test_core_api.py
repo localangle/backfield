@@ -103,6 +103,31 @@ def test_secure_whoami_service_token(client: TestClient) -> None:
     assert r.json().get("auth_type") == "service"
 
 
+def test_me_workspaces_requires_auth(client: TestClient) -> None:
+    r = client.get("/v1/me/workspaces")
+    assert r.status_code == 401
+
+
+def test_me_workspaces_groups_projects_for_org_admin(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "ws@example.com", "password": "ws-secret-12"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "ws@example.com", "password": "ws-secret-12"},
+    )
+    r = client.get("/v1/me/workspaces")
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    default_ws = next(w for w in data if w["slug"] == "default")
+    slugs = {p["slug"] for p in default_ws["projects"]}
+    assert "general" in slugs
+    assert "other" in slugs
+
+
 def test_change_password(client: TestClient) -> None:
     client.post(
         "/v1/bootstrap/first-user",

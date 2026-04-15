@@ -13,6 +13,7 @@ from core_api.routers import admin_org as admin_org_router
 from core_api.routers import auth as auth_router
 from core_api.routers import bootstrap as bootstrap_router
 from core_api.routers import credentials as credentials_router
+from core_api.routers import me as me_router
 from core_api.routers import public as public_router
 from core_api.routers import secure as secure_router
 
@@ -54,6 +55,7 @@ app.include_router(secure_router.router, prefix="/v1")
 app.include_router(bootstrap_router.router, prefix="/v1")
 app.include_router(admin_org_router.router, prefix="/v1")
 app.include_router(credentials_router.router, prefix="/v1")
+app.include_router(me_router.router, prefix="/v1")
 app.include_router(auth_router.router, prefix="/v1")
 
 

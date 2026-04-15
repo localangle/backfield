@@ -73,6 +73,11 @@ export async function listOrgWorkspaces(
   return jsonFetch(`/v1/organizations/${orgId}/workspaces`)
 }
 
+/** Workspaces and visible projects for the signed-in user (session only). */
+export async function listMyWorkspaces(): Promise<WorkspaceWithProjects[]> {
+  return jsonFetch(`/v1/me/workspaces`)
+}
+
 export interface ProjectMembershipRow {
   project_id: number
   slug: string

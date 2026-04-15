@@ -139,6 +139,7 @@ export interface RunCreate {
 export interface ProjectCreate {
   name: string
   slug?: string
+  workspace_id?: number | null
 }
 
 export interface ProjectUpdate {
@@ -379,6 +380,7 @@ export async function createProject(data: ProjectCreate): Promise<Project> {
     body: JSON.stringify({
       name: data.name,
       slug: data.slug,
+      workspace_id: data.workspace_id ?? null,
     }),
   }) as Promise<Project>
 }
