@@ -12,7 +12,7 @@ This page orients **people and coding assistants** on how work is organized in B
 ## Cursor / IDE conventions
 
 - **Rules:** [`.cursor/rules/`](../.cursor/rules/) — workspace rules (workflow, Python, DB, frontend, docs freshness). Treat them as binding alongside `AGENTS.md`.
-- **Skills:** [`.cursor/skills/`](../.cursor/skills/) — optional playbooks (e.g. DB changes, smoke, doc updates, self-review). Use when the task matches the skill’s description.
+- **Skills:** [`.cursor/skills/`](../.cursor/skills/) — optional playbooks (e.g. DB changes, smoke, doc updates, self-review). Use when the task matches the skill’s description. For **Plan mode** or explicit design stress-tests, see [`grill-me`](../.cursor/skills/grill-me/SKILL.md).
 
 ## Recommended workflow
 
