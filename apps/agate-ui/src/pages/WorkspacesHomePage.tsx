@@ -21,6 +21,7 @@ import {
   patchOrganization,
   type WorkspaceWithProjects,
 } from "@/lib/core-api"
+import { hasWorkspaceAccess } from "@/lib/workspace-access"
 
 function defaultProjectSlug(ws: WorkspaceWithProjects): string {
   const g = ws.projects.find((p) => p.slug === "general")
@@ -43,19 +44,29 @@ function workspaceGridEntries(
   return [...mapped, { kind: "add" }]
 }
 
-function WorkspaceHomeCard({ ws }: { ws: WorkspaceWithProjects }) {
+function WorkspaceHomeCard({
+  ws,
+  canUseTemplates,
+}: {
+  ws: WorkspaceWithProjects
+  canUseTemplates: boolean
+}) {
   const primary = defaultProjectSlug(ws)
   const isRealWorkspace = ws.id > 0 && ws.slug !== "_ungrouped"
   const href = isRealWorkspace
     ? `/workspace/${encodeURIComponent(ws.slug)}`
     : primary
       ? `/project/${encodeURIComponent(primary)}`
-      : "/templates"
+      : canUseTemplates
+        ? "/templates"
+        : "/"
   const openLabel = isRealWorkspace
     ? "Open workspace"
     : primary
       ? "Open workspace"
-      : "Browse templates"
+      : canUseTemplates
+        ? "Browse templates"
+        : "Workspaces"
   return (
     <Card className="h-full w-full flex flex-col hover:border-foreground/20 transition-colors">
       <CardHeader>
@@ -326,6 +337,7 @@ export default function WorkspacesHomePage() {
   )
 
   const showAddWorkspace = Boolean(isOrgAdmin && organizationId != null)
+  const canUseTemplates = hasWorkspaceAccess(rows, Boolean(isOrgAdmin))
 
   if (rows.length === 0) {
     return (
@@ -334,11 +346,13 @@ export default function WorkspacesHomePage() {
           <PublicationTitleRow />
           <p className="text-muted-foreground text-sm">
             You don&apos;t have access to any projects yet. Ask an organization admin to grant
-            workspace access, or open Templates to explore flows.
+            workspace access to use flows in Agate.
           </p>
-          <Button type="button" variant="outline" asChild>
-            <Link to="/templates">Browse templates</Link>
-          </Button>
+          {canUseTemplates ? (
+            <Button type="button" variant="outline" asChild>
+              <Link to="/templates">Browse templates</Link>
+            </Button>
+          ) : null}
         </div>
         {showAddWorkspace ? (
           <div className="flex max-w-xl justify-center sm:justify-start">
@@ -366,7 +380,7 @@ export default function WorkspacesHomePage() {
         {gridEntries.map((entry) =>
           entry.kind === "workspace" ? (
             <li key={`${entry.ws.slug}-${entry.ws.id}`} className="flex h-full min-h-0 w-full">
-              <WorkspaceHomeCard ws={entry.ws} />
+              <WorkspaceHomeCard ws={entry.ws} canUseTemplates={canUseTemplates} />
             </li>
           ) : (
             <li key="__add_workspace__" className="flex h-full min-h-0 w-full">

@@ -183,6 +183,40 @@ def resolve_auth(
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
 
+def require_session_may_assign_project_to_workspace(
+    session: Session,
+    auth: dict[str, Any],
+    *,
+    workspace_id: int,
+    organization_id: int,
+) -> None:
+    """Session users may only create projects in workspaces they belong to (unless org_admin).
+
+    Service tokens and API keys are not restricted here (create uses other rules).
+    """
+    if auth["type"] != "session":
+        return
+    if int(auth["organization_id"]) != organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Wrong organization",
+        )
+    if auth.get("org_role") == "org_admin":
+        return
+    uid = int(auth["user"].id)  # type: ignore[union-attr]
+    row = session.exec(
+        select(BackfieldWorkspaceMembership).where(
+            BackfieldWorkspaceMembership.user_id == uid,
+            BackfieldWorkspaceMembership.workspace_id == workspace_id,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No access to assign projects to this workspace",
+        )
+
+
 def require_org_admin(
     session: Session,
     auth: dict[str, Any],

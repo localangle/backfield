@@ -50,6 +50,22 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
                 workspace_id=int(ws.id),
             )
         )
+        ws2 = BackfieldWorkspace(
+            organization_id=int(org.id),
+            name="Investigations",
+            slug="investigations",
+        )
+        s.add(ws2)
+        s.commit()
+        s.refresh(ws2)
+        s.add(
+            BackfieldProject(
+                name="Alpha",
+                slug="alpha-proj",
+                organization_id=int(org.id),
+                workspace_id=int(ws2.id),
+            )
+        )
         s.commit()
 
     def get_test_session() -> Generator[Session, None, None]:
@@ -173,15 +189,18 @@ def test_create_workspace_org_admin_and_me_lists_empty(client: TestClient) -> No
     )
     org_id = client.get("/v1/auth/me").json()["organization_id"]
     assert org_id is not None
-    r = client.post(f"/v1/organizations/{org_id}/workspaces", json={"name": "Investigations"})
+    r = client.post(
+        f"/v1/organizations/{org_id}/workspaces",
+        json={"name": "Empty bucket"},
+    )
     assert r.status_code == 200
     body = r.json()
-    assert body["name"] == "Investigations"
+    assert body["name"] == "Empty bucket"
     assert body["projects"] == []
-    assert body["slug"] == "investigations"
+    assert body["slug"] == "empty-bucket"
 
     listed = client.get("/v1/me/workspaces").json()
-    inv = next(w for w in listed if w["slug"] == "investigations")
+    inv = next(w for w in listed if w["slug"] == "empty-bucket")
     assert inv["projects"] == []
 
 
@@ -336,6 +355,99 @@ def test_member_workspace_memberships_grant_project_access(client: TestClient) -
     listed = client.get("/v1/projects/1/api-keys").json()
     assert len(listed) == 1
     assert listed[0]["user_id"] == member_id
+
+
+def test_member_multiple_workspace_memberships(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "multiws@example.com", "password": "multiws-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "multiws@example.com", "password": "multiws-secret"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    workspaces = client.get(f"/v1/organizations/{org_id}/workspaces").json()
+    ws_default = next(w for w in workspaces if w["slug"] == "default")
+    ws_inv = next(w for w in workspaces if w["slug"] == "investigations")
+
+    create = client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={
+            "email": "multi@example.com",
+            "password": "multi-member-secret",
+            "role": "member",
+        },
+    )
+    assert create.status_code == 200
+    member_id = create.json()["id"]
+
+    put = client.put(
+        f"/v1/organizations/{org_id}/users/{member_id}/workspace-memberships",
+        json={"workspace_ids": [ws_default["id"], ws_inv["id"]]},
+    )
+    assert put.status_code == 200
+    assert len(put.json()) == 2
+
+    users = client.get(f"/v1/organizations/{org_id}/users?detail=true").json()
+    member_row = next(r for r in users if r["email"] == "multi@example.com")
+    m_ids = {m["id"] for m in member_row["workspace_memberships"]}
+    assert m_ids == {ws_default["id"], ws_inv["id"]}
+
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "multi@example.com", "password": "multi-member-secret"},
+    )
+    me_ws = client.get("/v1/me/workspaces").json()
+    slugs = {w["slug"] for w in me_ws}
+    assert "default" in slugs
+    assert "investigations" in slugs
+
+
+def test_member_cannot_access_project_in_unassigned_workspace(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "iso@example.com", "password": "iso-admin-secret"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "iso@example.com", "password": "iso-admin-secret"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    workspaces = client.get(f"/v1/organizations/{org_id}/workspaces").json()
+    ws_default = next(w for w in workspaces if w["slug"] == "default")
+    alpha = next(p for w in workspaces for p in w["projects"] if p["slug"] == "alpha-proj")
+    alpha_project_id = alpha["id"]
+
+    create = client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={
+            "email": "iso-member@example.com",
+            "password": "iso-member-secret",
+            "role": "member",
+        },
+    )
+    assert create.status_code == 200
+    member_id = create.json()["id"]
+
+    client.put(
+        f"/v1/organizations/{org_id}/users/{member_id}/workspace-memberships",
+        json={"workspace_ids": [ws_default["id"]]},
+    )
+
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "iso-member@example.com", "password": "iso-member-secret"},
+    )
+    assert client.get("/v1/projects/1/api-keys").status_code == 200
+    denied = client.get(f"/v1/projects/{alpha_project_id}/api-keys")
+    assert denied.status_code == 403
+    assert "access" in denied.json().get("detail", "").lower()
+
+    me_ws = client.get("/v1/me/workspaces").json()
+    assert all(w["slug"] != "investigations" for w in me_ws)
 
 
 def test_project_api_key_bearer(client: TestClient) -> None:

@@ -16,7 +16,7 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
   - `POST /v1/organizations/{org_id}/users` — create user (email, password, display_name, role).
   - `PATCH /v1/organizations/{org_id}/users/{user_id}` — `display_name`, `role` (`org_admin` | `member`); cannot demote the last org admin.
   - `DELETE /v1/organizations/{org_id}/users/{user_id}` — disables the user (`disabled_at`); cannot disable self or the last org admin.
-  - `PUT /v1/organizations/{org_id}/users/{user_id}/workspace-memberships` — body `{ "workspace_ids": [ … ] }` replaces workspace assignments for that user (workspaces must belong to `org_id`). Members get access to **all** projects in each assigned workspace. Not applicable to `org_admin` users (they already have every project).
+  - `PUT /v1/organizations/{org_id}/users/{user_id}/workspace-memberships` — body `{ "workspace_ids": [ … ] }` **replaces** workspace assignments for that user with the full list (workspaces must belong to `org_id`). A user may be assigned to **multiple** workspaces (one `backfield_workspace_membership` row per id). Members get access to **all** projects in each assigned workspace. Not applicable to `org_admin` users (they already have every project).
   - `PUT /v1/organizations/{org_id}/users/{user_id}/project-memberships` — **legacy:** body `{ "memberships": [ { "project_id", "role" } ] }` replaces explicit `backfield_project_membership` rows for projects in that org. Prefer `workspace-memberships` for new admin flows; `backfield_auth.gate` still unions legacy explicit rows with workspace-derived project access for members.
 
 **Member project access (sessions / API keys):** `org_admin` sees all org projects. Other members see projects in their assigned workspaces plus any legacy explicit `backfield_project_membership` rows for that org (see `session_project_ids_for_user` in `packages/backfield-auth`).
@@ -50,7 +50,7 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 - `routers/health.py`
   - Lightweight service health only.
 - `routers/projects.py`
-  - Project CRUD, stats, and encrypted project secrets.
+  - Project CRUD, stats, and encrypted project secrets. **`POST /projects`** accepts optional `workspace_id` (default org only). **Session callers:** `org_admin` may set `workspace_id` to any workspace in that org; **members** may only set it to a workspace where they have a `backfield_workspace_membership` row (otherwise **403**). Omitting `workspace_id` leaves the project unassigned. **Service token** calls are not restricted by workspace membership (automation).
 - `routers/graphs.py`
   - Graph CRUD and `GraphSpec` validation.
 - `routers/templates.py`

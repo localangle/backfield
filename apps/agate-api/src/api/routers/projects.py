@@ -8,7 +8,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from api.deps import get_auth, get_session
-from backfield_auth.gate import require_project_access, visible_project_ids
+from backfield_auth.gate import (
+    require_project_access,
+    require_session_may_assign_project_to_workspace,
+    visible_project_ids,
+)
 from backfield_db import (
     AgateGraph,
     AgateRun,
@@ -125,6 +129,12 @@ def create_project(
         if int(ws.organization_id) != int(org.id):
             raise HTTPException(400, "Workspace is not in the default organization")
         workspace_id = int(ws.id)
+        require_session_may_assign_project_to_workspace(
+            session,
+            auth,
+            workspace_id=workspace_id,
+            organization_id=int(org.id),
+        )
 
     p = BackfieldProject(
         organization_id=org.id,

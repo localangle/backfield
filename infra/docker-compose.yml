@@ -53,6 +53,18 @@ services:
       UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:8004
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8004/health', timeout=5)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +90,12 @@ services:
       # After migrations: sync .env API keys into General + create Starter flow graph.
       BACKFIELD_LOCAL_BOOTSTRAP: ${BACKFIELD_LOCAL_BOOTSTRAP:-1}
       # LLM / geocoder keys: set in repo-root .env (see .env.example); loaded via env_file above.
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,9 +155,9 @@ services:
       - /app/apps/agate-ui/node_modules
     depends_on:
       core-api:
-        condition: service_started
+        condition: service_healthy
       agate-api:
-        condition: service_started
+        condition: service_healthy
 
   stylebook-ui:
     build:

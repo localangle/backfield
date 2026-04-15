@@ -17,6 +17,7 @@ import { createProject, listProjects, type ProjectCreate } from '@/lib/api'
 import ProjectDialog from '@/components/ProjectDialog'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
+import { hasWorkspaceAccess } from '@/lib/workspace-access'
 
 const STORAGE_EXPANDED = 'agate-sidebar-expanded'
 const STORAGE_WORKSPACES_OPEN = 'agate-sidebar-workspaces-open'
@@ -28,7 +29,7 @@ function isSidebarWorkspacePage(ws: WorkspaceWithProjects): boolean {
 export default function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { organizationName } = useAuth()
+  const { organizationName, isOrgAdmin } = useAuth()
   const publicationLabel = organizationName ?? 'Workspaces'
   const [expanded, setExpanded] = useState(() => readBool(STORAGE_EXPANDED, true))
   const [workspacesOpen, setWorkspacesOpen] = useState(() =>
@@ -127,6 +128,8 @@ export default function AppSidebar() {
     projectRouteMatch?.params.projectSlug != null
       ? decodeURIComponent(projectRouteMatch.params.projectSlug)
       : null
+
+  const workspaceAccess = hasWorkspaceAccess(workspaceRows, isOrgAdmin)
 
   return (
     <>
@@ -261,16 +264,25 @@ export default function AppSidebar() {
                     </div>
                   </div>
                 ))}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2 mt-1 h-8 text-muted-foreground"
-                  onClick={openNewProject}
-                >
-                  <Plus className="h-4 w-4" />
-                  New project
-                </Button>
+                {workspaceAccess ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start gap-2 mt-1 h-8 text-muted-foreground"
+                    onClick={openNewProject}
+                  >
+                    <Plus className="h-4 w-4" />
+                    New project
+                  </Button>
+                ) : (
+                  <div
+                    className="mt-1 px-2 py-1.5 text-sm text-muted-foreground select-none"
+                    aria-disabled="true"
+                  >
+                    None
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -278,14 +290,16 @@ export default function AppSidebar() {
           <div className="flex-1 min-h-2" />
 
           <div className="border-t border-border/50 pt-2 space-y-1">
-            <NavLink
-              to="/templates"
-              className={hubLinkClass}
-              title={!expanded ? 'Templates' : undefined}
-            >
-              <LayoutTemplate className="h-5 w-5 shrink-0" aria-hidden />
-              {expanded && <span>Templates</span>}
-            </NavLink>
+            {workspaceAccess ? (
+              <NavLink
+                to="/templates"
+                className={hubLinkClass}
+                title={!expanded ? 'Templates' : undefined}
+              >
+                <LayoutTemplate className="h-5 w-5 shrink-0" aria-hidden />
+                {expanded && <span>Templates</span>}
+              </NavLink>
+            ) : null}
             <NavLink
               to="/help"
               className={hubLinkClass}

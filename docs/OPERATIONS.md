@@ -13,6 +13,8 @@ Primary local services are defined in `infra/docker-compose.yml`:
 - `stylebook-ui` on `localhost:5175`
 - `worker` as the background Celery consumer
 
+`agate-ui` is ordered **after** `core-api` and `agate-api` report **healthy** (HTTP `/health` checks) so the Vite dev proxy does not hit `ECONNREFUSED` while Uvicorn is still binding (notably when `agate-api` uses the reload worker).
+
 ## Canonical commands
 
 - `make up`: bring up the local stack in the foreground.
