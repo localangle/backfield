@@ -1,7 +1,7 @@
 """Seed Default Workspace under Backfield org; attach General project.
 
 Revision ID: 003_def_ws_general (must be <=32 chars for alembic_version.version_num).
-Revises: 002_backfield_identity
+Revises: 002_starter_flow_layout
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy import text
 
 revision: str = "003_def_ws_general"
-down_revision: Union[str, None] = "002_backfield_identity"
+down_revision: Union[str, None] = "002_starter_flow_layout"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

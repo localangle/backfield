@@ -225,9 +225,13 @@ def run_session_flow() -> int:
         if not session_token:
             raise RuntimeError("Login did not set session cookie; cannot continue session smoke.")
 
-        ws_payload = _assert_ok(core.get("/v1/me/workspaces"), "me/workspaces")
+        ws_resp = core.get("/v1/me/workspaces")
+        ws_resp.raise_for_status()
+        ws_payload = ws_resp.json()
         if not isinstance(ws_payload, list):
-            raise RuntimeError("me/workspaces: expected list")
+            raise RuntimeError(
+                f"me/workspaces: expected list, got {type(ws_payload).__name__}: {ws_payload!r}"
+            )
         workspace = next((w for w in ws_payload if w.get("slug") == SMOKE_WORKSPACE_SLUG), None)
         if workspace is None:
             slugs = [w.get("slug") for w in ws_payload]
