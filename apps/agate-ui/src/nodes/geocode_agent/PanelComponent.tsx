@@ -7,8 +7,7 @@ const nodeMetadata = {
   "description": "Intelligent geocoding using LLM reasoning (ported from agate-ai-platform).",
   "category": "enrichment",
   "requiredUpstreamNodes": [
-    "PlaceExtract",
-    "PlaceFilter"
+    "PlaceExtract"
   ],
   "dependencyHelperText": "Requires extracted places as input.",
   "inputs": [
@@ -156,7 +155,7 @@ export default function GeocodeAgentPanel({
         <div>
           <Label className="text-sm font-medium">Description</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            This node uses LLM reasoning to intelligently geocode locations from PlaceExtract or PlaceFilter. 
+            This node uses LLM reasoning to intelligently geocode locations from Place Extract. 
             It enhances geocoding accuracy by understanding context and resolving ambiguities.
           </p>
         </div>

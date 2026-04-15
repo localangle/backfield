@@ -62,8 +62,7 @@ export default function PlaceExtractPanel({
         <div>
           <Label className="text-sm font-medium">Input placeholders</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            Pull fields from upstream JSON into the prompt using these tokens (same behavior as the original
-            Flowbuilder Place Extract node):
+            Pull fields from upstream JSON into the prompt using these tokens:
           </p>
           <ul className="list-disc list-inside text-xs mt-2 space-y-1 text-muted-foreground">
             <li>
@@ -155,46 +154,19 @@ export default function PlaceExtractPanel({
               </pre>
             </div>
           )}
-          <p className="text-xs text-muted-foreground mt-1">
-            Tune extraction instructions. Placeholders:{' '}
-            <code className="bg-muted px-1 rounded">{'{text}'}</code>,{' '}
-            <code className="bg-muted px-1 rounded">{'{url}'}</code>,{' '}
-            <code className="bg-muted px-1 rounded">{'{results.images}'}</code>,{' '}
-            <code className="bg-muted px-1 rounded">{'{results.caption}'}</code>,{' '}
-            <code className="bg-muted px-1 rounded">{'{results.caption, id}'}</code>,{' '}
-            <code className="bg-muted px-1 rounded">{'{raw}'}</code>.
-          </p>
+          <p className="text-xs text-muted-foreground mt-1">Edit extraction prompt.</p>
         </div>
 
         <div className="pt-2">
-          <Label className="text-sm font-medium">Output format</Label>
-          {editMode && setNodes ? (
-            <Textarea
-              value={node.data?.json_format || nodeMetadata.defaultParams?.json_format || ''}
-              onChange={(e) => {
-                setNodes((nds: any[]) =>
-                  nds.map((n: any) =>
-                    n.id === node.id
-                      ? { ...n, data: { ...n.data, json_format: e.target.value } }
-                      : n
-                  )
-                )
-              }}
-              placeholder='{ "locations": [] }'
-              className="mt-2 min-h-[100px] px-3 py-2 text-xs border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 font-mono"
-            />
-          ) : (
-            <div className="mt-2 p-2 bg-muted rounded max-h-48 overflow-y-auto">
-              <pre className="text-xs whitespace-pre-wrap font-mono">
-                {node.data?.json_format ||
-                  nodeMetadata.defaultParams?.json_format ||
-                  '{ "locations": [] }'}
-              </pre>
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground mt-1">
-            Example JSON shape the model should return. Braces are escaped when this is merged into the prompt.
-          </p>
+          <Label className="text-sm font-medium">Output Format</Label>
+          <Textarea
+            readOnly
+            value={nodeMetadata.defaultParams?.output_format?.trim() || ''}
+            placeholder="Run node sync (apps/agate-ui) after changing prompts/_output_format.json"
+            className="mt-2 min-h-[120px] px-3 py-2 text-xs border border-input bg-muted/50 rounded-md font-mono cursor-default"
+            spellCheck={false}
+          />
+          <p className="text-xs text-muted-foreground mt-1">For reference only.</p>
         </div>
       </div>
 

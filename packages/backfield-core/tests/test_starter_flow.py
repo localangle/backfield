@@ -11,3 +11,13 @@ def test_starter_geocode_flow_graph_spec_round_trip() -> None:
     assert len(again.nodes) == 4
     assert len(again.edges) == 3
     assert {n.type for n in again.nodes} == {"TextInput", "PlaceExtract", "GeocodeAgent", "Output"}
+
+
+def test_starter_flow_positions_match_db_migration_002() -> None:
+    """Keep in sync with packages/backfield-db/alembic/versions/002_starter_flow_layout.py."""
+    spec = starter_geocode_flow_graph_spec()
+    by_id = {n.id: n.position for n in spec.nodes}
+    assert by_id["n1"] == {"x": 0.0, "y": 0.0}
+    assert by_id["n2"] == {"x": 328.0, "y": 0.0}
+    assert by_id["n3"] == {"x": 576.0, "y": 0.0}
+    assert by_id["n4"] == {"x": 824.0, "y": 0.0}

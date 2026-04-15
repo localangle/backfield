@@ -163,6 +163,7 @@ interface RawRun {
   status: string
   result?: unknown
   error_message?: string | null
+  mapbox_api_token?: string | null
   created_at: string
   updated_at: string
 }
@@ -238,6 +239,7 @@ function normalizeRun(raw: RawRun): Run {
     failed_items: failed,
     items,
     node_outputs: outputs,
+    mapbox_api_token: raw.mapbox_api_token ?? null,
   }
 }
 

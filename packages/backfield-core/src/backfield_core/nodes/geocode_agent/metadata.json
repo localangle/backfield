@@ -5,7 +5,7 @@
   "color": "bg-emerald-500",
   "description": "Intelligent geocoding using LLM reasoning (ported from agate-ai-platform).",
   "category": "enrichment",
-  "requiredUpstreamNodes": ["PlaceExtract", "PlaceFilter"],
+  "requiredUpstreamNodes": ["PlaceExtract"],
   "dependencyHelperText": "Requires extracted places as input.",
   "inputs": [{ "id": "locations", "label": "Locations", "type": "array", "required": true }],
   "outputs": [

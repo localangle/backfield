@@ -107,7 +107,7 @@ class GeocodeAgent:
                     text = candidate_text
                     break  # Use first text found
         
-        # Find locations in the state (could be from PlaceExtract or PlaceFilter)
+        # Find locations in the state (typically from PlaceExtract)
         locations_data = None
         for key, value in state_dict.items():
             if isinstance(value, dict) and 'locations' in value:

@@ -1,0 +1,134 @@
+{
+  "locations": [
+    {
+      "location": "100 Fake St., Minneapolis, MN",
+      "type": "address_intersection",
+      "original_text": "The car crash occurred on the 100 block of Fake St.",
+      "description": "A car crash happened at the 100 block of Fake St.",
+      "components": {
+        "place": {},
+        "street_road": {},
+        "span": {},
+        "address": "100 Fake St.",
+        "neighborhood": "",
+        "city": "Minneapolis",
+        "county": "",
+        "state": {
+          "name": "Minnesota",
+          "abbr": "MN"
+        },
+        "country": {
+          "name": "United States",
+          "abbr": "US"
+        }
+      }
+    },
+    {
+      "location": "Joe's Department Store, Chicago, IL",
+      "type": "city",
+      "original_text": "Bob Smith, who visiting at Joe's Department Store in Chicago, said he supported better agriculture policy.",
+      "description": "Bob Smith, a farmer who supports better agriculture policy, was visiting at Joe's Department Store in Chicago.",
+      "components": {
+        "place": {
+          "name": "Joe's Department Store",
+          "natural": false,
+          "addressable": true
+        },
+        "street_road": {},
+        "span": {},
+        "address": "",
+        "neighborhood": "",
+        "city": "Chicago",
+        "county": "",
+        "state": {
+          "name": "Illinois",
+          "abbr": "IL"
+        },
+        "country": {
+          "name": "United States",
+          "abbr": "US"
+        }
+      }
+    },
+    {
+      "location": "8th Ave S., Chicago, IL",
+      "type": "street_road",
+      "original_text": "The robberies occurred in several places along 8th Ave S. in Chicago",
+      "description": "8th Ave S. was the location of several robberies",
+      "components": {
+        "place": {},
+        "street_road": {
+          "name": "8th Ave. S.",
+          "boundary": "Chicago, IL"
+        },
+        "span": {},
+        "address": "8th Ave S.",
+        "neighborhood": "",
+        "city": "Chicago",
+        "county": "",
+        "state": {
+          "name": "Illinois",
+          "abbr": "IL"
+        },
+        "country": {
+          "name": "United States",
+          "abbr": "US"
+        }
+      }
+    },
+    {
+      "location": "Phoenix, AZ",
+      "type": "city",
+      "original_text": "It was warmer in Phoenix than in Minneapolis this week.",
+      "description": "Phoenix was warmer than Minneapolis during the week of July 5.",
+      "components": {
+        "place": {},
+        "street_road": {},
+        "address": "",
+        "neighborhood": "",
+        "city": "Phoenix",
+        "county": "",
+        "state": {
+          "name": "Arizona",
+          "abbr": "AZ"
+        },
+        "country": {
+          "name": "United States",
+          "abbr": "US"
+        }
+      }
+    },
+    {
+      "location": "Hennepin Ave. between W. 26th St. and W. 28th St.",
+      "type": "city",
+      "original_text": "The parade will happen on Hennepin Ave. between W. 26th St. and W. 28th St.",
+      "description": "A parade is happening along this stretch of Hennepin Ave.",
+      "components": {
+        "place": {},
+        "street_road": {},
+        "span": {
+          "start": {
+            "type": "intersection",
+            "location": "Hennepin Ave. and W. 26th St., Minneapolis, MN"
+          },
+          "end": {
+            "type": "intersection",
+            "location": "Hennepin Ave. and W. 28th St., Minneapolis, MN"
+          }
+        },
+        "address": "",
+        "neighborhood": "",
+        "city": "Phoenix",
+        "county": "",
+        "state": {
+          "name": "Arizona",
+          "abbr": "AZ"
+        },
+        "country": {
+          "name": "United States",
+          "abbr": "US"
+        }
+      }
+    }
+  ]
+}

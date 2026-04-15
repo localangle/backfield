@@ -447,10 +447,6 @@ export default function RunGraph() {
         return {
           model: 'gpt-4o-mini',
         }
-      case 'PlaceFilter':
-        return {
-          model: 'gpt-4o-mini',
-        }
       case 'GeocodeSimple':
         return {
           user_agent: 'agate-ai-platform/1.0',
