@@ -106,6 +106,17 @@ export async function patchOrganization(
   })
 }
 
+export async function patchWorkspace(
+  orgId: number,
+  workspaceId: number,
+  body: { name: string },
+): Promise<WorkspaceWithProjects> {
+  return jsonFetch(`/v1/organizations/${orgId}/workspaces/${workspaceId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })
+}
+
 export interface ProjectMembershipRow {
   project_id: number
   slug: string

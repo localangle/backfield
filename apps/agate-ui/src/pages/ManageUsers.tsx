@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { Building2, UserX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -200,40 +201,48 @@ export default function ManageUsersPage() {
                     <span>Active</span>
                   )}
                 </TableCell>
-                <TableCell className="text-right space-x-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!!u.disabled_at || u.role === "org_admin"}
-                    onClick={() => openWorkspaceAccess(u)}
-                    title={
-                      u.role === "org_admin"
-                        ? "Organization admins have access to all projects"
-                        : undefined
-                    }
-                  >
-                    Workspaces
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    disabled={!!u.disabled_at}
-                    onClick={async () => {
-                      if (
-                        !window.confirm(
-                          `Disable ${u.email}? They will not be able to sign in.`,
-                        )
-                      ) {
-                        return
+                <TableCell className="text-right align-middle">
+                  <div className="flex flex-nowrap items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5 max-lg:px-2.5"
+                      disabled={!!u.disabled_at || u.role === "org_admin"}
+                      onClick={() => openWorkspaceAccess(u)}
+                      title={
+                        u.role === "org_admin"
+                          ? "Organization admins have access to all projects"
+                          : "Manage workspace access"
                       }
-                      await disableOrgUser(orgId, u.id)
-                      await reload()
-                    }}
-                  >
-                    Disable
-                  </Button>
+                      aria-label="Manage workspace access"
+                    >
+                      <Building2 className="h-4 w-4 shrink-0" aria-hidden />
+                      <span className="hidden lg:inline">Workspaces</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="shrink-0 gap-1.5 max-lg:px-2.5"
+                      disabled={!!u.disabled_at}
+                      aria-label={`Disable ${u.email}`}
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            `Disable ${u.email}? They will not be able to sign in.`,
+                          )
+                        ) {
+                          return
+                        }
+                        await disableOrgUser(orgId, u.id)
+                        await reload()
+                      }}
+                    >
+                      <UserX className="h-4 w-4 shrink-0" aria-hidden />
+                      <span className="hidden lg:inline">Disable</span>
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

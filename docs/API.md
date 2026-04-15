@@ -11,6 +11,7 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
   - `GET /v1/organizations/{org_id}/projects` — projects in the org (`id`, `name`, `slug`).
   - `GET /v1/organizations/{org_id}/workspaces` — workspaces in the org, each with nested `projects` (`id`, `name`, `slug`) for admin UI context.
   - `POST /v1/organizations/{org_id}/workspaces` — body `{ "name": "<display name>" }`; creates an empty workspace (slug derived from the name, unique per org). Session callers receive a `backfield_workspace_membership` row for the new workspace; service token may also call this route.
+  - `PATCH /v1/organizations/{org_id}/workspaces/{workspace_id}` — body `{ "name": "<display name>" }`; updates `backfield_workspace.name` (slug unchanged). Org admins only; workspace must belong to `org_id`.
   - `GET /v1/organizations/{org_id}/users` — optional query `detail=true` to include `project_memberships` (legacy explicit grants) and `workspace_memberships` (`id`, `name`, `slug`) per user.
   - `POST /v1/organizations/{org_id}/users` — create user (email, password, display_name, role).
   - `PATCH /v1/organizations/{org_id}/users/{user_id}` — `display_name`, `role` (`org_admin` | `member`); cannot demote the last org admin.

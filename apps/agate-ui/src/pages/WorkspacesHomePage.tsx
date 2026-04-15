@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { Check, FolderOpen, Loader2, Pencil, Plus, X } from "lucide-react"
+import { Check, FolderOpen, Loader2, Pencil, X } from "lucide-react"
+import { AddPlusCta } from "@/components/AddPlusCta"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -13,7 +14,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import {
   createWorkspace,
@@ -43,32 +43,19 @@ function workspaceGridEntries(
   return [...mapped, { kind: "add" }]
 }
 
-function AddWorkspaceTrigger({
-  onClick,
-  className,
-}: {
-  onClick: () => void
-  className?: string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex flex-col items-center justify-center gap-2 rounded-lg py-10 px-6 text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        className,
-      )}
-      aria-label="Add Workspace"
-    >
-      <Plus className="h-8 w-8 shrink-0" aria-hidden />
-      <span className="text-sm font-medium">Add Workspace</span>
-    </button>
-  )
-}
-
 function WorkspaceHomeCard({ ws }: { ws: WorkspaceWithProjects }) {
   const primary = defaultProjectSlug(ws)
-  const href = primary ? `/project/${encodeURIComponent(primary)}` : "/templates"
+  const isRealWorkspace = ws.id > 0 && ws.slug !== "_ungrouped"
+  const href = isRealWorkspace
+    ? `/workspace/${encodeURIComponent(ws.slug)}`
+    : primary
+      ? `/project/${encodeURIComponent(primary)}`
+      : "/templates"
+  const openLabel = isRealWorkspace
+    ? "Open workspace"
+    : primary
+      ? "Open workspace"
+      : "Browse templates"
   return (
     <Card className="h-full w-full flex flex-col hover:border-foreground/20 transition-colors">
       <CardHeader>
@@ -99,7 +86,7 @@ function WorkspaceHomeCard({ ws }: { ws: WorkspaceWithProjects }) {
           ) : null}
         </ul>
         <Button type="button" className="w-full mt-auto" asChild>
-          <Link to={href}>{primary ? "Open workspace" : "Browse templates"}</Link>
+          <Link to={href}>{openLabel}</Link>
         </Button>
       </CardContent>
     </Card>
@@ -353,7 +340,7 @@ export default function WorkspacesHomePage() {
         </div>
         {showAddWorkspace ? (
           <div className="flex max-w-xl justify-center sm:justify-start">
-            <AddWorkspaceTrigger onClick={openCreateWorkspace} />
+            <AddPlusCta label="Add Workspace" onClick={openCreateWorkspace} />
           </div>
         ) : null}
         {workspaceCreateDialog}
@@ -381,7 +368,8 @@ export default function WorkspacesHomePage() {
             </li>
           ) : (
             <li key="__add_workspace__" className="flex h-full min-h-0 w-full">
-              <AddWorkspaceTrigger
+              <AddPlusCta
+                label="Add Workspace"
                 onClick={openCreateWorkspace}
                 className="h-full min-h-0 w-full flex-1"
               />

@@ -8,19 +8,12 @@ import {
   HelpCircle,
   LayoutTemplate,
   Newspaper,
-  Pencil,
   Plus,
+  SquarePen,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import {
-  createProject,
-  deleteProject,
-  listProjects,
-  updateProject,
-  type Project,
-  type ProjectCreate,
-} from '@/lib/api'
+import { createProject, listProjects, type ProjectCreate } from '@/lib/api'
 import ProjectDialog from '@/components/ProjectDialog'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
@@ -28,18 +21,8 @@ import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 const STORAGE_EXPANDED = 'agate-sidebar-expanded'
 const STORAGE_WORKSPACES_OPEN = 'agate-sidebar-workspaces-open'
 
-function summaryToProject(p: { id: number; name: string; slug: string }): Project {
-  return {
-    id: p.id,
-    name: p.name,
-    slug: p.slug,
-    created_at: '',
-    updated_at: '',
-  }
-}
-
-function flattenProjects(rows: WorkspaceWithProjects[]) {
-  return rows.flatMap((ws) => ws.projects)
+function isSidebarWorkspacePage(ws: WorkspaceWithProjects): boolean {
+  return ws.id > 0 && ws.slug !== '_ungrouped'
 }
 
 export default function AppSidebar() {
@@ -53,7 +36,6 @@ export default function AppSidebar() {
   )
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>([])
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
-  const [editingProject, setEditingProject] = useState<Project | null>(null)
 
   const loadWorkspaces = useCallback(async (): Promise<WorkspaceWithProjects[]> => {
     try {
@@ -120,40 +102,14 @@ export default function AppSidebar() {
   const toggleWorkspaces = useCallback(() => setWorkspacesOpen((o) => !o), [])
 
   const openNewProject = () => {
-    setEditingProject(null)
-    setProjectDialogOpen(true)
-  }
-
-  const openEditProject = (p: Project) => {
-    setEditingProject(p)
     setProjectDialogOpen(true)
   }
 
   const handleSaveProject = async (data: ProjectCreate) => {
-    if (editingProject) {
-      await updateProject(editingProject.id, { name: data.name })
-      await loadWorkspaces()
-      window.dispatchEvent(new CustomEvent('agate:projects-changed'))
-    } else {
-      const p = await createProject(data)
-      await loadWorkspaces()
-      window.dispatchEvent(new CustomEvent('agate:projects-changed'))
-      navigate(`/project/${encodeURIComponent(p.slug)}`)
-    }
-  }
-
-  const handleDeleteProject = async (p: Project) => {
-    await deleteProject(p.id)
-    const rows = await loadWorkspaces()
+    const p = await createProject(data)
+    await loadWorkspaces()
     window.dispatchEvent(new CustomEvent('agate:projects-changed'))
-    const m = matchPath({ path: '/project/:projectSlug', end: true }, location.pathname)
-    const routeSlug =
-      m?.params.projectSlug != null ? decodeURIComponent(m.params.projectSlug) : null
-    if (routeSlug === p.slug) {
-      const all = flattenProjects(rows)
-      const def = all.find((x) => x.slug === 'general') ?? all[0]
-      navigate(def ? `/project/${encodeURIComponent(def.slug)}` : '/')
-    }
+    navigate(`/project/${encodeURIComponent(p.slug)}`)
   }
 
   const hubLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -188,9 +144,15 @@ export default function AppSidebar() {
           )}
         >
           {expanded && (
-            <div
-              className="flex items-center gap-2 min-w-0 flex-1"
+            <NavLink
+              to="/"
+              end
               title={publicationLabel}
+              aria-label={`${publicationLabel} — all workspaces`}
+              className={cn(
+                'flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1',
+                'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              )}
             >
               <Newspaper
                 className="h-4 w-4 shrink-0 text-muted-foreground"
@@ -199,7 +161,7 @@ export default function AppSidebar() {
               <span className="truncate text-sm font-semibold tracking-tight text-foreground">
                 {publicationLabel}
               </span>
-            </div>
+            </NavLink>
           )}
           <Button
             type="button"
@@ -254,40 +216,47 @@ export default function AppSidebar() {
               <div className="mt-1 space-y-3 max-h-[50vh] overflow-y-auto pr-1">
                 {workspaceRows.map((ws) => (
                   <div key={`${ws.slug}-${ws.id}`}>
-                    <div
-                      className="px-2 py-0.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate"
-                      title={ws.name}
-                    >
-                      {ws.name}
+                    <div className="flex items-center gap-0.5 pr-0.5">
+                      <div
+                        className="min-w-0 flex-1 truncate px-2 py-0.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide"
+                        title={ws.name}
+                      >
+                        {ws.name}
+                      </div>
+                      {isSidebarWorkspacePage(ws) ? (
+                        <NavLink
+                          to={`/workspace/${encodeURIComponent(ws.slug)}`}
+                          title={`${ws.name} — manage workspace`}
+                          aria-label={`Open workspace ${ws.name}`}
+                          className={({ isActive }) =>
+                            cn(
+                              'shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/80 transition-colors',
+                              'hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                              isActive && 'bg-muted text-foreground',
+                            )
+                          }
+                        >
+                          <SquarePen className="h-3.5 w-3.5" aria-hidden />
+                        </NavLink>
+                      ) : null}
                     </div>
                     <div className="mt-0.5 ml-1 space-y-0.5 border-l border-border/50 pl-2">
                       {ws.projects.map((p) => (
-                        <div key={p.id} className="flex items-center gap-0.5 group">
-                          <NavLink
-                            to={`/project/${encodeURIComponent(p.slug)}`}
-                            className={() =>
-                              cn(
-                                'flex-1 truncate rounded-md px-2 py-1.5 text-sm transition-colors',
-                                activeProjectSlug === p.slug
-                                  ? 'bg-background text-foreground font-medium shadow-sm'
-                                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                              )
-                            }
-                            title={p.name}
-                          >
-                            {p.name}
-                          </NavLink>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground"
-                            title="Rename project"
-                            onClick={() => openEditProject(summaryToProject(p))}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                        <NavLink
+                          key={p.id}
+                          to={`/project/${encodeURIComponent(p.slug)}`}
+                          className={() =>
+                            cn(
+                              'block truncate rounded-md px-2 py-1.5 text-sm transition-colors',
+                              activeProjectSlug === p.slug
+                                ? 'bg-background text-foreground font-medium shadow-sm'
+                                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                            )
+                          }
+                          title={p.name}
+                        >
+                          {p.name}
+                        </NavLink>
                       ))}
                     </div>
                   </div>
@@ -332,9 +301,8 @@ export default function AppSidebar() {
       <ProjectDialog
         open={projectDialogOpen}
         onOpenChange={setProjectDialogOpen}
-        project={editingProject}
+        project={null}
         onSave={handleSaveProject}
-        onDelete={editingProject ? handleDeleteProject : undefined}
       />
     </>
   )

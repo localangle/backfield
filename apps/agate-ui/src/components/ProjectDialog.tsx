@@ -26,6 +26,8 @@ interface ProjectDialogProps {
   project?: Project | null
   onSave: (data: ProjectCreate) => Promise<void>
   onDelete?: (project: Project) => Promise<void>
+  /** When creating, lock new projects to this workspace (hides workspace selector). */
+  defaultWorkspaceId?: number | null
 }
 
 export default function ProjectDialog({
@@ -33,7 +35,8 @@ export default function ProjectDialog({
   onOpenChange,
   project,
   onSave,
-  onDelete
+  onDelete,
+  defaultWorkspaceId = null,
 }: ProjectDialogProps) {
   const [name, setName] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -50,7 +53,12 @@ export default function ProjectDialog({
       // Exclude synthetic grouping (e.g. _ungrouped).
       const real = rows.filter((w) => w.id > 0 && w.slug !== '_ungrouped')
       setWorkspaces(real)
-      if (!isEditing && !selectedWorkspaceId) {
+      if (isEditing) return
+      if (defaultWorkspaceId != null && defaultWorkspaceId > 0) {
+        setSelectedWorkspaceId(String(defaultWorkspaceId))
+        return
+      }
+      if (!selectedWorkspaceId) {
         const def = real.find((w) => w.slug === 'default') ?? real[0]
         if (def) setSelectedWorkspaceId(String(def.id))
       }
@@ -58,7 +66,7 @@ export default function ProjectDialog({
       console.error(e)
       setWorkspaces([])
     }
-  }, [isEditing, selectedWorkspaceId])
+  }, [defaultWorkspaceId, isEditing, selectedWorkspaceId])
 
   useEffect(() => {
     if (project) {
@@ -76,9 +84,17 @@ export default function ProjectDialog({
 
     try {
       setIsLoading(true)
+      const widLocked =
+        defaultWorkspaceId != null && defaultWorkspaceId > 0
+          ? defaultWorkspaceId
+          : null
+      const widSelect =
+        selectedWorkspaceId && workspaces.length > 0
+          ? parseInt(selectedWorkspaceId, 10)
+          : NaN
       const wid =
-        selectedWorkspaceId && workspaces.length > 0 ? parseInt(selectedWorkspaceId, 10) : null
-      await onSave({ name: name.trim(), workspace_id: Number.isFinite(wid) ? wid : null })
+        widLocked ?? (Number.isFinite(widSelect) ? widSelect : null)
+      await onSave({ name: name.trim(), workspace_id: wid })
       onOpenChange(false)
       setName('')
     } catch (error) {
@@ -138,7 +154,9 @@ export default function ProjectDialog({
               disabled={isLoading || isDeleting}
             />
           </div>
-          {!isEditing && workspaces.length > 0 ? (
+          {!isEditing &&
+          workspaces.length > 0 &&
+          (defaultWorkspaceId == null || defaultWorkspaceId <= 0) ? (
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="workspace" className="text-right">
                 Workspace

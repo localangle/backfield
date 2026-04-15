@@ -124,6 +124,10 @@ class WorkspaceCreateBody(BaseModel):
     name: str
 
 
+class WorkspacePatchBody(BaseModel):
+    name: str
+
+
 def _org_project_ids(session: Session, org_id: int) -> list[int]:
     rows = session.exec(
         select(BackfieldProject.id).where(BackfieldProject.organization_id == org_id)
@@ -136,6 +140,32 @@ def _org_workspace_ids(session: Session, org_id: int) -> list[int]:
         select(BackfieldWorkspace.id).where(BackfieldWorkspace.organization_id == org_id)
     ).all()
     return [int(r) for r in rows if r is not None]
+
+
+def _workspace_with_projects_out(
+    session: Session, org_id: int, wid: int
+) -> WorkspaceWithProjectsOut | None:
+    ws = session.get(BackfieldWorkspace, wid)
+    if ws is None or ws.id is None or int(ws.organization_id) != org_id:
+        return None
+    plist_rows = session.exec(
+        select(BackfieldProject).where(
+            BackfieldProject.organization_id == org_id,
+            BackfieldProject.workspace_id == int(ws.id),
+        )
+    ).all()
+    projects_out = [
+        ProjectSummaryOut(id=int(p.id), name=str(p.name), slug=str(p.slug))
+        for p in plist_rows
+        if p.id is not None
+    ]
+    projects_out.sort(key=lambda x: x.slug)
+    return WorkspaceWithProjectsOut(
+        id=int(ws.id),
+        name=str(ws.name),
+        slug=str(ws.slug),
+        projects=projects_out,
+    )
 
 
 def _workspace_memberships_for_user_org(
@@ -312,6 +342,35 @@ def create_workspace(
         slug=str(ws.slug),
         projects=[],
     )
+
+
+@router.patch(
+    "/{org_id}/workspaces/{workspace_id}",
+    response_model=WorkspaceWithProjectsOut,
+)
+def patch_workspace(
+    org_id: int,
+    workspace_id: int,
+    body: WorkspacePatchBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> WorkspaceWithProjectsOut:
+    """Update workspace display name (slug unchanged). Org admins only."""
+    require_org_admin(session, auth, org_id)
+    ws = session.get(BackfieldWorkspace, workspace_id)
+    if ws is None or ws.id is None or int(ws.organization_id) != org_id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    ws.name = name
+    session.add(ws)
+    session.commit()
+    session.refresh(ws)
+    out = _workspace_with_projects_out(session, org_id, int(ws.id))
+    if out is None:
+        raise HTTPException(status_code=500, detail="Workspace load failed")
+    return out
 
 
 @router.get("/{org_id}/users", response_model=list[UserOut])

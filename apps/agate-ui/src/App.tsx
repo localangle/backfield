@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import WorkspacesHomePage from './pages/WorkspacesHomePage'
+import WorkspaceDetailPage from './pages/WorkspaceDetailPage'
 import FlowsPage from './pages/FlowsPage'
 import RunsList from './pages/RunsList'
 import TemplatesPage from './pages/TemplatesPage'
@@ -84,6 +85,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <HubLayout>
               <WorkspacesHomePage />
+            </HubLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workspace/:workspaceSlug"
+        element={
+          <ProtectedRoute>
+            <HubLayout>
+              <WorkspaceDetailPage />
             </HubLayout>
           </ProtectedRoute>
         }

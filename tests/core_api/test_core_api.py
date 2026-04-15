@@ -134,6 +134,34 @@ def test_create_workspace_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_patch_workspace_requires_auth(client: TestClient) -> None:
+    r = client.patch("/v1/organizations/1/workspaces/1", json={"name": "Nope"})
+    assert r.status_code == 401
+
+
+def test_patch_workspace_name_org_admin(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "wspatch@example.com", "password": "wspatch-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "wspatch@example.com", "password": "wspatch-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    listed = client.get("/v1/me/workspaces").json()
+    wid = next(w for w in listed if w["slug"] == "default")["id"]
+    r = client.patch(
+        f"/v1/organizations/{org_id}/workspaces/{wid}",
+        json={"name": "Editorial desk"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "Editorial desk"
+    assert body["slug"] == "default"
+    assert "general" in {p["slug"] for p in body["projects"]}
+
+
 def test_create_workspace_org_admin_and_me_lists_empty(client: TestClient) -> None:
     client.post(
         "/v1/bootstrap/first-user",
