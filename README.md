@@ -81,6 +81,7 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — compose, env vars, and troubleshooting  
 - [docs/TESTING.md](docs/TESTING.md) — testing layers  
 - [docs/AGENT_WORKFLOWS.md](docs/AGENT_WORKFLOWS.md) — task-specific validation guidance  
+- [docs/AGENTIC.md](docs/AGENTIC.md) — agentic workflow orientation (rules, skills, branch/validation habits)  
 - [docs/PLANS.md](docs/PLANS.md) — planning expectations for larger changes  
 
 ## Layout

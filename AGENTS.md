@@ -39,6 +39,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 
 ## Docs map
 
+- `docs/AGENTIC.md`: orientation for agentic workflows (rules, skills, branch/validation habits); links here and to task checklists.
 - `README.md`: quick start, ports, and top-level layout.
 - `docs/ARCHITECTURE.md`: package boundaries, runtime flow, and dependency direction.
 - `docs/API.md`: Agate API conventions, route responsibilities, and run orchestration.
@@ -84,3 +85,4 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - Work from a clean working tree when you branch; keep one coherent task per branch and per diff.
 - Prefer short-lived branches and small diffs over stacking unrelated changes.
 - Use `git status` and `git diff` frequently to confirm the task boundary before finishing.
+- Before creating a PR, run a code review and an architecture review using the project skills in `.cursor/skills/`, and address the findings or open questions first.
