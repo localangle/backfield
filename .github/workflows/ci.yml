@@ -61,20 +61,31 @@ jobs:
           [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
           [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
           [ -n "${MAPBOX_API_TOKEN:-}" ] && printf 'MAPBOX_API_TOKEN=%s\n' "$MAPBOX_API_TOKEN" >> .env
-          docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api agate-api worker
+          docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api core-api agate-api worker
       - name: Wait for API health
         run: |
           for _ in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/health >/dev/null && curl -fsS http://localhost:8003/health >/dev/null; then
+            if curl -fsS http://localhost:8000/health >/dev/null \
+              && curl -fsS http://localhost:8003/health >/dev/null \
+              && curl -fsS http://localhost:8004/health >/dev/null; then
               exit 0
             fi
             sleep 2
           done
           docker compose -f infra/docker-compose.yml logs
           exit 1
-      # Run the script directly so the job exit code matches Python (make maps recipe failures to exit 2).
+      - name: Bootstrap smoke user (fresh DB)
+        run: |
+          curl -fsS -X POST http://localhost:8004/v1/bootstrap/first-user \
+            -H "Content-Type: application/json" \
+            -d '{"email":"smoke-ci@local.test","password":"smoke-ci-pass-change-in-prod"}' \
+            || true
+      # Session-shaped golden path (login → workspaces → project → run). Same script as make smoke.
       - name: Golden-path smoke
-        run: uv run python -u scripts/smoke_agate_stack.py
+        env:
+          SMOKE_EMAIL: smoke-ci@local.test
+          SMOKE_PASSWORD: smoke-ci-pass-change-in-prod
+        run: uv run python -u tests/smoke/golden_path_stack.py
       - name: Dump compose logs on failure
         if: failure()
         run: docker compose -f infra/docker-compose.yml logs

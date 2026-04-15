@@ -242,6 +242,7 @@ dependencies = [
     { name = "backfield-core" },
     { name = "httpx" },
     { name = "pytest" },
+    { name = "python-dotenv" },
     { name = "ruff" },
 ]
 
@@ -250,6 +251,7 @@ requires-dist = [
     { name = "backfield-core", editable = "packages/backfield-core" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pytest", specifier = ">=8.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "ruff", specifier = ">=0.6.0" },
 ]
 

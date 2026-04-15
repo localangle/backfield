@@ -42,7 +42,7 @@ make up                # Docker Compose (foreground; Ctrl+C stops all services)
 ```bash
 make lint
 make test
-make smoke   # requires a live local stack
+make smoke   # live stack; see docs/TESTING.md (session vs service-token modes)
 ```
 
 ### Environment

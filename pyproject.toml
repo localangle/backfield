@@ -5,8 +5,9 @@ description = "Backfield monorepo (Agate + Stylebook)"
 requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
-    "pytest>=8.0",
     "httpx>=0.27.0",
+    "pytest>=8.0",
+    "python-dotenv>=1.0.0",
     "ruff>=0.6.0",
     "backfield-core",
 ]

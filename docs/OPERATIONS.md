@@ -22,7 +22,7 @@ Primary local services are defined in `infra/docker-compose.yml`:
 - `make logs`: inspect compose logs.
 - `make migrate`: run Alembic inside `agate-api`.
 - `make reset-db`: tear down containers and volumes.
-- `make smoke`: run the HTTP golden-path smoke against a live stack.
+- `make smoke`: run the HTTP golden-path smoke against a live stack (`tests/smoke/golden_path_stack.py`). With **`SMOKE_EMAIL`** and **`SMOKE_PASSWORD`** set, exercises Core login and **`GET /v1/me/workspaces`** before Agate; otherwise uses the service Bearer on Agate only.
 - `make docker-prune-build`: reclaim disk from Docker build cache only (`docker builder prune -f`).
 - `make docker-prune-system`: remove stopped containers, dangling images, unused networks, and build cache (`docker system prune -f`).
 - `make docker-prune-volumes`: remove **unused** anonymous volumes (`docker volume prune -f`); does not remove named volumes while containers still reference them.
@@ -65,7 +65,7 @@ Graph nodes are executed in the worker using the vendored `agate-runtime` packag
 - **Who's On First SQLite** (parent lookups in `wof.py`): the database file is not in git (size). Install under `packages/agate-runtime/.../geocoding/data/` or set **`WOF_SQLITE_DB_PATH`** to the `.db` file. See `packages/agate-runtime/src/agate_utils/geocoding/data/README.md`.
 - **Celery limits**: `TASK_SOFT_TIME_LIMIT` / `TASK_HARD_TIME_LIMIT` (defaults `3600` / `4200` seconds on the worker service in Compose) mirror agate-ai-platform worker defaults for long-running geocode flows.
 
-For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in repo-root `.env` (or ensure they exist in the worker environment) so PlaceExtract can call the LLM; otherwise the run fails when those nodes execute.
+For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in repo-root `.env` (or ensure they exist in the worker environment) so PlaceExtract can call the LLM; otherwise the run fails when those nodes execute. For the **session-shaped** smoke, add **`SMOKE_EMAIL`** and **`SMOKE_PASSWORD`** to the same repo-root `.env` (they are loaded automatically; no need to `export`). Run **`core-api`** in Compose. Omit them to use the legacy service-token path on Agate only.
 
 `PROJECT_SLUG` can still be set via Compose interpolation on the worker service for Stylebook cache scoping.
 
