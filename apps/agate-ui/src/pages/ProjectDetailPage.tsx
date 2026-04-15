@@ -120,9 +120,9 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="w-full max-w-none min-w-0 space-y-10">
-      <div className="flex items-start gap-3 min-h-[2.5rem]">
+      <div className="min-h-[2.5rem]">
         {editingName ? (
-          <div className="flex flex-1 items-center gap-2 flex-wrap">
+          <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
             <Input
               ref={inputRef}
               value={nameDraft}
@@ -132,7 +132,7 @@ export default function ProjectDetailPage() {
                 if (e.key === 'Escape') cancelNameEdit()
               }}
               disabled={savingName}
-              className="text-3xl font-bold h-auto py-2 px-3 max-w-xl"
+              className="min-w-0 flex-1 max-w-xl text-3xl font-bold h-auto py-2 px-3"
             />
             <Button
               type="button"
@@ -158,8 +158,10 @@ export default function ProjectDetailPage() {
             </Button>
           </div>
         ) : (
-          <>
-            <h1 className="text-3xl font-bold flex-1">{project.name}</h1>
+          <div className="inline-flex max-w-full items-center gap-2">
+            <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-3xl font-bold">
+              {project.name}
+            </h1>
             <Button
               type="button"
               variant="ghost"
@@ -173,7 +175,7 @@ export default function ProjectDetailPage() {
             >
               <Pencil className="h-5 w-5" />
             </Button>
-          </>
+          </div>
         )}
       </div>
 

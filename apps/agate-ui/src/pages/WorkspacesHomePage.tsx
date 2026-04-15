@@ -139,7 +139,7 @@ function PublicationTitleRow() {
 
   if (editingName) {
     return (
-      <div className="flex flex-1 min-w-0 items-center gap-2 flex-wrap">
+      <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
         <Input
           ref={inputRef}
           value={nameDraft}
@@ -149,7 +149,7 @@ function PublicationTitleRow() {
             if (e.key === "Escape") cancelNameEdit()
           }}
           disabled={savingName}
-          className="text-2xl font-semibold h-auto py-2 px-3 max-w-xl tracking-tight"
+          className="min-w-0 flex-1 max-w-xl text-2xl font-semibold h-auto py-2 px-3 tracking-tight"
           aria-label="Publication name"
         />
         <Button
@@ -179,8 +179,10 @@ function PublicationTitleRow() {
   }
 
   return (
-    <div className="flex items-start gap-3 min-h-[2.5rem] min-w-0">
-      <h1 className="text-2xl font-semibold tracking-tight flex-1 min-w-0">{display}</h1>
+    <div className="inline-flex max-w-full min-h-[2.5rem] items-center gap-2">
+      <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-2xl font-semibold tracking-tight">
+        {display}
+      </h1>
       <Button
         type="button"
         variant="ghost"
