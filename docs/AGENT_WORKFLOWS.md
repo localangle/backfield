@@ -50,7 +50,9 @@ Backfield is a refactor of **agate-ai-platform** (`/Users/cjdd3b/apps/agate-ai-p
 
 ## Review workflow
 
+- Before creating a PR, run both [`pre-pr-code-review`](../.cursor/skills/pre-pr-code-review/SKILL.md) and [`pre-pr-architecture-review`](../.cursor/skills/pre-pr-architecture-review/SKILL.md).
 - Confirm the diff is scoped to the task.
 - Check docs when behavior changed.
 - Check tests and smoke coverage for meaningful runtime changes.
 - Flag oversized functions, unclear naming, or mismatched cross-layer contracts.
+- Raise cleanup or architecture concerns interactively before proceeding to PR creation.

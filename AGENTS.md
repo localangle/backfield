@@ -85,3 +85,4 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - Work from a clean working tree when you branch; keep one coherent task per branch and per diff.
 - Prefer short-lived branches and small diffs over stacking unrelated changes.
 - Use `git status` and `git diff` frequently to confirm the task boundary before finishing.
+- Before creating a PR, run a code review and an architecture review using the project skills in `.cursor/skills/`, and address the findings or open questions first.

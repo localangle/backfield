@@ -12,7 +12,7 @@ This page orients **people and coding assistants** on how work is organized in B
 ## Cursor / IDE conventions
 
 - **Rules:** [`.cursor/rules/`](../.cursor/rules/) — workspace rules (workflow, Python, DB, frontend, docs freshness). Treat them as binding alongside `AGENTS.md`.
-- **Skills:** [`.cursor/skills/`](../.cursor/skills/) — optional playbooks (e.g. DB changes, smoke, doc updates, self-review). Use when the task matches the skill’s description. For **Plan mode** or explicit design stress-tests, see [`grill-me`](../.cursor/skills/grill-me/SKILL.md).
+- **Skills:** [`.cursor/skills/`](../.cursor/skills/) — optional playbooks (e.g. DB changes, smoke, doc updates, self-review). Use when the task matches the skill’s description. For **Plan mode** or explicit design stress-tests, see [`grill-me`](../.cursor/skills/grill-me/SKILL.md). Before opening a PR, run [`pre-pr-code-review`](../.cursor/skills/pre-pr-code-review/SKILL.md) and [`pre-pr-architecture-review`](../.cursor/skills/pre-pr-architecture-review/SKILL.md).
 
 ## Recommended workflow
 
@@ -20,6 +20,7 @@ This page orients **people and coding assistants** on how work is organized in B
 2. **Read first:** Open the source-of-truth doc for the area you touch (`docs/ARCHITECTURE.md`, `docs/DATABASE.md`, `docs/API.md`, etc.).
 3. **Implement:** Prefer surgical diffs; match existing patterns; update docs when behavior or operations change.
 4. **Validate:** Follow [`docs/TESTING.md`](TESTING.md) and [`AGENTS.md`](../AGENTS.md) → **Validation defaults**.
+5. **Pre-PR review:** Run both [`pre-pr-code-review`](../.cursor/skills/pre-pr-code-review/SKILL.md) and [`pre-pr-architecture-review`](../.cursor/skills/pre-pr-architecture-review/SKILL.md) before creating a PR; address findings or questions interactively first.
 
 ## Reference implementation
 
