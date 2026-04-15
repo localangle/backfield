@@ -16,6 +16,7 @@ interface AuthContextType {
   username: string
   userId: number | null
   organizationId: number | null
+  organizationName: string | null
   orgRole: string | null
   isOrgAdmin: boolean
   loading: boolean
@@ -32,6 +33,7 @@ function applyMe(
     setUsername: (v: string) => void
     setUserId: (v: number | null) => void
     setOrganizationId: (v: number | null) => void
+    setOrganizationName: (v: string | null) => void
     setOrgRole: (v: string | null) => void
     setIsOrgAdmin: (v: boolean) => void
   },
@@ -43,6 +45,11 @@ function applyMe(
   setters.setOrganizationId(
     ok && data.organization_id != null ? data.organization_id : null,
   )
+  setters.setOrganizationName(
+    ok && data.organization_name != null && data.organization_name !== ""
+      ? String(data.organization_name)
+      : null,
+  )
   const role = ok ? (data.org_role ?? null) : null
   setters.setOrgRole(role)
   setters.setIsOrgAdmin(ok && role === "org_admin")
@@ -53,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [username, setUsername] = useState("")
   const [userId, setUserId] = useState<number | null>(null)
   const [organizationId, setOrganizationId] = useState<number | null>(null)
+  const [organizationName, setOrganizationName] = useState<string | null>(null)
   const [orgRole, setOrgRole] = useState<string | null>(null)
   const [isOrgAdmin, setIsOrgAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -65,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUsername,
         setUserId,
         setOrganizationId,
+        setOrganizationName,
         setOrgRole,
         setIsOrgAdmin,
       })
@@ -73,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUsername("")
       setUserId(null)
       setOrganizationId(null)
+      setOrganizationName(null)
       setOrgRole(null)
       setIsOrgAdmin(false)
     } finally {
@@ -97,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsername("")
     setUserId(null)
     setOrganizationId(null)
+    setOrganizationName(null)
     setOrgRole(null)
     setIsOrgAdmin(false)
   }, [])
@@ -106,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     username,
     userId,
     organizationId,
+    organizationName,
     orgRole,
     isOrgAdmin,
     loading,

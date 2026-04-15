@@ -43,7 +43,7 @@ def upgrade() -> None:
 
     op.execute(
         text(
-            "INSERT INTO backfield_organization (name, slug) VALUES ('Default', 'default')"
+            "INSERT INTO backfield_organization (name, slug) VALUES ('Backfield', 'default')"
         )
     )
 

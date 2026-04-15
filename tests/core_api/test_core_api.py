@@ -22,13 +22,13 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as s:
-        org = BackfieldOrganization(name="Default", slug="default")
+        org = BackfieldOrganization(name="Backfield", slug="default")
         s.add(org)
         s.commit()
         s.refresh(org)
         ws = BackfieldWorkspace(
             organization_id=int(org.id),
-            name="Default",
+            name="Default Workspace",
             slug="default",
         )
         s.add(ws)
@@ -89,6 +89,7 @@ def test_bootstrap_login_me_whoami(client: TestClient) -> None:
     assert body.get("authenticated") is True
     assert body.get("email") == "owner@example.com"
     assert body.get("organization_id") is not None
+    assert body.get("organization_name") == "Backfield"
 
     who = client.get("/v1/secure/whoami")
     assert who.status_code == 200
@@ -126,6 +127,59 @@ def test_me_workspaces_groups_projects_for_org_admin(client: TestClient) -> None
     slugs = {p["slug"] for p in default_ws["projects"]}
     assert "general" in slugs
     assert "other" in slugs
+
+
+def test_create_workspace_requires_auth(client: TestClient) -> None:
+    r = client.post("/v1/organizations/1/workspaces", json={"name": "Nope"})
+    assert r.status_code == 401
+
+
+def test_create_workspace_org_admin_and_me_lists_empty(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "cws@example.com", "password": "cws-secret-12"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "cws@example.com", "password": "cws-secret-12"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    assert org_id is not None
+    r = client.post(f"/v1/organizations/{org_id}/workspaces", json={"name": "Investigations"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "Investigations"
+    assert body["projects"] == []
+    assert body["slug"] == "investigations"
+
+    listed = client.get("/v1/me/workspaces").json()
+    inv = next(w for w in listed if w["slug"] == "investigations")
+    assert inv["projects"] == []
+
+
+def test_patch_organization_requires_auth(client: TestClient) -> None:
+    r = client.patch("/v1/organizations/1", json={"name": "Nope"})
+    assert r.status_code == 401
+
+
+def test_patch_organization_name_org_admin(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "orgpatch@example.com", "password": "orgpatch-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "orgpatch@example.com", "password": "orgpatch-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    assert org_id is not None
+    r = client.patch(f"/v1/organizations/{org_id}", json={"name": "River Gazette"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["name"] == "River Gazette"
+    assert body["slug"] == "default"
+    me = client.get("/v1/auth/me").json()
+    assert me.get("organization_name") == "River Gazette"
 
 
 def test_change_password(client: TestClient) -> None:

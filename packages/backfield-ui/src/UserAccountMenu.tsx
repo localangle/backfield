@@ -39,10 +39,18 @@ export function UserAccountMenu({
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
-          className="z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+          className="z-50 min-w-[12rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           sideOffset={6}
           align="end"
         >
+          {userLabel ? (
+            <div
+              className="px-2 py-2 text-xs text-muted-foreground border-b border-border mb-1 -mx-1 -mt-1 truncate"
+              title={userLabel}
+            >
+              {userLabel}
+            </div>
+          ) : null}
           <DropdownMenu.Item
             className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
             onSelect={(e) => {

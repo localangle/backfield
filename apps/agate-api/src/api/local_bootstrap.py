@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 GENERAL_SLUG = "general"
 DEFAULT_ORG_SLUG = "default"
+DEFAULT_ORG_DISPLAY_NAME = "Backfield"
 DEFAULT_WORKSPACE_SLUG = "default"
+DEFAULT_WORKSPACE_DISPLAY_NAME = "Default Workspace"
 
 # Keys mirrored from host/.env into backfield_project_secret for the General project.
 _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
@@ -39,12 +41,15 @@ _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
 
 
 def _ensure_default_workspace_and_general(session: Session) -> None:
-    """Idempotent: Default workspace under Default org; General project uses that workspace."""
+    """Idempotent: default workspace under default org; General project uses that workspace."""
     org = session.exec(
         select(BackfieldOrganization).where(BackfieldOrganization.slug == DEFAULT_ORG_SLUG)
     ).first()
     if org is None or org.id is None:
         return
+    if org.name != DEFAULT_ORG_DISPLAY_NAME:
+        org.name = DEFAULT_ORG_DISPLAY_NAME
+        session.add(org)
     oid = int(org.id)
     ws = session.exec(
         select(BackfieldWorkspace).where(
@@ -55,11 +60,14 @@ def _ensure_default_workspace_and_general(session: Session) -> None:
     if ws is None:
         ws = BackfieldWorkspace(
             organization_id=oid,
-            name="Default",
+            name=DEFAULT_WORKSPACE_DISPLAY_NAME,
             slug=DEFAULT_WORKSPACE_SLUG,
         )
         session.add(ws)
         session.flush()
+    elif ws.name != DEFAULT_WORKSPACE_DISPLAY_NAME:
+        ws.name = DEFAULT_WORKSPACE_DISPLAY_NAME
+        session.add(ws)
 
     project = session.exec(
         select(BackfieldProject).where(BackfieldProject.slug == GENERAL_SLUG)

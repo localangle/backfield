@@ -20,4 +20,4 @@ Components use Tailwind utility classes (`bg-popover`, `border-input`, …). Eac
 
 ## `UserAccountMenu`
 
-Icon trigger with dropdown: Change password, optional Manage users (org admin), Log out. Navigation is via callbacks so hosts can use React Router or any router.
+Icon trigger with dropdown: shows `userLabel` (typically email) at the top when set, then Change password, optional Manage users (org admin), Log out. Navigation is via callbacks so hosts can use React Router or any router.

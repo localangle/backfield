@@ -1,4 +1,4 @@
-"""Seed Default workspace under Default org; attach General project.
+"""Seed Default Workspace under Backfield org; attach General project.
 
 Revision ID: 003_def_ws_general (must be <=32 chars for alembic_version.version_num).
 Revises: 002_backfield_identity
@@ -22,7 +22,7 @@ def upgrade() -> None:
         text(
             """
             INSERT INTO backfield_workspace (organization_id, name, slug, created_at, updated_at)
-            SELECT id, 'Default', 'default', now(), now()
+            SELECT id, 'Default Workspace', 'default', now(), now()
             FROM backfield_organization
             WHERE slug = 'default'
             ON CONFLICT (organization_id, slug) DO NOTHING

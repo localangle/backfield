@@ -1,15 +1,26 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { Loader2, FolderOpen } from "lucide-react"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Check, FolderOpen, Loader2, Pencil, Plus, X } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { listMyWorkspaces, type WorkspaceWithProjects } from "@/lib/core-api"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { cn } from "@/lib/utils"
+import { useAuth } from "@/lib/auth"
+import {
+  createWorkspace,
+  listMyWorkspaces,
+  patchOrganization,
+  type WorkspaceWithProjects,
+} from "@/lib/core-api"
 
 function defaultProjectSlug(ws: WorkspaceWithProjects): string {
   const g = ws.projects.find((p) => p.slug === "general")
@@ -18,10 +29,197 @@ function defaultProjectSlug(ws: WorkspaceWithProjects): string {
   return sorted[0]?.slug ?? ""
 }
 
+type WorkspaceGridEntry =
+  | { kind: "workspace"; ws: WorkspaceWithProjects }
+  | { kind: "add" }
+
+/** Workspace tiles in API order, with Add Workspace last when shown. */
+function workspaceGridEntries(
+  rows: WorkspaceWithProjects[],
+  includeAdd: boolean,
+): WorkspaceGridEntry[] {
+  const mapped: WorkspaceGridEntry[] = rows.map((ws) => ({ kind: "workspace", ws }))
+  if (!includeAdd) return mapped
+  return [...mapped, { kind: "add" }]
+}
+
+function AddWorkspaceTrigger({
+  onClick,
+  className,
+}: {
+  onClick: () => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-center justify-center gap-2 rounded-lg py-10 px-6 text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        className,
+      )}
+      aria-label="Add Workspace"
+    >
+      <Plus className="h-8 w-8 shrink-0" aria-hidden />
+      <span className="text-sm font-medium">Add Workspace</span>
+    </button>
+  )
+}
+
+function WorkspaceHomeCard({ ws }: { ws: WorkspaceWithProjects }) {
+  const primary = defaultProjectSlug(ws)
+  const href = primary ? `/project/${encodeURIComponent(primary)}` : "/templates"
+  return (
+    <Card className="h-full w-full flex flex-col hover:border-foreground/20 transition-colors">
+      <CardHeader>
+        <div className="flex items-start gap-2">
+          <FolderOpen className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <CardTitle className="text-lg leading-snug">{ws.name}</CardTitle>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 flex flex-col gap-3">
+        <p className="text-sm text-muted-foreground">
+          {ws.projects.length} project{ws.projects.length === 1 ? "" : "s"}
+        </p>
+        <ul className="text-sm space-y-1 border-t border-border/60 pt-3">
+          {ws.projects.slice(0, 6).map((p) => (
+            <li key={p.id}>
+              <Link
+                to={`/project/${encodeURIComponent(p.slug)}`}
+                className="text-foreground hover:underline font-medium"
+              >
+                {p.name}
+              </Link>
+            </li>
+          ))}
+          {ws.projects.length > 6 ? (
+            <li className="text-xs text-muted-foreground">+{ws.projects.length - 6} more</li>
+          ) : null}
+        </ul>
+        <Button type="button" className="w-full mt-auto" asChild>
+          <Link to={href}>{primary ? "Open workspace" : "Browse templates"}</Link>
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function PublicationTitleRow() {
+  const { organizationId, organizationName, isOrgAdmin, checkAuth } = useAuth()
+  const display = organizationName ?? "Workspaces"
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(display)
+  const [savingName, setSavingName] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!editingName) setNameDraft(display)
+  }, [display, editingName])
+
+  useEffect(() => {
+    if (editingName) inputRef.current?.focus()
+  }, [editingName])
+
+  const cancelNameEdit = () => {
+    setNameDraft(display)
+    setEditingName(false)
+  }
+
+  const saveName = async () => {
+    if (!organizationId) return
+    const next = nameDraft.trim()
+    if (!next || next === display) {
+      cancelNameEdit()
+      return
+    }
+    try {
+      setSavingName(true)
+      await patchOrganization(organizationId, { name: next })
+      setEditingName(false)
+      await checkAuth()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  if (!isOrgAdmin || organizationId == null) {
+    return <h1 className="text-2xl font-semibold tracking-tight">{display}</h1>
+  }
+
+  if (editingName) {
+    return (
+      <div className="flex flex-1 min-w-0 items-center gap-2 flex-wrap">
+        <Input
+          ref={inputRef}
+          value={nameDraft}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void saveName()
+            if (e.key === "Escape") cancelNameEdit()
+          }}
+          disabled={savingName}
+          className="text-2xl font-semibold h-auto py-2 px-3 max-w-xl tracking-tight"
+          aria-label="Publication name"
+        />
+        <Button
+          type="button"
+          size="icon"
+          variant="default"
+          className="shrink-0"
+          disabled={savingName || !nameDraft.trim()}
+          onClick={() => void saveName()}
+          aria-label="Save publication name"
+        >
+          <Check className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="shrink-0"
+          disabled={savingName}
+          onClick={cancelNameEdit}
+          aria-label="Cancel"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-start gap-3 min-h-[2.5rem] min-w-0">
+      <h1 className="text-2xl font-semibold tracking-tight flex-1 min-w-0">{display}</h1>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          setNameDraft(display)
+          setEditingName(true)
+        }}
+        aria-label="Edit publication name"
+      >
+        <Pencil className="h-5 w-5" />
+      </Button>
+    </div>
+  )
+}
+
 export default function WorkspacesHomePage() {
+  const { organizationId, isOrgAdmin } = useAuth()
   const [rows, setRows] = useState<WorkspaceWithProjects[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [newWsName, setNewWsName] = useState("")
+  const [creatingWs, setCreatingWs] = useState(false)
+  const [createWsError, setCreateWsError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setError(null)
@@ -41,6 +239,33 @@ export default function WorkspacesHomePage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const openCreateWorkspace = () => {
+    setNewWsName("")
+    setCreateWsError(null)
+    setCreateOpen(true)
+  }
+
+  const submitCreateWorkspace = async () => {
+    if (organizationId == null) return
+    const name = newWsName.trim()
+    if (!name) {
+      setCreateWsError("Enter a workspace name.")
+      return
+    }
+    setCreateWsError(null)
+    setCreatingWs(true)
+    try {
+      await createWorkspace(organizationId, { name })
+      setCreateOpen(false)
+      await load()
+      window.dispatchEvent(new CustomEvent("agate:workspaces-changed"))
+    } catch (e) {
+      setCreateWsError(e instanceof Error ? e.message : "Could not create workspace")
+    } finally {
+      setCreatingWs(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -62,25 +287,86 @@ export default function WorkspacesHomePage() {
     )
   }
 
+  const workspaceCreateDialog = (
+    <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>New workspace</DialogTitle>
+          <DialogDescription>
+            Workspaces group projects. You can add projects from the sidebar after creating one.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-2">
+          <Label htmlFor="ws-name">Name</Label>
+          <Input
+            id="ws-name"
+            value={newWsName}
+            onChange={(e) => setNewWsName(e.target.value)}
+            placeholder="e.g. Investigations"
+            disabled={creatingWs}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void submitCreateWorkspace()
+            }}
+          />
+          {createWsError ? (
+            <p className="text-sm text-destructive">{createWsError}</p>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            className="inline-flex items-center"
+            disabled={creatingWs || !newWsName.trim()}
+            onClick={() => void submitCreateWorkspace()}
+          >
+            {creatingWs ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Creating…
+              </>
+            ) : (
+              "Create workspace"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+
+  const showAddWorkspace = Boolean(isOrgAdmin && organizationId != null)
+
   if (rows.length === 0) {
     return (
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Workspaces</h1>
-        <p className="text-muted-foreground text-sm">
-          You don&apos;t have access to any projects yet. Ask an organization admin to grant
-          workspace access, or open Templates to explore flows.
-        </p>
-        <Button type="button" variant="outline" asChild>
-          <Link to="/templates">Browse templates</Link>
-        </Button>
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <PublicationTitleRow />
+          <p className="text-muted-foreground text-sm">
+            You don&apos;t have access to any projects yet. Ask an organization admin to grant
+            workspace access, or open Templates to explore flows.
+          </p>
+          <Button type="button" variant="outline" asChild>
+            <Link to="/templates">Browse templates</Link>
+          </Button>
+        </div>
+        {showAddWorkspace ? (
+          <div className="flex max-w-xl justify-center sm:justify-start">
+            <AddWorkspaceTrigger onClick={openCreateWorkspace} />
+          </div>
+        ) : null}
+        {workspaceCreateDialog}
       </div>
     )
   }
 
+  const gridEntries = workspaceGridEntries(rows, showAddWorkspace)
+
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Workspaces</h1>
+        <PublicationTitleRow />
         <p className="text-muted-foreground text-sm mt-1 max-w-2xl">
           Open a workspace to work with its projects. Switch workspaces anytime from this page or
           the sidebar.
@@ -88,55 +374,22 @@ export default function WorkspacesHomePage() {
       </div>
 
       <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {rows.map((ws) => {
-          const primary = defaultProjectSlug(ws)
-          const href = primary ? `/project/${encodeURIComponent(primary)}` : "/templates"
-          return (
-            <li key={`${ws.slug}-${ws.id}`}>
-              <Card className="h-full flex flex-col hover:border-foreground/20 transition-colors">
-                <CardHeader>
-                  <div className="flex items-start gap-2">
-                    <FolderOpen className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <CardTitle className="text-lg leading-snug">{ws.name}</CardTitle>
-                      <CardDescription className="font-mono text-xs truncate">
-                        {ws.slug}
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="flex-1 flex flex-col gap-3">
-                  <p className="text-sm text-muted-foreground">
-                    {ws.projects.length} project{ws.projects.length === 1 ? "" : "s"}
-                  </p>
-                  <ul className="text-sm space-y-1 border-t border-border/60 pt-3">
-                    {ws.projects.slice(0, 6).map((p) => (
-                      <li key={p.id}>
-                        <Link
-                          to={`/project/${encodeURIComponent(p.slug)}`}
-                          className="text-foreground hover:underline font-medium"
-                        >
-                          {p.name}
-                        </Link>
-                      </li>
-                    ))}
-                    {ws.projects.length > 6 ? (
-                      <li className="text-xs text-muted-foreground">
-                        +{ws.projects.length - 6} more
-                      </li>
-                    ) : null}
-                  </ul>
-                  <Button type="button" className="w-full mt-auto" asChild>
-                    <Link to={href}>
-                      {primary ? "Open workspace" : "Browse templates"}
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
+        {gridEntries.map((entry) =>
+          entry.kind === "workspace" ? (
+            <li key={`${entry.ws.slug}-${entry.ws.id}`} className="flex h-full min-h-0 w-full">
+              <WorkspaceHomeCard ws={entry.ws} />
             </li>
-          )
-        })}
+          ) : (
+            <li key="__add_workspace__" className="flex h-full min-h-0 w-full">
+              <AddWorkspaceTrigger
+                onClick={openCreateWorkspace}
+                className="h-full min-h-0 w-full flex-1"
+              />
+            </li>
+          ),
+        )}
       </ul>
+      {workspaceCreateDialog}
     </div>
   )
 }

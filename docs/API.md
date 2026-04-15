@@ -4,11 +4,13 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
 
 ## Core API (session and org admin)
 
-- **Auth:** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password` (body: `current_password`, `new_password`; session cookie required).
-- **Session home (any signed-in user):** `GET /v1/me/workspaces` — workspaces with nested `projects` (`id`, `name`, `slug`) the user may access (filtered like Agate’s project list; includes a synthetic **Other projects** workspace with `slug` `_ungrouped` when the user has projects without a `workspace_id`). **Session cookie only** (returns 403 for service token or project API key).
+- **Auth:** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password` (body: `current_password`, `new_password`; session cookie required). `GET /v1/auth/me` includes `organization_name` (from `backfield_organization.name`) when authenticated.
+- **Session home (any signed-in user):** `GET /v1/me/workspaces` — workspaces with nested `projects` (`id`, `name`, `slug`) the user may access (filtered like Agate’s project list; **org admins** also see **empty** org workspaces with `projects: []`; members see empty workspaces they are assigned to via `backfield_workspace_membership`). Includes a synthetic **Other projects** workspace with `slug` `_ungrouped` when the user has projects without a `workspace_id`. **Session cookie only** (returns 403 for service token or project API key).
 - **Org admin** (session `org_role` = `org_admin` for the same `organization_id` as the path):
+  - `PATCH /v1/organizations/{org_id}` — body `{ "name": "<publication display name>" }`; updates `backfield_organization.name` (slug unchanged). Service token may also call this route.
   - `GET /v1/organizations/{org_id}/projects` — projects in the org (`id`, `name`, `slug`).
   - `GET /v1/organizations/{org_id}/workspaces` — workspaces in the org, each with nested `projects` (`id`, `name`, `slug`) for admin UI context.
+  - `POST /v1/organizations/{org_id}/workspaces` — body `{ "name": "<display name>" }`; creates an empty workspace (slug derived from the name, unique per org). Session callers receive a `backfield_workspace_membership` row for the new workspace; service token may also call this route.
   - `GET /v1/organizations/{org_id}/users` — optional query `detail=true` to include `project_memberships` (legacy explicit grants) and `workspace_memberships` (`id`, `name`, `slug`) per user.
   - `POST /v1/organizations/{org_id}/users` — create user (email, password, display_name, role).
   - `PATCH /v1/organizations/{org_id}/users/{user_id}` — `display_name`, `role` (`org_admin` | `member`); cannot demote the last org admin.

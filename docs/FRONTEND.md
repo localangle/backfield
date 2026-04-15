@@ -11,7 +11,7 @@ This document covers frontend conventions for `apps/agate-ui` and the lighter `a
 
 ## Auth and API bases (Agate UI)
 
-- **Core API (login / session):** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password`. `GET /v1/me/workspaces` lists workspaces and visible projects for the signed-in user (used on `/` and in the sidebar). Organization admin routes under `/v1/organizations/{org_id}/…` (users, workspaces, workspace memberships for access control). Use `**VITE_AUTH_API_BASE`** (empty string for same-origin). Typed fetch helpers live in `**src/lib/core-api.ts**` (session cookie, `credentials: 'include'`).
+- **Core API (login / session):** `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout`, `POST /v1/auth/change-password`. `GET /v1/auth/me` returns `organization_name` (publication / tenant display name). `GET /v1/me/workspaces` lists workspaces and visible projects for the signed-in user (used on `/` and in the sidebar). Organization admin routes under `/v1/organizations/{org_id}/…` (users, workspaces, workspace memberships for access control). Use `**VITE_AUTH_API_BASE`** (empty string for same-origin). Typed fetch helpers live in `**src/lib/core-api.ts**` (session cookie, `credentials: 'include'`).
 - **Project Settings — two credential concepts:** (1) **API access keys** (`bfk_…`) are issued by Core API (`/v1/projects/{id}/api-keys`); the Settings tab uses `**core-api.ts`** helpers and `[ProjectAccessKeysPanel](../apps/agate-ui/src/components/ProjectAccessKeysPanel.tsx)` for Bearer access to Backfield APIs. (2) **Integration secrets** (OpenAI, Mapbox, etc.) are stored via Agate API `/projects/{id}/secrets` and `**api.ts`** — encrypted provider env for flows, not Bearer keys.
 - **Agate API:** project/graph/run calls go through `**src/lib/api.ts`**. Default `**VITE_API_BASE**` is `/api/agate` so the Vite dev server can proxy to `agate-api` on one browser origin with `credentials: 'include'`.
 - **Local dev proxy:** `[apps/agate-ui/vite.config.ts](../apps/agate-ui/vite.config.ts)` proxies `/v1` → Core API and `/api/agate` → Agate API. Override targets with `VITE_CORE_API_PROXY_TARGET` / `VITE_AGATE_API_PROXY_TARGET` (e.g. in Docker Compose).
@@ -20,7 +20,7 @@ This document covers frontend conventions for `apps/agate-ui` and the lighter `a
 
 - Reusable shell components for multiple Backfield apps (Agate UI now; Stylebook UI later) live in `[packages/backfield-ui](../packages/backfield-ui)`.
 - **Tailwind:** add `../../packages/backfield-ui/src/**/*.{ts,tsx}` to the app’s Tailwind `content` array (see `[apps/agate-ui/tailwind.config.js](../apps/agate-ui/tailwind.config.js)`).
-- **Exports:** e.g. `UserAccountMenu` (account icon + dropdown: change password, optional manage users for org admins, log out). Navigation is via callbacks so hosts keep their own router.
+- **Exports:** e.g. `UserAccountMenu` (account icon + dropdown: signed-in email when `userLabel` is set, change password, optional manage users for org admins, log out). Navigation is via callbacks so hosts keep their own router.
 
 ## User-facing copy
 

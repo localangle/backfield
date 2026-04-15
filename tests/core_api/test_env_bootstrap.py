@@ -20,7 +20,7 @@ def sqlite_engine_with_org(tmp_path) -> Generator:
     )
     SQLModel.metadata.create_all(engine)
     with Session(engine) as s:
-        org = BackfieldOrganization(name="Default", slug="default")
+        org = BackfieldOrganization(name="Backfield", slug="default")
         s.add(org)
         s.commit()
         s.refresh(org)

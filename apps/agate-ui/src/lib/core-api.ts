@@ -37,6 +37,8 @@ export interface MeResponse {
   email?: string
   user_id?: number
   organization_id?: number
+  /** Display name of the organization (publication / tenant). */
+  organization_name?: string | null
   org_role?: string | null
 }
 
@@ -76,6 +78,32 @@ export async function listOrgWorkspaces(
 /** Workspaces and visible projects for the signed-in user (session only). */
 export async function listMyWorkspaces(): Promise<WorkspaceWithProjects[]> {
   return jsonFetch(`/v1/me/workspaces`)
+}
+
+export async function createWorkspace(
+  orgId: number,
+  body: { name: string },
+): Promise<WorkspaceWithProjects> {
+  return jsonFetch(`/v1/organizations/${orgId}/workspaces`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+}
+
+export interface OrganizationSummary {
+  id: number
+  name: string
+  slug: string
+}
+
+export async function patchOrganization(
+  orgId: number,
+  body: { name: string },
+): Promise<OrganizationSummary> {
+  return jsonFetch(`/v1/organizations/${orgId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })
 }
 
 export interface ProjectMembershipRow {

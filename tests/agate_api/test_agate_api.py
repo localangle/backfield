@@ -23,7 +23,7 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as s:
-        s.add(BackfieldOrganization(name="Default", slug="default"))
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
         s.commit()
 
     def get_test_session() -> Generator[Session, None, None]:
@@ -55,7 +55,7 @@ def test_projects_require_auth(tmp_path):
     )
     SQLModel.metadata.create_all(engine)
     with Session(engine) as s:
-        s.add(BackfieldOrganization(name="Default", slug="default"))
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
         s.commit()
 
     def get_test_session() -> Generator[Session, None, None]:
@@ -156,11 +156,13 @@ def test_create_project_with_workspace_id(tmp_path):
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as s:
-        org = BackfieldOrganization(name="Default", slug="default")
+        org = BackfieldOrganization(name="Backfield", slug="default")
         s.add(org)
         s.commit()
         s.refresh(org)
-        ws = BackfieldWorkspace(organization_id=int(org.id), name="Default", slug="default")
+        ws = BackfieldWorkspace(
+            organization_id=int(org.id), name="Default Workspace", slug="default"
+        )
         s.add(ws)
         s.commit()
         s.refresh(ws)

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from backfield_db import (
+    BackfieldOrganization,
     BackfieldOrganizationMembership,
     BackfieldProject,
     BackfieldProjectMembership,
@@ -21,6 +23,30 @@ from core_api.deps import get_auth, get_session
 from core_api.security import hash_password
 
 router = APIRouter(prefix="/organizations", tags=["admin"])
+
+
+def _slugify_workspace_name(name: str) -> str:
+    s = name.lower().strip().replace(" ", "-")
+    s = re.sub(r"[^a-z0-9-]+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s or "workspace"
+
+
+def _allocate_workspace_slug(session: Session, org_id: int, name: str) -> str:
+    base = _slugify_workspace_name(name)
+    slug = base
+    n = 2
+    while True:
+        hit = session.exec(
+            select(BackfieldWorkspace.id).where(
+                BackfieldWorkspace.organization_id == org_id,
+                BackfieldWorkspace.slug == slug,
+            )
+        ).first()
+        if hit is None:
+            return slug
+        slug = f"{base}-{n}"
+        n += 1
 
 
 class UserCreateBody(BaseModel):
@@ -82,6 +108,20 @@ class WorkspaceWithProjectsOut(BaseModel):
     name: str
     slug: str
     projects: list[ProjectSummaryOut]
+
+
+class OrganizationOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+
+
+class OrganizationPatchBody(BaseModel):
+    name: str
+
+
+class WorkspaceCreateBody(BaseModel):
+    name: str
 
 
 def _org_project_ids(session: Session, org_id: int) -> list[int]:
@@ -152,6 +192,30 @@ def _is_only_active_org_admin(session: Session, org_id: int, user_id: int) -> bo
     return _active_org_admin_count(session, org_id) == 1
 
 
+@router.patch("/{org_id}", response_model=OrganizationOut)
+def patch_organization(
+    org_id: int,
+    body: OrganizationPatchBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> OrganizationOut:
+    """Update organization display fields (publication name). Org admins only."""
+    require_org_admin(session, auth, org_id)
+    org = session.get(BackfieldOrganization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    org.name = name
+    session.add(org)
+    session.commit()
+    session.refresh(org)
+    if org.id is None:
+        raise HTTPException(status_code=500, detail="Organization persist failed")
+    return OrganizationOut(id=int(org.id), name=str(org.name), slug=str(org.slug))
+
+
 @router.get("/{org_id}/projects", response_model=list[ProjectSummaryOut])
 def list_org_projects(
     org_id: int,
@@ -209,6 +273,45 @@ def list_org_workspaces(
             )
         )
     return sorted(out, key=lambda x: x.slug)
+
+
+@router.post("/{org_id}/workspaces", response_model=WorkspaceWithProjectsOut)
+def create_workspace(
+    org_id: int,
+    body: WorkspaceCreateBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> WorkspaceWithProjectsOut:
+    """Create an empty workspace; org admins only. Session callers get workspace membership."""
+    require_org_admin(session, auth, org_id)
+    label = body.name.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Name is required")
+    slug = _allocate_workspace_slug(session, org_id, label)
+    ws = BackfieldWorkspace(organization_id=org_id, name=label, slug=slug)
+    session.add(ws)
+    session.flush()
+    if ws.id is None:
+        raise HTTPException(status_code=500, detail="Workspace persist failed")
+    wid = int(ws.id)
+    if auth["type"] == "session":
+        uid = int(auth["user"].id)  # type: ignore[union-attr]
+        exists = session.exec(
+            select(BackfieldWorkspaceMembership).where(
+                BackfieldWorkspaceMembership.user_id == uid,
+                BackfieldWorkspaceMembership.workspace_id == wid,
+            )
+        ).first()
+        if exists is None:
+            session.add(BackfieldWorkspaceMembership(user_id=uid, workspace_id=wid))
+    session.commit()
+    session.refresh(ws)
+    return WorkspaceWithProjectsOut(
+        id=wid,
+        name=str(ws.name),
+        slug=str(ws.slug),
+        projects=[],
+    )
 
 
 @router.get("/{org_id}/users", response_model=list[UserOut])

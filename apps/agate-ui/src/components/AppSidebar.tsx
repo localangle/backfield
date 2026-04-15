@@ -7,6 +7,7 @@ import {
   ChevronRight,
   HelpCircle,
   LayoutTemplate,
+  Newspaper,
   Pencil,
   Plus,
 } from 'lucide-react'
@@ -21,6 +22,7 @@ import {
   type ProjectCreate,
 } from '@/lib/api'
 import ProjectDialog from '@/components/ProjectDialog'
+import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 
 const STORAGE_EXPANDED = 'agate-sidebar-expanded'
@@ -43,6 +45,8 @@ function flattenProjects(rows: WorkspaceWithProjects[]) {
 export default function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { organizationName } = useAuth()
+  const publicationLabel = organizationName ?? 'Workspaces'
   const [expanded, setExpanded] = useState(() => readBool(STORAGE_EXPANDED, true))
   const [workspacesOpen, setWorkspacesOpen] = useState(() =>
     readBool(STORAGE_WORKSPACES_OPEN, true),
@@ -89,7 +93,11 @@ export default function AppSidebar() {
   useEffect(() => {
     const onChanged = () => void loadWorkspaces()
     window.addEventListener('agate:projects-changed', onChanged)
-    return () => window.removeEventListener('agate:projects-changed', onChanged)
+    window.addEventListener('agate:workspaces-changed', onChanged)
+    return () => {
+      window.removeEventListener('agate:projects-changed', onChanged)
+      window.removeEventListener('agate:workspaces-changed', onChanged)
+    }
   }, [loadWorkspaces])
 
   useEffect(() => {
@@ -173,7 +181,26 @@ export default function AppSidebar() {
         )}
         aria-label="Main navigation"
       >
-        <div className="flex items-center justify-end p-2 border-b border-border/50">
+        <div
+          className={cn(
+            'flex items-center min-w-0 p-2 border-b border-border/50',
+            expanded ? 'gap-1 justify-between' : 'justify-center',
+          )}
+        >
+          {expanded && (
+            <div
+              className="flex items-center gap-2 min-w-0 flex-1"
+              title={publicationLabel}
+            >
+              <Newspaper
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                {publicationLabel}
+              </span>
+            </div>
+          )}
           <Button
             type="button"
             variant="ghost"

@@ -7,6 +7,7 @@ import os
 from backfield_auth import create_session_token, verify_session_token
 from backfield_auth.deps import require_auth
 from backfield_db import (
+    BackfieldOrganization,
     BackfieldOrganizationMembership,
     BackfieldUser,
 )
@@ -31,6 +32,7 @@ class UserResponse(BaseModel):
     authenticated: bool
     user_id: int | None = None
     organization_id: int | None = None
+    organization_name: str | None = None
     org_role: str | None = None
 
 
@@ -117,11 +119,18 @@ def me(session: Session = Depends(get_session), cookie: str | None = Cookie(None
     user = session.get(BackfieldUser, int(uid))
     if user is None or user.disabled_at is not None:
         return UserResponse(email="", authenticated=False)
+    org_id = data.get("organization_id")
+    org_name: str | None = None
+    if org_id is not None:
+        org = session.get(BackfieldOrganization, int(org_id))
+        if org is not None:
+            org_name = str(org.name)
     return UserResponse(
         email=str(user.email),
         authenticated=True,
         user_id=int(user.id),
-        organization_id=data.get("organization_id"),
+        organization_id=org_id,
+        organization_name=org_name,
         org_role=data.get("org_role"),
     )
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from backfield_db import BackfieldProject, BackfieldWorkspace
+from backfield_db import BackfieldProject, BackfieldWorkspace, BackfieldWorkspaceMembership
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
@@ -41,19 +41,41 @@ def list_my_workspaces(
             org_role=role,
         )
     )
-    if not visible:
+
+    member_ws_ids: set[int] = set()
+    if role != "org_admin":
+        wm_rows = session.exec(
+            select(BackfieldWorkspaceMembership).where(
+                BackfieldWorkspaceMembership.user_id == uid,
+            )
+        ).all()
+        for wm in wm_rows:
+            if wm.workspace_id is None:
+                continue
+            ws = session.get(BackfieldWorkspace, int(wm.workspace_id))
+            if ws is None or ws.id is None:
+                continue
+            if int(ws.organization_id) != org_id:
+                continue
+            member_ws_ids.add(int(ws.id))
+
+    if not visible and role != "org_admin" and not member_ws_ids:
         return []
 
     rows = session.exec(
         select(BackfieldProject).where(BackfieldProject.organization_id == org_id)
     ).all()
-    projects_visible = [p for p in rows if p.id is not None and int(p.id) in visible]
+    if role == "org_admin":
+        projects_visible = [p for p in rows if p.id is not None]
+    else:
+        projects_visible = [p for p in rows if p.id is not None and int(p.id) in visible]
 
     by_ws: dict[int | None, list[BackfieldProject]] = defaultdict(list)
     for p in projects_visible:
         by_ws[p.workspace_id].append(p)
 
-    out: list[WorkspaceWithProjectsOut] = []
+    entries: list[tuple[int, str, str, list[ProjectSummaryOut]]] = []
+    present_ws_ids: set[int] = set()
 
     ws_keys = [k for k in by_ws if k is not None]
     ws_meta: list[tuple[int, str, str]] = []
@@ -66,20 +88,45 @@ def list_my_workspaces(
 
     for _wid, wname, wslug in ws_meta:
         plist = sorted(by_ws[_wid], key=lambda p: p.slug)
-        out.append(
-            WorkspaceWithProjectsOut(
-                id=_wid,
-                name=wname,
-                slug=wslug,
-                projects=[
-                    ProjectSummaryOut(
-                        id=int(p.id), name=str(p.name), slug=str(p.slug)
-                    )
-                    for p in plist
-                    if p.id is not None
-                ],
+        projects_out = [
+            ProjectSummaryOut(id=int(p.id), name=str(p.name), slug=str(p.slug))
+            for p in plist
+            if p.id is not None
+        ]
+        entries.append((_wid, wname, wslug, projects_out))
+        present_ws_ids.add(_wid)
+
+    if role == "org_admin":
+        all_ws = session.exec(
+            select(BackfieldWorkspace).where(BackfieldWorkspace.organization_id == org_id)
+        ).all()
+        for ws in all_ws:
+            if ws.id is None or int(ws.id) in present_ws_ids:
+                continue
+            entries.append(
+                (
+                    int(ws.id),
+                    str(ws.name),
+                    str(ws.slug),
+                    [],
+                )
             )
-        )
+            present_ws_ids.add(int(ws.id))
+    else:
+        for wid in sorted(member_ws_ids):
+            if wid in present_ws_ids:
+                continue
+            ws = session.get(BackfieldWorkspace, wid)
+            if ws is None or ws.id is None:
+                continue
+            entries.append((int(ws.id), str(ws.name), str(ws.slug), []))
+            present_ws_ids.add(int(ws.id))
+
+    entries.sort(key=lambda t: t[2])
+
+    out: list[WorkspaceWithProjectsOut] = [
+        WorkspaceWithProjectsOut(id=a, name=b, slug=c, projects=d) for a, b, c, d in entries
+    ]
 
     if None in by_ws and by_ws[None]:
         plist = sorted(by_ws[None], key=lambda p: p.slug)
@@ -89,9 +136,7 @@ def list_my_workspaces(
                 name="Other projects",
                 slug=_UNGROUPED_SLUG,
                 projects=[
-                    ProjectSummaryOut(
-                        id=int(p.id), name=str(p.name), slug=str(p.slug)
-                    )
+                    ProjectSummaryOut(id=int(p.id), name=str(p.name), slug=str(p.slug))
                     for p in plist
                     if p.id is not None
                 ],
