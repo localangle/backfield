@@ -21,7 +21,7 @@ import {
   type GraphCreate,
 } from '@/lib/api'
 import { formatDateCentral } from '@/lib/utils'
-import { Loader2, Copy, Trash2, Plus } from 'lucide-react'
+import { Loader2, Copy, Trash2 } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -128,18 +128,9 @@ export default function ProjectDetailFlowsTab({
 
   return (
     <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          Flows in this project. Open the editor to change the graph.
-        </p>
-        <Button
-          type="button"
-          onClick={() => navigate(`/flow/new?project=${encodeURIComponent(projectSlug)}`)}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New flow
-        </Button>
-      </div>
+      <p className="text-sm text-muted-foreground mb-4">
+        Flows in this project. Open the editor to change the graph.
+      </p>
 
       {graphs.length === 0 ? (
         <Card>

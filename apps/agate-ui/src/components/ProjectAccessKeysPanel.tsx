@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -31,11 +31,18 @@ import {
   type ProjectAccessCredentialCreated,
 } from "@/lib/core-api"
 
-export default function ProjectAccessKeysPanel({
-  projectId,
-}: {
-  projectId: number
-}) {
+export type ProjectAccessKeysPanelHandle = {
+  openCreateDialog: () => void
+}
+
+const ProjectAccessKeysPanel = forwardRef<
+  ProjectAccessKeysPanelHandle,
+  {
+    projectId: number
+    /** When true, hide the "New access key" row (actions live in parent toolbar). */
+    primaryActionsInToolbar?: boolean
+  }
+>(function ProjectAccessKeysPanel({ projectId, primaryActionsInToolbar = false }, ref) {
   const { userId, isOrgAdmin } = useAuth()
   const [rows, setRows] = useState<ProjectAccessCredential[]>([])
   const [loading, setLoading] = useState(true)
@@ -182,6 +189,13 @@ export default function ProjectAccessKeysPanel({
     void navigator.clipboard.writeText(raw)
   }
 
+  useImperativeHandle(ref, () => ({
+    openCreateDialog: () => {
+      setCreateOpen(true)
+      setCreateType("user")
+    },
+  }))
+
   return (
     <div className="w-full min-w-0 space-y-4 mb-10">
       <div>
@@ -200,21 +214,23 @@ export default function ProjectAccessKeysPanel({
         </Alert>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setCreateOpen(true)
-            setCreateType("user")
-          }}
-          disabled={saving}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New access key
-        </Button>
-      </div>
+      {!primaryActionsInToolbar ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCreateOpen(true)
+              setCreateType("user")
+            }}
+            disabled={saving}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New access key
+          </Button>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="text-sm text-muted-foreground py-4">Loading keys…</div>
@@ -393,4 +409,6 @@ export default function ProjectAccessKeysPanel({
       </Dialog>
     </div>
   )
-}
+})
+
+export default ProjectAccessKeysPanel
