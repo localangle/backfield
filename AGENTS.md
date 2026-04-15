@@ -39,6 +39,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 
 ## Docs map
 
+- `docs/AGENTIC.md`: orientation for agentic workflows (rules, skills, branch/validation habits); links here and to task checklists.
 - `README.md`: quick start, ports, and top-level layout.
 - `docs/ARCHITECTURE.md`: package boundaries, runtime flow, and dependency direction.
 - `docs/API.md`: Agate API conventions, route responsibilities, and run orchestration.

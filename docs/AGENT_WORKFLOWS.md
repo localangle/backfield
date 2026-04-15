@@ -2,6 +2,8 @@
 
 Use this file to decide what to read and which checks to run for common task types.
 
+For a short overview of how agentic work is organized in this repo (entry points, Cursor rules/skills, branch habits), see [`docs/AGENTIC.md`](AGENTIC.md).
+
 ## agate-ai-platform parity
 
 Backfield is a refactor of **agate-ai-platform** (`/Users/cjdd3b/apps/agate-ai-platform` on this machine, or your local clone). For non-trivial features and fixes, **open the corresponding files there** and aim for **maximum fidelity** when copying or adapting. See `AGENTS.md` → **Reference implementation**.
