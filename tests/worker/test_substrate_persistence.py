@@ -76,28 +76,28 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
 
     with Session(engine) as session:
         from backfield_db import (
-            BackfieldArticle,
-            BackfieldLocation,
-            BackfieldLocationMention,
-            BackfieldLocationMentionOccurrence,
+            SubstrateArticle,
+            SubstrateLocation,
+            SubstrateLocationMention,
+            SubstrateLocationMentionOccurrence,
         )
 
-        articles = session.exec(select(BackfieldArticle)).all()
+        articles = session.exec(select(SubstrateArticle)).all()
         assert len(articles) == 1
         assert articles[0].text == "Hello Chicago."
         assert articles[0].source_run_id == "run-1"
 
-        locations = session.exec(select(BackfieldLocation)).all()
+        locations = session.exec(select(SubstrateLocation)).all()
         assert len(locations) == 1
         assert locations[0].external_source == "pelias"
 
-        mentions = session.exec(select(BackfieldLocationMention)).all()
+        mentions = session.exec(select(SubstrateLocationMention)).all()
         assert len(mentions) == 1
         assert mentions[0].role_in_story == "Setting"
         assert mentions[0].nature == "primary"
         assert mentions[0].nature_secondary_tags_json == ["context"]
 
-        occ = session.exec(select(BackfieldLocationMentionOccurrence)).all()
+        occ = session.exec(select(SubstrateLocationMentionOccurrence)).all()
         assert len(occ) == 1
         assert occ[0].mention_text == "Chicago"
         assert occ[0].suppressed is False
@@ -163,10 +163,12 @@ def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
         session.commit()
 
     with Session(engine) as session:
-        from backfield_db import BackfieldLocationMentionOccurrence
+        from backfield_db import SubstrateLocationMentionOccurrence
 
         occ = session.exec(
-            select(BackfieldLocationMentionOccurrence).order_by(col(BackfieldLocationMentionOccurrence.id))
+            select(SubstrateLocationMentionOccurrence).order_by(
+                col(SubstrateLocationMentionOccurrence.id)
+            )
         ).all()
         assert len(occ) == 2
         assert sum(1 for row in occ if row.suppressed) == 1

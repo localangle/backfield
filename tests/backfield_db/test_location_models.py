@@ -1,13 +1,13 @@
-"""Schema contract tests for shared Backfield content/location models."""
+"""Schema contract tests for shared substrate content/location models."""
 
 from __future__ import annotations
 
 from backfield_db import (
-    BackfieldArticle,
-    BackfieldLocation,
-    BackfieldLocationCache,
-    BackfieldLocationMention,
-    BackfieldLocationMentionOccurrence,
+    SubstrateArticle,
+    SubstrateLocation,
+    SubstrateLocationCache,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from sqlalchemy import UniqueConstraint
 
@@ -20,35 +20,35 @@ def _unique_constraint_columns(model: type[object], name: str) -> tuple[str, ...
     raise AssertionError(f"Unique constraint {name!r} not found on {table.name}")
 
 
-def test_backfield_article_unique_constraints_cover_project_external_identity_and_url() -> None:
+def test_substrate_article_unique_constraints_cover_project_external_identity_and_url() -> None:
     assert _unique_constraint_columns(
-        BackfieldArticle,
-        "uq_backfield_article_project_external",
+        SubstrateArticle,
+        "uq_substrate_article_project_external",
     ) == ("project_id", "external_source", "external_id")
     assert _unique_constraint_columns(
-        BackfieldArticle,
-        "uq_backfield_article_project_url",
+        SubstrateArticle,
+        "uq_substrate_article_project_url",
     ) == ("project_id", "url")
 
 
-def test_backfield_location_mention_is_unique_per_article_and_location() -> None:
+def test_substrate_location_mention_is_unique_per_article_and_location() -> None:
     assert _unique_constraint_columns(
-        BackfieldLocationMention,
-        "uq_backfield_location_mention_article_location",
+        SubstrateLocationMention,
+        "uq_substrate_location_mention_article_location",
     ) == ("article_id", "location_id")
 
 
-def test_backfield_location_cache_is_project_scoped() -> None:
+def test_substrate_location_cache_is_project_scoped() -> None:
     assert _unique_constraint_columns(
-        BackfieldLocationCache,
-        "uq_backfield_location_cache_project_query",
+        SubstrateLocationCache,
+        "uq_substrate_location_cache_project_query",
     ) == ("project_id", "query_fingerprint")
 
 
 def test_location_defaults_keep_workflow_and_provenance_fields_predictable() -> None:
-    location = BackfieldLocation(project_id=1, name="Chicago", normalized_name="chicago")
-    mention = BackfieldLocationMention(article_id=1, location_id=2)
-    occurrence = BackfieldLocationMentionOccurrence(location_mention_id=1, mention_text="Chicago")
+    location = SubstrateLocation(project_id=1, name="Chicago", normalized_name="chicago")
+    mention = SubstrateLocationMention(article_id=1, location_id=2)
+    occurrence = SubstrateLocationMentionOccurrence(location_mention_id=1, mention_text="Chicago")
 
     assert location.status == "provisional"
     assert location.source_kind == "unknown"
@@ -67,10 +67,10 @@ def test_location_defaults_keep_workflow_and_provenance_fields_predictable() -> 
 
 
 def test_location_defaults_use_independent_json_containers() -> None:
-    first_location = BackfieldLocation(project_id=1, name="Chicago", normalized_name="chicago")
-    second_location = BackfieldLocation(project_id=1, name="Austin", normalized_name="austin")
-    first_mention = BackfieldLocationMention(article_id=1, location_id=2)
-    second_occurrence = BackfieldLocationMentionOccurrence(
+    first_location = SubstrateLocation(project_id=1, name="Chicago", normalized_name="chicago")
+    second_location = SubstrateLocation(project_id=1, name="Austin", normalized_name="austin")
+    first_mention = SubstrateLocationMention(article_id=1, location_id=2)
+    second_occurrence = SubstrateLocationMentionOccurrence(
         location_mention_id=1,
         mention_text="Austin",
     )
@@ -80,8 +80,8 @@ def test_location_defaults_use_independent_json_containers() -> None:
     second_occurrence.labels_json.append("quote")
 
     assert second_location.parent_ids_json == []
-    assert BackfieldLocationMention(article_id=2, location_id=3).nature_secondary_tags_json == []
-    assert BackfieldLocationMentionOccurrence(
+    assert SubstrateLocationMention(article_id=2, location_id=3).nature_secondary_tags_json == []
+    assert SubstrateLocationMentionOccurrence(
         location_mention_id=2,
         mention_text="Chicago",
     ).labels_json == []
