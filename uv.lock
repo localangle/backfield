@@ -83,6 +83,7 @@ dependencies = [
     { name = "backfield-core" },
     { name = "backfield-db" },
     { name = "celery" },
+    { name = "geoalchemy2" },
     { name = "redis" },
 ]
 
@@ -91,6 +92,7 @@ requires-dist = [
     { name = "backfield-core", editable = "packages/backfield-core" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "celery", specifier = ">=5.3.0" },
+    { name = "geoalchemy2", specifier = ">=0.14.0" },
     { name = "redis", specifier = ">=5.0.0" },
 ]
 

@@ -2,7 +2,10 @@ import logging
 from typing import Dict, Any, List, Optional
 from pydantic import Field
 
-from agate_utils.geocoding.geocoding_types import GeometryPolygon
+from agate_utils.geocoding.geocoding_types import (
+    GeometryPolygon,
+    bbox_west_south_east_north_to_polygon_coordinates,
+)
 from agate_utils.geocoding.wof import get_bbox_by_id
 
 from .area import Area
@@ -44,11 +47,27 @@ class Neighborhood(Area):
         return [west, south, east, north]
 
     @staticmethod
-    def _is_degenerate_bbox(bbox: Optional[List[float]]) -> bool:
-        if not bbox or len(bbox) != 4:
+    def _is_degenerate_bbox(coords: Optional[Any]) -> bool:
+        """True when extent is a line or point (flat bbox or flat polygon ring)."""
+        if not coords:
             return True
-        west, south, east, north = bbox
-        return abs(east - west) < 1e-5 or abs(north - south) < 1e-5
+        if isinstance(coords, list) and len(coords) == 4 and all(
+            isinstance(x, (int, float)) for x in coords
+        ):
+            west, south, east, north = (float(coords[0]), float(coords[1]), float(coords[2]), float(coords[3]))
+            return abs(east - west) < 1e-5 or abs(north - south) < 1e-5
+        if isinstance(coords, list) and coords and isinstance(coords[0], list):
+            ring = coords[0]
+            xs: list[float] = []
+            ys: list[float] = []
+            for pt in ring:
+                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                    xs.append(float(pt[0]))
+                    ys.append(float(pt[1]))
+            if len(xs) < 2:
+                return True
+            return (max(xs) - min(xs)) < 1e-5 or (max(ys) - min(ys)) < 1e-5
+        return True
 
     def _prep(self) -> Dict[str, Any]:
         """Prepare neighborhood data for geocoding."""
@@ -93,7 +112,9 @@ class Neighborhood(Area):
         wof_bbox = self._lookup_wof_bbox(result.result.id)
         if wof_bbox:
             try:
-                result.result.geometry = GeometryPolygon(coordinates=wof_bbox)
+                result.result.geometry = GeometryPolygon(
+                    coordinates=bbox_west_south_east_north_to_polygon_coordinates(wof_bbox),
+                )
             except Exception as exc:
                 logger.debug("Failed to apply WOF bbox for neighborhood %s: %s", self.name, exc)
 

@@ -30,11 +30,11 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 
 ### Shared content and locations (`backfield_*`)
 
-- `backfield_article` — project-scoped content item for stateful ingestion. Uses a project-scoped external identity hierarchy with `(project_id, url)` as the fallback uniqueness rule.
+- `backfield_article` — project-scoped content item for stateful ingestion. Uses a project-scoped external identity hierarchy with `(project_id, url)` as the fallback uniqueness rule. `source_run_id` stores the executing `agate_run.id` (UUID string) when the row is produced from an Agate worker run.
 - `backfield_image` — images attached to a `backfield_article`.
 - `backfield_location` — durable shared location entity row. Stores normalized naming, provider identity/fingerprint, canonical status fields, parent hierarchy, and PostGIS geometry.
-- `backfield_location_mention` — one aggregate article-to-location association per `(article_id, location_id)` with workflow state, provenance, `role_in_story`, and `nature`.
-- `backfield_location_mention_occurrence` — supporting evidence rows for a location mention aggregate (text/context/offsets/labels/provenance).
+- `backfield_location_mention` — one aggregate article-to-location association per `(article_id, location_id)` with workflow state, provenance, `role_in_story`, primary **`nature`** (PlaceExtract editorial role: `primary`, `secondary`, `subject`, `context`, `person`, `unknown`), and optional **`nature_secondary_tags_json`** for extra roles.
+- `backfield_location_mention_occurrence` — supporting evidence rows for a location mention aggregate (`mention_text`, offsets, labels, provenance). Editorial prose lives on the mention (`role_in_story`, `description` from extraction) — not duplicated here.
 - `backfield_location_cache` — project-scoped dumb cache of external resolution results only. Cache rows are lookup accelerators, not the durable entity identity layer.
 
 ### Agate execution (`agate_*`)
@@ -49,7 +49,11 @@ Schema revisions start at `001_agate_baseline` (initial `agate_*` tables and see
 
 - `backfield_project_secret` — per-project encrypted env-style secrets (`key` + `value_encrypted`); decrypted by the worker at run time when `MASTER_ENCRYPTION_KEY` is set.
 
-Revision **`003_def_ws_general`** inserts the **Default Workspace** (`slug` `default`) and links General to it (org display name is seeded as **Backfield** in `002_backfield_identity`). Revision **`004_ws_membership`** adds `backfield_workspace_membership`. Revision **`005_location_schema_foundation`** adds the shared `backfield_article`, `backfield_image`, `backfield_location`, `backfield_location_mention`, `backfield_location_mention_occurrence`, and `backfield_location_cache` tables and enables PostGIS for location geometry.
+Revision **`003_def_ws_general`** inserts the **Default Workspace** (`slug` `default`) and links General to it (org display name is seeded as **Backfield** in `002_backfield_identity`). Revision **`004_ws_membership`** adds `backfield_workspace_membership`. Revision **`005_location_schema_foundation`** adds the shared `backfield_article`, `backfield_image`, `backfield_location`, `backfield_location_mention`, `backfield_location_mention_occurrence`, and `backfield_location_cache` tables and enables PostGIS for location geometry. Revision **`006_article_source_run_id_text`** aligns `backfield_article.source_run_id` with string `agate_run.id` values (and adds the ORM-level foreign key).
+
+Revision **`007_starter_flow_add_db_output`** rewrites stored **Starter flow** `agate_graph.spec_json` rows to the canonical starter spec that includes **`DBOutput`** (so local stacks pick up persistence gating without manual graph edits).
+
+Revision **`008_drop_occurrence_context_text`** drops **`context_text`** from **`backfield_location_mention_occurrence`** (redundant with extraction `description` / mention fields).
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 

@@ -6,6 +6,7 @@ from agate_utils.geocoding.geocoding_types import (
     GeocodingResultData,
     GeometryPoint,
     GeometryPolygon,
+    bbox_west_south_east_north_to_polygon_coordinates,
 )
 from .area import Area
 from .city import City
@@ -166,7 +167,9 @@ class Span(Area):
             )
             return None
 
-        return GeometryPolygon(coordinates=[west, south, east, north])
+        return GeometryPolygon(
+            coordinates=bbox_west_south_east_north_to_polygon_coordinates([west, south, east, north]),
+        )
 
     def _build_result_id(self) -> str:
         digest = hashlib.md5(self.name.encode("utf-8")).hexdigest()

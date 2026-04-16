@@ -1,6 +1,6 @@
 ---
 name: run-agate-smoke
-description: Validate the Backfield golden path against a live stack. Use when runtime behavior changes across Agate API, worker, Stylebook API, or the four-node starter flow.
+description: Validate the Backfield golden path against a live stack. Use when runtime behavior changes across Agate API, worker, Stylebook API, or the starter geocode pipeline (including DBOutput persistence).
 ---
 
 # Run Agate Smoke

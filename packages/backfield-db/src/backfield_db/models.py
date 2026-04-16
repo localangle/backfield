@@ -226,7 +226,7 @@ class BackfieldArticle(SQLModel, table=True):
     s3_bucket: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     s3_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     text: str = Field(sa_column=Column(Text, nullable=False))
-    source_run_id: int | None = Field(default=None)
+    source_run_id: str | None = Field(default=None, foreign_key="agate_run.id", index=True)
     source_item_id: int | None = Field(default=None)
     added: bool = Field(default=False, index=True)
     edited: bool = Field(default=False, index=True)
@@ -402,7 +402,6 @@ class BackfieldLocationMentionOccurrence(SQLModel, table=True):
         sa_column=Column(JSON, nullable=True),
     )
     mention_text: str = Field(sa_column=Column(Text, nullable=False))
-    context_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     quote_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     start_char: int | None = Field(default=None)
     end_char: int | None = Field(default=None)

@@ -1,0 +1,39 @@
+{
+  "type": "DBOutput",
+  "label": "DB Output",
+  "icon": "Database",
+  "color": "bg-slate-500",
+  "description": "Persist consolidated upstream JSON into Backfield Postgres (worker-local)",
+  "category": "output",
+  "requiredUpstreamNodes": [],
+  "dependencyHelperText": "Same consolidation rules as JSON Output: wire any upstream nodes you want merged (unwraps node-* namespaces, apply include/exclude), then persists when `places` is present. JSON Output is optional — not required upstream.",
+  "inputs": [
+    {
+      "id": "data",
+      "label": "Any Data",
+      "type": "object",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "success",
+      "label": "Success",
+      "type": "boolean"
+    },
+    {
+      "id": "article_id",
+      "label": "Article ID",
+      "type": "number"
+    },
+    {
+      "id": "message",
+      "label": "Message",
+      "type": "string"
+    }
+  ],
+  "defaultParams": {
+    "exclude": null,
+    "include": null
+  }
+}
