@@ -1,4 +1,4 @@
-"""Persist successful Agate graph outputs into shared Backfield substrate tables."""
+"""Persist successful Agate graph outputs into shared substrate_* tables."""
 
 from __future__ import annotations
 
@@ -10,19 +10,19 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from backfield_db import (
-    BackfieldArticle,
-    BackfieldImage,
-    BackfieldLocation,
-    BackfieldLocationCache,
-    BackfieldLocationMention,
-    BackfieldLocationMentionOccurrence,
+    SubstrateArticle,
+    SubstrateImage,
+    SubstrateLocation,
+    SubstrateLocationCache,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from sqlmodel import Session, col, select
 
 _WS_RE = re.compile(r"\s+")
 
 # Primary editorial role (PlaceExtract `nature`). Extras: `nature_secondary_tags` in extraction JSON
-# → `BackfieldLocationMention.nature_secondary_tags_json`.
+# → `SubstrateLocationMention.nature_secondary_tags_json`.
 _NATURE_PRIMARY_ALLOWED = frozenset(
     {"primary", "secondary", "subject", "context", "person", "unknown"}
 )
@@ -189,7 +189,7 @@ def _geojson_to_wkt(geometry_json: dict[str, Any]) -> str | None:
 
 
 def _geometry_bind_value(session: Session, geometry_json: dict[str, Any]) -> object | None:
-    """Return a dialect-appropriate bind value for `BackfieldLocation.geometry`.
+    """Return a dialect-appropriate bind value for `SubstrateLocation.geometry`.
 
     SQLite tests store `geometry` as plain text and cannot bind GeoAlchemy elements.
     Postgres uses true PostGIS geometry via GeoAlchemy's `WKTElement`.
@@ -273,9 +273,9 @@ def _upsert_location_cache(
     )
 
     row = session.exec(
-        select(BackfieldLocationCache).where(
-            col(BackfieldLocationCache.project_id) == project_id,
-            col(BackfieldLocationCache.query_fingerprint) == fingerprint,
+        select(SubstrateLocationCache).where(
+            col(SubstrateLocationCache.project_id) == project_id,
+            col(SubstrateLocationCache.query_fingerprint) == fingerprint,
         )
     ).first()
 
@@ -287,7 +287,7 @@ def _upsert_location_cache(
 
     if row is None:
         session.add(
-            BackfieldLocationCache(
+            SubstrateLocationCache(
                 project_id=project_id,
                 query_text=query_text,
                 normalized_query=normalized_query,
@@ -467,7 +467,7 @@ def _upsert_article(
     project_id: int,
     consolidated: dict[str, Any],
     run_id: str,
-) -> BackfieldArticle:
+) -> SubstrateArticle:
     url = consolidated.get("url")
     url_str = str(url).strip() if isinstance(url, str) else None
     if url_str == "":
@@ -503,21 +503,21 @@ def _upsert_article(
     if entry_id is not None and str(entry_id).strip():
         external_id = str(entry_id).strip()
 
-    article: BackfieldArticle | None = None
+    article: SubstrateArticle | None = None
     if url_str:
         article = session.exec(
-            select(BackfieldArticle).where(
-                col(BackfieldArticle.project_id) == project_id,
-                col(BackfieldArticle.url) == url_str,
+            select(SubstrateArticle).where(
+                col(SubstrateArticle.project_id) == project_id,
+                col(SubstrateArticle.url) == url_str,
             )
         ).first()
 
     if article is None and external_source and external_id:
         article = session.exec(
-            select(BackfieldArticle).where(
-                col(BackfieldArticle.project_id) == project_id,
-                col(BackfieldArticle.external_source) == external_source,
-                col(BackfieldArticle.external_id) == external_id,
+            select(SubstrateArticle).where(
+                col(SubstrateArticle.project_id) == project_id,
+                col(SubstrateArticle.external_source) == external_source,
+                col(SubstrateArticle.external_id) == external_id,
             )
         ).first()
 
@@ -529,10 +529,10 @@ def _upsert_article(
             )
         )
         article = session.exec(
-            select(BackfieldArticle).where(
-                col(BackfieldArticle.project_id) == project_id,
-                col(BackfieldArticle.external_source) == "backfield_text_fingerprint",
-                col(BackfieldArticle.external_id) == fingerprint,
+            select(SubstrateArticle).where(
+                col(SubstrateArticle.project_id) == project_id,
+                col(SubstrateArticle.external_source) == "backfield_text_fingerprint",
+                col(SubstrateArticle.external_id) == fingerprint,
             )
         ).first()
 
@@ -542,7 +542,7 @@ def _upsert_article(
             json.dumps({"project_id": project_id, "text": text_str}, sort_keys=True)
         )
         resolved_external_id = external_id or text_fingerprint
-        article = BackfieldArticle(
+        article = SubstrateArticle(
             project_id=project_id,
             external_source=external_source or "backfield_text_fingerprint",
             external_id=resolved_external_id,
@@ -595,14 +595,14 @@ def _sync_images(session: Session, *, article_id: int, consolidated: dict[str, A
             caption_str = None
 
         row = session.exec(
-            select(BackfieldImage).where(
-                col(BackfieldImage.article_id) == article_id,
-                col(BackfieldImage.image_id) == image_id_str,
+            select(SubstrateImage).where(
+                col(SubstrateImage.article_id) == article_id,
+                col(SubstrateImage.image_id) == image_id_str,
             )
         ).first()
         if row is None:
             session.add(
-                BackfieldImage(
+                SubstrateImage(
                     article_id=article_id,
                     image_id=image_id_str,
                     url=url_str,
@@ -625,7 +625,7 @@ def _upsert_location(
     entry: dict[str, Any],
     run_id: str,
     graph_id: str,
-) -> BackfieldLocation | None:
+) -> SubstrateLocation | None:
     display_name = _display_name_for_place_entry(entry)
     normalized = _normalize_name(display_name)
     if not normalized:
@@ -667,21 +667,21 @@ def _upsert_location(
     if geocode_result and geometry_json:
         status = "resolved"
 
-    loc: BackfieldLocation | None = None
+    loc: SubstrateLocation | None = None
     if external_source and external_id:
         loc = session.exec(
-            select(BackfieldLocation).where(
-                col(BackfieldLocation.project_id) == project_id,
-                col(BackfieldLocation.external_source) == external_source,
-                col(BackfieldLocation.external_id) == external_id,
+            select(SubstrateLocation).where(
+                col(SubstrateLocation.project_id) == project_id,
+                col(SubstrateLocation.external_source) == external_source,
+                col(SubstrateLocation.external_id) == external_id,
             )
         ).first()
 
     if loc is None:
         loc = session.exec(
-            select(BackfieldLocation).where(
-                col(BackfieldLocation.project_id) == project_id,
-                col(BackfieldLocation.identity_fingerprint) == fingerprint,
+            select(SubstrateLocation).where(
+                col(SubstrateLocation.project_id) == project_id,
+                col(SubstrateLocation.identity_fingerprint) == fingerprint,
             )
         ).first()
 
@@ -694,7 +694,7 @@ def _upsert_location(
     }
 
     if loc is None:
-        loc = BackfieldLocation(
+        loc = SubstrateLocation(
             project_id=project_id,
             name=display_name,
             normalized_name=normalized,
@@ -770,11 +770,11 @@ def _suppress_prior_system_occurrences(
     mention_text: str,
 ) -> None:
     rows = session.exec(
-        select(BackfieldLocationMentionOccurrence).where(
-            col(BackfieldLocationMentionOccurrence.location_mention_id) == mention_id,
-            col(BackfieldLocationMentionOccurrence.mention_text) == mention_text,
-            col(BackfieldLocationMentionOccurrence.suppressed).is_(False),
-            col(BackfieldLocationMentionOccurrence.source_kind) == "system_extraction",
+        select(SubstrateLocationMentionOccurrence).where(
+            col(SubstrateLocationMentionOccurrence.location_mention_id) == mention_id,
+            col(SubstrateLocationMentionOccurrence.mention_text) == mention_text,
+            col(SubstrateLocationMentionOccurrence.suppressed).is_(False),
+            col(SubstrateLocationMentionOccurrence.source_kind) == "system_extraction",
         )
     ).all()
     now = _utcnow()
@@ -823,9 +823,9 @@ def _upsert_mention_and_occurrence(
     span = _find_mention_span(haystack=article_text, needle=mention_text)
 
     mention = session.exec(
-        select(BackfieldLocationMention).where(
-            col(BackfieldLocationMention.article_id) == article_id,
-            col(BackfieldLocationMention.location_id) == location_id,
+        select(SubstrateLocationMention).where(
+            col(SubstrateLocationMention.article_id) == article_id,
+            col(SubstrateLocationMention.location_id) == location_id,
         )
     ).first()
 
@@ -839,7 +839,7 @@ def _upsert_mention_and_occurrence(
 
     now = _utcnow()
     if mention is None:
-        mention = BackfieldLocationMention(
+        mention = SubstrateLocationMention(
             article_id=article_id,
             location_id=location_id,
             role_in_story=role_str,
@@ -872,7 +872,7 @@ def _upsert_mention_and_occurrence(
         mention_text=mention_text,
     )
 
-    occurrence = BackfieldLocationMentionOccurrence(
+    occurrence = SubstrateLocationMentionOccurrence(
         location_mention_id=int(mention.id),
         source_kind="system_extraction",
         source_details_json={"run_id": run_id, "graph_id": graph_id, "places_bucket": bucket},

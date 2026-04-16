@@ -9,6 +9,8 @@ from backfield_db import (
     AgateTemplate,
     BackfieldProject,
     BackfieldProjectSecret,
+    SubstrateArticle,
+    SubstrateLocation,
 )
 from worker import tasks as worker_tasks
 
@@ -25,6 +27,11 @@ def test_agate_tables_use_app_prefix():
 def test_backfield_project_tables_use_prefix():
     assert BackfieldProject.__tablename__ == "backfield_project"
     assert BackfieldProjectSecret.__tablename__ == "backfield_project_secret"
+
+
+def test_substrate_tables_use_prefix():
+    assert SubstrateArticle.__tablename__ == "substrate_article"
+    assert SubstrateLocation.__tablename__ == "substrate_location"
 
 
 def test_expected_indexes_exist():

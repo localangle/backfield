@@ -194,23 +194,23 @@ class BackfieldProjectSecret(SQLModel, table=True):
     )
 
 
-# ----- Shared content + entity substrate (backfield_*) -----
+# ----- Shared content + entity substrate (substrate_* — not tenancy `backfield_*`) -----
 
 
-class BackfieldArticle(SQLModel, table=True):
+class SubstrateArticle(SQLModel, table=True):
     """Project-scoped article/content item used by stateful ingestion."""
 
-    __tablename__ = "backfield_article"
+    __tablename__ = "substrate_article"
     __table_args__ = (
         UniqueConstraint(
             "project_id",
             "external_source",
             "external_id",
-            name="uq_backfield_article_project_external",
+            name="uq_substrate_article_project_external",
         ),
-        UniqueConstraint("project_id", "url", name="uq_backfield_article_project_url"),
-        Index("idx_backfield_article_project_pub_date", "project_id", "pub_date"),
-        Index("idx_backfield_article_project_entry_id", "project_id", "entry_id"),
+        UniqueConstraint("project_id", "url", name="uq_substrate_article_project_url"),
+        Index("idx_substrate_article_project_pub_date", "project_id", "pub_date"),
+        Index("idx_substrate_article_project_entry_id", "project_id", "entry_id"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -239,16 +239,16 @@ class BackfieldArticle(SQLModel, table=True):
     )
 
 
-class BackfieldImage(SQLModel, table=True):
-    """Image attached to a Backfield article."""
+class SubstrateImage(SQLModel, table=True):
+    """Image attached to a substrate article row."""
 
-    __tablename__ = "backfield_image"
+    __tablename__ = "substrate_image"
     __table_args__ = (
-        UniqueConstraint("article_id", "image_id", name="uq_backfield_image_article_image_id"),
+        UniqueConstraint("article_id", "image_id", name="uq_substrate_image_article_image_id"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    article_id: int = Field(foreign_key="backfield_article.id", index=True)
+    article_id: int = Field(foreign_key="substrate_article.id", index=True)
     image_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     url: str = Field(sa_column=Column(Text, nullable=False))
     caption: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
@@ -257,27 +257,27 @@ class BackfieldImage(SQLModel, table=True):
     )
 
 
-class BackfieldLocation(SQLModel, table=True):
+class SubstrateLocation(SQLModel, table=True):
     """Durable shared location entity for stateful article ingestion."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    __tablename__ = "backfield_location"
+    __tablename__ = "substrate_location"
     __table_args__ = (
         UniqueConstraint(
             "project_id",
             "external_source",
             "external_id",
-            name="uq_backfield_location_project_external",
+            name="uq_substrate_location_project_external",
         ),
         UniqueConstraint(
             "project_id",
             "identity_fingerprint",
-            name="uq_backfield_location_project_fingerprint",
+            name="uq_substrate_location_project_fingerprint",
         ),
-        Index("idx_backfield_location_project_status", "project_id", "status"),
-        Index("idx_backfield_location_project_name", "project_id", "normalized_name"),
-        Index("idx_backfield_location_project_type", "project_id", "location_type"),
+        Index("idx_substrate_location_project_status", "project_id", "status"),
+        Index("idx_substrate_location_project_name", "project_id", "normalized_name"),
+        Index("idx_substrate_location_project_type", "project_id", "location_type"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -326,28 +326,28 @@ class BackfieldLocation(SQLModel, table=True):
     )
 
 
-class BackfieldLocationMention(SQLModel, table=True):
+class SubstrateLocationMention(SQLModel, table=True):
     """One aggregate article-to-location association."""
 
-    __tablename__ = "backfield_location_mention"
+    __tablename__ = "substrate_location_mention"
     __table_args__ = (
         UniqueConstraint(
             "article_id",
             "location_id",
-            name="uq_backfield_location_mention_article_location",
+            name="uq_substrate_location_mention_article_location",
         ),
         Index(
-            "idx_backfield_location_mention_article_review",
+            "idx_substrate_location_mention_article_review",
             "article_id",
             "needs_review",
             "deleted",
         ),
-        Index("idx_backfield_location_mention_location", "location_id", "deleted"),
+        Index("idx_substrate_location_mention_location", "location_id", "deleted"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    article_id: int = Field(foreign_key="backfield_article.id", index=True)
-    location_id: int = Field(foreign_key="backfield_location.id", index=True)
+    article_id: int = Field(foreign_key="substrate_article.id", index=True)
+    location_id: int = Field(foreign_key="substrate_location.id", index=True)
     role_in_story: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
     nature_secondary_tags_json: list[str] = Field(
@@ -378,13 +378,13 @@ class BackfieldLocationMention(SQLModel, table=True):
     )
 
 
-class BackfieldLocationMentionOccurrence(SQLModel, table=True):
+class SubstrateLocationMentionOccurrence(SQLModel, table=True):
     """Supporting textual evidence for a location mention aggregate."""
 
-    __tablename__ = "backfield_location_mention_occurrence"
+    __tablename__ = "substrate_location_mention_occurrence"
     __table_args__ = (
         Index(
-            "idx_backfield_location_occurrence_mention_source",
+            "idx_substrate_location_occurrence_mention_source",
             "location_mention_id",
             "source_kind",
             "suppressed",
@@ -392,7 +392,7 @@ class BackfieldLocationMentionOccurrence(SQLModel, table=True):
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    location_mention_id: int = Field(foreign_key="backfield_location_mention.id", index=True)
+    location_mention_id: int = Field(foreign_key="substrate_location_mention.id", index=True)
     source_kind: str = Field(
         default="system_extraction",
         sa_column=Column(Text, nullable=False, server_default="system_extraction")
@@ -419,20 +419,20 @@ class BackfieldLocationMentionOccurrence(SQLModel, table=True):
     )
 
 
-class BackfieldLocationCache(SQLModel, table=True):
+class SubstrateLocationCache(SQLModel, table=True):
     """Project-scoped dumb cache of external geocoding or resolution results."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    __tablename__ = "backfield_location_cache"
+    __tablename__ = "substrate_location_cache"
     __table_args__ = (
         UniqueConstraint(
             "project_id",
             "query_fingerprint",
-            name="uq_backfield_location_cache_project_query",
+            name="uq_substrate_location_cache_project_query",
         ),
-        Index("idx_backfield_location_cache_project_query_text", "project_id", "normalized_query"),
-        Index("idx_backfield_location_cache_project_type", "project_id", "location_type"),
+        Index("idx_substrate_location_cache_project_query_text", "project_id", "normalized_query"),
+        Index("idx_substrate_location_cache_project_type", "project_id", "location_type"),
     )
 
     id: int | None = Field(default=None, primary_key=True)

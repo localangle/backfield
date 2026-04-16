@@ -72,5 +72,5 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         **body,
         "success": True,
         "article_id": article_id,
-        "message": "Persisted flow output to Backfield substrate tables",
+        "message": "Persisted flow output to substrate_* tables",
     }
