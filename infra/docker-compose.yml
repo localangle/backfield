@@ -68,6 +68,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Alembic runs in agate-api's entrypoint before uvicorn; core-api env bootstrap needs identity tables.
+      agate-api:
+        condition: service_healthy
 
   agate-api:
     build:
@@ -130,7 +133,7 @@ services:
       stylebook-api:
         condition: service_started
       agate-api:
-        condition: service_started
+        condition: service_healthy
 
   agate-ui:
     build:
