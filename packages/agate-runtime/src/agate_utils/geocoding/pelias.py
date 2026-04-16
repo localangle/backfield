@@ -3,7 +3,14 @@
 import logging
 import httpx
 from typing import Dict, Any, Optional, List
-from agate_utils.geocoding.geocoding_types import GeocodingResult, GeocodingResultData, GeometryPoint, GeometryPolygon, Confidence
+from agate_utils.geocoding.geocoding_types import (
+    Confidence,
+    GeocodingResult,
+    GeocodingResultData,
+    GeometryPoint,
+    GeometryPolygon,
+    bbox_west_south_east_north_to_polygon_coordinates,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +117,7 @@ async def geocode_search(
             logger.info(f"Using bbox for {layer}: {bbox}")
             result_geometry = GeometryPolygon(
                 type="Polygon",
-                coordinates=bbox  # [west, south, east, north]
+                coordinates=bbox_west_south_east_north_to_polygon_coordinates(bbox),
             )
         else:
             # Use point geometry
@@ -246,7 +253,7 @@ async def geocode_structured(
             logger.info(f"Using bbox for {layer}: {bbox}")
             result_geometry = GeometryPolygon(
                 type="Polygon",
-                coordinates=bbox  # [west, south, east, north]
+                coordinates=bbox_west_south_east_north_to_polygon_coordinates(bbox),
             )
         else:
             # Use point geometry

@@ -1,7 +1,13 @@
 import logging
 import requests
 from typing import Optional, List, Dict, Any
-from .geocoding_types import GeocodingResult, GeocodingResultData, GeometryPoint, GeometryPolygon
+from .geocoding_types import (
+    GeocodingResult,
+    GeocodingResultData,
+    GeometryPoint,
+    GeometryPolygon,
+    bbox_west_south_east_north_to_polygon_coordinates,
+)
 
 ########## STYLEBOOK API FUNCTIONS ##########
 
@@ -284,9 +290,12 @@ def format_geocoding_result_from_localize(input_str: str, localize_result: Dict[
         
         if not geometry:
             if len(bbox) >= 4:
-                # bbox format: [min_lon, min_lat, max_lon, max_lat]
-                # This matches the GeometryPolygon format: [west, south, east, north]
-                geometry = GeometryPolygon(coordinates=bbox)
+                # bbox format: [min_lon, min_lat, max_lon, max_lat] == [west, south, east, north]
+                geometry = GeometryPolygon(
+                    coordinates=bbox_west_south_east_north_to_polygon_coordinates(
+                        [float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])]
+                    ),
+                )
             else:
                 # If no bbox, try to get a point from lat/lon
                 lat = localize_result.get("lat") or localize_result.get("latitude")
