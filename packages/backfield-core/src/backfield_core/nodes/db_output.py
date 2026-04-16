@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from agate_runtime.output_node import OutputConsolidator, OutputParams
+from agate_runtime.output_node import (
+    OutputConsolidator,
+    OutputParams,
+    expand_upstream_merge_for_output_consolidator,
+)
 
 
 def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
@@ -13,6 +17,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
     for _upstream_id, payload in inputs.items():
         if isinstance(payload, dict):
             merged.update(payload)
+    merged = expand_upstream_merge_for_output_consolidator(merged)
 
     cons = OutputConsolidator()
     p = OutputParams.model_validate(params)

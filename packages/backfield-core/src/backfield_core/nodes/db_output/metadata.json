@@ -6,7 +6,7 @@
   "description": "Persist consolidated upstream JSON into Backfield Postgres (worker-local)",
   "category": "output",
   "requiredUpstreamNodes": [],
-  "dependencyHelperText": "Wire this after your consolidation step (typically JSON Output). It unwraps upstream node namespaces, applies include/exclude filters, then writes substrate rows when `places` is present.",
+  "dependencyHelperText": "Same consolidation rules as JSON Output: wire any upstream nodes you want merged (unwraps node-* namespaces, apply include/exclude), then persists when `places` is present. JSON Output is optional — not required upstream.",
   "inputs": [
     {
       "id": "data",

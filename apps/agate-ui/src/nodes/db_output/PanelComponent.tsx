@@ -7,7 +7,7 @@ const nodeMetadata = {
   "description": "Persist consolidated upstream JSON into Backfield Postgres (worker-local)",
   "category": "output",
   "requiredUpstreamNodes": [],
-  "dependencyHelperText": "Wire this after your consolidation step (typically JSON Output). It unwraps upstream node namespaces, applies include/exclude filters, then writes substrate rows when `places` is present.",
+  "dependencyHelperText": "Same consolidation rules as JSON Output: wire any upstream nodes you want merged (unwraps node-* namespaces, apply include/exclude), then persists when `places` is present. JSON Output is optional — not required upstream.",
   "inputs": [
     {
       "id": "data",
@@ -112,7 +112,8 @@ export default function DBOutputPanel({
           <Label className="text-sm font-medium">Description</Label>
           <p className="text-sm text-muted-foreground mt-1">
             Same consolidation rules as JSON Output (include/exclude keys), then persists the consolidated payload
-            into shared Backfield tables when the worker runs this graph. Use after your JSON consolidation step.
+            into shared Backfield tables when the worker runs this graph. Wire upstream nodes directly; JSON Output
+            is optional.
           </p>
         </div>
       </div>

@@ -71,7 +71,8 @@ export default function DBOutputPanel({
           <Label className="text-sm font-medium">Description</Label>
           <p className="text-sm text-muted-foreground mt-1">
             Same consolidation rules as JSON Output (include/exclude keys), then persists the consolidated payload
-            into shared Backfield tables when the worker runs this graph. Use after your JSON consolidation step.
+            into shared Backfield tables when the worker runs this graph. Wire upstream nodes directly; JSON Output
+            is optional.
           </p>
         </div>
       </div>

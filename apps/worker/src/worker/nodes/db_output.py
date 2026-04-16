@@ -5,7 +5,11 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from agate_runtime.output_node import OutputConsolidator, OutputParams
+from agate_runtime.output_node import (
+    OutputConsolidator,
+    OutputParams,
+    expand_upstream_merge_for_output_consolidator,
+)
 from sqlmodel import Session
 
 from worker.substrate_persistence import persist_from_consolidated
@@ -33,6 +37,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
     project_id = int(project_id_raw)
 
     merged = _merge_namespaced_upstream_inputs(inputs)
+    merged = expand_upstream_merge_for_output_consolidator(merged)
     cons = OutputConsolidator()
     p = OutputParams.model_validate(params)
     body = cons.run(merged, p.model_dump())

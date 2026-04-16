@@ -99,7 +99,10 @@ def execute_graph(
         if not runner:
             raise GraphExecutionError(f"Unknown node type: {node.type}")
 
-        if node.type in {"Output", "DBOutput"}:
+        # Match agate-ai-platform worker `map_node_inputs`: only JSON `Output` deep-merges
+        # all completed node outputs. `DBOutput` consolidates from wired upstream nodes only
+        # (namespaced by source id), like other consumers — it does not require JSON Output.
+        if node.type == "Output":
             inputs = _merged_outputs_for_output(node_outputs, by_id)
         else:
             inputs = _namespaced_upstream_inputs(nid, spec.edges, node_outputs, by_id)
