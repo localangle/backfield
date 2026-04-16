@@ -11,10 +11,6 @@ from sqlmodel import Session
 from worker.substrate_persistence import persist_from_consolidated
 
 
-def _truthy_env(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _merge_namespaced_upstream_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
     """Shallow-merge upstream node outputs keyed by upstream node id."""
 
@@ -26,11 +22,6 @@ def _merge_namespaced_upstream_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-    if _truthy_env("BACKFIELD_DISABLE_RUN_SUBSTRATE_PERSISTENCE"):
-        raise RuntimeError(
-            "DBOutput persistence is disabled via BACKFIELD_DISABLE_RUN_SUBSTRATE_PERSISTENCE"
-        )
-
     project_id_raw = os.getenv("BACKFIELD_PROJECT_ID")
     graph_id = os.getenv("BACKFIELD_GRAPH_ID")
     run_id = os.getenv("BACKFIELD_RUN_ID")

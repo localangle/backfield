@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from collections.abc import Iterable
 from datetime import UTC, date, datetime
@@ -21,18 +20,6 @@ from backfield_db import (
 from sqlmodel import Session, col, select
 
 _WS_RE = re.compile(r"\s+")
-
-
-def _truthy_env(name: str) -> bool:
-    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def persist_enabled() -> bool:
-    """Default-on persistence with an explicit kill switch for emergencies."""
-
-    if _truthy_env("BACKFIELD_DISABLE_RUN_SUBSTRATE_PERSISTENCE"):
-        return False
-    return True
 
 
 def _utcnow() -> datetime:
@@ -866,9 +853,6 @@ def persist_from_consolidated(
     run_id: str,
     consolidated: dict[str, Any],
 ) -> int:
-    if not persist_enabled():
-        raise RuntimeError("Persistence disabled via BACKFIELD_DISABLE_RUN_SUBSTRATE_PERSISTENCE")
-
     places = consolidated.get("places")
     if not isinstance(places, dict):
         raise RuntimeError(
