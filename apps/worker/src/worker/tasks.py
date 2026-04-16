@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -13,6 +14,10 @@ from backfield_db.crypto import decrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
 from celery import Celery
 from sqlmodel import Session, select
+
+from worker.substrate_persistence import persist_graph_outputs
+
+logger = logging.getLogger(__name__)
 
 celery_app = Celery(
     "agate_worker",
@@ -79,6 +84,17 @@ def execute_agate_run(run_id: str) -> None:
             overlay = _project_env_map(session, graph.project_id)
             with _env_overlay(overlay):
                 outputs = execute_graph(spec)
+            try:
+                persist_graph_outputs(
+                    session,
+                    project_id=graph.project_id,
+                    graph_id=graph.id,
+                    run_id=run.id,
+                    graph=spec,
+                    node_outputs=outputs,
+                )
+            except Exception:
+                logger.exception("Failed persisting run outputs into Backfield substrate tables")
             run.status = "succeeded"
             run.result_json = json.dumps(outputs)
             run.error_message = None
