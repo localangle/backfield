@@ -15,6 +15,8 @@ Primary local services are defined in `infra/docker-compose.yml`:
 
 `agate-ui` is ordered **after** `core-api` and `agate-api` report **healthy** (HTTP `/health` checks) so the Vite dev proxy does not hit `ECONNREFUSED` while Uvicorn is still binding (notably when `agate-api` uses the reload worker).
 
+`core-api` and the **`worker`** likewise wait until **`agate-api` is healthy** so its entrypoint has finished **`alembic upgrade head`** (and optional `BACKFIELD_LOCAL_BOOTSTRAP`) before those services touch the database. Otherwise `core-api` can log *Env bootstrap skipped: identity tables missing* on a cold volume because Postgres was ready while migrations had not run yet.
+
 ## Canonical commands
 
 - `make up`: bring up the local stack in the foreground.
