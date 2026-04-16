@@ -220,6 +220,7 @@ source = { editable = "packages/backfield-db" }
 dependencies = [
     { name = "alembic" },
     { name = "cryptography" },
+    { name = "geoalchemy2" },
     { name = "psycopg", extra = ["binary"] },
     { name = "sqlalchemy" },
     { name = "sqlmodel" },
@@ -229,6 +230,7 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "cryptography", specifier = ">=42.0.0" },
+    { name = "geoalchemy2", specifier = ">=0.19.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "sqlmodel", specifier = ">=0.0.14" },
@@ -692,6 +694,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f7/e6/7adb4c5fa231e82c35b8f5741a9f2d055f520c29af5546fd70d3e8e1cd2e/fastapi-0.135.3.tar.gz", hash = "sha256:bd6d7caf1a2bdd8d676843cdcd2287729572a1ef524fc4d65c17ae002a1be654", size = 396524, upload-time = "2026-04-01T16:23:58.188Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/84/a4/5caa2de7f917a04ada20018eccf60d6cc6145b0199d55ca3711b0fc08312/fastapi-0.135.3-py3-none-any.whl", hash = "sha256:9b0f590c813acd13d0ab43dd8494138eb58e484bfac405db1f3187cfc5810d98", size = 117734, upload-time = "2026-04-01T16:23:59.328Z" },
+]
+
+[[package]]
+name = "geoalchemy2"
+version = "0.19.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f1/3e/8b6b15cd6a68bb4472ad865e8ecc83b010f1673a22834a52fa479cabf639/geoalchemy2-0.19.0.tar.gz", hash = "sha256:c88be59cdb90af9d74278bdd33a5f58acb23859f0f1380726593eed0f343f4a8", size = 240220, upload-time = "2026-04-12T21:02:16.544Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/35/78/0d5918bea58179dc7a6b724c097b3d972f875328460503f74521c46283bc/geoalchemy2-0.19.0-py3-none-any.whl", hash = "sha256:878a5859e23ae632fe20ea35412cda40f50c94fa69c9242587574941e4d4ec32", size = 81145, upload-time = "2026-04-12T21:02:15.337Z" },
 ]
 
 [[package]]

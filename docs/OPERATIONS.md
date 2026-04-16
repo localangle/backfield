@@ -4,7 +4,7 @@
 
 Primary local services are defined in `infra/docker-compose.yml`:
 
-- `postgres` on `localhost:5433`
+- PostGIS-enabled `postgres` on `localhost:5433`
 - `redis` on `localhost:6379`
 - `agate-api` on `localhost:8000`
 - `stylebook-api` on `localhost:8003`
@@ -72,6 +72,7 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 ## Database guidance
 
 - Use Alembic for schema changes (single chain in `packages/backfield-db`; **`make migrate` runs inside `agate-api`** — do not also auto-migrate from `core-api` on startup).
+- The local `postgres` service uses a PostGIS-enabled image because shared location tables store geometry columns.
 - Agate execution tables use the `agate_` prefix; tenancy and project tables use `backfield_`.
 - Do not let multiple services race to run migrations for the same revision path.
 

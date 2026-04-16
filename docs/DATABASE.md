@@ -1,15 +1,16 @@
 # Database strategy (Backfield)
 
-Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix**; shared tenancy and project tables use **`backfield_`** so each app’s data is namespaced in Postgres (e.g. future Stylebook tables as `stylebook_*`).
+Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix**; shared tenancy, content, entity, cache, and mention tables use **`backfield_`** so each app’s data is namespaced in Postgres (e.g. editorial Stylebook tables use `stylebook_*`).
 
 ## Ownership
 
 
-| Area                                             | Owner                   | Notes                                    |
-| ------------------------------------------------ | ----------------------- | ---------------------------------------- |
-| Agate graphs, runs, templates                    | `packages/backfield-db` | Alembic migrations live here only        |
-| Backfield orgs, users, projects, credentials     | `packages/backfield-db` | Same migration chain                     |
-| Stylebook domain tables                          | future package / prefix | Add when Stylebook persistence is needed |
+| Area                                             | Owner                   | Notes                                                                  |
+| ------------------------------------------------ | ----------------------- | ---------------------------------------------------------------------- |
+| Agate graphs, runs, templates                    | `packages/backfield-db` | Alembic migrations live here only                                      |
+| Backfield orgs, users, projects, credentials     | `packages/backfield-db` | Same migration chain                                                   |
+| Shared content/location substrate                | `packages/backfield-db` | `backfield_article`, `backfield_location`, mentions, occurrences, cache |
+| Stylebook editorial/canonicalization tables      | future package / prefix | Layer on top of shared substrate when canonical management lands        |
 
 
 Do **not** run multiple services that each invoke `alembic upgrade` on startup for the same revision path; pick **one** migration runner (the `agate-api` entrypoint on deploy, or `make migrate` locally).
@@ -27,6 +28,15 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 - `backfield_project_membership` — `(user_id, project_id)` with optional per-project `role` (legacy explicit grants).
 - `backfield_api_credential` — per-project API keys (`credential_type` `user` or `service`), `key_prefix` + `key_hash`, `revoked_at`.
 
+### Shared content and locations (`backfield_*`)
+
+- `backfield_article` — project-scoped content item for stateful ingestion. Uses a project-scoped external identity hierarchy with `(project_id, url)` as the fallback uniqueness rule.
+- `backfield_image` — images attached to a `backfield_article`.
+- `backfield_location` — durable shared location entity row. Stores normalized naming, provider identity/fingerprint, canonical status fields, parent hierarchy, and PostGIS geometry.
+- `backfield_location_mention` — one aggregate article-to-location association per `(article_id, location_id)` with workflow state, provenance, `role_in_story`, and `nature`.
+- `backfield_location_mention_occurrence` — supporting evidence rows for a location mention aggregate (text/context/offsets/labels/provenance).
+- `backfield_location_cache` — project-scoped dumb cache of external resolution results only. Cache rows are lookup accelerators, not the durable entity identity layer.
+
 ### Agate execution (`agate_*`)
 
 - `agate_graph` — stored graph spec (JSON), FK to `backfield_project`.
@@ -39,7 +49,7 @@ Schema revisions start at `001_agate_baseline` (initial `agate_*` tables and see
 
 - `backfield_project_secret` — per-project encrypted env-style secrets (`key` + `value_encrypted`); decrypted by the worker at run time when `MASTER_ENCRYPTION_KEY` is set.
 
-Revision **`003_def_ws_general`** inserts the **Default Workspace** (`slug` `default`) and links General to it (org display name is seeded as **Backfield** in `002_backfield_identity`). Revision **`004_ws_membership`** adds `backfield_workspace_membership`.
+Revision **`003_def_ws_general`** inserts the **Default Workspace** (`slug` `default`) and links General to it (org display name is seeded as **Backfield** in `002_backfield_identity`). Revision **`004_ws_membership`** adds `backfield_workspace_membership`. Revision **`005_location_schema_foundation`** adds the shared `backfield_article`, `backfield_image`, `backfield_location`, `backfield_location_mention`, `backfield_location_mention_occurrence`, and `backfield_location_cache` tables and enables PostGIS for location geometry.
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 
@@ -54,6 +64,7 @@ The **Starter flow** graph row for the General project is created at runtime whe
   - `agate_run.graph_id`
   - `backfield_project_secret.project_id`
   - unique key on `backfield_project_secret (project_id, key)`
+  - GIST indexes on shared location geometry columns
 - If a new query path matters for runtime behavior, capture the indexing decision in the migration or model change rather than leaving it implicit.
 
 ## Redesign space

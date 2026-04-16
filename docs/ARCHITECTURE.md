@@ -24,6 +24,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
   - Excluded from default Ruff scope in the workspace root config; treat as third-party-style surface when editing.
 - `packages/backfield-db`
   - Owns SQLModel models, DB session helpers, encryption helpers, and Alembic migrations.
+  - Owns the shared `backfield_*` content/location substrate (`backfield_article`, `backfield_location`, location mentions/occurrences, cache) in addition to tenancy and Agate execution tables.
   - Is the only package that should define DB table names and schema-level conventions.
 - `apps/agate-api`
   - Owns HTTP routes for health, projects, graphs, templates, runs, and node metadata.
@@ -36,6 +37,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
   - Consumes node metadata and synced node UI generated from `backfield-core`.
 - `apps/stylebook-api`
   - Owns Stylebook-only HTTP endpoints such as geocode resolution.
+  - Will layer editorial/canonicalization workflows on top of the shared `backfield_*` substrate rather than replacing the shared entity tables.
 - `apps/stylebook-ui`
   - Owns the minimal Stylebook browser shell.
 - `packages/backfield-auth`
@@ -76,7 +78,8 @@ flowchart LR
 ## Important conventions
 
 - `GraphSpec` is the canonical stored graph shape.
-- Agate execution tables use the `agate_` prefix; shared tenancy and project tables use `backfield_` (e.g. `backfield_project`).
+- Agate execution tables use the `agate_` prefix; shared tenancy, content, and entity substrate tables use `backfield_` (e.g. `backfield_project`, `backfield_location`).
+- `backfield_location` is the durable shared location entity table; future `stylebook_*` tables layer editorial canonicalization and alias management on top of it.
 - Celery queue and worker name use `agate`.
 - Node metadata and optional node UI live in `packages/backfield-core/src/backfield_core/nodes`.
 - `apps/agate-ui/scripts/sync-nodes.js` copies node UI and generates the frontend registry.
