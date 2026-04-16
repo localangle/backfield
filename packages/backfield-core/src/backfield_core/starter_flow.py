@@ -1,4 +1,7 @@
-"""Canonical four-node geocode starter graph (TextInput through Output) for bootstrap and smoke."""
+"""Canonical geocode starter graph.
+
+Topology: TextInput → PlaceExtract → GeocodeAgent → JSON Output → DB Output.
+"""
 
 from __future__ import annotations
 
@@ -16,10 +19,13 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
     """
     gap = 48
     # n1 TextInput w-[280px]; then 200px-wide nodes with a gap between each.
+    w_text = 280.0
+    w_card = 200.0
     x1 = 0.0
-    x2 = x1 + 280 + gap
-    x3 = x2 + 200 + gap
-    x4 = x3 + 200 + gap
+    x2 = x1 + w_text + gap
+    x3 = x2 + w_card + gap
+    x4 = x3 + w_card + gap
+    x5 = x4 + w_card + gap
     y = 0.0
     return GraphSpec(
         name="starter_geocode_flow",
@@ -48,6 +54,12 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
                 params={},
                 position={"x": x4, "y": y},
             ),
+            NodeConfig(
+                id="n5",
+                type="DBOutput",
+                params={},
+                position={"x": x5, "y": y},
+            ),
         ],
         edges=[
             Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
@@ -61,6 +73,12 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
                 source="n3",
                 target="n4",
                 sourceHandle="locations",
+                targetHandle="data",
+            ),
+            Edge(
+                source="n4",
+                target="n5",
+                sourceHandle="consolidated",
                 targetHandle="data",
             ),
         ],

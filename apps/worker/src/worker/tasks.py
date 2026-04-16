@@ -9,13 +9,14 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from backfield_core import GraphSpec, execute_graph
+from backfield_core.nodes import NODE_RUNNERS
 from backfield_db import AgateGraph, AgateRun, BackfieldProjectSecret
 from backfield_db.crypto import decrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
 from celery import Celery
 from sqlmodel import Session, select
 
-from worker.substrate_persistence import persist_graph_outputs
+from worker.nodes.db_output import run_db_output
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,17 @@ def _project_env_map(session: Session, project_id: int) -> dict[str, str]:
     return out
 
 
+@contextmanager
+def _run_execution_env(*, project_id: int, graph_id: str, run_id: str):
+    updates = {
+        "BACKFIELD_PROJECT_ID": str(project_id),
+        "BACKFIELD_GRAPH_ID": str(graph_id),
+        "BACKFIELD_RUN_ID": str(run_id),
+    }
+    with _env_overlay(updates):
+        yield
+
+
 @celery_app.task(name="worker.tasks.execute_agate_run")
 def execute_agate_run(run_id: str) -> None:
     engine = get_engine()
@@ -82,19 +94,14 @@ def execute_agate_run(run_id: str) -> None:
         try:
             spec = GraphSpec.model_validate_json(graph.spec_json)
             overlay = _project_env_map(session, graph.project_id)
-            with _env_overlay(overlay):
-                outputs = execute_graph(spec)
-            try:
-                persist_graph_outputs(
-                    session,
-                    project_id=graph.project_id,
-                    graph_id=graph.id,
-                    run_id=run.id,
-                    graph=spec,
-                    node_outputs=outputs,
-                )
-            except Exception:
-                logger.exception("Failed persisting run outputs into Backfield substrate tables")
+            node_runners = dict(NODE_RUNNERS)
+            node_runners["DBOutput"] = run_db_output
+            with _env_overlay(overlay), _run_execution_env(
+                project_id=graph.project_id,
+                graph_id=graph.id,
+                run_id=run.id,
+            ):
+                outputs = execute_graph(spec, node_runners=node_runners)
             run.status = "succeeded"
             run.result_json = json.dumps(outputs)
             run.error_message = None

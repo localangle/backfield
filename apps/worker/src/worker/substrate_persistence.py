@@ -10,11 +10,11 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from typing import Any
 
-from backfield_core.types import GraphSpec, NodeConfig
 from backfield_db import (
     BackfieldArticle,
     BackfieldImage,
     BackfieldLocation,
+    BackfieldLocationCache,
     BackfieldLocationMention,
     BackfieldLocationMentionOccurrence,
 )
@@ -68,32 +68,92 @@ def _parse_date(value: Any) -> date | None:
     return None
 
 
-def _find_output_nodes(nodes: list[NodeConfig]) -> list[NodeConfig]:
-    return [n for n in nodes if n.type == "Output"]
+def _coord_pair_wkt(pair: Any) -> str | None:
+    if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+        return None
+    lon, lat = float(pair[0]), float(pair[1])
+    return f"{lon} {lat}"
 
 
-def _pick_consolidated_payload(
-    graph: GraphSpec, node_outputs: dict[str, dict[str, Any]]
-) -> dict[str, Any] | None:
-    output_nodes = _find_output_nodes(graph.nodes)
-    if not output_nodes:
+def _ring_coords_wkt(ring: Any) -> str | None:
+    if not isinstance(ring, list) or not ring:
+        return None
+    pts: list[str] = []
+    for pair in ring:
+        wkt_pair = _coord_pair_wkt(pair)
+        if not wkt_pair:
+            return None
+        pts.append(wkt_pair)
+    if len(pts) < 3:
+        return None
+    if pts[0] != pts[-1]:
+        pts.append(pts[0])
+    return ", ".join(pts)
+
+
+def _geojson_to_wkt(geometry_json: dict[str, Any]) -> str | None:
+    gtype = str(geometry_json.get("type") or "").title()
+    coords = geometry_json.get("coordinates")
+
+    try:
+        if gtype == "Point":
+            pair = _coord_pair_wkt(coords)
+            if not pair:
+                return None
+            return f"POINT ({pair})"
+
+        if gtype == "MultiPoint":
+            if not isinstance(coords, list) or not coords:
+                return None
+            parts: list[str] = []
+            for pair in coords:
+                wkt_pair = _coord_pair_wkt(pair)
+                if not wkt_pair:
+                    return None
+                parts.append(f"({wkt_pair})")
+            return "MULTIPOINT (" + ", ".join(parts) + ")"
+
+        if gtype == "LineString":
+            if not isinstance(coords, list) or len(coords) < 2:
+                return None
+            pts: list[str] = []
+            for pair in coords:
+                wkt_pair = _coord_pair_wkt(pair)
+                if not wkt_pair:
+                    return None
+                pts.append(wkt_pair)
+            return "LINESTRING (" + ", ".join(pts) + ")"
+
+        if gtype == "Polygon":
+            if not isinstance(coords, list) or not coords:
+                return None
+            rings_wkt: list[str] = []
+            for ring in coords:
+                ring_wkt = _ring_coords_wkt(ring)
+                if not ring_wkt:
+                    return None
+                rings_wkt.append(f"({ring_wkt})")
+            return "POLYGON (" + ", ".join(rings_wkt) + ")"
+
+        if gtype == "MultiPolygon":
+            if not isinstance(coords, list) or not coords:
+                return None
+            polys: list[str] = []
+            for poly in coords:
+                if not isinstance(poly, list) or not poly:
+                    return None
+                rings_wkt = []
+                for ring in poly:
+                    ring_wkt = _ring_coords_wkt(ring)
+                    if not ring_wkt:
+                        return None
+                    rings_wkt.append(f"({ring_wkt})")
+                polys.append("(" + ", ".join(rings_wkt) + ")")
+            return "MULTIPOLYGON (" + ", ".join(polys) + ")"
+    except Exception:
         return None
 
-    def score(node_id: str) -> int:
-        out = node_outputs.get(node_id) or {}
-        consolidated = out.get("consolidated")
-        if not isinstance(consolidated, dict):
-            return -1
-        places = consolidated.get("places")
-        if not isinstance(places, dict):
-            return 0
-        return 1 if places else 0
-
-    best_id = max((n.id for n in output_nodes), key=lambda nid: score(nid))
-    if score(best_id) < 0:
-        return None
-    consolidated = node_outputs.get(best_id, {}).get("consolidated")
-    return consolidated if isinstance(consolidated, dict) else None
+    return None
 
 
 def _geometry_bind_value(session: Session, geometry_json: dict[str, Any]) -> object | None:
@@ -103,13 +163,9 @@ def _geometry_bind_value(session: Session, geometry_json: dict[str, Any]) -> obj
     Postgres uses true PostGIS geometry via GeoAlchemy's `WKTElement`.
     """
 
-    gtype = str(geometry_json.get("type") or "").upper()
-    coords = geometry_json.get("coordinates")
-    if gtype != "POINT" or not isinstance(coords, (list, tuple)) or len(coords) < 2:
+    wkt = _geojson_to_wkt(geometry_json)
+    if not wkt:
         return None
-
-    lon, lat = float(coords[0]), float(coords[1])
-    wkt = f"POINT ({lon} {lat})"
 
     dialect_name = session.get_bind().dialect.name
     if dialect_name == "postgresql":
@@ -118,6 +174,122 @@ def _geometry_bind_value(session: Session, geometry_json: dict[str, Any]) -> obj
         return WKTElement(wkt, srid=4326)
 
     return wkt
+
+
+def _find_mention_span(*, haystack: str, needle: str) -> tuple[int, int] | None:
+    if not needle:
+        return None
+
+    idx = haystack.find(needle)
+    if idx >= 0:
+        return idx, idx + len(needle)
+
+    collapsed_hay = _WS_RE.sub(" ", haystack).strip()
+    collapsed_needle = _WS_RE.sub(" ", needle).strip()
+    if collapsed_needle:
+        idx2 = collapsed_hay.find(collapsed_needle)
+        if idx2 >= 0:
+            # Approximate mapping back to original indices by scanning for the first token.
+            first_token = collapsed_needle.split(" ")[0]
+            if first_token:
+                idx3 = haystack.find(first_token)
+                if idx3 >= 0:
+                    return idx3, idx3 + len(needle)
+
+    return None
+
+
+def _cache_fingerprint(*, project_id: int, normalized_query: str, location_type: str | None) -> str:
+    return _sha256_hex(
+        json.dumps(
+            {
+                "project_id": project_id,
+                "normalized_query": normalized_query,
+                "location_type": location_type,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+def _upsert_location_cache(
+    session: Session,
+    *,
+    project_id: int,
+    query_text: str,
+    location_type: str | None,
+    entry: dict[str, Any],
+    geocode_type: str | None,
+    geocode_result: dict[str, Any] | None,
+    geometry_json: dict[str, Any] | None,
+    geometry_value: object | None,
+    geometry_type_str: str | None,
+    formatted_address: str | None,
+) -> None:
+    normalized_query = _normalize_name(query_text)
+    if not normalized_query:
+        return
+
+    fingerprint = _cache_fingerprint(
+        project_id=project_id,
+        normalized_query=normalized_query,
+        location_type=location_type,
+    )
+
+    external_source, external_id = (
+        _external_identity_from_geocode_result(geocode_result) if geocode_result else (None, None)
+    )
+
+    row = session.exec(
+        select(BackfieldLocationCache).where(
+            col(BackfieldLocationCache.project_id) == project_id,
+            col(BackfieldLocationCache.query_fingerprint) == fingerprint,
+        )
+    ).first()
+
+    now = _utcnow()
+    payload = {
+        "places_entry": entry,
+        "geocode_result": geocode_result,
+    }
+
+    if row is None:
+        session.add(
+            BackfieldLocationCache(
+                project_id=project_id,
+                query_text=query_text,
+                normalized_query=normalized_query,
+                query_fingerprint=fingerprint,
+                request_components_json=None,
+                external_source=external_source,
+                external_id=external_id,
+                location_name=query_text,
+                location_type=location_type,
+                geocode_type=geocode_type,
+                formatted_address=formatted_address,
+                geometry=geometry_value,
+                geometry_type=geometry_type_str,
+                geometry_json=geometry_json,
+                response_payload_json=payload,
+            )
+        )
+    else:
+        row.query_text = query_text
+        row.normalized_query = normalized_query
+        row.external_source = external_source or row.external_source
+        row.external_id = external_id or row.external_id
+        row.location_name = query_text
+        row.location_type = location_type or row.location_type
+        row.geocode_type = geocode_type or row.geocode_type
+        row.formatted_address = formatted_address or row.formatted_address
+        row.geometry = geometry_value or row.geometry
+        row.geometry_type = geometry_type_str or row.geometry_type
+        row.geometry_json = geometry_json or row.geometry_json
+        row.response_payload_json = payload
+        row.updated_at = now
+        session.add(row)
+
+    session.flush()
 
 
 def _external_identity_from_geocode_result(result: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -450,11 +622,18 @@ def _upsert_location(
         display_name=display_name,
     )
 
+    # Status semantics (intentionally simple for now):
+    # - provisional: extracted/geocoded-ish row but not editorially confirmed
+    # - resolved: geocoder returned a usable identity/geometry payload
+    # - needs_review: explicit review bucket / partial failures
+    # - failed: explicitly not geocoded / hard failure entries
     status = "provisional"
     if bucket == "needs_review":
         status = "needs_review"
     if geocoded is False:
         status = "failed"
+    if geocode_result and geometry_json:
+        status = "resolved"
 
     loc: BackfieldLocation | None = None
     if external_source and external_id:
@@ -503,6 +682,19 @@ def _upsert_location(
         )
         session.add(loc)
         session.flush()
+        _upsert_location_cache(
+            session,
+            project_id=project_id,
+            query_text=display_name,
+            location_type=location_type_str,
+            entry=entry,
+            geocode_type=geocode_type,
+            geocode_result=geocode_result if isinstance(geocode_result, dict) else None,
+            geometry_json=geometry_json,
+            geometry_value=geometry_value,
+            geometry_type_str=geometry_type_str,
+            formatted_address=formatted_address,
+        )
         return loc
 
     loc.name = display_name
@@ -523,6 +715,19 @@ def _upsert_location(
     loc.updated_at = now
     session.add(loc)
     session.flush()
+    _upsert_location_cache(
+        session,
+        project_id=project_id,
+        query_text=display_name,
+        location_type=location_type_str,
+        entry=entry,
+        geocode_type=geocode_type,
+        geocode_result=geocode_result if isinstance(geocode_result, dict) else None,
+        geometry_json=geometry_json,
+        geometry_value=geometry_value,
+        geometry_type_str=geometry_type_str,
+        formatted_address=formatted_address,
+    )
     return loc
 
 
@@ -553,20 +758,40 @@ def _upsert_mention_and_occurrence(
     *,
     article_id: int,
     location_id: int,
+    article_text: str,
     entry: dict[str, Any],
     run_id: str,
     graph_id: str,
     bucket: str,
+    occurrence_order: int,
 ) -> None:
     original_text = entry.get("original_text")
     mention_text = str(original_text).strip() if isinstance(original_text, str) else ""
     if not mention_text:
         mention_text = _display_name_for_place_entry(entry)
 
-    context = entry.get("description")
-    context_str = str(context).strip() if isinstance(context, str) else None
-    if context_str == "":
-        context_str = None
+    description = entry.get("description")
+    description_str = str(description).strip() if isinstance(description, str) else None
+    if description_str == "":
+        description_str = None
+
+    role = entry.get("role_in_story")
+    role_str = str(role).strip() if isinstance(role, str) else None
+    if role_str == "":
+        role_str = None
+    if role_str is None:
+        role_str = description_str
+
+    nature = entry.get("nature")
+    nature_str = str(nature).strip().lower() if isinstance(nature, str) else None
+    if nature_str == "":
+        nature_str = None
+
+    # `description` is editorial "why this place matters" context.
+    # `role_in_story` is a compact label when PlaceExtract provides it.
+    context_str = description_str if description_str else None
+
+    span = _find_mention_span(haystack=article_text, needle=mention_text)
 
     mention = session.exec(
         select(BackfieldLocationMention).where(
@@ -588,6 +813,8 @@ def _upsert_mention_and_occurrence(
         mention = BackfieldLocationMention(
             article_id=article_id,
             location_id=location_id,
+            role_in_story=role_str,
+            nature=nature_str,
             needs_review=bool(needs_review),
             review_data_json=review_data,
             source_kind="agate_geocode",
@@ -597,6 +824,8 @@ def _upsert_mention_and_occurrence(
         session.add(mention)
         session.flush()
     else:
+        mention.role_in_story = role_str or mention.role_in_story
+        mention.nature = nature_str or mention.nature
         mention.needs_review = bool(needs_review)
         mention.review_data_json = review_data or mention.review_data_json
         mention.source_kind = "agate_geocode"
@@ -619,9 +848,9 @@ def _upsert_mention_and_occurrence(
         mention_text=mention_text,
         context_text=context_str,
         quote_text=None,
-        start_char=None,
-        end_char=None,
-        occurrence_order=None,
+        start_char=span[0] if span else None,
+        end_char=span[1] if span else None,
+        occurrence_order=occurrence_order,
         labels_json=[],
         suppressed=False,
     )
@@ -629,25 +858,22 @@ def _upsert_mention_and_occurrence(
     session.flush()
 
 
-def persist_graph_outputs(
+def persist_from_consolidated(
     session: Session,
     *,
     project_id: int,
     graph_id: str,
     run_id: str,
-    graph: GraphSpec,
-    node_outputs: dict[str, dict[str, Any]],
-) -> None:
+    consolidated: dict[str, Any],
+) -> int:
     if not persist_enabled():
-        return
-
-    consolidated = _pick_consolidated_payload(graph, node_outputs)
-    if not consolidated:
-        return
+        raise RuntimeError("Persistence disabled via BACKFIELD_DISABLE_RUN_SUBSTRATE_PERSISTENCE")
 
     places = consolidated.get("places")
     if not isinstance(places, dict):
-        return
+        raise RuntimeError(
+            "DBOutput persistence requires consolidated['places'] (GeocodeAgent output)"
+        )
 
     article = _upsert_article(
         session,
@@ -657,6 +883,8 @@ def persist_graph_outputs(
     )
     _sync_images(session, article_id=int(article.id), consolidated=consolidated)
 
+    article_text = str(consolidated.get("text") or "")
+    order = 0
     for bucket, entry in _iter_place_entries(places):
         loc = _upsert_location(
             session,
@@ -672,8 +900,13 @@ def persist_graph_outputs(
             session,
             article_id=int(article.id),
             location_id=int(loc.id),
+            article_text=article_text,
             entry=entry,
             run_id=run_id,
             graph_id=graph_id,
             bucket=bucket,
+            occurrence_order=order,
         )
+        order += 1
+
+    return int(article.id)

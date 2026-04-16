@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from backfield_core.nodes import NODE_RUNNERS
 from backfield_core.types import Edge, GraphSpec, NodeConfig
+
+NodeRunner = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
 
 class GraphExecutionError(Exception):
@@ -76,7 +79,10 @@ def _merged_outputs_for_output(
     return merged
 
 
-def execute_graph(spec: GraphSpec) -> dict[str, Any]:
+def execute_graph(
+    spec: GraphSpec,
+    node_runners: Mapping[str, NodeRunner] | None = None,
+) -> dict[str, Any]:
     """
     Run all nodes in dependency order. Returns mapping node_id -> output dict.
     Raises GraphExecutionError on unknown node type or wiring errors.
@@ -85,13 +91,15 @@ def execute_graph(spec: GraphSpec) -> dict[str, Any]:
     order = _topo_order(spec)
     node_outputs: dict[str, dict[str, Any]] = {}
 
+    runners = NODE_RUNNERS if node_runners is None else dict(NODE_RUNNERS) | dict(node_runners)
+
     for nid in order:
         node = by_id[nid]
-        runner = NODE_RUNNERS.get(node.type)
+        runner = runners.get(node.type)
         if not runner:
             raise GraphExecutionError(f"Unknown node type: {node.type}")
 
-        if node.type == "Output":
+        if node.type in {"Output", "DBOutput"}:
             inputs = _merged_outputs_for_output(node_outputs, by_id)
         else:
             inputs = _namespaced_upstream_inputs(nid, spec.edges, node_outputs, by_id)

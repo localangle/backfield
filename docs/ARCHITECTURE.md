@@ -32,7 +32,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `apps/worker`
   - Owns Celery task execution and runtime concerns for processing runs.
   - Reads from DB, executes `backfield-core`, and writes status/results back to DB.
-  - After a successful `execute_graph`, best-effort code may persist consolidated Output payloads into shared `backfield_*` substrate tables when the graph output includes a GeocodeAgent-style `places` structure (see `worker/substrate_persistence.py`).
+  - May execute worker-local nodes (e.g. `DBOutput`) that write directly to Postgres using `backfield-db` helpers (see `apps/worker/src/worker/nodes/db_output.py` and `apps/worker/src/worker/substrate_persistence.py`).
 - `apps/agate-ui`
   - Owns the flowbuilder UI, API client, and browser-facing interaction patterns.
   - Consumes node metadata and synced node UI generated from `backfield-core`.
@@ -69,7 +69,7 @@ flowchart LR
     Core --> Runtime[agate_runtime]
     Runtime -->|optional cache / match| StylebookAPI[StylebookAPI]
     Runtime -->|LLM and external geocoders| ExternalAPIs[ExternalAPIs]
-    Worker -->|write result + optional substrate rows| Postgres
+    Worker -->|write run results (+ DBOutput substrate writes)| Postgres
     AgateUI -->|poll run| AgateAPI
     AgateAPI -->|read status/result| Postgres
 ```

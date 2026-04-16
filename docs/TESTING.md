@@ -7,7 +7,7 @@
 2. **Integration / API smoke**
   FastAPI apps mounted via `TestClient` where no Docker is required. Run: `make test-integration`.
 3. **End-to-end (manual or CI)**
-  `make up`, then run `make smoke` or open Agate UI and **Run pipeline**. Validates Postgres, Redis, Celery, and the four starter nodes together. `make smoke` runs the **General** project’s **Starter flow** graph (created by local bootstrap on first API start). Put `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (and optional geocoder keys) in repo-root `.env` so the worker and encrypted project secrets receive them, or the run will fail when those nodes call external APIs.
+  `make up`, then run `make smoke` or open Agate UI and **Run pipeline**. Validates Postgres, Redis, Celery, and the starter pipeline nodes together (including **DBOutput** persistence). `make smoke` runs the **General** project’s **Starter flow** graph (created by local bootstrap on first API start). Put `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (and optional geocoder keys) in repo-root `.env` so the worker and encrypted project secrets receive them, or the run will fail when those nodes call external APIs.
 
 ## Validation ladder
 
@@ -28,7 +28,7 @@
 
 ## Conventions
 
-- Keep the **four-node starter pipeline** as the canonical regression story; add tests when changing execution or handles.
+- Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → JSON Output → DBOutput) as the canonical regression story; add tests when changing execution or handles.
 - Prefer a few high-signal tests over broad shallow coverage.
 - When adding nodes, add a focused unit test under `packages/backfield-core/tests/`.
 - When changing API or worker contracts, add or update a test that guards the naming, queue, status, or schema assumption.

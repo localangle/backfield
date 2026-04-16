@@ -51,6 +51,8 @@ Schema revisions start at `001_agate_baseline` (initial `agate_*` tables and see
 
 Revision **`003_def_ws_general`** inserts the **Default Workspace** (`slug` `default`) and links General to it (org display name is seeded as **Backfield** in `002_backfield_identity`). Revision **`004_ws_membership`** adds `backfield_workspace_membership`. Revision **`005_location_schema_foundation`** adds the shared `backfield_article`, `backfield_image`, `backfield_location`, `backfield_location_mention`, `backfield_location_mention_occurrence`, and `backfield_location_cache` tables and enables PostGIS for location geometry. Revision **`006_article_source_run_id_text`** aligns `backfield_article.source_run_id` with string `agate_run.id` values (and adds the ORM-level foreign key).
 
+Revision **`007_starter_flow_add_db_output`** rewrites stored **Starter flow** `agate_graph.spec_json` rows to the canonical starter spec that includes **`DBOutput`** (so local stacks pick up persistence gating without manual graph edits).
+
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 
 **Existing databases** that already applied older revisions: follow migration notes in your upgrade path or reset (`make reset-db` + `make up`) for dev.

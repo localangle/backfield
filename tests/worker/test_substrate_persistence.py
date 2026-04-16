@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from backfield_core import GraphSpec, NodeConfig
 from backfield_db import AgateRun, BackfieldOrganization, BackfieldProject
 from sqlmodel import Session, SQLModel, col, create_engine, select
-from worker.substrate_persistence import persist_graph_outputs
+from worker.substrate_persistence import persist_from_consolidated
 
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 
@@ -31,15 +30,6 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         session.add(AgateRun(id="run-1", graph_id="graph-1", status="pending"))
         session.commit()
 
-        graph = GraphSpec(
-            name="g",
-            nodes=[
-                NodeConfig(id="n1", type="TextInput", params={"text": "Hello Chicago."}),
-                NodeConfig(id="n4", type="Output", params={}),
-            ],
-            edges=[],
-        )
-
         consolidated = {
             "text": "Hello Chicago.",
             "places": {
@@ -50,6 +40,9 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
                         {
                             "id": "city:1",
                             "original_text": "Chicago",
+                            "description": "Mentioned as the setting for the story.",
+                            "role_in_story": "Setting",
+                            "nature": "setting",
                             "location": "Chicago, IL",
                             "type": "city",
                             "geocode": {
@@ -57,7 +50,7 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
                                 "result": {
                                     "id": "pelias:abc",
                                     "formatted_address": "Chicago, IL, USA",
-                                        "geometry": CHICAGO_POINT,
+                                    "geometry": CHICAGO_POINT,
                                 },
                             },
                         }
@@ -71,15 +64,12 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
             },
         }
 
-        outputs = {"n4": {"consolidated": consolidated}}
-
-        persist_graph_outputs(
+        persist_from_consolidated(
             session,
             project_id=project_id,
             graph_id="graph-1",
             run_id="run-1",
-            graph=graph,
-            node_outputs=outputs,
+            consolidated=consolidated,
         )
         session.commit()
 
@@ -102,11 +92,17 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
 
         mentions = session.exec(select(BackfieldLocationMention)).all()
         assert len(mentions) == 1
+        assert mentions[0].role_in_story == "Setting"
+        assert mentions[0].nature == "setting"
 
         occ = session.exec(select(BackfieldLocationMentionOccurrence)).all()
         assert len(occ) == 1
         assert occ[0].mention_text == "Chicago"
         assert occ[0].suppressed is False
+        assert occ[0].context_text == "Mentioned as the setting for the story."
+        assert occ[0].start_char == 6
+        assert occ[0].end_char == 13
+        assert occ[0].occurrence_order == 0
 
 
 def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
@@ -118,12 +114,6 @@ def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
         session.add(AgateRun(id="run-1", graph_id="graph-1", status="pending"))
         session.add(AgateRun(id="run-2", graph_id="graph-1", status="pending"))
         session.commit()
-
-        graph = GraphSpec(
-            name="g",
-            nodes=[NodeConfig(id="n4", type="Output", params={})],
-            edges=[],
-        )
 
         consolidated = {
             "text": "Hello Chicago.",
@@ -142,7 +132,7 @@ def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
                                 "result": {
                                     "id": "pelias:abc",
                                     "formatted_address": "Chicago, IL, USA",
-                                        "geometry": CHICAGO_POINT,
+                                    "geometry": CHICAGO_POINT,
                                 },
                             },
                         }
@@ -155,23 +145,19 @@ def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
                 "needs_review": [],
             },
         }
-        outputs = {"n4": {"consolidated": consolidated}}
-
-        persist_graph_outputs(
+        persist_from_consolidated(
             session,
             project_id=project_id,
             graph_id="graph-1",
             run_id="run-1",
-            graph=graph,
-            node_outputs=outputs,
+            consolidated=consolidated,
         )
-        persist_graph_outputs(
+        persist_from_consolidated(
             session,
             project_id=project_id,
             graph_id="graph-1",
             run_id="run-2",
-            graph=graph,
-            node_outputs=outputs,
+            consolidated=consolidated,
         )
         session.commit()
 

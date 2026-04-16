@@ -90,11 +90,13 @@ def test_four_node_pipeline_mock_geocode():
             NodeConfig(id="n2", type="PlaceExtract", params={}),
             NodeConfig(id="n3", type="GeocodeAgent", params={}),
             NodeConfig(id="n4", type="Output", params={}),
+            NodeConfig(id="n5", type="DBOutput", params={}),
         ],
         edges=[
             Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
             Edge(source="n2", target="n3", sourceHandle="locations", targetHandle="locations"),
             Edge(source="n3", target="n4", sourceHandle="locations", targetHandle="data"),
+            Edge(source="n4", target="n5", sourceHandle="consolidated", targetHandle="data"),
         ],
     )
 
@@ -115,3 +117,7 @@ def test_four_node_pipeline_mock_geocode():
     assert "places" in consolidated
     cities = consolidated["places"]["areas"]["cities"]
     assert cities and cities[0]["name"] == "Austin"
+
+    db_out = out["n5"]
+    assert db_out.get("success") is True
+    assert "places" in db_out
