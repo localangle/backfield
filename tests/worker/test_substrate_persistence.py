@@ -42,7 +42,8 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
                             "original_text": "Chicago",
                             "description": "Mentioned as the setting for the story.",
                             "role_in_story": "Setting",
-                            "nature": "setting",
+                            "nature": "primary",
+                            "nature_secondary_tags": ["context"],
                             "location": "Chicago, IL",
                             "type": "city",
                             "geocode": {
@@ -93,13 +94,13 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         mentions = session.exec(select(BackfieldLocationMention)).all()
         assert len(mentions) == 1
         assert mentions[0].role_in_story == "Setting"
-        assert mentions[0].nature == "setting"
+        assert mentions[0].nature == "primary"
+        assert mentions[0].nature_secondary_tags_json == ["context"]
 
         occ = session.exec(select(BackfieldLocationMentionOccurrence)).all()
         assert len(occ) == 1
         assert occ[0].mention_text == "Chicago"
         assert occ[0].suppressed is False
-        assert occ[0].context_text == "Mentioned as the setting for the story."
         assert occ[0].start_char == 6
         assert occ[0].end_char == 13
         assert occ[0].occurrence_order == 0

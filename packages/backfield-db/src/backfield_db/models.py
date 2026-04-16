@@ -402,7 +402,6 @@ class BackfieldLocationMentionOccurrence(SQLModel, table=True):
         sa_column=Column(JSON, nullable=True),
     )
     mention_text: str = Field(sa_column=Column(Text, nullable=False))
-    context_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     quote_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     start_char: int | None = Field(default=None)
     end_char: int | None = Field(default=None)

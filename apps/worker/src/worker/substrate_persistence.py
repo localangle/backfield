@@ -21,6 +21,51 @@ from sqlmodel import Session, col, select
 
 _WS_RE = re.compile(r"\s+")
 
+# Primary editorial role (PlaceExtract `nature`). Extras: `nature_secondary_tags` in extraction JSON
+# → `BackfieldLocationMention.nature_secondary_tags_json`.
+_NATURE_PRIMARY_ALLOWED = frozenset(
+    {"primary", "secondary", "subject", "context", "person", "unknown"}
+)
+_NATURE_PRIMARY_SYNONYMS: dict[str, str] = {
+    "setting": "primary",
+    "main": "primary",
+    "scene": "primary",
+    "dateline": "primary",
+}
+
+
+def _normalize_nature_primary(entry: dict[str, Any]) -> str | None:
+    raw = entry.get("nature")
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip().lower()
+    if not s:
+        return None
+    if s in _NATURE_PRIMARY_ALLOWED:
+        return s
+    return _NATURE_PRIMARY_SYNONYMS.get(s, "unknown")
+
+
+def _parse_nature_secondary_tags(entry: dict[str, Any]) -> list[str]:
+    raw = entry.get("nature_secondary_tags")
+    if raw is None:
+        raw = entry.get("nature_secondary")
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for x in raw:
+        if isinstance(x, str):
+            t = _WS_RE.sub(" ", x.strip()).lower()
+            if t:
+                out.append(t)
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for t in out:
+        if t not in seen:
+            seen.add(t)
+            uniq.append(t)
+    return uniq
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -769,14 +814,11 @@ def _upsert_mention_and_occurrence(
     if role_str is None:
         role_str = description_str
 
-    nature = entry.get("nature")
-    nature_str = str(nature).strip().lower() if isinstance(nature, str) else None
-    if nature_str == "":
-        nature_str = None
+    nature_str = _normalize_nature_primary(entry)
+    secondary_tags = _parse_nature_secondary_tags(entry)
 
     # `description` is editorial "why this place matters" context.
     # `role_in_story` is a compact label when PlaceExtract provides it.
-    context_str = description_str if description_str else None
 
     span = _find_mention_span(haystack=article_text, needle=mention_text)
 
@@ -802,6 +844,7 @@ def _upsert_mention_and_occurrence(
             location_id=location_id,
             role_in_story=role_str,
             nature=nature_str,
+            nature_secondary_tags_json=secondary_tags,
             needs_review=bool(needs_review),
             review_data_json=review_data,
             source_kind="agate_geocode",
@@ -813,6 +856,7 @@ def _upsert_mention_and_occurrence(
     else:
         mention.role_in_story = role_str or mention.role_in_story
         mention.nature = nature_str or mention.nature
+        mention.nature_secondary_tags_json = secondary_tags
         mention.needs_review = bool(needs_review)
         mention.review_data_json = review_data or mention.review_data_json
         mention.source_kind = "agate_geocode"
@@ -833,7 +877,6 @@ def _upsert_mention_and_occurrence(
         source_kind="system_extraction",
         source_details_json={"run_id": run_id, "graph_id": graph_id, "places_bucket": bucket},
         mention_text=mention_text,
-        context_text=context_str,
         quote_text=None,
         start_char=span[0] if span else None,
         end_char=span[1] if span else None,
