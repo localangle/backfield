@@ -11,6 +11,12 @@ from backfield_db.models import (
     BackfieldUser,
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
+    SubstrateArticle,
+    SubstrateImage,
+    SubstrateLocation,
+    SubstrateLocationCache,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from backfield_db.session import get_engine, get_session_factory, get_session_generator, init_db
 
@@ -27,6 +33,12 @@ __all__ = [
     "BackfieldUser",
     "BackfieldWorkspace",
     "BackfieldWorkspaceMembership",
+    "SubstrateArticle",
+    "SubstrateImage",
+    "SubstrateLocation",
+    "SubstrateLocationCache",
+    "SubstrateLocationMention",
+    "SubstrateLocationMentionOccurrence",
     "get_engine",
     "get_session_factory",
     "get_session_generator",

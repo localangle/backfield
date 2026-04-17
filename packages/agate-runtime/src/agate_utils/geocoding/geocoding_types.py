@@ -5,8 +5,30 @@ This module defines common data structures that are used across
 all geocoding service implementations to ensure consistency.
 """
 
-from typing import Dict, Optional, Union, List, Any
+from typing import Dict, Optional, Union, List, Any, Sequence
 from dataclasses import dataclass
+
+
+def bbox_west_south_east_north_to_polygon_coordinates(
+    bbox: Sequence[float] | Sequence[int],
+) -> List[List[List[float]]]:
+    """Convert a Pelias/GeoJSON bbox [west, south, east, north] to GeoJSON Polygon coordinates.
+
+    Many providers expose extent as four numbers; GeoJSON ``Polygon`` requires a closed linear
+    ring of ``[lon, lat]`` pairs. Callers should pass this return value as ``GeometryPolygon.coordinates``.
+    """
+
+    if len(bbox) != 4:
+        raise ValueError("bbox must have length 4 [west, south, east, north]")
+    west, south, east, north = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    ring: List[List[float]] = [
+        [west, south],
+        [east, south],
+        [east, north],
+        [west, north],
+        [west, south],
+    ]
+    return [ring]
 
 
 @dataclass
@@ -77,7 +99,6 @@ class GeocodingResultData:
     processed_str: str
     geometry: Union[GeometryPoint, GeometryPolygon]
     confidence: Dict  # Empty dict {} if no confidence available
-    parent_hierarchy: Optional[Dict] = None  # Parent administrative hierarchy information
 
 
 @dataclass
@@ -105,7 +126,6 @@ class GeocodingResult:
                     'coordinates': self.result.geometry.coordinates
                 },
                 'confidence': self.result.confidence,
-                'parent_hierarchy': self.result.parent_hierarchy
             }
         }
     
@@ -125,7 +145,6 @@ class GeocodingResult:
             processed_str=data['result']['processed_str'],
             geometry=geometry,
             confidence=data['result']['confidence'],
-            parent_hierarchy=data['result'].get('parent_hierarchy')
         )
         
         return cls(
@@ -233,8 +252,9 @@ def cache_match_to_geocoding_result(
     if geometry is None:
         bbox = cache_match.get("bbox")
         if bbox and isinstance(bbox, list) and len(bbox) == 4:
-            # Bbox format [west, south, east, north] - convert to Polygon coordinates
-            geometry = GeometryPolygon(coordinates=bbox)  # Bbox format [west, south, east, north]
+            geometry = GeometryPolygon(
+                coordinates=bbox_west_south_east_north_to_polygon_coordinates(bbox),
+            )
         else:
             # If no geometry at all, raise an error or return None
             raise ValueError(f"No geometry data available in cache match for query: {original_query}")
@@ -254,7 +274,6 @@ def cache_match_to_geocoding_result(
         processed_str=processed_str,
         geometry=geometry,
         confidence=confidence,
-        parent_hierarchy=None
     )
     
     return GeocodingResult(
@@ -310,7 +329,9 @@ def stylebook_match_to_geocoding_result(
     if geometry is None:
         bbox = stylebook_match.get("bbox")
         if bbox and len(bbox) == 4:
-            geometry = GeometryPolygon(coordinates=bbox)  # Bbox format [west, south, east, north]
+            geometry = GeometryPolygon(
+                coordinates=bbox_west_south_east_north_to_polygon_coordinates(bbox),
+            )
     
     # Build processed string (use label or name)
     processed_str = stylebook_match.get("label") or stylebook_match.get("name", original_query)
@@ -327,7 +348,6 @@ def stylebook_match_to_geocoding_result(
         processed_str=processed_str,
         geometry=geometry,
         confidence=confidence,
-        parent_hierarchy=None
     )
     
     return GeocodingResult(

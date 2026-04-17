@@ -1,9 +1,7 @@
 import os
 import sqlite3
 import logging
-import json
-import importlib
-from typing import List, Dict, Any, Optional
+from typing import Dict, Optional
 from pathlib import Path
 
 # Path to the Who's On First database (optional; see geocoding/data/README.md)
@@ -28,8 +26,8 @@ def get_concordances_by_id(wof_id: str) -> Dict[str, str]:
             }
             
     Raises:
-        FileNotFoundError: If the WOF database file doesn't exist
-        sqlite3.Error: If there's an error querying the database
+        FileNotFoundError: If the WOF database file does not exist
+        sqlite3.Error: If there is an error querying the database
     """
     if not WOF_DB_PATH.exists():
         raise FileNotFoundError(f"Who's On First database not found at {WOF_DB_PATH}")
@@ -70,8 +68,8 @@ def get_concordances_by_source_id(source: str, source_id: str) -> Dict[str, str]
         Dict[str, str]: Dictionary mapping source systems to their IDs
         
     Raises:
-        FileNotFoundError: If the WOF database file doesn't exist
-        sqlite3.Error: If there's an error querying the database
+        FileNotFoundError: If the WOF database file does not exist
+        sqlite3.Error: If there is an error querying the database
     """
     if not WOF_DB_PATH.exists():
         raise FileNotFoundError(f"Who's On First database not found at {WOF_DB_PATH}")
@@ -144,139 +142,6 @@ def get_bbox_by_id(wof_id: str) -> Dict[str, float]:
     except Exception as e:
         logging.error(f"Unexpected error querying bounding box for ID {wof_id}: {e}")
         raise
-
-def get_geocode_by_id(wof_id: str) -> Dict[str, float]:
-    """
-    Retrieve the geocode object for a given Who's On First ID.
-    """
-    if not WOF_DB_PATH.exists():
-        raise FileNotFoundError(f"Who's On First database not found at {WOF_DB_PATH}")
-
-    wof_id_numeric = wof_id.split(":")[-1]
-    
-    geocode = {
-        "geocode": {
-            "geocode_type": "wof",
-            "result": {
-                "id": wof_id,
-                "formatted_address": get_name_by_id(wof_id_numeric),
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": get_bbox_by_id(wof_id_numeric)
-                },
-            }
-        }
-    }
-
-    return geocode
-
-def get_parents_by_coords(lat: float, lon: float, placetype: str) -> Dict[str, Dict[str, str]]:
-    """
-    Retrieve the parents for a given set of coordinates.
-    Returns a structured format with placetype as keys and name/id as values.
-    """
-    logging.info(f"Getting parents for coordinates {lat}, {lon} with placetype {placetype}")
-
-    if not WOF_DB_PATH.exists():
-        raise FileNotFoundError(f"Who's On First database not found at {WOF_DB_PATH}")
-
-    try:
-        with sqlite3.connect(WOF_DB_PATH) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            placetype_filter = ""
-            if placetype == 'state':
-                return {}
-            elif placetype == "county":
-                placetype_filter = " AND placetype = 'region'"
-            elif placetype == "city":
-                placetype_filter = " AND placetype IN ('region', 'county')"
-            elif placetype == "neighborhood":
-                placetype_filter = " AND placetype IN ('region', 'county', 'locality')"
-            else:
-                placetype_filter = " AND placetype IN ('region', 'county', 'locality', 'neighbourhood')"
-
-            query = """
-            SELECT id, name, placetype
-            FROM spr
-            WHERE min_latitude <= ? AND max_latitude >= ? AND min_longitude <= ? AND max_longitude >= ? AND is_current = 1
-            """
-            if placetype_filter:
-                query += placetype_filter
-
-            cursor.execute(query, (lat, lat, lon, lon))
-            candidate_rows = cursor.fetchall()
-
-            filtered_rows: List[sqlite3.Row] = []
-
-            for row in candidate_rows:
-                if _point_within_feature(conn, row["id"], lon, lat):
-                    filtered_rows.append(row)
-
-    except sqlite3.Error as e:
-        logging.error(f"Database error querying parents for coordinates {lat}, {lon}: {e}")
-        raise
-    except Exception as e:
-        logging.error(f"Unexpected error querying parents for coordinates {lat}, {lon}: {e}")
-        raise
-
-    parents: Dict[str, Dict[str, str]] = {}
-    for row in filtered_rows:
-        wof_id = f"whosonfirst:{row['placetype']}:{row['id']}"
-        placetype_key = row['placetype']
-        
-        # Map WOF placetypes to our expected keys
-        if placetype_key == 'region':
-            key = 'state'
-        elif placetype_key == 'county':
-            key = 'county'
-        elif placetype_key == 'locality':
-            key = 'city'
-        elif placetype_key == 'neighbourhood':
-            key = 'neighborhood'
-        else:
-            key = placetype_key
-            
-        parents[key] = {
-            "name": row['name'],
-            "id": wof_id
-        }
-
-    logging.info(f"Found {len(parents)} parents for coordinates {lat}, {lon} with placetype {placetype}")
-
-    return parents
-
-
-def _point_within_feature(conn: sqlite3.Connection, wof_numeric_id: Any, lon: float, lat: float) -> bool:
-    """Return True if the given point is within the feature's polygon geometry."""
-    try:
-        shapely_geometry = importlib.import_module("shapely.geometry")
-        shapely_errors = importlib.import_module("shapely.errors")
-        Point = getattr(shapely_geometry, "Point")
-        shape = getattr(shapely_geometry, "shape")
-        ShapelyError = getattr(shapely_errors, "ShapelyError")
-    except ModuleNotFoundError:
-        logging.warning("Shapely not available; skipping geometry containment test")
-        return True
-
-    try:
-        cursor = conn.execute("SELECT body FROM geojson WHERE id = ?", (wof_numeric_id,))
-        row = cursor.fetchone()
-        if not row:
-            return True  # fall back to bbox-only if geometry missing
-
-        feature = json.loads(row["body"])
-        geometry = feature.get("geometry") or feature
-        shapely_geom = shape(geometry)
-        point = Point(lon, lat)
-        return shapely_geom.covers(point)
-    except (json.JSONDecodeError, ShapelyError, TypeError, ValueError) as exc:
-        logging.warning("Failed geometry check for WOF id %s: %s", wof_numeric_id, exc)
-        return True  # do not exclude on parsing errors
-    except sqlite3.Error as exc:
-        logging.warning("Failed geometry lookup for WOF id %s: %s", wof_numeric_id, exc)
-        return True
 
 def get_id_by_coords(lat: float, lon: float, placetype: Optional[str]) -> Optional[str]:
     """

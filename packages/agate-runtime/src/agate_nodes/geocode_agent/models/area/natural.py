@@ -7,6 +7,7 @@ from agate_utils.geocoding.geocoding_types import (
     GeocodingResultData,
     GeometryPoint,
     GeometryPolygon,
+    bbox_west_south_east_north_to_polygon_coordinates,
 )
 from agate_utils.geocoding.nominatim import NominatimGeocoder
 from agate_utils.llm import call_llm
@@ -164,7 +165,6 @@ class NaturalPlace(Area):
                     processed_str=candidate.get("display_name", self.name),
                     geometry=geometry,
                     confidence=confidence_data,
-                    parent_hierarchy=None,
                 ),
             )
         except Exception as exc:
@@ -190,7 +190,9 @@ class NaturalPlace(Area):
                     if lon is not None and lat is not None:
                         return GeometryPoint(coordinates=[lon, lat])
                     return None
-                return GeometryPolygon(coordinates=[west, south, east, north])
+                return GeometryPolygon(
+                    coordinates=bbox_west_south_east_north_to_polygon_coordinates([west, south, east, north]),
+                )
             except Exception as exc:
                 logger.debug("Invalid polygon for natural place: %s", exc)
 
@@ -255,7 +257,9 @@ class NaturalPlace(Area):
         west, south, east, north = min_lon, min_lat, max_lon, max_lat
 
         try:
-            geometry = GeometryPolygon(coordinates=[west, south, east, north])
+            geometry = GeometryPolygon(
+                coordinates=bbox_west_south_east_north_to_polygon_coordinates([west, south, east, north]),
+            )
         except Exception as exc:
             logger.error("NaturalPlace fallback polygon invalid: %s", exc)
             return None
@@ -276,7 +280,6 @@ class NaturalPlace(Area):
                 processed_str=f"{self.name} (LLM natural estimate)",
                 geometry=geometry,
                 confidence={"center": {"lat": center_lat, "lon": center_lon}, **confidence},
-                parent_hierarchy=None,
             ),
         )
 
@@ -431,8 +434,4 @@ class NaturalPlace(Area):
 
         logger.warning("NaturalPlace geocoding failed for '%s'", self.name)
         return None
-
-    def get_parents(self) -> List[Dict[str, str]]:
-        """Natural places currently do not compute parent hierarchies."""
-        return []
 

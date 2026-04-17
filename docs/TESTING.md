@@ -7,7 +7,7 @@
 2. **Integration / API smoke**
   FastAPI apps mounted via `TestClient` where no Docker is required. Run: `make test-integration`.
 3. **End-to-end (manual or CI)**
-  `make up`, then run `make smoke` or open Agate UI and **Run pipeline**. Validates Postgres, Redis, Celery, and the four starter nodes together. `make smoke` runs the **General** project’s **Starter flow** graph (created by local bootstrap on first API start). Put `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (and optional geocoder keys) in repo-root `.env` so the worker and encrypted project secrets receive them, or the run will fail when those nodes call external APIs.
+  `make up`, then run `make smoke` or open Agate UI and **Run pipeline**. Validates Postgres, Redis, Celery, and the starter pipeline nodes together (including **DBOutput** persistence). `make smoke` runs the **General** project’s **Starter flow** graph (created by local bootstrap on first API start). Put `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (and optional geocoder keys) in repo-root `.env` so the worker and encrypted project secrets receive them, or the run will fail when those nodes call external APIs.
 
 ## Validation ladder
 
@@ -22,13 +22,15 @@
   - **If `SMOKE_EMAIL` and `SMOKE_PASSWORD` are set** (including via repo-root **`.env`**, loaded automatically): logs in to Core API (`CORE_API_BASE`, default `http://localhost:8004`), calls **`GET /v1/me/workspaces`** (same data the home page uses), picks workspace slug `SMOKE_WORKSPACE_SLUG` (default `default`) and project `SMOKE_PROJECT_SLUG` (default `general`), then calls Agate with the **`session` cookie** to list graphs and **`POST /runs`** — matching **log in → workspace → project → run**.
   - **Otherwise:** uses **`Authorization: Bearer`** on Agate (defaults to `SERVICE_API_TOKEN` or `SMOKE_AGATE_BEARER` / a project API key), finds the **General** project and **Starter flow** graph, enqueues a run, and polls for completion.
 
+  In both paths it asserts the **Starter flow** `spec` matches bootstrap (`starter_geocode_flow_graph_spec`, ending in **DBOutput**) and the finished run **`result`** includes **`stylebook_output`** with **`success: true`** (and omits **`json_output`** / **`__outputKeysByNodeId`**).
+
   Poll tuning: `SMOKE_POLL_TIMEOUT_SECONDS` (default 180s). Optional: `SMOKE_BOOTSTRAP=1` with Core credentials to call **`POST /v1/bootstrap/first-user`** first (empty DB only). The smoke does not delete General or the starter graph.
 4. **Manual UI pass**
   Use the Agate UI when the task changes browser-facing behavior or flowbuilder interactions.
 
 ## Conventions
 
-- Keep the **four-node starter pipeline** as the canonical regression story; add tests when changing execution or handles.
+- Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → Stylebook Output / `DBOutput`, no JSON Output node) as the canonical regression story; add tests when changing execution or handles.
 - Prefer a few high-signal tests over broad shallow coverage.
 - When adding nodes, add a focused unit test under `packages/backfield-core/tests/`.
 - When changing API or worker contracts, add or update a test that guards the naming, queue, status, or schema assumption.

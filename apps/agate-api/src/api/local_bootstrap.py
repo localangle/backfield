@@ -9,7 +9,11 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from backfield_core import STARTER_FLOW_GRAPH_DISPLAY_NAME, starter_geocode_flow_graph_spec
+from backfield_core import (
+    STARTER_FLOW_GRAPH_DISPLAY_NAME,
+    GraphSpec,
+    starter_geocode_flow_graph_spec,
+)
 from backfield_db import (
     AgateGraph,
     BackfieldOrganization,
@@ -122,6 +126,9 @@ def _sync_secrets(session: Session, project_id: int) -> int:
 
 
 def _ensure_starter_graph(session: Session, project_id: int) -> bool:
+    canonical = starter_geocode_flow_graph_spec()
+    canonical_json = canonical.model_dump_json()
+
     existing = session.exec(
         select(AgateGraph).where(
             AgateGraph.project_id == project_id,
@@ -129,12 +136,27 @@ def _ensure_starter_graph(session: Session, project_id: int) -> bool:
         )
     ).first()
     if existing:
-        return False
-    spec = starter_geocode_flow_graph_spec()
+        try:
+            current = GraphSpec.model_validate_json(existing.spec_json)
+            current_json = current.model_dump_json()
+        except Exception:
+            current_json = ""
+
+        if current_json == canonical_json:
+            return False
+
+        logger.info(
+            "local_bootstrap: updating starter graph %r to canonical spec revision",
+            STARTER_FLOW_GRAPH_DISPLAY_NAME,
+        )
+        existing.spec_json = canonical_json
+        session.add(existing)
+        return True
+
     session.add(
         AgateGraph(
             name=STARTER_FLOW_GRAPH_DISPLAY_NAME,
-            spec_json=spec.model_dump_json(),
+            spec_json=canonical_json,
             project_id=project_id,
         )
     )
@@ -163,7 +185,7 @@ def run_local_bootstrap() -> int:
             logger.info("local_bootstrap: upserted %d project secret(s) for General", secret_count)
         if added_graph:
             logger.info(
-                "local_bootstrap: created graph %r for General",
+                "local_bootstrap: starter graph %r created/updated for General",
                 STARTER_FLOW_GRAPH_DISPLAY_NAME,
             )
         if not secret_count and not added_graph:

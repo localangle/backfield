@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { getNodeOutputById, nodeOutputLookupFromGraphSpec, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { getRun, getGraph, getProcessedItem, rerunProcessedItem, type Run, type Graph, type ProcessedItem } from '@/lib/api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { formatDateCentral } from '@/lib/utils'
@@ -20,6 +21,11 @@ export default function ProcessedItemDetail() {
   const [loading, setLoading] = useState(true)
   const [rerunning, setRerunning] = useState(false)
   const [visualizations, setVisualizations] = useState<VisualizationDescriptor[]>([])
+
+  const nodeOutputLookup = useMemo((): NodeOutputLookupSpec | null => {
+    if (!graph?.spec?.nodes?.length) return null
+    return nodeOutputLookupFromGraphSpec(graph.spec)
+  }, [graph])
 
   useEffect(() => {
     if (runId && itemId) {
@@ -194,6 +200,9 @@ export default function ProcessedItemDetail() {
     // Handle objects
     const sanitized: any = {}
     for (const [key, value] of Object.entries(data)) {
+      if (key === '__outputKeysByNodeId' || key.startsWith('__')) {
+        continue
+      }
       // Remove or truncate large geometry fields
       if (key === 'boundaries' || key === 'geometry') {
         if (Array.isArray(value) && value.length > 0) {
@@ -302,10 +311,21 @@ export default function ProcessedItemDetail() {
 
   const nodeOutputs = item.node_outputs ?? {}
   const nodeLogs = item.node_logs ?? {}
-  const uniqueNodeIds = new Set<string>([
-    ...Object.keys(nodeOutputs),
-    ...Object.keys(nodeLogs),
-  ])
+  const rawOutputs = nodeOutputs as Record<string, unknown>
+  const hasNodeOutput = (nodeId: string) =>
+    getNodeOutputById(rawOutputs, nodeId, nodeOutputLookup) !== undefined
+  const uniqueNodeIds = new Set<string>([...Object.keys(nodeLogs)])
+  if (graph?.spec?.nodes) {
+    for (const node of graph.spec.nodes) {
+      if (hasNodeOutput(node.id)) {
+        uniqueNodeIds.add(node.id)
+      }
+    }
+  } else {
+    for (const k of Object.keys(nodeOutputs)) {
+      if (k !== '__outputKeysByNodeId') uniqueNodeIds.add(k)
+    }
+  }
   const orderedNodeIds: string[] = []
   if (graph?.spec?.nodes) {
     for (const node of graph.spec.nodes) {
@@ -809,7 +829,7 @@ export default function ProcessedItemDetail() {
                 (nodeConfig?.params as any)?.label ||
                 nodeType
 
-              const output = nodeOutputs[nodeId]
+              const output = getNodeOutputById(rawOutputs, nodeId, nodeOutputLookup)
               const logs = nodeLogs[nodeId] ?? []
 
               return (

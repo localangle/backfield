@@ -24,10 +24,6 @@ class GeocodeAgentInput(BaseModel):
 
 class GeocodeAgentParams(BaseModel):
     """Parameters for GeocodeAgent node."""
-    calculateParents: bool = Field(
-        default=False,
-        description="Whether to calculate parent hierarchies for geocoded locations"
-    )
     maxLocations: int = Field(
         default=100,
         ge=1,
@@ -270,7 +266,6 @@ class GeocodeAgent:
                         brave_search_api_key=brave_search_api_key,
                         geocodio_api_key=geocodio_api_key,
                         openai_api_key=openai_api_key,
-                        calculate_parents=params.calculateParents,
                         use_cache=params.useCache,
                         stylebook_api_url=stylebook_api_url,
                         project_slug=project_slug,

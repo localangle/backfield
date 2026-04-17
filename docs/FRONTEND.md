@@ -19,6 +19,7 @@ This document covers frontend conventions for `apps/agate-ui` and the lighter `a
 ## Shared UI package (`@backfield/ui`)
 
 - Reusable shell components for multiple Backfield apps (Agate UI now; Stylebook UI later) live in `[packages/backfield-ui](../packages/backfield-ui)`.
+- **`nodeOutputs`:** `@backfield/ui/nodeOutputs` holds the canonical mapping from graph topology + node types to **`execute_graph` output keys** (snake_case slugs, legacy keys, `__outputKeysByNodeId`). Agate UI imports it through `[apps/agate-ui/src/lib/nodeOutputs.ts](../apps/agate-ui/src/lib/nodeOutputs.ts)`. Synced `backfield-core` panels use `@/lib/nodeOutputs` (resolved to that re-export). **`packages/agate-runtime`** Geocode UI sources import the same subpath so parity copies stay aligned with `backfield-ui`’s package **`exports`** (no separate filesystem-relative path).
 - **Tailwind:** add `../../packages/backfield-ui/src/**/*.{ts,tsx}` to the app’s Tailwind `content` array (see `[apps/agate-ui/tailwind.config.js](../apps/agate-ui/tailwind.config.js)`).
 - **Exports:** e.g. `UserAccountMenu` (account icon + dropdown: signed-in email when `userLabel` is set, change password, optional manage users for org admins, log out). Navigation is via callbacks so hosts keep their own router.
 

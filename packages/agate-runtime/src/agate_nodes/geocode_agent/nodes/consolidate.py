@@ -2,34 +2,10 @@
 
 import logging
 import hashlib
-from typing import List
 from ..types import AgentState
 from agate_utils.geocoding.h3 import h3_cell
 
 logger = logging.getLogger(__name__)
-
-########## HELPER FUNCTIONS ##########
-
-def _get_parent_ids_from_model(geocoding_model) -> List[dict]:
-    """
-    Get parent IDs using the geocoding model's get_parents() method.
-    
-    Args:
-        geocoding_model: The model instance that was used for geocoding
-        
-    Returns:
-        List of parent ID objects in the format {"name": "...", "id": "..."}
-    """
-    try:
-        if not geocoding_model:
-            return []
-        
-        # Use the model's get_parents() method (it already has the geocoding result stored)
-        return geocoding_model.get_parents()
-        
-    except Exception as e:
-        logger.warning(f"Error getting parent IDs from model: {e}")
-        return []
 
 ########## CONSOLIDATE NODE ##########
 
@@ -102,10 +78,6 @@ async def consolidate_node(state: AgentState) -> AgentState:
         }
     }
     
-    # Build parent_ids using the geocoding model's get_parents() method
-    geocoding_model = state.get("geocoding_model")
-    parent_ids = _get_parent_ids_from_model(geocoding_model)
-    
     # Create the location entry
     # Generate ID based on location type
     if location_type == "street_road":
@@ -146,7 +118,6 @@ async def consolidate_node(state: AgentState) -> AgentState:
         "location": location_text,  # Parsed location name
         "type": location_type,
         "description": extra_fields.get("description", f"Geocoded {location_type} location"),
-        "parent_ids": parent_ids,
         "geocode": {
             "geocode_type": geocoding_result.geocoder,
             "result": dict(result_base),
@@ -172,7 +143,6 @@ async def consolidate_node(state: AgentState) -> AgentState:
     elif location_type in ["natural", "street_road"]:
         consolidated["places"]["areas"]["other"].append(location_entry)
     elif location_type in ["address", "point", "place", "intersection_road", "intersection_highway"]:
-        # Create point entry with parent_ids
         # Use H3 cell ID as the point ID
         coordinates = geocoding_result.result.geometry.coordinates
         try:
@@ -182,16 +152,12 @@ async def consolidate_node(state: AgentState) -> AgentState:
             logger.warning(f"Failed to generate H3 ID for point: {e}, using geocoder ID instead")
             h3_id = geocoding_result.result.id
         
-        # Build parent_ids using the geocoding model's get_parents() method
-        point_parent_ids = parent_ids if parent_ids else _get_parent_ids_from_model(geocoding_model)
-        
         point_entry = {
             "id": h3_id,
             "original_text": original_text,
             "location": location_text,
             "type": location_type,
             "description": extra_fields.get("description", f"Geocoded {location_type} location"),
-            "parent_ids": point_parent_ids,
             "geocode": {
                 "geocode_type": geocoding_result.geocoder,
                 "result": dict(result_base),

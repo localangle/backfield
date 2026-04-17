@@ -2,15 +2,32 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import Column, DateTime, Text, UniqueConstraint, func
+from geoalchemy2 import Geometry
+from pydantic import ConfigDict
+from sqlalchemy import JSON, Column, DateTime, Index, Text, UniqueConstraint, func
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
 
 def _uuid() -> str:
     return str(uuid4())
+
+
+class _PostgresGeometry(TypeDecorator):
+    """Render true PostGIS geometry on Postgres and plain text elsewhere."""
+
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(
+                Geometry(geometry_type="GEOMETRY", srid=4326, spatial_index=False)
+            )
+        return dialect.type_descriptor(Text())
 
 
 # ----- Identity & tenancy (backfield_*) -----
@@ -169,6 +186,283 @@ class BackfieldProjectSecret(SQLModel, table=True):
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
     key: str = Field(sa_column=Column(Text, nullable=False))
     value_encrypted: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+# ----- Shared content + entity substrate (substrate_* — not tenancy `backfield_*`) -----
+
+
+class SubstrateArticle(SQLModel, table=True):
+    """Project-scoped article/content item used by stateful ingestion."""
+
+    __tablename__ = "substrate_article"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "external_source",
+            "external_id",
+            name="uq_substrate_article_project_external",
+        ),
+        UniqueConstraint("project_id", "url", name="uq_substrate_article_project_url"),
+        Index("idx_substrate_article_project_pub_date", "project_id", "pub_date"),
+        Index("idx_substrate_article_project_entry_id", "project_id", "entry_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    external_source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    external_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    url: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
+    headline: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    author: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    pub_date: date | None = Field(default=None, index=True)
+    updated: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    entry_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    s3_bucket: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    s3_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    text: str = Field(sa_column=Column(Text, nullable=False))
+    source_run_id: str | None = Field(default=None, foreign_key="agate_run.id", index=True)
+    source_item_id: int | None = Field(default=None)
+    added: bool = Field(default=False, index=True)
+    edited: bool = Field(default=False, index=True)
+    deleted: bool = Field(default=False, index=True)
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class SubstrateImage(SQLModel, table=True):
+    """Image attached to a substrate article row."""
+
+    __tablename__ = "substrate_image"
+    __table_args__ = (
+        UniqueConstraint("article_id", "image_id", name="uq_substrate_image_article_image_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    article_id: int = Field(foreign_key="substrate_article.id", index=True)
+    image_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    url: str = Field(sa_column=Column(Text, nullable=False))
+    caption: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class SubstrateLocation(SQLModel, table=True):
+    """Durable shared location entity for stateful article ingestion."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    __tablename__ = "substrate_location"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "external_source",
+            "external_id",
+            name="uq_substrate_location_project_external",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "identity_fingerprint",
+            name="uq_substrate_location_project_fingerprint",
+        ),
+        Index("idx_substrate_location_project_status", "project_id", "status"),
+        Index("idx_substrate_location_project_name", "project_id", "normalized_name"),
+        Index("idx_substrate_location_project_type", "project_id", "location_type"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    name: str = Field(sa_column=Column(Text, nullable=False))
+    normalized_name: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    location_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    status: str = Field(
+        default="provisional",
+        sa_column=Column(Text, nullable=False, server_default="provisional"),
+    )
+    external_source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    external_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    identity_fingerprint: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    geocode_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    formatted_address: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    source_kind: str = Field(
+        default="unknown",
+        sa_column=Column(Text, nullable=False, server_default="unknown"),
+    )
+    source_details_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    geometry: object | None = Field(
+        default=None,
+        sa_column=Column(_PostgresGeometry(), nullable=True),
+    )
+    geometry_type: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True, index=True),
+    )
+    geometry_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class SubstrateLocationMention(SQLModel, table=True):
+    """One aggregate article-to-location association."""
+
+    __tablename__ = "substrate_location_mention"
+    __table_args__ = (
+        UniqueConstraint(
+            "article_id",
+            "location_id",
+            name="uq_substrate_location_mention_article_location",
+        ),
+        Index(
+            "idx_substrate_location_mention_article_review",
+            "article_id",
+            "needs_review",
+            "deleted",
+        ),
+        Index("idx_substrate_location_mention_location", "location_id", "deleted"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    article_id: int = Field(foreign_key="substrate_article.id", index=True)
+    location_id: int = Field(foreign_key="substrate_location.id", index=True)
+    role_in_story: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
+    nature_secondary_tags_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    needs_review: bool = Field(default=False, index=True)
+    review_data_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    added: bool = Field(default=False, index=True)
+    edited: bool = Field(default=False, index=True)
+    deleted: bool = Field(default=False, index=True)
+    source_kind: str = Field(
+        default="unknown",
+        sa_column=Column(Text, nullable=False, server_default="unknown"),
+    )
+    source_details_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class SubstrateLocationMentionOccurrence(SQLModel, table=True):
+    """Supporting textual evidence for a location mention aggregate."""
+
+    __tablename__ = "substrate_location_mention_occurrence"
+    __table_args__ = (
+        Index(
+            "idx_substrate_location_occurrence_mention_source",
+            "location_mention_id",
+            "source_kind",
+            "suppressed",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    location_mention_id: int = Field(foreign_key="substrate_location_mention.id", index=True)
+    source_kind: str = Field(
+        default="system_extraction",
+        sa_column=Column(Text, nullable=False, server_default="system_extraction")
+    )
+    source_details_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    mention_text: str = Field(sa_column=Column(Text, nullable=False))
+    quote_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    start_char: int | None = Field(default=None)
+    end_char: int | None = Field(default=None)
+    occurrence_order: int | None = Field(default=None)
+    labels_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    suppressed: bool = Field(default=False, index=True)
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class SubstrateLocationCache(SQLModel, table=True):
+    """Project-scoped dumb cache of external geocoding or resolution results."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    __tablename__ = "substrate_location_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "query_fingerprint",
+            name="uq_substrate_location_cache_project_query",
+        ),
+        Index("idx_substrate_location_cache_project_query_text", "project_id", "normalized_query"),
+        Index("idx_substrate_location_cache_project_type", "project_id", "location_type"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    query_text: str = Field(sa_column=Column(Text, nullable=False))
+    normalized_query: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    query_fingerprint: str = Field(sa_column=Column(Text, nullable=False))
+    request_components_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    external_source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    external_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    location_name: str = Field(sa_column=Column(Text, nullable=False))
+    location_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    geocode_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    formatted_address: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    geometry: object | None = Field(
+        default=None,
+        sa_column=Column(_PostgresGeometry(), nullable=True),
+    )
+    geometry_type: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True, index=True),
+    )
+    geometry_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    response_payload_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    expires_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

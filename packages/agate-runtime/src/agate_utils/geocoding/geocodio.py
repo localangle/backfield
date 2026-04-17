@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, Union
 from geopy.geocoders import Geocodio
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut
 from agate_utils.geocoding.geocoding_types import GeocodingResult, GeocodingResultData, GeometryPoint, Confidence
-from agate_utils.geocoding.wof import get_parents_by_coords, get_id_by_coords
+from agate_utils.geocoding.wof import get_id_by_coords
 
 logger = logging.getLogger(__name__)
 
@@ -57,19 +57,6 @@ def geocode_search(
             logger.warning(f"No results found for: {query}")
             return None
         
-        # Get parent hierarchy using WOF
-        parent_hierarchy = {}
-        if placetype:
-            try:
-                parent_hierarchy = get_parents_by_coords(
-                    location.latitude,
-                    location.longitude,
-                    placetype
-                )
-            except Exception as e:
-                logger.warning(f"Failed to get parent hierarchy from WOF: {e}")
-                parent_hierarchy = {}
-        
         # Store raw data for validation purposes
         raw_data = location.raw if hasattr(location, 'raw') else {}
         
@@ -82,7 +69,6 @@ def geocode_search(
                 coordinates=[location.longitude, location.latitude]
             ),
             confidence=raw_data,  # Store raw data in confidence for later validation
-            parent_hierarchy=parent_hierarchy
         )
         
         return GeocodingResult(
@@ -159,19 +145,6 @@ def geocode_structured(
             logger.warning(f"No results found for structured query: {query_dict}")
             return None
         
-        # Get parent hierarchy using WOF
-        parent_hierarchy = {}
-        if placetype:
-            try:
-                parent_hierarchy = get_parents_by_coords(
-                    location.latitude,
-                    location.longitude,
-                    placetype
-                )
-            except Exception as e:
-                logger.warning(f"Failed to get parent hierarchy from WOF: {e}")
-                parent_hierarchy = {}
-        
         # Build input string from components for display
         input_parts = [p for p in [street, city, state, postal_code, country] if p]
         input_str = ", ".join(input_parts)
@@ -185,7 +158,6 @@ def geocode_structured(
                 coordinates=[location.longitude, location.latitude]
             ),
             confidence={},  # geopy doesn't expose Geocodio's accuracy score
-            parent_hierarchy=parent_hierarchy
         )
         
         return GeocodingResult(
@@ -247,7 +219,6 @@ def reverse_geocode(
                 coordinates=[location.longitude, location.latitude]
             ),
             confidence={},
-            parent_hierarchy=None  # Geocodio doesn't provide parent hierarchy via geopy
         )
         
         return GeocodingResult(

@@ -25,6 +25,43 @@ class OutputParams(BaseModel):
     include: list[str] | None = None
 
 
+def _merge_namespaced_upstream_inputs_for_dboutput(inputs: dict[str, Any]) -> dict[str, Any]:
+    """Shallow-merge upstream node outputs keyed by upstream node id (DBOutput wiring)."""
+
+    merged: dict[str, Any] = {}
+    for _upstream_id, payload in inputs.items():
+        if isinstance(payload, dict):
+            merged.update(payload)
+    return merged
+
+
+def consolidated_body_from_dboutput(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+    """Run the same consolidation path as the DBOutput node before persistence (worker or stub)."""
+
+    merged = _merge_namespaced_upstream_inputs_for_dboutput(inputs)
+    merged = expand_upstream_merge_for_output_consolidator(merged)
+    cons = OutputConsolidator()
+    p = OutputParams.model_validate(params)
+    return cons.run(merged, p.model_dump())
+
+
+def expand_upstream_merge_for_output_consolidator(merged: dict[str, Any]) -> dict[str, Any]:
+    """Hoist JSON ``Output``'s ``{"consolidated": {...}}`` shell after namespaced shallow-merge.
+
+    When ``DBOutput`` is wired directly after ``Output``, upstream merge yields a top-level
+    ``consolidated`` key; :class:`OutputConsolidator` expects article-shaped keys (``places``,
+    ``text``, …) at the top level like multi-upstream merges from raw nodes.
+    """
+
+    if not isinstance(merged, dict):
+        return merged
+    inner = merged.get("consolidated")
+    if isinstance(inner, dict):
+        shell = {k: v for k, v in merged.items() if k != "consolidated"}
+        return {**shell, **inner}
+    return dict(merged)
+
+
 class OutputConsolidator:
     """Same behavior as flowbuilder Output node."""
 

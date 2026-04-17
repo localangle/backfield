@@ -1,0 +1,36 @@
+{
+  "type": "DBOutput",
+  "label": "Stylebook Output",
+  "icon": "Database",
+  "color": "bg-slate-500",
+  "description": "Persists results to Stylebook",
+  "category": "output",
+  "requiredUpstreamNodes": [],
+  "dependencyHelperText": "Persists results to Stylebook",
+  "inputs": [
+    {
+      "id": "data",
+      "label": "Any Data",
+      "type": "object",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "success",
+      "label": "Success",
+      "type": "boolean"
+    },
+    {
+      "id": "article_id",
+      "label": "Article ID",
+      "type": "number"
+    },
+    {
+      "id": "message",
+      "label": "Message",
+      "type": "string"
+    }
+  ],
+  "defaultParams": {}
+}

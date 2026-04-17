@@ -5,6 +5,7 @@ from agate_utils.geocoding.geocoding_types import (
     GeocodingResult,
     GeocodingResultData,
     GeometryPolygon,
+    bbox_west_south_east_north_to_polygon_coordinates,
 )
 from agate_utils.llm import call_llm
 from .area import Area
@@ -98,7 +99,9 @@ class Region(Area):
         west, south, east, north = min_lon, min_lat, max_lon, max_lat
 
         try:
-            geometry = GeometryPolygon(coordinates=[west, south, east, north])
+            geometry = GeometryPolygon(
+                coordinates=bbox_west_south_east_north_to_polygon_coordinates([west, south, east, north]),
+            )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to build polygon for region '%s': %s", self.name, exc)
             return None
@@ -120,14 +123,9 @@ class Region(Area):
                 processed_str=f"{self.name} (region estimate)",
                 geometry=geometry,
                 confidence=confidence_data,
-                parent_hierarchy=None,
             ),
         )
 
         self.geocoding_result = result
         return result
-
-    def get_parents(self) -> list:
-        """Regions do not provide parent hierarchies."""
-        return []
 

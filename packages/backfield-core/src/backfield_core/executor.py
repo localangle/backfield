@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from backfield_core.nodes import NODE_RUNNERS
 from backfield_core.types import Edge, GraphSpec, NodeConfig
+
+NodeRunner = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+
+# Stable JSON keys for run results: snake_case from node type, with palette aliases where needed.
+_NODE_TYPE_OUTPUT_SLUGS: dict[str, str] = {
+    "Output": "json_output",
+    "DBOutput": "stylebook_output",
+}
+
+
+def _node_type_to_output_slug(node_type: str) -> str:
+    if node_type in _NODE_TYPE_OUTPUT_SLUGS:
+        return _NODE_TYPE_OUTPUT_SLUGS[node_type]
+    # PascalCase / CamelCase → snake_case
+    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", node_type)
+    s2 = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1)
+    return s2.lower()
 
 
 class GraphExecutionError(Exception):
@@ -62,6 +81,45 @@ def _namespaced_upstream_inputs(
     return state
 
 
+def _public_node_output_keys(
+    by_id: dict[str, NodeConfig],
+    order: list[str],
+) -> dict[str, str]:
+    """Map internal node id -> unique top-level JSON key (execution order for disambiguation)."""
+    per_base_count: dict[str, int] = defaultdict(int)
+    id_to_public: dict[str, str] = {}
+    used_public: set[str] = set()
+
+    for nid in order:
+        node = by_id[nid]
+        base = _node_type_to_output_slug(node.type)
+        per_base_count[base] += 1
+        if per_base_count[base] == 1:
+            public = base
+        else:
+            public = f"{base}_{nid}"
+        if public in used_public:
+            public = nid
+        used_public.add(public)
+        id_to_public[nid] = public
+
+    return id_to_public
+
+
+def _remap_outputs_for_json(
+    by_id: dict[str, NodeConfig],
+    order: list[str],
+    node_outputs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Top-level keys are snake_case slugs from node types (see ``_NODE_TYPE_OUTPUT_SLUGS``)."""
+    id_to_public = _public_node_output_keys(by_id, order)
+    out: dict[str, Any] = {}
+    for nid in order:
+        pub = id_to_public[nid]
+        out[pub] = node_outputs[nid]
+    return out
+
+
 def _merged_outputs_for_output(
     node_outputs: dict[str, dict[str, Any]],
     by_id: dict[str, NodeConfig],
@@ -76,21 +134,33 @@ def _merged_outputs_for_output(
     return merged
 
 
-def execute_graph(spec: GraphSpec) -> dict[str, Any]:
+def execute_graph(
+    spec: GraphSpec,
+    node_runners: Mapping[str, NodeRunner] | None = None,
+) -> dict[str, Any]:
     """
-    Run all nodes in dependency order. Returns mapping node_id -> output dict.
-    Raises GraphExecutionError on unknown node type or wiring errors.
+    Run all nodes in dependency order.
+
+    Returns a JSON-serializable dict whose top-level keys are stable snake_case strings
+    per node (for example ``text_input``, ``json_output``, ``stylebook_output``), not
+    internal React Flow ids. Execution still uses internal ids for wiring; downstream
+    runners receive namespaced inputs keyed by id.
     """
     by_id = {n.id: n for n in spec.nodes}
     order = _topo_order(spec)
     node_outputs: dict[str, dict[str, Any]] = {}
 
+    runners = NODE_RUNNERS if node_runners is None else dict(NODE_RUNNERS) | dict(node_runners)
+
     for nid in order:
         node = by_id[nid]
-        runner = NODE_RUNNERS.get(node.type)
+        runner = runners.get(node.type)
         if not runner:
             raise GraphExecutionError(f"Unknown node type: {node.type}")
 
+        # Match agate-ai-platform worker `map_node_inputs`: only JSON `Output` deep-merges
+        # all completed node outputs. `DBOutput` consolidates from wired upstream nodes only
+        # (namespaced by source id), like other consumers — it does not require JSON Output.
         if node.type == "Output":
             inputs = _merged_outputs_for_output(node_outputs, by_id)
         else:
@@ -105,4 +175,4 @@ def execute_graph(spec: GraphSpec) -> dict[str, Any]:
             raise GraphExecutionError(f"Node {nid} returned non-dict: {type(result)}")
         node_outputs[nid] = result
 
-    return node_outputs
+    return _remap_outputs_for_json(by_id, order, node_outputs)

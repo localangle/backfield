@@ -24,6 +24,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
   - Excluded from default Ruff scope in the workspace root config; treat as third-party-style surface when editing.
 - `packages/backfield-db`
   - Owns SQLModel models, DB session helpers, encryption helpers, and Alembic migrations.
+  - Owns the shared **`substrate_*`** content/location substrate (`substrate_article`, `substrate_location`, location mentions/occurrences, cache) in addition to **`backfield_*`** tenancy and Agate execution tables.
   - Is the only package that should define DB table names and schema-level conventions.
 - `apps/agate-api`
   - Owns HTTP routes for health, projects, graphs, templates, runs, and node metadata.
@@ -31,11 +32,16 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `apps/worker`
   - Owns Celery task execution and runtime concerns for processing runs.
   - Reads from DB, executes `backfield-core`, and writes status/results back to DB.
+  - May execute worker-local nodes (e.g. `DBOutput`) that write directly to Postgres using `backfield-db` helpers (see `apps/worker/src/worker/nodes/db_output.py` and `apps/worker/src/worker/substrate_persistence.py`, split across `substrate_common.py`, `substrate_span.py`, `substrate_article.py`, `substrate_location.py`, and `substrate_mentions.py`).
+- `packages/backfield-ui`
+  - Shared React shell components (`UserAccountMenu`, etc.) for multiple apps.
+  - Also publishes **`@backfield/ui/nodeOutputs`**: pure TypeScript helpers that map React Flow graph shape + node types to **`execute_graph` snake_case output keys** (same rules as the Python executor). Agate UI re-exports this from `src/lib/nodeOutputs.ts`; `backfield-core` node sources use the same module via sync-time `@/lib/nodeOutputs` resolution.
 - `apps/agate-ui`
   - Owns the flowbuilder UI, API client, and browser-facing interaction patterns.
   - Consumes node metadata and synced node UI generated from `backfield-core`.
 - `apps/stylebook-api`
   - Owns Stylebook-only HTTP endpoints such as geocode resolution.
+  - Will layer editorial/canonicalization workflows on top of the shared **`substrate_*`** substrate rather than replacing the shared entity tables.
 - `apps/stylebook-ui`
   - Owns the minimal Stylebook browser shell.
 - `packages/backfield-auth`
@@ -51,6 +57,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `core-api` may depend on `backfield-auth` and `backfield-db`.
 - `backfield-core` may depend on `agate-runtime` and must not depend on app code.
 - `agate-runtime` must not depend on app code or `backfield-db`.
+  - **TypeScript in `agate-runtime`:** vendored node UI under `src/agate_nodes/*/ui` mirrors agate-ai-platform and uses the same `@/…` aliases as Agate UI for shadcn-style imports. For executor output keys it imports **`@backfield/ui/nodeOutputs`**, matching the **`exports`** entry in `packages/backfield-ui/package.json` (not a Python dependency on `backfield-ui`).
 - `backfield-db` must not depend on app code.
 
 ## Runtime flow
@@ -66,7 +73,7 @@ flowchart LR
     Core --> Runtime[agate_runtime]
     Runtime -->|optional cache / match| StylebookAPI[StylebookAPI]
     Runtime -->|LLM and external geocoders| ExternalAPIs[ExternalAPIs]
-    Worker -->|write result| Postgres
+    Worker -->|write run results (+ DBOutput substrate writes)| Postgres
     AgateUI -->|poll run| AgateAPI
     AgateAPI -->|read status/result| Postgres
 ```
@@ -76,7 +83,9 @@ flowchart LR
 ## Important conventions
 
 - `GraphSpec` is the canonical stored graph shape.
-- Agate execution tables use the `agate_` prefix; shared tenancy and project tables use `backfield_` (e.g. `backfield_project`).
+- Worker-persisted `execute_graph` results use **stable snake_case keys** per node derived from node types (e.g. `geocode_agent`, `json_output`, `stylebook_output`), not internal React Flow ids. The UI resolves a node’s slice by recomputing that key from the graph spec plus the same ordering rules as the executor (legacy payloads may still include `__outputKeysByNodeId` and older human-readable keys).
+- Agate execution tables use the `agate_` prefix. Shared **infrastructure** tables use `backfield_` (e.g. `backfield_project`). The shared **substrate** uses `substrate_*` (e.g. `substrate_location`, `substrate_article`).
+- `substrate_location` is the durable shared location entity table; future `stylebook_*` tables layer editorial canonicalization and alias management on top of it.
 - Celery queue and worker name use `agate`.
 - Node metadata and optional node UI live in `packages/backfield-core/src/backfield_core/nodes`.
 - `apps/agate-ui/scripts/sync-nodes.js` copies node UI and generates the frontend registry.

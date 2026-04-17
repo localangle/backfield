@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from .area import Area
 
@@ -30,9 +30,3 @@ class State(Area):
                 "query": f"{self.name}, {self.country}",
             },
         }
-
-    ########## PUBLIC METHODS ##########
-
-    def get_parents(self) -> List[Dict[str, str]]:
-        """States currently have no parents beyond the country."""
-        return []

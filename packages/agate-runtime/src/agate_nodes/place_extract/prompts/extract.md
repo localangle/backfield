@@ -122,11 +122,28 @@ Do not infer additional information about the locations beyond what is instructe
 
 Return empty objects or strings in cases where a component does not apply to the geography in question.
 
+## Editorial role (nature)
+
+For **each** location object, set exactly one primary **`nature`** value describing how this place functions in the story:
+
+- **primary** — Where the main news event (or events) happens: crime scene, construction site, weather-affected area, game venue, key meeting place, etc.
+- **secondary** — A consequential but supporting location (e.g. hospital after a crash, secondary scene in a developing story).
+- **subject** — The place is the focus of coverage: restaurant review, profile of a venue, or an item in a list (e.g. “10 best parks in San Francisco”).
+- **context** — Referenced for background, history, or non-event context without being the main scene.
+- **person** — Tied to a person: where they were quoted, hometown, identifying employer campus, etc.
+- **unknown** — Use only when none of the above clearly applies.
+
+Optionally include **`nature_secondary_tags`**: an array of zero or more **additional** labels drawn from the **same** vocabulary when a place clearly plays more than one role (e.g. primary scene plus **`context`**).
+
+`description` remains the human-readable sentence; **`nature`** is the controlled vocabulary for filtering and analytics.
+
 ## Required Fields
 
 Return the paragraph from which the location was extracted and return it as "original_text." Ensure these are copied verbatim from the story.
 
 Return a brief description of the nature of the location and its importance in the story under a "description" attribute.
+
+Include **`nature`** (string, one of the values above) and optionally **`nature_secondary_tags`** (array of strings).
 
 The description should:
 

@@ -13,7 +13,6 @@
     { "id": "text", "label": "Text", "type": "string" }
   ],
   "defaultParams": {
-    "calculateParents": false,
     "maxLocations": 100,
     "perLocationTimeout": 300,
     "useCache": false,

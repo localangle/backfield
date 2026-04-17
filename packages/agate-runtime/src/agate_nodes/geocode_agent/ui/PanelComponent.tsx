@@ -1,6 +1,6 @@
 import React from 'react'
+import { getNodeOutputById, type NodeOutputLookupSpec } from '@backfield/ui/nodeOutputs'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 
@@ -12,6 +12,7 @@ interface GeocodeAgentPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
 export default function GeocodeAgentPanel({
@@ -21,28 +22,16 @@ export default function GeocodeAgentPanel({
   running,
   currentRun,
   editMode,
-  setNodes
+  setNodes,
+  nodeOutputLookupSpec,
 }: GeocodeAgentPanelProps) {
   const params = node.data || { 
-    calculateParents: false,
     useCache: false,
     stylebookApiUrl: '',
     projectSlug: ''
   }
   
   const isDisabled = !(editMode && setNodes)
-  
-  const handleCalculateParentsChange = (checked: boolean) => {
-    if (setNodes) {
-      setNodes((nodes: any[]) =>
-        nodes.map((n) =>
-          n.id === node.id
-            ? { ...n, data: { ...n.data, calculateParents: checked } }
-            : n
-        )
-      )
-    }
-  }
 
   const handleUseCacheChange = (checked: boolean) => {
     if (setNodes) {
@@ -81,7 +70,11 @@ export default function GeocodeAgentPanel({
   }
 
   // Get latest run data - only show if we have specific node output
-  const nodeOutput = currentRun?.node_outputs?.[node.id]
+  const nodeOutput = getNodeOutputById(
+    currentRun?.node_outputs as Record<string, unknown> | undefined,
+    node.id,
+    nodeOutputLookupSpec ?? undefined,
+  )
   const latestData = nodeOutput || null
   const locationCount = latestData?.locations?.length || 0
 
@@ -103,26 +96,6 @@ export default function GeocodeAgentPanel({
         </div>
         
         <div className="space-y-3 mt-2">
-          <div>
-            <Label htmlFor="calculateParents" className="text-xs text-muted-foreground">Calculate Parents</Label>
-            {editMode && setNodes ? (
-              <div className="mt-1 flex items-center space-x-2">
-                <Switch
-                  id="calculateParents"
-                  checked={params.calculateParents || false}
-                  onCheckedChange={handleCalculateParentsChange}
-                />
-                <Label htmlFor="calculateParents" className="text-xs">
-                  {params.calculateParents ? 'Enabled' : 'Disabled'}
-                </Label>
-              </div>
-            ) : (
-              <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs font-mono">{params.calculateParents ? 'Enabled' : 'Disabled'}</span>
-              </div>
-            )}
-          </div>
-
           <div className="pt-2 border-t">
             <div className="flex items-center space-x-2">
               <Checkbox

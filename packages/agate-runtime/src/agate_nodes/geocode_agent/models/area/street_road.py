@@ -2,7 +2,12 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict
-from agate_utils.geocoding.geocoding_types import GeocodingResult, GeocodingResultData, GeometryPolygon
+from agate_utils.geocoding.geocoding_types import (
+    GeocodingResult,
+    GeocodingResultData,
+    GeometryPolygon,
+    bbox_west_south_east_north_to_polygon_coordinates,
+)
 from agate_utils.geocoding.nominatim import geocode_address_raw
 from agate_utils.llm import call_llm
 from .area import Area
@@ -74,7 +79,10 @@ class StreetRoad(Area):
                 logger.warning("Invalid bounding box from LLM: %s", bbox_data)
                 return None
 
-            geometry = GeometryPolygon(type="Polygon", coordinates=[west, south, east, north])
+            geometry = GeometryPolygon(
+                type="Polygon",
+                coordinates=bbox_west_south_east_north_to_polygon_coordinates([west, south, east, north]),
+            )
             result_data = GeocodingResultData(
                 id=f"street_road_llm_{self.name.replace(' ', '_')}",
                 processed_str=f"{self.name} (LLM bounding box)",
@@ -83,7 +91,6 @@ class StreetRoad(Area):
                     "llm_reasoning": bbox_data.get("reasoning"),
                     "selected_segments": bbox_data.get("selected_segments", []),
                 },
-                parent_hierarchy=None,
             )
 
             return GeocodingResult(
@@ -126,13 +133,15 @@ class StreetRoad(Area):
             logger.warning("Combined bounding box invalid for %s", self.name)
             return None
 
-        geometry = GeometryPolygon(type="Polygon", coordinates=[west, south, east, north])
+        geometry = GeometryPolygon(
+            type="Polygon",
+            coordinates=bbox_west_south_east_north_to_polygon_coordinates([west, south, east, north]),
+        )
         result_data = GeocodingResultData(
             id=f"street_road_combined_{self.name.replace(' ', '_')}",
             processed_str=f"{self.name} (combined from {len(raw_data)} raw segments)",
             geometry=geometry,
             confidence={"method": "combined_all_raw_segments"},
-            parent_hierarchy=None,
         )
 
         return GeocodingResult(
@@ -181,8 +190,3 @@ class StreetRoad(Area):
         except Exception as exc:  # pragma: no cover - defensive
             logger.error("Error geocoding street/road %s: %s", self.name, exc)
             return None
-
-    def get_parents(self) -> List[Dict[str, str]]:
-        """Street/road objects currently omit parent hierarchies."""
-        return []
-    

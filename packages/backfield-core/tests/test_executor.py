@@ -50,7 +50,8 @@ def test_text_to_place_extract():
         return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
     ):
         out = execute_graph(spec)
-    loc = out["b"]["locations"][0]["location"]
+    assert "__outputKeysByNodeId" not in out
+    loc = out["place_extract"]["locations"][0]["location"]
     full = loc["full"] if isinstance(loc, dict) else loc
     assert "Chicago" in full
 
@@ -90,11 +91,13 @@ def test_four_node_pipeline_mock_geocode():
             NodeConfig(id="n2", type="PlaceExtract", params={}),
             NodeConfig(id="n3", type="GeocodeAgent", params={}),
             NodeConfig(id="n4", type="Output", params={}),
+            NodeConfig(id="n5", type="DBOutput", params={}),
         ],
         edges=[
             Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
             Edge(source="n2", target="n3", sourceHandle="locations", targetHandle="locations"),
             Edge(source="n3", target="n4", sourceHandle="locations", targetHandle="data"),
+            Edge(source="n4", target="n5", sourceHandle="consolidated", targetHandle="data"),
         ],
     )
 
@@ -110,8 +113,50 @@ def test_four_node_pipeline_mock_geocode():
     ):
         out = execute_graph(spec)
 
-    consolidated = out["n4"]["consolidated"]
+    assert "__outputKeysByNodeId" not in out
+    consolidated = out["json_output"]["consolidated"]
     assert isinstance(consolidated, dict)
     assert "places" in consolidated
     cities = consolidated["places"]["areas"]["cities"]
+    assert cities and cities[0]["name"] == "Austin"
+
+    db_out = out["stylebook_output"]
+    assert db_out.get("success") is True
+    assert "places" in db_out
+
+
+def test_dboutput_direct_upstream_without_json_output():
+    """DBOutput must not require an Output node — upstream-only merge (agate parity)."""
+    spec = GraphSpec(
+        name="pipeline",
+        nodes=[
+            NodeConfig(id="n1", type="TextInput", params={"text": "Meetings in Austin, TX."}),
+            NodeConfig(id="n2", type="PlaceExtract", params={}),
+            NodeConfig(id="n3", type="GeocodeAgent", params={}),
+            NodeConfig(id="n5", type="DBOutput", params={}),
+        ],
+        edges=[
+            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(source="n2", target="n3", sourceHandle="locations", targetHandle="locations"),
+            Edge(source="n3", target="n5", sourceHandle="locations", targetHandle="data"),
+        ],
+    )
+
+    with (
+        patch(
+            "agate_nodes.place_extract.node_port.call_llm",
+            return_value=_mock_place_extract_json("Austin", "Texas", "TX"),
+        ),
+        patch(
+            "agate_nodes.geocode_agent.node.run_geocoding_agent",
+            side_effect=_fake_run_geocoding_agent,
+        ),
+    ):
+        out = execute_graph(spec)
+
+    assert "__outputKeysByNodeId" not in out
+    db_out = out["stylebook_output"]
+    assert db_out.get("success") is True
+    assert "places" in db_out
+    cities = db_out["places"]["areas"]["cities"]
     assert cities and cities[0]["name"] == "Austin"

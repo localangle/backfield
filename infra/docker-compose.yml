@@ -6,7 +6,7 @@ x-shared-env: &shared-env
 
 services:
   postgres:
-    image: postgres:16
+    image: postgis/postgis:16-3.4
     environment:
       POSTGRES_DB: backfield
       POSTGRES_USER: postgres
