@@ -2,9 +2,28 @@ from __future__ import annotations
 
 from backfield_db import AgateRun, BackfieldOrganization, BackfieldProject
 from sqlmodel import Session, SQLModel, col, create_engine, select
-from worker.substrate_persistence import persist_from_consolidated
+from worker.substrate_persistence import _find_mention_span, persist_from_consolidated
 
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
+
+
+def test_find_mention_span_strips_trailing_punctuation_not_in_article() -> None:
+    haystack = (
+        "Violet Harris, a 15-year-old student, was killed after a vehicle crashed into "
+        "the electric scooter she was riding last month in South Shore"
+    )
+    needle = haystack + "."
+    assert haystack.find(needle) < 0
+    span = _find_mention_span(haystack=haystack, needle=needle)
+    assert span is not None
+    start, end = span
+    assert haystack[start:end] == haystack
+    assert end == len(haystack)
+
+
+def test_find_mention_span_exact_match_still_preferred() -> None:
+    haystack = "We met in South Shore."
+    assert _find_mention_span(haystack=haystack, needle="South Shore.") == (10, 22)
 
 
 def _bootstrap_project(session: Session, *, org_slug: str, project_slug: str) -> int:

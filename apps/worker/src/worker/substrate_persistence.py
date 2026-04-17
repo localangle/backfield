@@ -21,6 +21,36 @@ from sqlmodel import Session, col, select
 
 _WS_RE = re.compile(r"\s+")
 
+# LLM / consolidation sometimes appends closing punctuation not present in `consolidated["text"]`.
+# passlib is unrelated; these are stripped only when locating a substring for start_char/end_char.
+_TRAILING_SPAN_ARTIFACT_CHARS: frozenset[str] = frozenset(
+    '.,;:!?)]}"\'…\u201d\u2019\u201c'  # ASCII closers + ellipsis + curly quotes
+)
+
+
+def _rstrip_trailing_span_artifacts(fragment: str) -> str:
+    """Drop trailing whitespace and common sentence/closing marks (iteratively)."""
+
+    s = fragment.rstrip()
+    while s and s[-1] in _TRAILING_SPAN_ARTIFACT_CHARS:
+        s = s[:-1].rstrip()
+    return s
+
+
+def _mention_text_span_variants(needle: str) -> list[str]:
+    """Longest-first candidates to search in article text (exact substring match)."""
+
+    stripped = _rstrip_trailing_span_artifacts(needle)
+    if stripped == needle:
+        return [needle] if needle else []
+    out: list[str] = []
+    if needle:
+        out.append(needle)
+    if stripped:
+        out.append(stripped)
+    return out
+
+
 # Primary editorial role (PlaceExtract `nature`). Extras: `nature_secondary_tags` in extraction JSON
 # → `SubstrateLocationMention.nature_secondary_tags_json`.
 _NATURE_PRIMARY_ALLOWED = frozenset(
@@ -212,13 +242,18 @@ def _find_mention_span(*, haystack: str, needle: str) -> tuple[int, int] | None:
     if not needle:
         return None
 
-    idx = haystack.find(needle)
-    if idx >= 0:
-        return idx, idx + len(needle)
+    for candidate in _mention_text_span_variants(needle):
+        idx = haystack.find(candidate)
+        if idx >= 0:
+            return idx, idx + len(candidate)
 
     collapsed_hay = _WS_RE.sub(" ", haystack).strip()
-    collapsed_needle = _WS_RE.sub(" ", needle).strip()
-    if collapsed_needle:
+    for candidate in _mention_text_span_variants(needle):
+        if not candidate:
+            continue
+        collapsed_needle = _WS_RE.sub(" ", candidate).strip()
+        if not collapsed_needle:
+            continue
         idx2 = collapsed_hay.find(collapsed_needle)
         if idx2 >= 0:
             # Approximate mapping back to original indices by scanning for the first token.
@@ -226,7 +261,7 @@ def _find_mention_span(*, haystack: str, needle: str) -> tuple[int, int] | None:
             if first_token:
                 idx3 = haystack.find(first_token)
                 if idx3 >= 0:
-                    return idx3, idx3 + len(needle)
+                    return idx3, idx3 + len(candidate)
 
     return None
 
