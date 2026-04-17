@@ -1,5 +1,5 @@
 import hashlib, logging, math
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple
 from pydantic import Field
 from agate_utils.geocoding.geocoding_types import (
     GeocodingResult,
@@ -228,7 +228,6 @@ class Span(Area):
             processed_str=f"{self.name} (span)",
             geometry=bbox,
             confidence=confidence,
-            parent_hierarchy=None,
         )
 
         self.geocoding_result = GeocodingResult(
@@ -238,22 +237,3 @@ class Span(Area):
         )
 
         return self.geocoding_result
-
-    def get_parents(self) -> List[Dict[str, str]]:
-        """Aggregate unique parents from both endpoints."""
-        parents: List[Dict[str, str]] = []
-        seen = set()
-
-        for model in (self._start_model, self._end_model):
-            if not model:
-                continue
-            try:
-                for parent in model.get_parents():
-                    key = (parent.get("id"), parent.get("name"))
-                    if key not in seen:
-                        seen.add(key)
-                        parents.append(parent)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Failed to fetch parents from endpoint model: %s", exc)
-
-        return parents

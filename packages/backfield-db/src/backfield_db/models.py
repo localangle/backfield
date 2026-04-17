@@ -294,10 +294,6 @@ class SubstrateLocation(SQLModel, table=True):
     identity_fingerprint: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     geocode_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     formatted_address: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
-    parent_ids_json: list[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON, nullable=False),
-    )
     source_kind: str = Field(
         default="unknown",
         sa_column=Column(Text, nullable=False, server_default="unknown"),

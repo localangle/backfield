@@ -321,7 +321,6 @@ def format_geocoding_result_from_localize(input_str: str, localize_result: Dict[
             processed_str=formatted_address,
             geometry=geometry,
             confidence={},  # Empty dict for now, can be populated if stylebook provides confidence
-            parent_hierarchy=None  # Can be populated if stylebook provides parent info
         )
         
         # Create and return the geocoding result

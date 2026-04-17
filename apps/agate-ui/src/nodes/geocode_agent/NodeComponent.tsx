@@ -31,7 +31,6 @@ const nodeMetadata = {
     }
   ],
   "defaultParams": {
-    "calculateParents": false,
     "maxLocations": 100,
     "perLocationTimeout": 300,
     "useCache": false,
@@ -47,7 +46,6 @@ import { Label } from '@/components/ui/label'
 import { getNodeIcon, getNodeLabel, getNodeBgColor } from '@/lib/nodeUtils'
 
 interface GeocodeAgentData {
-  calculateParents?: boolean
   locations?: any[]
 }
 

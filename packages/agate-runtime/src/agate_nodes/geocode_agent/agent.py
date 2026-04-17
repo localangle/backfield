@@ -2,16 +2,13 @@
 
 from typing import Optional
 from langgraph.graph import StateGraph, END  # type: ignore
-from .nodes import orchestrate_geocode, consolidate_node, enrich_node, output_node
+from .nodes import orchestrate_geocode, consolidate_node, output_node
 from .types import AgentState
 
-def create_geocoding_agent(calculate_parents: bool = False):
+def create_geocoding_agent():
     """
     Create the LangGraph geocoding agent using model-based approach.
-    
-    Args:
-        calculate_parents: Whether to run the enrich node for parent calculation
-    
+
     Returns:
         Compiled LangGraph workflow
     """
@@ -21,22 +18,12 @@ def create_geocoding_agent(calculate_parents: bool = False):
     # Add nodes
     workflow.add_node("orchestrate_geocode", orchestrate_geocode)
     workflow.add_node("consolidate", consolidate_node)
-    
-    if calculate_parents:
-        workflow.add_node("enrich", enrich_node)
-    
     workflow.add_node("output", output_node)
     
     # Add edges
     workflow.set_entry_point("orchestrate_geocode")
     workflow.add_edge("orchestrate_geocode", "consolidate")
-    
-    if calculate_parents:
-        workflow.add_edge("consolidate", "enrich")
-        workflow.add_edge("enrich", "output")
-    else:
-        workflow.add_edge("consolidate", "output")
-    
+    workflow.add_edge("consolidate", "output")
     workflow.add_edge("output", END)
     
     return workflow.compile()
@@ -53,7 +40,6 @@ async def run_geocoding_agent(
     geocodio_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
     brave_search_api_key: Optional[str] = None,
-    calculate_parents: bool = False,
     use_cache: bool = False,
     stylebook_api_url: Optional[str] = None,
     project_slug: Optional[str] = None,
@@ -74,13 +60,12 @@ async def run_geocoding_agent(
         geocodio_api_key: Geocodio API key for fallback geocoding
         openai_api_key: OpenAI API key for LLM evaluation
         brave_search_api_key: Brave Search API key for place address finding
-        calculate_parents: Whether to calculate parent hierarchies
         
     Returns:
         Consolidated output dict if successful, None otherwise
     """
     # Create agent
-    agent = create_geocoding_agent(calculate_parents=calculate_parents)
+    agent = create_geocoding_agent()
     
     # Initialize state
     initial_state: AgentState = {

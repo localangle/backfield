@@ -31,7 +31,6 @@ const nodeMetadata = {
     }
   ],
   "defaultParams": {
-    "calculateParents": false,
     "maxLocations": 100,
     "perLocationTimeout": 300,
     "useCache": false,

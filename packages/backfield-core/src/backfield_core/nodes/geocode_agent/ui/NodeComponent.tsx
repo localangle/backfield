@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label'
 import { getNodeIcon, getNodeLabel, getNodeBgColor } from '@/lib/nodeUtils'
 
 interface GeocodeAgentData {
-  calculateParents?: boolean
   locations?: any[]
 }
 

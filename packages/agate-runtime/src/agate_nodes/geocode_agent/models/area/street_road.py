@@ -91,7 +91,6 @@ class StreetRoad(Area):
                     "llm_reasoning": bbox_data.get("reasoning"),
                     "selected_segments": bbox_data.get("selected_segments", []),
                 },
-                parent_hierarchy=None,
             )
 
             return GeocodingResult(
@@ -143,7 +142,6 @@ class StreetRoad(Area):
             processed_str=f"{self.name} (combined from {len(raw_data)} raw segments)",
             geometry=geometry,
             confidence={"method": "combined_all_raw_segments"},
-            parent_hierarchy=None,
         )
 
         return GeocodingResult(
@@ -192,8 +190,3 @@ class StreetRoad(Area):
         except Exception as exc:  # pragma: no cover - defensive
             logger.error("Error geocoding street/road %s: %s", self.name, exc)
             return None
-
-    def get_parents(self) -> List[Dict[str, str]]:
-        """Street/road objects currently omit parent hierarchies."""
-        return []
-    

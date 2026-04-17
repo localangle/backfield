@@ -120,18 +120,3 @@ class Neighborhood(Area):
 
         self.geocoding_result = result
         return result
-
-    def get_parents(self) -> List[Dict[str, str]]:
-        """Return city, county, and state parent IDs when available."""
-        if not self.geocoding_result or not self.geocoding_result.result:
-            return []
-
-        hierarchy = self.geocoding_result.result.parent_hierarchy or {}
-        parents: List[Dict[str, str]] = []
-
-        for key in ("state", "county", "city"):
-            node = hierarchy.get(key)
-            if node and node.get("name") and node.get("id"):
-                parents.append({"name": node["name"], "id": node["id"]})
-
-        return parents

@@ -99,7 +99,6 @@ class GeocodingResultData:
     processed_str: str
     geometry: Union[GeometryPoint, GeometryPolygon]
     confidence: Dict  # Empty dict {} if no confidence available
-    parent_hierarchy: Optional[Dict] = None  # Parent administrative hierarchy information
 
 
 @dataclass
@@ -127,7 +126,6 @@ class GeocodingResult:
                     'coordinates': self.result.geometry.coordinates
                 },
                 'confidence': self.result.confidence,
-                'parent_hierarchy': self.result.parent_hierarchy
             }
         }
     
@@ -147,7 +145,6 @@ class GeocodingResult:
             processed_str=data['result']['processed_str'],
             geometry=geometry,
             confidence=data['result']['confidence'],
-            parent_hierarchy=data['result'].get('parent_hierarchy')
         )
         
         return cls(
@@ -277,7 +274,6 @@ def cache_match_to_geocoding_result(
         processed_str=processed_str,
         geometry=geometry,
         confidence=confidence,
-        parent_hierarchy=None
     )
     
     return GeocodingResult(
@@ -352,7 +348,6 @@ def stylebook_match_to_geocoding_result(
         processed_str=processed_str,
         geometry=geometry,
         confidence=confidence,
-        parent_hierarchy=None
     )
     
     return GeocodingResult(

@@ -3,8 +3,8 @@
 from typing import Dict, Any
 from ..types import AgentState
 
-AREA_KEY_ORDER = ["id", "location", "type", "original_text", "description", "parent_ids", "geocode"]
-POINT_KEY_ORDER = ["id", "location", "type", "original_text", "description", "parent_ids", "geocode"]
+AREA_KEY_ORDER = ["id", "location", "type", "original_text", "description", "geocode"]
+POINT_KEY_ORDER = ["id", "location", "type", "original_text", "description", "geocode"]
 
 ########## HELPER FUNCTIONS ##########
 
@@ -51,7 +51,7 @@ async def output_node(state: AgentState) -> AgentState:
     Formatting includes:
     - Reordering keys in area objects to: id, location, type, original_text, geocode (followed by extra fields like 'mural')
     - Reordering keys in point objects to: id, location, type, original_text, geocode (followed by extra fields like 'mural')
-    - Preserving any extra fields (like 'mural', 'description', 'parent_ids') after the core fields
+    - Preserving any extra fields (like 'mural', 'description') after the core fields
     
     Args:
         state: Current agent state with final_output

@@ -165,7 +165,6 @@ class NaturalPlace(Area):
                     processed_str=candidate.get("display_name", self.name),
                     geometry=geometry,
                     confidence=confidence_data,
-                    parent_hierarchy=None,
                 ),
             )
         except Exception as exc:
@@ -281,7 +280,6 @@ class NaturalPlace(Area):
                 processed_str=f"{self.name} (LLM natural estimate)",
                 geometry=geometry,
                 confidence={"center": {"lat": center_lat, "lon": center_lon}, **confidence},
-                parent_hierarchy=None,
             ),
         )
 
@@ -436,8 +434,4 @@ class NaturalPlace(Area):
 
         logger.warning("NaturalPlace geocoding failed for '%s'", self.name)
         return None
-
-    def get_parents(self) -> List[Dict[str, str]]:
-        """Natural places currently do not compute parent hierarchies."""
-        return []
 

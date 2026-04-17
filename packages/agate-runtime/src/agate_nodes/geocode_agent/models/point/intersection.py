@@ -5,7 +5,7 @@ from typing import Optional
 from agate_utils.geocoding.geocodio import geocode_search as geocodio_search, is_valid_intersection_result
 from agate_utils.geocoding.geocoding_types import GeocodingResult, GeocodingResultData, GeometryPoint
 from agate_utils.geocoding.overpass import find_intersection_coordinates_from_text
-from agate_utils.geocoding.wof import get_parents_by_coords, get_id_by_coords
+from agate_utils.geocoding.wof import get_id_by_coords
 
 from .point import Point
 
@@ -56,18 +56,12 @@ class Intersection(Point):
                 return None
 
             lat, lon = point.y, point.x
-            try:
-                parent_hierarchy = get_parents_by_coords(lat, lon, placetype="address")
-            except Exception as exc:
-                logger.warning("Failed to get parents for intersection %s: %s", self.name, exc)
-                parent_hierarchy = {}
 
             result_data = GeocodingResultData(
                 id=get_id_by_coords(lat, lon, "address"),
                 processed_str=self.name,
                 geometry=GeometryPoint(type="Point", coordinates=[lon, lat]),
                 confidence={},
-                parent_hierarchy=parent_hierarchy,
             )
             return GeocodingResult(geocoder="overpass", input_str=self.name, result=result_data)
         except Exception as exc:

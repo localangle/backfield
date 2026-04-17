@@ -52,7 +52,6 @@ def test_location_defaults_keep_workflow_and_provenance_fields_predictable() -> 
 
     assert location.status == "provisional"
     assert location.source_kind == "unknown"
-    assert location.parent_ids_json == []
 
     assert mention.needs_review is False
     assert mention.added is False
@@ -67,19 +66,17 @@ def test_location_defaults_keep_workflow_and_provenance_fields_predictable() -> 
 
 
 def test_location_defaults_use_independent_json_containers() -> None:
-    first_location = SubstrateLocation(project_id=1, name="Chicago", normalized_name="chicago")
-    second_location = SubstrateLocation(project_id=1, name="Austin", normalized_name="austin")
     first_mention = SubstrateLocationMention(article_id=1, location_id=2)
+    second_mention = SubstrateLocationMention(article_id=1, location_id=3)
     second_occurrence = SubstrateLocationMentionOccurrence(
         location_mention_id=1,
         mention_text="Austin",
     )
 
-    first_location.parent_ids_json.append("parent-1")
     first_mention.nature_secondary_tags_json.append("scene")
     second_occurrence.labels_json.append("quote")
 
-    assert second_location.parent_ids_json == []
+    assert second_mention.nature_secondary_tags_json == []
     assert SubstrateLocationMention(article_id=2, location_id=3).nature_secondary_tags_json == []
     assert SubstrateLocationMentionOccurrence(
         location_mention_id=2,

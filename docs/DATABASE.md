@@ -32,7 +32,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 
 - `substrate_article` — project-scoped content item for stateful ingestion. Uses a project-scoped external identity hierarchy with `(project_id, url)` as the fallback uniqueness rule. `source_run_id` stores the executing `agate_run.id` (UUID string) when the row is produced from an Agate worker run.
 - `substrate_image` — images attached to a `substrate_article`.
-- `substrate_location` — durable shared location entity row. Stores normalized naming, provider identity/fingerprint, canonical status fields, parent hierarchy, and PostGIS geometry.
+- `substrate_location` — durable shared location entity row. Stores normalized naming, provider identity/fingerprint, canonical status fields, and PostGIS geometry.
 - `substrate_location_mention` — one aggregate article-to-location association per `(article_id, location_id)` with workflow state, provenance, `role_in_story`, primary **`nature`** (PlaceExtract editorial role: `primary`, `secondary`, `subject`, `context`, `person`, `unknown`), and optional **`nature_secondary_tags_json`** for extra roles.
 - `substrate_location_mention_occurrence` — supporting evidence rows for a location mention aggregate (`mention_text`, offsets, labels, provenance). Editorial prose lives on the mention (`role_in_story`, `description` from extraction) — not duplicated here.
 - `substrate_location_cache` — project-scoped dumb cache of external resolution results only. Cache rows are lookup accelerators, not the durable entity identity layer.

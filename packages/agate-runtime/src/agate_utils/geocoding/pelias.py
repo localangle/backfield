@@ -15,49 +15,6 @@ from agate_utils.geocoding.geocoding_types import (
 logger = logging.getLogger(__name__)
 
 
-def _extract_parent_hierarchy(properties: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Extract parent hierarchy information from Pelias properties.
-    
-    Args:
-        properties: Properties dictionary from Pelias response
-        
-    Returns:
-        Dictionary containing parent hierarchy information
-    """
-    hierarchy = {}
-    
-    # Extract state/region information
-    if properties.get("region"):
-        hierarchy["state"] = {
-            "name": properties["region"],
-            "id": properties.get("region_gid")
-        }
-    
-    # Extract county information
-    if properties.get("county"):
-        hierarchy["county"] = {
-            "name": properties["county"],
-            "id": properties.get("county_gid")
-        }
-    
-    # Extract city/locality information
-    if properties.get("locality"):
-        hierarchy["city"] = {
-            "name": properties["locality"],
-            "id": properties.get("locality_gid")
-        }
-    
-    # Extract neighborhood information
-    if properties.get("neighbourhood"):
-        hierarchy["neighborhood"] = {
-            "name": properties["neighbourhood"],
-            "id": properties.get("neighbourhood_gid")
-        }
-    
-    return hierarchy
-
-
 async def geocode_search(
     text: str,
     api_key: Optional[str] = None,
@@ -136,9 +93,6 @@ async def geocode_search(
                 coordinates=[lon, lat]
             )
         
-        # Extract parent hierarchy information
-        parent_hierarchy = _extract_parent_hierarchy(properties)
-        
         # Use specific GID based on layer type
         layer = properties.get("layer", "")
         if layer == "neighbourhood":
@@ -158,7 +112,6 @@ async def geocode_search(
             processed_str=properties.get("label", text),
             geometry=result_geometry,
             confidence={},  # Pelias doesn't provide structured confidence
-            parent_hierarchy=parent_hierarchy
         )
         
         return GeocodingResult(
@@ -276,9 +229,6 @@ async def geocode_structured(
         input_parts = [p for p in [address, locality, county, region, postalcode, country] if p]
         input_str = ", ".join(input_parts)
         
-        # Extract parent hierarchy information
-        parent_hierarchy = _extract_parent_hierarchy(properties)
-        
         # Use specific GID based on layer type
         layer = properties.get("layer", "")
         if layer == "neighbourhood":
@@ -298,7 +248,6 @@ async def geocode_structured(
             processed_str=properties.get("label", input_str),
             geometry=result_geometry,
             confidence={},  # Pelias doesn't provide structured confidence
-            parent_hierarchy=parent_hierarchy
         )
         
         return GeocodingResult(
@@ -365,9 +314,6 @@ async def reverse_geocode(
         
         result_lon, result_lat = coords[0], coords[1]
         
-        # Extract parent hierarchy information
-        parent_hierarchy = _extract_parent_hierarchy(properties)
-        
         # Build result
         input_str = f"{lat}, {lon}"
         result_data = GeocodingResultData(
@@ -378,7 +324,6 @@ async def reverse_geocode(
                 coordinates=[result_lon, result_lat]
             ),
             confidence={},
-            parent_hierarchy=parent_hierarchy
         )
         
         return GeocodingResult(

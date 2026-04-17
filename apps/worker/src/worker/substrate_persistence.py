@@ -577,21 +577,6 @@ def _geocode_meta_from_entry(entry: dict[str, Any]) -> tuple[str | None, dict[st
     return geocode_type_str, result
 
 
-def _parent_ids_json(entry: dict[str, Any]) -> list[str]:
-    parents = entry.get("parent_ids")
-    if not isinstance(parents, list):
-        return []
-    out: list[str] = []
-    for p in parents:
-        if isinstance(p, dict):
-            pid = p.get("id")
-            if pid is not None:
-                out.append(str(pid))
-        elif p is not None:
-            out.append(str(p))
-    return out
-
-
 def _upsert_article(
     session: Session,
     *,
@@ -836,7 +821,6 @@ def _upsert_location(
             identity_fingerprint=fingerprint,
             geocode_type=geocode_type,
             formatted_address=formatted_address,
-            parent_ids_json=_parent_ids_json(entry),
             source_kind="agate_geocode",
             source_details_json=details,
             geometry=geometry_value,
@@ -869,7 +853,6 @@ def _upsert_location(
     loc.identity_fingerprint = fingerprint
     loc.geocode_type = geocode_type or loc.geocode_type
     loc.formatted_address = formatted_address or loc.formatted_address
-    loc.parent_ids_json = _parent_ids_json(entry) or loc.parent_ids_json
     loc.source_kind = "agate_geocode"
     loc.source_details_json = details
     loc.geometry = geometry_value or loc.geometry

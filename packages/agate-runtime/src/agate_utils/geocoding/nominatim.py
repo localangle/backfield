@@ -25,7 +25,7 @@ from .geocoding_types import (
     GeometryPolygon,
     bbox_west_south_east_north_to_polygon_coordinates,
 )
-from .wof import get_parents_by_coords, get_id_by_coords
+from .wof import get_id_by_coords
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -134,19 +134,6 @@ class NominatimGeocoder:
             # Create Point geometry from lat/lon
             geometry = GeometryPoint(coordinates=[location.longitude or 0.0, location.latitude or 0.0])
         
-        # Get parent hierarchy using WOF
-        parent_hierarchy = {}
-        if placetype and location.latitude and location.longitude:
-            try:
-                parent_hierarchy = get_parents_by_coords(
-                    location.latitude,
-                    location.longitude,
-                    placetype
-                )
-            except Exception as e:
-                logger.warning(f"Failed to get parent hierarchy from WOF: {e}")
-                parent_hierarchy = {}
-        
         # Get ID from WOF if placetype is recognized, otherwise use Nominatim place_id
         wof_id = None
         if placetype:
@@ -164,7 +151,6 @@ class NominatimGeocoder:
             processed_str=location.raw.get("formatted_address", location.address),
             geometry=geometry,
             confidence={},  # Empty dict since Nominatim doesn't provide confidence scores
-            parent_hierarchy=parent_hierarchy
         )
         
         return GeocodingResult(

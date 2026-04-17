@@ -1,10 +1,9 @@
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from agate_utils.geocoding.geocoding_types import GeocodingResult
 from agate_utils.geocoding.pelias import geocode_search as pelias_search
 from agate_utils.geocoding.geocodio import geocode_search as geocodio_search
 from agate_utils.geocoding.nominatim import geocode_address
-from agate_utils.geocoding.wof import get_parents_by_coords
 
 from ..base import Location
 
@@ -70,27 +69,3 @@ class Point(Location):
 
         logger.warning("All geocoding services failed for %s", self.name)
         return None
-
-    def get_parents(self) -> List[Dict[str, str]]:
-        """Return parent hierarchy (neighborhood, city, county, state) for a point."""
-        if not self.geocoding_result or not self.geocoding_result.result:
-            return []
-
-        try:
-            lon, lat = self.geocoding_result.result.geometry.coordinates
-            parent_hierarchy = get_parents_by_coords(lat, lon, placetype="address")
-        except Exception as exc:
-            logger.warning("Error getting parent IDs for point %s: %s", self.name, exc)
-            return []
-
-        if not parent_hierarchy:
-            return []
-
-        ordered_keys = ["neighborhood", "city", "county", "state"]
-        parents: List[Dict[str, str]] = []
-        for key in ordered_keys:
-            node = parent_hierarchy.get(key)
-            if node and node.get("name") and node.get("id"):
-                parents.append({"name": node["name"], "id": node["id"]})
-
-        return parents

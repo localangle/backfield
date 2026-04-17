@@ -123,14 +123,9 @@ class Region(Area):
                 processed_str=f"{self.name} (region estimate)",
                 geometry=geometry,
                 confidence=confidence_data,
-                parent_hierarchy=None,
             ),
         )
 
         self.geocoding_result = result
         return result
-
-    def get_parents(self) -> list:
-        """Regions do not provide parent hierarchies."""
-        return []
 
