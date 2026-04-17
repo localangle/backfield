@@ -8,12 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc curl && rm 
 COPY packages/agate-runtime /app/packages/agate-runtime
 COPY packages/backfield-core /app/packages/backfield-core
 COPY packages/backfield-db /app/packages/backfield-db
+COPY packages/backfield-stylebook /app/packages/backfield-stylebook
 COPY packages/backfield-auth /app/packages/backfield-auth
 COPY apps/agate-api /app/apps/agate-api
 
 RUN pip install --no-cache-dir -e /app/packages/agate-runtime \
     && pip install --no-cache-dir -e /app/packages/backfield-core \
     && pip install --no-cache-dir -e /app/packages/backfield-db \
+    && pip install --no-cache-dir -e /app/packages/backfield-stylebook \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
     && pip install --no-cache-dir \
         "fastapi>=0.109.0" \
