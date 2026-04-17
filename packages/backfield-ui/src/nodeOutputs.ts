@@ -1,6 +1,10 @@
 /**
- * Aligns with `execute_graph` JSON: snake_case type slugs (and legacy human-readable keys +
- * `__outputKeysByNodeId` when present).
+ * Run `result` / `node_outputs` objects use stable snake_case keys per node type
+ * (e.g. `geocode_agent`, `json_output`, `stylebook_output`), matching `execute_graph`.
+ * Legacy payloads may still include `__outputKeysByNodeId` plus human-readable keys.
+ *
+ * Canonical copy for Agate UI, backfield-core node sources (via `@/lib/nodeOutputs` re-export),
+ * and agate-runtime panels (relative import).
  */
 
 export const NODE_OUTPUT_KEY_INDEX = '__outputKeysByNodeId' as const
@@ -60,6 +64,7 @@ function topoOrder(
   return order
 }
 
+/** Match `execute_graph` / `_public_node_output_keys` in backfield_core.executor. */
 export function buildNodeIdToPublicOutputKey(spec: NodeOutputLookupSpec): Record<string, string> {
   const byId = new Map(spec.nodes.map((n) => [n.id, n]))
   const order = topoOrder(
@@ -97,6 +102,7 @@ export function getNodeOutputKeyMap(
   return null
 }
 
+/** Resolve a node's output dict; supports legacy results and slug keys with an optional graph spec. */
 export function getNodeOutputById(
   raw: Record<string, unknown> | null | undefined,
   nodeId: string,
@@ -120,7 +126,7 @@ export function getNodeOutputById(
         return raw[pub]
       }
     } catch {
-      /* invalid spec */
+      /* invalid spec — fall through */
     }
   }
 
@@ -128,4 +134,26 @@ export function getNodeOutputById(
     return raw[nodeId]
   }
   return undefined
+}
+
+/** Build lookup spec from an Agate API graph `spec` (nodes + optional edges). */
+export function nodeOutputLookupFromGraphSpec(spec: {
+  nodes: Array<{ id: string; type: string }>
+  edges?: Array<{ source: string; target: string }> | null
+}): NodeOutputLookupSpec {
+  return {
+    nodes: spec.nodes.map((n) => ({ id: n.id, type: n.type })),
+    edges: (spec.edges ?? []).map((e) => ({ source: e.source, target: e.target })),
+  }
+}
+
+/** Build lookup spec from React Flow `nodes` / `edges` (canvas state). */
+export function nodeOutputLookupFromReactFlow(
+  nodes: Array<{ id: string; type?: string | null }>,
+  edges: Array<{ source: string; target: string }>,
+): NodeOutputLookupSpec {
+  return {
+    nodes: nodes.map((n) => ({ id: n.id, type: n.type! })),
+    edges: edges.map((e) => ({ source: e.source, target: e.target })),
+  }
 }

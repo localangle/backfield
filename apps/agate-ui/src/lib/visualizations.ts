@@ -8,7 +8,7 @@
  */
 
 import type { ProcessedItem, Graph } from '@/lib/api'
-import { getNodeOutputById } from '@/lib/nodeOutputs'
+import { getNodeOutputById, nodeOutputLookupFromGraphSpec } from '@/lib/nodeOutputs'
 import { visualizationComponents } from '@/nodes/registry'
 import type React from 'react'
 
@@ -103,12 +103,7 @@ export async function getVisualizationsForItem(params: {
   }
 
   const lookup =
-    graph?.spec?.nodes && graph.spec.nodes.length > 0
-      ? {
-          nodes: graph.spec.nodes.map((n) => ({ id: n.id, type: n.type })),
-          edges: (graph.spec.edges ?? []).map((e) => ({ source: e.source, target: e.target })),
-        }
-      : null
+    graph?.spec?.nodes && graph.spec.nodes.length > 0 ? nodeOutputLookupFromGraphSpec(graph.spec) : null
 
   if (graph?.spec?.nodes) {
     for (const node of graph.spec.nodes) {

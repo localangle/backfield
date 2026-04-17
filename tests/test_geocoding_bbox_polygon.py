@@ -6,7 +6,7 @@ from agate_utils.geocoding.geocoding_types import (
     GeometryPolygon,
     bbox_west_south_east_north_to_polygon_coordinates,
 )
-from worker.substrate_persistence import _geojson_to_wkt
+from worker.substrate_location import _geojson_to_wkt
 
 
 def test_bbox_to_polygon_is_closed_ring_of_lon_lat_pairs() -> None:

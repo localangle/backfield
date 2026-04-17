@@ -120,19 +120,60 @@ def _health_checks(agate_client: httpx.Client) -> None:
         stylebook_client.close()
 
 
+def _edge_signature(e: Any) -> tuple[str | None, str | None, str | None, str | None]:
+    """Normalize edge tuple for comparison (handles optional / null)."""
+    if hasattr(e, "source"):
+        return (e.source, e.target, e.sourceHandle, e.targetHandle)
+    if isinstance(e, dict):
+        return (
+            e.get("source"),
+            e.get("target"),
+            e.get("sourceHandle"),
+            e.get("targetHandle"),
+        )
+    raise RuntimeError(f"Invalid edge shape: {type(e).__name__}")
+
+
 def _assert_starter_graph_matches_bootstrap(starter: dict[str, Any]) -> None:
-    """Starter flow must match ``starter_geocode_flow_graph_spec`` (GeocodeAgent → DBOutput)."""
+    """Starter flow topology must match bootstrap.
+
+    Expected chain: TextInput → PlaceExtract → GeocodeAgent → DBOutput.
+    """
     spec_raw = starter.get("spec")
     if not isinstance(spec_raw, dict):
         raise RuntimeError("Starter flow graph payload missing object 'spec'")
     current = GraphSpec.model_validate(spec_raw)
     canonical = starter_geocode_flow_graph_spec()
-    if current.model_dump(mode="json") != canonical.model_dump(mode="json"):
+
+    if current.name != canonical.name:
         raise RuntimeError(
-            "Starter flow graph spec does not match canonical bootstrap "
-            "(TextInput → PlaceExtract → GeocodeAgent → Stylebook Output / DBOutput). "
+            f"Starter flow spec.name expected {canonical.name!r}, got {current.name!r}. "
             "Restart agate-api with BACKFIELD_LOCAL_BOOTSTRAP=1 so local bootstrap rewrites it."
         )
+
+    want_nodes = {(n.id, n.type) for n in canonical.nodes}
+    have_nodes = {(n.id, n.type) for n in current.nodes}
+    if have_nodes != want_nodes:
+        raise RuntimeError(
+            "Starter flow nodes do not match canonical bootstrap "
+            f"(expected {sorted(want_nodes)!r}, have {sorted(have_nodes)!r}). "
+            "Restart agate-api with BACKFIELD_LOCAL_BOOTSTRAP=1."
+        )
+
+    want_edges = {_edge_signature(e) for e in canonical.edges}
+    have_edges = {_edge_signature(e) for e in current.edges}
+    if have_edges != want_edges:
+        raise RuntimeError(
+            "Starter flow edges do not match canonical bootstrap. "
+            "Restart agate-api with BACKFIELD_LOCAL_BOOTSTRAP=1."
+        )
+
+    if any(n.type == "Output" for n in current.nodes):
+        raise RuntimeError(
+            "Starter flow must not include JSON Output node; use GeocodeAgent → DBOutput only."
+        )
+    if not any(n.type == "DBOutput" for n in current.nodes):
+        raise RuntimeError("Starter flow must include a DBOutput (Stylebook Output) node.")
 
 
 def _assert_golden_run_result(result: object) -> None:

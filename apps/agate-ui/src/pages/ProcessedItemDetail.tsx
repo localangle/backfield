@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
+import { getNodeOutputById, nodeOutputLookupFromGraphSpec, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { getRun, getGraph, getProcessedItem, rerunProcessedItem, type Run, type Graph, type ProcessedItem } from '@/lib/api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { formatDateCentral } from '@/lib/utils'
@@ -24,10 +24,7 @@ export default function ProcessedItemDetail() {
 
   const nodeOutputLookup = useMemo((): NodeOutputLookupSpec | null => {
     if (!graph?.spec?.nodes?.length) return null
-    return {
-      nodes: graph.spec.nodes.map((n) => ({ id: n.id, type: n.type })),
-      edges: (graph.spec.edges ?? []).map((e) => ({ source: e.source, target: e.target })),
-    }
+    return nodeOutputLookupFromGraphSpec(graph.spec)
   }, [graph])
 
   useEffect(() => {

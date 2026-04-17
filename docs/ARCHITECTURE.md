@@ -32,7 +32,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `apps/worker`
   - Owns Celery task execution and runtime concerns for processing runs.
   - Reads from DB, executes `backfield-core`, and writes status/results back to DB.
-  - May execute worker-local nodes (e.g. `DBOutput`) that write directly to Postgres using `backfield-db` helpers (see `apps/worker/src/worker/nodes/db_output.py` and `apps/worker/src/worker/substrate_persistence.py`).
+  - May execute worker-local nodes (e.g. `DBOutput`) that write directly to Postgres using `backfield-db` helpers (see `apps/worker/src/worker/nodes/db_output.py` and `apps/worker/src/worker/substrate_persistence.py`, split across `substrate_common.py`, `substrate_span.py`, `substrate_article.py`, `substrate_location.py`, and `substrate_mentions.py`).
 - `apps/agate-ui`
   - Owns the flowbuilder UI, API client, and browser-facing interaction patterns.
   - Consumes node metadata and synced node UI generated from `backfield-core`.
