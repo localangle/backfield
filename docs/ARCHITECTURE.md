@@ -79,7 +79,7 @@ flowchart LR
 ## Important conventions
 
 - `GraphSpec` is the canonical stored graph shape.
-- Worker-persisted `execute_graph` results use **human-readable top-level keys** per node (e.g. `Geocode Agent`, `JSON Output`), not internal React Flow ids. The object includes **`__outputKeysByNodeId`** mapping each graph node id to its display key so the UI can resolve outputs by `node.id`.
+- Worker-persisted `execute_graph` results use **stable snake_case keys** per node derived from node types (e.g. `geocode_agent`, `json_output`, `stylebook_output`), not internal React Flow ids. The UI resolves a node’s slice by recomputing that key from the graph spec plus the same ordering rules as the executor (legacy payloads may still include `__outputKeysByNodeId` and older human-readable keys).
 - Agate execution tables use the `agate_` prefix. Shared **infrastructure** tables use `backfield_` (e.g. `backfield_project`). The shared **substrate** uses `substrate_*` (e.g. `substrate_location`, `substrate_article`).
 - `substrate_location` is the durable shared location entity table; future `stylebook_*` tables layer editorial canonicalization and alias management on top of it.
 - Celery queue and worker name use `agate`.

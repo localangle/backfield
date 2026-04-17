@@ -22,6 +22,7 @@ import NodePalette from '@/components/NodePalette'
 import RunPanel from '@/components/RunPanel'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { getGraph, createRun, getRun, updateGraph, deleteGraph, type Graph, type Run } from '@/lib/api'
+import type { NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { ArrowLeft, Save, Edit, Loader2, Play, Trash2 } from 'lucide-react'
 
 export default function RunGraph() {
@@ -61,6 +62,14 @@ export default function RunGraph() {
     onCancel?: () => void
   } | null>(null)
   
+  const nodeOutputLookupSpec: NodeOutputLookupSpec = useMemo(
+    () => ({
+      nodes: nodes.map((n) => ({ id: n.id!, type: n.type! })),
+      edges: edges.map((e) => ({ source: e.source, target: e.target })),
+    }),
+    [nodes, edges],
+  )
+
   // Find the selected node
   const selectedNode = nodes.find(n => n.id === selectedNodeId)
   
@@ -1009,6 +1018,7 @@ export default function RunGraph() {
               editMode={editMode}
               setNodes={setNodes}
               showModal={showModal}
+              nodeOutputLookupSpec={nodeOutputLookupSpec}
             />
           )}
 

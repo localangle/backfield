@@ -40,7 +40,7 @@ const nodeMetadata = {
 };
 
 import React from 'react'
-import { getNodeOutputById } from '../../../node_outputs_ui'
+import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -53,6 +53,8 @@ interface GeocodeAgentPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  /** When set, resolves `execute_graph` snake_case output keys for this graph. */
+  nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
 export default function GeocodeAgentPanel({
@@ -62,7 +64,8 @@ export default function GeocodeAgentPanel({
   running,
   currentRun,
   editMode,
-  setNodes
+  setNodes,
+  nodeOutputLookupSpec,
 }: GeocodeAgentPanelProps) {
   const params = node.data || {
     maxLocations: 100,
@@ -114,6 +117,7 @@ export default function GeocodeAgentPanel({
   const nodeOutput = getNodeOutputById(
     currentRun?.node_outputs as Record<string, unknown> | undefined,
     node.id,
+    nodeOutputLookupSpec ?? undefined,
   )
   const latestData = nodeOutput || null
   const places = latestData?.places as

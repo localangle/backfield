@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import type { Run } from '@/lib/api'
-import { getNodeOutputById } from '@/lib/nodeOutputs'
+import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Suspense } from 'react'
 import { panelComponents } from '@/nodes/registry'
 
@@ -19,6 +19,7 @@ interface NodePanelProps {
   currentRun?: Run | null
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  nodeOutputLookupSpec?: NodeOutputLookupSpec | null
   showModal?: (config: {
     title: string
     description: string
@@ -41,12 +42,13 @@ export default function NodePanel({
   editMode,
   setNodes,
   showModal,
+  nodeOutputLookupSpec,
 }: NodePanelProps) {
   if (!selectedNode) return null
 
   const rawNodeOutputs = currentRun?.node_outputs as Record<string, unknown> | undefined
   const selectedNodeOutput = rawNodeOutputs
-    ? getNodeOutputById(rawNodeOutputs, selectedNode.id)
+    ? getNodeOutputById(rawNodeOutputs, selectedNode.id, nodeOutputLookupSpec ?? undefined)
     : undefined
   const selectedNodeOutputObj =
     selectedNodeOutput !== undefined &&
@@ -119,6 +121,7 @@ export default function NodePanel({
                   currentRun={currentRun}
                   editMode={editMode}
                   setNodes={setNodes}
+                  nodeOutputLookupSpec={nodeOutputLookupSpec}
                 />
               )
             }

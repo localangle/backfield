@@ -12,16 +12,20 @@ from backfield_core.types import Edge, GraphSpec, NodeConfig
 
 NodeRunner = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
-# Human-readable JSON keys for run results (aligned with Agate UI node metadata labels).
-_NODE_TYPE_DISPLAY_NAMES: dict[str, str] = {
-    "TextInput": "Text Input",
-    "PlaceExtract": "Place Extract",
-    "GeocodeAgent": "Geocode Agent",
-    "Output": "JSON Output",
-    "DBOutput": "Stylebook Output",
+# Stable JSON keys for run results: snake_case from node type, with palette aliases where needed.
+_NODE_TYPE_OUTPUT_SLUGS: dict[str, str] = {
+    "Output": "json_output",
+    "DBOutput": "stylebook_output",
 }
 
-_OUTPUT_KEY_INDEX = "__outputKeysByNodeId"
+
+def _node_type_to_output_slug(node_type: str) -> str:
+    if node_type in _NODE_TYPE_OUTPUT_SLUGS:
+        return _NODE_TYPE_OUTPUT_SLUGS[node_type]
+    # PascalCase / CamelCase → snake_case
+    s1 = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", node_type)
+    s2 = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s1)
+    return s2.lower()
 
 
 class GraphExecutionError(Exception):
@@ -77,42 +81,23 @@ def _namespaced_upstream_inputs(
     return state
 
 
-def _node_display_base_name(node: NodeConfig) -> str:
-    """Display name for JSON keys from params or catalog, else prettified node type."""
-    params = node.params if isinstance(node.params, dict) else {}
-    for key in ("label", "name", "title"):
-        val = params.get(key)
-        if isinstance(val, str) and val.strip():
-            return val.strip()
-    if node.type in _NODE_TYPE_DISPLAY_NAMES:
-        return _NODE_TYPE_DISPLAY_NAMES[node.type]
-    return _prettify_node_type(node.type)
-
-
-def _prettify_node_type(node_type: str) -> str:
-    """Best-effort split CamelCase / PascalCase for unknown node types."""
-    s = re.sub(r"([a-z])([A-Z])", r"\1 \2", node_type)
-    s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", s)
-    return s.strip()
-
-
 def _public_node_output_keys(
     by_id: dict[str, NodeConfig],
     order: list[str],
 ) -> dict[str, str]:
-    """Map internal node id -> unique JSON object key (execution order for disambiguation)."""
+    """Map internal node id -> unique top-level JSON key (execution order for disambiguation)."""
     per_base_count: dict[str, int] = defaultdict(int)
     id_to_public: dict[str, str] = {}
     used_public: set[str] = set()
 
     for nid in order:
         node = by_id[nid]
-        base = _node_display_base_name(node)
+        base = _node_type_to_output_slug(node.type)
         per_base_count[base] += 1
         if per_base_count[base] == 1:
             public = base
         else:
-            public = f"{base} ({nid})"
+            public = f"{base}_{nid}"
         if public in used_public:
             public = nid
         used_public.add(public)
@@ -126,13 +111,12 @@ def _remap_outputs_for_json(
     order: list[str],
     node_outputs: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    """Human-readable top-level keys plus ``__outputKeysByNodeId`` (id -> key)."""
+    """Top-level keys are snake_case slugs from node types (see ``_NODE_TYPE_OUTPUT_SLUGS``)."""
     id_to_public = _public_node_output_keys(by_id, order)
     out: dict[str, Any] = {}
     for nid in order:
         pub = id_to_public[nid]
         out[pub] = node_outputs[nid]
-    out[_OUTPUT_KEY_INDEX] = id_to_public
     return out
 
 
@@ -157,9 +141,10 @@ def execute_graph(
     """
     Run all nodes in dependency order.
 
-    Returns a JSON-serializable dict whose top-level keys are human-readable node labels
-    (plus ``__outputKeysByNodeId`` mapping internal node ids to those keys). Execution still
-    uses internal ids for wiring; downstream runners receive namespaced inputs keyed by id.
+    Returns a JSON-serializable dict whose top-level keys are stable snake_case strings
+    per node (for example ``text_input``, ``json_output``, ``stylebook_output``), not
+    internal React Flow ids. Execution still uses internal ids for wiring; downstream
+    runners receive namespaced inputs keyed by id.
     """
     by_id = {n.id: n for n in spec.nodes}
     order = _topo_order(spec)

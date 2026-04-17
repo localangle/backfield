@@ -50,9 +50,8 @@ def test_text_to_place_extract():
         return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
     ):
         out = execute_graph(spec)
-    assert "__outputKeysByNodeId" in out
-    assert out["__outputKeysByNodeId"]["b"] == "Place Extract"
-    loc = out["Place Extract"]["locations"][0]["location"]
+    assert "__outputKeysByNodeId" not in out
+    loc = out["place_extract"]["locations"][0]["location"]
     full = loc["full"] if isinstance(loc, dict) else loc
     assert "Chicago" in full
 
@@ -114,14 +113,14 @@ def test_four_node_pipeline_mock_geocode():
     ):
         out = execute_graph(spec)
 
-    assert out["__outputKeysByNodeId"]["n4"] == "JSON Output"
-    consolidated = out["JSON Output"]["consolidated"]
+    assert "__outputKeysByNodeId" not in out
+    consolidated = out["json_output"]["consolidated"]
     assert isinstance(consolidated, dict)
     assert "places" in consolidated
     cities = consolidated["places"]["areas"]["cities"]
     assert cities and cities[0]["name"] == "Austin"
 
-    db_out = out["Stylebook Output"]
+    db_out = out["stylebook_output"]
     assert db_out.get("success") is True
     assert "places" in db_out
 
@@ -155,7 +154,8 @@ def test_dboutput_direct_upstream_without_json_output():
     ):
         out = execute_graph(spec)
 
-    db_out = out["Stylebook Output"]
+    assert "__outputKeysByNodeId" not in out
+    db_out = out["stylebook_output"]
     assert db_out.get("success") is True
     assert "places" in db_out
     cities = db_out["places"]["areas"]["cities"]

@@ -102,9 +102,17 @@ export async function getVisualizationsForItem(params: {
     }
   }
 
+  const lookup =
+    graph?.spec?.nodes && graph.spec.nodes.length > 0
+      ? {
+          nodes: graph.spec.nodes.map((n) => ({ id: n.id, type: n.type })),
+          edges: (graph.spec.edges ?? []).map((e) => ({ source: e.source, target: e.target })),
+        }
+      : null
+
   if (graph?.spec?.nodes) {
     for (const node of graph.spec.nodes) {
-      const output = getNodeOutputById(rawOutputs, node.id)
+      const output = getNodeOutputById(rawOutputs, node.id, lookup)
       if (output === undefined) continue
       await processOne(node.id, output)
     }

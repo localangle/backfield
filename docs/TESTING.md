@@ -28,7 +28,7 @@
 
 ## Conventions
 
-- Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → JSON Output → DBOutput) as the canonical regression story; add tests when changing execution or handles.
+- Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → Stylebook Output / `DBOutput`, no JSON Output node) as the canonical regression story; add tests when changing execution or handles.
 - Prefer a few high-signal tests over broad shallow coverage.
 - When adding nodes, add a focused unit test under `packages/backfield-core/tests/`.
 - When changing API or worker contracts, add or update a test that guards the naming, queue, status, or schema assumption.

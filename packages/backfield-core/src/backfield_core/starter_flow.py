@@ -1,6 +1,6 @@
 """Canonical geocode starter graph.
 
-Topology: TextInput → PlaceExtract → GeocodeAgent → JSON Output → Stylebook Output.
+Topology: TextInput → PlaceExtract → GeocodeAgent → Stylebook Output (DBOutput).
 """
 
 from __future__ import annotations
@@ -12,53 +12,36 @@ STARTER_FLOW_GRAPH_DISPLAY_NAME = "Starter flow"
 
 
 def starter_geocode_flow_graph_spec() -> GraphSpec:
-    """Same topology as the golden-path smoke flow (includes edge handles).
+    """Golden-path starter: geocode then persist, with DBOutput wired directly from GeocodeAgent.
 
-    Horizontal spacing matches Agate UI node card widths (TextInput ~280px, others ~200px)
-    so nodes do not overlap when positions are interpreted as top-left in React Flow.
+    Positions match the graph exported from Agate UI for this layout.
     """
-    gap = 48
-    # n1 TextInput w-[280px]; then 200px-wide nodes with a gap between each.
-    w_text = 280.0
-    w_card = 200.0
-    x1 = 0.0
-    x2 = x1 + w_text + gap
-    x3 = x2 + w_card + gap
-    x4 = x3 + w_card + gap
-    x5 = x4 + w_card + gap
-    y = 0.0
     return GraphSpec(
-        name="starter_geocode_flow",
+        name="starter_flow",
         nodes=[
             NodeConfig(
                 id="n1",
                 type="TextInput",
                 params={"text": "We visited Chicago, IL and Austin, TX."},
-                position={"x": x1, "y": y},
+                position={"x": 0.0, "y": 0.0},
             ),
             NodeConfig(
                 id="n2",
                 type="PlaceExtract",
                 params={},
-                position={"x": x2, "y": y},
+                position={"x": 337.487868852459, "y": 46.08393442622952},
             ),
             NodeConfig(
                 id="n3",
                 type="GeocodeAgent",
                 params={},
-                position={"x": x3, "y": y},
-            ),
-            NodeConfig(
-                id="n4",
-                type="Output",
-                params={},
-                position={"x": x4, "y": y},
+                position={"x": 596.3311475409837, "y": 16.26491803278691},
             ),
             NodeConfig(
                 id="n5",
                 type="DBOutput",
                 params={},
-                position={"x": x5, "y": y},
+                position={"x": 865.9777049180329, "y": 46.08393442622952},
             ),
         ],
         edges=[
@@ -71,14 +54,8 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
             ),
             Edge(
                 source="n3",
-                target="n4",
-                sourceHandle="locations",
-                targetHandle="data",
-            ),
-            Edge(
-                source="n4",
                 target="n5",
-                sourceHandle="consolidated",
+                sourceHandle="locations",
                 targetHandle="data",
             ),
         ],

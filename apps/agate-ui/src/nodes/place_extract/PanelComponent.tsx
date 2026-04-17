@@ -84,7 +84,7 @@ const nodeMetadata = {
   ]
 };
 
-import { getNodeOutputById } from '../../../node_outputs_ui'
+import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -97,6 +97,7 @@ interface PlaceExtractPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
 function formatSamplePlaceTitle(location: {
@@ -123,11 +124,13 @@ export default function PlaceExtractPanel({
   running,
   currentRun,
   editMode,
-  setNodes
+  setNodes,
+  nodeOutputLookupSpec,
 }: PlaceExtractPanelProps) {
   const nodeOutput = getNodeOutputById(
     currentRun?.node_outputs as Record<string, unknown> | undefined,
     node.id,
+    nodeOutputLookupSpec ?? undefined,
   )
   const latestData = nodeOutput || null
 
