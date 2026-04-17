@@ -26,6 +26,31 @@ def test_find_mention_span_exact_match_still_preferred() -> None:
     assert _find_mention_span(haystack=haystack, needle="South Shore.") == (10, 22)
 
 
+def test_find_mention_span_unifies_curly_and_straight_quotes() -> None:
+    haystack = 'He was "still processing" the news.'
+    needle = "He was 'still processing' the news."
+    span = _find_mention_span(haystack=haystack, needle=needle)
+    assert span == (0, len(haystack))
+
+
+def test_find_mention_span_falls_back_when_paraphrase_differs() -> None:
+    haystack = (
+        'Ald. Desmon Yancy (5th) said Thursday morning he was "still processing" '
+        "the shooting in his ward."
+    )
+    needle = (
+        "Fifth Ward Ald. Desmon Yancy said Thursday morning he was 'still processing' "
+        "the shooting in his ward."
+    )
+    span = _find_mention_span(haystack=haystack, needle=needle)
+    assert span is not None
+    start, end = span
+    excerpt = haystack[start:end]
+    assert len(excerpt) >= 12
+    assert excerpt in haystack
+    assert "still processing" in excerpt or "Desmon Yancy" in excerpt
+
+
 def _bootstrap_project(session: Session, *, org_slug: str, project_slug: str) -> int:
     org = BackfieldOrganization(name="Org", slug=org_slug)
     session.add(org)
