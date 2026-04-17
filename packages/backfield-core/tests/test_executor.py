@@ -121,7 +121,7 @@ def test_four_node_pipeline_mock_geocode():
     cities = consolidated["places"]["areas"]["cities"]
     assert cities and cities[0]["name"] == "Austin"
 
-    db_out = out["DB Output"]
+    db_out = out["Stylebook Output"]
     assert db_out.get("success") is True
     assert "places" in db_out
 
@@ -155,7 +155,7 @@ def test_dboutput_direct_upstream_without_json_output():
     ):
         out = execute_graph(spec)
 
-    db_out = out["DB Output"]
+    db_out = out["Stylebook Output"]
     assert db_out.get("success") is True
     assert "places" in db_out
     cities = db_out["places"]["areas"]["cities"]

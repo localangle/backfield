@@ -1,13 +1,13 @@
 // Auto-injected metadata for DBOutput
 const nodeMetadata = {
   "type": "DBOutput",
-  "label": "DB Output",
+  "label": "Stylebook Output",
   "icon": "Database",
   "color": "bg-slate-500",
-  "description": "Persist consolidated upstream JSON into Backfield Postgres (worker-local)",
+  "description": "Persists results to Stylebook",
   "category": "output",
   "requiredUpstreamNodes": [],
-  "dependencyHelperText": "Same consolidation rules as JSON Output: wire any upstream nodes you want merged (unwraps node-* namespaces, apply include/exclude), then persists when `places` is present. JSON Output is optional — not required upstream.",
+  "dependencyHelperText": "Persists results to Stylebook",
   "inputs": [
     {
       "id": "data",
@@ -33,10 +33,7 @@ const nodeMetadata = {
       "type": "string"
     }
   ],
-  "defaultParams": {
-    "exclude": null,
-    "include": null
-  }
+  "defaultParams": {}
 };
 
 import { memo } from 'react'

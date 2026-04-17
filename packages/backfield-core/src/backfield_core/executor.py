@@ -18,7 +18,7 @@ _NODE_TYPE_DISPLAY_NAMES: dict[str, str] = {
     "PlaceExtract": "Place Extract",
     "GeocodeAgent": "Geocode Agent",
     "Output": "JSON Output",
-    "DBOutput": "DB Output",
+    "DBOutput": "Stylebook Output",
 }
 
 _OUTPUT_KEY_INDEX = "__outputKeysByNodeId"

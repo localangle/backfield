@@ -1,6 +1,6 @@
 """Canonical geocode starter graph.
 
-Topology: TextInput → PlaceExtract → GeocodeAgent → JSON Output → DB Output.
+Topology: TextInput → PlaceExtract → GeocodeAgent → JSON Output → Stylebook Output.
 """
 
 from __future__ import annotations

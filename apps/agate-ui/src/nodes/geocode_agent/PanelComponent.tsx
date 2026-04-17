@@ -40,7 +40,7 @@ const nodeMetadata = {
 };
 
 import React from 'react'
-import { getNodeOutputById } from '@/lib/nodeOutputs'
+import { getNodeOutputById } from '../../../node_outputs_ui'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
