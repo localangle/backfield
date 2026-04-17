@@ -22,6 +22,8 @@
   - **If `SMOKE_EMAIL` and `SMOKE_PASSWORD` are set** (including via repo-root **`.env`**, loaded automatically): logs in to Core API (`CORE_API_BASE`, default `http://localhost:8004`), calls **`GET /v1/me/workspaces`** (same data the home page uses), picks workspace slug `SMOKE_WORKSPACE_SLUG` (default `default`) and project `SMOKE_PROJECT_SLUG` (default `general`), then calls Agate with the **`session` cookie** to list graphs and **`POST /runs`** — matching **log in → workspace → project → run**.
   - **Otherwise:** uses **`Authorization: Bearer`** on Agate (defaults to `SERVICE_API_TOKEN` or `SMOKE_AGATE_BEARER` / a project API key), finds the **General** project and **Starter flow** graph, enqueues a run, and polls for completion.
 
+  In both paths it asserts the **Starter flow** `spec` matches bootstrap (`starter_geocode_flow_graph_spec`, ending in **DBOutput**) and the finished run **`result`** includes **`stylebook_output`** with **`success: true`** (and omits **`json_output`** / **`__outputKeysByNodeId`**).
+
   Poll tuning: `SMOKE_POLL_TIMEOUT_SECONDS` (default 180s). Optional: `SMOKE_BOOTSTRAP=1` with Core credentials to call **`POST /v1/bootstrap/first-user`** first (empty DB only). The smoke does not delete General or the starter graph.
 4. **Manual UI pass**
   Use the Agate UI when the task changes browser-facing behavior or flowbuilder interactions.

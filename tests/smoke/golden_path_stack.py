@@ -42,7 +42,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from backfield_core import STARTER_FLOW_GRAPH_DISPLAY_NAME, starter_geocode_flow_graph_spec
+from backfield_core import (
+    STARTER_FLOW_GRAPH_DISPLAY_NAME,
+    GraphSpec,
+    starter_geocode_flow_graph_spec,
+)
 
 
 def _load_repo_dotenv() -> None:
@@ -116,9 +120,46 @@ def _health_checks(agate_client: httpx.Client) -> None:
         stylebook_client.close()
 
 
+def _assert_starter_graph_matches_bootstrap(starter: dict[str, Any]) -> None:
+    """Starter flow must match ``starter_geocode_flow_graph_spec`` (GeocodeAgent → DBOutput)."""
+    spec_raw = starter.get("spec")
+    if not isinstance(spec_raw, dict):
+        raise RuntimeError("Starter flow graph payload missing object 'spec'")
+    current = GraphSpec.model_validate(spec_raw)
+    canonical = starter_geocode_flow_graph_spec()
+    if current.model_dump(mode="json") != canonical.model_dump(mode="json"):
+        raise RuntimeError(
+            "Starter flow graph spec does not match canonical bootstrap "
+            "(TextInput → PlaceExtract → GeocodeAgent → Stylebook Output / DBOutput). "
+            "Restart agate-api with BACKFIELD_LOCAL_BOOTSTRAP=1 so local bootstrap rewrites it."
+        )
+
+
+def _assert_golden_run_result(result: object) -> None:
+    """Run JSON must match slug-key executor output and include DBOutput persistence."""
+    if not isinstance(result, dict):
+        raise RuntimeError(f"Run result: expected object, got {type(result).__name__}")
+    if "__outputKeysByNodeId" in result:
+        raise RuntimeError("Run result must not include __outputKeysByNodeId")
+    if "json_output" in result:
+        raise RuntimeError(
+            "Run result must not include json_output; canonical starter has no JSON Output node"
+        )
+    if "stylebook_output" not in result:
+        raise RuntimeError(
+            "Run result missing stylebook_output; golden path expects Stylebook Output "
+            "(DBOutput) at the end of the starter flow."
+        )
+    so = result["stylebook_output"]
+    if not isinstance(so, dict):
+        raise RuntimeError("stylebook_output must be an object")
+    if so.get("success") is not True:
+        raise RuntimeError(f"stylebook_output.success expected True, got {so.get('success')!r}")
+
+
 def _find_starter_graph(
     agate_client: httpx.Client, project_id: int
-) -> tuple[str, str]:
+) -> tuple[str, str, dict[str, Any]]:
     graphs = agate_client.get("/graphs")
     graphs.raise_for_status()
     glist = graphs.json()
@@ -128,7 +169,8 @@ def _find_starter_graph(
         (
             g
             for g in glist
-            if g.get("project_id") == project_id
+            if isinstance(g, dict)
+            and g.get("project_id") == project_id
             and g.get("name") == STARTER_FLOW_GRAPH_DISPLAY_NAME
         ),
         None,
@@ -141,7 +183,8 @@ def _find_starter_graph(
             "Start the stack with BACKFIELD_LOCAL_BOOTSTRAP=1 (see docker-compose) "
             f"or create it with spec name {spec.name!r}."
         )
-    return str(starter["id"]), STARTER_FLOW_GRAPH_DISPLAY_NAME
+    _assert_starter_graph_matches_bootstrap(starter)
+    return str(starter["id"]), STARTER_FLOW_GRAPH_DISPLAY_NAME, starter
 
 
 def run_service_bearer_flow() -> int:
@@ -167,7 +210,7 @@ def run_service_bearer_flow() -> int:
             )
         project_id = int(general["id"])
 
-        graph_id, graph_name = _find_starter_graph(agate_client, project_id)
+        graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
 
         run = _assert_ok(agate_client.post("/runs", json={"graph_id": graph_id}), "create run")
         terminal_run = _wait_for_terminal_run(agate_client, str(run["id"]))
@@ -176,6 +219,7 @@ def run_service_bearer_flow() -> int:
                 "Smoke run failed: "
                 f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
             )
+        _assert_golden_run_result(terminal_run.get("result"))
 
         _log("Smoke passed (service bearer).")
         _log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
@@ -272,7 +316,7 @@ def run_session_flow() -> int:
             )
         _log("Smoke: Agate project list matches session scope.")
 
-        graph_id, graph_name = _find_starter_graph(agate_client, project_id)
+        graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
         _log(f"Smoke: selected graph {graph_name!r} (id={graph_id}).")
 
         run = _assert_ok(agate_client.post("/runs", json={"graph_id": graph_id}), "create run")
@@ -282,6 +326,7 @@ def run_session_flow() -> int:
                 "Smoke run failed: "
                 f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
             )
+        _assert_golden_run_result(terminal_run.get("result"))
 
         _log("Smoke passed (session).")
         _log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")

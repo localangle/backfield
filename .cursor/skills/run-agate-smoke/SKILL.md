@@ -18,6 +18,7 @@ description: Validate the Backfield golden path against a live stack. Use when r
 - **General** project (slug `general`, overridable) and **Starter flow** graph present
 - With **`SMOKE_EMAIL` / `SMOKE_PASSWORD`**: Core login, **`GET /v1/me/workspaces`**, then Agate with **`session` cookie** (UI-shaped path)
 - Run enqueue on the `agate` queue for that graph; worker completion and terminal run status
+- Asserts **Starter flow** `spec` matches bootstrap (`starter_geocode_flow_graph_spec`: GeocodeAgent → DBOutput) and the run `result` includes **`stylebook_output`** with `success: true` (no `json_output` / `__outputKeysByNodeId`)
 - Does **not** delete General or the starter graph
 
 ## When To Use It
