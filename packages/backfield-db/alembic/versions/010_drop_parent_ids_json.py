@@ -11,7 +11,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "010_drop_substrate_location_parent_ids_json"
+revision: str = "010_drop_parent_ids_json"
 down_revision: Union[str, None] = "009_rename_substrate_tables"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
