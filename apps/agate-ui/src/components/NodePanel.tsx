@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import type { Run } from '@/lib/api'
+import { getNodeOutputById } from '@/lib/nodeOutputs'
 import { Suspense } from 'react'
 import { panelComponents } from '@/nodes/registry'
 
@@ -42,6 +43,18 @@ export default function NodePanel({
   showModal,
 }: NodePanelProps) {
   if (!selectedNode) return null
+
+  const rawNodeOutputs = currentRun?.node_outputs as Record<string, unknown> | undefined
+  const selectedNodeOutput = rawNodeOutputs
+    ? getNodeOutputById(rawNodeOutputs, selectedNode.id)
+    : undefined
+  const selectedNodeOutputObj =
+    selectedNodeOutput !== undefined &&
+    selectedNodeOutput !== null &&
+    typeof selectedNodeOutput === 'object' &&
+    !Array.isArray(selectedNodeOutput)
+      ? (selectedNodeOutput as Record<string, unknown>)
+      : null
   
   const handleDelete = () => {
     if (showModal) {
@@ -359,20 +372,20 @@ export default function NodePanel({
                     <h4 className="text-sm font-medium mb-2">Node Output</h4>
                     
                     {/* Show individual node output if available */}
-                    {currentRun.node_outputs && currentRun.node_outputs[selectedNode.id] ? (
+                    {selectedNodeOutputObj ? (
                       <div className="space-y-3">
                         <div className="p-3 bg-muted/50 rounded-lg border">
                           <p className="text-xs font-medium mb-2">Node: {selectedNode.type}</p>
                           <div className="space-y-1 text-xs">
-                            {Object.keys(currentRun.node_outputs[selectedNode.id]).map((key) => (
+                            {Object.keys(selectedNodeOutputObj).map((key) => (
                               <div key={key} className="flex items-center gap-2">
                                 <Badge variant="outline" className="text-xs">
                                   {key}
                                 </Badge>
                                 <span className="text-muted-foreground">
-                                  {Array.isArray(currentRun.node_outputs?.[selectedNode.id]?.[key]) 
-                                    ? `Array[${currentRun.node_outputs?.[selectedNode.id]?.[key]?.length}]`
-                                    : typeof currentRun.node_outputs?.[selectedNode.id]?.[key]}
+                                  {Array.isArray(selectedNodeOutputObj[key]) 
+                                    ? `Array[${(selectedNodeOutputObj[key] as unknown[]).length}]`
+                                    : typeof selectedNodeOutputObj[key]}
                                 </span>
                               </div>
                             ))}
@@ -380,11 +393,11 @@ export default function NodePanel({
                         </div>
                         
                         {/* Show specific node output details */}
-                        {currentRun.node_outputs?.[selectedNode.id]?.labels && (
+                        {selectedNodeOutputObj.labels && (
                           <div>
                             <p className="text-xs font-medium mb-1">Classifications</p>
                             <div className="space-y-1">
-                              {currentRun.node_outputs[selectedNode.id].labels.slice(0, 3).map((label: any, idx: number) => (
+                              {(selectedNodeOutputObj.labels as any[]).slice(0, 3).map((label: any, idx: number) => (
                                 <div key={idx} className="flex justify-between text-xs">
                                   <span className="capitalize">{label.label?.replace('_', ' ')}</span>
                                   <span>{((label.score || 0) * 100).toFixed(0)}%</span>
@@ -394,42 +407,42 @@ export default function NodePanel({
                           </div>
                         )}
                         
-                        {currentRun.node_outputs?.[selectedNode.id]?.embedding && (
+                        {selectedNodeOutputObj.embedding && (
                           <div>
                             <p className="text-xs font-medium mb-1">Embedding</p>
                             <div className="flex justify-between text-xs p-2 bg-muted rounded">
                               <span className="text-muted-foreground">Dimensions</span>
-                              <span className="font-medium">{currentRun.node_outputs[selectedNode.id].dimensions || currentRun.node_outputs[selectedNode.id].embedding.length}</span>
+                              <span className="font-medium">{(selectedNodeOutputObj.dimensions as number | undefined) || (selectedNodeOutputObj.embedding as unknown[]).length}</span>
                             </div>
                           </div>
                         )}
 
-                        {currentRun.node_outputs?.[selectedNode.id]?.enriched_data && (
+                        {selectedNodeOutputObj.enriched_data && (
                           <div>
                             <p className="text-xs font-medium mb-1">LLM Enrichment</p>
                             <div className="p-2 bg-muted rounded">
                               <p className="text-xs text-muted-foreground mb-1">Custom JSON data:</p>
                               <code className="text-xs font-mono">
-                                {JSON.stringify(currentRun.node_outputs[selectedNode.id].enriched_data, null, 2).substring(0, 100)}
-                                {JSON.stringify(currentRun.node_outputs[selectedNode.id].enriched_data, null, 2).length > 100 ? '...' : ''}
+                                {JSON.stringify(selectedNodeOutputObj.enriched_data, null, 2).substring(0, 100)}
+                                {JSON.stringify(selectedNodeOutputObj.enriched_data, null, 2).length > 100 ? '...' : ''}
                               </code>
                             </div>
                           </div>
                         )}
 
-                        {currentRun.node_outputs?.[selectedNode.id]?.locations && (
+                        {selectedNodeOutputObj.locations && (
                           <div>
                             <p className="text-xs font-medium mb-1">Locations</p>
                             <div className="space-y-1">
-                              {currentRun.node_outputs[selectedNode.id].locations.slice(0, 3).map((location: any, idx: number) => (
+                              {(selectedNodeOutputObj.locations as any[]).slice(0, 3).map((location: any, idx: number) => (
                                 <div key={idx} className="text-xs p-2 bg-muted rounded">
                                   <div className="font-medium">{location.location?.full || location.original_text}</div>
                                   <div className="text-muted-foreground">{location.description}</div>
                                 </div>
                               ))}
-                              {currentRun.node_outputs[selectedNode.id].locations.length > 3 && (
+                              {(selectedNodeOutputObj.locations as any[]).length > 3 && (
                                 <div className="text-xs text-muted-foreground">
-                                  ... and {currentRun.node_outputs[selectedNode.id].locations.length - 3} more
+                                  ... and {(selectedNodeOutputObj.locations as any[]).length - 3} more
                                 </div>
                               )}
                             </div>
@@ -521,8 +534,8 @@ export default function NodePanel({
                       View raw JSON
                     </summary>
                     <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-auto max-h-40">
-                      {currentRun.node_outputs && currentRun.node_outputs[selectedNode.id] 
-                        ? JSON.stringify(currentRun.node_outputs[selectedNode.id], null, 2)
+                      {selectedNodeOutput !== undefined && selectedNodeOutput !== null
+                        ? JSON.stringify(selectedNodeOutput, null, 2)
                         : JSON.stringify(currentRun.output, null, 2)}
                     </pre>
                   </details>

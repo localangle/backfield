@@ -84,6 +84,7 @@ const nodeMetadata = {
   ]
 };
 
+import { getNodeOutputById } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -124,7 +125,10 @@ export default function PlaceExtractPanel({
   editMode,
   setNodes
 }: PlaceExtractPanelProps) {
-  const nodeOutput = currentRun?.node_outputs?.[node.id]
+  const nodeOutput = getNodeOutputById(
+    currentRun?.node_outputs as Record<string, unknown> | undefined,
+    node.id,
+  )
   const latestData = nodeOutput || null
 
   const modelOptions =

@@ -8,6 +8,7 @@
  */
 
 import type { ProcessedItem, Graph } from '@/lib/api'
+import { getNodeOutputById } from '@/lib/nodeOutputs'
 import { visualizationComponents } from '@/nodes/registry'
 import type React from 'react'
 
@@ -74,9 +75,9 @@ export async function getVisualizationsForItem(params: {
   }
 
   const visuals: VisualizationDescriptor[] = []
+  const rawOutputs = item.node_outputs as Record<string, unknown>
 
-  // Process each node output
-  for (const [nodeId, output] of Object.entries(item.node_outputs)) {
+  const processOne = async (nodeId: string, output: unknown) => {
     const nodeConfig = nodeById.get(nodeId)
     const nodeType = nodeConfig?.type ?? 'Unknown'
     const nodeLabel =
@@ -84,16 +85,13 @@ export async function getVisualizationsForItem(params: {
       nodeConfig?.params?.label ??
       `${nodeType} (${nodeId})`
 
-    // Check if this node type has a visualization component
     const visualizationLoader = visualizationComponents[nodeType as keyof typeof visualizationComponents]
     if (visualizationLoader) {
       try {
-        // Dynamically import the visualization component
         const visualizationModule = await visualizationLoader()
         if (visualizationModule && typeof visualizationModule.buildVisualization === 'function') {
           const viz = visualizationModule.buildVisualization(nodeId, nodeLabel, output)
           if (viz) {
-            // Store the node-specific output so the component can access it
             viz.nodeOutput = output
             visuals.push(viz)
           }
@@ -101,6 +99,19 @@ export async function getVisualizationsForItem(params: {
       } catch (error) {
         console.error(`Failed to load visualization for node type ${nodeType}:`, error)
       }
+    }
+  }
+
+  if (graph?.spec?.nodes) {
+    for (const node of graph.spec.nodes) {
+      const output = getNodeOutputById(rawOutputs, node.id)
+      if (output === undefined) continue
+      await processOne(node.id, output)
+    }
+  } else {
+    for (const [key, output] of Object.entries(item.node_outputs)) {
+      if (key === '__outputKeysByNodeId' || key.startsWith('__')) continue
+      await processOne(key, output)
     }
   }
 

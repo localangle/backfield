@@ -40,6 +40,7 @@ const nodeMetadata = {
 };
 
 import React from 'react'
+import { getNodeOutputById } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -110,7 +111,10 @@ export default function GeocodeAgentPanel({
   }
 
   // Get latest run data - only show if we have specific node output
-  const nodeOutput = currentRun?.node_outputs?.[node.id]
+  const nodeOutput = getNodeOutputById(
+    currentRun?.node_outputs as Record<string, unknown> | undefined,
+    node.id,
+  )
   const latestData = nodeOutput || null
   const places = latestData?.places as
     | {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -10,6 +11,17 @@ from backfield_core.nodes import NODE_RUNNERS
 from backfield_core.types import Edge, GraphSpec, NodeConfig
 
 NodeRunner = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+
+# Human-readable JSON keys for run results (aligned with Agate UI node metadata labels).
+_NODE_TYPE_DISPLAY_NAMES: dict[str, str] = {
+    "TextInput": "Text Input",
+    "PlaceExtract": "Place Extract",
+    "GeocodeAgent": "Geocode Agent",
+    "Output": "JSON Output",
+    "DBOutput": "DB Output",
+}
+
+_OUTPUT_KEY_INDEX = "__outputKeysByNodeId"
 
 
 class GraphExecutionError(Exception):
@@ -65,6 +77,65 @@ def _namespaced_upstream_inputs(
     return state
 
 
+def _node_display_base_name(node: NodeConfig) -> str:
+    """Display name for JSON keys from params or catalog, else prettified node type."""
+    params = node.params if isinstance(node.params, dict) else {}
+    for key in ("label", "name", "title"):
+        val = params.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    if node.type in _NODE_TYPE_DISPLAY_NAMES:
+        return _NODE_TYPE_DISPLAY_NAMES[node.type]
+    return _prettify_node_type(node.type)
+
+
+def _prettify_node_type(node_type: str) -> str:
+    """Best-effort split CamelCase / PascalCase for unknown node types."""
+    s = re.sub(r"([a-z])([A-Z])", r"\1 \2", node_type)
+    s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", s)
+    return s.strip()
+
+
+def _public_node_output_keys(
+    by_id: dict[str, NodeConfig],
+    order: list[str],
+) -> dict[str, str]:
+    """Map internal node id -> unique JSON object key (execution order for disambiguation)."""
+    per_base_count: dict[str, int] = defaultdict(int)
+    id_to_public: dict[str, str] = {}
+    used_public: set[str] = set()
+
+    for nid in order:
+        node = by_id[nid]
+        base = _node_display_base_name(node)
+        per_base_count[base] += 1
+        if per_base_count[base] == 1:
+            public = base
+        else:
+            public = f"{base} ({nid})"
+        if public in used_public:
+            public = nid
+        used_public.add(public)
+        id_to_public[nid] = public
+
+    return id_to_public
+
+
+def _remap_outputs_for_json(
+    by_id: dict[str, NodeConfig],
+    order: list[str],
+    node_outputs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Human-readable top-level keys plus ``__outputKeysByNodeId`` (id -> key)."""
+    id_to_public = _public_node_output_keys(by_id, order)
+    out: dict[str, Any] = {}
+    for nid in order:
+        pub = id_to_public[nid]
+        out[pub] = node_outputs[nid]
+    out[_OUTPUT_KEY_INDEX] = id_to_public
+    return out
+
+
 def _merged_outputs_for_output(
     node_outputs: dict[str, dict[str, Any]],
     by_id: dict[str, NodeConfig],
@@ -84,8 +155,11 @@ def execute_graph(
     node_runners: Mapping[str, NodeRunner] | None = None,
 ) -> dict[str, Any]:
     """
-    Run all nodes in dependency order. Returns mapping node_id -> output dict.
-    Raises GraphExecutionError on unknown node type or wiring errors.
+    Run all nodes in dependency order.
+
+    Returns a JSON-serializable dict whose top-level keys are human-readable node labels
+    (plus ``__outputKeysByNodeId`` mapping internal node ids to those keys). Execution still
+    uses internal ids for wiring; downstream runners receive namespaced inputs keyed by id.
     """
     by_id = {n.id: n for n in spec.nodes}
     order = _topo_order(spec)
@@ -116,4 +190,4 @@ def execute_graph(
             raise GraphExecutionError(f"Node {nid} returned non-dict: {type(result)}")
         node_outputs[nid] = result
 
-    return node_outputs
+    return _remap_outputs_for_json(by_id, order, node_outputs)
