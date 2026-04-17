@@ -33,6 +33,9 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
   - Owns Celery task execution and runtime concerns for processing runs.
   - Reads from DB, executes `backfield-core`, and writes status/results back to DB.
   - May execute worker-local nodes (e.g. `DBOutput`) that write directly to Postgres using `backfield-db` helpers (see `apps/worker/src/worker/nodes/db_output.py` and `apps/worker/src/worker/substrate_persistence.py`, split across `substrate_common.py`, `substrate_span.py`, `substrate_article.py`, `substrate_location.py`, and `substrate_mentions.py`).
+- `packages/backfield-ui`
+  - Shared React shell components (`UserAccountMenu`, etc.) for multiple apps.
+  - Also publishes **`@backfield/ui/nodeOutputs`**: pure TypeScript helpers that map React Flow graph shape + node types to **`execute_graph` snake_case output keys** (same rules as the Python executor). Agate UI re-exports this from `src/lib/nodeOutputs.ts`; `backfield-core` node sources use the same module via sync-time `@/lib/nodeOutputs` resolution.
 - `apps/agate-ui`
   - Owns the flowbuilder UI, API client, and browser-facing interaction patterns.
   - Consumes node metadata and synced node UI generated from `backfield-core`.
@@ -54,6 +57,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `core-api` may depend on `backfield-auth` and `backfield-db`.
 - `backfield-core` may depend on `agate-runtime` and must not depend on app code.
 - `agate-runtime` must not depend on app code or `backfield-db`.
+  - **TypeScript in `agate-runtime`:** vendored node UI under `src/agate_nodes/*/ui` mirrors agate-ai-platform and uses the same `@/…` aliases as Agate UI for shadcn-style imports. For executor output keys it imports **`@backfield/ui/nodeOutputs`**, matching the **`exports`** entry in `packages/backfield-ui/package.json` (not a Python dependency on `backfield-ui`).
 - `backfield-db` must not depend on app code.
 
 ## Runtime flow

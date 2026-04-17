@@ -1,5 +1,5 @@
 import React from 'react'
-import { getNodeOutputById, type NodeOutputLookupSpec } from '../../../../../backfield-ui/src/nodeOutputs'
+import { getNodeOutputById, type NodeOutputLookupSpec } from '@backfield/ui/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
