@@ -8,6 +8,7 @@ dependencies = [
     "geoalchemy2>=0.14.0",
     "backfield-core",
     "backfield-db",
+    "backfield-stylebook",
 ]
 
 [build-system]

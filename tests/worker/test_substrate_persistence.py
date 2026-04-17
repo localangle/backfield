@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from backfield_db import AgateRun, BackfieldOrganization, BackfieldProject
+from backfield_db import AgateRun, BackfieldOrganization, BackfieldProject, BackfieldWorkspace
+from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from sqlmodel import Session, SQLModel, col, create_engine, select
 from worker.substrate_persistence import _find_mention_span, persist_from_consolidated
 
@@ -56,8 +57,25 @@ def _bootstrap_project(session: Session, *, org_slug: str, project_slug: str) ->
     session.add(org)
     session.commit()
     session.refresh(org)
+    oid = int(org.id)  # type: ignore[arg-type]
+    sb = ensure_default_stylebook_for_organization(session, oid)
+    sb_id = int(sb.id)  # type: ignore[arg-type]
+    ws = BackfieldWorkspace(
+        organization_id=oid,
+        stylebook_id=sb_id,
+        name="Workspace",
+        slug="ws",
+    )
+    session.add(ws)
+    session.commit()
+    session.refresh(ws)
 
-    proj = BackfieldProject(organization_id=int(org.id), name="Proj", slug=project_slug)  # type: ignore[arg-type]
+    proj = BackfieldProject(
+        organization_id=oid,
+        name="Proj",
+        slug=project_slug,
+        workspace_id=int(ws.id),  # type: ignore[arg-type]
+    )
     session.add(proj)
     session.commit()
     session.refresh(proj)
@@ -120,6 +138,8 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
 
     with Session(engine) as session:
         from backfield_db import (
+            StylebookLocationAlias,
+            StylebookLocationCanonical,
             SubstrateArticle,
             SubstrateLocation,
             SubstrateLocationMention,
@@ -134,6 +154,13 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         locations = session.exec(select(SubstrateLocation)).all()
         assert len(locations) == 1
         assert locations[0].external_source == "pelias"
+
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 1
+        assert int(canon_rows[0].primary_substrate_location_id or 0) == int(locations[0].id or 0)
+        alias_rows = session.exec(select(StylebookLocationAlias)).all()
+        assert len(alias_rows) == 1
+        assert alias_rows[0].normalized_alias == locations[0].normalized_name
 
         mentions = session.exec(select(SubstrateLocationMention)).all()
         assert len(mentions) == 1

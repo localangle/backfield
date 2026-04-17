@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from geoalchemy2 import Geometry
 from pydantic import ConfigDict
-from sqlalchemy import JSON, Column, DateTime, Index, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Text, UniqueConstraint, func, text
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
@@ -57,6 +57,7 @@ class BackfieldWorkspace(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
     name: str = Field(sa_column=Column(Text, nullable=False))
     slug: str = Field(sa_column=Column(Text, nullable=False, index=True))
     created_at: datetime = Field(
@@ -135,6 +136,92 @@ class BackfieldProjectMembership(SQLModel, table=True):
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
     role: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class Stylebook(SQLModel, table=True):
+    """Org-scoped Stylebook (canonical entities, editorial rules)."""
+
+    __tablename__ = "stylebook"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "slug", name="uq_stylebook_organization_slug"),
+        Index(
+            "uq_stylebook_org_one_default",
+            "organization_id",
+            unique=True,
+            postgresql_where=text("is_default = true"),
+            sqlite_where=text("is_default = 1"),
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    slug: str = Field(sa_column=Column(Text, nullable=False))
+    name: str = Field(sa_column=Column(Text, nullable=False))
+    is_default: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookLocationCanonical(SQLModel, table=True):
+    """Canonical location row within a Stylebook."""
+
+    __tablename__ = "stylebook_location_canonical"
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    label: str = Field(sa_column=Column(Text, nullable=False))
+    primary_substrate_location_id: int | None = Field(
+        default=None,
+        foreign_key="substrate_location.id",
+        index=True,
+    )
+    status: str = Field(
+        default="active",
+        sa_column=Column(Text, nullable=False, server_default="active"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookLocationAlias(SQLModel, table=True):
+    """Alias string for a canonical location (hybrid provenance)."""
+
+    __tablename__ = "stylebook_location_alias"
+    __table_args__ = (
+        UniqueConstraint(
+            "location_canonical_id",
+            "normalized_alias",
+            name="uq_stylebook_location_alias_canonical_normalized",
+        ),
+        Index("ix_stylebook_location_alias_normalized", "normalized_alias"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    location_canonical_id: int = Field(foreign_key="stylebook_location_canonical.id", index=True)
+    alias_text: str = Field(sa_column=Column(Text, nullable=False))
+    normalized_alias: str = Field(sa_column=Column(Text, nullable=False))
+    provenance: str = Field(sa_column=Column(Text, nullable=False))
+    suppressed: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 

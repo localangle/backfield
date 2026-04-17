@@ -22,6 +22,15 @@ from backfield_db.models import (  # noqa: F401
     BackfieldUser,
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
+    Stylebook,
+    StylebookLocationAlias,
+    StylebookLocationCanonical,
+    SubstrateArticle,
+    SubstrateImage,
+    SubstrateLocation,
+    SubstrateLocationCache,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 
 config = context.config

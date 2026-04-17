@@ -6,6 +6,7 @@ from collections.abc import Generator
 
 import pytest
 from backfield_db import BackfieldOrganization, BackfieldProject, BackfieldWorkspace
+from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from core_api.deps import get_session
 from core_api.main import app
 from fastapi.testclient import TestClient
@@ -26,8 +27,12 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
         s.add(org)
         s.commit()
         s.refresh(org)
+        oid = int(org.id)
+        sb = ensure_default_stylebook_for_organization(s, oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
         ws = BackfieldWorkspace(
-            organization_id=int(org.id),
+            organization_id=oid,
+            stylebook_id=sb_id,
             name="Default Workspace",
             slug="default",
         )
@@ -51,7 +56,8 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
             )
         )
         ws2 = BackfieldWorkspace(
-            organization_id=int(org.id),
+            organization_id=oid,
+            stylebook_id=sb_id,
             name="Investigations",
             slug="investigations",
         )

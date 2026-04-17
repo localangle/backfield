@@ -26,6 +26,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - `packages/backfield-auth`: Shared session cookies and service Bearer token dependencies for FastAPI apps.
 - `packages/agate-runtime`: Vendored LLM PlaceExtract, LangGraph GeocodeAgent, and geocoding/LLM utilities (ported from agate-ai-platform).
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
+- `packages/backfield-stylebook`: Stylebook domain helpers (default Stylebook per org, `stylebook_id` resolution from project/workspace, canonical/alias sync) shared by worker, core-api, and agate-api bootstrap.
 - `infra/docker-compose.yml`: Local multi-service stack.
 
 ## Canonical commands

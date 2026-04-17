@@ -17,6 +17,7 @@ from backfield_db import (
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
 )
+from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
@@ -197,8 +198,14 @@ def test_create_project_with_workspace_id(tmp_path):
         s.add(org)
         s.commit()
         s.refresh(org)
+        oid = int(org.id)
+        sb = ensure_default_stylebook_for_organization(s, oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
         ws = BackfieldWorkspace(
-            organization_id=int(org.id), name="Default Workspace", slug="default"
+            organization_id=oid,
+            stylebook_id=sb_id,
+            name="Default Workspace",
+            slug="default",
         )
         s.add(ws)
         s.commit()
@@ -240,11 +247,13 @@ def test_create_project_session_member_denied_without_workspace_membership(tmp_p
         s.commit()
         s.refresh(org)
         oid = int(org.id)
+        sb = ensure_default_stylebook_for_organization(s, oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
         ws_a = BackfieldWorkspace(
-            organization_id=oid, name="Workspace A", slug="ws-a"
+            organization_id=oid, stylebook_id=sb_id, name="Workspace A", slug="ws-a"
         )
         ws_b = BackfieldWorkspace(
-            organization_id=oid, name="Workspace B", slug="ws-b"
+            organization_id=oid, stylebook_id=sb_id, name="Workspace B", slug="ws-b"
         )
         s.add(ws_a)
         s.add(ws_b)
@@ -313,8 +322,10 @@ def test_create_project_session_org_admin_may_use_any_org_workspace(tmp_path) ->
         s.commit()
         s.refresh(org)
         oid = int(org.id)
+        sb = ensure_default_stylebook_for_organization(s, oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
         ws_b = BackfieldWorkspace(
-            organization_id=oid, name="Workspace B", slug="ws-b2"
+            organization_id=oid, stylebook_id=sb_id, name="Workspace B", slug="ws-b2"
         )
         s.add(ws_b)
         s.commit()

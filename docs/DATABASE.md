@@ -10,7 +10,7 @@ Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix*
 | Agate graphs, runs, templates                    | `packages/backfield-db` | Alembic migrations live here only                                      |
 | Backfield orgs, users, projects, credentials     | `packages/backfield-db` | Same migration chain                                                   |
 | Shared content/location substrate                | `packages/backfield-db` | `substrate_article`, `substrate_location`, mentions, occurrences, cache |
-| Stylebook editorial/canonicalization tables      | future package / prefix | Layer on top of shared substrate when canonical management lands        |
+| Stylebook editorial / canonical tables           | `packages/backfield-db` | `stylebook`, `stylebook_location_canonical`, `stylebook_location_alias`; helpers in `packages/backfield-stylebook` |
 
 
 Do **not** run multiple services that each invoke `alembic upgrade` on startup for the same revision path; pick **one** migration runner (the `agate-api` entrypoint on deploy, or `make migrate` locally).
@@ -20,7 +20,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 ### Identity and projects (`backfield_*`)
 
 - `backfield_organization` — tenant; migration seeds a `default` org for single-org installs.
-- `backfield_workspace` — optional sub-org grouping under an organization (generic naming; many projects per workspace). Revision **`003_def_ws_general`** seeds a **`default`** workspace under the **`default`** org and sets the **General** project’s `workspace_id` to that row (so General lives under Organization → Workspace → Project).
+- `backfield_workspace` — optional sub-org grouping under an organization (generic naming; many projects per workspace). Each row references exactly one **`stylebook`** via **`stylebook_id`** (NOT NULL after revision **`011_stylebook_locations`**). Revision **`003_def_ws_general`** seeds a **`default`** workspace under the **`default`** org and sets the **General** project’s `workspace_id` to that row (so General lives under Organization → Workspace → Project).
 - `backfield_user` — user identity (email, password hash, `disabled_at`).
 - `backfield_organization_membership` — `(user_id, organization_id)` with `role` (`org_admin`, `member`, …).
 - `backfield_project` — canonical project for Agate graphs, encrypted vault keys, Stylebook scoping, and future Core import APIs (`organization_id` required; `workspace_id` optional but new/bootstrap flows should set it).
@@ -36,6 +36,12 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 - `substrate_location_mention` — one aggregate article-to-location association per `(article_id, location_id)` with workflow state, provenance, `role_in_story`, primary **`nature`** (PlaceExtract editorial role: `primary`, `secondary`, `subject`, `context`, `person`, `unknown`), and optional **`nature_secondary_tags_json`** for extra roles.
 - `substrate_location_mention_occurrence` — supporting evidence rows for a location mention aggregate (`mention_text`, offsets, labels, provenance). Editorial prose lives on the mention (`role_in_story`, `description` from extraction) — not duplicated here.
 - `substrate_location_cache` — project-scoped dumb cache of external resolution results only. Cache rows are lookup accelerators, not the durable entity identity layer.
+
+### Stylebook (`stylebook_*`)
+
+- `stylebook` — org-scoped Stylebook catalog (`organization_id`, `slug`, `name`, `is_default`). Unique `(organization_id, slug)`. At most one **`is_default`** row per organization (partial unique index on Postgres). Migration **`011_stylebook_locations`** inserts a **Default Stylebook** (`slug` `default`) per existing org and sets **`backfield_workspace.stylebook_id`** for all workspaces in that org.
+- `stylebook_location_canonical` — canonical location within a Stylebook; optional **`primary_substrate_location_id`** FK to `substrate_location` for materialized geometry linkage.
+- `stylebook_location_alias` — alias strings keyed to a canonical row (`normalized_alias`, **`provenance`**, optional suppression). Unique `(location_canonical_id, normalized_alias)`.
 
 ### Agate execution (`agate_*`)
 
@@ -54,6 +60,8 @@ Revision **`003_def_ws_general`** inserts the **Default Workspace** (`slug` `def
 Revision **`007_starter_flow_add_db_output`** rewrites stored **Starter flow** `agate_graph.spec_json` rows to the canonical starter spec that includes **`DBOutput`** (so local stacks pick up persistence gating without manual graph edits).
 
 Revision **`008_drop_occurrence_context_text`** drops **`context_text`** from the location mention occurrence table (redundant with extraction `description` / mention fields). Revision **`009_rename_substrate_tables`** renames substrate tables and related indexes/constraints from `backfield_*` to **`substrate_*`** so `backfield_*` stays reserved for tenancy and infrastructure.
+
+Revision **`011_stylebook_locations`** adds **`stylebook`**, **`stylebook_location_canonical`**, **`stylebook_location_alias`**, and **`backfield_workspace.stylebook_id`** with per-org default Stylebook backfill.
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 

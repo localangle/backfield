@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backfield_stylebook.locations import sync_substrate_location_into_stylebook
+from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from sqlmodel import Session
 
 from worker.substrate_article import _sync_images, _upsert_article
@@ -38,6 +40,10 @@ def persist_from_consolidated(
 
     article_text = str(consolidated.get("text") or "")
     order = 0
+    try:
+        stylebook_id = resolve_stylebook_id_for_project_id(session, project_id)
+    except LookupError:
+        stylebook_id = None
     for bucket, entry in _iter_place_entries(places):
         loc = _upsert_location(
             session,
@@ -49,6 +55,13 @@ def persist_from_consolidated(
         )
         if loc is None or article.id is None:
             continue
+        if stylebook_id is not None:
+            sync_substrate_location_into_stylebook(
+                session,
+                stylebook_id=stylebook_id,
+                location=loc,
+                provenance="substrate_ingest",
+            )
         _upsert_mention_and_occurrence(
             session,
             article_id=int(article.id),

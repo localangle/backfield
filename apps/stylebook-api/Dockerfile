@@ -12,4 +12,4 @@ ENV PYTHONPATH=/app/apps/stylebook-api/src
 
 WORKDIR /app/apps/stylebook-api
 EXPOSE 8003
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload"]
+CMD ["uvicorn", "stylebook_api.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload"]

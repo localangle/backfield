@@ -23,6 +23,7 @@ from backfield_db import (
 )
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
+from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,8 @@ def _ensure_default_workspace_and_general(session: Session) -> None:
         org.name = DEFAULT_ORG_DISPLAY_NAME
         session.add(org)
     oid = int(org.id)
+    default_sb = ensure_default_stylebook_for_organization(session, oid)
+    sb_id = int(default_sb.id)  # type: ignore[arg-type]
     ws = session.exec(
         select(BackfieldWorkspace).where(
             BackfieldWorkspace.organization_id == oid,
@@ -64,14 +67,19 @@ def _ensure_default_workspace_and_general(session: Session) -> None:
     if ws is None:
         ws = BackfieldWorkspace(
             organization_id=oid,
+            stylebook_id=sb_id,
             name=DEFAULT_WORKSPACE_DISPLAY_NAME,
             slug=DEFAULT_WORKSPACE_SLUG,
         )
         session.add(ws)
         session.flush()
-    elif ws.name != DEFAULT_WORKSPACE_DISPLAY_NAME:
-        ws.name = DEFAULT_WORKSPACE_DISPLAY_NAME
-        session.add(ws)
+    else:
+        if int(ws.stylebook_id) != sb_id:
+            ws.stylebook_id = sb_id
+            session.add(ws)
+        if ws.name != DEFAULT_WORKSPACE_DISPLAY_NAME:
+            ws.name = DEFAULT_WORKSPACE_DISPLAY_NAME
+            session.add(ws)
 
     project = session.exec(
         select(BackfieldProject).where(BackfieldProject.slug == GENERAL_SLUG)

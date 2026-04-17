@@ -13,7 +13,9 @@ from backfield_db import (
     BackfieldUser,
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
+    Stylebook,
 )
+from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
@@ -122,6 +124,9 @@ class OrganizationPatchBody(BaseModel):
 
 class WorkspaceCreateBody(BaseModel):
     name: str
+    """Attach an existing org Stylebook; default is the org bootstrap Stylebook."""
+
+    stylebook_id: int | None = None
 
 
 class WorkspacePatchBody(BaseModel):
@@ -133,6 +138,12 @@ def _org_project_ids(session: Session, org_id: int) -> list[int]:
         select(BackfieldProject.id).where(BackfieldProject.organization_id == org_id)
     ).all()
     return [int(r) for r in rows if r is not None]
+
+
+def _stylebook_must_belong_to_org(session: Session, org_id: int, stylebook_id: int) -> None:
+    sb = session.get(Stylebook, stylebook_id)
+    if sb is None or int(sb.organization_id) != org_id:
+        raise HTTPException(status_code=400, detail="Stylebook not found in this organization")
 
 
 def _org_workspace_ids(session: Session, org_id: int) -> list[int]:
@@ -318,7 +329,12 @@ def create_workspace(
     if not label:
         raise HTTPException(status_code=400, detail="Name is required")
     slug = _allocate_workspace_slug(session, org_id, label)
-    ws = BackfieldWorkspace(organization_id=org_id, name=label, slug=slug)
+    default_sb = ensure_default_stylebook_for_organization(session, org_id)
+    sb_id = int(default_sb.id)  # type: ignore[arg-type]
+    if body.stylebook_id is not None:
+        _stylebook_must_belong_to_org(session, org_id, body.stylebook_id)
+        sb_id = body.stylebook_id
+    ws = BackfieldWorkspace(organization_id=org_id, stylebook_id=sb_id, name=label, slug=slug)
     session.add(ws)
     session.flush()
     if ws.id is None:
