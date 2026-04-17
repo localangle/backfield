@@ -1,6 +1,18 @@
 # Frontend
 
-This document covers frontend conventions for `apps/agate-ui` and the lighter `apps/stylebook-ui`.
+This document covers frontend conventions for `apps/agate-ui` and `apps/stylebook-ui`.
+
+## Stylebook UI (Backfield)
+
+- **Scope key (first slice):** the UI keeps **agate-ai-platform–style `project_slug`** in the query string (`?project=…`) as the primary navigation scope. **`stylebook-api`** resolves the slug to `backfield_project.id` and reads or writes **`substrate_location`** rows (not legacy platform Stylebook tables). A later milestone may move nav to **`organization_id` + `stylebook_id`** with less compatibility shimming; until then, treat **`project_slug`** as the contract for list/detail/create and the stubbed candidate/stats routes.
+- **First-slice routes (supported):** `/` (dashboard), `/locations/candidates`, `/locations/canonical`, `/locations/canonical/:id`, `/locations/create`, plus **stub** pages for import, other entity candidates, and agents so deep links do not 404.
+- **Auth:** Core API session only — `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout` with **`email` + `password`**, same as Agate UI. Use **`VITE_AUTH_API_BASE`** as empty string in dev so the browser stays on the Stylebook UI origin and the Vite proxy forwards `/v1` to Core.
+- **Proxies (local dev):** [`apps/stylebook-ui/vite.config.ts`](../apps/stylebook-ui/vite.config.ts) mirrors Agate UI:
+  - `/v1` → Core API (`VITE_CORE_API_PROXY_TARGET`, default `http://localhost:8004`)
+  - `/api/agate` → Agate API (`VITE_AGATE_API_PROXY_TARGET`, default `http://localhost:8000`), strip prefix
+  - `/api/stylebook` → Stylebook API (`VITE_STYLEBOOK_API_PROXY_TARGET`, default `http://localhost:8003`), strip prefix
+- **API bases:** `VITE_AGATE_API_BASE` defaults to `/api/agate` (project picker: `GET /projects`). `VITE_STYLEBOOK_API_BASE` defaults to `/api/stylebook` (locations and UI-compat stubs under `/v1/...` on the Stylebook service). All fetches use **`credentials: 'include'`** so the Core session cookie is sent to the dev origin.
+- **Client layout:** typed calls are split under `apps/stylebook-ui/src/lib/stylebook-api/` and re-exported from `src/lib/api.ts` for pages that still follow the agate-ai-platform import style.
 
 ## Agate UI responsibilities
 

@@ -169,7 +169,20 @@ services:
     ports:
       - "5175:5175"
     environment:
-      VITE_STYLEBOOK_API_BASE: http://localhost:8003
+      # Same-origin dev: browser calls /v1, /api/agate, /api/stylebook on :5175; Vite proxies.
+      VITE_AUTH_API_BASE: ""
+      VITE_AGATE_API_BASE: /api/agate
+      VITE_STYLEBOOK_API_BASE: /api/stylebook
+      VITE_CORE_API_PROXY_TARGET: http://core-api:8004
+      VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
+      VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
     volumes:
       - ../apps/stylebook-ui:/app
       - /app/node_modules
+    depends_on:
+      core-api:
+        condition: service_healthy
+      agate-api:
+        condition: service_healthy
+      stylebook-api:
+        condition: service_started

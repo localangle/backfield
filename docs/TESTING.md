@@ -14,6 +14,7 @@
 1. **Fast local gate**
   - `make lint`
   - `make test`
+  - When changing **`apps/stylebook-ui`**, also run **`make stylebook-ui-build`** (installs npm deps and runs `tsc` + `vite build`).
 2. **Structural checks**
   Runtime contract and schema-prefix assertions live in the test suite and run as part of `make test`.
 3. **Golden-path smoke**

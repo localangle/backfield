@@ -1,0 +1,38 @@
+/**
+ * Stylebook UI API surface — re-exports split clients (stylebook-api + Agate projects).
+ */
+
+export { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
+export {
+  LOCATION_TYPES,
+  type LinkedMention,
+  type Location,
+  type LocationMentionsResponse,
+  type PaginatedLocationResponse,
+  createLocation,
+  deleteLocation,
+  getLocation,
+  getLocationMentions,
+  listLocationOptions,
+  listLocations,
+  updateLocation,
+  updateLocationGeometry,
+} from "@/lib/stylebook-api/locations"
+export {
+  type Candidate,
+  type CandidateCluster,
+  type ListCandidatesFilterOptions,
+  type ListClustersOptions,
+  type PaginatedCandidatesResponse,
+  type PaginatedClustersResponse,
+  listCandidates,
+  listClusters,
+  listLocationCandidateTypes,
+} from "@/lib/stylebook-api/candidates-stub"
+export {
+  type AgentType,
+  type EntityTypeStats,
+  type Stats,
+  getAgentTypes,
+  getStats,
+} from "@/lib/stylebook-api/stats-stub"

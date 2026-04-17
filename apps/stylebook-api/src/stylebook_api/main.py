@@ -7,7 +7,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from stylebook_api.routers import geocode, health, stylebooks
+from stylebook_api.routers import geocode, health, locations, stylebooks, ui_stubs
 
 UI_ORIGIN = os.getenv("UI_ORIGIN", "http://localhost:5175")
 if UI_ORIGIN.startswith("http://localhost"):
@@ -35,3 +35,5 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(stylebooks.router)
 app.include_router(geocode.router)
+app.include_router(locations.router)
+app.include_router(ui_stubs.router)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
-from backfield_db import BackfieldOrganization, Stylebook
+from backfield_db import BackfieldOrganization, BackfieldProject, Stylebook
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from stylebook_api.deps import get_session
@@ -40,6 +40,14 @@ def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, N
                 slug="default",
                 name="Default Stylebook",
                 is_default=True,
+            )
+        )
+        s.add(
+            BackfieldProject(
+                organization_id=oid,
+                name="Demo",
+                slug="demo-proj",
+                workspace_id=None,
             )
         )
         s.commit()
@@ -86,3 +94,19 @@ def test_list_stylebooks_service(client: TestClient) -> None:
     rows = r.json()
     assert len(rows) == 1
     assert rows[0]["slug"] == "default"
+
+
+def test_list_locations_requires_auth(client: TestClient) -> None:
+    r = client.get("/v1/locations?project_slug=demo-proj")
+    assert r.status_code == 401
+
+
+def test_list_locations_empty_with_service_token(client: TestClient) -> None:
+    r = client.get(
+        "/v1/locations?project_slug=demo-proj",
+        headers={"Authorization": "Bearer backfield-dev"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["total"] == 0
+    assert data["locations"] == []

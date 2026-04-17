@@ -11,7 +11,7 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 | **Worker** | — | Celery executes runs (`agate` queue) |
 | **Stylebook API** | 8003 | Geocode helper for `GeocodeAgent` |
 | **Core API** | 8004 | Shared domain API (auth + future import routes) |
-| **Stylebook UI** | 5175 | Shell + health check |
+| **Stylebook UI** | 5175 | Stylebook shell (Core auth + project-scoped locations against `stylebook-api` / `substrate_location`) |
 | **Postgres** | 5433 | `agate_*` application tables (see [docs/DATABASE.md](docs/DATABASE.md)) |
 | **Redis** | 6379 | Celery broker |
 
@@ -42,6 +42,7 @@ make up                # Docker Compose (foreground; Ctrl+C stops all services)
 ```bash
 make lint
 make test
+make stylebook-ui-build   # when apps/stylebook-ui changes
 make smoke   # live stack; see docs/TESTING.md (session vs service-token modes)
 ```
 

@@ -2,7 +2,7 @@
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE)
 
-.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim test test-unit test-integration lint format bootstrap smoke
+.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim test test-unit test-integration lint format bootstrap smoke stylebook-ui-build
 
 help:
 	@echo "Backfield"
@@ -23,6 +23,7 @@ help:
 	@echo "  make format      - Ruff format"
 	@echo "  make bootstrap   - uv sync (root) for local tooling"
 	@echo "  make smoke       - Golden-path smoke against a live stack"
+	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
 
 bootstrap:
 	uv sync --all-packages
@@ -82,3 +83,6 @@ format:
 
 smoke:
 	uv run python -u tests/smoke/golden_path_stack.py
+
+stylebook-ui-build:
+	cd apps/stylebook-ui && npm ci && npm run build
