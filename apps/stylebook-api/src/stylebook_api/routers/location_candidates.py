@@ -281,7 +281,20 @@ def accept_candidate(
         provenance="stylebook_ui_accept",
     )
     loc.canonical_link_status = CANONICAL_LINK_LINKED
-    loc.canonical_review_reasons_json = None
+    if body.create_new:
+        loc.canonical_review_reasons_json = [
+            {
+                "code": "linked_manual_accept_create_new",
+                "canonical_id": int(canon.id),  # type: ignore[arg-type]
+            }
+        ]
+    else:
+        loc.canonical_review_reasons_json = [
+            {
+                "code": "linked_manual_accept_existing",
+                "canonical_id": int(canon.id),  # type: ignore[arg-type]
+            }
+        ]
     session.add(loc)
     session.commit()
     return {"message": "linked"}

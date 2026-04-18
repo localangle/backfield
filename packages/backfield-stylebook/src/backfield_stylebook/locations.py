@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, select
 
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
-from backfield_stylebook.canonical_policy import (
-    CanonicalPersistDecision,
-    CanonicalPersistPlan,
-    defer_reason_payload,
-)
+from backfield_stylebook.canonical_policy import CanonicalPersistDecision, CanonicalPersistPlan
 
 
 def assert_canonical_link_invariant(location: SubstrateLocation) -> None:
@@ -88,6 +86,7 @@ def link_to_existing_canonical(
     location: SubstrateLocation,
     canonical_id: int,
     provenance: str = "substrate_ingest",
+    audit_reasons: list[dict[str, Any]] | None = None,
 ) -> None:
     """Attach substrate row to an existing canonical and upsert alias."""
     if location.id is None:
@@ -97,7 +96,9 @@ def link_to_existing_canonical(
         return
     location.stylebook_location_canonical_id = int(canon.id)  # type: ignore[arg-type]
     location.canonical_link_status = CANONICAL_LINK_LINKED
-    location.canonical_review_reasons_json = None
+    location.canonical_review_reasons_json = (
+        [dict(r) for r in audit_reasons] if audit_reasons is not None else None
+    )
     session.add(location)
     session.flush()
     cid = int(canon.id)  # type: ignore[arg-type]
@@ -115,6 +116,7 @@ def materialize_new_canonical_and_link(
     stylebook_id: int,
     location: SubstrateLocation,
     provenance: str = "substrate_ingest",
+    audit_reasons: list[dict[str, Any]] | None = None,
 ) -> None:
     """Create a new canonical, set FK + ``linked``, upsert alias."""
     if location.id is None:
@@ -134,7 +136,9 @@ def materialize_new_canonical_and_link(
     cid = int(canon.id)  # type: ignore[arg-type]
     location.stylebook_location_canonical_id = cid
     location.canonical_link_status = CANONICAL_LINK_LINKED
-    location.canonical_review_reasons_json = None
+    location.canonical_review_reasons_json = (
+        [dict(r) for r in audit_reasons] if audit_reasons is not None else None
+    )
     session.add(location)
     session.flush()
     _upsert_alias_for_canonical(
@@ -155,14 +159,10 @@ def apply_canonical_persist_plan(
     provenance: str = "substrate_ingest",
 ) -> None:
     """Apply policy outcome: defer (pending, no Stylebook rows), link, or materialize."""
+    reasons = [dict(r) for r in plan.resolution_reasons]
     if plan.decision == CanonicalPersistDecision.DEFER:
         location.canonical_link_status = CANONICAL_LINK_PENDING
-        if plan.defer_review_reasons is not None:
-            location.canonical_review_reasons_json = [dict(r) for r in plan.defer_review_reasons]
-        else:
-            location.canonical_review_reasons_json = defer_reason_payload(
-                places_bucket=places_bucket, location=location
-            )
+        location.canonical_review_reasons_json = reasons
         session.add(location)
         return
     if plan.decision == CanonicalPersistDecision.LINK_EXISTING:
@@ -174,10 +174,15 @@ def apply_canonical_persist_plan(
             location=location,
             canonical_id=int(plan.existing_canonical_id),
             provenance=provenance,
+            audit_reasons=reasons,
         )
         return
     materialize_new_canonical_and_link(
-        session, stylebook_id=stylebook_id, location=location, provenance=provenance
+        session,
+        stylebook_id=stylebook_id,
+        location=location,
+        provenance=provenance,
+        audit_reasons=reasons,
     )
 
 

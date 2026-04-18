@@ -564,6 +564,105 @@ def test_persist_materializes_canonical_for_city_without_geometry_when_no_match(
         assert_canonical_link_invariant(locs[0])
 
 
+def test_persist_neighborhood_materializes_instead_of_autolinking_city_parent() -> None:
+    """Regression: child neighborhoods must not fuzzy-autolink to a broader city canonical."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-wr", project_slug="proj-wr")
+        session.add(AgateRun(id="run-wr", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        proj = session.get(BackfieldProject, project_id)
+        assert proj is not None
+        ws = session.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        chicago_canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            primary_substrate_location_id=None,
+            status="active",
+            geometry_json=CHICAGO_POINT,
+            geometry_type="Point",
+        )
+        session.add(chicago_canon)
+        session.commit()
+        session.refresh(chicago_canon)
+        chicago_id = int(chicago_canon.id)  # type: ignore[arg-type]
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=chicago_id,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="seed",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        consolidated = {
+            "text": "News in West Ridge.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [
+                        {
+                            "id": "nominatim:wr",
+                            "original_text": "West Ridge",
+                            "location": "West Ridge, Chicago, IL",
+                            "type": "neighborhood",
+                            "geocode": {
+                                "geocode_type": "nominatim",
+                                "result": {
+                                    "id": "nominatim:wr",
+                                    "formatted_address": (
+                                        "West Ridge, Chicago, Rogers Park Township, "
+                                        "Cook County, Illinois, United States"
+                                    ),
+                                    "geometry": WGP_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-wr",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
+        assert locs[0].stylebook_location_canonical_id is not None
+        assert int(locs[0].stylebook_location_canonical_id) != chicago_id
+
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 2
+
+        reasons = locs[0].canonical_review_reasons_json
+        assert isinstance(reasons, list) and reasons
+        assert reasons[0].get("code") == "materialized_new_canonical"
+        assert reasons[0].get("match_basis") == "string_only"
+        assert_canonical_link_invariant(locs[0])
+
+
 def test_persist_defers_intersection_without_geometry_when_no_match() -> None:
     """Intersection types keep strict materialization (geometry + resolved); otherwise defer."""
     engine = create_engine("sqlite://", echo=False)

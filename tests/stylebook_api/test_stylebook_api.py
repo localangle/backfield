@@ -185,6 +185,9 @@ def test_create_location_materializes_stylebook_canonical_and_alias(
         loc = s.get(SubstrateLocation, lid)
         assert loc is not None
         assert loc.stylebook_location_canonical_id is not None
+        assert loc.canonical_review_reasons_json == [
+            {"code": "materialized_stylebook_ui_manual", "provenance": "stylebook_ui_manual"}
+        ]
         cid = int(loc.stylebook_location_canonical_id)  # type: ignore[arg-type]
         canon = s.get(StylebookLocationCanonical, cid)
         assert canon is not None
@@ -368,6 +371,10 @@ def test_accept_candidate_create_new(
         assert row.canonical_link_status == CANONICAL_LINK_LINKED
         canon = s.get(StylebookLocationCanonical, int(row.stylebook_location_canonical_id))
         assert canon is not None
+        coid = int(canon.id)  # type: ignore[arg-type]
+        assert row.canonical_review_reasons_json == [
+            {"code": "linked_manual_accept_create_new", "canonical_id": coid}
+        ]
         assert canon.label == "Newplace Canon"
         assert canon.primary_substrate_location_id is None
         canon_id = int(canon.id)  # type: ignore[arg-type]
@@ -425,6 +432,9 @@ def test_accept_candidate_link_existing_canonical(
         assert row is not None
         assert int(row.stylebook_location_canonical_id or 0) == cid
         assert row.canonical_link_status == CANONICAL_LINK_LINKED
+        assert row.canonical_review_reasons_json == [
+            {"code": "linked_manual_accept_existing", "canonical_id": cid}
+        ]
         aliases = s.exec(
             select(StylebookLocationAlias).where(
                 StylebookLocationAlias.location_canonical_id == cid,

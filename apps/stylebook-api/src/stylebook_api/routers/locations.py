@@ -544,7 +544,12 @@ def delete_canonical_location(
     for loc in linked:
         loc.stylebook_location_canonical_id = None
         loc.canonical_link_status = CANONICAL_LINK_PENDING
-        loc.canonical_review_reasons_json = None
+        loc.canonical_review_reasons_json = [
+            {
+                "code": "reset_pending_after_canonical_deleted",
+                "deleted_canonical_id": int(canonical_id),
+            }
+        ]
         session.add(loc)
 
     session.delete(canon)
@@ -698,6 +703,12 @@ def create_location(
             stylebook_id=sb_id,
             location=row,
             provenance="stylebook_ui_manual",
+            audit_reasons=[
+                {
+                    "code": "materialized_stylebook_ui_manual",
+                    "provenance": "stylebook_ui_manual",
+                },
+            ],
         )
     except LookupError:
         pass
