@@ -5,16 +5,23 @@
 export { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
 export {
   LOCATION_TYPES,
+  type CanonicalLocation,
   type LinkedMention,
   type Location,
   type LocationMentionsResponse,
+  type PaginatedCanonicalLocationResponse,
   type PaginatedLocationResponse,
   createLocation,
+  deleteCanonicalLocation,
   deleteLocation,
+  getCanonicalLocation,
+  getCanonicalLocationMentions,
   getLocation,
   getLocationMentions,
+  listCanonicalLocations,
   listLocationOptions,
   listLocations,
+  patchCanonicalLocation,
   updateLocation,
   updateLocationGeometry,
 } from "@/lib/stylebook-api/locations"

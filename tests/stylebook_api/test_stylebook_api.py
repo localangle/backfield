@@ -198,6 +198,31 @@ def test_create_location_materializes_stylebook_canonical_and_alias(
         assert aliases[0].normalized_alias == "west garfield park, chicago, il"
 
 
+def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClient) -> None:
+    r = client.post(
+        "/v1/locations?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"name": "Catalog Test Place", "location_type": "city"},
+    )
+    assert r.status_code == 200
+    created = r.json()
+    canon_fk = created.get("stylebook_location_canonical_id")
+    assert canon_fk is not None
+    r2 = client.get("/v1/canonical-locations?project_slug=demo-proj", headers=_service_headers())
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["total"] >= 1
+    canon = next(c for c in data["canonicals"] if c["label"] == "Catalog Test Place")
+    assert int(canon["id"]) == int(canon_fk)
+    assert canon.get("linked_substrate_count", 0) >= 1
+    r3 = client.get(
+        f"/v1/canonical-locations/{canon['id']}?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r3.status_code == 200
+    assert r3.json()["label"] == "Catalog Test Place"
+
+
 def test_candidates_400_when_project_has_no_workspace(client: TestClient) -> None:
     r = client.get(
         "/v1/candidates?project_slug=no-ws-proj&status=open",

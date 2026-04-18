@@ -15,6 +15,30 @@ export interface Location {
   mention_count?: number
   canonical_link_status?: string
   canonical_review_reasons_json?: unknown
+  /** When set, this substrate row is linked to this Stylebook canonical id (catalog key). */
+  stylebook_location_canonical_id?: number | null
+}
+
+/** One ``stylebook_location_canonical`` row (Stylebook catalog), not a substrate location. */
+export interface CanonicalLocation {
+  id: number
+  label: string
+  geometry_json?: Record<string, unknown> | null
+  geometry_type?: string | null
+  status: string
+  linked_substrate_count: number
+  mention_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PaginatedCanonicalLocationResponse {
+  canonicals: CanonicalLocation[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
 }
 
 export interface PaginatedLocationResponse {
@@ -61,6 +85,28 @@ export async function listLocations(
   params.append("limit", limit.toString())
   params.append("offset", offset.toString())
   return stylebookJsonFetch<PaginatedLocationResponse>(`/v1/locations?${params}`)
+}
+
+export async function listCanonicalLocations(
+  projectSlug: string,
+  q?: string,
+  limit: number = 25,
+  offset: number = 0,
+): Promise<PaginatedCanonicalLocationResponse> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  if (q) params.append("q", q)
+  params.append("limit", limit.toString())
+  params.append("offset", offset.toString())
+  return stylebookJsonFetch<PaginatedCanonicalLocationResponse>(`/v1/canonical-locations?${params}`)
+}
+
+export async function getCanonicalLocation(
+  canonicalId: number,
+  projectSlug: string,
+): Promise<CanonicalLocation> {
+  return stylebookJsonFetch<CanonicalLocation>(
+    `/v1/canonical-locations/${canonicalId}?project_slug=${encodeURIComponent(projectSlug)}`,
+  )
 }
 
 export async function listLocationOptions(
@@ -182,5 +228,45 @@ export async function getLocationMentions(
   })
   return stylebookJsonFetch<LocationMentionsResponse>(
     `/v1/locations/${locationId}/mentions?${params}`,
+  )
+}
+
+export async function getCanonicalLocationMentions(
+  canonicalId: number,
+  projectSlug: string,
+  limit: number = 50,
+  offset: number = 0,
+  _sort?: string,
+  sortDirection: "asc" | "desc" = "desc",
+): Promise<LocationMentionsResponse> {
+  const params = new URLSearchParams({
+    project_slug: projectSlug,
+    limit: limit.toString(),
+    offset: offset.toString(),
+    sort_direction: sortDirection,
+  })
+  return stylebookJsonFetch<LocationMentionsResponse>(
+    `/v1/canonical-locations/${canonicalId}/mentions?${params}`,
+  )
+}
+
+export async function patchCanonicalLocation(
+  canonicalId: number,
+  projectSlug: string,
+  data: { label?: string },
+): Promise<CanonicalLocation> {
+  return stylebookJsonFetch<CanonicalLocation>(
+    `/v1/canonical-locations/${canonicalId}?project_slug=${encodeURIComponent(projectSlug)}`,
+    { method: "PATCH", body: JSON.stringify(data) },
+  )
+}
+
+export async function deleteCanonicalLocation(
+  canonicalId: number,
+  projectSlug: string,
+): Promise<{ message: string; id: number; unlinked_substrate_count: number }> {
+  return stylebookJsonFetch(
+    `/v1/canonical-locations/${canonicalId}?project_slug=${encodeURIComponent(projectSlug)}`,
+    { method: "DELETE" },
   )
 }

@@ -41,7 +41,8 @@ export default function CreateLocation() {
         geometry_json: geometry ?? undefined,
         status: "active",
       })
-      navigate(`/locations/canonical/${location.id}?project=${projectSlug}`)
+      const canonId = location.stylebook_location_canonical_id ?? location.id
+      navigate(`/locations/canonical/${canonId}?project=${projectSlug}`)
     } catch (error) {
       console.error("Failed to create location:", error)
       alert(`Failed to create location: ${error instanceof Error ? error.message : "Unknown error"}`)
