@@ -42,7 +42,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `apps/stylebook-api` (`stylebook_api` Python package to avoid clashing with Agate’s `api` on `PYTHONPATH`)
   - Owns Stylebook HTTP routes: org Stylebook catalog (`/v1/organizations/{org_id}/stylebooks`), starter **`/v1/geocode/resolve`**, substrate-backed **location candidate** list/accept under **`/v1/candidates*`** (project slug + workspace-resolved Stylebook), and health.
   - Uses the same **`resolve_auth`** pattern as Agate (session cookie, service Bearer, `bfk_` project key) via `backfield-auth` + `backfield-db` sessions.
-  - Editorial/canonical HTTP stays here; **worker** materializes `stylebook_*` rows during DBOutput using **`packages/backfield-stylebook`** (no `agate-runtime` → DB dependency).
+  - Editorial/canonical HTTP stays here; **worker** materializes `stylebook_*` rows during DBOutput using **`packages/backfield-stylebook`** (no `agate-runtime` → DB dependency). Ingest policy in `canonical_policy.decide_canonical_persist_plan` auto-creates a canonical when no alias/fuzzy link matches for most `location_type` values; **address** stays deferred up front, and **intersection** (`intersection_highway`, `intersection_road`), **street_road**, and types whose name contains **`span`** still require resolved geocode **with** geometry before materializing.
 - `apps/stylebook-ui`
   - Owns the minimal Stylebook browser shell.
 - `packages/backfield-auth`

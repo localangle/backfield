@@ -78,12 +78,50 @@ def _should_defer(*, places_bucket: str, location: SubstrateLocation) -> bool:
     return False
 
 
-def _should_materialize_new(location: SubstrateLocation) -> bool:
+_NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
+    {
+        "address",
+        "intersection_highway",
+        "intersection_road",
+        "street_road",
+    }
+)
+
+
+def _location_type_allows_autocreate_without_strict_geometry(location_type: str | None) -> bool:
+    lt = (location_type or "").strip().lower()
+    if lt in _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES:
+        return False
+    if "span" in lt:
+        return False
+    return True
+
+
+def _should_materialize_new_strict(location: SubstrateLocation) -> bool:
+    """Legacy gate for excluded types: only materialize with resolved geocode + geometry."""
     if location.geometry_json is None:
         return False
     if str(location.status or "") != "resolved":
         return False
     return True
+
+
+def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> bool:
+    """After exact match + fuzzy tiers: whether to create a new canonical.
+
+    Most location types get a canonical when nothing linked and recall is not ambiguous,
+    as long as the row is not a hard geocode failure and has a normalized name.
+
+    Address, intersections, and span / street-road types keep the strict geometry rule.
+    """
+    if _location_type_allows_autocreate_without_strict_geometry(location.location_type):
+        st = str(location.status or "")
+        if st == "failed":
+            return False
+        if not str(location.normalized_name or "").strip():
+            return False
+        return True
+    return _should_materialize_new_strict(location)
 
 
 def decide_canonical_persist_plan(
@@ -169,7 +207,7 @@ def decide_canonical_persist_plan(
                 ),
             )
 
-    if _should_materialize_new(location):
+    if _should_materialize_when_no_canonical_match(location):
         return CanonicalPersistPlan(decision=CanonicalPersistDecision.MATERIALIZE_NEW)
 
     return CanonicalPersistPlan(decision=CanonicalPersistDecision.DEFER)

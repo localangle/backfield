@@ -499,3 +499,238 @@ def test_persist_fuzzy_links_preseeded_canonical_when_alias_normalization_differ
         assert int(locs[0].stylebook_location_canonical_id or 0) == cid
         assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
         assert_canonical_link_invariant(locs[0])
+
+
+def test_persist_materializes_canonical_for_city_without_geometry_when_no_match() -> None:
+    """Non-excluded types auto-materialize when there is no link, even without geometry JSON."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-auto", project_slug="proj-auto")
+        session.add(AgateRun(id="run-auto", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "News in Peoria.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:peoria",
+                            "original_text": "Peoria",
+                            "location": "Peoria, IL",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:peoria",
+                                    "formatted_address": "Peoria, IL, USA",
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-auto",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].geometry_json is None
+        assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
+        assert locs[0].stylebook_location_canonical_id is not None
+
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 1
+        assert_canonical_link_invariant(locs[0])
+
+
+def test_persist_defers_intersection_without_geometry_when_no_match() -> None:
+    """Intersection types keep strict materialization (geometry + resolved); otherwise defer."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-xsect", project_slug="proj-xsect")
+        session.add(AgateRun(id="run-xsect", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Crash at Main St and Oak Ave.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [
+                    {
+                        "id": "pt:1",
+                        "original_text": "Main St and Oak Ave",
+                        "location": "Main St and Oak Ave, Chicago, IL",
+                        "type": "intersection_road",
+                        "geocode": {
+                            "geocode_type": "geocodio",
+                            "result": {
+                                "id": "gc:xsect",
+                                "formatted_address": "Main St & Oak Ave, Chicago, IL",
+                            },
+                        },
+                    }
+                ],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-xsect",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].canonical_link_status == CANONICAL_LINK_PENDING
+        assert locs[0].stylebook_location_canonical_id is None
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 0
+
+
+def test_persist_defers_street_road_span_type_without_geometry_when_no_match() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-span", project_slug="proj-span")
+        session.add(AgateRun(id="run-span", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Along Western Ave.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [
+                        {
+                            "id": "span:1",
+                            "original_text": "Western Ave",
+                            "location": "Western Ave, Chicago, IL",
+                            "type": "street_road",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:western",
+                                    "formatted_address": "Western Ave, Chicago, IL",
+                                },
+                            },
+                        }
+                    ],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-span",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].canonical_link_status == CANONICAL_LINK_PENDING
+        assert locs[0].stylebook_location_canonical_id is None
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 0
+
+
+def test_persist_does_not_materialize_canonical_when_geocode_failed() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-fail", project_slug="proj-fail")
+        session.add(AgateRun(id="run-fail", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Somewhere in Nowhereville.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:nv",
+                            "original_text": "Nowhereville",
+                            "location": "Nowhereville, XX",
+                            "type": "city",
+                            "geocoded": False,
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-fail",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].canonical_link_status == CANONICAL_LINK_PENDING
+        assert locs[0].stylebook_location_canonical_id is None
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 0
