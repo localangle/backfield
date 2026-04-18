@@ -12,6 +12,7 @@ from backfield_stylebook.canonical_match_score import (
     classify_recall_score,
     combined_score,
     haversine_m,
+    policy_match_score,
     spatial_score_from_distance_m,
     string_score_for_candidate,
 )
@@ -26,6 +27,19 @@ def test_string_score_exact_normalized_alias() -> None:
         canonical_id=1,
         label="Other",
         normalized_aliases=("west garfield park, chicago, il",),
+    )
+    assert string_score_for_candidate(sub, feat) == 1.0
+
+
+def test_loose_normalization_treats_punctuation_variants_as_exact() -> None:
+    sub = SubstrateMatchInput(
+        name="West Garfield Park",
+        normalized_name="west garfield park chicago il",
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="West Garfield Park, Chicago, IL",
+        normalized_aliases=(),
     )
     assert string_score_for_candidate(sub, feat) == 1.0
 
@@ -80,3 +94,59 @@ def test_haversine_symmetric() -> None:
     a = (41.0, -87.0)
     b = (42.0, -88.0)
     assert math.isclose(haversine_m(a, b), haversine_m(b, a))
+
+
+def test_combined_score_never_below_string_only() -> None:
+    chicago = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
+    far = {"type": "Point", "coordinates": [-100.0, 35.0]}
+    sub = SubstrateMatchInput(
+        name="Hello World",
+        normalized_name="hello world",
+        geometry_json=chicago,
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="hello earth",
+        normalized_aliases=("hello earth",),
+        geometry_json=far,
+    )
+    s_str = string_score_for_candidate(sub, feat)
+    comb = combined_score(sub, feat)
+    assert comb >= s_str
+
+
+def test_formatted_address_extra_tokens_match_canonical_label() -> None:
+    """Geocoder formatted lines often extend the display name; label tokens still match."""
+    sub = SubstrateMatchInput(
+        name="West Garfield Park, Chicago, IL",
+        normalized_name="west garfield park west side chicago il usa",
+        formatted_address="West Garfield Park, West Side, Chicago, IL, USA",
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="West Garfield Park, Chicago, IL",
+        normalized_aliases=(),
+    )
+    assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
+
+
+def test_policy_match_non_address_ignores_spatial_penalty() -> None:
+    chicago = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
+    far = {"type": "Point", "coordinates": [-70.0, 40.0]}
+    sub = SubstrateMatchInput(
+        name="West Garfield Park",
+        normalized_name="west garfield park chicago il",
+        geometry_json=chicago,
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="West Garfield Park, Chicago, IL",
+        normalized_aliases=(),
+        geometry_json=far,
+    )
+    s_str = string_score_for_candidate(sub, feat)
+    p_neighborhood = policy_match_score(sub, feat, substrate_location_type="neighborhood")
+    p_address = policy_match_score(sub, feat, substrate_location_type="address")
+    assert s_str == 1.0
+    assert p_neighborhood == 1.0
+    assert p_address >= s_str

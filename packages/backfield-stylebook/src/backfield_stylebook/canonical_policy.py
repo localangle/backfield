@@ -15,7 +15,7 @@ from backfield_stylebook.canonical_match_score import (
     CanonicalMatchFeatures,
     SubstrateMatchInput,
     classify_recall_score,
-    combined_score,
+    policy_match_score,
 )
 from backfield_stylebook.canonical_retrieval import (
     load_canonical_match_features,
@@ -116,6 +116,7 @@ def decide_canonical_persist_plan(
         stylebook_id=stylebook_id,
         query_text=str(location.name),
         normalized_query=str(location.normalized_name),
+        formatted_address=location.formatted_address,
     )
     if recall:
         cids = [cid for cid, _ in recall]
@@ -124,6 +125,7 @@ def decide_canonical_persist_plan(
             name=str(location.name),
             normalized_name=str(location.normalized_name),
             geometry_json=location.geometry_json,
+            formatted_address=location.formatted_address,
         )
         best_id: int | None = None
         best_score = 0.0
@@ -139,7 +141,11 @@ def decide_canonical_persist_plan(
                 geometry_json=canon.geometry_json,
                 retrieval_string_hint=hint,
             )
-            sc = combined_score(substrate, feat)
+            sc = policy_match_score(
+                substrate,
+                feat,
+                substrate_location_type=location.location_type,
+            )
             if sc >= best_score:
                 best_score = sc
                 best_id = canon_id
