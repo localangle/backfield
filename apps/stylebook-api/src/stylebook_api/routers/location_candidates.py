@@ -12,6 +12,7 @@ from backfield_db import (
     SubstrateLocationMention,
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_stylebook.locations import refresh_aliases_for_linked_location
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -273,6 +274,12 @@ def accept_candidate(
             )
         loc.stylebook_location_canonical_id = int(canon.id)  # type: ignore[arg-type]
 
+    refresh_aliases_for_linked_location(
+        session,
+        stylebook_id=stylebook_id,
+        location=loc,
+        provenance="stylebook_ui_accept",
+    )
     loc.canonical_link_status = CANONICAL_LINK_LINKED
     loc.canonical_review_reasons_json = None
     session.add(loc)

@@ -15,6 +15,7 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_stylebook.locations import materialize_new_canonical_and_link
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -326,6 +327,17 @@ def create_location(
         external_id=ext_id,
     )
     session.add(row)
+    session.flush()
+    try:
+        sb_id = resolve_stylebook_id_for_project_id(session, int(proj.id))
+        materialize_new_canonical_and_link(
+            session,
+            stylebook_id=sb_id,
+            location=row,
+            provenance="stylebook_ui_manual",
+        )
+    except LookupError:
+        pass
     session.commit()
     session.refresh(row)
     return LocationResponse.from_row(row, 0)

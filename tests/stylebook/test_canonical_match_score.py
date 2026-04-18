@@ -115,6 +115,19 @@ def test_combined_score_never_below_string_only() -> None:
     assert comb >= s_str
 
 
+def test_state_abbrev_vs_full_name_token_coverage() -> None:
+    sub = SubstrateMatchInput(
+        name="Chicago, IL",
+        normalized_name="chicago, il",
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="Chicago, Illinois",
+        normalized_aliases=(),
+    )
+    assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
+
+
 def test_formatted_address_extra_tokens_match_canonical_label() -> None:
     """Geocoder formatted lines often extend the display name; label tokens still match."""
     sub = SubstrateMatchInput(

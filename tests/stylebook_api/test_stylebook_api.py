@@ -10,6 +10,7 @@ from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
     Stylebook,
+    StylebookLocationAlias,
     StylebookLocationCanonical,
     SubstrateArticle,
     SubstrateLocation,
@@ -165,6 +166,38 @@ def test_list_locations_empty_with_service_token(client: TestClient) -> None:
     assert data["locations"] == []
 
 
+def test_create_location_materializes_stylebook_canonical_and_alias(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    r = client.post(
+        "/v1/locations?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "name": "West Garfield Park, Chicago, IL",
+            "location_type": "neighborhood",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["canonical_link_status"] == CANONICAL_LINK_LINKED
+    lid = int(body["id"])
+    with Session(stylebook_test_engine) as s:
+        loc = s.get(SubstrateLocation, lid)
+        assert loc is not None
+        assert loc.stylebook_location_canonical_id is not None
+        cid = int(loc.stylebook_location_canonical_id)  # type: ignore[arg-type]
+        canon = s.get(StylebookLocationCanonical, cid)
+        assert canon is not None
+        assert canon.label == "West Garfield Park, Chicago, IL"
+        aliases = s.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == cid,
+            )
+        ).all()
+        assert len(aliases) == 1
+        assert aliases[0].normalized_alias == "west garfield park, chicago, il"
+
+
 def test_candidates_400_when_project_has_no_workspace(client: TestClient) -> None:
     r = client.get(
         "/v1/candidates?project_slug=no-ws-proj&status=open",
@@ -312,6 +345,14 @@ def test_accept_candidate_create_new(
         assert canon is not None
         assert canon.label == "Newplace Canon"
         assert canon.primary_substrate_location_id is None
+        canon_id = int(canon.id)  # type: ignore[arg-type]
+        aliases = s.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == canon_id,
+            )
+        ).all()
+        assert len(aliases) == 1
+        assert aliases[0].normalized_alias == "newplace"
 
 
 def test_accept_candidate_link_existing_canonical(
@@ -359,6 +400,13 @@ def test_accept_candidate_link_existing_canonical(
         assert row is not None
         assert int(row.stylebook_location_canonical_id or 0) == cid
         assert row.canonical_link_status == CANONICAL_LINK_LINKED
+        aliases = s.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == cid,
+            )
+        ).all()
+        assert len(aliases) == 1
+        assert aliases[0].normalized_alias == "linkme"
 
 
 def test_accept_rejects_non_pending_candidate(

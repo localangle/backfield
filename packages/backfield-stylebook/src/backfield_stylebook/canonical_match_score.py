@@ -12,6 +12,77 @@ from typing import Any, Literal
 # compare as the same place name for scoring.
 _LOOSE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
 
+# Map common US state tokens so ``IL`` vs ``Illinois`` does not break token-coverage checks.
+_US_STATE_ABBR_FULL: dict[str, str] = {
+    "al": "alabama",
+    "ak": "alaska",
+    "az": "arizona",
+    "ar": "arkansas",
+    "ca": "california",
+    "co": "colorado",
+    "ct": "connecticut",
+    "de": "delaware",
+    "dc": "districtofcolumbia",
+    "fl": "florida",
+    "ga": "georgia",
+    "hi": "hawaii",
+    "id": "idaho",
+    "il": "illinois",
+    "in": "indiana",
+    "ia": "iowa",
+    "ks": "kansas",
+    "ky": "kentucky",
+    "la": "louisiana",
+    "me": "maine",
+    "md": "maryland",
+    "ma": "massachusetts",
+    "mi": "michigan",
+    "mn": "minnesota",
+    "ms": "mississippi",
+    "mo": "missouri",
+    "mt": "montana",
+    "ne": "nebraska",
+    "nv": "nevada",
+    "nh": "newhampshire",
+    "nj": "newjersey",
+    "nm": "newmexico",
+    "ny": "newyork",
+    "nc": "northcarolina",
+    "nd": "northdakota",
+    "oh": "ohio",
+    "ok": "oklahoma",
+    "or": "oregon",
+    "pa": "pennsylvania",
+    "ri": "rhodeisland",
+    "sc": "southcarolina",
+    "sd": "southdakota",
+    "tn": "tennessee",
+    "tx": "texas",
+    "ut": "utah",
+    "vt": "vermont",
+    "va": "virginia",
+    "wa": "washington",
+    "wv": "westvirginia",
+    "wi": "wisconsin",
+    "wy": "wyoming",
+}
+
+
+def _expand_us_state_tokens(toks: set[str]) -> set[str]:
+    """Add paired state name / abbreviation tokens so coverage checks stay stable."""
+    out = set(toks)
+    for t in list(toks):
+        low = t.lower()
+        full = _US_STATE_ABBR_FULL.get(low)
+        if full:
+            out.add(full)
+    for t in list(toks):
+        low = t.lower()
+        for abbr, full in _US_STATE_ABBR_FULL.items():
+            if low == full:
+                out.add(abbr)
+    return out
+
 # Tunable thresholds (single place for policy + tests).
 AUTOLINK_MIN_SCORE: float = 0.82
 RECALL_MIN_SCORE: float = 0.28
@@ -88,15 +159,29 @@ def _token_set_coverage_score(canonical_loose: str, substrate_surfaces: list[str
     Handles geocoder ``formatted_address`` strings that extend the place name with
     neighborhood or country tokens without changing the core location identity.
     """
-    ct = _meaningful_token_set(canonical_loose)
+    ct = _expand_us_state_tokens(_meaningful_token_set(canonical_loose))
     if len(ct) < 3:
         return None
     union: set[str] = set()
     for surf in substrate_surfaces:
-        union |= _meaningful_token_set(_loose_key(surf))
+        union |= _expand_us_state_tokens(_meaningful_token_set(_loose_key(surf)))
     if not union:
         return None
     if ct <= union:
+        return 1.0
+    return None
+
+
+def _loose_substring_identity_score(loose_label: str, surfaces: list[str]) -> float | None:
+    """1.0 when the canonical loose label appears as a contiguous token run in substrate text."""
+    if len(loose_label) < 10:
+        return None
+    blob = " ".join(_loose_key(s) for s in surfaces if s.strip())
+    if not blob:
+        return None
+    if loose_label in blob:
+        return 1.0
+    if len(blob) >= 10 and blob in loose_label:
         return 1.0
     return None
 
@@ -110,6 +195,8 @@ def _string_score_surface_vs_candidate(norm: str, candidate: CanonicalMatchFeatu
     parts: list[float] = []
     label_lower = candidate.label.strip().lower()
     loose_label = _loose_key(candidate.label)
+    if norm == label_lower:
+        parts.append(1.0)
     if loose_n and loose_n == loose_label:
         parts.append(1.0)
     parts.append(_ratio(norm, label_lower))
@@ -183,6 +270,9 @@ def string_score_for_candidate(
     cov = _token_set_coverage_score(loose_label, surfaces)
     if cov is not None:
         parts.append(cov)
+    subseq = _loose_substring_identity_score(loose_label, surfaces)
+    if subseq is not None:
+        parts.append(subseq)
     for a in candidate.normalized_aliases:
         acov = _token_set_coverage_score(_loose_key(a), surfaces)
         if acov is not None:
