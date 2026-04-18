@@ -105,6 +105,10 @@ _HEAD_ANCHOR_GATED_TYPES: frozenset[str] = frozenset(
         "borough",
         "suburb",
         "county",
+        # POI / school / etc. (PlaceExtract ``place``): name still carries ``..., City, ST`` and
+        # string-only fuzzy scoring can otherwise autolink to the city canonical.
+        "place",
+        "point",
     }
 )
 
@@ -309,6 +313,9 @@ def decide_canonical_persist_plan(
                     "code": "materialized_new_canonical",
                     "had_fuzzy_recall": bool(recall_canonical_ids),
                     "match_basis": _match_basis_for_audit(location.location_type),
+                    "head_anchor_gate_applied": _should_apply_head_anchor_gate(
+                        location.location_type
+                    ),
                     **extra,
                 },
             ),
