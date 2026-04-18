@@ -44,7 +44,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 ## Environment variables
 
-- `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: database connection string (required for `agate-api`, `worker`, and **`core-api`** — Core API reads users and API credentials from the same Postgres database).
+- `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: database connection string (required for `agate-api`, **`stylebook-api`**, `worker`, and **`core-api`** — these apps read the same Postgres database; Compose sets the in-network URL `...@postgres:5432/...` so containers do not default to `localhost:5433`, which only works from the host).
 - `REDIS_URL`: Celery broker and backend.
 - `STYLEBOOK_API_URL`: worker/node access to Stylebook API.
 - `SERVICE_API_TOKEN`: shared Bearer token for service-to-service calls. **Agate API** requires `Authorization: Bearer` (this token or a project `bfk_` key) on protected routes; `make smoke` sends it automatically (override with `SMOKE_AGATE_BEARER` if needed).

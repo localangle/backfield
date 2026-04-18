@@ -157,7 +157,8 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
 
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 1
-        assert int(canon_rows[0].primary_substrate_location_id or 0) == int(locations[0].id or 0)
+        assert canon_rows[0].primary_substrate_location_id is None
+        assert locations[0].stylebook_location_canonical_id is None
         alias_rows = session.exec(select(StylebookLocationAlias)).all()
         assert len(alias_rows) == 1
         assert alias_rows[0].normalized_alias == locations[0].normalized_name

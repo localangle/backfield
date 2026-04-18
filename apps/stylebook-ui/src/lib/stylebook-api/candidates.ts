@@ -5,6 +5,7 @@ export interface Candidate {
   project_id: number
   suggested_name?: string
   suggested_type?: string
+  suggested_formatted_address?: string | null
   status: string
 }
 
@@ -35,6 +36,7 @@ export type ListCandidatesFilterOptions = {
   type_filter?: string
   limit?: number
   offset?: number
+  needs_review?: boolean
 }
 
 export type ListClustersOptions = ListCandidatesFilterOptions & {
@@ -49,6 +51,8 @@ function candidatesFilterParams(options?: ListCandidatesFilterOptions): URLSearc
   if (options.limit !== undefined) params.append("limit", String(options.limit))
   if (options.offset !== undefined) params.append("offset", String(options.offset))
   if (options.type_filter) params.append("type_filter", options.type_filter)
+  if (options.needs_review === true) params.append("needs_review", "true")
+  if (options.needs_review === false) params.append("needs_review", "false")
   return params
 }
 
@@ -84,4 +88,25 @@ export async function listLocationCandidateTypes(
 ): Promise<{ types: string[] }> {
   const params = new URLSearchParams({ project_slug: projectSlug, status })
   return stylebookJsonFetch(`/v1/candidates/types?${params}`)
+}
+
+export type AcceptCandidateBody = {
+  create_new: boolean
+  stylebook_location_id?: number | null
+  name?: string | null
+}
+
+export async function acceptCandidate(
+  projectSlug: string,
+  substrateLocationId: number,
+  body: AcceptCandidateBody,
+): Promise<{ message: string }> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  return stylebookJsonFetch<{ message: string }>(
+    `/v1/candidates/${substrateLocationId}/accept?${params}`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  )
 }

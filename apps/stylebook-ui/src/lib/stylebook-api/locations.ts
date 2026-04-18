@@ -139,7 +139,9 @@ export interface LinkedMention {
   mention_id: number
   article_id: number
   article_headline?: string
-  original_text?: string
+  article_url?: string | null
+  original_text?: string | null
+  description?: string | null
 }
 
 export interface LocationMentionsResponse {

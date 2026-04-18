@@ -7,7 +7,13 @@ from datetime import datetime
 from typing import Any
 
 from backfield_auth.gate import require_project_access
-from backfield_db import BackfieldProject, SubstrateLocation, SubstrateLocationMention
+from backfield_db import (
+    BackfieldProject,
+    SubstrateArticle,
+    SubstrateLocation,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -116,6 +122,35 @@ class PatchLocationBody(BaseModel):
 
 class PatchGeometryBody(BaseModel):
     geometry_json: dict[str, Any]
+
+
+def _first_occurrence_mention_text_by_mention_id(
+    session: Session, mention_ids: list[int]
+) -> dict[int, str]:
+    """First non-suppressed occurrence text per location mention (stable quote for UI)."""
+    if not mention_ids:
+        return {}
+    rows = session.exec(
+        select(SubstrateLocationMentionOccurrence)
+        .where(
+            col(SubstrateLocationMentionOccurrence.location_mention_id).in_(mention_ids),
+            SubstrateLocationMentionOccurrence.suppressed == False,  # noqa: E712
+        )
+        .order_by(
+            col(SubstrateLocationMentionOccurrence.location_mention_id),
+            col(SubstrateLocationMentionOccurrence.occurrence_order).asc().nulls_last(),
+            col(SubstrateLocationMentionOccurrence.id),
+        )
+    ).all()
+    out: dict[int, str] = {}
+    for occ in rows:
+        mid = int(occ.location_mention_id)
+        if mid in out:
+            continue
+        txt = (occ.mention_text or "").strip()
+        if txt:
+            out[mid] = txt
+    return out
 
 
 def _mention_counts(session: Session, location_ids: list[int]) -> dict[int, int]:
@@ -388,6 +423,11 @@ def list_location_mentions(
     project_slug: str = Query(...),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    sort: str | None = Query(
+        None,
+        description="article | created_at (default)",
+    ),
+    sort_direction: str = Query("desc", description="asc or desc"),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> LocationMentionsResponse:
@@ -396,11 +436,73 @@ def list_location_mentions(
     loc = session.get(SubstrateLocation, location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
+
+    base_where: list[ColumnElement[bool]] = [
+        SubstrateLocationMention.location_id == location_id,
+        SubstrateLocationMention.deleted == False,  # noqa: E712
+        SubstrateArticle.project_id == int(proj.id),
+        SubstrateArticle.deleted == False,  # noqa: E712
+    ]
+
+    count_stmt = (
+        select(func.count())
+        .select_from(SubstrateLocationMention)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
+        .where(*base_where)
+    )
+    total = int(session.scalar(count_stmt) or 0)
+
+    descending = sort_direction.strip().lower() != "asc"
+    if sort == "article":
+        headline_sort = col(SubstrateArticle.headline)
+        order_by = headline_sort.desc() if descending else headline_sort.asc()
+    else:
+        ts = col(SubstrateLocationMention.updated_at)
+        order_by = ts.desc() if descending else ts.asc()
+
+    list_stmt = (
+        select(SubstrateLocationMention, SubstrateArticle)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
+        .where(*base_where)
+        .order_by(order_by)
+        .offset(offset)
+        .limit(limit)
+    )
+    pairs = list(session.exec(list_stmt).all())
+    mention_ids = [int(m.id) for m, _ in pairs if m.id is not None]  # type: ignore[union-attr]
+    texts = _first_occurrence_mention_text_by_mention_id(session, mention_ids)
+
+    mentions_out: list[LinkedMention] = []
+    for mention, article in pairs:
+        mid = int(mention.id)  # type: ignore[arg-type]
+        aid = int(article.id)  # type: ignore[arg-type]
+        created = mention.created_at
+        mentions_out.append(
+            LinkedMention(
+                mention_id=mid,
+                article_id=aid,
+                article_headline=str(article.headline),
+                article_url=article.url,
+                original_text=texts.get(mid),
+                description=mention.role_in_story,
+                location_name=str(loc.name),
+                location_type=loc.location_type,
+                formatted_address=loc.formatted_address,
+                geometry_type=loc.geometry_type,
+                geometry_json=loc.geometry_json,
+                has_geometry=bool(loc.geometry_json),
+                cache_id=None,
+                created_at=created.isoformat() if created else None,
+                link_location_cache_id=None,
+                link_location_mention_id=mid,
+            )
+        )
+
     return LocationMentionsResponse(
         canonical_location_id=location_id,
         canonical_name=str(loc.name),
-        mentions=[],
-        total=0,
+        mentions=mentions_out,
+        total=total,
         limit=limit,
         offset=offset,
     )

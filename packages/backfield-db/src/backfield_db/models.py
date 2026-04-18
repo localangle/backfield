@@ -365,6 +365,11 @@ class SubstrateLocation(SQLModel, table=True):
         Index("idx_substrate_location_project_status", "project_id", "status"),
         Index("idx_substrate_location_project_name", "project_id", "normalized_name"),
         Index("idx_substrate_location_project_type", "project_id", "location_type"),
+        Index(
+            "ix_substrate_location_project_canonical",
+            "project_id",
+            "stylebook_location_canonical_id",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -375,6 +380,11 @@ class SubstrateLocation(SQLModel, table=True):
     status: str = Field(
         default="provisional",
         sa_column=Column(Text, nullable=False, server_default="provisional"),
+    )
+    stylebook_location_canonical_id: int | None = Field(
+        default=None,
+        foreign_key="stylebook_location_canonical.id",
+        index=True,
     )
     external_source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     external_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))

@@ -32,7 +32,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 
 - `substrate_article` — project-scoped content item for stateful ingestion. Uses a project-scoped external identity hierarchy with `(project_id, url)` as the fallback uniqueness rule. `source_run_id` stores the executing `agate_run.id` (UUID string) when the row is produced from an Agate worker run.
 - `substrate_image` — images attached to a `substrate_article`.
-- `substrate_location` — durable shared location entity row. Stores normalized naming, provider identity/fingerprint, canonical status fields, and PostGIS geometry.
+- `substrate_location` — durable shared location entity row. Stores normalized naming, provider identity/fingerprint, status fields, PostGIS geometry, and optional **`stylebook_location_canonical_id`** (nullable FK to `stylebook_location_canonical`). **Editorial link:** substrate owns this edge; ingest may materialize canonicals and aliases without setting the FK so rows stay on the **open candidate queue** until a human (or API) accepts a link. Indexes include **`ix_substrate_location_project_canonical`** `(project_id, stylebook_location_canonical_id)` and a Postgres **partial** index on `(project_id)` where the canonical FK is null for queue scans.
 - `substrate_location_mention` — one aggregate article-to-location association per `(article_id, location_id)` with workflow state, provenance, `role_in_story`, primary **`nature`** (PlaceExtract editorial role: `primary`, `secondary`, `subject`, `context`, `person`, `unknown`), and optional **`nature_secondary_tags_json`** for extra roles.
 - `substrate_location_mention_occurrence` — supporting evidence rows for a location mention aggregate (`mention_text`, offsets, labels, provenance). Editorial prose lives on the mention (`role_in_story`, `description` from extraction) — not duplicated here.
 - `substrate_location_cache` — project-scoped dumb cache of external resolution results only. Cache rows are lookup accelerators, not the durable entity identity layer.
@@ -40,7 +40,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 ### Stylebook (`stylebook_*`)
 
 - `stylebook` — org-scoped Stylebook catalog (`organization_id`, `slug`, `name`, `is_default`). Unique `(organization_id, slug)`. At most one **`is_default`** row per organization (partial unique index on Postgres). Migration **`011_stylebook_locations`** inserts a **Default Stylebook** (`slug` `default`) per existing org and sets **`backfield_workspace.stylebook_id`** for all workspaces in that org.
-- `stylebook_location_canonical` — canonical location within a Stylebook; optional **`primary_substrate_location_id`** FK to `substrate_location` for materialized geometry linkage.
+- `stylebook_location_canonical` — canonical location within a Stylebook; optional **`primary_substrate_location_id`** FK to `substrate_location` remains for legacy rows but is **deprecated for new linkage**—do not use it as the identity key for ingest or linking; prefer **`substrate_location.stylebook_location_canonical_id`** instead.
 - `stylebook_location_alias` — alias strings keyed to a canonical row (`normalized_alias`, **`provenance`**, optional suppression). Unique `(location_canonical_id, normalized_alias)`.
 
 ### Agate execution (`agate_*`)
@@ -62,6 +62,8 @@ Revision **`007_starter_flow_add_db_output`** rewrites stored **Starter flow** `
 Revision **`008_drop_occurrence_context_text`** drops **`context_text`** from the location mention occurrence table (redundant with extraction `description` / mention fields). Revision **`009_rename_substrate_tables`** renames substrate tables and related indexes/constraints from `backfield_*` to **`substrate_*`** so `backfield_*` stays reserved for tenancy and infrastructure.
 
 Revision **`011_stylebook_locations`** adds **`stylebook`**, **`stylebook_location_canonical`**, **`stylebook_location_alias`**, and **`backfield_workspace.stylebook_id`** with per-org default Stylebook backfill.
+
+Revision **`012_substrate_sb_canon_fk`** adds **`substrate_location.stylebook_location_canonical_id`** (nullable FK, `ON DELETE SET NULL`) and supporting indexes for workspace-scoped candidate queues and accepts.
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 

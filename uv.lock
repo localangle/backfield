@@ -2144,6 +2144,7 @@ source = { editable = "apps/stylebook-api" }
 dependencies = [
     { name = "backfield-auth" },
     { name = "backfield-db" },
+    { name = "backfield-stylebook" },
     { name = "fastapi" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -2152,6 +2153,7 @@ dependencies = [
 requires-dist = [
     { name = "backfield-auth", editable = "packages/backfield-auth" },
     { name = "backfield-db", editable = "packages/backfield-db" },
+    { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]

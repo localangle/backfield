@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   deleteLocation,
@@ -68,17 +68,19 @@ export default function LocationDetail() {
     void loadLocation(parseInt(id, 10), projectSlug)
   }, [id, projectSlug])
 
+  const loadMentions = useCallback(async (locId: number, slug: string) => {
+    try {
+      const m = await getLocationMentions(locId, slug)
+      setMentions(m.mentions)
+    } catch {
+      setMentions([])
+    }
+  }, [])
+
   useEffect(() => {
     if (!id || !projectSlug) return
-    void (async () => {
-      try {
-        const m = await getLocationMentions(parseInt(id, 10), projectSlug)
-        setMentions(m.mentions)
-      } catch {
-        setMentions([])
-      }
-    })()
-  }, [id, projectSlug])
+    void loadMentions(parseInt(id, 10), projectSlug)
+  }, [id, projectSlug, loadMentions])
 
   const saveEdits = async () => {
     if (!location || !id || !projectSlug) return
@@ -96,6 +98,7 @@ export default function LocationDetail() {
       setLocation(updated)
       setEditing(false)
       await loadLocation(locId, projectSlug)
+      await loadMentions(locId, projectSlug)
     } catch (e) {
       console.error(e)
       alert(e instanceof Error ? e.message : "Save failed")
@@ -199,24 +202,44 @@ export default function LocationDetail() {
       <Card>
         <CardHeader>
           <CardTitle>Article mentions</CardTitle>
-          <CardDescription>Linked articles for this canonical location</CardDescription>
+          <CardDescription>
+            Articles linked to this location via substrate location mentions (PlaceExtract / geocode
+            pipeline).
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {mentions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No mentions returned for this project yet.</p>
+            <p className="text-sm text-muted-foreground">No article mentions for this location yet.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Article</TableHead>
-                  <TableHead>Text</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Quoted text</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {mentions.map((m) => (
                   <TableRow key={m.mention_id}>
-                    <TableCell>{m.article_id}</TableCell>
-                    <TableCell>{m.original_text ?? "—"}</TableCell>
+                    <TableCell className="max-w-xs">
+                      {m.article_url ? (
+                        <a
+                          href={m.article_url}
+                          className="font-medium text-primary hover:underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {m.article_headline ?? `Article ${m.article_id}`}
+                        </a>
+                      ) : (
+                        <span className="font-medium">{m.article_headline ?? `Article ${m.article_id}`}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground whitespace-nowrap">
+                      {m.description ?? "—"}
+                    </TableCell>
+                    <TableCell className="max-w-md">{m.original_text ?? "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

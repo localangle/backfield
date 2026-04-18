@@ -38,6 +38,13 @@ services:
     environment:
       <<: *shared-env
       UI_ORIGIN: http://localhost:5175
+      # Same DB as agate-api/core-api; inside Compose use service hostname `postgres:5432`
+      # (not localhost:5433, which is only valid from the host machine).
+      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   core-api:
     build:

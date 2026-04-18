@@ -40,7 +40,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
   - Owns the flowbuilder UI, API client, and browser-facing interaction patterns.
   - Consumes node metadata and synced node UI generated from `backfield-core`.
 - `apps/stylebook-api` (`stylebook_api` Python package to avoid clashing with Agate’s `api` on `PYTHONPATH`)
-  - Owns Stylebook HTTP routes: org Stylebook catalog (`/v1/organizations/{org_id}/stylebooks`), starter **`/v1/geocode/resolve`**, and health.
+  - Owns Stylebook HTTP routes: org Stylebook catalog (`/v1/organizations/{org_id}/stylebooks`), starter **`/v1/geocode/resolve`**, substrate-backed **location candidate** list/accept under **`/v1/candidates*`** (project slug + workspace-resolved Stylebook), and health.
   - Uses the same **`resolve_auth`** pattern as Agate (session cookie, service Bearer, `bfk_` project key) via `backfield-auth` + `backfield-db` sessions.
   - Editorial/canonical HTTP stays here; **worker** materializes `stylebook_*` rows during DBOutput using **`packages/backfield-stylebook`** (no `agate-runtime` → DB dependency).
 - `apps/stylebook-ui`
@@ -86,7 +86,7 @@ flowchart LR
 - `GraphSpec` is the canonical stored graph shape.
 - Worker-persisted `execute_graph` results use **stable snake_case keys** per node derived from node types (e.g. `geocode_agent`, `json_output`, `stylebook_output`), not internal React Flow ids. The UI resolves a node’s slice by recomputing that key from the graph spec plus the same ordering rules as the executor (legacy payloads may still include `__outputKeysByNodeId` and older human-readable keys).
 - Agate execution tables use the `agate_` prefix. Shared **infrastructure** tables use `backfield_` (e.g. `backfield_project`). The shared **substrate** uses `substrate_*` (e.g. `substrate_location`, `substrate_article`).
-- `substrate_location` is the durable shared location entity table (still **`project_id`**-scoped). **`stylebook_*`** tables layer editorial canonicalization and alias management; effective Stylebook for a run resolves **`project → workspace → workspace.stylebook_id`**.
+- `substrate_location` is the durable shared location entity table (still **`project_id`**-scoped) and may reference a **`stylebook_location_canonical`** row via **`stylebook_location_canonical_id`** when editorially linked. **`stylebook_*`** tables layer canonicalization and alias management; effective Stylebook for a project resolves **`project → workspace → workspace.stylebook_id`** (see `packages/backfield-stylebook`).
 - Celery queue and worker name use `agate`.
 - Node metadata and optional node UI live in `packages/backfield-core/src/backfield_core/nodes`.
 - `apps/agate-ui/scripts/sync-nodes.js` copies node UI and generates the frontend registry.

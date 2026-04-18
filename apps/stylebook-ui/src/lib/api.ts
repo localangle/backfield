@@ -19,16 +19,18 @@ export {
   updateLocationGeometry,
 } from "@/lib/stylebook-api/locations"
 export {
+  type AcceptCandidateBody,
   type Candidate,
   type CandidateCluster,
   type ListCandidatesFilterOptions,
   type ListClustersOptions,
   type PaginatedCandidatesResponse,
   type PaginatedClustersResponse,
+  acceptCandidate,
   listCandidates,
   listClusters,
   listLocationCandidateTypes,
-} from "@/lib/stylebook-api/candidates-stub"
+} from "@/lib/stylebook-api/candidates"
 export {
   type AgentType,
   type EntityTypeStats,
