@@ -71,6 +71,8 @@ class LocationResponse(BaseModel):
     updated_at: datetime
     mention_count: int = 0
     notes: str | None = None
+    canonical_link_status: str | None = None
+    canonical_review_reasons_json: list[Any] | dict[str, Any] | None = None
 
     @classmethod
     def from_row(cls, row: SubstrateLocation, mention_count: int = 0) -> LocationResponse:
@@ -89,6 +91,8 @@ class LocationResponse(BaseModel):
             updated_at=row.updated_at,
             mention_count=mention_count,
             notes=None,
+            canonical_link_status=str(row.canonical_link_status),
+            canonical_review_reasons_json=row.canonical_review_reasons_json,
         )
 
 

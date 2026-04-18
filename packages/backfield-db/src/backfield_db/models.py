@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 from uuid import uuid4
 
 from geoalchemy2 import Geometry
@@ -370,6 +371,11 @@ class SubstrateLocation(SQLModel, table=True):
             "project_id",
             "stylebook_location_canonical_id",
         ),
+        Index(
+            "ix_substrate_location_project_link_status",
+            "project_id",
+            "canonical_link_status",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -385,6 +391,14 @@ class SubstrateLocation(SQLModel, table=True):
         default=None,
         foreign_key="stylebook_location_canonical.id",
         index=True,
+    )
+    canonical_link_status: str = Field(
+        default="unlinked",
+        sa_column=Column(Text, nullable=False, server_default="unlinked"),
+    )
+    canonical_review_reasons_json: list[Any] | dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
     )
     external_source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     external_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))

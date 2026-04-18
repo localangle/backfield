@@ -1,7 +1,16 @@
 from __future__ import annotations
 
-from backfield_db import AgateRun, BackfieldOrganization, BackfieldProject, BackfieldWorkspace
+from backfield_db import (
+    AgateRun,
+    BackfieldOrganization,
+    BackfieldProject,
+    BackfieldWorkspace,
+    StylebookLocationAlias,
+    StylebookLocationCanonical,
+)
+from backfield_stylebook import assert_canonical_link_invariant
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
+from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from sqlmodel import Session, SQLModel, col, create_engine, select
 from worker.substrate_persistence import _find_mention_span, persist_from_consolidated
 
@@ -138,8 +147,6 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
 
     with Session(engine) as session:
         from backfield_db import (
-            StylebookLocationAlias,
-            StylebookLocationCanonical,
             SubstrateArticle,
             SubstrateLocation,
             SubstrateLocationMention,
@@ -158,7 +165,10 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 1
         assert canon_rows[0].primary_substrate_location_id is None
-        assert locations[0].stylebook_location_canonical_id is None
+        assert locations[0].stylebook_location_canonical_id is not None
+        assert int(locations[0].stylebook_location_canonical_id) == int(canon_rows[0].id)  # type: ignore[arg-type]
+        assert locations[0].canonical_link_status == CANONICAL_LINK_LINKED
+        assert_canonical_link_invariant(locations[0])
         alias_rows = session.exec(select(StylebookLocationAlias)).all()
         assert len(alias_rows) == 1
         assert alias_rows[0].normalized_alias == locations[0].normalized_name
@@ -245,3 +255,155 @@ def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
         assert len(occ) == 2
         assert sum(1 for row in occ if row.suppressed) == 1
         assert sum(1 for row in occ if not row.suppressed) == 1
+
+
+def test_persist_defers_address_type_without_materializing_canonical() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-addr", project_slug="proj-addr")
+        session.add(AgateRun(id="run-addr", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Ship to 123 Main St.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "addr:1",
+                            "original_text": "123 Main St",
+                            "location": "123 Main St, Chicago, IL",
+                            "type": "address",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:addr",
+                                    "formatted_address": "123 Main St, Chicago, IL",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-addr",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].canonical_link_status == CANONICAL_LINK_PENDING
+        assert locs[0].stylebook_location_canonical_id is None
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 0
+
+
+def test_persist_links_preseeded_canonical_alias_without_second_canonical() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-link", project_slug="proj-link")
+        session.add(AgateRun(id="run-link", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        proj = session.get(BackfieldProject, project_id)
+        assert proj is not None
+        ws = session.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = int(canon.id)  # type: ignore[arg-type]
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="seed",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        consolidated = {
+            "text": "Hello Chicago.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:1",
+                            "original_text": "Chicago",
+                            "description": "Mentioned as the setting for the story.",
+                            "role_in_story": "Setting",
+                            "nature": "primary",
+                            "nature_secondary_tags": ["context"],
+                            "location": "Chicago, IL",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:other",
+                                    "formatted_address": "Chicago, IL, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-link",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 1
+        assert int(canon_rows[0].id) == cid  # type: ignore[arg-type]
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert int(locs[0].stylebook_location_canonical_id or 0) == cid
+        assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
+        assert_canonical_link_invariant(locs[0])

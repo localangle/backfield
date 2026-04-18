@@ -13,6 +13,8 @@ export interface Location {
   created_at: string
   updated_at: string
   mention_count?: number
+  canonical_link_status?: string
+  canonical_review_reasons_json?: unknown
 }
 
 export interface PaginatedLocationResponse {

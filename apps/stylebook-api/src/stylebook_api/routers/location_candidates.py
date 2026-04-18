@@ -11,6 +11,7 @@ from backfield_db import (
     SubstrateLocation,
     SubstrateLocationMention,
 )
+from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -60,6 +61,7 @@ def _open_candidate_filters(
     filters: list[Any] = [
         SubstrateLocation.project_id == project_id,
         col(SubstrateLocation.stylebook_location_canonical_id).is_(None),
+        SubstrateLocation.canonical_link_status == CANONICAL_LINK_PENDING,
     ]
     if needs_review is True:
         filters.append(
@@ -232,6 +234,11 @@ def accept_candidate(
         raise HTTPException(status_code=404, detail="Substrate location not found")
     if loc.stylebook_location_canonical_id is not None:
         raise HTTPException(status_code=409, detail="Location already linked to a canonical")
+    if loc.canonical_link_status != CANONICAL_LINK_PENDING:
+        raise HTTPException(
+            status_code=400,
+            detail="Location is not in the canonical review queue (status must be pending)",
+        )
 
     if body.create_new:
         label = (body.name or loc.name or "").strip()
@@ -262,6 +269,8 @@ def accept_candidate(
             )
         loc.stylebook_location_canonical_id = int(canon.id)  # type: ignore[arg-type]
 
+    loc.canonical_link_status = CANONICAL_LINK_LINKED
+    loc.canonical_review_reasons_json = None
     session.add(loc)
     session.commit()
     return {"message": "linked"}

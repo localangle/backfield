@@ -16,6 +16,11 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_stylebook.canonical_link import (
+    CANONICAL_LINK_LINKED,
+    CANONICAL_LINK_PENDING,
+    CANONICAL_LINK_UNLINKED,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -193,6 +198,7 @@ def test_candidates_lists_unlinked_substrate(
             location_type="city",
             identity_fingerprint="fp-chicago-1",
             stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
         )
         s.add(loc)
         s.commit()
@@ -221,6 +227,7 @@ def test_candidates_needs_review_facet(
             location_type="city",
             identity_fingerprint="fp-review-1",
             stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
         )
         s.add(loc)
         s.flush()
@@ -281,6 +288,7 @@ def test_accept_candidate_create_new(
             location_type="city",
             identity_fingerprint="fp-new-1",
             stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
         )
         s.add(loc)
         s.commit()
@@ -299,6 +307,7 @@ def test_accept_candidate_create_new(
         row = s.get(SubstrateLocation, sid)
         assert row is not None
         assert row.stylebook_location_canonical_id is not None
+        assert row.canonical_link_status == CANONICAL_LINK_LINKED
         canon = s.get(StylebookLocationCanonical, int(row.stylebook_location_canonical_id))
         assert canon is not None
         assert canon.label == "Newplace Canon"
@@ -331,6 +340,7 @@ def test_accept_candidate_link_existing_canonical(
             location_type="city",
             identity_fingerprint="fp-link-1",
             stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
         )
         s.add(loc)
         s.commit()
@@ -348,6 +358,36 @@ def test_accept_candidate_link_existing_canonical(
         row = s.get(SubstrateLocation, sid)
         assert row is not None
         assert int(row.stylebook_location_canonical_id or 0) == cid
+        assert row.canonical_link_status == CANONICAL_LINK_LINKED
+
+
+def test_accept_rejects_non_pending_candidate(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Stale",
+            normalized_name="stale",
+            location_type="city",
+            identity_fingerprint="fp-stale-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_UNLINKED,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.post(
+        f"/v1/candidates/{sid}/accept?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"create_new": True, "name": "X"},
+    )
+    assert r.status_code == 400
 
 
 def test_list_location_mentions_includes_article_and_occurrence_quote(

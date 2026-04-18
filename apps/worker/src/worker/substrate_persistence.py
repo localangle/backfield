@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_stylebook.locations import sync_substrate_location_into_stylebook
+from backfield_stylebook.canonical_link import CANONICAL_LINK_UNLINKED
+from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+from backfield_stylebook.locations import (
+    apply_canonical_persist_plan,
+    refresh_aliases_for_linked_location,
+)
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from sqlmodel import Session
 
@@ -55,13 +60,32 @@ def persist_from_consolidated(
         )
         if loc is None or article.id is None:
             continue
-        if stylebook_id is not None:
-            sync_substrate_location_into_stylebook(
+        if stylebook_id is not None and loc.stylebook_location_canonical_id is not None:
+            refresh_aliases_for_linked_location(
                 session,
                 stylebook_id=stylebook_id,
                 location=loc,
                 provenance="substrate_ingest",
             )
+        elif stylebook_id is not None:
+            plan = decide_canonical_persist_plan(
+                session,
+                stylebook_id=stylebook_id,
+                places_bucket=bucket,
+                location=loc,
+                entry=entry,
+            )
+            apply_canonical_persist_plan(
+                session,
+                stylebook_id=stylebook_id,
+                location=loc,
+                plan=plan,
+                places_bucket=bucket,
+                provenance="substrate_ingest",
+            )
+        elif loc.stylebook_location_canonical_id is None:
+            loc.canonical_link_status = CANONICAL_LINK_UNLINKED
+            session.add(loc)
         _upsert_mention_and_occurrence(
             session,
             article_id=int(article.id),
