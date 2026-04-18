@@ -40,8 +40,8 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 ### Stylebook (`stylebook_*`)
 
 - `stylebook` — org-scoped Stylebook catalog (`organization_id`, `slug`, `name`, `is_default`). Unique `(organization_id, slug)`. At most one **`is_default`** row per organization (partial unique index on Postgres). Migration **`011_stylebook_locations`** inserts a **Default Stylebook** (`slug` `default`) per existing org and sets **`backfield_workspace.stylebook_id`** for all workspaces in that org.
-- `stylebook_location_canonical` — canonical location within a Stylebook; optional **`primary_substrate_location_id`** FK to `substrate_location` remains for legacy rows but is **deprecated for new linkage**—do not use it as the identity key for ingest or linking; prefer **`substrate_location.stylebook_location_canonical_id`** instead.
-- `stylebook_location_alias` — alias strings keyed to a canonical row (`normalized_alias`, **`provenance`**, optional suppression). Unique `(location_canonical_id, normalized_alias)`.
+- `stylebook_location_canonical` — canonical location within a Stylebook; optional **`primary_substrate_location_id`** FK to `substrate_location` remains for legacy rows but is **deprecated for new linkage**—do not use it as the identity key for ingest or linking; prefer **`substrate_location.stylebook_location_canonical_id`** instead. Optional **`geometry_json`**, **`geometry`**, and **`geometry_type`** mirror the substrate pattern so manual canonicals can participate in proximity-aware scoring when populated.
+- `stylebook_location_alias` — alias strings keyed to a canonical row (`normalized_alias`, **`provenance`**, optional suppression). Unique `(location_canonical_id, normalized_alias)`. On Postgres, revision **`014_pg_trgm_canon_geom`** adds a **GIN `pg_trgm`** index on **`normalized_alias`** for fuzzy recall (requires **`CREATE EXTENSION IF NOT EXISTS pg_trgm`** in that migration).
 
 ### Agate execution (`agate_*`)
 
@@ -66,6 +66,8 @@ Revision **`011_stylebook_locations`** adds **`stylebook`**, **`stylebook_locati
 Revision **`012_substrate_sb_canon_fk`** adds **`substrate_location.stylebook_location_canonical_id`** (nullable FK, `ON DELETE SET NULL`) and supporting indexes for workspace-scoped candidate queues and accepts.
 
 Revision **`013_substrate_slc_status`** adds **`canonical_link_status`** (default `unlinked`) and **`canonical_review_reasons_json`**, backfills **`linked`** where a canonical FK was already set, and adds queue-oriented indexes.
+
+Revision **`014_pg_trgm_canon_geom`** enables **`pg_trgm`** on Postgres (extension creation is not caught—migration fails if the extension cannot be installed), adds the trigram index on **`stylebook_location_alias.normalized_alias`**, and adds optional geometry columns on **`stylebook_location_canonical`**. Non-Postgres upgrades skip the extension and trigram index; **`geometry`** is stored as plain text where PostGIS is not used.
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 

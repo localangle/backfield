@@ -119,11 +119,15 @@ def materialize_new_canonical_and_link(
     """Create a new canonical, set FK + ``linked``, upsert alias."""
     if location.id is None:
         return
+    gj = location.geometry_json
     canon = StylebookLocationCanonical(
         stylebook_id=stylebook_id,
         label=str(location.name),
         primary_substrate_location_id=None,
         status="active",
+        geometry_json=dict(gj) if isinstance(gj, dict) else gj,
+        geometry_type=location.geometry_type,
+        geometry=location.geometry,
     )
     session.add(canon)
     session.flush()
@@ -153,9 +157,12 @@ def apply_canonical_persist_plan(
     """Apply policy outcome: defer (pending, no Stylebook rows), link, or materialize."""
     if plan.decision == CanonicalPersistDecision.DEFER:
         location.canonical_link_status = CANONICAL_LINK_PENDING
-        location.canonical_review_reasons_json = defer_reason_payload(
-            places_bucket=places_bucket, location=location
-        )
+        if plan.defer_review_reasons is not None:
+            location.canonical_review_reasons_json = [dict(r) for r in plan.defer_review_reasons]
+        else:
+            location.canonical_review_reasons_json = defer_reason_payload(
+                places_bucket=places_bucket, location=location
+            )
         session.add(location)
         return
     if plan.decision == CanonicalPersistDecision.LINK_EXISTING:

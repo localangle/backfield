@@ -15,6 +15,7 @@ from sqlmodel import Session, SQLModel, col, create_engine, select
 from worker.substrate_persistence import _find_mention_span, persist_from_consolidated
 
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
+WGP_POINT = {"type": "Point", "coordinates": [-87.703, 41.914]}
 
 
 def test_find_mention_span_strips_trailing_punctuation_not_in_article() -> None:
@@ -391,6 +392,97 @@ def test_persist_links_preseeded_canonical_alias_without_second_canonical() -> N
             project_id=project_id,
             graph_id="graph-1",
             run_id="run-link",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        canon_rows = session.exec(select(StylebookLocationCanonical)).all()
+        assert len(canon_rows) == 1
+        assert int(canon_rows[0].id) == cid  # type: ignore[arg-type]
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert int(locs[0].stylebook_location_canonical_id or 0) == cid
+        assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
+        assert_canonical_link_invariant(locs[0])
+
+
+def test_persist_fuzzy_links_preseeded_canonical_when_alias_normalization_differs() -> None:
+    """Exact ``normalized_alias`` misses; SQLite recall + difflib score should autolink."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-fuzzy", project_slug="proj-fuzzy")
+        session.add(AgateRun(id="run-fuzzy", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        proj = session.get(BackfieldProject, project_id)
+        assert proj is not None
+        ws = session.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="West Garfield Park, Chicago, IL",
+            primary_substrate_location_id=None,
+            status="active",
+            geometry_json=WGP_POINT,
+            geometry_type="Point",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = int(canon.id)  # type: ignore[arg-type]
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="West Garfield Park Chicago IL",
+                normalized_alias="west garfield park chicago il",
+                provenance="seed",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        consolidated = {
+            "text": "News in West Garfield Park.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "nhood:1",
+                            "original_text": "West Garfield Park",
+                            "location": "West Garfield Park, Chicago, IL",
+                            "type": "neighborhood",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:wgp",
+                                    "formatted_address": "West Garfield Park, Chicago, IL, USA",
+                                    "geometry": WGP_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-fuzzy",
             consolidated=consolidated,
         )
         session.commit()

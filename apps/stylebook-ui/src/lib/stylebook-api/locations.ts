@@ -127,6 +127,17 @@ export async function updateLocationGeometry(
   )
 }
 
+export async function updateCanonicalLocationGeometry(
+  canonicalId: number,
+  projectSlug: string,
+  geometryJson: Record<string, unknown>,
+): Promise<{ message: string; id: number }> {
+  return stylebookJsonFetch<{ message: string; id: number }>(
+    `/v1/canonical-locations/${canonicalId}/geometry?project_slug=${encodeURIComponent(projectSlug)}`,
+    { method: "PATCH", body: JSON.stringify({ geometry_json: geometryJson }) },
+  )
+}
+
 export async function deleteLocation(
   locationId: number,
   projectSlug: string,

@@ -43,6 +43,7 @@
   - `tests/core_api/` — `core-api` HTTP tests and core-api-only bootstrap/env behavior.
   - `tests/agate_api/` — Agate API `TestClient` tests.
   - `tests/stylebook_api/` — Stylebook API tests (`stylebook_api` app). **`POST /v1/geocode/resolve`** requires auth (service Bearer, session, or `bfk_`), matching production `resolve_auth` behavior.
+  - `tests/stylebook/` — Stylebook-domain pure tests (for example canonical fuzzy-match scoring without Postgres). **Trigram retrieval** against a live Postgres DB is covered by running **`make migrate`** on Compose and exercising ingest/worker paths locally; CI SQLite runs use the dialect fallback only.
   - `tests/contracts/` — cross-cutting structural checks (schema prefixes, indexes, shared runtime contracts) that are not tied to a single HTTP app.
   - `tests/smoke/` — **live-stack** golden-path script (`golden_path_stack.py`), invoked by `make smoke` (not part of `make test` / pytest collection).
 - Shared pytest defaults for these tests live in `tests/conftest.py` at the repo `tests/` root.

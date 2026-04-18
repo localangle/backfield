@@ -215,6 +215,7 @@ class AcceptCandidateBody(BaseModel):
     create_new: bool = False
     stylebook_location_id: int | None = None
     name: str | None = None
+    geometry_json: dict[str, Any] | None = None
 
 
 @router.post("/candidates/{substrate_location_id}/accept")
@@ -244,11 +245,14 @@ def accept_candidate(
         label = (body.name or loc.name or "").strip()
         if not label:
             raise HTTPException(status_code=400, detail="name is required when create_new is true")
+        gj = body.geometry_json
         canon = StylebookLocationCanonical(
             stylebook_id=stylebook_id,
             label=label,
             primary_substrate_location_id=None,
             status="active",
+            geometry_json=dict(gj) if isinstance(gj, dict) else gj,
+            geometry_type=(gj or {}).get("type") if isinstance(gj, dict) else None,
         )
         session.add(canon)
         session.flush()

@@ -94,6 +94,7 @@ export type AcceptCandidateBody = {
   create_new: boolean
   stylebook_location_id?: number | null
   name?: string | null
+  geometry_json?: Record<string, unknown> | null
 }
 
 export async function acceptCandidate(

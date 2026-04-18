@@ -9,6 +9,19 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, select
 
+from backfield_stylebook.canonical_match_score import (
+    AUTOLINK_MIN_SCORE,
+    RECALL_MIN_SCORE,
+    CanonicalMatchFeatures,
+    SubstrateMatchInput,
+    classify_recall_score,
+    combined_score,
+)
+from backfield_stylebook.canonical_retrieval import (
+    load_canonical_match_features,
+    retrieve_candidate_canonical_ids,
+)
+
 
 class CanonicalPersistDecision(StrEnum):
     DEFER = "defer"
@@ -22,6 +35,9 @@ class CanonicalPersistPlan:
     """When ``LINK_EXISTING``, the canonical row id to attach."""
 
     existing_canonical_id: int | None = None
+    """Optional ``DEFER`` payload for ``canonical_review_reasons_json`` (fuzzy ambiguous path)."""
+
+    defer_review_reasons: tuple[dict[str, Any], ...] | None = None
 
 
 def find_existing_canonical_id_by_alias(
@@ -94,6 +110,58 @@ def decide_canonical_persist_plan(
             decision=CanonicalPersistDecision.LINK_EXISTING,
             existing_canonical_id=cid,
         )
+
+    recall = retrieve_candidate_canonical_ids(
+        session,
+        stylebook_id=stylebook_id,
+        query_text=str(location.name),
+        normalized_query=str(location.normalized_name),
+    )
+    if recall:
+        cids = [cid for cid, _ in recall]
+        bundles = load_canonical_match_features(session, canonical_ids=cids)
+        substrate = SubstrateMatchInput(
+            name=str(location.name),
+            normalized_name=str(location.normalized_name),
+            geometry_json=location.geometry_json,
+        )
+        best_id: int | None = None
+        best_score = 0.0
+        for canon_id, hint in recall:
+            row = bundles.get(canon_id)
+            if row is None:
+                continue
+            canon, alias_tup = row
+            feat = CanonicalMatchFeatures(
+                canonical_id=canon_id,
+                label=str(canon.label),
+                normalized_aliases=alias_tup,
+                geometry_json=canon.geometry_json,
+                retrieval_string_hint=hint,
+            )
+            sc = combined_score(substrate, feat)
+            if sc >= best_score:
+                best_score = sc
+                best_id = canon_id
+        tier = classify_recall_score(best_score)
+        if tier == "autolink" and best_id is not None:
+            return CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.LINK_EXISTING,
+                existing_canonical_id=int(best_id),
+            )
+        if tier == "ambiguous" and best_id is not None:
+            return CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.DEFER,
+                defer_review_reasons=(
+                    {
+                        "code": "ambiguous_canonical_match",
+                        "best_canonical_id": int(best_id),
+                        "best_score": float(best_score),
+                        "autolink_min_score": float(AUTOLINK_MIN_SCORE),
+                        "recall_min_score": float(RECALL_MIN_SCORE),
+                    },
+                ),
+            )
 
     if _should_materialize_new(location):
         return CanonicalPersistPlan(decision=CanonicalPersistDecision.MATERIALIZE_NEW)

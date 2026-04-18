@@ -9,11 +9,13 @@ from typing import Any
 from backfield_auth.gate import require_project_access
 from backfield_db import (
     BackfieldProject,
+    StylebookLocationCanonical,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -126,6 +128,17 @@ class PatchLocationBody(BaseModel):
 
 class PatchGeometryBody(BaseModel):
     geometry_json: dict[str, Any]
+
+
+class PatchCanonicalGeometryBody(BaseModel):
+    geometry_json: dict[str, Any]
+
+
+def _require_stylebook_id(session: Session, project: BackfieldProject) -> int:
+    try:
+        return resolve_stylebook_id_for_project_id(session, int(project.id))
+    except LookupError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 def _first_occurrence_mention_text_by_mention_id(
@@ -367,6 +380,28 @@ def patch_location_geometry(
     session.refresh(loc)
     mc = _mention_counts(session, [location_id])
     return LocationResponse.from_row(loc, mc.get(location_id, 0))
+
+
+@router.patch("/canonical-locations/{canonical_id}/geometry")
+def patch_canonical_location_geometry(
+    canonical_id: int,
+    body: PatchCanonicalGeometryBody,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> dict[str, Any]:
+    """Optional GeoJSON pin on a Stylebook canonical (proximity scoring)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    stylebook_id = _require_stylebook_id(session, proj)
+    canon = session.get(StylebookLocationCanonical, canonical_id)
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
+        raise HTTPException(status_code=404, detail="Canonical location not found")
+    canon.geometry_json = body.geometry_json
+    canon.geometry_type = body.geometry_json.get("type") if body.geometry_json else None
+    session.add(canon)
+    session.commit()
+    return {"message": "updated", "id": int(canon.id)}  # type: ignore[arg-type]
 
 
 @router.delete("/locations/{location_id}")

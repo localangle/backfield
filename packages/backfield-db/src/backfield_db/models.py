@@ -175,6 +175,8 @@ class Stylebook(SQLModel, table=True):
 class StylebookLocationCanonical(SQLModel, table=True):
     """Canonical location row within a Stylebook."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     __tablename__ = "stylebook_location_canonical"
 
     id: int | None = Field(default=None, primary_key=True)
@@ -188,6 +190,18 @@ class StylebookLocationCanonical(SQLModel, table=True):
     status: str = Field(
         default="active",
         sa_column=Column(Text, nullable=False, server_default="active"),
+    )
+    geometry: object | None = Field(
+        default=None,
+        sa_column=Column(_PostgresGeometry(), nullable=True),
+    )
+    geometry_type: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True, index=True),
+    )
+    geometry_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
     )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
