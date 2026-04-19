@@ -111,3 +111,26 @@ export async function acceptCandidate(
     },
   )
 }
+
+export interface SuggestedCanonicalItem {
+  canonical_id: number
+  label: string
+}
+
+export interface SuggestedCanonicalsResponse {
+  suggestions: SuggestedCanonicalItem[]
+}
+
+export async function getSuggestedCanonicals(
+  projectSlug: string,
+  substrateLocationId: number,
+  limit: number = 24,
+): Promise<SuggestedCanonicalsResponse> {
+  const params = new URLSearchParams({
+    project_slug: projectSlug,
+    limit: String(limit),
+  })
+  return stylebookJsonFetch<SuggestedCanonicalsResponse>(
+    `/v1/candidates/${substrateLocationId}/suggested-canonicals?${params}`,
+  )
+}

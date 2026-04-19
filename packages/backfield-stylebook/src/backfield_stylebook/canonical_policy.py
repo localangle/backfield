@@ -161,6 +161,56 @@ def _should_materialize_new_strict(location: SubstrateLocation) -> bool:
     return True
 
 
+def rank_scored_canonical_recall_matches(
+    session: Session,
+    *,
+    location: SubstrateLocation,
+    recall: list[tuple[int, str]],
+) -> list[tuple[int, str, float, int]]:
+    """Score each recalled canonical; return best-first rows.
+
+    Each tuple is ``(canonical_id, label, score, recall_index)``. Tie-break on equal
+    ``score``: higher ``recall_index`` wins, matching fuzzy ``best_id`` selection in
+    :func:`decide_canonical_persist_plan`.
+    """
+    if not recall:
+        return []
+    cids = [cid for cid, _ in recall]
+    bundles = load_canonical_match_features(session, canonical_ids=cids)
+    substrate = SubstrateMatchInput(
+        name=str(location.name),
+        normalized_name=str(location.normalized_name),
+        geometry_json=location.geometry_json,
+        formatted_address=location.formatted_address,
+    )
+    rows: list[tuple[int, int, str, float]] = []
+    for recall_index, (canon_id, hint) in enumerate(recall):
+        row = bundles.get(canon_id)
+        if row is None:
+            continue
+        canon, alias_tup = row
+        feat = CanonicalMatchFeatures(
+            canonical_id=canon_id,
+            label=str(canon.label),
+            normalized_aliases=alias_tup,
+            geometry_json=canon.geometry_json,
+            retrieval_string_hint=hint,
+        )
+        sc = float(
+            policy_match_score(
+                substrate,
+                feat,
+                substrate_location_type=location.location_type,
+            )
+        )
+        gate_lt = _should_apply_head_anchor_gate(location.location_type)
+        if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
+            sc = min(sc, RECALL_MIN_SCORE - 0.001)
+        rows.append((recall_index, int(canon_id), str(canon.label), sc))
+    rows.sort(key=lambda r: (-r[3], -r[0]))
+    return [(r[1], r[2], r[3], r[0]) for r in rows]
+
+
 def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> bool:
     """After exact match + fuzzy tiers: whether to create a new canonical.
 
@@ -227,41 +277,11 @@ def decide_canonical_persist_plan(
     recall_canonical_ids: tuple[int, ...] = ()
     if recall:
         recall_canonical_ids = tuple(int(cid) for cid, _ in recall)
-        cids = [cid for cid, _ in recall]
-        bundles = load_canonical_match_features(session, canonical_ids=cids)
-        substrate = SubstrateMatchInput(
-            name=str(location.name),
-            normalized_name=str(location.normalized_name),
-            geometry_json=location.geometry_json,
-            formatted_address=location.formatted_address,
+        ranked = rank_scored_canonical_recall_matches(
+            session, location=location, recall=list(recall)
         )
-        for canon_id, hint in recall:
-            row = bundles.get(canon_id)
-            if row is None:
-                continue
-            canon, alias_tup = row
-            feat = CanonicalMatchFeatures(
-                canonical_id=canon_id,
-                label=str(canon.label),
-                normalized_aliases=alias_tup,
-                geometry_json=canon.geometry_json,
-                retrieval_string_hint=hint,
-            )
-            sc = float(
-                policy_match_score(
-                    substrate,
-                    feat,
-                    substrate_location_type=location.location_type,
-                )
-            )
-            gate_lt = _should_apply_head_anchor_gate(location.location_type)
-            if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
-                # Drop below ``RECALL_MIN_SCORE`` so a gated miss cannot dominate the ambiguous tier
-                # and block auto-materialize when no acceptable autolink exists.
-                sc = min(sc, RECALL_MIN_SCORE - 0.001)
-            if sc >= best_score:
-                best_score = sc
-                best_id = canon_id
+        if ranked:
+            best_id, best_score = ranked[0][0], ranked[0][2]
         tier = classify_recall_score(best_score)
         if tier == "autolink" and best_id is not None:
             return CanonicalPersistPlan(

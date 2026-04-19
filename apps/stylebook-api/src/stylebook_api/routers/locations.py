@@ -17,6 +17,10 @@ from backfield_db import (
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.locations import create_standalone_canonical
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
+from backfield_stylebook.substrate_canonical_link_actions import (
+    link_substrate_to_canonical_atomic,
+    unlink_substrate_from_canonical,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
@@ -356,6 +360,18 @@ class LocationMentionsResponse(BaseModel):
     offset: int
 
 
+class LinkedSubstrateItem(BaseModel):
+    id: int
+    name: str
+    normalized_name: str
+    location_type: str
+    canonical_link_status: str
+
+
+class LinkedSubstratesResponse(BaseModel):
+    substrates: list[LinkedSubstrateItem]
+
+
 @router.get("/canonical-locations", response_model=PaginatedCanonicalLocationResponse)
 def list_canonical_locations(
     project_slug: str = Query(...),
@@ -446,6 +462,47 @@ def get_canonical_location(
         canon,
         linked_substrate_count=lc.get(cid, 0),
         mention_count=mc.get(cid, 0),
+    )
+
+
+@router.get(
+    "/canonical-locations/{canonical_id}/linked-substrates",
+    response_model=LinkedSubstratesResponse,
+)
+def list_canonical_linked_substrates(
+    canonical_id: int,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> LinkedSubstratesResponse:
+    """Project substrate rows currently linked to this Stylebook canonical."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    stylebook_id = _require_stylebook_id(session, proj)
+    canon = session.get(StylebookLocationCanonical, canonical_id)
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
+        raise HTTPException(status_code=404, detail="Canonical location not found")
+    rows = list(
+        session.exec(
+            select(SubstrateLocation)
+            .where(
+                SubstrateLocation.project_id == int(proj.id),
+                SubstrateLocation.stylebook_location_canonical_id == int(canonical_id),
+            )
+            .order_by(col(SubstrateLocation.name))
+        ).all()
+    )
+    return LinkedSubstratesResponse(
+        substrates=[
+            LinkedSubstrateItem(
+                id=int(r.id),  # type: ignore[arg-type]
+                name=str(r.name),
+                normalized_name=str(r.normalized_name or ""),
+                location_type=str(r.location_type or ""),
+                canonical_link_status=str(r.canonical_link_status or ""),
+            )
+            for r in rows
+        ]
     )
 
 
@@ -726,6 +783,68 @@ def get_location(
         raise HTTPException(status_code=404, detail="Location not found")
     mc = _mention_counts(session, [location_id])
     return LocationResponse.from_row(loc, mc.get(location_id, 0))
+
+
+class LinkCanonicalBody(BaseModel):
+    stylebook_location_canonical_id: int
+
+
+class LinkCanonicalResponse(BaseModel):
+    changed: bool
+
+
+@router.post("/locations/{location_id}/unlink-canonical")
+def unlink_substrate_from_canonical_route(
+    location_id: int,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> dict[str, str]:
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    stylebook_id = _require_stylebook_id(session, proj)
+    loc = session.get(SubstrateLocation, location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Location not found")
+    try:
+        unlink_substrate_from_canonical(
+            session, stylebook_id=stylebook_id, location=loc, provenance="stylebook_ui_unlink"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    session.commit()
+    return {"message": "unlinked"}
+
+
+@router.post("/locations/{location_id}/link-canonical", response_model=LinkCanonicalResponse)
+def link_substrate_to_canonical_route(
+    location_id: int,
+    body: LinkCanonicalBody,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> LinkCanonicalResponse:
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    stylebook_id = _require_stylebook_id(session, proj)
+    loc = session.get(SubstrateLocation, location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Location not found")
+    try:
+        changed = link_substrate_to_canonical_atomic(
+            session,
+            stylebook_id=stylebook_id,
+            location=loc,
+            target_canonical_id=int(body.stylebook_location_canonical_id),
+            provenance="stylebook_ui_link",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "not in this stylebook" in msg:
+            raise HTTPException(status_code=400, detail=msg) from e
+        raise HTTPException(status_code=409, detail=msg) from e
+    session.commit()
+    return LinkCanonicalResponse(changed=changed)
 
 
 @router.post("/locations", response_model=CanonicalLocationResponse)

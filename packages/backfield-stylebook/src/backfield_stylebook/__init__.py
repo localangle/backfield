@@ -12,6 +12,7 @@ from backfield_stylebook.canonical_policy import (
     CanonicalPersistPlan,
     decide_canonical_persist_plan,
     find_existing_canonical_id_by_alias,
+    rank_scored_canonical_recall_matches,
 )
 from backfield_stylebook.locations import (
     apply_canonical_persist_plan,
@@ -37,6 +38,7 @@ __all__ = [
     "decide_canonical_persist_plan",
     "ensure_default_stylebook_for_organization",
     "find_existing_canonical_id_by_alias",
+    "rank_scored_canonical_recall_matches",
     "link_to_existing_canonical",
     "materialize_new_canonical_and_link",
     "refresh_aliases_for_linked_location",

@@ -4,10 +4,14 @@ import {
   deleteCanonicalLocation,
   getCanonicalLocation,
   getCanonicalLocationMentions,
+  listCanonicalLinkedSubstrates,
   patchCanonicalLocation,
+  unlinkSubstrateFromCanonical,
   type CanonicalLocation,
   type LinkedMention,
+  type LinkedSubstrateItem,
 } from "@/lib/api"
+import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -46,15 +50,19 @@ export default function LocationDetail() {
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [substrates, setSubstrates] = useState<LinkedSubstrateItem[]>([])
+  const [substratesLoading, setSubstratesLoading] = useState(false)
+  const [moveSubstrateId, setMoveSubstrateId] = useState<number | null>(null)
+  const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
 
   useEffect(() => {
     const slug = searchParams.get("project") || ""
     setProjectSlug(slug)
   }, [searchParams])
 
-  const loadCanonical = async (canonicalId: number, slug: string) => {
+  const loadCanonical = async (canonicalId: number, slug: string, quiet = false) => {
     try {
-      setLoading(true)
+      if (!quiet) setLoading(true)
       const row = await getCanonicalLocation(canonicalId, slug)
       setCanonical(row)
       setLabel(row.label)
@@ -62,7 +70,7 @@ export default function LocationDetail() {
     } catch (e) {
       console.error(e)
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }
 
@@ -84,6 +92,44 @@ export default function LocationDetail() {
     if (!id || !projectSlug) return
     void loadMentions(parseInt(id, 10), projectSlug)
   }, [id, projectSlug, loadMentions])
+
+  const loadSubstrates = useCallback(async (canonicalId: number, slug: string) => {
+    try {
+      setSubstratesLoading(true)
+      const r = await listCanonicalLinkedSubstrates(canonicalId, slug)
+      setSubstrates(r.substrates)
+    } catch {
+      setSubstrates([])
+    } finally {
+      setSubstratesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!id || !projectSlug) return
+    void loadSubstrates(parseInt(id, 10), projectSlug)
+  }, [id, projectSlug, loadSubstrates])
+
+  const refreshCanonicalPage = useCallback(async () => {
+    if (!id || !projectSlug) return
+    const cid = parseInt(id, 10)
+    await loadCanonical(cid, projectSlug, true)
+    await loadSubstrates(cid, projectSlug)
+    await loadMentions(cid, projectSlug)
+  }, [id, projectSlug, loadMentions, loadSubstrates])
+
+  async function handleUnlinkSubstrate(sub: LinkedSubstrateItem) {
+    if (!projectSlug) return
+    setUnlinkingId(sub.id)
+    try {
+      await unlinkSubstrateFromCanonical(sub.id, projectSlug)
+      await refreshCanonicalPage()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Unlink failed")
+    } finally {
+      setUnlinkingId(null)
+    }
+  }
 
   const saveEdits = async () => {
     if (!canonical || !id || !projectSlug) return
@@ -187,6 +233,67 @@ export default function LocationDetail() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Linked substrate places</CardTitle>
+          <CardDescription>
+            Substrate rows in this project pointing at this canonical. Unlink sends a row back to the
+            open candidate queue (mentions unchanged). Move relinks to another canonical in one
+            request.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {substratesLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : substrates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No linked substrate places.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Link status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {substrates.map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell>{s.location_type || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {s.canonical_link_status}
+                    </TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={unlinkingId === s.id}
+                        onClick={() => setMoveSubstrateId(s.id)}
+                      >
+                        Move…
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={unlinkingId === s.id}
+                        onClick={() => void handleUnlinkSubstrate(s)}
+                      >
+                        {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Article mentions</CardTitle>
           <CardDescription>
             Mentions on any substrate location in this project linked to this canonical.
@@ -252,6 +359,17 @@ export default function LocationDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CanonicalLinkModal
+        open={moveSubstrateId !== null}
+        onOpenChange={(o) => {
+          if (!o) setMoveSubstrateId(null)
+        }}
+        projectSlug={projectSlug}
+        substrateLocationId={moveSubstrateId}
+        title="Move substrate to another canonical"
+        onDone={() => void refreshCanonicalPage()}
+      />
     </div>
   )
 }

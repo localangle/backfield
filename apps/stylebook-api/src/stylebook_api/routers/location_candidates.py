@@ -14,6 +14,9 @@ from backfield_db import (
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from backfield_stylebook.locations import refresh_aliases_for_linked_location
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
+from backfield_stylebook.substrate_canonical_link_actions import (
+    rank_canonical_suggestions_for_substrate,
+)
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import exists
@@ -210,6 +213,49 @@ def candidates_types(
     raw = session.exec(stmt).all()
     types = sorted({str(t) for t in raw if t})
     return {"types": types}
+
+
+class SuggestedCanonicalItem(BaseModel):
+    canonical_id: int
+    label: str
+
+
+class SuggestedCanonicalsResponse(BaseModel):
+    suggestions: list[SuggestedCanonicalItem]
+
+
+@router.get(
+    "/candidates/{substrate_location_id}/suggested-canonicals",
+    response_model=SuggestedCanonicalsResponse,
+)
+def candidates_suggested_canonicals(
+    substrate_location_id: int,
+    project_slug: str = Query(...),
+    limit: int = Query(24, ge=1, le=48),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> SuggestedCanonicalsResponse:
+    """Ranked canonical matches (pending candidate or linked row for relink/move)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    stylebook_id = _require_stylebook_id(session, proj)
+    loc = session.get(SubstrateLocation, substrate_location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Substrate location not found")
+    st = str(loc.canonical_link_status or "")
+    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED):
+        raise HTTPException(
+            status_code=409,
+            detail="Suggestions are only available for pending or linked substrate locations",
+        )
+    if st == CANONICAL_LINK_PENDING and loc.stylebook_location_canonical_id is not None:
+        raise HTTPException(status_code=409, detail="Invalid pending state: canonical FK is set")
+    ranked = rank_canonical_suggestions_for_substrate(
+        session, stylebook_id=stylebook_id, location=loc, limit=limit
+    )
+    return SuggestedCanonicalsResponse(
+        suggestions=[SuggestedCanonicalItem(canonical_id=cid, label=lab) for cid, lab in ranked]
+    )
 
 
 class AcceptCandidateBody(BaseModel):

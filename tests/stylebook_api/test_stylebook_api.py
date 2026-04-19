@@ -566,3 +566,366 @@ def test_list_location_mentions_includes_article_and_occurrence_quote(
     assert m0["article_url"] == "https://example.com/chicago-story"
     assert m0["original_text"] == "Chicago skyline"
     assert m0["description"] == "setting"
+
+
+def test_post_unlink_canonical_prunes_alias_when_sole_substrate(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Sole Canon",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.commit()
+        s.refresh(canon)
+        cid = int(canon.id)  # type: ignore[arg-type]
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Soleplace",
+            normalized_name="soleplace",
+            location_type="city",
+            identity_fingerprint="fp-sole-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r_link = client.post(
+        f"/v1/locations/{sid}/link-canonical?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"stylebook_location_canonical_id": cid},
+    )
+    assert r_link.status_code == 200
+    assert r_link.json()["changed"] is True
+
+    with Session(engine) as s:
+        aliases_before = s.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == cid,
+                StylebookLocationAlias.normalized_alias == "soleplace",
+            )
+        ).all()
+        assert len(aliases_before) >= 1
+
+    r_un = client.post(
+        f"/v1/locations/{sid}/unlink-canonical?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r_un.status_code == 200
+    assert r_un.json() == {"message": "unlinked"}
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.stylebook_location_canonical_id is None
+        assert row.canonical_link_status == CANONICAL_LINK_PENDING
+        aliases_after = s.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == cid,
+                StylebookLocationAlias.normalized_alias == "soleplace",
+            )
+        ).all()
+        assert len(aliases_after) == 0
+
+
+def test_post_unlink_canonical_keeps_alias_when_second_substrate_shares_norm(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Shared Canon",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.commit()
+        s.refresh(canon)
+        cid = int(canon.id)  # type: ignore[arg-type]
+        loc1 = SubstrateLocation(
+            project_id=pid,
+            name="Dup A",
+            normalized_name="dupnorm",
+            location_type="city",
+            identity_fingerprint="fp-dup-a",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        loc2 = SubstrateLocation(
+            project_id=pid,
+            name="Dup B",
+            normalized_name="dupnorm",
+            location_type="city",
+            identity_fingerprint="fp-dup-b",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc1)
+        s.add(loc2)
+        s.commit()
+        s.refresh(loc1)
+        s.refresh(loc2)
+        sid1 = int(loc1.id)  # type: ignore[arg-type]
+        sid2 = int(loc2.id)  # type: ignore[arg-type]
+
+    assert (
+        client.post(
+            f"/v1/locations/{sid1}/link-canonical?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"stylebook_location_canonical_id": cid},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            f"/v1/locations/{sid2}/link-canonical?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"stylebook_location_canonical_id": cid},
+        ).status_code
+        == 200
+    )
+
+    assert (
+        client.post(
+            f"/v1/locations/{sid1}/unlink-canonical?project_slug=demo-proj",
+            headers=_service_headers(),
+        ).status_code
+        == 200
+    )
+
+    with Session(engine) as s:
+        aliases = s.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == cid,
+                StylebookLocationAlias.normalized_alias == "dupnorm",
+            )
+        ).all()
+        assert len(aliases) >= 1
+
+
+def test_post_link_canonical_relink_moves_alias_and_prunes_old_when_safe(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        ca = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Canon A",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        cb = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Canon B",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(ca)
+        s.add(cb)
+        s.commit()
+        s.refresh(ca)
+        s.refresh(cb)
+        aid = int(ca.id)  # type: ignore[arg-type]
+        bid = int(cb.id)  # type: ignore[arg-type]
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Moveme",
+            normalized_name="moveme",
+            location_type="city",
+            identity_fingerprint="fp-move-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    assert (
+        client.post(
+            f"/v1/locations/{sid}/link-canonical?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"stylebook_location_canonical_id": aid},
+        ).json()["changed"]
+        is True
+    )
+    r2 = client.post(
+        f"/v1/locations/{sid}/link-canonical?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"stylebook_location_canonical_id": bid},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["changed"] is True
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert int(row.stylebook_location_canonical_id or 0) == bid
+        on_b = s.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == bid,
+                StylebookLocationAlias.normalized_alias == "moveme",
+            )
+        ).all()
+        assert len(on_b) >= 1
+        on_a = s.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == aid,
+                StylebookLocationAlias.normalized_alias == "moveme",
+            )
+        ).all()
+        assert len(on_a) == 0
+
+
+def test_post_link_canonical_idempotent_same_target(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Idem Canon",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.commit()
+        s.refresh(canon)
+        cid = int(canon.id)  # type: ignore[arg-type]
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Idem",
+            normalized_name="idem",
+            location_type="city",
+            identity_fingerprint="fp-idem-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    assert (
+        client.post(
+            f"/v1/locations/{sid}/link-canonical?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"stylebook_location_canonical_id": cid},
+        ).json()["changed"]
+        is True
+    )
+    r2 = client.post(
+        f"/v1/locations/{sid}/link-canonical?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"stylebook_location_canonical_id": cid},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["changed"] is False
+
+
+def test_get_canonical_linked_substrates(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="List Canon",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.commit()
+        s.refresh(canon)
+        cid = int(canon.id)  # type: ignore[arg-type]
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Listed",
+            normalized_name="listed",
+            location_type="city",
+            identity_fingerprint="fp-list-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    assert (
+        client.post(
+            f"/v1/locations/{sid}/link-canonical?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"stylebook_location_canonical_id": cid},
+        ).status_code
+        == 200
+    )
+
+    r = client.get(
+        f"/v1/canonical-locations/{cid}/linked-substrates?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["substrates"]) == 1
+    assert data["substrates"][0]["id"] == sid
+    assert data["substrates"][0]["normalized_name"] == "listed"
+
+
+def test_get_suggested_canonicals_for_pending_candidate(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Suggestme",
+            normalized_name="suggestme",
+            location_type="city",
+            identity_fingerprint="fp-sug-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.get(
+        f"/v1/candidates/{sid}/suggested-canonicals?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "suggestions" in body
+    assert isinstance(body["suggestions"], list)

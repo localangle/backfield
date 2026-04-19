@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { acceptCandidate, listCandidates, listClusters, type Candidate } from "@/lib/api"
+import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -23,6 +24,7 @@ export default function LocationCandidates() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false)
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
+  const [linkModalId, setLinkModalId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const loadClusters = useCallback(async () => {
@@ -97,7 +99,8 @@ export default function LocationCandidates() {
           <CardTitle>Review queue</CardTitle>
           <CardDescription>
             Open substrate locations for this project (not yet linked to a Stylebook canonical). Use
-            “Accept as new” to create a canonical and link this row.
+            “Link to canonical” to pick an existing catalog row, or “Accept as new” to create one and
+            link.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -148,14 +151,22 @@ export default function LocationCandidates() {
                         <TableCell className="font-medium">{c.suggested_name || "—"}</TableCell>
                         <TableCell>{c.suggested_type || "—"}</TableCell>
                         <TableCell className="max-w-xs truncate">{c.suggested_formatted_address || "—"}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            size="sm"
+                            variant="default"
+                            disabled={acceptingId === c.id}
+                            onClick={() => setLinkModalId(c.id)}
+                          >
+                            Link to canonical
+                          </Button>
                           <Button
                             size="sm"
                             variant="secondary"
                             disabled={acceptingId === c.id}
                             onClick={() => void handleAcceptNew(c)}
                           >
-                            {acceptingId === c.id ? "Linking…" : "Accept as new"}
+                            {acceptingId === c.id ? "Accepting…" : "Accept as new"}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -167,6 +178,17 @@ export default function LocationCandidates() {
           )}
         </CardContent>
       </Card>
+
+      <CanonicalLinkModal
+        open={linkModalId !== null}
+        onOpenChange={(o) => {
+          if (!o) setLinkModalId(null)
+        }}
+        projectSlug={projectSlug}
+        substrateLocationId={linkModalId}
+        title="Link candidate to canonical"
+        onDone={() => void loadFlat()}
+      />
     </div>
   )
 }

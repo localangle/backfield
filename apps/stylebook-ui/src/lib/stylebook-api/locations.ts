@@ -109,6 +109,51 @@ export async function getCanonicalLocation(
   )
 }
 
+export interface LinkedSubstrateItem {
+  id: number
+  name: string
+  normalized_name: string
+  location_type: string
+  canonical_link_status: string
+}
+
+export interface LinkedSubstratesResponse {
+  substrates: LinkedSubstrateItem[]
+}
+
+export async function listCanonicalLinkedSubstrates(
+  canonicalId: number,
+  projectSlug: string,
+): Promise<LinkedSubstratesResponse> {
+  return stylebookJsonFetch<LinkedSubstratesResponse>(
+    `/v1/canonical-locations/${canonicalId}/linked-substrates?project_slug=${encodeURIComponent(projectSlug)}`,
+  )
+}
+
+export async function unlinkSubstrateFromCanonical(
+  substrateLocationId: number,
+  projectSlug: string,
+): Promise<{ message: string }> {
+  return stylebookJsonFetch<{ message: string }>(
+    `/v1/locations/${substrateLocationId}/unlink-canonical?project_slug=${encodeURIComponent(projectSlug)}`,
+    { method: "POST" },
+  )
+}
+
+export async function linkSubstrateToCanonical(
+  substrateLocationId: number,
+  projectSlug: string,
+  stylebookLocationCanonicalId: number,
+): Promise<{ changed: boolean }> {
+  return stylebookJsonFetch<{ changed: boolean }>(
+    `/v1/locations/${substrateLocationId}/link-canonical?project_slug=${encodeURIComponent(projectSlug)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ stylebook_location_canonical_id: stylebookLocationCanonicalId }),
+    },
+  )
+}
+
 export async function listLocationOptions(
   projectSlug: string,
   q?: string,
