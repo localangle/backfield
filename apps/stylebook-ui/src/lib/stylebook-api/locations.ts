@@ -134,16 +134,33 @@ export async function createLocation(
   projectSlug: string,
   data: {
     name: string
-    location_type: string
+    location_type?: string
     formatted_address?: string
     geometry_json?: Record<string, unknown>
     status?: string
   },
-): Promise<Location> {
-  return stylebookJsonFetch<Location>(`/v1/locations?project_slug=${encodeURIComponent(projectSlug)}`, {
-    method: "POST",
-    body: JSON.stringify(data),
-  })
+): Promise<CanonicalLocation> {
+  return stylebookJsonFetch<CanonicalLocation>(
+    `/v1/locations?project_slug=${encodeURIComponent(projectSlug)}`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    },
+  )
+}
+
+/** Create a catalog canonical only (no project substrate row). Prefer over legacy ``createLocation``. */
+export async function createCanonicalLocation(
+  projectSlug: string,
+  data: { label: string; geometry_json?: Record<string, unknown> },
+): Promise<CanonicalLocation> {
+  return stylebookJsonFetch<CanonicalLocation>(
+    `/v1/canonical-locations?project_slug=${encodeURIComponent(projectSlug)}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ label: data.label, geometry_json: data.geometry_json }),
+    },
+  )
 }
 
 export async function updateLocation(

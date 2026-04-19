@@ -16,6 +16,7 @@ from backfield_stylebook.canonical_policy import (
 from backfield_stylebook.locations import (
     apply_canonical_persist_plan,
     assert_canonical_link_invariant,
+    create_standalone_canonical,
     link_to_existing_canonical,
     materialize_new_canonical_and_link,
     refresh_aliases_for_linked_location,
@@ -32,6 +33,7 @@ __all__ = [
     "CanonicalPersistPlan",
     "apply_canonical_persist_plan",
     "assert_canonical_link_invariant",
+    "create_standalone_canonical",
     "decide_canonical_persist_plan",
     "ensure_default_stylebook_for_organization",
     "find_existing_canonical_id_by_alias",

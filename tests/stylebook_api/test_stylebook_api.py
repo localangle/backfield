@@ -166,9 +166,15 @@ def test_list_locations_empty_with_service_token(client: TestClient) -> None:
     assert data["locations"] == []
 
 
-def test_create_location_materializes_stylebook_canonical_and_alias(
+def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        q = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
+        before = len(s.exec(q).all())
+
     r = client.post(
         "/v1/locations?project_slug=demo-proj",
         headers=_service_headers(),
@@ -179,16 +185,13 @@ def test_create_location_materializes_stylebook_canonical_and_alias(
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["canonical_link_status"] == CANONICAL_LINK_LINKED
-    lid = int(body["id"])
+    assert body["label"] == "West Garfield Park, Chicago, IL"
+    cid = int(body["id"])
+    assert body.get("linked_substrate_count", 0) == 0
     with Session(stylebook_test_engine) as s:
-        loc = s.get(SubstrateLocation, lid)
-        assert loc is not None
-        assert loc.stylebook_location_canonical_id is not None
-        assert loc.canonical_review_reasons_json == [
-            {"code": "materialized_stylebook_ui_manual", "provenance": "stylebook_ui_manual"}
-        ]
-        cid = int(loc.stylebook_location_canonical_id)  # type: ignore[arg-type]
+        q2 = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
+        after = len(s.exec(q2).all())
+        assert after == before
         canon = s.get(StylebookLocationCanonical, cid)
         assert canon is not None
         assert canon.label == "West Garfield Park, Chicago, IL"
@@ -201,6 +204,32 @@ def test_create_location_materializes_stylebook_canonical_and_alias(
         assert aliases[0].normalized_alias == "west garfield park, chicago, il"
 
 
+def test_create_canonical_location_post_alias_no_substrate(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        q0 = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
+        before = len(s.exec(q0).all())
+
+    r = client.post(
+        "/v1/canonical-locations?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"label": "Solo Canonical, Evanston, IL"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["label"] == "Solo Canonical, Evanston, IL"
+    cid = int(body["id"])
+    with Session(stylebook_test_engine) as s:
+        canon = s.get(StylebookLocationCanonical, cid)
+        assert canon is not None
+        q1 = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
+        after = len(s.exec(q1).all())
+        assert after == before
+
+
 def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClient) -> None:
     r = client.post(
         "/v1/locations?project_slug=demo-proj",
@@ -209,15 +238,15 @@ def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClie
     )
     assert r.status_code == 200
     created = r.json()
-    canon_fk = created.get("stylebook_location_canonical_id")
-    assert canon_fk is not None
+    canon_fk = int(created["id"])
+    assert created["label"] == "Catalog Test Place"
     r2 = client.get("/v1/canonical-locations?project_slug=demo-proj", headers=_service_headers())
     assert r2.status_code == 200
     data = r2.json()
     assert data["total"] >= 1
     canon = next(c for c in data["canonicals"] if c["label"] == "Catalog Test Place")
     assert int(canon["id"]) == int(canon_fk)
-    assert canon.get("linked_substrate_count", 0) >= 1
+    assert canon.get("linked_substrate_count", 0) == 0
     r3 = client.get(
         f"/v1/canonical-locations/{canon['id']}?project_slug=demo-proj",
         headers=_service_headers(),

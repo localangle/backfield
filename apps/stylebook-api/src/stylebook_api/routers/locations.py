@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 from typing import Any
 
@@ -16,7 +15,7 @@ from backfield_db import (
     SubstrateLocationMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
-from backfield_stylebook.locations import materialize_new_canonical_and_link
+from backfield_stylebook.locations import create_standalone_canonical
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -112,14 +111,26 @@ class PaginatedLocationResponse(BaseModel):
     has_prev: bool
 
 
+class CreateCanonicalLocationBody(BaseModel):
+    """Create a catalog canonical only (no ``substrate_location`` row)."""
+
+    label: str
+    geometry_json: dict[str, Any] | None = None
+
+
 class CreateLocationBody(BaseModel):
+    """Legacy body for ``POST /v1/locations`` — maps ``name`` to canonical ``label``."""
+
     name: str
-    location_type: str
+    location_type: str | None = Field(
+        default=None,
+        description="Optional UI hint only; not stored on the canonical row.",
+    )
     formatted_address: str | None = None
     geometry_json: dict[str, Any] | None = None
     status: str | None = Field(
         default=None,
-        description="draft | active (mapped to substrate statuses)",
+        description="Ignored for catalog-only create (kept for API compatibility).",
     )
 
 
@@ -144,6 +155,34 @@ def _require_stylebook_id(session: Session, project: BackfieldProject) -> int:
         return resolve_stylebook_id_for_project_id(session, int(project.id))
     except LookupError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _persist_new_catalog_canonical(
+    session: Session,
+    *,
+    project: BackfieldProject,
+    label: str,
+    geometry_json: dict[str, Any] | None,
+) -> CanonicalLocationResponse:
+    """Insert canonical + primary alias; no substrate row."""
+    stylebook_id = _require_stylebook_id(session, project)
+    canon = create_standalone_canonical(
+        session,
+        stylebook_id=stylebook_id,
+        label=label,
+        geometry_json=geometry_json,
+        provenance="stylebook_ui_manual",
+    )
+    session.commit()
+    session.refresh(canon)
+    cid = int(canon.id)  # type: ignore[arg-type]
+    mc = _mention_counts_by_canonical(session, project_id=int(project.id), canonical_ids=[cid])
+    lc = _linked_substrate_counts(session, project_id=int(project.id), canonical_ids=[cid])
+    return CanonicalLocationResponse.from_canonical(
+        canon,
+        linked_substrate_count=lc.get(cid, 0),
+        mention_count=mc.get(cid, 0),
+    )
 
 
 def _first_occurrence_mention_text_by_mention_id(
@@ -366,6 +405,24 @@ def list_canonical_locations(
         per_page=limit,
         has_next=offset + len(out) < total,
         has_prev=offset > 0,
+    )
+
+
+@router.post("/canonical-locations", response_model=CanonicalLocationResponse)
+def create_canonical_location(
+    body: CreateCanonicalLocationBody,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CanonicalLocationResponse:
+    """Create a Stylebook canonical (and primary alias) without a project substrate row."""
+    label = body.label.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="label is required")
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    return _persist_new_catalog_canonical(
+        session, project=proj, label=label, geometry_json=body.geometry_json
     )
 
 
@@ -671,50 +728,22 @@ def get_location(
     return LocationResponse.from_row(loc, mc.get(location_id, 0))
 
 
-@router.post("/locations", response_model=LocationResponse)
+@router.post("/locations", response_model=CanonicalLocationResponse)
 def create_location(
     body: CreateLocationBody,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
-) -> LocationResponse:
+) -> CanonicalLocationResponse:
+    """Compatibility alias for :func:`create_canonical_location` (uses ``name`` as ``label``)."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    mapped = _map_incoming_status(body.status) or "provisional"
-    ext_id = f"manual:{uuid.uuid4().hex}"
-    row = SubstrateLocation(
-        project_id=int(proj.id),
-        name=body.name.strip(),
-        normalized_name=_normalize_name(body.name),
-        location_type=body.location_type.strip(),
-        status=mapped,
-        formatted_address=body.formatted_address,
-        geometry_json=body.geometry_json,
-        geometry_type=(body.geometry_json or {}).get("type") if body.geometry_json else None,
-        external_source="stylebook_ui",
-        external_id=ext_id,
+    return _persist_new_catalog_canonical(
+        session, project=proj, label=name, geometry_json=body.geometry_json
     )
-    session.add(row)
-    session.flush()
-    try:
-        sb_id = resolve_stylebook_id_for_project_id(session, int(proj.id))
-        materialize_new_canonical_and_link(
-            session,
-            stylebook_id=sb_id,
-            location=row,
-            provenance="stylebook_ui_manual",
-            audit_reasons=[
-                {
-                    "code": "materialized_stylebook_ui_manual",
-                    "provenance": "stylebook_ui_manual",
-                },
-            ],
-        )
-    except LookupError:
-        pass
-    session.commit()
-    session.refresh(row)
-    return LocationResponse.from_row(row, 0)
 
 
 @router.patch("/locations/{location_id}", response_model=LocationResponse)

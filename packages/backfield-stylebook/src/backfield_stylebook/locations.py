@@ -26,14 +26,19 @@ def assert_canonical_link_invariant(location: SubstrateLocation) -> None:
             )
 
 
-def _upsert_alias_for_canonical(
+def _normalize_alias_text(text: str) -> str:
+    return text.strip().lower()
+
+
+def upsert_alias_for_canonical_text(
     session: Session,
     *,
     canon_id: int,
-    location: SubstrateLocation,
+    alias_text: str,
+    normalized_alias: str,
     provenance: str,
 ) -> None:
-    norm = str(location.normalized_name)
+    norm = str(normalized_alias)
     existing = session.exec(
         select(StylebookLocationAlias).where(
             StylebookLocationAlias.location_canonical_id == canon_id,
@@ -44,17 +49,33 @@ def _upsert_alias_for_canonical(
         session.add(
             StylebookLocationAlias(
                 location_canonical_id=canon_id,
-                alias_text=str(location.name),
+                alias_text=str(alias_text),
                 normalized_alias=norm,
                 provenance=provenance,
                 suppressed=False,
             )
         )
     else:
-        existing.alias_text = str(location.name)
+        existing.alias_text = str(alias_text)
         existing.provenance = provenance
         existing.suppressed = False
         session.add(existing)
+
+
+def _upsert_alias_for_canonical(
+    session: Session,
+    *,
+    canon_id: int,
+    location: SubstrateLocation,
+    provenance: str,
+) -> None:
+    upsert_alias_for_canonical_text(
+        session,
+        canon_id=canon_id,
+        alias_text=str(location.name),
+        normalized_alias=str(location.normalized_name),
+        provenance=provenance,
+    )
 
 
 def refresh_aliases_for_linked_location(
@@ -108,6 +129,44 @@ def link_to_existing_canonical(
         location=location,
         provenance=provenance,
     )
+
+
+def create_standalone_canonical(
+    session: Session,
+    *,
+    stylebook_id: int,
+    label: str,
+    geometry_json: dict[str, Any] | None = None,
+    provenance: str = "stylebook_ui_manual",
+) -> StylebookLocationCanonical:
+    """Create a Stylebook canonical + primary alias without a ``SubstrateLocation`` row."""
+    clean = label.strip()
+    if not clean:
+        raise ValueError("label is required")
+    gj = dict(geometry_json) if isinstance(geometry_json, dict) else None
+    gt_raw = gj.get("type") if isinstance(gj, dict) else None
+    geometry_type_str = str(gt_raw) if gt_raw is not None else None
+    canon = StylebookLocationCanonical(
+        stylebook_id=stylebook_id,
+        label=clean,
+        primary_substrate_location_id=None,
+        status="active",
+        geometry_json=gj,
+        geometry_type=geometry_type_str,
+        geometry=None,
+    )
+    session.add(canon)
+    session.flush()
+    cid = int(canon.id)  # type: ignore[arg-type]
+    upsert_alias_for_canonical_text(
+        session,
+        canon_id=cid,
+        alias_text=clean,
+        normalized_alias=_normalize_alias_text(clean),
+        provenance=provenance,
+    )
+    session.flush()
+    return canon
 
 
 def materialize_new_canonical_and_link(

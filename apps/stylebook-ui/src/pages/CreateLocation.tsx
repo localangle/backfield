@@ -27,22 +27,16 @@ export default function CreateLocation() {
       alert("Please enter a location name")
       return
     }
-    if (!locationType.trim()) {
-      alert("Please enter a location type")
-      return
-    }
-
     try {
       setCreating(true)
       const location = await createLocation(projectSlug, {
         name: name.trim(),
-        location_type: locationType.trim(),
+        location_type: locationType.trim() || undefined,
         formatted_address: formattedAddress.trim() || undefined,
         geometry_json: geometry ?? undefined,
         status: "active",
       })
-      const canonId = location.stylebook_location_canonical_id ?? location.id
-      navigate(`/locations/canonical/${canonId}?project=${projectSlug}`)
+      navigate(`/locations/canonical/${location.id}?project=${projectSlug}`)
     } catch (error) {
       console.error("Failed to create location:", error)
       alert(`Failed to create location: ${error instanceof Error ? error.message : "Unknown error"}`)
@@ -79,12 +73,12 @@ export default function CreateLocation() {
                 />
               </div>
               <div>
-                <Label htmlFor="locationType">Location Type *</Label>
+                <Label htmlFor="locationType">Location Type (optional)</Label>
                 <Input
                   id="locationType"
                   value={locationType}
                   onChange={(e) => setLocationType(e.target.value)}
-                  placeholder="e.g., city, neighborhood, ward"
+                  placeholder="e.g., city, neighborhood — not stored on catalog row"
                 />
               </div>
               <div>
@@ -117,7 +111,7 @@ export default function CreateLocation() {
         <Button variant="outline" onClick={handleCancel} disabled={creating}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={creating || !name.trim() || !locationType.trim()}>
+        <Button onClick={handleSubmit} disabled={creating || !name.trim()}>
           {creating ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />

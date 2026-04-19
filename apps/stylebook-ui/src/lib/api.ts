@@ -11,6 +11,7 @@ export {
   type LocationMentionsResponse,
   type PaginatedCanonicalLocationResponse,
   type PaginatedLocationResponse,
+  createCanonicalLocation,
   createLocation,
   deleteCanonicalLocation,
   deleteLocation,
