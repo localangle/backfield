@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from backfield_auth.gate import require_project_access
-from backfield_db import BackfieldProject
+from backfield_db import BackfieldProject, StylebookLocationCanonical, SubstrateLocation
+from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
+from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, col, func, select
 
 from stylebook_api.deps import get_auth, get_session
 
@@ -38,7 +40,33 @@ def get_stats(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     z = {"canonical_count": 0, "candidate_count": 0}
-    return StatsOut(locations=z, people=z, organizations=z, works=z)
+    try:
+        stylebook_id = resolve_stylebook_id_for_project_id(session, int(proj.id))
+    except LookupError:
+        return StatsOut(locations=z, people=z, organizations=z, works=z)
+
+    canon_cnt = int(
+        session.scalar(
+            select(func.count())
+            .select_from(StylebookLocationCanonical)
+            .where(StylebookLocationCanonical.stylebook_id == int(stylebook_id))
+        )
+        or 0
+    )
+    cand_cnt = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstrateLocation)
+            .where(
+                SubstrateLocation.project_id == int(proj.id),
+                col(SubstrateLocation.stylebook_location_canonical_id).is_(None),
+                SubstrateLocation.canonical_link_status == CANONICAL_LINK_PENDING,
+            )
+        )
+        or 0
+    )
+    loc = {"canonical_count": canon_cnt, "candidate_count": cand_cnt}
+    return StatsOut(locations=loc, people=z, organizations=z, works=z)
 
 
 @router.get("/agents/types", response_model=list[dict[str, Any]])

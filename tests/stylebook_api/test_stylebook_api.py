@@ -256,6 +256,66 @@ def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClie
     assert r3.json()["label"] == "Catalog Test Place"
 
 
+def test_stats_locations_initial_zeros(client: TestClient) -> None:
+    r = client.get("/v1/stats?project_slug=demo-proj", headers=_service_headers())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["locations"]["canonical_count"] == 0
+    assert body["locations"]["candidate_count"] == 0
+    assert body["people"]["canonical_count"] == 0
+
+
+def test_stats_no_workspace_project_returns_location_zeros(client: TestClient) -> None:
+    r = client.get("/v1/stats?project_slug=no-ws-proj", headers=_service_headers())
+    assert r.status_code == 200
+    loc = r.json()["locations"]
+    assert loc["canonical_count"] == 0
+    assert loc["candidate_count"] == 0
+
+
+def test_stats_reflects_canonical_and_pending_candidates(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    r_loc = client.post(
+        "/v1/locations?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"name": "Stats Town", "location_type": "city"},
+    )
+    assert r_loc.status_code == 200
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        s.add(
+            SubstrateLocation(
+                project_id=pid,
+                name="Pending One",
+                normalized_name="pending-one",
+                location_type="city",
+                identity_fingerprint="fp-stats-p1",
+                stylebook_location_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+            )
+        )
+        s.add(
+            SubstrateLocation(
+                project_id=pid,
+                name="Pending Two",
+                normalized_name="pending-two",
+                location_type="city",
+                identity_fingerprint="fp-stats-p2",
+                stylebook_location_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+            )
+        )
+        s.commit()
+
+    r = client.get("/v1/stats?project_slug=demo-proj", headers=_service_headers())
+    assert r.status_code == 200
+    loc = r.json()["locations"]
+    assert loc["canonical_count"] == 1
+    assert loc["candidate_count"] == 2
+
+
 def test_candidates_400_when_project_has_no_workspace(client: TestClient) -> None:
     r = client.get(
         "/v1/candidates?project_slug=no-ws-proj&status=open",
