@@ -20,6 +20,7 @@ from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_stylebook.locations import refresh_aliases_for_linked_location
+from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from backfield_stylebook.substrate_canonical_link_actions import (
     rank_canonical_suggestions_for_substrate,
@@ -344,21 +345,8 @@ def candidates_types(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     _require_stylebook_id(session, proj)
-    filters = _open_candidate_filters(
-        int(proj.id),
-        needs_review=None,
-        q=None,
-        type_filter=None,
-    )
-    stmt = (
-        select(SubstrateLocation.location_type)
-        .where(*filters)
-        .where(col(SubstrateLocation.location_type).is_not(None))
-        .distinct()
-    )
-    raw = session.exec(stmt).all()
-    types = sorted({str(t) for t in raw if t})
-    return {"types": types}
+    # Fixed taxonomy from PlaceExtract (not DISTINCT from queue — empty queue had no types).
+    return {"types": list(PLACE_EXTRACT_LOCATION_TYPES)}
 
 
 def _first_occurrence_text_by_mention_id(

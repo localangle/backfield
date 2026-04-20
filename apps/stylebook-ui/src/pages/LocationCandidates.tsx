@@ -10,8 +10,17 @@ import {
   type Candidate,
   type CandidateContextResponse,
 } from "@/lib/api"
+import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,7 +40,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { ChevronRight, Link2, Loader2, PlusCircle, StickyNote } from "lucide-react"
 
 export default function LocationCandidates() {
   const [searchParams] = useSearchParams()
@@ -50,9 +60,15 @@ export default function LocationCandidates() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [contextById, setContextById] = useState<Record<number, CandidateContextResponse>>({})
   const [contextLoadingId, setContextLoadingId] = useState<number | null>(null)
-  const [noteDraftById, setNoteDraftById] = useState<Record<number, string>>({})
+  const [noteModalId, setNoteModalId] = useState<number | null>(null)
+  const [noteModalDraft, setNoteModalDraft] = useState("")
   const [noteSavingId, setNoteSavingId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const noteModalCandidate = useMemo(
+    () => (noteModalId === null ? undefined : candidates.find((x) => x.id === noteModalId)),
+    [candidates, noteModalId]
+  )
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQuery(query), 250)
@@ -63,13 +79,13 @@ export default function LocationCandidates() {
     if (!projectSlug) return
     void (async () => {
       try {
-        const res = await listLocationCandidateTypes(projectSlug, "open")
+        const res = await listLocationCandidateTypes(projectSlug, status)
         setTypes(res.types)
       } catch {
         setTypes([])
       }
     })()
-  }, [projectSlug])
+  }, [projectSlug, status])
 
   const candidatesFilter = useMemo(() => {
     const tf = typeFilter === "all" ? undefined : typeFilter
@@ -150,11 +166,6 @@ export default function LocationCandidates() {
     try {
       const ctx = await getCandidateContext(projectSlug, next, 3)
       setContextById((prev) => ({ ...prev, [next]: ctx }))
-      if (ctx.note !== undefined && ctx.note !== null) {
-        setNoteDraftById((prev) => ({ ...prev, [next]: ctx.note ?? "" }))
-      } else if (c.note) {
-        setNoteDraftById((prev) => ({ ...prev, [next]: c.note ?? "" }))
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load context")
     } finally {
@@ -162,23 +173,40 @@ export default function LocationCandidates() {
     }
   }
 
-  async function saveNote(c: Candidate) {
-    if (!projectSlug) return
-    const draft = (noteDraftById[c.id] ?? "").trim()
-    setNoteSavingId(c.id)
+  function openNoteModal(c: Candidate) {
+    setNoteModalId(c.id)
+    const ctx = contextById[c.id]
+    const initial = (c.note ?? ctx?.note ?? "") as string
+    setNoteModalDraft(initial)
+  }
+
+  function closeNoteModal() {
+    setNoteModalId(null)
+    setNoteModalDraft("")
+  }
+
+  async function saveNoteFromModal() {
+    if (!projectSlug || noteModalId === null) return
+    const draft = noteModalDraft.trim()
+    const id = noteModalId
+    setNoteSavingId(id)
+    setError(null)
+    let ok = false
     try {
-      await updateCandidateNote(projectSlug, c.id, draft ? draft : null)
+      await updateCandidateNote(projectSlug, id, draft ? draft : null)
       setContextById((prev) => {
-        const existing = prev[c.id]
+        const existing = prev[id]
         if (!existing) return prev
-        return { ...prev, [c.id]: { ...existing, note: draft ? draft : null } }
+        return { ...prev, [id]: { ...existing, note: draft ? draft : null } }
       })
       await loadFlat()
+      ok = true
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save note")
     } finally {
       setNoteSavingId(null)
     }
+    if (ok) closeNoteModal()
   }
 
   return (
@@ -194,66 +222,93 @@ export default function LocationCandidates() {
         <CardHeader>
           <CardTitle>Review queue</CardTitle>
           <CardDescription>
-            Unlinked locations for this project. Use “Link to canonical” to link the item to an
-            existing canonical, or “Accept as new” to create a new one.
+            Unlinked locations for this project. Use “Link” to attach to an existing canonical, or
+            “Create new” to add a new one.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2 items-center">
-            <Button
-              variant={status === "open" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatus("open")}
-              disabled={loading}
-            >
-              For review
-            </Button>
-            <Button
-              variant={status === "deferred" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatus("deferred")}
-              disabled={loading}
-            >
-              Deferred
-            </Button>
-            <div className="ml-auto flex flex-wrap gap-2 items-end">
-              <div className="w-[220px]">
-                <Label>Search</Label>
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search name…"
-                />
-              </div>
-              <div className="w-[220px]">
-                <Label>Type</Label>
-                <Select value={typeFilter} onValueChange={setTypeFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    {types.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="space-y-2">
+            <Label htmlFor="candidate-search">Search</Label>
+            <Input
+              id="candidate-search"
+              className="w-full max-w-none"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search name…"
+            />
+          </div>
+          <div className="flex flex-wrap gap-4 items-end justify-between">
+            <div className="w-full max-w-xs">
+              <Label>Type</Label>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  {types.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {placeExtractTypeLabel(t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {loading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground pb-2">
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                <span>Loading…</span>
+              </div>
+            )}
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <>
+          <div className="overflow-hidden rounded-md border">
+            <div
+              className="flex gap-8 border-b border-border bg-muted/20 px-4"
+              role="tablist"
+              aria-label="Review queue"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={status === "open"}
+                disabled={loading}
+                className={cn(
+                  "whitespace-nowrap border-b-2 -mb-px py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50",
+                  status === "open"
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setStatus("open")}
+              >
+                For review
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={status === "deferred"}
+                disabled={loading}
+                className={cn(
+                  "whitespace-nowrap border-b-2 -mb-px py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50",
+                  status === "deferred"
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setStatus("deferred")}
+              >
+                Deferred
+              </button>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <TableHead>Location</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Created</TableHead>
                   <TableHead>Address</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -264,59 +319,105 @@ export default function LocationCandidates() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  candidates.map((c) => (
+                  candidates.map((c) => {
+                    const savedNoteText = String(contextById[c.id]?.note ?? c.note ?? "").trim()
+                    return (
                     <Fragment key={c.id}>
                       <TableRow>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <Button
-                              size="sm"
+                              type="button"
+                              size="icon"
                               variant="ghost"
+                              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
                               onClick={() => void toggleExpanded(c)}
                               disabled={contextLoadingId === c.id}
+                              aria-expanded={expandedId === c.id}
+                              aria-label={expandedId === c.id ? "Hide context" : "Show context"}
                             >
-                              {expandedId === c.id ? "Hide" : "Show"}
+                              {contextLoadingId === c.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <ChevronRight
+                                  className={cn(
+                                    "h-4 w-4 transition-transform duration-200",
+                                    expandedId === c.id && "rotate-90"
+                                  )}
+                                  aria-hidden
+                                />
+                              )}
                             </Button>
                             <span>{c.suggested_name || "—"}</span>
                             {c.note ? (
-                              <span className="text-xs text-muted-foreground">(note)</span>
+                              <StickyNote
+                                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                aria-label="Has a note"
+                              />
                             ) : null}
                           </div>
                         </TableCell>
-                        <TableCell>{c.suggested_type || "—"}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                          {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
+                        <TableCell>
+                          {c.suggested_type
+                            ? placeExtractTypeLabel(c.suggested_type)
+                            : "—"}
                         </TableCell>
                         <TableCell className="max-w-xs truncate">
                           {c.suggested_formatted_address || "—"}
                         </TableCell>
-                        <TableCell className="text-right space-x-2">
-                          <Button
-                            size="sm"
-                            variant="default"
-                            disabled={acceptingId === c.id || deferringId === c.id}
-                            onClick={() => setLinkModalId(c.id)}
-                          >
-                            Link to canonical
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={acceptingId === c.id || deferringId === c.id}
-                            onClick={() => void handleAcceptNew(c)}
-                          >
-                            {acceptingId === c.id ? "Accepting…" : "Accept as new"}
-                          </Button>
-                          {status === "open" && (
+                        <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                          {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              disabled={acceptingId === c.id || deferringId === c.id}
+                              onClick={() => setLinkModalId(c.id)}
+                            >
+                              <span className="inline-flex items-center gap-1.5">
+                                <Link2 className="h-3.5 w-3.5" aria-hidden />
+                                Link
+                              </span>
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={acceptingId === c.id || deferringId === c.id}
+                              onClick={() => void handleAcceptNew(c)}
+                            >
+                              <span className="inline-flex items-center gap-1.5">
+                                <PlusCircle className="h-3.5 w-3.5" aria-hidden />
+                                {acceptingId === c.id ? "Creating…" : "Create new"}
+                              </span>
+                            </Button>
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={acceptingId === c.id || deferringId === c.id}
-                              onClick={() => void handleDefer(c)}
+                              disabled={
+                                acceptingId === c.id ||
+                                deferringId === c.id ||
+                                noteSavingId === c.id
+                              }
+                              onClick={() => openNoteModal(c)}
                             >
-                              {deferringId === c.id ? "Deferring…" : "Defer"}
+                              <span className="inline-flex items-center gap-1.5">
+                                <StickyNote className="h-3.5 w-3.5" aria-hidden />
+                                {c.note ? "Edit note" : "Note"}
+                              </span>
                             </Button>
-                          )}
+                            {status === "open" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={acceptingId === c.id || deferringId === c.id}
+                                onClick={() => void handleDefer(c)}
+                              >
+                                {deferringId === c.id ? "Deferring…" : "Defer"}
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                       {expandedId === c.id && (
@@ -347,39 +448,27 @@ export default function LocationCandidates() {
                                   </ul>
                                 )}
                               </div>
-                              <div>
+                              <div className="border-t border-border/60 pt-3 mt-3">
                                 <div className="text-sm font-medium">Note</div>
-                                <Textarea
-                                  value={noteDraftById[c.id] ?? c.note ?? ""}
-                                  onChange={(e) =>
-                                    setNoteDraftById((prev) => ({
-                                      ...prev,
-                                      [c.id]: e.target.value,
-                                    }))
-                                  }
-                                  placeholder="Add a brief note…"
-                                />
-                                <div className="mt-2 flex justify-end">
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    disabled={noteSavingId === c.id}
-                                    onClick={() => void saveNote(c)}
-                                  >
-                                    {noteSavingId === c.id ? "Saving…" : "Save note"}
-                                  </Button>
-                                </div>
+                                {savedNoteText ? (
+                                  <p className="mt-1 text-sm whitespace-pre-wrap">{savedNoteText}</p>
+                                ) : (
+                                  <p className="mt-1 text-sm text-muted-foreground italic">
+                                    No note yet. Use the Note button in the row actions to add one.
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </TableCell>
                         </TableRow>
                       )}
                     </Fragment>
-                  ))
+                    )
+                  })
                 )}
               </TableBody>
             </Table>
-          </>
+          </div>
         </CardContent>
       </Card>
 
@@ -393,6 +482,52 @@ export default function LocationCandidates() {
         title="Link candidate to canonical"
         onDone={() => void loadFlat()}
       />
+
+      <Dialog
+        open={noteModalId !== null}
+        onOpenChange={(open) => {
+          if (!open && noteSavingId !== null) return
+          if (!open) closeNoteModal()
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Review note</DialogTitle>
+            <DialogDescription>
+              {noteModalCandidate?.suggested_name
+                ? `Optional note for “${noteModalCandidate.suggested_name}”.`
+                : "Optional brief note for this candidate."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="candidate-note-modal">Note</Label>
+            <Textarea
+              id="candidate-note-modal"
+              rows={5}
+              value={noteModalDraft}
+              onChange={(e) => setNoteModalDraft(e.target.value)}
+              placeholder="Add a brief note…"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={noteSavingId !== null}
+              onClick={() => closeNoteModal()}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={noteSavingId !== null}
+              onClick={() => void saveNoteFromModal()}
+            >
+              {noteSavingId !== null ? "Saving…" : "Save note"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
