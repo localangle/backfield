@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from backfield_auth.gate import require_project_access
 from backfield_db import (
     BackfieldProject,
     StylebookLocationCanonical,
+    SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_LINKED,
@@ -61,6 +64,24 @@ class PaginatedCandidatesResponse(BaseModel):
     has_prev: bool
 
 
+class CandidateContextItem(BaseModel):
+    article_id: int
+    article_headline: str | None = None
+    article_url: str | None = None
+    text: str
+
+
+class CandidateContextResponse(BaseModel):
+    substrate_location_id: int
+    created_at: str | None = None
+    note: str | None = None
+    examples: list[CandidateContextItem]
+
+
+class UpdateCandidateNoteBody(BaseModel):
+    note: str | None = None
+
+
 def _open_candidate_filters(
     project_id: int,
     *,
@@ -110,18 +131,35 @@ def _deferred_candidate_filters(
 
 
 def _candidate_dict(loc: SubstrateLocation) -> dict[str, Any]:
+    note = _extract_review_note(loc)
     return {
         "id": int(loc.id),  # type: ignore[arg-type]
         "project_id": int(loc.project_id),
         "suggested_name": str(loc.name),
         "suggested_type": loc.location_type or "",
         "suggested_formatted_address": loc.formatted_address,
+        "created_at": loc.created_at.isoformat() if isinstance(loc.created_at, datetime) else None,
+        "note": note,
         "status": (
-            "deferred"
-            if str(loc.canonical_link_status) == CANONICAL_LINK_WAIVED
-            else "open"
+            "deferred" if str(loc.canonical_link_status) == CANONICAL_LINK_WAIVED else "open"
         ),
     }
+
+
+def _extract_review_note(loc: SubstrateLocation) -> str | None:
+    raw = loc.canonical_review_reasons_json
+    if raw is None:
+        return None
+    items: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        items = [r for r in raw if isinstance(r, dict)]
+    elif isinstance(raw, dict):
+        items = [raw]
+    for it in reversed(items):
+        if str(it.get("code") or "") == "review_note":
+            val = (it.get("note") or "").strip()
+            return val or None
+    return None
 
 
 def _list_open_candidates(
@@ -321,6 +359,137 @@ def candidates_types(
     raw = session.exec(stmt).all()
     types = sorted({str(t) for t in raw if t})
     return {"types": types}
+
+
+def _first_occurrence_text_by_mention_id(
+    session: Session, mention_ids: list[int]
+) -> dict[int, str]:
+    if not mention_ids:
+        return {}
+    rows = session.exec(
+        select(SubstrateLocationMentionOccurrence)
+        .where(
+            col(SubstrateLocationMentionOccurrence.location_mention_id).in_(mention_ids),
+            SubstrateLocationMentionOccurrence.suppressed == False,  # noqa: E712
+        )
+        .order_by(
+            col(SubstrateLocationMentionOccurrence.location_mention_id),
+            col(SubstrateLocationMentionOccurrence.occurrence_order).asc().nulls_last(),
+            col(SubstrateLocationMentionOccurrence.id),
+        )
+    ).all()
+    out: dict[int, str] = {}
+    for occ in rows:
+        mid = int(occ.location_mention_id)
+        if mid in out:
+            continue
+        # Prefer quote_text if present; fallback to mention_text.
+        txt = (occ.quote_text or occ.mention_text or "").strip()
+        if txt:
+            out[mid] = txt
+    return out
+
+
+@router.get(
+    "/candidates/{substrate_location_id}/context",
+    response_model=CandidateContextResponse,
+)
+def candidate_context(
+    substrate_location_id: int,
+    project_slug: str = Query(...),
+    limit: int = Query(3, ge=1, le=10),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CandidateContextResponse:
+    """Small textual examples showing where this location appears in articles (lean payload)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    _ = _require_stylebook_id(session, proj)
+
+    loc = session.get(SubstrateLocation, substrate_location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Substrate location not found")
+    if loc.stylebook_location_canonical_id is not None:
+        raise HTTPException(status_code=409, detail="Location is already linked to a canonical")
+    if str(loc.canonical_link_status) not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
+        raise HTTPException(status_code=409, detail="Location is not in the review queue")
+
+    pairs = list(
+        session.exec(
+            select(SubstrateLocationMention, SubstrateArticle)
+            .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
+            .where(
+                SubstrateLocationMention.location_id == int(substrate_location_id),
+                SubstrateLocationMention.deleted == False,  # noqa: E712
+                SubstrateArticle.project_id == int(proj.id),
+                SubstrateArticle.deleted == False,  # noqa: E712
+            )
+            .order_by(col(SubstrateLocationMention.updated_at).desc())
+            .limit(limit)
+        ).all()
+    )
+    mention_ids = [int(m.id) for m, _ in pairs if m.id is not None]  # type: ignore[union-attr]
+    texts = _first_occurrence_text_by_mention_id(session, mention_ids)
+    examples: list[CandidateContextItem] = []
+    for mention, article in pairs:
+        mid = int(mention.id)  # type: ignore[arg-type]
+        txt = texts.get(mid) or ""
+        if not txt:
+            continue
+        examples.append(
+            CandidateContextItem(
+                article_id=int(article.id),  # type: ignore[arg-type]
+                article_headline=str(article.headline),
+                article_url=article.url,
+                text=txt,
+            )
+        )
+
+    return CandidateContextResponse(
+        substrate_location_id=int(substrate_location_id),
+        created_at=loc.created_at.isoformat() if isinstance(loc.created_at, datetime) else None,
+        note=_extract_review_note(loc),
+        examples=examples,
+    )
+
+
+@router.post("/candidates/{substrate_location_id}/note")
+def candidate_update_note(
+    substrate_location_id: int,
+    body: UpdateCandidateNoteBody,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> dict[str, str]:
+    """Attach a short editor note to a review queue item (stored on the location row)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    _ = _require_stylebook_id(session, proj)
+
+    loc = session.get(SubstrateLocation, substrate_location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Substrate location not found")
+    if loc.stylebook_location_canonical_id is not None:
+        raise HTTPException(status_code=409, detail="Location is already linked to a canonical")
+    if str(loc.canonical_link_status) not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
+        raise HTTPException(status_code=409, detail="Location is not in the review queue")
+
+    note = (body.note or "").strip()
+    raw = loc.canonical_review_reasons_json
+    reasons: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        reasons = [r for r in raw if isinstance(r, dict)]
+    elif isinstance(raw, dict):
+        reasons = [raw]
+
+    # Remove any existing note entries.
+    reasons = [r for r in reasons if str(r.get("code") or "") != "review_note"]
+    if note:
+        reasons.append({"code": "review_note", "note": note, "provenance": "stylebook_ui"})
+    loc.canonical_review_reasons_json = reasons if reasons else None
+    session.add(loc)
+    session.commit()
+    return {"message": "updated"}
 
 
 class SuggestedCanonicalItem(BaseModel):

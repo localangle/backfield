@@ -35,6 +35,8 @@ export {
   type AcceptCandidateBody,
   type Candidate,
   type CandidateCluster,
+  type CandidateContextItem,
+  type CandidateContextResponse,
   type ListCandidatesFilterOptions,
   type ListClustersOptions,
   type PaginatedCandidatesResponse,
@@ -43,10 +45,12 @@ export {
   type SuggestedCanonicalsResponse,
   acceptCandidate,
   deferCandidate,
+  getCandidateContext,
   getSuggestedCanonicals,
   listCandidates,
   listClusters,
   listLocationCandidateTypes,
+  updateCandidateNote,
 } from "@/lib/stylebook-api/candidates"
 export {
   type AgentType,

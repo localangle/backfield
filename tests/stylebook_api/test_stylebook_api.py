@@ -411,6 +411,83 @@ def test_candidates_filters_by_q_and_type_filter(
     assert r_t.json()["candidates"][0]["suggested_name"] == "Chicago"
 
 
+def test_candidate_context_and_note_roundtrip(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        art = SubstrateArticle(
+            project_id=pid,
+            headline="H",
+            text="We visited Chicago skyline today.",
+            url="https://example.com/a2",
+            deleted=False,
+        )
+        s.add(art)
+        s.flush()
+        aid = int(art.id)  # type: ignore[arg-type]
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Chicago",
+            normalized_name="chicago",
+            location_type="city",
+            identity_fingerprint="fp-chicago-ctx",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.flush()
+        lid = int(loc.id)  # type: ignore[arg-type]
+        men = SubstrateLocationMention(
+            article_id=aid,
+            location_id=lid,
+            needs_review=False,
+            deleted=False,
+        )
+        s.add(men)
+        s.flush()
+        mid = int(men.id)  # type: ignore[arg-type]
+        s.add(
+            SubstrateLocationMentionOccurrence(
+                location_mention_id=mid,
+                mention_text="Chicago skyline",
+                quote_text="We visited Chicago skyline today.",
+                suppressed=False,
+                occurrence_order=0,
+            )
+        )
+        s.commit()
+
+    r0 = client.get(
+        f"/v1/candidates/{lid}/context?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r0.status_code == 200
+    body = r0.json()
+    assert body["substrate_location_id"] == lid
+    assert body["created_at"] is not None
+    assert body["examples"]
+    assert "Chicago skyline" in body["examples"][0]["text"]
+
+    r1 = client.post(
+        f"/v1/candidates/{lid}/note?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"note": "Ambiguous between city and sports team."},
+    )
+    assert r1.status_code == 200
+
+    r2 = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open&q=chicago",
+        headers=_service_headers(),
+    )
+    assert r2.status_code == 200
+    row = r2.json()["candidates"][0]
+    assert row["created_at"] is not None
+    assert row["note"] == "Ambiguous between city and sports team."
+
+
 def test_candidates_needs_review_facet(
     client: TestClient, stylebook_test_engine: object
 ) -> None:

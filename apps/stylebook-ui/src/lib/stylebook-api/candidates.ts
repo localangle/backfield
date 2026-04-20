@@ -6,6 +6,8 @@ export interface Candidate {
   suggested_name?: string
   suggested_type?: string
   suggested_formatted_address?: string | null
+  created_at?: string | null
+  note?: string | null
   status: string
 }
 
@@ -122,6 +124,46 @@ export async function deferCandidate(
   return stylebookJsonFetch<{ message: string }>(
     `/v1/candidates/${substrateLocationId}/defer?${params}`,
     { method: "POST" },
+  )
+}
+
+export interface CandidateContextItem {
+  article_id: number
+  article_headline?: string | null
+  article_url?: string | null
+  text: string
+}
+
+export interface CandidateContextResponse {
+  substrate_location_id: number
+  created_at?: string | null
+  note?: string | null
+  examples: CandidateContextItem[]
+}
+
+export async function getCandidateContext(
+  projectSlug: string,
+  substrateLocationId: number,
+  limit: number = 3,
+): Promise<CandidateContextResponse> {
+  const params = new URLSearchParams({
+    project_slug: projectSlug,
+    limit: String(limit),
+  })
+  return stylebookJsonFetch<CandidateContextResponse>(
+    `/v1/candidates/${substrateLocationId}/context?${params}`,
+  )
+}
+
+export async function updateCandidateNote(
+  projectSlug: string,
+  substrateLocationId: number,
+  note: string | null,
+): Promise<{ message: string }> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  return stylebookJsonFetch<{ message: string }>(
+    `/v1/candidates/${substrateLocationId}/note?${params}`,
+    { method: "POST", body: JSON.stringify({ note }) },
   )
 }
 
