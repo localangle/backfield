@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   deleteCanonicalLocation,
@@ -52,6 +52,7 @@ export default function LocationDetail() {
   const [deleting, setDeleting] = useState(false)
   const [substrates, setSubstrates] = useState<LinkedSubstrateItem[]>([])
   const [substratesLoading, setSubstratesLoading] = useState(false)
+  const [mentionsLoading, setMentionsLoading] = useState(false)
   const [moveSubstrateId, setMoveSubstrateId] = useState<number | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
 
@@ -80,11 +81,14 @@ export default function LocationDetail() {
   }, [id, projectSlug])
 
   const loadMentions = useCallback(async (canonicalId: number, slug: string) => {
+    setMentionsLoading(true)
     try {
-      const m = await getCanonicalLocationMentions(canonicalId, slug)
+      const m = await getCanonicalLocationMentions(canonicalId, slug, 500, 0)
       setMentions(m.mentions)
     } catch {
       setMentions([])
+    } finally {
+      setMentionsLoading(false)
     }
   }, [])
 
@@ -118,6 +122,19 @@ export default function LocationDetail() {
     await loadMentions(cid, projectSlug)
   }, [id, projectSlug, loadMentions, loadSubstrates])
 
+  const mentionsBySubstrateId = useMemo(() => {
+    const map = new Map<number, LinkedMention[]>()
+    for (const row of mentions) {
+      const sid = row.substrate_location_id
+      const bucket = map.get(sid) ?? []
+      bucket.push(row)
+      map.set(sid, bucket)
+    }
+    return map
+  }, [mentions])
+
+  const tableLoading = substratesLoading || mentionsLoading
+
   async function handleUnlinkSubstrate(sub: LinkedSubstrateItem) {
     if (!projectSlug) return
     setUnlinkingId(sub.id)
@@ -143,6 +160,7 @@ export default function LocationDetail() {
       setCanonical(updated)
       setEditing(false)
       await loadCanonical(canonicalId, projectSlug)
+      await loadSubstrates(canonicalId, projectSlug)
       await loadMentions(canonicalId, projectSlug)
     } catch (e) {
       console.error(e)
@@ -233,15 +251,15 @@ export default function LocationDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Linked substrate places</CardTitle>
+          <CardTitle>Places and article mentions</CardTitle>
           <CardDescription>
-            Substrate rows in this project pointing at this canonical. Unlink sends a row back to the
-            open candidate queue (mentions unchanged). Move relinks to another canonical in one
-            request.
+            Each row is a project substrate place linked to this canonical. Article mentions for
+            that place appear indented underneath. Unlink returns only that substrate row to the open
+            candidate queue (mentions unchanged). Move relinks it to another canonical in one step.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {substratesLoading ? (
+          {tableLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading…
@@ -252,88 +270,85 @@ export default function LocationDetail() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Link status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {substrates.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="font-medium">{s.name}</TableCell>
-                    <TableCell>{s.location_type || "—"}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {s.canonical_link_status}
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={unlinkingId === s.id}
-                        onClick={() => setMoveSubstrateId(s.id)}
-                      >
-                        Move…
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={unlinkingId === s.id}
-                        onClick={() => void handleUnlinkSubstrate(s)}
-                      >
-                        {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Article mentions</CardTitle>
-          <CardDescription>
-            Mentions on any substrate location in this project linked to this canonical.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {mentions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No article mentions yet.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Article</TableHead>
-                  <TableHead>Role</TableHead>
+                  <TableHead className="w-[32%] min-w-[140px]">Place / article</TableHead>
+                  <TableHead className="w-[14%]">Type / role</TableHead>
                   <TableHead>Quoted text</TableHead>
+                  <TableHead className="text-right w-[150px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mentions.map((m) => (
-                  <TableRow key={m.mention_id}>
-                    <TableCell className="max-w-xs">
-                      {m.article_url ? (
-                        <a
-                          href={m.article_url}
-                          className="font-medium text-primary hover:underline"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {m.article_headline ?? `Article ${m.article_id}`}
-                        </a>
+                {substrates.map((s) => {
+                  const group = mentionsBySubstrateId.get(s.id) ?? []
+                  return (
+                    <Fragment key={`group-${s.id}`}>
+                      <TableRow className="bg-muted/50 border-t">
+                        <TableCell colSpan={3} className="align-top py-3">
+                          <div className="font-medium">{s.name}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {s.location_type || "—"} · {s.normalized_name || "—"} ·{" "}
+                            <span className="capitalize">{s.canonical_link_status}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right align-top py-3 space-x-2 whitespace-nowrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={unlinkingId === s.id}
+                            onClick={() => setMoveSubstrateId(s.id)}
+                          >
+                            Move…
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={unlinkingId === s.id}
+                            onClick={() => void handleUnlinkSubstrate(s)}
+                          >
+                            {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {group.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="pl-8 text-sm text-muted-foreground py-2">
+                            No article mentions for this place.
+                          </TableCell>
+                        </TableRow>
                       ) : (
-                        <span className="font-medium">{m.article_headline ?? `Article ${m.article_id}`}</span>
+                        group.map((m) => (
+                          <TableRow key={m.mention_id} className="hover:bg-muted/30">
+                            <TableCell className="pl-8 align-top">
+                              <span className="text-muted-foreground mr-1 select-none" aria-hidden>
+                                ↳
+                              </span>
+                              {m.article_url ? (
+                                <a
+                                  href={m.article_url}
+                                  className="font-medium text-primary hover:underline"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {m.article_headline ?? `Article ${m.article_id}`}
+                                </a>
+                              ) : (
+                                <span className="font-medium">
+                                  {m.article_headline ?? `Article ${m.article_id}`}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm align-top whitespace-nowrap">
+                              {m.description ?? "—"}
+                            </TableCell>
+                            <TableCell className="max-w-md text-sm align-top">
+                              {m.original_text ?? "—"}
+                            </TableCell>
+                            <TableCell className="align-top" />
+                          </TableRow>
+                        ))
                       )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground whitespace-nowrap">
-                      {m.description ?? "—"}
-                    </TableCell>
-                    <TableCell className="max-w-md">{m.original_text ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
+                    </Fragment>
+                  )
+                })}
               </TableBody>
             </Table>
           )}

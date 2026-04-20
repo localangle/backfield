@@ -333,6 +333,9 @@ class PatchCanonicalLocationBody(BaseModel):
 
 
 class LinkedMention(BaseModel):
+    """Mention row; ``substrate_location_id`` is the project ``substrate_location`` row."""
+
+    substrate_location_id: int
     mention_id: int
     article_id: int
     article_headline: str | None = None
@@ -513,7 +516,7 @@ def list_canonical_linked_substrates(
 def list_canonical_location_mentions(
     canonical_id: int,
     project_slug: str = Query(...),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort: str | None = Query(
         None,
@@ -574,8 +577,10 @@ def list_canonical_location_mentions(
         mid = int(mention.id)  # type: ignore[arg-type]
         aid = int(article.id)  # type: ignore[arg-type]
         created = mention.created_at
+        lid_sub = int(loc.id)  # type: ignore[arg-type]
         mentions_out.append(
             LinkedMention(
+                substrate_location_id=lid_sub,
                 mention_id=mid,
                 article_id=aid,
                 article_headline=str(article.headline),
@@ -1024,6 +1029,7 @@ def list_location_mentions(
         created = mention.created_at
         mentions_out.append(
             LinkedMention(
+                substrate_location_id=int(location_id),
                 mention_id=mid,
                 article_id=aid,
                 article_headline=str(article.headline),

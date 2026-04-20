@@ -257,12 +257,21 @@ export async function deleteLocation(
 }
 
 export interface LinkedMention {
+  substrate_location_id: number
   mention_id: number
   article_id: number
   article_headline?: string
   article_url?: string | null
   original_text?: string | null
   description?: string | null
+  location_name?: string | null
+  location_type?: string | null
+  formatted_address?: string | null
+  geometry_type?: string | null
+  geometry_json?: Record<string, unknown> | null
+  has_geometry?: boolean | null
+  created_at?: string | null
+  link_location_mention_id?: number | null
 }
 
 export interface LocationMentionsResponse {

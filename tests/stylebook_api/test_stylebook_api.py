@@ -560,6 +560,7 @@ def test_list_location_mentions_includes_article_and_occurrence_quote(
     assert data["canonical_location_id"] == lid
     assert len(data["mentions"]) == 1
     m0 = data["mentions"][0]
+    assert m0["substrate_location_id"] == lid
     assert m0["mention_id"] == mid
     assert m0["article_id"] == aid
     assert m0["article_headline"] == "Chicago story"
