@@ -115,3 +115,67 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
         codes = [str(r.get("code") or "") for r in out.resolution_reasons]
         assert "ambiguous_canonical_match" in codes
         assert "canonical_adjudication" in codes
+
+
+def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> None:
+    """Declined link + materialize-eligible row becomes MATERIALIZE_NEW (review UI suggestion)."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        c1 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Austin, TX",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(c1)
+        session.commit()
+        session.refresh(c1)
+        id1 = int(c1.id)  # type: ignore[arg-type]
+
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Austin, AR",
+            normalized_name="austin, ar",
+            location_type="city",
+            identity_fingerprint="fp-adj-ar",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_canonical_match",
+                    "best_canonical_id": id1,
+                    "best_score": 0.8,
+                    "recall_canonical_ids": [id1],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                '{"canonical_id": null, "confidence": 0.15, '
+                '"rationale": "AR vs TX; no fit."}'
+            )
+
+        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+        codes = [str(r.get("code") or "") for r in out.resolution_reasons]
+        assert "ambiguous_canonical_match" in codes
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "no_high_confidence_link"

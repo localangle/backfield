@@ -11,6 +11,7 @@ from backfield_db import StylebookLocationCanonical, SubstrateLocation
 from backfield_stylebook.canonical_policy import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
+    substrate_may_materialize_canonical_after_recall,
 )
 from sqlmodel import Session, select
 
@@ -120,6 +121,11 @@ def adjudicate_ambiguous_plan_with_llm(
             "outcome": "no_high_confidence_link",
         }
         merged = tuple(list(plan.resolution_reasons) + [extra])
+        if substrate_may_materialize_canonical_after_recall(location):
+            return CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.MATERIALIZE_NEW,
+                resolution_reasons=merged,
+            )
         return CanonicalPersistPlan(decision=plan.decision, resolution_reasons=merged)
 
     extra = {

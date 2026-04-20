@@ -229,6 +229,15 @@ def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> 
     return _should_materialize_new_strict(location)
 
 
+def substrate_may_materialize_canonical_after_recall(location: SubstrateLocation) -> bool:
+    """True when ``MATERIALIZE_NEW`` is allowed for this row (same gates as rules materialize).
+
+    Used when LLM adjudication declines linking to any recalled canonical so the plan can
+    still suggest creating a new canonical (e.g. Austin, AR vs Austin, TX).
+    """
+    return _should_materialize_when_no_canonical_match(location)
+
+
 def decide_canonical_persist_plan(
     session: Session,
     *,
