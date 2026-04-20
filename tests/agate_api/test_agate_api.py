@@ -223,7 +223,10 @@ def test_create_project_with_workspace_id(tmp_path):
             json={"name": "WS Project", "slug": "wsproj", "workspace_id": int(ws.id)},
         )
         assert r.status_code == 200
-        pid = int(r.json()["id"])
+        body = r.json()
+        pid = int(body["id"])
+        assert body.get("workspace_id") == int(ws.id)
+        assert body.get("workspace_stylebook_id") == sb_id
         with Session(engine) as s:
             p = s.get(BackfieldProject, pid)
             assert p is not None

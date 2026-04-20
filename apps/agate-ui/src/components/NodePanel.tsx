@@ -9,6 +9,12 @@ import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Suspense } from 'react'
 import { panelComponents } from '@/nodes/registry'
 
+export type GraphPanelContext = {
+  workspaceDefaultStylebookId: number | null
+  /** True when a project is selected but the API did not resolve a workspace Stylebook. */
+  missingWorkspaceStylebook?: boolean
+}
+
 interface NodePanelProps {
   selectedNode: any
   onClose: () => void
@@ -19,6 +25,7 @@ interface NodePanelProps {
   currentRun?: Run | null
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  graphContext?: GraphPanelContext | null
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
   showModal?: (config: {
     title: string
@@ -42,6 +49,7 @@ export default function NodePanel({
   editMode,
   setNodes,
   showModal,
+  graphContext,
   nodeOutputLookupSpec,
 }: NodePanelProps) {
   if (!selectedNode) return null
@@ -121,6 +129,7 @@ export default function NodePanel({
                   currentRun={currentRun}
                   editMode={editMode}
                   setNodes={setNodes}
+                  graphContext={graphContext ?? undefined}
                   nodeOutputLookupSpec={nodeOutputLookupSpec}
                 />
               )

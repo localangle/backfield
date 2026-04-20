@@ -43,6 +43,7 @@ const nodeMetadata = {
 
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import type { GraphPanelContext } from '@/components/NodePanel'
 
 interface DBOutputPanelProps {
   node: any
@@ -52,6 +53,7 @@ interface DBOutputPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  graphContext?: GraphPanelContext | null
 }
 
 const DEFAULTS = {
@@ -61,7 +63,12 @@ const DEFAULTS = {
   adjudication_model: 'gpt-5-nano' as 'gpt-5-nano' | 'gpt-5-mini',
 }
 
-export default function DBOutputPanel({ node, editMode, setNodes }: DBOutputPanelProps) {
+export default function DBOutputPanel({
+  node,
+  editMode,
+  setNodes,
+  graphContext,
+}: DBOutputPanelProps) {
   const data = { ...DEFAULTS, ...(node.data || {}) }
   const disabled = !(editMode && setNodes)
 
@@ -107,6 +114,17 @@ export default function DBOutputPanel({ node, editMode, setNodes }: DBOutputPane
           When set, canonicalization targets this Stylebook (must belong to the project
           organization). When empty, the workspace default Stylebook is used.
         </p>
+        {stylebookStr === '' && graphContext?.workspaceDefaultStylebookId != null && (
+          <p className="text-xs text-muted-foreground">
+            Workspace default: Stylebook {graphContext.workspaceDefaultStylebookId}
+          </p>
+        )}
+        {stylebookStr === '' && graphContext?.missingWorkspaceStylebook === true && (
+          <p className="text-xs text-muted-foreground">
+            This project has no workspace Stylebook from the API. Assign the project to a
+            workspace (org admin) or set a Stylebook ID above.
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">

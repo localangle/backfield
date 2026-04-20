@@ -5,12 +5,22 @@ import { AddPlusCta } from "@/components/AddPlusCta"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import ProjectDialog from "@/components/ProjectDialog"
 import { useAuth } from "@/lib/auth"
 import { createProject, type ProjectCreate } from "@/lib/api"
 import {
   listMyWorkspaces,
+  listOrgStylebooks,
   patchWorkspace,
+  type OrgStylebook,
   type ProjectSummary,
   type WorkspaceWithProjects,
 } from "@/lib/core-api"
@@ -132,6 +142,112 @@ function WorkspaceTitleRow({
   )
 }
 
+function WorkspaceStylebookSection({
+  workspace,
+  organizationId,
+  isOrgAdmin,
+  onUpdated,
+}: {
+  workspace: WorkspaceWithProjects
+  organizationId: number | null
+  isOrgAdmin: boolean
+  onUpdated: (w: WorkspaceWithProjects) => void
+}) {
+  const [stylebooks, setStylebooks] = useState<OrgStylebook[]>([])
+  const [loadingList, setLoadingList] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!isOrgAdmin || organizationId == null) return
+    let cancelled = false
+    void (async () => {
+      try {
+        setLoadingList(true)
+        const rows = await listOrgStylebooks(organizationId)
+        if (!cancelled) setStylebooks(rows)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        if (!cancelled) setLoadingList(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOrgAdmin, organizationId])
+
+  const sid = workspace.stylebook_id ?? null
+  const readOnlyLabel =
+    workspace.stylebook_name != null &&
+    workspace.stylebook_name !== "" &&
+    sid != null
+      ? `${workspace.stylebook_name} (${sid})`
+      : sid != null
+        ? `Stylebook ${sid}`
+        : "—"
+
+  if (!isOrgAdmin) {
+    return (
+      <div className="mt-4 max-w-xl space-y-1">
+        <p className="text-sm font-medium">Workspace Stylebook</p>
+        <p className="text-sm text-muted-foreground">{readOnlyLabel}</p>
+      </div>
+    )
+  }
+
+  if (organizationId == null) return null
+
+  const currentStr = sid != null ? String(sid) : ""
+
+  return (
+    <div className="mt-4 max-w-xl space-y-2">
+      <Label htmlFor="ws-stylebook-select">Workspace Stylebook</Label>
+      {loadingList ? (
+        <p className="text-sm text-muted-foreground">Loading stylebooks…</p>
+      ) : (
+        <Select
+          value={currentStr}
+          disabled={saving || stylebooks.length === 0}
+          onValueChange={(value) => {
+            void (async () => {
+              const nextId = Number(value)
+              if (Number.isNaN(nextId) || nextId === sid) return
+              setSaving(true)
+              try {
+                const updated = await patchWorkspace(organizationId, workspace.id, {
+                  stylebook_id: nextId,
+                })
+                onUpdated(updated)
+                window.dispatchEvent(new CustomEvent("agate:workspaces-changed"))
+              } catch (e) {
+                console.error(e)
+              } finally {
+                setSaving(false)
+              }
+            })()
+          }}
+        >
+          <SelectTrigger id="ws-stylebook-select" className="max-w-md">
+            <SelectValue placeholder="Select a Stylebook" />
+          </SelectTrigger>
+          <SelectContent>
+            {stylebooks.map((sb) => (
+              <SelectItem key={sb.id} value={String(sb.id)}>
+                {sb.name}
+                {sb.is_default ? " (default)" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Projects in this workspace use this Stylebook for Stylebook Output nodes when no override
+        is set on the node.
+      </p>
+    </div>
+  )
+}
+
 function ProjectHomeCard({ project }: { project: ProjectSummary }) {
   return (
     <Card className="h-full w-full flex flex-col hover:border-foreground/20 transition-colors">
@@ -245,6 +361,12 @@ export default function WorkspaceDetailPage() {
         <p className="text-muted-foreground text-sm mt-1 max-w-2xl">
           Open a project to edit flows and runs, or add a new project to this workspace.
         </p>
+        <WorkspaceStylebookSection
+          workspace={workspace}
+          organizationId={organizationId}
+          isOrgAdmin={isOrgAdmin}
+          onUpdated={setWorkspace}
+        />
       </div>
 
       <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

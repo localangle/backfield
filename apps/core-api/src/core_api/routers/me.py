@@ -6,11 +6,15 @@ from collections import defaultdict
 
 from backfield_db import BackfieldProject, BackfieldWorkspace, BackfieldWorkspaceMembership
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from core_api.authz import session_project_ids_for_user
 from core_api.deps import get_auth, get_session
-from core_api.routers.admin_org import ProjectSummaryOut, WorkspaceWithProjectsOut
+from core_api.routers.admin_org import (
+    ProjectSummaryOut,
+    WorkspaceWithProjectsOut,
+    _stylebook_name_map,
+)
 
 router = APIRouter(prefix="/me", tags=["me"])
 
@@ -124,9 +128,39 @@ def list_my_workspaces(
 
     entries.sort(key=lambda t: t[2])
 
-    out: list[WorkspaceWithProjectsOut] = [
-        WorkspaceWithProjectsOut(id=a, name=b, slug=c, projects=d) for a, b, c, d in entries
-    ]
+    wids_real = [wid for wid, _, _, _ in entries]
+    ws_by_id: dict[int, BackfieldWorkspace] = {}
+    if wids_real:
+        wrows = session.exec(
+            select(BackfieldWorkspace).where(col(BackfieldWorkspace.id).in_(wids_real))
+        ).all()
+        for w in wrows:
+            if w.id is not None:
+                ws_by_id[int(w.id)] = w
+    sb_ids = {
+        int(ws_by_id[wid].stylebook_id) for wid in wids_real if wid in ws_by_id
+    }
+    sb_labels = _stylebook_name_map(session, org_id, sb_ids)
+
+    out: list[WorkspaceWithProjectsOut] = []
+    for wid, wname, wslug, projects in entries:
+        ws_row = ws_by_id.get(wid)
+        if ws_row is not None:
+            sid = int(ws_row.stylebook_id)
+            sname = sb_labels.get(sid, "")
+        else:
+            sid = None
+            sname = None
+        out.append(
+            WorkspaceWithProjectsOut(
+                id=wid,
+                name=wname,
+                slug=wslug,
+                projects=projects,
+                stylebook_id=sid,
+                stylebook_name=sname,
+            )
+        )
 
     if None in by_ws and by_ws[None]:
         plist = sorted(by_ws[None], key=lambda p: p.slug)
@@ -140,6 +174,8 @@ def list_my_workspaces(
                     for p in plist
                     if p.id is not None
                 ],
+                stylebook_id=None,
+                stylebook_name=None,
             )
         )
 

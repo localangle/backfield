@@ -16,6 +16,8 @@ export interface Project {
   system_prompt?: string
   created_at: string
   updated_at?: string
+  workspace_id?: number | null
+  workspace_stylebook_id?: number | null
 }
 
 export interface ProjectStats {

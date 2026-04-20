@@ -57,6 +57,25 @@ export default function GraphBuilder() {
   // Find the selected node
   const selectedNode = nodes.find(n => n.id === selectedNodeId)
 
+  const selectedProject = useMemo(
+    () => projects.find((p) => p.id.toString() === selectedProjectId) ?? null,
+    [projects, selectedProjectId],
+  )
+
+  const graphContext = useMemo(() => {
+    if (!selectedProject) {
+      return {
+        workspaceDefaultStylebookId: null as number | null,
+        missingWorkspaceStylebook: false,
+      }
+    }
+    const sid = selectedProject.workspace_stylebook_id ?? null
+    return {
+      workspaceDefaultStylebookId: sid,
+      missingWorkspaceStylebook: sid == null,
+    }
+  }, [selectedProject])
+
   // Node click handlers
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id)
@@ -633,6 +652,7 @@ export default function GraphBuilder() {
               editMode={true}
               setNodes={setNodes}
               showModal={showModal}
+              graphContext={graphContext}
             />
           )}
 
