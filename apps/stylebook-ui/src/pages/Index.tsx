@@ -68,7 +68,7 @@ export default function Index() {
 
   const handleEntityTypeClick = (type: string) => {
     if (type === 'locations') {
-      navigate(`/locations/candidates?project=${projectSlug}`)
+      navigate(`/locations/canonical?project=${projectSlug}`)
     } else if (type === 'people') {
       navigate(`/people/candidates?project=${projectSlug}`)
     } else if (type === 'organizations') {

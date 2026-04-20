@@ -21,6 +21,7 @@ from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
+    CANONICAL_LINK_WAIVED,
 )
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
@@ -272,6 +273,65 @@ def test_candidates_open_queue_empty(client: TestClient) -> None:
     data = r.json()
     assert data["total"] == 0
     assert data["candidates"] == []
+
+
+def test_candidates_defer_removes_from_open_queue_and_lists_in_deferred(
+    client: TestClient, stylebook_test_engine: object
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Deferme",
+            normalized_name="deferme",
+            location_type="city",
+            identity_fingerprint="fp-defer-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r0 = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open",
+        headers=_service_headers(),
+    )
+    assert r0.status_code == 200
+    assert r0.json()["total"] == 1
+
+    r_def = client.post(
+        f"/v1/candidates/{sid}/defer?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r_def.status_code == 200
+    assert r_def.json() == {"message": "deferred"}
+
+    r1 = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open",
+        headers=_service_headers(),
+    )
+    assert r1.status_code == 200
+    assert r1.json()["total"] == 0
+
+    r2 = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=deferred",
+        headers=_service_headers(),
+    )
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body["total"] == 1
+    assert body["candidates"][0]["suggested_name"] == "Deferme"
+    assert body["candidates"][0]["status"] == "deferred"
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.stylebook_location_canonical_id is None
+        assert row.canonical_link_status == CANONICAL_LINK_WAIVED
 
 
 def test_candidates_lists_unlinked_substrate(

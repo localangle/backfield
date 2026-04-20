@@ -11,7 +11,11 @@ from backfield_db import (
     SubstrateLocation,
     SubstrateLocationMention,
 )
-from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_stylebook.canonical_link import (
+    CANONICAL_LINK_LINKED,
+    CANONICAL_LINK_PENDING,
+    CANONICAL_LINK_WAIVED,
+)
 from backfield_stylebook.locations import refresh_aliases_for_linked_location
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from backfield_stylebook.substrate_canonical_link_actions import (
@@ -78,6 +82,14 @@ def _open_candidate_filters(
     return filters
 
 
+def _deferred_candidate_filters(project_id: int) -> list[Any]:
+    return [
+        SubstrateLocation.project_id == project_id,
+        col(SubstrateLocation.stylebook_location_canonical_id).is_(None),
+        SubstrateLocation.canonical_link_status == CANONICAL_LINK_WAIVED,
+    ]
+
+
 def _candidate_dict(loc: SubstrateLocation) -> dict[str, Any]:
     return {
         "id": int(loc.id),  # type: ignore[arg-type]
@@ -85,7 +97,11 @@ def _candidate_dict(loc: SubstrateLocation) -> dict[str, Any]:
         "suggested_name": str(loc.name),
         "suggested_type": loc.location_type or "",
         "suggested_formatted_address": loc.formatted_address,
-        "status": "open",
+        "status": (
+            "deferred"
+            if str(loc.canonical_link_status) == CANONICAL_LINK_WAIVED
+            else "open"
+        ),
     }
 
 
@@ -117,6 +133,33 @@ def _list_open_candidates(
     )
 
 
+def _list_deferred_candidates(
+    session: Session,
+    *,
+    project_id: int,
+    limit: int,
+    offset: int,
+) -> PaginatedCandidatesResponse:
+    filters = _deferred_candidate_filters(project_id)
+    count_stmt = select(func.count()).select_from(SubstrateLocation).where(*filters)
+    total = int(session.scalar(count_stmt) or 0)
+    stmt = (
+        select(SubstrateLocation)
+        .where(*filters)
+        .order_by(col(SubstrateLocation.updated_at).desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = list(session.exec(stmt).all())
+    candidates = [_candidate_dict(r) for r in rows]
+    return PaginatedCandidatesResponse(
+        candidates=candidates,
+        total=total,
+        has_next=offset + len(candidates) < total,
+        has_prev=offset > 0,
+    )
+
+
 @router.get("/candidates", response_model=PaginatedCandidatesResponse)
 def candidates_list(
     project_slug: str = Query(...),
@@ -127,13 +170,23 @@ def candidates_list(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedCandidatesResponse:
-    if status not in ("open", "all"):
-        raise HTTPException(status_code=400, detail="Only status=open or all is supported")
+    if status not in ("open", "deferred", "all"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only status=open, deferred, or all is supported",
+        )
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     _require_stylebook_id(session, proj)
     if status == "all":
         raise HTTPException(status_code=400, detail="status=all is not implemented for this queue")
+    if status == "deferred":
+        return _list_deferred_candidates(
+            session,
+            project_id=int(proj.id),
+            limit=limit,
+            offset=offset,
+        )
     return _list_open_candidates(
         session,
         project_id=int(proj.id),
@@ -153,13 +206,23 @@ def candidates_ungrouped(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedCandidatesResponse:
-    if status not in ("open", "all"):
-        raise HTTPException(status_code=400, detail="Only status=open or all is supported")
+    if status not in ("open", "deferred", "all"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only status=open, deferred, or all is supported",
+        )
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     _require_stylebook_id(session, proj)
     if status == "all":
         raise HTTPException(status_code=400, detail="status=all is not implemented for this queue")
+    if status == "deferred":
+        return _list_deferred_candidates(
+            session,
+            project_id=int(proj.id),
+            limit=limit,
+            offset=offset,
+        )
     return _list_open_candidates(
         session,
         project_id=int(proj.id),
@@ -263,6 +326,38 @@ class AcceptCandidateBody(BaseModel):
     stylebook_location_id: int | None = None
     name: str | None = None
     geometry_json: dict[str, Any] | None = None
+
+
+@router.post("/candidates/{substrate_location_id}/defer")
+def defer_candidate(
+    substrate_location_id: int,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> dict[str, str]:
+    """Defer canonical linking for a substrate row (remove from open queue without linking)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    _ = _require_stylebook_id(session, proj)
+
+    loc = session.get(SubstrateLocation, substrate_location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Substrate location not found")
+    if loc.stylebook_location_canonical_id is not None:
+        raise HTTPException(status_code=409, detail="Location is already linked to a canonical")
+    if loc.canonical_link_status != CANONICAL_LINK_PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail="Location is not in the review queue (status must be pending)",
+        )
+
+    loc.canonical_link_status = CANONICAL_LINK_WAIVED
+    loc.canonical_review_reasons_json = [
+        {"code": "deferred_manual", "provenance": "stylebook_ui_defer"}
+    ]
+    session.add(loc)
+    session.commit()
+    return {"message": "deferred"}
 
 
 @router.post("/candidates/{substrate_location_id}/accept")

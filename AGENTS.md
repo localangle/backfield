@@ -59,6 +59,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - Prefer existing commands, docs, and package boundaries over inventing new workflows.
 - Update the matching source-of-truth doc when behavior, architecture, or operations change.
 - Keep work reviewable: one task per branch, one coherent diff, no unrelated cleanup.
+- In user-facing UI copy and frontend docs, prefer **product language** (e.g. “locations”, “candidates”, “canonicals”) over internal database terms like **“substrate”**.
 
 ## Style constraints
 

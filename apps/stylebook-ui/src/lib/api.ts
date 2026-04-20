@@ -42,6 +42,7 @@ export {
   type SuggestedCanonicalItem,
   type SuggestedCanonicalsResponse,
   acceptCandidate,
+  deferCandidate,
   getSuggestedCanonicals,
   listCandidates,
   listClusters,

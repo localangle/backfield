@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { acceptCandidate, listCandidates, listClusters, type Candidate } from "@/lib/api"
+import { acceptCandidate, deferCandidate, listCandidates, type Candidate } from "@/lib/api"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,29 +18,22 @@ export default function LocationCandidates() {
   const [searchParams] = useSearchParams()
   const projectSlug = searchParams.get("project") || ""
   const [loading, setLoading] = useState(false)
-  const [clusterMode, setClusterMode] = useState(false)
-  const [clusterTotal, setClusterTotal] = useState(0)
   const [listTotal, setListTotal] = useState(0)
   const [candidates, setCandidates] = useState<Candidate[]>([])
-  const [needsReviewOnly, setNeedsReviewOnly] = useState(false)
+  const [status, setStatus] = useState<"open" | "deferred">("open")
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
+  const [deferringId, setDeferringId] = useState<number | null>(null)
   const [linkModalId, setLinkModalId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const loadClusters = useCallback(async () => {
-    const res = await listClusters(projectSlug, "open", { limit: 25, offset: 0 })
-    setClusterTotal(res.total)
-  }, [projectSlug])
-
   const loadFlat = useCallback(async () => {
-    const res = await listCandidates(projectSlug, "open", false, {
+    const res = await listCandidates(projectSlug, status, false, {
       limit: 100,
       offset: 0,
-      needs_review: needsReviewOnly ? true : undefined,
     })
     setListTotal(res.total)
     setCandidates(res.candidates)
-  }, [projectSlug, needsReviewOnly])
+  }, [projectSlug, status])
 
   useEffect(() => {
     if (!projectSlug) return
@@ -49,15 +42,10 @@ export default function LocationCandidates() {
       setLoading(true)
       setError(null)
       try {
-        if (clusterMode) {
-          await loadClusters()
-        } else {
-          await loadFlat()
-        }
+        await loadFlat()
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Request failed")
-          setClusterTotal(0)
           setListTotal(0)
           setCandidates([])
         }
@@ -68,7 +56,7 @@ export default function LocationCandidates() {
     return () => {
       cancelled = true
     }
-  }, [projectSlug, clusterMode, loadClusters, loadFlat])
+  }, [projectSlug, status, loadFlat])
 
   async function handleAcceptNew(c: Candidate) {
     const name = (c.suggested_name || "").trim()
@@ -85,6 +73,20 @@ export default function LocationCandidates() {
     }
   }
 
+  async function handleDefer(c: Candidate) {
+    if (!projectSlug) return
+    setDeferringId(c.id)
+    setError(null)
+    try {
+      await deferCandidate(projectSlug, c.id)
+      await loadFlat()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Defer failed")
+    } finally {
+      setDeferringId(null)
+    }
+  }
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -98,84 +100,90 @@ export default function LocationCandidates() {
         <CardHeader>
           <CardTitle>Review queue</CardTitle>
           <CardDescription>
-            Open substrate locations for this project (not yet linked to a Stylebook canonical). Use
-            “Link to canonical” to pick an existing catalog row, or “Accept as new” to create one and
-            link.
+            Unlinked locations for this project. Use “Link to canonical” to link the item to an
+            existing canonical, or “Accept as new” to create a new one.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2 items-center">
-            <Button variant={!clusterMode ? "default" : "outline"} size="sm" onClick={() => setClusterMode(false)}>
-              Open queue (table)
+            <Button
+              variant={status === "open" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatus("open")}
+              disabled={loading}
+            >
+              For review
             </Button>
-            <Button variant={clusterMode ? "default" : "outline"} size="sm" onClick={() => setClusterMode(true)}>
-              Clusters (preview)
+            <Button
+              variant={status === "deferred" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatus("deferred")}
+              disabled={loading}
+            >
+              Deferred
             </Button>
-            {!clusterMode && (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground ml-2">
-                <input
-                  type="checkbox"
-                  checked={needsReviewOnly}
-                  onChange={(ev) => setNeedsReviewOnly(ev.target.checked)}
-                />
-                Needs review only
-              </label>
-            )}
             {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          {clusterMode ? (
-            <p className="text-sm text-muted-foreground">Clusters from API: {clusterTotal}</p>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">Open candidates: {listTotal}</p>
-              <Table>
-                <TableHeader>
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Address</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {candidates.length === 0 ? (
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableCell colSpan={4} className="text-muted-foreground">
+                      No unlinked locations.
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {candidates.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-muted-foreground">
-                        No rows in the open queue.
+                ) : (
+                  candidates.map((c) => (
+                    <TableRow key={c.id}>
+                      <TableCell className="font-medium">{c.suggested_name || "—"}</TableCell>
+                      <TableCell>{c.suggested_type || "—"}</TableCell>
+                      <TableCell className="max-w-xs truncate">
+                        {c.suggested_formatted_address || "—"}
+                      </TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          size="sm"
+                          variant="default"
+                          disabled={acceptingId === c.id || deferringId === c.id}
+                          onClick={() => setLinkModalId(c.id)}
+                        >
+                          Link to canonical
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={acceptingId === c.id || deferringId === c.id}
+                          onClick={() => void handleAcceptNew(c)}
+                        >
+                          {acceptingId === c.id ? "Accepting…" : "Accept as new"}
+                        </Button>
+                        {status === "open" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={acceptingId === c.id || deferringId === c.id}
+                            onClick={() => void handleDefer(c)}
+                          >
+                            {deferringId === c.id ? "Deferring…" : "Defer"}
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    candidates.map((c) => (
-                      <TableRow key={c.id}>
-                        <TableCell className="font-medium">{c.suggested_name || "—"}</TableCell>
-                        <TableCell>{c.suggested_type || "—"}</TableCell>
-                        <TableCell className="max-w-xs truncate">{c.suggested_formatted_address || "—"}</TableCell>
-                        <TableCell className="text-right space-x-2">
-                          <Button
-                            size="sm"
-                            variant="default"
-                            disabled={acceptingId === c.id}
-                            onClick={() => setLinkModalId(c.id)}
-                          >
-                            Link to canonical
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={acceptingId === c.id}
-                            onClick={() => void handleAcceptNew(c)}
-                          >
-                            {acceptingId === c.id ? "Accepting…" : "Accept as new"}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </>
-          )}
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </>
         </CardContent>
       </Card>
 

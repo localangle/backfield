@@ -112,6 +112,17 @@ export async function acceptCandidate(
   )
 }
 
+export async function deferCandidate(
+  projectSlug: string,
+  substrateLocationId: number,
+): Promise<{ message: string }> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  return stylebookJsonFetch<{ message: string }>(
+    `/v1/candidates/${substrateLocationId}/defer?${params}`,
+    { method: "POST" },
+  )
+}
+
 export interface SuggestedCanonicalItem {
   canonical_id: number
   label: string

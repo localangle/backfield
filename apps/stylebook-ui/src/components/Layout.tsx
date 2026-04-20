@@ -45,7 +45,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const handleProjectChange = (slug: string) => {
     const pathname = location.pathname
     if (pathname.startsWith("/locations/")) {
-      navigate(`/locations/candidates?project=${slug}`)
+      navigate(`/locations/canonical?project=${slug}`)
     } else if (pathname.startsWith("/people/")) {
       navigate(`/people/candidates?project=${slug}`)
     } else if (pathname.startsWith("/organizations/")) {
