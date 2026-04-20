@@ -40,7 +40,12 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
             NodeConfig(
                 id="n5",
                 type="DBOutput",
-                params={},
+                params={
+                    "stylebook_id": None,
+                    "canonicalization_mode": "rules",
+                    "auto_apply_canonicalization": True,
+                    "adjudication_model": "gpt-5-nano",
+                },
                 position={"x": 865.9777049180329, "y": 46.08393442622952},
             ),
         ],

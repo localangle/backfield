@@ -1,5 +1,15 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
 
+export interface CanonicalSuggestion {
+  suggested_action?: string | null
+  stylebook_location_canonical_id?: number | null
+  source?: string | null
+  adjudication_confidence?: number | null
+  adjudication_rationale?: string | null
+  adjudication_model?: string | null
+  adjudication_outcome?: string | null
+}
+
 export interface Candidate {
   id: number
   project_id: number
@@ -9,6 +19,7 @@ export interface Candidate {
   created_at?: string | null
   note?: string | null
   status: string
+  canonical_suggestion?: CanonicalSuggestion | null
 }
 
 export interface CandidateCluster {

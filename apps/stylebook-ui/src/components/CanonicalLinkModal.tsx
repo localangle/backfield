@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import {
+  getCanonicalLocation,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
   listCanonicalLocations,
@@ -29,8 +30,11 @@ export function CanonicalLinkModal(props: {
   substrateLocationId: number | null
   onDone: () => void
   title?: string
+  /** When set, pre-select this canonical after loading its label. */
+  initialCanonicalId?: number | null
 }) {
-  const { open, onOpenChange, projectSlug, substrateLocationId, onDone, title } = props
+  const { open, onOpenChange, projectSlug, substrateLocationId, onDone, title, initialCanonicalId } =
+    props
   const [suggestions, setSuggestions] = useState<SuggestedCanonicalItem[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [searchQ, setSearchQ] = useState("")
@@ -44,9 +48,26 @@ export function CanonicalLinkModal(props: {
     if (!open) return
     setSearchQ("")
     setSearchHits([])
-    setSelected(null)
     setError(null)
-  }, [open, substrateLocationId])
+    setSelected(null)
+    if (!initialCanonicalId || !projectSlug) {
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const c = await getCanonicalLocation(initialCanonicalId, projectSlug)
+        if (!cancelled && c) {
+          setSelected({ canonical_id: c.id, label: c.label })
+        }
+      } catch {
+        if (!cancelled) setSelected(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, substrateLocationId, projectSlug, initialCanonicalId])
 
   useEffect(() => {
     if (!open || !substrateLocationId || !projectSlug) {

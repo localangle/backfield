@@ -45,6 +45,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
             graph_id=graph_id,
             run_id=run_id,
             consolidated=body,
+            db_output_params=params if isinstance(params, dict) else None,
         )
         session.commit()
 

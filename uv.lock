@@ -249,12 +249,14 @@ version = "0.1.0"
 source = { editable = "packages/backfield-stylebook" }
 dependencies = [
     { name = "backfield-db" },
+    { name = "pydantic" },
     { name = "sqlmodel" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "backfield-db", editable = "packages/backfield-db" },
+    { name = "pydantic", specifier = ">=2.0.0" },
     { name = "sqlmodel", specifier = ">=0.0.16" },
 ]
 

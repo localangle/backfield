@@ -356,6 +356,14 @@ def decide_canonical_persist_plan(
     )
 
 
+def plan_has_ambiguous_canonical_match(plan: CanonicalPersistPlan) -> bool:
+    """True when rules deferred with an ambiguous fuzzy recall (LLM adjudication hook)."""
+    for r in plan.resolution_reasons:
+        if isinstance(r, dict) and str(r.get("code") or "") == "ambiguous_canonical_match":
+            return True
+    return False
+
+
 def defer_reason_payload(
     *,
     places_bucket: str,

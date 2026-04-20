@@ -208,6 +208,48 @@ def materialize_new_canonical_and_link(
     )
 
 
+def _canonical_suggestion_from_rules_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
+    """Structured hint for Stylebook review UI when auto-apply is off."""
+    if (
+        plan.decision == CanonicalPersistDecision.LINK_EXISTING
+        and plan.existing_canonical_id is not None
+    ):
+        return {
+            "code": "canonical_suggestion",
+            "source": "rules_plan",
+            "suggested_action": "link_existing",
+            "stylebook_location_canonical_id": int(plan.existing_canonical_id),
+        }
+    if plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW:
+        return {
+            "code": "canonical_suggestion",
+            "source": "rules_plan",
+            "suggested_action": "materialize_new",
+        }
+    return None
+
+
+def apply_canonical_persist_plan_review_only(
+    session: Session,
+    *,
+    stylebook_id: int,
+    location: SubstrateLocation,
+    plan: CanonicalPersistPlan,
+    places_bucket: str,
+) -> None:
+    """Queue for review: pending, no Stylebook FK, with reasons and optional suggestion."""
+    _ = places_bucket
+    _ = stylebook_id
+    reasons: list[dict[str, Any]] = [dict(r) for r in plan.resolution_reasons]
+    extra = _canonical_suggestion_from_rules_plan(plan)
+    if extra is not None:
+        reasons.append(extra)
+    location.stylebook_location_canonical_id = None
+    location.canonical_link_status = CANONICAL_LINK_PENDING
+    location.canonical_review_reasons_json = reasons
+    session.add(location)
+
+
 def apply_canonical_persist_plan(
     session: Session,
     *,

@@ -33,6 +33,7 @@ export {
 } from "@/lib/stylebook-api/locations"
 export {
   type AcceptCandidateBody,
+  type CanonicalSuggestion,
   type Candidate,
   type CandidateCluster,
   type CandidateContextItem,

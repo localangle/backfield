@@ -933,3 +933,159 @@ def test_persist_does_not_materialize_canonical_when_geocode_failed() -> None:
         assert locs[0].stylebook_location_canonical_id is None
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 0
+
+
+def test_db_output_invalid_stylebook_id_raises() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-bad-sb", project_slug="proj-bad-sb")
+        session.add(AgateRun(id="run-bad", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Hello Chicago.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:1",
+                            "original_text": "Chicago",
+                            "location": "Chicago, IL",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:abc",
+                                    "formatted_address": "Chicago, IL, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        try:
+            persist_from_consolidated(
+                session,
+                project_id=project_id,
+                graph_id="graph-1",
+                run_id="run-bad",
+                consolidated=consolidated,
+                db_output_params={"stylebook_id": 999_999},
+            )
+        except RuntimeError as exc:
+            assert "DBOutput stylebook resolution failed" in str(exc)
+        else:
+            raise AssertionError("expected RuntimeError")
+
+
+def test_persist_auto_apply_false_exact_alias_leaves_pending_with_suggestion() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-aa", project_slug="proj-aa")
+        session.add(AgateRun(id="run-aa", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        proj = session.get(BackfieldProject, project_id)
+        assert proj is not None
+        ws = session.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = int(canon.id)  # type: ignore[arg-type]
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="seed",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        consolidated = {
+            "text": "Hello Chicago.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:1",
+                            "original_text": "Chicago",
+                            "description": "Setting",
+                            "role_in_story": "Setting",
+                            "nature": "primary",
+                            "nature_secondary_tags": [],
+                            "location": "Chicago, IL",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:other",
+                                    "formatted_address": "Chicago, IL, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-aa",
+            consolidated=consolidated,
+            db_output_params={
+                "stylebook_id": sb_id,
+                "canonicalization_mode": "rules",
+                "auto_apply_canonicalization": False,
+                "adjudication_model": "gpt-5-nano",
+            },
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].canonical_link_status == CANONICAL_LINK_PENDING
+        assert locs[0].stylebook_location_canonical_id is None
+        raw = locs[0].canonical_review_reasons_json
+        assert isinstance(raw, list)
+        assert any(isinstance(x, dict) and x.get("code") == "canonical_suggestion" for x in raw)
+        sug = next(
+            x for x in raw if isinstance(x, dict) and x.get("code") == "canonical_suggestion"
+        )
+        assert sug.get("suggested_action") == "link_existing"
+        assert int(sug.get("stylebook_location_canonical_id") or 0) == cid

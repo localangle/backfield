@@ -131,9 +131,52 @@ def _deferred_candidate_filters(
     return filters
 
 
+def _canonical_suggestion_payload(loc: SubstrateLocation) -> dict[str, Any] | None:
+    """Merge rules-plan + adjudication blobs for Stylebook UI (ingest recommendations)."""
+    raw = loc.canonical_review_reasons_json
+    if raw is None:
+        return None
+    items: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        items = [r for r in raw if isinstance(r, dict)]
+    elif isinstance(raw, dict):
+        items = [raw]
+    sug: dict[str, Any] | None = None
+    adj: dict[str, Any] | None = None
+    for it in items:
+        code = str(it.get("code") or "")
+        if code == "canonical_suggestion":
+            sug = dict(it)
+        if code == "canonical_adjudication":
+            adj = dict(it)
+    if sug is None and adj is None:
+        return None
+    out: dict[str, Any] = {}
+    if sug is not None:
+        out["suggested_action"] = sug.get("suggested_action")
+        cid = sug.get("stylebook_location_canonical_id")
+        out["stylebook_location_canonical_id"] = int(cid) if cid is not None else None
+        out["source"] = sug.get("source")
+    if adj is not None:
+        out["adjudication_confidence"] = adj.get("confidence")
+        out["adjudication_rationale"] = adj.get("rationale")
+        out["adjudication_model"] = adj.get("model")
+        out["adjudication_outcome"] = adj.get("outcome")
+        if (
+            out.get("stylebook_location_canonical_id") is None
+            and adj.get("canonical_id") is not None
+        ):
+            try:
+                out["stylebook_location_canonical_id"] = int(adj["canonical_id"])
+            except (TypeError, ValueError):
+                pass
+    return out or None
+
+
 def _candidate_dict(loc: SubstrateLocation) -> dict[str, Any]:
     note = _extract_review_note(loc)
-    return {
+    sug = _canonical_suggestion_payload(loc)
+    row: dict[str, Any] = {
         "id": int(loc.id),  # type: ignore[arg-type]
         "project_id": int(loc.project_id),
         "suggested_name": str(loc.name),
@@ -145,6 +188,9 @@ def _candidate_dict(loc: SubstrateLocation) -> dict[str, Any]:
             "deferred" if str(loc.canonical_link_status) == CANONICAL_LINK_WAIVED else "open"
         ),
     }
+    if sug is not None:
+        row["canonical_suggestion"] = sug
+    return row
 
 
 def _extract_review_note(loc: SubstrateLocation) -> str | None:

@@ -57,6 +57,9 @@ export default function LocationCandidates() {
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
   const [deferringId, setDeferringId] = useState<number | null>(null)
   const [linkModalId, setLinkModalId] = useState<number | null>(null)
+  const [linkModalInitialCanonicalId, setLinkModalInitialCanonicalId] = useState<number | null>(
+    null
+  )
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [contextById, setContextById] = useState<Record<number, CandidateContextResponse>>({})
   const [contextLoadingId, setContextLoadingId] = useState<number | null>(null)
@@ -374,7 +377,10 @@ export default function LocationCandidates() {
                               size="sm"
                               variant="default"
                               disabled={acceptingId === c.id || deferringId === c.id}
-                              onClick={() => setLinkModalId(c.id)}
+                              onClick={() => {
+                                setLinkModalId(c.id)
+                                setLinkModalInitialCanonicalId(null)
+                              }}
                             >
                               <span className="inline-flex items-center gap-1.5">
                                 <Link2 className="h-3.5 w-3.5" aria-hidden />
@@ -448,6 +454,58 @@ export default function LocationCandidates() {
                                   </ul>
                                 )}
                               </div>
+                              {c.canonical_suggestion ? (
+                                <div className="border-t border-border/60 pt-3 mt-3 space-y-2">
+                                  <div className="text-sm font-medium">Ingest suggestion</div>
+                                  <div className="text-sm text-muted-foreground space-y-1">
+                                    {c.canonical_suggestion.suggested_action ? (
+                                      <p>
+                                        Action:{" "}
+                                        <span className="text-foreground">
+                                          {c.canonical_suggestion.suggested_action}
+                                        </span>
+                                      </p>
+                                    ) : null}
+                                    {c.canonical_suggestion.stylebook_location_canonical_id != null ? (
+                                      <p>
+                                        Canonical id:{" "}
+                                        <span className="text-foreground font-mono">
+                                          {c.canonical_suggestion.stylebook_location_canonical_id}
+                                        </span>
+                                      </p>
+                                    ) : null}
+                                    {c.canonical_suggestion.source ? (
+                                      <p>Source: {c.canonical_suggestion.source}</p>
+                                    ) : null}
+                                    {c.canonical_suggestion.adjudication_confidence != null ? (
+                                      <p>
+                                        Confidence:{" "}
+                                        {Number(c.canonical_suggestion.adjudication_confidence).toFixed(2)}
+                                      </p>
+                                    ) : null}
+                                    {c.canonical_suggestion.adjudication_rationale ? (
+                                      <p className="text-foreground whitespace-pre-wrap">
+                                        {c.canonical_suggestion.adjudication_rationale}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  {c.canonical_suggestion.stylebook_location_canonical_id != null ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={acceptingId === c.id || deferringId === c.id}
+                                      onClick={() => {
+                                        setLinkModalId(c.id)
+                                        setLinkModalInitialCanonicalId(
+                                          c.canonical_suggestion!.stylebook_location_canonical_id!
+                                        )
+                                      }}
+                                    >
+                                      Open link with suggestion
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              ) : null}
                               <div className="border-t border-border/60 pt-3 mt-3">
                                 <div className="text-sm font-medium">Note</div>
                                 {savedNoteText ? (
@@ -475,10 +533,14 @@ export default function LocationCandidates() {
       <CanonicalLinkModal
         open={linkModalId !== null}
         onOpenChange={(o) => {
-          if (!o) setLinkModalId(null)
+          if (!o) {
+            setLinkModalId(null)
+            setLinkModalInitialCanonicalId(null)
+          }
         }}
         projectSlug={projectSlug}
         substrateLocationId={linkModalId}
+        initialCanonicalId={linkModalInitialCanonicalId}
         title="Link candidate to canonical"
         onDone={() => void loadFlat()}
       />
