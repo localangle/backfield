@@ -1,9 +1,24 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { acceptCandidate, deferCandidate, listCandidates, type Candidate } from "@/lib/api"
+import {
+  acceptCandidate,
+  deferCandidate,
+  listCandidates,
+  listLocationCandidateTypes,
+  type Candidate,
+} from "@/lib/api"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -21,19 +36,48 @@ export default function LocationCandidates() {
   const [listTotal, setListTotal] = useState(0)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [status, setStatus] = useState<"open" | "deferred">("open")
+  const [query, setQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  const [typeFilter, setTypeFilter] = useState<string>("all")
+  const [types, setTypes] = useState<string[]>([])
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
   const [deferringId, setDeferringId] = useState<number | null>(null)
   const [linkModalId, setLinkModalId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(query), 250)
+    return () => window.clearTimeout(t)
+  }, [query])
+
+  useEffect(() => {
+    if (!projectSlug) return
+    void (async () => {
+      try {
+        const res = await listLocationCandidateTypes(projectSlug, "open")
+        setTypes(res.types)
+      } catch {
+        setTypes([])
+      }
+    })()
+  }, [projectSlug])
+
+  const candidatesFilter = useMemo(() => {
+    const tf = typeFilter === "all" ? undefined : typeFilter
+    const q = debouncedQuery.trim() || undefined
+    return { q, type_filter: tf }
+  }, [debouncedQuery, typeFilter])
+
   const loadFlat = useCallback(async () => {
     const res = await listCandidates(projectSlug, status, false, {
       limit: 100,
       offset: 0,
+      type_filter: candidatesFilter.type_filter,
+      q: candidatesFilter.q,
     })
     setListTotal(res.total)
     setCandidates(res.candidates)
-  }, [projectSlug, status])
+  }, [projectSlug, status, candidatesFilter])
 
   useEffect(() => {
     if (!projectSlug) return
@@ -122,6 +166,32 @@ export default function LocationCandidates() {
             >
               Deferred
             </Button>
+            <div className="ml-auto flex flex-wrap gap-2 items-end">
+              <div className="w-[220px]">
+                <Label>Search</Label>
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search name…"
+                />
+              </div>
+              <div className="w-[220px]">
+                <Label>Type</Label>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {types.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}

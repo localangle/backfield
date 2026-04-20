@@ -65,12 +65,21 @@ def _open_candidate_filters(
     project_id: int,
     *,
     needs_review: bool | None,
+    q: str | None,
+    type_filter: str | None,
 ) -> list[Any]:
     filters: list[Any] = [
         SubstrateLocation.project_id == project_id,
         col(SubstrateLocation.stylebook_location_canonical_id).is_(None),
         SubstrateLocation.canonical_link_status == CANONICAL_LINK_PENDING,
     ]
+    if q:
+        term = f"%{q.strip()}%"
+        filters.append(col(SubstrateLocation.name).ilike(term))
+    if type_filter:
+        tf = type_filter.strip()
+        if tf:
+            filters.append(SubstrateLocation.location_type == tf)
     if needs_review is True:
         filters.append(
             exists().where(
@@ -82,12 +91,22 @@ def _open_candidate_filters(
     return filters
 
 
-def _deferred_candidate_filters(project_id: int) -> list[Any]:
-    return [
+def _deferred_candidate_filters(
+    project_id: int, *, q: str | None, type_filter: str | None
+) -> list[Any]:
+    filters: list[Any] = [
         SubstrateLocation.project_id == project_id,
         col(SubstrateLocation.stylebook_location_canonical_id).is_(None),
         SubstrateLocation.canonical_link_status == CANONICAL_LINK_WAIVED,
     ]
+    if q:
+        term = f"%{q.strip()}%"
+        filters.append(col(SubstrateLocation.name).ilike(term))
+    if type_filter:
+        tf = type_filter.strip()
+        if tf:
+            filters.append(SubstrateLocation.location_type == tf)
+    return filters
 
 
 def _candidate_dict(loc: SubstrateLocation) -> dict[str, Any]:
@@ -112,8 +131,15 @@ def _list_open_candidates(
     limit: int,
     offset: int,
     needs_review: bool | None,
+    q: str | None,
+    type_filter: str | None,
 ) -> PaginatedCandidatesResponse:
-    filters = _open_candidate_filters(project_id, needs_review=needs_review)
+    filters = _open_candidate_filters(
+        project_id,
+        needs_review=needs_review,
+        q=q,
+        type_filter=type_filter,
+    )
     count_stmt = select(func.count()).select_from(SubstrateLocation).where(*filters)
     total = int(session.scalar(count_stmt) or 0)
     stmt = (
@@ -139,8 +165,10 @@ def _list_deferred_candidates(
     project_id: int,
     limit: int,
     offset: int,
+    q: str | None,
+    type_filter: str | None,
 ) -> PaginatedCandidatesResponse:
-    filters = _deferred_candidate_filters(project_id)
+    filters = _deferred_candidate_filters(project_id, q=q, type_filter=type_filter)
     count_stmt = select(func.count()).select_from(SubstrateLocation).where(*filters)
     total = int(session.scalar(count_stmt) or 0)
     stmt = (
@@ -164,6 +192,8 @@ def _list_deferred_candidates(
 def candidates_list(
     project_slug: str = Query(...),
     status: str = Query("open"),
+    q: str | None = Query(None),
+    type_filter: str | None = Query(None),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     needs_review: bool | None = Query(None),
@@ -186,6 +216,8 @@ def candidates_list(
             project_id=int(proj.id),
             limit=limit,
             offset=offset,
+            q=q,
+            type_filter=type_filter,
         )
     return _list_open_candidates(
         session,
@@ -193,6 +225,8 @@ def candidates_list(
         limit=limit,
         offset=offset,
         needs_review=needs_review,
+        q=q,
+        type_filter=type_filter,
     )
 
 
@@ -200,6 +234,8 @@ def candidates_list(
 def candidates_ungrouped(
     project_slug: str = Query(...),
     status: str = Query("open"),
+    q: str | None = Query(None),
+    type_filter: str | None = Query(None),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     needs_review: bool | None = Query(None),
@@ -222,6 +258,8 @@ def candidates_ungrouped(
             project_id=int(proj.id),
             limit=limit,
             offset=offset,
+            q=q,
+            type_filter=type_filter,
         )
     return _list_open_candidates(
         session,
@@ -229,6 +267,8 @@ def candidates_ungrouped(
         limit=limit,
         offset=offset,
         needs_review=needs_review,
+        q=q,
+        type_filter=type_filter,
     )
 
 
@@ -266,7 +306,12 @@ def candidates_types(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     _require_stylebook_id(session, proj)
-    filters = _open_candidate_filters(int(proj.id), needs_review=None)
+    filters = _open_candidate_filters(
+        int(proj.id),
+        needs_review=None,
+        q=None,
+        type_filter=None,
+    )
     stmt = (
         select(SubstrateLocation.location_type)
         .where(*filters)

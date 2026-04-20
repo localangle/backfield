@@ -34,6 +34,7 @@ export interface PaginatedCandidatesResponse {
 
 export type ListCandidatesFilterOptions = {
   type_filter?: string
+  q?: string
   limit?: number
   offset?: number
   needs_review?: boolean
@@ -51,6 +52,7 @@ function candidatesFilterParams(options?: ListCandidatesFilterOptions): URLSearc
   if (options.limit !== undefined) params.append("limit", String(options.limit))
   if (options.offset !== undefined) params.append("offset", String(options.offset))
   if (options.type_filter) params.append("type_filter", options.type_filter)
+  if (options.q) params.append("q", options.q)
   if (options.needs_review === true) params.append("needs_review", "true")
   if (options.needs_review === false) params.append("needs_review", "false")
   return params

@@ -363,6 +363,54 @@ def test_candidates_lists_unlinked_substrate(
     assert data["candidates"][0]["suggested_name"] == "Chicago"
 
 
+def test_candidates_filters_by_q_and_type_filter(
+    client: TestClient, stylebook_test_engine: object
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        s.add(
+            SubstrateLocation(
+                project_id=pid,
+                name="Chicago",
+                normalized_name="chicago",
+                location_type="city",
+                identity_fingerprint="fp-chicago-filter",
+                stylebook_location_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+            )
+        )
+        s.add(
+            SubstrateLocation(
+                project_id=pid,
+                name="Wicker Park",
+                normalized_name="wicker park",
+                location_type="neighborhood",
+                identity_fingerprint="fp-wicker-filter",
+                stylebook_location_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+            )
+        )
+        s.commit()
+
+    r_q = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open&q=wicker",
+        headers=_service_headers(),
+    )
+    assert r_q.status_code == 200
+    assert r_q.json()["total"] == 1
+    assert r_q.json()["candidates"][0]["suggested_name"] == "Wicker Park"
+
+    r_t = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open&type_filter=city",
+        headers=_service_headers(),
+    )
+    assert r_t.status_code == 200
+    assert r_t.json()["total"] == 1
+    assert r_t.json()["candidates"][0]["suggested_name"] == "Chicago"
+
+
 def test_candidates_needs_review_facet(
     client: TestClient, stylebook_test_engine: object
 ) -> None:
