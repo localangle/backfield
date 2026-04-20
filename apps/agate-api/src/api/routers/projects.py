@@ -20,6 +20,7 @@ from backfield_db import (
     BackfieldProject,
     BackfieldProjectSecret,
     BackfieldWorkspace,
+    Stylebook,
 )
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,9 +43,9 @@ def _settings_dict(project: BackfieldProject) -> dict:
 
 def _workspace_stylebook_by_project_id(
     session: Session, projects: list[BackfieldProject]
-) -> dict[int, tuple[int | None, int | None]]:
-    """Map project id -> (workspace_id, workspace_stylebook_id)."""
-    out: dict[int, tuple[int | None, int | None]] = {}
+) -> dict[int, tuple[int | None, int | None, str | None]]:
+    """Map project id -> (workspace_id, workspace_stylebook_id, workspace_stylebook_name)."""
+    out: dict[int, tuple[int | None, int | None, str | None]] = {}
     wids: set[int] = set()
     for p in projects:
         if p.id is None:
@@ -59,19 +60,27 @@ def _workspace_stylebook_by_project_id(
         for w in wrows:
             if w.id is not None:
                 ws_map[int(w.id)] = w
+    sb_ids = {int(w.stylebook_id) for w in ws_map.values()}
+    sb_names: dict[int, str] = {}
+    if sb_ids:
+        sb_rows = session.exec(select(Stylebook).where(col(Stylebook.id).in_(sb_ids))).all()
+        for s in sb_rows:
+            if s.id is not None:
+                sb_names[int(s.id)] = str(s.name)
     for p in projects:
         if p.id is None:
             continue
         pid = int(p.id)
         if p.workspace_id is None:
-            out[pid] = (None, None)
+            out[pid] = (None, None, None)
             continue
         wid = int(p.workspace_id)
         ws = ws_map.get(wid)
         if ws is None:
-            out[pid] = (wid, None)
+            out[pid] = (wid, None, None)
         else:
-            out[pid] = (wid, int(ws.stylebook_id))
+            sbid = int(ws.stylebook_id)
+            out[pid] = (wid, sbid, sb_names.get(sbid))
     return out
 
 
@@ -105,6 +114,7 @@ class ProjectOut(BaseModel):
     updated_at: datetime
     workspace_id: int | None = None
     workspace_stylebook_id: int | None = None
+    workspace_stylebook_name: str | None = None
 
     @classmethod
     def from_row(
@@ -113,6 +123,7 @@ class ProjectOut(BaseModel):
         *,
         workspace_id: int | None = None,
         workspace_stylebook_id: int | None = None,
+        workspace_stylebook_name: str | None = None,
     ) -> ProjectOut:
         d = _settings_dict(p)
         return cls(
@@ -124,6 +135,7 @@ class ProjectOut(BaseModel):
             updated_at=p.updated_at,
             workspace_id=workspace_id,
             workspace_stylebook_id=workspace_stylebook_id,
+            workspace_stylebook_name=workspace_stylebook_name,
         )
 
 
@@ -150,8 +162,9 @@ def list_projects(
     return [
         ProjectOut.from_row(
             r,
-            workspace_id=meta.get(int(r.id), (None, None))[0],
-            workspace_stylebook_id=meta.get(int(r.id), (None, None))[1],
+            workspace_id=meta.get(int(r.id), (None, None, None))[0],
+            workspace_stylebook_id=meta.get(int(r.id), (None, None, None))[1],
+            workspace_stylebook_name=meta.get(int(r.id), (None, None, None))[2],
         )
         for r in rows
         if r.id is not None
@@ -201,8 +214,15 @@ def create_project(
     session.refresh(p)
     if p.id is None:
         raise HTTPException(500, "Project persist failed")
-    wid, sbid = _workspace_stylebook_by_project_id(session, [p]).get(int(p.id), (None, None))
-    return ProjectOut.from_row(p, workspace_id=wid, workspace_stylebook_id=sbid)
+    wid, sbid, sbname = _workspace_stylebook_by_project_id(session, [p]).get(
+        int(p.id), (None, None, None)
+    )
+    return ProjectOut.from_row(
+        p,
+        workspace_id=wid,
+        workspace_stylebook_id=sbid,
+        workspace_stylebook_name=sbname,
+    )
 
 
 class ProjectStatsOut(BaseModel):
@@ -269,8 +289,15 @@ def get_project_by_slug(
     if not p:
         raise HTTPException(404, "Project not found")
     require_project_access(session, auth, int(p.id))
-    wid, sbid = _workspace_stylebook_by_project_id(session, [p]).get(int(p.id), (None, None))
-    return ProjectOut.from_row(p, workspace_id=wid, workspace_stylebook_id=sbid)
+    wid, sbid, sbname = _workspace_stylebook_by_project_id(session, [p]).get(
+        int(p.id), (None, None, None)
+    )
+    return ProjectOut.from_row(
+        p,
+        workspace_id=wid,
+        workspace_stylebook_id=sbid,
+        workspace_stylebook_name=sbname,
+    )
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -283,8 +310,15 @@ def get_project(
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
-    wid, sbid = _workspace_stylebook_by_project_id(session, [p]).get(int(p.id), (None, None))
-    return ProjectOut.from_row(p, workspace_id=wid, workspace_stylebook_id=sbid)
+    wid, sbid, sbname = _workspace_stylebook_by_project_id(session, [p]).get(
+        int(p.id), (None, None, None)
+    )
+    return ProjectOut.from_row(
+        p,
+        workspace_id=wid,
+        workspace_stylebook_id=sbid,
+        workspace_stylebook_name=sbname,
+    )
 
 
 @router.get("/{project_id}/stats", response_model=ProjectStatsOut)
@@ -329,8 +363,15 @@ def update_project(
     session.add(p)
     session.commit()
     session.refresh(p)
-    wid, sbid = _workspace_stylebook_by_project_id(session, [p]).get(int(p.id), (None, None))
-    return ProjectOut.from_row(p, workspace_id=wid, workspace_stylebook_id=sbid)
+    wid, sbid, sbname = _workspace_stylebook_by_project_id(session, [p]).get(
+        int(p.id), (None, None, None)
+    )
+    return ProjectOut.from_row(
+        p,
+        workspace_id=wid,
+        workspace_stylebook_id=sbid,
+        workspace_stylebook_name=sbname,
+    )
 
 
 @router.delete("/{project_id}", status_code=204)

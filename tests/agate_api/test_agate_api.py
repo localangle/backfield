@@ -227,6 +227,7 @@ def test_create_project_with_workspace_id(tmp_path):
         pid = int(body["id"])
         assert body.get("workspace_id") == int(ws.id)
         assert body.get("workspace_stylebook_id") == sb_id
+        assert body.get("workspace_stylebook_name") == "Default Stylebook"
         with Session(engine) as s:
             p = s.get(BackfieldProject, pid)
             assert p is not None

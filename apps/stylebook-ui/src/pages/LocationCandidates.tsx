@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -42,6 +43,21 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { ChevronRight, Link2, Loader2, PlusCircle, StickyNote } from "lucide-react"
+
+/** Row action aligned with `canonical_suggestion.suggested_action` from the API. */
+function suggestedRowAction(c: Candidate): "link" | "create_new" | null {
+  const raw = c.canonical_suggestion?.suggested_action
+  if (raw === "link_existing") return "link"
+  if (raw === "materialize_new") return "create_new"
+  return null
+}
+
+function suggestedActionShortLabel(c: Candidate): string | null {
+  const sug = suggestedRowAction(c)
+  if (sug === "link") return "Link to existing canonical"
+  if (sug === "create_new") return "Create new canonical"
+  return null
+}
 
 export default function LocationCandidates() {
   const [searchParams] = useSearchParams()
@@ -324,10 +340,13 @@ export default function LocationCandidates() {
                 ) : (
                   candidates.map((c) => {
                     const savedNoteText = String(contextById[c.id]?.note ?? c.note ?? "").trim()
+                    const rowSug = suggestedRowAction(c)
+                    const rowSugLabel = suggestedActionShortLabel(c)
                     return (
                     <Fragment key={c.id}>
                       <TableRow>
                         <TableCell className="font-medium">
+                          <div className="flex flex-col items-start gap-1">
                           <div className="flex items-center gap-2">
                             <Button
                               type="button"
@@ -359,6 +378,15 @@ export default function LocationCandidates() {
                               />
                             ) : null}
                           </div>
+                          {rowSugLabel ? (
+                            <div className="flex flex-wrap items-center gap-2 pl-10">
+                              <Badge variant="secondary" className="font-normal">
+                                Suggested
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">{rowSugLabel}</span>
+                            </div>
+                          ) : null}
+                          </div>
                         </TableCell>
                         <TableCell>
                           {c.suggested_type
@@ -375,11 +403,21 @@ export default function LocationCandidates() {
                           <div className="flex flex-wrap justify-end gap-2">
                             <Button
                               size="sm"
-                              variant="default"
+                              variant={rowSug === "create_new" ? "outline" : "default"}
                               disabled={acceptingId === c.id || deferringId === c.id}
+                              className={cn(
+                                rowSug === "link" &&
+                                  "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-sm",
+                              )}
+                              title={rowSug === "link" ? "Suggested action for this location" : undefined}
                               onClick={() => {
                                 setLinkModalId(c.id)
-                                setLinkModalInitialCanonicalId(null)
+                                const preId =
+                                  rowSug === "link" &&
+                                  c.canonical_suggestion?.stylebook_location_canonical_id != null
+                                    ? c.canonical_suggestion.stylebook_location_canonical_id
+                                    : null
+                                setLinkModalInitialCanonicalId(preId)
                               }}
                             >
                               <span className="inline-flex items-center gap-1.5">
@@ -389,8 +427,17 @@ export default function LocationCandidates() {
                             </Button>
                             <Button
                               size="sm"
-                              variant="secondary"
+                              variant={rowSug === "create_new" ? "default" : "secondary"}
                               disabled={acceptingId === c.id || deferringId === c.id}
+                              className={cn(
+                                rowSug === "create_new" &&
+                                  "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-sm",
+                              )}
+                              title={
+                                rowSug === "create_new"
+                                  ? "Suggested action for this location"
+                                  : undefined
+                              }
                               onClick={() => void handleAcceptNew(c)}
                             >
                               <span className="inline-flex items-center gap-1.5">
@@ -454,58 +501,6 @@ export default function LocationCandidates() {
                                   </ul>
                                 )}
                               </div>
-                              {c.canonical_suggestion ? (
-                                <div className="border-t border-border/60 pt-3 mt-3 space-y-2">
-                                  <div className="text-sm font-medium">Ingest suggestion</div>
-                                  <div className="text-sm text-muted-foreground space-y-1">
-                                    {c.canonical_suggestion.suggested_action ? (
-                                      <p>
-                                        Action:{" "}
-                                        <span className="text-foreground">
-                                          {c.canonical_suggestion.suggested_action}
-                                        </span>
-                                      </p>
-                                    ) : null}
-                                    {c.canonical_suggestion.stylebook_location_canonical_id != null ? (
-                                      <p>
-                                        Canonical id:{" "}
-                                        <span className="text-foreground font-mono">
-                                          {c.canonical_suggestion.stylebook_location_canonical_id}
-                                        </span>
-                                      </p>
-                                    ) : null}
-                                    {c.canonical_suggestion.source ? (
-                                      <p>Source: {c.canonical_suggestion.source}</p>
-                                    ) : null}
-                                    {c.canonical_suggestion.adjudication_confidence != null ? (
-                                      <p>
-                                        Confidence:{" "}
-                                        {Number(c.canonical_suggestion.adjudication_confidence).toFixed(2)}
-                                      </p>
-                                    ) : null}
-                                    {c.canonical_suggestion.adjudication_rationale ? (
-                                      <p className="text-foreground whitespace-pre-wrap">
-                                        {c.canonical_suggestion.adjudication_rationale}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                  {c.canonical_suggestion.stylebook_location_canonical_id != null ? (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={acceptingId === c.id || deferringId === c.id}
-                                      onClick={() => {
-                                        setLinkModalId(c.id)
-                                        setLinkModalInitialCanonicalId(
-                                          c.canonical_suggestion!.stylebook_location_canonical_id!
-                                        )
-                                      }}
-                                    >
-                                      Open link with suggestion
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              ) : null}
                               <div className="border-t border-border/60 pt-3 mt-3">
                                 <div className="text-sm font-medium">Note</div>
                                 {savedNoteText ? (

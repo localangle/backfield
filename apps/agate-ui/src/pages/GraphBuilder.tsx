@@ -15,13 +15,19 @@ import 'reactflow/dist/style.css'
 
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import NodePalette from '@/components/NodePalette'
 import NodePanel from '@/components/NodePanel'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { nodeComponents, nodeMetadata } from '@/nodes/registry'
-import { createGraph, getGraph, listProjects, updateGraph, type Project } from '@/lib/api'
-import { ArrowLeft, Save, Info, Building2 } from 'lucide-react'
+import {
+  createGraph,
+  getGraph,
+  getProject,
+  listProjects,
+  updateGraph,
+  type Project,
+} from '@/lib/api'
+import { ArrowLeft, Save, Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 let id = 0
@@ -37,7 +43,9 @@ export default function GraphBuilder() {
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null)
   const [graphName, setGraphName] = useState('Untitled Flow')
   const [saving, setSaving] = useState(false)
-  const [projects, setProjects] = useState<Project[]>([])
+  /** Project for this flow (from graph, URL, or default); includes workspace Stylebook fields. */
+  const [resolvedFlowProject, setResolvedFlowProject] = useState<Project | null>(null)
+  const [flowProjectLoading, setFlowProjectLoading] = useState(false)
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [existingGraphId, setExistingGraphId] = useState<string | null>(null)
@@ -57,24 +65,35 @@ export default function GraphBuilder() {
   // Find the selected node
   const selectedNode = nodes.find(n => n.id === selectedNodeId)
 
-  const selectedProject = useMemo(
-    () => projects.find((p) => p.id.toString() === selectedProjectId) ?? null,
-    [projects, selectedProjectId],
-  )
-
   const graphContext = useMemo(() => {
-    if (!selectedProject) {
+    if (flowProjectLoading) {
       return {
         workspaceDefaultStylebookId: null as number | null,
+        workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
+        flowProjectLoading: true,
       }
     }
-    const sid = selectedProject.workspace_stylebook_id ?? null
+    const p = resolvedFlowProject
+    if (!p) {
+      return {
+        workspaceDefaultStylebookId: null as number | null,
+        workspaceStylebookName: null as string | null,
+        missingWorkspaceStylebook: false,
+        flowProjectLoading: false,
+      }
+    }
+    const sid = p.workspace_stylebook_id ?? null
+    const rawName = p.workspace_stylebook_name
+    const nm =
+      typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null
     return {
       workspaceDefaultStylebookId: sid,
-      missingWorkspaceStylebook: sid == null,
+      workspaceStylebookName: nm,
+      missingWorkspaceStylebook: sid == null && nm == null,
+      flowProjectLoading: false,
     }
-  }, [selectedProject])
+  }, [resolvedFlowProject, flowProjectLoading])
 
   // Node click handlers
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
@@ -98,34 +117,45 @@ export default function GraphBuilder() {
     }
   }, [selectedNodeId, setNodes])
 
-  // Load projects and set default
+  /** New flow: infer project from `?project=` slug/id, else General (or first visible). */
   useEffect(() => {
-    const loadProjects = async () => {
+    if (routeGraphId) return
+    let cancelled = false
+    void (async () => {
+      setFlowProjectLoading(true)
       try {
-        const projectsData = await listProjects()
-        setProjects(projectsData)
-        
-        const projectFromUrl = searchParams.get('project')
-        if (projectFromUrl) {
-          const project =
-            projectsData.find((p) => p.slug === projectFromUrl) ??
-            projectsData.find((p) => p.id.toString() === projectFromUrl)
-          if (project) {
-            setSelectedProjectId(project.id.toString())
-          }
-        } else {
-          const generalProject = projectsData.find((p) => p.slug === 'general')
-          if (generalProject) {
-            setSelectedProjectId(generalProject.id.toString())
-          }
+        const list = await listProjects()
+        if (cancelled) return
+        const q = searchParams.get('project')
+        const pick =
+          (q &&
+            (list.find((p) => p.slug === q) ?? list.find((p) => p.id.toString() === q))) ??
+          list.find((p) => p.slug === 'general') ??
+          list[0] ??
+          null
+        if (!pick) {
+          setResolvedFlowProject(null)
+          setSelectedProjectId('')
+          return
         }
+        const full = await getProject(pick.id)
+        if (cancelled) return
+        setResolvedFlowProject(full)
+        setSelectedProjectId(String(full.id))
       } catch (error) {
-        console.error('Failed to load projects:', error)
+        console.error('Failed to resolve flow project:', error)
+        if (!cancelled) {
+          setResolvedFlowProject(null)
+          setSelectedProjectId('')
+        }
+      } finally {
+        if (!cancelled) setFlowProjectLoading(false)
       }
+    })()
+    return () => {
+      cancelled = true
     }
-    
-    loadProjects()
-  }, [searchParams])
+  }, [searchParams, routeGraphId])
 
   // Helper function to show modal
   const showModal = (config: typeof modalConfig) => {
@@ -136,13 +166,17 @@ export default function GraphBuilder() {
   useEffect(() => {
     if (!routeGraphId) return
     let cancelled = false
-    ;(async () => {
+    void (async () => {
+      setFlowProjectLoading(true)
       try {
         const g = await getGraph(routeGraphId)
         if (cancelled) return
+        const proj = await getProject(g.project_id)
+        if (cancelled) return
         setExistingGraphId(g.id)
         setGraphName(g.name)
-        setSelectedProjectId(String(g.project_id))
+        setSelectedProjectId(String(proj.id))
+        setResolvedFlowProject(proj)
         setNodes(
           g.spec.nodes.map((n) => ({
             id: n.id,
@@ -169,6 +203,8 @@ export default function GraphBuilder() {
       } catch (e) {
         console.error('Failed to load graph', e)
         navigate('/')
+      } finally {
+        if (!cancelled) setFlowProjectLoading(false)
       }
     })()
     return () => {
@@ -507,11 +543,22 @@ export default function GraphBuilder() {
       return
     }
 
-    // Check if project is selected
-    if (!selectedProjectId) {
+    if (flowProjectLoading) {
       showModal({
-        title: 'No Project Selected',
-        description: 'Please select a project for this flow.',
+        title: 'Still loading',
+        description: 'Project details for this flow are still loading. Try again in a moment.',
+        type: 'warning',
+        confirmText: 'OK',
+        onConfirm: () => {},
+      })
+      return
+    }
+
+    if (!selectedProjectId || !resolvedFlowProject) {
+      showModal({
+        title: 'No project for this flow',
+        description:
+          'Could not determine which project this flow belongs to. Open the flow from a project or try reloading the page.',
         type: 'warning',
         confirmText: 'OK',
         onConfirm: () => {},
@@ -586,22 +633,6 @@ export default function GraphBuilder() {
                 <p className="text-xs text-muted-foreground mt-1">
                   Drag nodes to build your flow
                 </p>
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-muted-foreground" />
-                <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Select project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id.toString()}>
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
             </div>
           </div>

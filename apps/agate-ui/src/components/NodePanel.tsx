@@ -7,12 +7,15 @@ import { Badge } from '@/components/ui/badge'
 import type { Run } from '@/lib/api'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Suspense } from 'react'
-import { panelComponents } from '@/nodes/registry'
+import { nodeMetadata, panelComponents } from '@/nodes/registry'
 
 export type GraphPanelContext = {
   workspaceDefaultStylebookId: number | null
+  workspaceStylebookName: string | null
   /** True when a project is selected but the API did not resolve a workspace Stylebook. */
   missingWorkspaceStylebook?: boolean
+  /** Flow editor is still fetching the project (for workspace Stylebook). */
+  flowProjectLoading?: boolean
 }
 
 interface NodePanelProps {
@@ -53,6 +56,9 @@ export default function NodePanel({
   nodeOutputLookupSpec,
 }: NodePanelProps) {
   if (!selectedNode) return null
+
+  const nodePanelTitle =
+    nodeMetadata.find((m) => m.type === selectedNode.type)?.label ?? selectedNode.type
 
   const rawNodeOutputs = currentRun?.node_outputs as Record<string, unknown> | undefined
   const selectedNodeOutput = rawNodeOutputs
@@ -101,7 +107,7 @@ export default function NodePanel({
     <div className="absolute top-0 right-0 h-full w-96 bg-background/95 backdrop-blur-sm border-l shadow-lg flex flex-col z-10 slide-in-from-right">
       <div className="flex items-center justify-between p-4 border-b">
         <div>
-          <h3 className="font-semibold text-lg">{selectedNode.type}</h3>
+          <h3 className="font-semibold text-lg">{nodePanelTitle}</h3>
         </div>
         <div className="flex gap-1">
           {editMode && onDelete && (

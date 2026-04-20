@@ -51,7 +51,7 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 - `routers/health.py`
   - Lightweight service health only.
 - `routers/projects.py`
-  - Project CRUD, stats, and encrypted project secrets. **`POST /projects`** accepts optional `workspace_id` (default org only). **Session callers:** `org_admin` may set `workspace_id` to any workspace in that org; **members** may only set it to a workspace where they have a `backfield_workspace_membership` row (otherwise **403**). Omitting `workspace_id` leaves the project unassigned. **Service token** calls are not restricted by workspace membership (automation).
+  - Project CRUD, stats, and encrypted project secrets. **`POST /projects`** accepts optional `workspace_id` (default org only). **Session callers:** `org_admin` may set `workspace_id` to any workspace in that org; **members** may only set it to a workspace where they have a `backfield_workspace_membership` row (otherwise **403**). Omitting `workspace_id` leaves the project unassigned. **Service token** calls are not restricted by workspace membership (automation). **`GET /projects`**, **`GET /projects/{id}`**, and **`GET /projects/by-slug/...`** include `workspace_id`, `workspace_stylebook_id`, and `workspace_stylebook_name` when the project’s workspace resolves a Stylebook.
 - `routers/graphs.py`
   - Graph CRUD and `GraphSpec` validation.
 - `routers/templates.py`
