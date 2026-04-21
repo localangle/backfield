@@ -69,7 +69,7 @@ Revision **`013_substrate_slc_status`** adds **`canonical_link_status`** (defaul
 
 Revision **`014_pg_trgm_canon_geom`** enables **`pg_trgm`** on Postgres (extension creation is not caught—migration fails if the extension cannot be installed), adds the trigram index on **`stylebook_location_alias.normalized_alias`**, and adds optional geometry columns on **`stylebook_location_canonical`**. Non-Postgres upgrades skip the extension and trigram index; **`geometry`** is stored as plain text where PostGIS is not used.
 
-Revision **`015_canonical_location_type_address`** adds nullable **`location_type`** and **`formatted_address`** text columns on **`stylebook_location_canonical`**.
+Revision **`015_canon_geo_meta`** adds nullable **`location_type`** and **`formatted_address`** text columns on **`stylebook_location_canonical`**.
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 

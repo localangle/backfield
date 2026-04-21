@@ -1,6 +1,8 @@
 """Add location_type and formatted_address to stylebook_location_canonical.
 
 Catalog rows carry authoritative geography hints separate from per-project substrate rows.
+
+Revision id must fit ``alembic_version.version_num`` (varchar(32)).
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "015_canonical_location_type_address"
+revision: str = "015_canon_geo_meta"
 down_revision: Union[str, None] = "014_pg_trgm_canon_geom"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
