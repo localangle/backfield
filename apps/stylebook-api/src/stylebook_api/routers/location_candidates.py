@@ -636,9 +636,13 @@ def accept_candidate(
         if not label:
             raise HTTPException(status_code=400, detail="name is required when create_new is true")
         gj = body.geometry_json
+        lt = (loc.location_type or "").strip().lower() or None
+        fa = (loc.formatted_address or "").strip() or None
         canon = StylebookLocationCanonical(
             stylebook_id=stylebook_id,
             label=label,
+            location_type=lt,
+            formatted_address=fa,
             primary_substrate_location_id=None,
             status="active",
             geometry_json=dict(gj) if isinstance(gj, dict) else gj,

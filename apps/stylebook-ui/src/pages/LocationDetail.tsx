@@ -46,6 +46,8 @@ export default function LocationDetail() {
   const [editing, setEditing] = useState(false)
   const [projectSlug, setProjectSlug] = useState("")
   const [label, setLabel] = useState("")
+  const [locationType, setLocationType] = useState("")
+  const [formattedAddress, setFormattedAddress] = useState("")
   const [geometry, setGeometry] = useState<Record<string, unknown> | null>(null)
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -67,6 +69,8 @@ export default function LocationDetail() {
       const row = await getCanonicalLocation(canonicalId, slug)
       setCanonical(row)
       setLabel(row.label)
+      setLocationType(row.location_type ?? "")
+      setFormattedAddress(row.formatted_address ?? "")
       setGeometry((row.geometry_json as Record<string, unknown> | undefined) ?? null)
     } catch (e) {
       console.error(e)
@@ -153,7 +157,11 @@ export default function LocationDetail() {
     setSaving(true)
     try {
       const canonicalId = parseInt(id, 10)
-      const updated = await patchCanonicalLocation(canonicalId, projectSlug, { label })
+      const updated = await patchCanonicalLocation(canonicalId, projectSlug, {
+        label: label.trim(),
+        location_type: locationType.trim() === "" ? null : locationType.trim().toLowerCase(),
+        formatted_address: formattedAddress.trim() === "" ? null : formattedAddress.trim(),
+      })
       if (geometry) {
         await updateCanonicalLocationGeometry(canonicalId, projectSlug, geometry)
       }
@@ -199,7 +207,19 @@ export default function LocationDetail() {
         <div className="flex gap-2">
           {editing ? (
             <>
-              <Button variant="outline" onClick={() => setEditing(false)} disabled={saving}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (canonical) {
+                    setLabel(canonical.label)
+                    setLocationType(canonical.location_type ?? "")
+                    setFormattedAddress(canonical.formatted_address ?? "")
+                    setGeometry((canonical.geometry_json as Record<string, unknown> | undefined) ?? null)
+                  }
+                  setEditing(false)
+                }}
+                disabled={saving}
+              >
                 Cancel
               </Button>
               <Button onClick={() => void saveEdits()} disabled={saving}>
@@ -208,7 +228,18 @@ export default function LocationDetail() {
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={() => setEditing(true)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (canonical) {
+                    setLabel(canonical.label)
+                    setLocationType(canonical.location_type ?? "")
+                    setFormattedAddress(canonical.formatted_address ?? "")
+                    setGeometry((canonical.geometry_json as Record<string, unknown> | undefined) ?? null)
+                  }
+                  setEditing(true)
+                }}
+              >
                 Edit
               </Button>
               <Button variant="destructive" size="icon" onClick={() => setDeleteOpen(true)}>
@@ -222,17 +253,35 @@ export default function LocationDetail() {
       <Card>
         <CardHeader>
           <CardTitle>Details</CardTitle>
-          <CardDescription>
-            Stylebook canonical #{canonical.id} • {canonical.status} •{" "}
-            {canonical.linked_substrate_count} linked substrate place
-            {canonical.linked_substrate_count !== 1 ? "s" : ""} • {canonical.mention_count} mention
-            {canonical.mention_count !== 1 ? "s" : ""}
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 max-w-xl">
           <div>
             <Label>Label</Label>
             <Input value={label} onChange={(e) => setLabel(e.target.value)} disabled={!editing} />
+          </div>
+          <div>
+            <Label>Location type</Label>
+            {editing ? (
+              <Input
+                value={locationType}
+                onChange={(e) => setLocationType(e.target.value)}
+                placeholder="e.g. city, neighborhood"
+              />
+            ) : (
+              <p className="text-sm mt-1.5">{canonical.location_type || "—"}</p>
+            )}
+          </div>
+          <div>
+            <Label>Formatted address</Label>
+            {editing ? (
+              <Input
+                value={formattedAddress}
+                onChange={(e) => setFormattedAddress(e.target.value)}
+                placeholder="e.g. Chicago, IL, USA"
+              />
+            ) : (
+              <p className="text-sm mt-1.5">{canonical.formatted_address || "—"}</p>
+            )}
           </div>
         </CardContent>
       </Card>

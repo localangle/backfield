@@ -23,6 +23,8 @@ export interface Location {
 export interface CanonicalLocation {
   id: number
   label: string
+  location_type?: string | null
+  formatted_address?: string | null
   geometry_json?: Record<string, unknown> | null
   geometry_type?: string | null
   status: string
@@ -197,13 +199,23 @@ export async function createLocation(
 /** Create a catalog canonical only (no project substrate row). Prefer over legacy ``createLocation``. */
 export async function createCanonicalLocation(
   projectSlug: string,
-  data: { label: string; geometry_json?: Record<string, unknown> },
+  data: {
+    label: string
+    location_type?: string | null
+    formatted_address?: string | null
+    geometry_json?: Record<string, unknown>
+  },
 ): Promise<CanonicalLocation> {
   return stylebookJsonFetch<CanonicalLocation>(
     `/v1/canonical-locations?project_slug=${encodeURIComponent(projectSlug)}`,
     {
       method: "POST",
-      body: JSON.stringify({ label: data.label, geometry_json: data.geometry_json }),
+      body: JSON.stringify({
+        label: data.label,
+        location_type: data.location_type,
+        formatted_address: data.formatted_address,
+        geometry_json: data.geometry_json,
+      }),
     },
   )
 }
@@ -324,7 +336,7 @@ export async function getCanonicalLocationMentions(
 export async function patchCanonicalLocation(
   canonicalId: number,
   projectSlug: string,
-  data: { label?: string },
+  data: { label?: string; location_type?: string | null; formatted_address?: string | null },
 ): Promise<CanonicalLocation> {
   return stylebookJsonFetch<CanonicalLocation>(
     `/v1/canonical-locations/${canonicalId}?project_slug=${encodeURIComponent(projectSlug)}`,

@@ -561,6 +561,11 @@ def test_persist_materializes_canonical_for_city_without_geometry_when_no_match(
 
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 1
+        fk = locs[0].stylebook_location_canonical_id
+        canon = session.get(StylebookLocationCanonical, int(fk or 0))
+        assert canon is not None
+        assert canon.location_type == "city"
+        assert canon.formatted_address and "Peoria" in canon.formatted_address
         assert_canonical_link_invariant(locs[0])
 
 

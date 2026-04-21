@@ -182,6 +182,8 @@ class StylebookLocationCanonical(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
     label: str = Field(sa_column=Column(Text, nullable=False))
+    location_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    formatted_address: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     primary_substrate_location_id: int | None = Field(
         default=None,
         foreign_key="substrate_location.id",

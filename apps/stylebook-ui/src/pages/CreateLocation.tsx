@@ -78,7 +78,7 @@ export default function CreateLocation() {
                   id="locationType"
                   value={locationType}
                   onChange={(e) => setLocationType(e.target.value)}
-                  placeholder="e.g., city, neighborhood — not stored on catalog row"
+                  placeholder="e.g., city, neighborhood (stored on the canonical catalog row)"
                 />
               </div>
               <div>

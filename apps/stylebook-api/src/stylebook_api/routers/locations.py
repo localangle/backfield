@@ -119,6 +119,8 @@ class CreateCanonicalLocationBody(BaseModel):
     """Create a catalog canonical only (no ``substrate_location`` row)."""
 
     label: str
+    location_type: str | None = None
+    formatted_address: str | None = None
     geometry_json: dict[str, Any] | None = None
 
 
@@ -128,9 +130,12 @@ class CreateLocationBody(BaseModel):
     name: str
     location_type: str | None = Field(
         default=None,
-        description="Optional UI hint only; not stored on the canonical row.",
+        description="Optional; stored on the new ``stylebook_location_canonical`` row.",
     )
-    formatted_address: str | None = None
+    formatted_address: str | None = Field(
+        default=None,
+        description="Optional; stored on the new ``stylebook_location_canonical`` row.",
+    )
     geometry_json: dict[str, Any] | None = None
     status: str | None = Field(
         default=None,
@@ -167,6 +172,8 @@ def _persist_new_catalog_canonical(
     project: BackfieldProject,
     label: str,
     geometry_json: dict[str, Any] | None,
+    location_type: str | None = None,
+    formatted_address: str | None = None,
 ) -> CanonicalLocationResponse:
     """Insert canonical + primary alias; no substrate row."""
     stylebook_id = _require_stylebook_id(session, project)
@@ -174,6 +181,8 @@ def _persist_new_catalog_canonical(
         session,
         stylebook_id=stylebook_id,
         label=label,
+        location_type=location_type,
+        formatted_address=formatted_address,
         geometry_json=geometry_json,
         provenance="stylebook_ui_manual",
     )
@@ -290,6 +299,8 @@ class CanonicalLocationResponse(BaseModel):
 
     id: int
     label: str
+    location_type: str | None = None
+    formatted_address: str | None = None
     geometry_json: dict[str, Any] | None = None
     geometry_type: str | None = None
     status: str
@@ -309,6 +320,8 @@ class CanonicalLocationResponse(BaseModel):
         return cls(
             id=int(canon.id),  # type: ignore[arg-type]
             label=str(canon.label),
+            location_type=canon.location_type,
+            formatted_address=canon.formatted_address,
             geometry_json=canon.geometry_json,
             geometry_type=canon.geometry_type,
             status=str(canon.status),
@@ -330,6 +343,8 @@ class PaginatedCanonicalLocationResponse(BaseModel):
 
 class PatchCanonicalLocationBody(BaseModel):
     label: str | None = None
+    location_type: str | None = None
+    formatted_address: str | None = None
 
 
 class LinkedMention(BaseModel):
@@ -441,7 +456,12 @@ def create_canonical_location(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     return _persist_new_catalog_canonical(
-        session, project=proj, label=label, geometry_json=body.geometry_json
+        session,
+        project=proj,
+        label=label,
+        geometry_json=body.geometry_json,
+        location_type=body.location_type,
+        formatted_address=body.formatted_address,
     )
 
 
@@ -624,8 +644,23 @@ def patch_canonical_location(
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
-    if body.label is not None:
-        canon.label = body.label.strip()
+    updates = body.model_dump(exclude_unset=True)
+    if "label" in updates and updates["label"] is not None:
+        canon.label = str(updates["label"]).strip()
+    if "location_type" in updates:
+        v = updates["location_type"]
+        if v is None:
+            canon.location_type = None
+        else:
+            s = str(v).strip().lower()
+            canon.location_type = s if s else None
+    if "formatted_address" in updates:
+        v = updates["formatted_address"]
+        if v is None:
+            canon.formatted_address = None
+        else:
+            s = str(v).strip()
+            canon.formatted_address = s if s else None
     session.add(canon)
     session.commit()
     session.refresh(canon)
@@ -866,7 +901,12 @@ def create_location(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     return _persist_new_catalog_canonical(
-        session, project=proj, label=name, geometry_json=body.geometry_json
+        session,
+        project=proj,
+        label=name,
+        geometry_json=body.geometry_json,
+        location_type=body.location_type,
+        formatted_address=body.formatted_address,
     )
 
 

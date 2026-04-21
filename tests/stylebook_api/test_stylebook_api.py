@@ -187,6 +187,7 @@ def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
     assert r.status_code == 200
     body = r.json()
     assert body["label"] == "West Garfield Park, Chicago, IL"
+    assert body.get("location_type") == "neighborhood"
     cid = int(body["id"])
     assert body.get("linked_substrate_count", 0) == 0
     with Session(stylebook_test_engine) as s:
@@ -196,6 +197,7 @@ def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
         canon = s.get(StylebookLocationCanonical, cid)
         assert canon is not None
         assert canon.label == "West Garfield Park, Chicago, IL"
+        assert canon.location_type == "neighborhood"
         aliases = s.exec(
             select(StylebookLocationAlias).where(
                 StylebookLocationAlias.location_canonical_id == cid,
@@ -254,6 +256,44 @@ def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClie
     )
     assert r3.status_code == 200
     assert r3.json()["label"] == "Catalog Test Place"
+
+
+def test_patch_canonical_location_updates_location_type_and_formatted_address(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    _ = stylebook_test_engine
+    r = client.post(
+        "/v1/canonical-locations?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"label": "Patchable Canon Row"},
+    )
+    assert r.status_code == 200
+    cid = int(r.json()["id"])
+    r2 = client.patch(
+        f"/v1/canonical-locations/{cid}?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"location_type": "city", "formatted_address": "Patchable, IL, USA"},
+    )
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body["location_type"] == "city"
+    assert body["formatted_address"] == "Patchable, IL, USA"
+    r3 = client.get(
+        f"/v1/canonical-locations/{cid}?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r3.status_code == 200
+    assert r3.json()["location_type"] == "city"
+    assert r3.json()["formatted_address"] == "Patchable, IL, USA"
+    r4 = client.patch(
+        f"/v1/canonical-locations/{cid}?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"location_type": None, "formatted_address": None},
+    )
+    assert r4.status_code == 200
+    cleared = r4.json()
+    assert cleared.get("location_type") is None
+    assert cleared.get("formatted_address") is None
 
 
 def test_stats_locations_initial_zeros(client: TestClient) -> None:
@@ -635,6 +675,7 @@ def test_accept_candidate_create_new(
             name="Newplace",
             normalized_name="newplace",
             location_type="city",
+            formatted_address="Newplace, IL, USA",
             identity_fingerprint="fp-new-1",
             stylebook_location_canonical_id=None,
             canonical_link_status=CANONICAL_LINK_PENDING,
@@ -664,6 +705,8 @@ def test_accept_candidate_create_new(
             {"code": "linked_manual_accept_create_new", "canonical_id": coid}
         ]
         assert canon.label == "Newplace Canon"
+        assert canon.location_type == "city"
+        assert canon.formatted_address == "Newplace, IL, USA"
         assert canon.primary_substrate_location_id is None
         canon_id = int(canon.id)  # type: ignore[arg-type]
         aliases = s.exec(
@@ -686,6 +729,8 @@ def test_accept_candidate_link_existing_canonical(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Existing",
+            location_type="neighborhood",
+            formatted_address="Canon card only",
             primary_substrate_location_id=None,
             status="active",
         )
@@ -699,6 +744,7 @@ def test_accept_candidate_link_existing_canonical(
             name="Linkme",
             normalized_name="linkme",
             location_type="city",
+            formatted_address="Substrate geocode line",
             identity_fingerprint="fp-link-1",
             stylebook_location_canonical_id=None,
             canonical_link_status=CANONICAL_LINK_PENDING,
@@ -730,6 +776,10 @@ def test_accept_candidate_link_existing_canonical(
         ).all()
         assert len(aliases) == 1
         assert aliases[0].normalized_alias == "linkme"
+        canon2 = s.get(StylebookLocationCanonical, cid)
+        assert canon2 is not None
+        assert canon2.location_type == "neighborhood"
+        assert canon2.formatted_address == "Canon card only"
 
 
 def test_accept_rejects_non_pending_candidate(

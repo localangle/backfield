@@ -136,6 +136,8 @@ def create_standalone_canonical(
     *,
     stylebook_id: int,
     label: str,
+    location_type: str | None = None,
+    formatted_address: str | None = None,
     geometry_json: dict[str, Any] | None = None,
     provenance: str = "stylebook_ui_manual",
 ) -> StylebookLocationCanonical:
@@ -146,9 +148,13 @@ def create_standalone_canonical(
     gj = dict(geometry_json) if isinstance(geometry_json, dict) else None
     gt_raw = gj.get("type") if isinstance(gj, dict) else None
     geometry_type_str = str(gt_raw) if gt_raw is not None else None
+    lt = (location_type or "").strip().lower() or None
+    fa = (formatted_address or "").strip() or None
     canon = StylebookLocationCanonical(
         stylebook_id=stylebook_id,
         label=clean,
+        location_type=lt,
+        formatted_address=fa,
         primary_substrate_location_id=None,
         status="active",
         geometry_json=gj,
@@ -181,9 +187,13 @@ def materialize_new_canonical_and_link(
     if location.id is None:
         return
     gj = location.geometry_json
+    lt = (location.location_type or "").strip().lower() or None
+    fa = (location.formatted_address or "").strip() or None
     canon = StylebookLocationCanonical(
         stylebook_id=stylebook_id,
         label=str(location.name),
+        location_type=lt,
+        formatted_address=fa,
         primary_substrate_location_id=None,
         status="active",
         geometry_json=dict(gj) if isinstance(gj, dict) else gj,
