@@ -16,6 +16,27 @@ logger = logging.getLogger(__name__)
 # Get Celery timeout limits from environment (defaults match worker/tasks.py)
 TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))  # 60 minutes default
 
+
+def _flatten_executor_upstream_inputs(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Hoist per-upstream payloads to top level (parity with PlaceExtract / Backfield executor).
+
+    The graph executor namespaces each direct upstream output by source node id. Without
+    flattening, article fields like ``headline`` and ``url`` stay nested and DBOutput's
+    shallow merge never sees them for ``substrate_article`` upserts.
+    """
+
+    flattened: Dict[str, Any] = {}
+    for key, value in state.items():
+        is_node_key = key.startswith("node-") and len(key) > 5 and key[5:].isdigit()
+        if is_node_key and isinstance(value, dict):
+            flattened.update(value)
+        elif isinstance(value, dict):
+            flattened.update(value)
+        else:
+            flattened[key] = value
+    return flattened
+
+
 ########## AGENT MODELS ##########
 
 class GeocodeAgentInput(BaseModel):
@@ -91,30 +112,32 @@ class GeocodeAgent:
         Currently supports city, state, and county location types.
         Uses sequential fallback: Nominatim → (LLM evaluation) → Pelias if needed.
         """
-        # Get all state
+        # Get all state (namespaced by upstream node id from the Backfield executor)
         state_dict = inp.model_dump()
-        
-        # Extract text from namespaced state if it exists (for downstream nodes like PlaceReview)
-        text = None
-        for key, value in state_dict.items():
-            if isinstance(value, dict) and 'text' in value:
-                candidate_text = value['text']
-                if isinstance(candidate_text, str):
-                    text = candidate_text
-                    break  # Use first text found
-        
-        # Find locations in the state (typically from PlaceExtract)
-        locations_data = None
-        for key, value in state_dict.items():
-            if isinstance(value, dict) and 'locations' in value:
-                locations_data = value['locations']
-                break
-        
+        flat_state = _flatten_executor_upstream_inputs(state_dict)
+
+        # Prefer flattened text / locations (single upstream is typical)
+        text = flat_state.get("text") if isinstance(flat_state.get("text"), str) else None
+        if not text:
+            for _key, value in state_dict.items():
+                if isinstance(value, dict) and "text" in value:
+                    candidate_text = value["text"]
+                    if isinstance(candidate_text, str):
+                        text = candidate_text
+                        break
+
+        locations_data = flat_state.get("locations")
+        if locations_data is None:
+            for _key, value in state_dict.items():
+                if isinstance(value, dict) and "locations" in value:
+                    locations_data = value["locations"]
+                    break
+
         # If no locations found, return empty places structure
         if not locations_data:
             logger.info("No locations found in input state. Returning empty places structure.")
             output_data = {
-                **state_dict,
+                **flat_state,
                 "places": {
                     "areas": {
                         "states": [],
@@ -137,7 +160,7 @@ class GeocodeAgent:
         if not isinstance(locations_data, list) or len(locations_data) == 0:
             logger.info("Empty locations list found. Returning empty places structure.")
             output_data = {
-                **state_dict,
+                **flat_state,
                 "places": {
                     "areas": {
                         "states": [],
@@ -384,24 +407,12 @@ class GeocodeAgent:
             f"{skipped_count} skipped, total time: {total_time:.1f}s"
         )
         
-        # Extract text from namespaced state if it exists (for downstream nodes like PlaceReview)
-        text = None
-        for key, value in state_dict.items():
-            if isinstance(value, dict) and 'text' in value:
-                candidate_text = value['text']
-                if isinstance(candidate_text, str):
-                    text = candidate_text
-                    break  # Use first text found
-        
-        # Return output with all state plus consolidated places structure
-        # Explicitly include text at root level if found, so downstream nodes can access it
+        # Return flattened carry-through fields + ``places`` so DBOutput sees article metadata.
         output_data = {
-            **state_dict,
-            "places": all_consolidated_places
+            **flat_state,
+            "places": all_consolidated_places,
         }
-        
-        # If we found text in namespaced state, also include it at root level for easy access
         if text:
             output_data["text"] = text
-        
+
         return GeocodeAgentOutput(**output_data)

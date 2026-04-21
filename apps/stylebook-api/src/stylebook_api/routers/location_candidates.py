@@ -31,6 +31,7 @@ from sqlalchemy import exists
 from sqlmodel import Session, col, func, select
 
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
 router = APIRouter(prefix="/v1", tags=["location-candidates"])
 
@@ -501,11 +502,12 @@ def candidate_context(
         txt = texts.get(mid) or ""
         if not txt:
             continue
+        ah, au = article_fields_for_linked_mention(article)
         examples.append(
             CandidateContextItem(
                 article_id=int(article.id),  # type: ignore[arg-type]
-                article_headline=str(article.headline),
-                article_url=article.url,
+                article_headline=ah,
+                article_url=au,
                 text=txt,
             )
         )

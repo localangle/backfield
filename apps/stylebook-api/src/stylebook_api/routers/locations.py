@@ -28,6 +28,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
 router = APIRouter(prefix="/v1", tags=["locations"])
 
@@ -598,13 +599,14 @@ def list_canonical_location_mentions(
         aid = int(article.id)  # type: ignore[arg-type]
         created = mention.created_at
         lid_sub = int(loc.id)  # type: ignore[arg-type]
+        ah, au = article_fields_for_linked_mention(article)
         mentions_out.append(
             LinkedMention(
                 substrate_location_id=lid_sub,
                 mention_id=mid,
                 article_id=aid,
-                article_headline=str(article.headline),
-                article_url=article.url,
+                article_headline=ah,
+                article_url=au,
                 original_text=texts.get(mid),
                 description=mention.role_in_story,
                 location_name=str(loc.name),
@@ -1067,13 +1069,14 @@ def list_location_mentions(
         mid = int(mention.id)  # type: ignore[arg-type]
         aid = int(article.id)  # type: ignore[arg-type]
         created = mention.created_at
+        ah, au = article_fields_for_linked_mention(article)
         mentions_out.append(
             LinkedMention(
                 substrate_location_id=int(location_id),
                 mention_id=mid,
                 article_id=aid,
-                article_headline=str(article.headline),
-                article_url=article.url,
+                article_headline=ah,
+                article_url=au,
                 original_text=texts.get(mid),
                 description=mention.role_in_story,
                 location_name=str(loc.name),

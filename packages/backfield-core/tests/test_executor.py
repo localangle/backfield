@@ -316,3 +316,50 @@ def test_dboutput_direct_upstream_without_json_output():
     assert "places" in db_out
     cities = db_out["places"]["areas"]["cities"]
     assert cities and cities[0]["name"] == "Austin"
+
+
+def test_json_input_article_fields_reach_dboutput_after_geocode():
+    """Geocode must flatten executor namespacing so headline/url survive DBOutput merge."""
+    spec = GraphSpec(
+        name="article-pipeline",
+        nodes=[
+            NodeConfig(
+                id="j1",
+                type="JSONInput",
+                params={
+                    "text": "A man was shot in West Garfield Park.",
+                    "headline": "Man fatally shot in West Garfield Park",
+                    "url": "https://chicago.suntimes.com/crime/2026/04/19/example",
+                    "publication": "Chicago Sun-Times",
+                    "author": "Sun-Times Wire",
+                },
+            ),
+            NodeConfig(id="n2", type="PlaceExtract", params={}),
+            NodeConfig(id="n3", type="GeocodeAgent", params={}),
+            NodeConfig(id="n5", type="DBOutput", params={}),
+        ],
+        edges=[
+            Edge(source="j1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(source="n2", target="n3", sourceHandle="locations", targetHandle="locations"),
+            Edge(source="n3", target="n5", sourceHandle="locations", targetHandle="data"),
+        ],
+    )
+
+    with (
+        patch(
+            "agate_nodes.place_extract.node_port.call_llm",
+            return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
+        ),
+        patch(
+            "agate_nodes.geocode_agent.node.run_geocoding_agent",
+            side_effect=_fake_run_geocoding_agent,
+        ),
+    ):
+        out = execute_graph(spec)
+
+    db_out = out["stylebook_output"]
+    assert db_out.get("success") is True
+    assert db_out.get("headline") == "Man fatally shot in West Garfield Park"
+    assert db_out.get("url") == "https://chicago.suntimes.com/crime/2026/04/19/example"
+    assert db_out.get("author") == "Sun-Times Wire"
+    assert db_out.get("publication") == "Chicago Sun-Times"

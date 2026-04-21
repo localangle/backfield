@@ -36,6 +36,17 @@ import {
 } from "@/components/ui/dialog"
 import { Loader2, Trash2 } from "lucide-react"
 
+function mentionArticleDisplayTitle(m: LinkedMention): string {
+  const trimmed = (m.article_headline ?? "").trim()
+  if (trimmed.length > 0) return trimmed
+  return `Article ${m.article_id}`
+}
+
+function mentionArticleHref(m: LinkedMention): string | null {
+  const u = (m.article_url ?? "").trim()
+  return u.length > 0 ? u : null
+}
+
 export default function LocationDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -257,7 +268,11 @@ export default function LocationDetail() {
         <CardContent className="space-y-4 max-w-xl">
           <div>
             <Label>Label</Label>
-            <Input value={label} onChange={(e) => setLabel(e.target.value)} disabled={!editing} />
+            {editing ? (
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} />
+            ) : (
+              <p className="text-sm mt-1.5">{canonical.label || "—"}</p>
+            )}
           </div>
           <div>
             <Label>Location type</Label>
@@ -364,26 +379,37 @@ export default function LocationDetail() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        group.map((m) => (
+                        group.map((m) => {
+                          const articleHref = mentionArticleHref(m)
+                          const articleLabel = mentionArticleDisplayTitle(m)
+                          return (
                           <TableRow key={m.mention_id} className="hover:bg-muted/30">
-                            <TableCell className="pl-8 align-top">
-                              <span className="text-muted-foreground mr-1 select-none" aria-hidden>
-                                ↳
-                              </span>
-                              {m.article_url ? (
-                                <a
-                                  href={m.article_url}
-                                  className="font-medium text-primary hover:underline"
-                                  target="_blank"
-                                  rel="noreferrer"
+                            <TableCell className="pl-8 align-top min-w-0 max-w-md">
+                              <div className="flex items-start gap-1 min-w-0">
+                                <span
+                                  className="text-muted-foreground select-none shrink-0 pt-0.5"
+                                  aria-hidden
                                 >
-                                  {m.article_headline ?? `Article ${m.article_id}`}
-                                </a>
-                              ) : (
-                                <span className="font-medium">
-                                  {m.article_headline ?? `Article ${m.article_id}`}
+                                  ↳
                                 </span>
-                              )}
+                                <div className="min-w-0">
+                                  {articleHref ? (
+                                    <a
+                                      href={articleHref}
+                                      className="font-medium text-primary hover:underline break-words"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title={articleLabel}
+                                    >
+                                      {articleLabel}
+                                    </a>
+                                  ) : (
+                                    <span className="font-medium break-words" title={articleLabel}>
+                                      {articleLabel}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground text-sm align-top whitespace-nowrap">
                               {m.description ?? "—"}
@@ -393,7 +419,8 @@ export default function LocationDetail() {
                             </TableCell>
                             <TableCell className="align-top" />
                           </TableRow>
-                        ))
+                          )
+                        })
                       )}
                     </Fragment>
                   )
