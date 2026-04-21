@@ -61,7 +61,7 @@ export default function JSONInputPanel({
 
     try {
       const parsed = JSON.parse(value) as unknown
-      if typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
         setJsonError('JSON must be an object')
         return
       }
