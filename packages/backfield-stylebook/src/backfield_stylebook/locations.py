@@ -7,7 +7,11 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, select
 
-from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_stylebook.canonical_link import (
+    CANONICAL_LINK_LINKED,
+    CANONICAL_LINK_PENDING,
+    CANONICAL_LINK_WAIVED,
+)
 from backfield_stylebook.canonical_policy import CanonicalPersistDecision, CanonicalPersistPlan
 
 
@@ -218,6 +222,13 @@ def materialize_new_canonical_and_link(
     )
 
 
+def _resolution_includes_private_place_or_residence(plan: CanonicalPersistPlan) -> bool:
+    for r in plan.resolution_reasons:
+        if isinstance(r, dict) and str(r.get("code") or "") == "private_place_or_residence":
+            return True
+    return False
+
+
 def _canonical_suggestion_from_rules_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
     """Structured hint for Stylebook review UI when auto-apply is off."""
     if (
@@ -235,6 +246,12 @@ def _canonical_suggestion_from_rules_plan(plan: CanonicalPersistPlan) -> dict[st
             "code": "canonical_suggestion",
             "source": "rules_plan",
             "suggested_action": "materialize_new",
+        }
+    if plan.decision == CanonicalPersistDecision.DEFER:
+        return {
+            "code": "canonical_suggestion",
+            "source": "rules_plan",
+            "suggested_action": "defer",
         }
     return None
 
@@ -268,11 +285,15 @@ def apply_canonical_persist_plan(
     plan: CanonicalPersistPlan,
     places_bucket: str,
     provenance: str = "substrate_ingest",
+    auto_apply_canonicalization: bool = False,
 ) -> None:
     """Apply policy outcome: defer (pending, no Stylebook rows), link, or materialize."""
     reasons = [dict(r) for r in plan.resolution_reasons]
     if plan.decision == CanonicalPersistDecision.DEFER:
-        location.canonical_link_status = CANONICAL_LINK_PENDING
+        if auto_apply_canonicalization and _resolution_includes_private_place_or_residence(plan):
+            location.canonical_link_status = CANONICAL_LINK_WAIVED
+        else:
+            location.canonical_link_status = CANONICAL_LINK_PENDING
         location.canonical_review_reasons_json = reasons
         session.add(location)
         return

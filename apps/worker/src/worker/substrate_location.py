@@ -13,7 +13,7 @@ from worker.substrate_common import _normalize_name, _sha256_hex, _utcnow
 
 
 def _place_extract_persist_fields_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """Subset of PlaceExtract / geocode ``entry`` stored on ``SubstrateLocation.source_details_json``."""
+    """Fields from the geocode ``entry`` merged into ``SubstrateLocation.source_details_json``."""
     out: dict[str, Any] = {}
     comps = entry.get("components")
     if isinstance(comps, dict):

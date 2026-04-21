@@ -5,8 +5,7 @@ ADDRESS_PLACE_KIND_PUBLIC_NAMED = "public_named"
 ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE = "private_residence"
 ADDRESS_PLACE_KIND_UNKNOWN = "unknown"
 
-# Street-level / site-level types where we ask the model to judge residence vs named public place.
-# Includes occasional model outputs like ``address_intersection`` that are not in the main prompt list.
+# Street-level types for ``address_place_kind`` (model may emit ``address_intersection`` too).
 ADDRESS_LIKE_LOCATION_TYPES: frozenset[str] = frozenset(
     {
         "address",

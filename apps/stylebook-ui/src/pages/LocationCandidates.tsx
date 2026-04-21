@@ -45,10 +45,11 @@ import { cn } from "@/lib/utils"
 import { ChevronRight, Link2, Loader2, PlusCircle, StickyNote } from "lucide-react"
 
 /** Row action aligned with `canonical_suggestion.suggested_action` from the API. */
-function suggestedRowAction(c: Candidate): "link" | "create_new" | null {
+function suggestedRowAction(c: Candidate): "link" | "create_new" | "defer" | null {
   const raw = c.canonical_suggestion?.suggested_action
   if (raw === "link_existing") return "link"
   if (raw === "materialize_new") return "create_new"
+  if (raw === "defer") return "defer"
   return null
 }
 
@@ -56,6 +57,7 @@ function suggestedActionShortLabel(c: Candidate): string | null {
   const sug = suggestedRowAction(c)
   if (sug === "link") return "Link to existing canonical"
   if (sug === "create_new") return "Create new canonical"
+  if (sug === "defer") return "Defer (remove from linking queue)"
   return null
 }
 
@@ -463,8 +465,17 @@ export default function LocationCandidates() {
                             {status === "open" && (
                               <Button
                                 size="sm"
-                                variant="outline"
+                                variant={rowSug === "defer" ? "default" : "outline"}
                                 disabled={acceptingId === c.id || deferringId === c.id}
+                                className={cn(
+                                  rowSug === "defer" &&
+                                    "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-sm",
+                                )}
+                                title={
+                                  rowSug === "defer"
+                                    ? "Suggested action for this location"
+                                    : undefined
+                                }
                                 onClick={() => void handleDefer(c)}
                               >
                                 {deferringId === c.id ? "Deferring…" : "Defer"}

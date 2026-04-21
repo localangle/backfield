@@ -111,6 +111,7 @@ def persist_from_consolidated(
                     plan=plan,
                     places_bucket=bucket,
                     provenance="substrate_ingest",
+                    auto_apply_canonicalization=True,
                 )
             else:
                 apply_canonical_persist_plan_review_only(
