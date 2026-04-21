@@ -19,16 +19,17 @@ Primary local services are defined in `infra/docker-compose.yml`:
 
 ## Canonical commands
 
-- `make up`: bring up the local stack in the foreground.
-- `make down`: stop the stack and remove orphans, then run `docker-trim` (same pattern as agate-ai-platform: `docker system prune -f` then `docker volume prune -f`).
+- `make up`: bring up the local stack in the foreground. It does **not** run `docker volume prune` or `docker system prune` (only `docker compose up`).
+- `make down`: stop the stack and remove orphans, then run `docker-trim` (`docker system prune -f` only). **Volume prune is omitted** so local Postgres / Compose data volumes are not removed while the stack is down (same pattern as agate-ai-platform local `make down`). Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
 - `make logs`: inspect compose logs.
 - `make migrate`: run Alembic inside `agate-api`.
 - `make reset-db`: tear down containers and volumes.
 - `make smoke`: run the HTTP golden-path smoke against a live stack (`tests/smoke/golden_path_stack.py`). With **`SMOKE_EMAIL`** and **`SMOKE_PASSWORD`** set, exercises Core login and **`GET /v1/me/workspaces`** before Agate; otherwise uses the service Bearer on Agate only.
 - `make docker-prune-build`: reclaim disk from Docker build cache only (`docker builder prune -f`).
 - `make docker-prune-system`: remove stopped containers, dangling images, unused networks, and build cache (`docker system prune -f`).
-- `make docker-prune-volumes`: remove **unused** anonymous volumes (`docker volume prune -f`); does not remove named volumes while containers still reference them.
-- `make docker-trim`: runs `docker-prune-system` then `docker-prune-volumes` (aligned with agate-ai-platform `make down` cleanup; use before `make up` when the daemon is low on disk).
+- `make docker-prune-volumes`: run `docker volume prune -f` (**unused** volumes only — after `make down`, Compose DB volumes are typically unused and **can be deleted**; use only when you intend to reclaim space or reset anonymous volumes).
+- `make docker-trim`: runs `docker-prune-system` only (safe default before `make up` when the daemon is low on disk; preserves Postgres and other compose volumes across `down`/`up`).
+- `make docker-trim-full`: runs `docker-trim` then `docker-prune-volumes` (aggressive reclaim; can wipe local DB data if nothing references those volumes).
 
 Docker builds use the repo root as context; [.dockerignore](../.dockerignore) excludes large local files such as Who's On First `*.db` under `packages/agate-runtime/.../geocoding/data/` so images do not try to copy multi-gigabyte databases.
 
@@ -90,4 +91,4 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 - If geocode calls fail, check `stylebook-api`, `STYLEBOOK_API_URL`, and `SERVICE_API_TOKEN`.
 - If PlaceExtract or GeocodeAgent fail with auth errors, verify LLM and geocoder keys on the worker (Compose env or project secrets).
 - If **`agate-ui` fails with `vite: not found`**, the image may be stale or an old anonymous `node_modules` volume may be wrong: rebuild the service (`docker compose build agate-ui --no-cache`) and bring the stack up again. Compose mounts `apps/agate-ui` at `/app/apps/agate-ui` to match the Dockerfile `WORKDIR` so `node_modules` (including Vite) resolves correctly.
-- If `make up` / image build fails with **no space left on device**, run `make docker-trim` (and remove any huge local `.db` under `packages/agate-runtime/.../geocoding/data/` if you do not need it). The WOF database must not live in the image; [.dockerignore](../.dockerignore) keeps it out of the build context.
+- If `make up` / image build fails with **no space left on device**, run `make docker-trim` first; if space is still tight, run `make docker-trim-full` or `make docker-prune-volumes` knowing it may remove unused volumes (including a stopped stack’s DB volume). Remove any huge local `.db` under `packages/agate-runtime/.../geocoding/data/` if you do not need it. The WOF database must not live in the image; [.dockerignore](../.dockerignore) keeps it out of the build context.
