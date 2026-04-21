@@ -529,6 +529,10 @@ export default function RunGraph() {
           bucket: '',
           folder_path: '',
         }
+      case 'JSONInput':
+        return {
+          text: '',
+        }
       case 'APIInput':
         return {
           enable_api_access: true,

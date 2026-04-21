@@ -56,7 +56,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 - `apps/agate-ui/scripts/sync-nodes.js` copies UI files into `apps/agate-ui/src/nodes`.
 - The sync script also generates `src/nodes/registry.ts`.
 - Avoid hand-editing generated registry output unless the sync flow itself is changing.
-- The default Agate palette includes `TextInput`, `PlaceExtract`, `GeocodeAgent`, and `Output`. `PlaceExtract` performs editorially relevant place extraction in a **single** LLM call; there is no separate Place Filter node.
+- The default Agate palette includes `TextInput`, `JSONInput`, `S3Input`, `PlaceExtract`, `GeocodeAgent`, and `Output`. `PlaceExtract` performs editorially relevant place extraction in a **single** LLM call; there is no separate Place Filter node.
 
 ## TypeScript expectations
 

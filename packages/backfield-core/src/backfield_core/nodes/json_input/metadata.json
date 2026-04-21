@@ -1,0 +1,19 @@
+{
+  "type": "JSONInput",
+  "label": "JSON Input",
+  "icon": "Braces",
+  "color": "bg-blue-500",
+  "description": "Provide structured JSON data with required text field",
+  "category": "input",
+  "inputs": [],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text + Data",
+      "type": "object"
+    }
+  ],
+  "defaultParams": {
+    "text": ""
+  }
+}

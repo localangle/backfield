@@ -42,7 +42,7 @@ const nodeMetadata = {
 };
 
 import { Label } from '@/components/ui/label'
-import type { GraphPanelContext } from '@/components/NodePanel'
+import { Input } from '@/components/ui/input'
 
 interface DBOutputPanelProps {
   node: any
@@ -52,7 +52,6 @@ interface DBOutputPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
-  graphContext?: GraphPanelContext | null
 }
 
 const DEFAULTS = {
@@ -62,12 +61,7 @@ const DEFAULTS = {
   adjudication_model: 'gpt-5-nano' as 'gpt-5-nano' | 'gpt-5-mini',
 }
 
-export default function DBOutputPanel({
-  node,
-  editMode,
-  setNodes,
-  graphContext,
-}: DBOutputPanelProps) {
+export default function DBOutputPanel({ node, editMode, setNodes }: DBOutputPanelProps) {
   const data = { ...DEFAULTS, ...(node.data || {}) }
   const disabled = !(editMode && setNodes)
 
@@ -80,24 +74,10 @@ export default function DBOutputPanel({
     )
   }
 
-  const readOnlyText = (() => {
-    const ctx = graphContext
-    if (!ctx) {
-      return 'Loading workspace Stylebook…'
-    }
-    if (ctx.flowProjectLoading) {
-      return 'Loading workspace Stylebook…'
-    }
-    const name = ctx.workspaceStylebookName?.trim()
-    if (name) return name
-    if (ctx.workspaceDefaultStylebookId != null) {
-      return `Stylebook ${ctx.workspaceDefaultStylebookId}`
-    }
-    if (ctx.missingWorkspaceStylebook) {
-      return 'No workspace Stylebook resolved for this project.'
-    }
-    return 'Could not load the workspace Stylebook for this flow.'
-  })()
+  const stylebookStr =
+    data.stylebook_id === null || data.stylebook_id === undefined || data.stylebook_id === ''
+      ? ''
+      : String(data.stylebook_id)
 
   return (
     <div className="space-y-4">
@@ -110,17 +90,22 @@ export default function DBOutputPanel({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="dbout-workspace-stylebook">Workspace Stylebook</Label>
-        <div
-          id="dbout-workspace-stylebook"
-          className="flex min-h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm text-foreground"
-          aria-readonly="true"
-        >
-          {readOnlyText}
-        </div>
+        <Label htmlFor="dbout-stylebook-id">Stylebook ID</Label>
+        <Input
+          id="dbout-stylebook-id"
+          type="number"
+          min={1}
+          placeholder="Leave empty to use project workspace default"
+          value={stylebookStr}
+          disabled={disabled}
+          onChange={(e) => {
+            const v = e.target.value.trim()
+            patch({ stylebook_id: v === '' ? null : Number(v) })
+          }}
+        />
         <p className="text-xs text-muted-foreground">
-          Taken from the workspace that owns this flow&apos;s project. Change it in workspace
-          settings.
+          When set, canonicalization targets this Stylebook (must belong to the project
+          organization). When empty, the workspace default Stylebook is used.
         </p>
       </div>
 
