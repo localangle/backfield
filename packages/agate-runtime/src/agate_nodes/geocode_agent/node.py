@@ -248,11 +248,17 @@ class GeocodeAgent:
                     f"{location_name} (type: {location_info.get('type', '')})"
                 )
                 
-                # Extract extra fields
+                # Extract extra fields (everything except nested location + verbatim quote).
                 extra_fields = {
-                    key: value for key, value in loc.items() 
-                    if key not in ['location', 'original_text']
+                    key: value
+                    for key, value in loc.items()
+                    if key not in ("location", "original_text")
                 }
+                # ``components`` live under ``location`` in PlaceExtract output; copy for DBOutput persistence.
+                if isinstance(location_info, dict):
+                    comps = location_info.get("components")
+                    if isinstance(comps, dict):
+                        extra_fields = {**extra_fields, "components": comps}
                 
                 # Run the agent for this location with per-location timeout
                 consolidated_result = await asyncio.wait_for(

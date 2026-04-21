@@ -12,6 +12,18 @@ from sqlmodel import Session, col, select
 from worker.substrate_common import _normalize_name, _sha256_hex, _utcnow
 
 
+def _place_extract_persist_fields_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Subset of PlaceExtract / geocode ``entry`` stored on ``SubstrateLocation.source_details_json``."""
+    out: dict[str, Any] = {}
+    comps = entry.get("components")
+    if isinstance(comps, dict):
+        out["place_extract_components"] = comps
+    kind = entry.get("address_place_kind")
+    if isinstance(kind, str) and kind.strip():
+        out["address_place_kind"] = kind.strip().lower()
+    return out
+
+
 def _coord_pair_wkt(pair: Any) -> str | None:
     if not isinstance(pair, (list, tuple)) or len(pair) < 2:
         return None
@@ -408,6 +420,7 @@ def _upsert_location(
         "run_id": run_id,
         "places_bucket": bucket,
         "raw_entry_id": entry.get("id"),
+        **_place_extract_persist_fields_from_entry(entry),
     }
 
     if loc is None:
@@ -455,7 +468,8 @@ def _upsert_location(
     loc.geocode_type = geocode_type or loc.geocode_type
     loc.formatted_address = formatted_address or loc.formatted_address
     loc.source_kind = "agate_geocode"
-    loc.source_details_json = details
+    prev_details = loc.source_details_json if isinstance(loc.source_details_json, dict) else {}
+    loc.source_details_json = {**prev_details, **details}
     loc.geometry = geometry_value or loc.geometry
     loc.geometry_type = geometry_type_str or loc.geometry_type
     loc.geometry_json = geometry_json or loc.geometry_json

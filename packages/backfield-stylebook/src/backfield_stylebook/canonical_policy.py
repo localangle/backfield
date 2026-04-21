@@ -22,6 +22,12 @@ from backfield_stylebook.canonical_retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
+from backfield_stylebook.place_extract_location_types import (
+    ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE,
+    ADDRESS_PLACE_KIND_PUBLIC_NAMED,
+    ADDRESS_PLACE_KIND_UNKNOWN,
+    is_address_like_location_type,
+)
 
 
 class CanonicalPersistDecision(StrEnum):
@@ -67,14 +73,37 @@ def find_existing_canonical_id_by_alias(
     return int(canon.id)
 
 
-def _should_defer(*, places_bucket: str, location: SubstrateLocation) -> bool:
+def _address_place_kind_from_entry(entry: dict[str, Any] | None) -> str:
+    """Normalize PlaceExtract ``address_place_kind`` (default ``unknown``)."""
+    if not isinstance(entry, dict):
+        return ADDRESS_PLACE_KIND_UNKNOWN
+    raw = entry.get("address_place_kind")
+    s = str(raw).strip().lower() if raw is not None else ""
+    if s in (
+        ADDRESS_PLACE_KIND_PUBLIC_NAMED,
+        ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE,
+        ADDRESS_PLACE_KIND_UNKNOWN,
+    ):
+        return s
+    return ADDRESS_PLACE_KIND_UNKNOWN
+
+
+def _should_defer(
+    *,
+    places_bucket: str,
+    location: SubstrateLocation,
+    entry: dict[str, Any] | None = None,
+) -> bool:
     if places_bucket == "needs_review":
         return True
     st = str(location.status or "")
     if st in ("needs_review", "failed"):
         return True
     lt = (location.location_type or "").strip().lower()
-    if lt == "address":
+    kind = _address_place_kind_from_entry(entry)
+    if is_address_like_location_type(lt) and kind == ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE:
+        return True
+    if lt == "address" and kind != ADDRESS_PLACE_KIND_PUBLIC_NAMED:
         return True
     return False
 
@@ -248,10 +277,24 @@ def decide_canonical_persist_plan(
 ) -> CanonicalPersistPlan:
     """Decide how persistence should treat Stylebook canonicalization for this substrate row.
 
-    ``entry`` is reserved for future scoring (e.g. LLM hints); v1 rules use bucket + location only.
+    ``entry`` carries PlaceExtract extras (e.g. ``address_place_kind``) for address deferral rules.
     """
-    _ = entry
-    if _should_defer(places_bucket=places_bucket, location=location):
+    if _should_defer(places_bucket=places_bucket, location=location, entry=entry):
+        lt = (location.location_type or "").strip().lower()
+        kind = _address_place_kind_from_entry(entry)
+        if is_address_like_location_type(lt) and kind == ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE:
+            return CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.DEFER,
+                resolution_reasons=(
+                    {
+                        "code": "private_place_or_residence",
+                        "message": "Private place or residence",
+                        "location_type": location.location_type,
+                        "places_bucket": places_bucket,
+                        "substrate_status": str(location.status or ""),
+                    },
+                ),
+            )
         return CanonicalPersistPlan(
             decision=CanonicalPersistDecision.DEFER,
             resolution_reasons=defer_reason_payload(places_bucket=places_bucket, location=location),
