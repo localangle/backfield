@@ -19,6 +19,8 @@ export interface Candidate {
   created_at?: string | null
   note?: string | null
   status: string
+  /** Human-readable ingest/policy reason when present (e.g. deferred private residence). */
+  defer_display_message?: string | null
   canonical_suggestion?: CanonicalSuggestion | null
 }
 

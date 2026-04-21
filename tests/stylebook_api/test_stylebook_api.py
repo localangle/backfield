@@ -448,6 +448,44 @@ def test_candidates_defer_removes_from_open_queue_and_lists_in_deferred(
         assert row.canonical_link_status == CANONICAL_LINK_WAIVED
 
 
+def test_deferred_candidate_lists_defer_display_message_from_reasons_json(
+    client: TestClient, stylebook_test_engine: object
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Private Rd",
+            normalized_name="private rd",
+            location_type="address",
+            identity_fingerprint="fp-private-msg-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_WAIVED,
+            canonical_review_reasons_json=[
+                {
+                    "code": "private_place_or_residence",
+                    "message": "Private place or residence",
+                    "location_type": "address",
+                }
+            ],
+        )
+        s.add(loc)
+        s.commit()
+
+    r = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=deferred",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    cand = body["candidates"][0]
+    assert cand["suggested_name"] == "Private Rd"
+    assert cand["defer_display_message"] == "Private place or residence"
+
+
 def test_candidates_lists_unlinked_substrate(
     client: TestClient, stylebook_test_engine: object
 ) -> None:

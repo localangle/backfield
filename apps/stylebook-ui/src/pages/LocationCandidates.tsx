@@ -388,6 +388,11 @@ export default function LocationCandidates() {
                               <span className="text-xs text-muted-foreground">{rowSugLabel}</span>
                             </div>
                           ) : null}
+                          {status === "deferred" && c.defer_display_message ? (
+                            <p className="pl-10 text-xs text-muted-foreground max-w-md">
+                              {c.defer_display_message}
+                            </p>
+                          ) : null}
                           </div>
                         </TableCell>
                         <TableCell>
