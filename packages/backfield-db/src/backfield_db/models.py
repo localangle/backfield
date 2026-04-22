@@ -629,6 +629,29 @@ class AgateRun(SQLModel, table=True):
     )
 
 
+class AgateProcessedItem(SQLModel, table=True):
+    """Per-S3-object execution unit for S3Input batch runs (parent ``agate_run``)."""
+
+    __tablename__ = "agate_processed_item"
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(foreign_key="agate_run.id", index=True)
+    source_file: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    input_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    status: str = Field(
+        default="pending",
+        sa_column=Column(Text, nullable=False),
+    )
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    result_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class AgateTemplate(SQLModel, table=True):
     __tablename__ = "agate_template"
 

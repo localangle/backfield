@@ -156,6 +156,58 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     assert len(list_response.json()) == 1
 
 
+def test_s3_graph_run_enqueues_batch_setup(monkeypatch, client: TestClient):
+    sent_task: dict[str, object] = {}
+
+    def fake_send_task(name: str, args: list[str], queue: str) -> None:
+        sent_task["name"] = name
+        sent_task["args"] = args
+        sent_task["queue"] = queue
+
+    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+
+    project = client.post("/projects", json={"name": "S3 Project", "slug": "s3-proj"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "S3 Flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "s3_flow",
+                "nodes": [
+                    {
+                        "id": "s3",
+                        "type": "S3Input",
+                        "params": {"bucket": "b", "folder_path": ""},
+                        "position": {"x": 0, "y": 0},
+                    },
+                    {
+                        "id": "out",
+                        "type": "Output",
+                        "params": {},
+                        "position": {"x": 200, "y": 0},
+                    },
+                ],
+                "edges": [
+                    {
+                        "source": "s3",
+                        "target": "out",
+                        "sourceHandle": "text",
+                        "targetHandle": "data",
+                    },
+                ],
+            },
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert run["status"] == "pending"
+    assert sent_task == {
+        "name": "worker.tasks.execute_s3_batch_setup",
+        "args": [run["id"]],
+        "queue": "agate",
+    }
+
+
 def test_run_includes_mapbox_api_token_from_project_secrets(monkeypatch, client: TestClient):
     def fake_send_task(*_a, **_k):
         pass

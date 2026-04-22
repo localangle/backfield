@@ -9,6 +9,7 @@ from typing import Any
 
 from api.deps import get_auth, get_session
 from backfield_auth.gate import require_project_access, visible_project_ids
+from backfield_core.s3_batch import graph_spec_json_contains_s3_input
 from backfield_db import AgateGraph, AgateRun, BackfieldProjectSecret
 from backfield_db.crypto import decrypt_secret
 from celery import Celery
@@ -81,8 +82,13 @@ def create_run(
     session.add(run)
     session.commit()
     session.refresh(run)
+    task_name = (
+        "worker.tasks.execute_s3_batch_setup"
+        if graph_spec_json_contains_s3_input(g.spec_json)
+        else "worker.tasks.execute_agate_run"
+    )
     celery_app.send_task(
-        "worker.tasks.execute_agate_run",
+        task_name,
         args=[run.id],
         queue=os.environ.get("CELERY_QUEUE", "agate"),
     )

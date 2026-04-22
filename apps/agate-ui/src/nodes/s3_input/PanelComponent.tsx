@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "S3 Input",
   "icon": "Database",
   "color": "bg-blue-500",
-  "description": "Load article text from JSON files in S3. Each file must be a JSON object with a top-level \"text\" string. For a single graph run, the first valid file supplies the pipeline text (same downstream wiring as Text Input). Requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (optional AWS_SESSION_TOKEN) in project secrets / worker environment.",
+  "description": "Load article text from JSON files in S3.",
   "category": "input",
   "inputs": [],
   "outputs": [
@@ -16,7 +16,8 @@ const nodeMetadata = {
   ],
   "defaultParams": {
     "bucket": "",
-    "folder_path": ""
+    "folder_path": "",
+    "max_files": 500
   }
 };
 
@@ -54,13 +55,7 @@ export default function S3InputPanel({
         <div>
           <Label className="text-sm font-medium">Description</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            Reads JSON objects from an S3 bucket prefix. Each file must include a top-level{' '}
-            <span className="font-mono">&quot;text&quot;</span> string. On run, the first valid
-            file supplies text to downstream nodes (same as Text Input). AWS credentials must be
-            available as project secrets:{' '}
-            <span className="font-mono">AWS_ACCESS_KEY_ID</span>,{' '}
-            <span className="font-mono">AWS_SECRET_ACCESS_KEY</span>, and optionally{' '}
-            <span className="font-mono">AWS_SESSION_TOKEN</span>.
+            Load article text from JSON files in S3.
           </p>
         </div>
       </div>
@@ -127,6 +122,35 @@ export default function S3InputPanel({
               Optional prefix inside the bucket (for example <span className="font-mono">input/</span>
               ).
             </p>
+          </div>
+
+          <div>
+            <Label htmlFor="max-files" className="text-xs text-muted-foreground">
+              Max files per run
+            </Label>
+            {editMode && setNodes ? (
+              <Input
+                id="max-files"
+                type="number"
+                min={1}
+                max={10000}
+                value={node.data.max_files ?? 500}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10)
+                  const next = Number.isFinite(v) ? v : 500
+                  setNodes((nds: any[]) =>
+                    nds.map((n: any) =>
+                      n.id === node.id ? { ...n, data: { ...n.data, max_files: next } } : n,
+                    ),
+                  )
+                }}
+                className="mt-1 text-xs"
+              />
+            ) : (
+              <div className="mt-1 p-2 bg-muted rounded">
+                <span className="text-xs">{node.data.max_files ?? 500}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

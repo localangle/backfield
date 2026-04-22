@@ -47,6 +47,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 
 - `agate_graph` — stored graph spec (JSON), FK to `backfield_project`.
 - `agate_run` — execution record, status, result/error JSON.
+- `agate_processed_item` — per-S3-object work unit for **S3Input** batch runs: FK to `agate_run.id`, optional `source_file` (S3 key), optional `input_json` (full valid document), `status` (`pending` / `running` / `succeeded` / `failed` / `skipped`), optional `error_message` / `result_json`, timestamps. Indexed on `run_id`.
 - `agate_template` — curated template flows (`spec_json`); instantiated as new `agate_graph` rows.
 
 Schema revisions start at `001_agate_baseline` (initial `agate_*` tables and seed rows). Revision **`002_backfield_identity`** adds identity tables, renames `agate_project` → `backfield_project` (adds `organization_id`, optional `workspace_id`), and renames `agate_project_secret` → `backfield_project_secret`. Revision **`002_starter_flow_layout`** (runs next) is a **data migration** that rewrites stored `spec_json` for graphs named `Starter flow` (and the seeded **Geocode pipeline** template) so node positions match the UI card widths—run `make migrate` so existing databases pick up the layout fix.
@@ -71,6 +72,8 @@ Revision **`014_pg_trgm_canon_geom`** enables **`pg_trgm`** on Postgres (extensi
 
 Revision **`015_canon_geo_meta`** adds nullable **`location_type`** and **`formatted_address`** text columns on **`stylebook_location_canonical`**.
 
+Revision **`016_agate_processed_item`** creates **`agate_processed_item`** with FK to **`agate_run.id`** (`ON DELETE CASCADE`) and index **`ix_agate_processed_item_run_id`**.
+
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 
 **Existing databases** that already applied older revisions: follow migration notes in your upgrade path or reset (`make reset-db` + `make up`) for dev.
@@ -82,6 +85,7 @@ The **Starter flow** graph row for the General project is created at runtime whe
 - Intentional indexes include:
   - `backfield_project.slug`
   - `agate_run.graph_id`
+  - `agate_processed_item.run_id`
   - `backfield_project_secret.project_id`
   - unique key on `backfield_project_secret (project_id, key)`
   - GIST indexes on shared location geometry columns

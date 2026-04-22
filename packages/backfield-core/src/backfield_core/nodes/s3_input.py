@@ -1,18 +1,19 @@
-"""S3Input node — load pipeline text from JSON objects in S3 (ported from agate-ai-platform).
+"""S3Input node — load pipeline text from JSON objects in S3.
 
-Backfield executes one graph per run. This runner lists ``*.json`` keys under the configured
-prefix, reads each object, and uses the **first** JSON document whose top-level ``text`` field
-is a non-empty string as the pipeline input (same downstream shape as ``TextInput``). The
-returned dict also includes batch summary fields for UI parity with the original node.
+Graph runs that start with ``POST /runs`` and include this node are orchestrated by the worker:
+each valid ``*.json`` object under the configured prefix becomes an ``agate_processed_item`` and
+is executed in parallel (bounded). Direct ``execute_graph`` calls (e.g. tests) still resolve the
+first valid JSON document with a non-empty top-level ``text`` field, same shape as ``TextInput``.
 """
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
 import boto3
+
+from backfield_core.s3_batch import list_json_keys_under_prefix, parse_s3_text_json_document
 
 
 def _s3_client():
@@ -33,26 +34,6 @@ def _s3_client():
     return boto3.client("s3", **session_kwargs)
 
 
-def _list_json_keys(s3_client: Any, *, bucket: str, prefix: str) -> list[str]:
-    keys: list[str] = []
-    token: str | None = None
-    while True:
-        kwargs: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix}
-        if token:
-            kwargs["ContinuationToken"] = token
-        resp = s3_client.list_objects_v2(**kwargs)
-        for obj in resp.get("Contents") or []:
-            key = str(obj.get("Key") or "")
-            if key.endswith(".json") and not key.endswith("/"):
-                keys.append(key)
-        if not resp.get("IsTruncated"):
-            break
-        token = resp.get("NextContinuationToken")
-        if not token:
-            break
-    return keys
-
-
 def run_s3_input(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
     del inputs  # input nodes have no upstream wiring in the executor
     bucket = str(params.get("bucket") or "").strip()
@@ -65,7 +46,7 @@ def run_s3_input(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, An
 
     s3_client = _s3_client()
     prefix = folder_path.rstrip("/") + "/" if folder_path else ""
-    json_keys = _list_json_keys(s3_client, bucket=bucket, prefix=prefix)
+    json_keys = list_json_keys_under_prefix(s3_client, bucket=bucket, prefix=prefix)
     total_files = len(json_keys)
     if total_files == 0:
         raise ValueError(f"No JSON objects found under s3://{bucket}/{prefix or ''}")
@@ -79,23 +60,17 @@ def run_s3_input(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, An
         try:
             response = s3_client.get_object(Bucket=bucket, Key=file_key)
             raw = response["Body"].read().decode("utf-8")
-            file_data = json.loads(raw)
-        except json.JSONDecodeError:
-            skipped_files += 1
-            continue
         except Exception:
             skipped_files += 1
             continue
 
-        if not isinstance(file_data, dict):
-            skipped_files += 1
-            continue
-        text_val = file_data.get("text")
-        if text_val is None or not str(text_val).strip():
+        file_data, err = parse_s3_text_json_document(raw)
+        if err or file_data is None:
             skipped_files += 1
             continue
 
         processed_files += 1
+        text_val = file_data.get("text")
         if chosen_text is None:
             chosen_text = str(text_val)
             source_file = file_key

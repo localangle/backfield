@@ -36,7 +36,10 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 ## Runtime contracts
 
 - Agate worker queue: `agate`
-- Worker task name: `worker.tasks.execute_agate_run`
+- Worker task names:
+  - `worker.tasks.execute_agate_run` — default graph execution (single Celery task runs `execute_graph`).
+  - `worker.tasks.execute_s3_batch_setup` — lists/validates S3 JSON under the S3Input prefix, inserts **`agate_processed_item`** rows, then runs child tasks in bounded chunks.
+  - `worker.tasks.execute_processed_item` — one Celery task per queued item; runs `execute_graph` with an S3Input shim (parent **`agate_run.id`** remains **`BACKFIELD_RUN_ID`** for DBOutput / substrate).
 - Worker app name: `agate_worker`
 - Health endpoints:
   - Agate API: `GET /health`
@@ -67,6 +70,7 @@ Graph nodes are executed in the worker using the vendored `agate-runtime` packag
 - **GeocodeAgent** may use `OPENAI_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and optional Stylebook cache via `STYLEBOOK_API_URL` + `PROJECT_SLUG` + `SERVICE_API_TOKEN`.
 - **Who's On First SQLite** (coordinate → WOF ID / bbox helpers in `wof.py`): the database file is not in git (size). Install under `packages/agate-runtime/.../geocoding/data/` or set **`WOF_SQLITE_DB_PATH`** to the `.db` file. See `packages/agate-runtime/src/agate_utils/geocoding/data/README.md`.
 - **Celery limits**: `TASK_SOFT_TIME_LIMIT` / `TASK_HARD_TIME_LIMIT` (defaults `3600` / `4200` seconds on the worker service in Compose) mirror agate-ai-platform worker defaults for long-running geocode flows.
+- **S3 batch fan-out**: `S3_BATCH_MAX_INFLIGHT` (default `12`, max `256`) caps how many `execute_processed_item` tasks are in flight at once per parent run (sequential chunks of Celery `group` + `get()` inside `execute_s3_batch_setup`). S3 listing and downloads run in the worker with project secrets merged into the process environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`). The S3Input node param **`max_files`** (default `500`, hard cap `10000`) limits how many valid JSON documents are executed per run; additional valid keys are recorded as **`skipped`** items with reason **`max_files cap`**.
 
 For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in repo-root `.env` (or ensure they exist in the worker environment) so PlaceExtract (and any other LLM nodes in the flow) can call the model; otherwise the run fails when those nodes execute. For the **session-shaped** smoke, add **`SMOKE_EMAIL`** and **`SMOKE_PASSWORD`** to the same repo-root `.env` (they are loaded automatically; no need to `export`). Run **`core-api`** in Compose. Omit them to use the legacy service-token path on Agate only.
 

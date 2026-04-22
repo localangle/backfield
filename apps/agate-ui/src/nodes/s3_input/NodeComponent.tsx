@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "S3 Input",
   "icon": "Database",
   "color": "bg-blue-500",
-  "description": "Load article text from JSON files in S3. Each file must be a JSON object with a top-level \"text\" string. For a single graph run, the first valid file supplies the pipeline text (same downstream wiring as Text Input). Requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (optional AWS_SESSION_TOKEN) in project secrets / worker environment.",
+  "description": "Load article text from JSON files in S3.",
   "category": "input",
   "inputs": [],
   "outputs": [
@@ -16,7 +16,8 @@ const nodeMetadata = {
   ],
   "defaultParams": {
     "bucket": "",
-    "folder_path": ""
+    "folder_path": "",
+    "max_files": 500
   }
 };
 
