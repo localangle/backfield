@@ -48,7 +48,7 @@ make smoke   # live stack; see docs/TESTING.md (session vs service-token modes)
 
 ### Environment
 
-- **LLM / geocoder / Mapbox keys**: add to repo-root `.env` (see [.env.example](.env.example)). Compose loads that file into `agate-api` and `worker` so PlaceExtract and GeocodeAgent can run. The same values are copied into **General** project secrets when local bootstrap runs (Fernet-encrypted in Postgres), including optional **`MAPBOX_API_TOKEN`** for map visualizations.
+- **LLM / geocoder / Mapbox / AWS keys**: add to repo-root `.env` (see [.env.example](.env.example)). Compose loads that file into `agate-api` and `worker` so PlaceExtract and GeocodeAgent can run. The same values are copied into **General** project secrets when local bootstrap runs (Fernet-encrypted in Postgres), including optional **`MAPBOX_API_TOKEN`** for map visualizations and optional **`AWS_ACCESS_KEY_ID`** / **`AWS_SECRET_ACCESS_KEY`** (and **`AWS_SESSION_TOKEN`** if needed) for S3 Input.
 - **Shared service token** (optional): set the same value on agate-api, worker, and stylebook-api:
 
 ```bash
