@@ -16,6 +16,7 @@ from backfield_db import (
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.locations import create_standalone_canonical
+from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from backfield_stylebook.substrate_canonical_link_actions import (
     link_substrate_to_canonical_atomic,
@@ -31,6 +32,8 @@ from stylebook_api.deps import get_auth, get_session
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
 router = APIRouter(prefix="/v1", tags=["locations"])
+
+_ALLOWED_CANONICAL_LIST_TYPE_FILTER = frozenset(PLACE_EXTRACT_LOCATION_TYPES)
 
 
 def _project_by_slug(session: Session, slug: str) -> BackfieldProject:
@@ -357,6 +360,7 @@ class LinkedMention(BaseModel):
     article_headline: str | None = None
     article_url: str | None = None
     original_text: str | None = None
+    mention_nature: str | None = None
     description: str | None = None
     location_name: str | None = None
     location_type: str | None = None
@@ -395,6 +399,10 @@ class LinkedSubstratesResponse(BaseModel):
 def list_canonical_locations(
     project_slug: str = Query(...),
     q: str | None = None,
+    type_filter: str | None = Query(
+        None,
+        description="Filter by canonical ``location_type`` (PlaceExtract taxonomy).",
+    ),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
@@ -409,6 +417,15 @@ def list_canonical_locations(
     if q:
         term = f"%{q.strip()}%"
         filters.append(col(StylebookLocationCanonical.label).ilike(term))
+    if type_filter is not None:
+        tf = type_filter.strip()
+        if tf:
+            if tf not in _ALLOWED_CANONICAL_LIST_TYPE_FILTER:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid type_filter for canonical list",
+                )
+            filters.append(col(StylebookLocationCanonical.location_type) == tf)
 
     count_stmt = select(func.count()).select_from(StylebookLocationCanonical).where(*filters)
     total = int(session.scalar(count_stmt) or 0)
@@ -608,6 +625,7 @@ def list_canonical_location_mentions(
                 article_headline=ah,
                 article_url=au,
                 original_text=texts.get(mid),
+                mention_nature=mention.nature,
                 description=mention.role_in_story,
                 location_name=str(loc.name),
                 location_type=loc.location_type,
@@ -1078,6 +1096,7 @@ def list_location_mentions(
                 article_headline=ah,
                 article_url=au,
                 original_text=texts.get(mid),
+                mention_nature=mention.nature,
                 description=mention.role_in_story,
                 location_name=str(loc.name),
                 location_type=loc.location_type,

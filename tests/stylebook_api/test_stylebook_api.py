@@ -233,6 +233,38 @@ def test_create_canonical_location_post_alias_no_substrate(
         assert after == before
 
 
+def test_list_canonical_locations_type_filter(client: TestClient) -> None:
+    r_city = client.post(
+        "/v1/canonical-locations?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"label": "Filter City Row", "location_type": "city"},
+    )
+    assert r_city.status_code == 200
+    r_nb = client.post(
+        "/v1/canonical-locations?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"label": "Filter Neighborhood Row", "location_type": "neighborhood"},
+    )
+    assert r_nb.status_code == 200
+    r_list = client.get(
+        "/v1/canonical-locations?project_slug=demo-proj&type_filter=city",
+        headers=_service_headers(),
+    )
+    assert r_list.status_code == 200
+    data = r_list.json()
+    labels = {c["label"] for c in data["canonicals"]}
+    assert "Filter City Row" in labels
+    assert "Filter Neighborhood Row" not in labels
+    for row in data["canonicals"]:
+        if row["label"] == "Filter City Row":
+            assert row.get("location_type") == "city"
+    r_bad = client.get(
+        "/v1/canonical-locations?project_slug=demo-proj&type_filter=not_a_real_type",
+        headers=_service_headers(),
+    )
+    assert r_bad.status_code == 400
+
+
 def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClient) -> None:
     r = client.post(
         "/v1/locations?project_slug=demo-proj",
@@ -914,6 +946,7 @@ def test_list_location_mentions_includes_article_and_occurrence_quote(
     assert m0["article_url"] == "https://example.com/chicago-story"
     assert m0["original_text"] == "Chicago skyline"
     assert m0["description"] == "setting"
+    assert m0["mention_nature"] == "primary"
 
 
 def test_post_unlink_canonical_prunes_alias_when_sole_substrate(

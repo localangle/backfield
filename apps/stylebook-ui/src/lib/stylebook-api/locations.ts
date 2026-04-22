@@ -94,9 +94,11 @@ export async function listCanonicalLocations(
   q?: string,
   limit: number = 25,
   offset: number = 0,
+  typeFilter?: string,
 ): Promise<PaginatedCanonicalLocationResponse> {
   const params = new URLSearchParams({ project_slug: projectSlug })
   if (q) params.append("q", q)
+  if (typeFilter && typeFilter !== "all") params.append("type_filter", typeFilter)
   params.append("limit", limit.toString())
   params.append("offset", offset.toString())
   return stylebookJsonFetch<PaginatedCanonicalLocationResponse>(`/v1/canonical-locations?${params}`)
@@ -275,6 +277,8 @@ export interface LinkedMention {
   article_headline?: string
   article_url?: string | null
   original_text?: string | null
+  /** PlaceExtract editorial ``nature`` (primary, secondary, …) persisted on the mention. */
+  mention_nature?: string | null
   description?: string | null
   location_name?: string | null
   location_type?: string | null

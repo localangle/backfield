@@ -13,6 +13,8 @@ import {
 } from "@/lib/api"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
+import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -45,6 +47,30 @@ function mentionArticleDisplayTitle(m: LinkedMention): string {
 function mentionArticleHref(m: LinkedMention): string | null {
   const u = (m.article_url ?? "").trim()
   return u.length > 0 ? u : null
+}
+
+function mentionNatureDisplayLabel(raw: string | null | undefined): string {
+  const s = (raw ?? "").trim().toLowerCase()
+  if (!s) return "Unknown"
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+function mentionNatureBadgeClass(raw: string | null | undefined): string {
+  const s = (raw ?? "").trim().toLowerCase()
+  switch (s) {
+    case "primary":
+      return "border-primary/35 bg-primary/10 text-primary"
+    case "secondary":
+      return "border-muted-foreground/25 bg-muted text-muted-foreground"
+    case "subject":
+      return "border-violet-500/40 bg-violet-500/10 text-violet-900 dark:text-violet-200"
+    case "context":
+      return "border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-100"
+    case "person":
+      return "border-amber-500/45 bg-amber-500/12 text-amber-950 dark:text-amber-100"
+    default:
+      return "border-border bg-background text-muted-foreground"
+  }
 }
 
 export default function LocationDetail() {
@@ -317,9 +343,9 @@ export default function LocationDetail() {
         <CardHeader>
           <CardTitle>Places and article mentions</CardTitle>
           <CardDescription>
-            Each row is a project substrate place linked to this canonical. Article mentions for
-            that place appear indented underneath. Unlink returns only that substrate row to the open
-            candidate queue (mentions unchanged). Move relinks it to another canonical in one step.
+            Each row contains a distinct representation of this location found in an article. Each
+            article that uses this form of the location is listed below. Unlink or reassign locations
+            here.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -331,13 +357,14 @@ export default function LocationDetail() {
           ) : substrates.length === 0 ? (
             <p className="text-sm text-muted-foreground">No linked substrate places.</p>
           ) : (
-            <Table>
+            <Table className="table-fixed w-full">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[32%] min-w-[140px]">Place / article</TableHead>
-                  <TableHead className="w-[14%]">Type / role</TableHead>
+                  <TableHead className="w-[26%] min-w-[9rem]">Place / article</TableHead>
+                  <TableHead className="w-[6.5rem] min-w-[5.5rem]">Nature</TableHead>
+                  <TableHead className="w-[10rem]">Type / role</TableHead>
                   <TableHead>Quoted text</TableHead>
-                  <TableHead className="text-right w-[150px]">Actions</TableHead>
+                  <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -346,35 +373,38 @@ export default function LocationDetail() {
                   return (
                     <Fragment key={`group-${s.id}`}>
                       <TableRow className="bg-muted/50 border-t">
-                        <TableCell colSpan={3} className="align-top py-3">
+                        <TableCell colSpan={4} className="align-top py-3">
                           <div className="font-medium">{s.name}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">
-                            {s.location_type || "—"} · {s.normalized_name || "—"} ·{" "}
-                            <span className="capitalize">{s.canonical_link_status}</span>
+                            {s.location_type || "—"} · {s.normalized_name || "—"}
                           </div>
                         </TableCell>
-                        <TableCell className="text-right align-top py-3 space-x-2 whitespace-nowrap">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={unlinkingId === s.id}
-                            onClick={() => setMoveSubstrateId(s.id)}
-                          >
-                            Move…
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={unlinkingId === s.id}
-                            onClick={() => void handleUnlinkSubstrate(s)}
-                          >
-                            {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
-                          </Button>
+                        <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0"
+                              disabled={unlinkingId === s.id}
+                              onClick={() => setMoveSubstrateId(s.id)}
+                            >
+                              Move…
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="shrink-0"
+                              disabled={unlinkingId === s.id}
+                              onClick={() => void handleUnlinkSubstrate(s)}
+                            >
+                              {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                       {group.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="pl-8 text-sm text-muted-foreground py-2">
+                          <TableCell colSpan={5} className="pl-8 text-sm text-muted-foreground py-2">
                             No article mentions for this place.
                           </TableCell>
                         </TableRow>
@@ -384,7 +414,7 @@ export default function LocationDetail() {
                           const articleLabel = mentionArticleDisplayTitle(m)
                           return (
                           <TableRow key={m.mention_id} className="hover:bg-muted/30">
-                            <TableCell className="pl-8 align-top min-w-0 max-w-md">
+                            <TableCell className="pl-8 align-top min-w-0">
                               <div className="flex items-start gap-1 min-w-0">
                                 <span
                                   className="text-muted-foreground select-none shrink-0 pt-0.5"
@@ -411,10 +441,21 @@ export default function LocationDetail() {
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="text-muted-foreground text-sm align-top whitespace-nowrap">
+                            <TableCell className="align-top py-3">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "font-medium shadow-none",
+                                  mentionNatureBadgeClass(m.mention_nature),
+                                )}
+                              >
+                                {mentionNatureDisplayLabel(m.mention_nature)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm align-top max-w-[10rem] break-words leading-snug">
                               {m.description ?? "—"}
                             </TableCell>
-                            <TableCell className="max-w-md text-sm align-top">
+                            <TableCell className="min-w-0 text-sm align-top break-words leading-relaxed">
                               {m.original_text ?? "—"}
                             </TableCell>
                             <TableCell className="align-top" />

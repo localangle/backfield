@@ -1,15 +1,31 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import {
   deleteCanonicalLocation,
   listCanonicalLocations,
+  listLocationCandidateTypes,
   type CanonicalLocation,
 } from "@/lib/api"
+import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Loader2, Trash2 } from "lucide-react"
 import Pagination from "@/components/Pagination"
 import CanonicalSourceIcon from "@/components/CanonicalSourceIcon"
@@ -21,6 +37,8 @@ export default function Locations() {
   const [projectSlug, setProjectSlug] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
+  const [typeFilter, setTypeFilter] = useState<string>("all")
+  const [types, setTypes] = useState<string[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [hasNext, setHasNext] = useState(false)
@@ -32,6 +50,14 @@ export default function Locations() {
   const [deleting, setDeleting] = useState(false)
   const locationsPerPage = 25
   const prevSearchRef = useRef(debouncedSearchQuery)
+  const prevTypeFilterRef = useRef(typeFilter)
+
+  const orderedTypeFilterOptions = useMemo(
+    () => sortReviewQueueTypeFilterOptions(types),
+    [types],
+  )
+
+  const typeFilterParam = typeFilter === "all" ? undefined : typeFilter
 
   useEffect(() => {
     const slug = searchParams.get("project") || ""
@@ -47,21 +73,17 @@ export default function Locations() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  const loadCanonicals = async (slug: string, q?: string, page: number = 1) => {
-    try {
-      setLoading(true)
-      const offset = (page - 1) * locationsPerPage
-      const data = await listCanonicalLocations(slug, q, locationsPerPage, offset)
-      setCanonicals(data.canonicals)
-      setTotal(data.total)
-      setHasNext(data.has_next)
-      setHasPrev(data.has_prev)
-    } catch (error) {
-      console.error("Failed to load canonical locations:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    if (!projectSlug) return
+    void (async () => {
+      try {
+        const res = await listLocationCandidateTypes(projectSlug, "open")
+        setTypes(res.types)
+      } catch {
+        setTypes([])
+      }
+    })()
+  }, [projectSlug])
 
   useEffect(() => {
     const prev = prevSearchRef.current
@@ -77,9 +99,48 @@ export default function Locations() {
   }, [debouncedSearchQuery, setSearchParams])
 
   useEffect(() => {
+    const prev = prevTypeFilterRef.current
+    prevTypeFilterRef.current = typeFilter
+    if (prev !== typeFilter) {
+      setCurrentPage(1)
+      setSearchParams((prevParams) => {
+        const next = new URLSearchParams(prevParams)
+        next.set("page", "1")
+        return next
+      })
+    }
+  }, [typeFilter, setSearchParams])
+
+  const loadCanonicals = async (
+    slug: string,
+    q?: string,
+    page: number = 1,
+    tf?: string,
+  ) => {
+    try {
+      setLoading(true)
+      const offset = (page - 1) * locationsPerPage
+      const data = await listCanonicalLocations(slug, q, locationsPerPage, offset, tf)
+      setCanonicals(data.canonicals)
+      setTotal(data.total)
+      setHasNext(data.has_next)
+      setHasPrev(data.has_prev)
+    } catch (error) {
+      console.error("Failed to load canonical locations:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
     if (!projectSlug) return
-    void loadCanonicals(projectSlug, debouncedSearchQuery || undefined, currentPage)
-  }, [currentPage, projectSlug, debouncedSearchQuery])
+    void loadCanonicals(
+      projectSlug,
+      debouncedSearchQuery || undefined,
+      currentPage,
+      typeFilterParam,
+    )
+  }, [currentPage, projectSlug, debouncedSearchQuery, typeFilterParam])
 
   return (
     <div className="container mx-auto p-6">
@@ -112,6 +173,22 @@ export default function Locations() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
+              </div>
+              <div>
+                <Label>Type</Label>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {orderedTypeFilterOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {placeExtractTypeLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
@@ -253,6 +330,7 @@ export default function Locations() {
                     projectSlug,
                     debouncedSearchQuery || undefined,
                     currentPage,
+                    typeFilterParam,
                   )
                 } catch (error) {
                   console.error("Failed to delete canonical:", error)

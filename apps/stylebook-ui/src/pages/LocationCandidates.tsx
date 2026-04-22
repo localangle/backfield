@@ -10,7 +10,7 @@ import {
   type Candidate,
   type CandidateContextResponse,
 } from "@/lib/api"
-import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { Button } from "@/components/ui/button"
 import {
@@ -89,6 +89,11 @@ export default function LocationCandidates() {
   const noteModalCandidate = useMemo(
     () => (noteModalId === null ? undefined : candidates.find((x) => x.id === noteModalId)),
     [candidates, noteModalId]
+  )
+
+  const orderedTypeFilterOptions = useMemo(
+    () => sortReviewQueueTypeFilterOptions(types),
+    [types],
   )
 
   useEffect(() => {
@@ -267,7 +272,7 @@ export default function LocationCandidates() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  {types.map((t) => (
+                  {orderedTypeFilterOptions.map((t) => (
                     <SelectItem key={t} value={t}>
                       {placeExtractTypeLabel(t)}
                     </SelectItem>
