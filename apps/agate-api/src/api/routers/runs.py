@@ -10,12 +10,12 @@ from typing import Any
 from api.deps import get_auth, get_session
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_core.s3_batch import graph_spec_json_contains_s3_input
-from backfield_db import AgateGraph, AgateRun, BackfieldProjectSecret
+from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, BackfieldProjectSecret
 from backfield_db.crypto import decrypt_secret
 from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import desc
+from sqlalchemy import asc, desc
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -51,6 +51,34 @@ class RunCreate(BaseModel):
     graph_id: str
 
 
+class ProcessedItemOut(BaseModel):
+    """Row from ``agate_processed_item`` (S3 batch and future multi-item runs)."""
+
+    id: int
+    run_id: str
+    source_file: str | None = None
+    status: str
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProcessedItemDetailOut(BaseModel):
+    """Single processed item for run detail / item drill-down."""
+
+    id: int
+    run_id: str
+    source_file: str | None = None
+    input: dict[str, Any]
+    output: dict[str, Any] | None = None
+    node_outputs: dict[str, Any] | None = None
+    node_logs: dict[str, list[str]] | None = None
+    status: str
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class RunOut(BaseModel):
     id: str
     graph_id: str
@@ -61,11 +89,38 @@ class RunOut(BaseModel):
     mapbox_api_token: str | None = None
     created_at: datetime
     updated_at: datetime
+    processed_items: list[ProcessedItemOut] = []
 
 
 def _graph_project_id(session: Session, graph_id: str) -> int:
     g = session.get(AgateGraph, graph_id)
     return g.project_id if g else 0
+
+
+def _processed_items_for_run(session: Session, run_id: str) -> list[ProcessedItemOut]:
+    rows = list(
+        session.exec(
+            select(AgateProcessedItem)
+            .where(AgateProcessedItem.run_id == run_id)
+            .order_by(asc(AgateProcessedItem.id))
+        ).all()
+    )
+    out: list[ProcessedItemOut] = []
+    for row in rows:
+        if row.id is None:
+            continue
+        out.append(
+            ProcessedItemOut(
+                id=int(row.id),
+                run_id=row.run_id,
+                source_file=row.source_file,
+                status=row.status,
+                error_message=row.error_message,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+        )
+    return out
 
 
 @router.post("", response_model=RunOut)
@@ -147,6 +202,59 @@ def list_runs(
     return out
 
 
+@router.get("/{run_id}/items/{item_id}", response_model=ProcessedItemDetailOut)
+def get_run_processed_item(
+    run_id: str,
+    item_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+    row = session.get(AgateProcessedItem, item_id)
+    if row is None or row.run_id != run_id:
+        raise HTTPException(404, "Processed item not found")
+
+    input_obj: dict[str, Any] = {}
+    if row.input_json:
+        try:
+            parsed = json.loads(row.input_json)
+            if isinstance(parsed, dict):
+                input_obj = parsed
+        except json.JSONDecodeError:
+            input_obj = {}
+
+    output_obj: dict[str, Any] | None = None
+    if row.result_json:
+        try:
+            parsed = json.loads(row.result_json)
+            if isinstance(parsed, dict):
+                output_obj = parsed
+        except json.JSONDecodeError:
+            output_obj = None
+
+    rid = row.id
+    if rid is None:
+        raise HTTPException(404, "Processed item not found")
+    return ProcessedItemDetailOut(
+        id=int(rid),
+        run_id=row.run_id,
+        source_file=row.source_file,
+        input=input_obj,
+        output=output_obj,
+        node_outputs=output_obj,
+        node_logs=None,
+        status=row.status,
+        error=row.error_message,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 @router.get("/{run_id}", response_model=RunOut)
 def get_run(
     run_id: str,
@@ -166,6 +274,7 @@ def get_run(
         except json.JSONDecodeError:
             result = {"raw": r.result_json}
     pid = _graph_project_id(session, r.graph_id)
+    processed = _processed_items_for_run(session, run_id)
     return RunOut(
         id=r.id,
         graph_id=r.graph_id,
@@ -176,4 +285,5 @@ def get_run(
         mapbox_api_token=_mapbox_api_token_for_project(session, pid),
         created_at=r.created_at,
         updated_at=r.updated_at,
+        processed_items=processed,
     )

@@ -208,6 +208,69 @@ def test_s3_graph_run_enqueues_batch_setup(monkeypatch, client: TestClient):
     }
 
 
+def test_get_run_includes_processed_items_array(monkeypatch, client: TestClient):
+    def fake_send_task(*_a, **_k):
+        pass
+
+    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+
+    project = client.post("/projects", json={"name": "Runs API", "slug": "runs-api"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Text flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "t",
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "type": "TextInput",
+                        "params": {"text": "Hi"},
+                        "position": {"x": 0, "y": 0},
+                    },
+                ],
+                "edges": [],
+            },
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    detail = client.get(f"/runs/{run['id']}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body.get("processed_items") == []
+
+
+def test_get_run_processed_item_not_found(monkeypatch, client: TestClient):
+    def fake_send_task(*_a, **_k):
+        pass
+
+    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+
+    project = client.post("/projects", json={"name": "Item 404", "slug": "item-404"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Text flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "t",
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "type": "TextInput",
+                        "params": {"text": "Hi"},
+                        "position": {"x": 0, "y": 0},
+                    },
+                ],
+                "edges": [],
+            },
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert client.get(f"/runs/{run['id']}/items/99999").status_code == 404
+
+
 def test_run_includes_mapbox_api_token_from_project_secrets(monkeypatch, client: TestClient):
     def fake_send_task(*_a, **_k):
         pass

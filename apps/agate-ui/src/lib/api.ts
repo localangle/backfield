@@ -61,7 +61,7 @@ export interface ProcessedItemSummary {
   id: number
   run_id: string
   source_file: string | null
-  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out'
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'
   error: string | null
   created_at: string
   updated_at: string
@@ -81,7 +81,7 @@ export interface ProcessedItem {
   output: Record<string, unknown> | null
   node_outputs: Record<string, unknown> | null
   node_logs: Record<string, string[]> | null
-  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out'
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'
   error: string | null
   created_at: string
   updated_at: string
@@ -159,6 +159,16 @@ interface RawGraph {
   created_at: string
 }
 
+interface RawProcessedItem {
+  id: number
+  run_id: string
+  source_file: string | null
+  status: string
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
 interface RawRun {
   id: string
   graph_id: string
@@ -169,6 +179,7 @@ interface RawRun {
   mapbox_api_token?: string | null
   created_at: string
   updated_at: string
+  processed_items?: RawProcessedItem[] | null
 }
 
 function normalizeGraph(raw: RawGraph): Graph {
@@ -191,6 +202,35 @@ function mapRunStatus(
   return 'completed_with_errors'
 }
 
+function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
+  const st = row.status
+  const uiStatus: ProcessedItemSummary['status'] =
+    st === 'skipped'
+      ? 'skipped'
+      : st === 'pending' ||
+          st === 'running' ||
+          st === 'succeeded' ||
+          st === 'failed' ||
+          st === 'timed_out'
+        ? st
+        : 'pending'
+  return {
+    id: row.id,
+    run_id: row.run_id,
+    source_file: row.source_file,
+    status: uiStatus,
+    error: row.error_message ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    output_s3_bucket: null,
+    output_s3_key: null,
+    input_article_id: null,
+    input_headline: null,
+    current_node_types: null,
+    is_array_splitter_item: false,
+  }
+}
+
 function normalizeRun(raw: RawRun): Run {
   const st = mapRunStatus(raw.status)
   const outputs =
@@ -198,35 +238,51 @@ function normalizeRun(raw: RawRun): Run {
       ? (raw.result as Record<string, unknown>)
       : null
 
-  const items: ProcessedItemSummary[] =
-    st === 'completed' && outputs
-      ? [
-          {
-            id: 1,
-            run_id: raw.id,
-            source_file: null,
-            status: 'succeeded',
-            error: null,
-            created_at: raw.created_at,
-            updated_at: raw.created_at,
-          },
-        ]
-      : st === 'completed_with_errors'
-        ? [
-            {
-              id: 1,
-              run_id: raw.id,
-              source_file: null,
-              status: 'failed',
-              error: raw.error_message || 'failed',
-              created_at: raw.created_at,
-              updated_at: raw.created_at,
-            },
-          ]
-        : []
+  let items: ProcessedItemSummary[] = []
+  if (raw.processed_items && raw.processed_items.length > 0) {
+    items = raw.processed_items.map(_mapDbProcessedItem)
+  } else if (st === 'completed' && outputs) {
+    items = [
+      {
+        id: 1,
+        run_id: raw.id,
+        source_file: null,
+        status: 'succeeded',
+        error: null,
+        created_at: raw.created_at,
+        updated_at: raw.created_at,
+        output_s3_bucket: null,
+        output_s3_key: null,
+        input_article_id: null,
+        input_headline: null,
+        current_node_types: null,
+        is_array_splitter_item: false,
+      },
+    ]
+  } else if (st === 'completed_with_errors') {
+    items = [
+      {
+        id: 1,
+        run_id: raw.id,
+        source_file: null,
+        status: 'failed',
+        error: raw.error_message || 'failed',
+        created_at: raw.created_at,
+        updated_at: raw.created_at,
+        output_s3_bucket: null,
+        output_s3_key: null,
+        input_article_id: null,
+        input_headline: null,
+        current_node_types: null,
+        is_array_splitter_item: false,
+      },
+    ]
+  }
 
   const succeeded = items.filter((i) => i.status === 'succeeded').length
-  const failed = items.filter((i) => i.status === 'failed').length
+  const failed = items.filter((i) => i.status === 'failed' || i.status === 'timed_out').length
+  const pending_items = items.filter((i) => i.status === 'pending').length
+  const running_items = items.filter((i) => i.status === 'running').length
 
   return {
     id: raw.id,
@@ -236,8 +292,8 @@ function normalizeRun(raw: RawRun): Run {
     created_at: raw.created_at,
     updated_at: raw.updated_at,
     total_items: items.length,
-    pending_items: raw.status === 'pending' ? 1 : 0,
-    running_items: raw.status === 'running' ? 1 : 0,
+    pending_items,
+    running_items,
     succeeded_items: succeeded,
     failed_items: failed,
     items,
@@ -332,29 +388,7 @@ export async function getProcessedItem(
   runId: string | number,
   itemId: number
 ): Promise<ProcessedItem> {
-  const raw = (await fetchAPI(`/runs/${runId}`)) as RawRun
-  if (itemId !== 1) {
-    throw new Error('Item not found')
-  }
-  const outputs =
-    raw.result && typeof raw.result === 'object' && !Array.isArray(raw.result)
-      ? (raw.result as Record<string, unknown>)
-      : null
-  const now = raw.created_at
-  const ok = raw.status === 'succeeded'
-  return {
-    id: 1,
-    run_id: String(runId),
-    source_file: null,
-    input: {},
-    output: outputs as Record<string, unknown> | null,
-    node_outputs: outputs,
-    node_logs: null,
-    status: ok ? 'succeeded' : raw.status === 'failed' ? 'failed' : 'pending',
-    error: raw.error_message || null,
-    created_at: now,
-    updated_at: now,
-  }
+  return (await fetchAPI(`/runs/${runId}/items/${itemId}`)) as ProcessedItem
 }
 
 export interface RerunItemResponse {

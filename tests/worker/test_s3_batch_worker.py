@@ -1,4 +1,8 @@
-"""S3 batch Celery tasks (eager broker, mocked S3 client)."""
+"""S3 batch Celery tasks (eager broker, mocked S3 client).
+
+``execute_s3_batch_setup`` runs child tasks in-process via ``.apply()`` so tests
+and low-concurrency workers do not deadlock on ``group().get()``.
+"""
 
 from __future__ import annotations
 

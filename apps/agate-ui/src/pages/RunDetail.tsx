@@ -188,6 +188,8 @@ export default function RunDetail() {
         return 'bg-red-100 text-red-800 border-red-200'
       case 'timed_out':
         return 'bg-orange-100 text-orange-800 border-orange-200'
+      case 'skipped':
+        return 'bg-slate-100 text-slate-700 border-slate-200'
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200'
     }
@@ -202,6 +204,8 @@ export default function RunDetail() {
       case 'failed':
         return <XCircle className="h-4 w-4" />
       case 'timed_out':
+        return <AlertTriangle className="h-4 w-4" />
+      case 'skipped':
         return <AlertTriangle className="h-4 w-4" />
       default:
         return <Clock className="h-4 w-4" />
@@ -465,7 +469,11 @@ export default function RunDetail() {
                       <Checkbox
                         checked={selectedItems.has(item.id)}
                         onCheckedChange={(checked) => handleSelectItem(item.id, checked as boolean)}
-                        disabled={item.status === 'pending' || item.status === 'running'}
+                        disabled={
+                          item.status === 'pending' ||
+                          item.status === 'running' ||
+                          item.status === 'skipped'
+                        }
                       />
                     </TableCell>
                     <TableCell className="font-mono text-xs">#{item.id}</TableCell>

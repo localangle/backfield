@@ -20,7 +20,7 @@ from backfield_core.s3_batch import (
 from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, BackfieldProjectSecret
 from backfield_db.crypto import decrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
-from celery import Celery, group
+from celery import Celery
 from sqlmodel import Session, select
 
 from worker.nodes.db_output import run_db_output
@@ -325,17 +325,17 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     session.commit()
                 return
 
-            inflight_raw = os.environ.get("S3_BATCH_MAX_INFLIGHT", "12")
-            try:
-                inflight = int(inflight_raw)
-            except ValueError:
-                inflight = 12
-            inflight = max(1, min(inflight, 256))
-
-            for i in range(0, len(pending_ids), inflight):
-                chunk = pending_ids[i : i + inflight]
-                job = group(execute_processed_item.s(item_id) for item_id in chunk)
-                job.apply_async().get(disable_sync_subtasks=False)
+            # Run each child task in-process via ``.apply()`` so we never block a Celery worker
+            # on ``group(...).get()`` while child tasks need the same pool (deadlock at low
+            # concurrency). ``S3_BATCH_MAX_INFLIGHT`` remains documented for a future broker-side
+            # fan-out; today execution is sequential within this task.
+            logger.info(
+                "execute_s3_batch_setup: running %d processed item task(s) in-process for run %s",
+                len(pending_ids),
+                run_id,
+            )
+            for item_id in pending_ids:
+                execute_processed_item.apply(args=(item_id,))
 
             with Session(engine) as session2:
                 _finalize_s3_parent_run(session2, run_id)

@@ -57,7 +57,7 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 - `routers/templates.py`
   - List templates and instantiate them into project graphs.
 - `routers/runs.py`
-  - Create, list, and fetch runs; enqueue **`worker.tasks.execute_s3_batch_setup`** when the graph spec includes an **S3Input** node, otherwise **`worker.tasks.execute_agate_run`**.
+  - Create, list, and fetch runs; enqueue **`worker.tasks.execute_s3_batch_setup`** when the graph spec includes an **S3Input** node, otherwise **`worker.tasks.execute_agate_run`**. **`GET /runs/{id}`** includes **`processed_items`** (``agate_processed_item`` rows). **`GET /runs/{id}/items/{item_id}`** returns one item’s parsed **`input`** / **`output`** (child graph **`result_json`**).
 - `routers/nodes.py`
   - Surface node metadata derived from `backfield-core`.
 
@@ -75,7 +75,7 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 2. API inserts an `AgateRun` row with `pending` status.
 3. API enqueues **`worker.tasks.execute_s3_batch_setup`** when the graph contains **S3Input**, otherwise **`worker.tasks.execute_agate_run`**, on the `agate` queue.
 4. Worker transitions the run to `running`, executes the graph (or S3 batch orchestration + per-file graph runs), then stores `succeeded` or `failed`.
-5. Client polls `GET /runs/{id}` until the run reaches a terminal state.
+5. Client polls `GET /runs/{id}` until the run reaches a terminal state (refresh **`processed_items`** for per-file batch progress).
 6. `POST /runs`, `GET /runs`, and `GET /runs/{id}` include `mapbox_api_token` when the run’s project has a stored `MAPBOX_API_TOKEN` secret (decrypted server-side for browser map visualizations). Otherwise the field is `null`.
 
 ## API change checklist
