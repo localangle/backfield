@@ -84,11 +84,18 @@ export default function LocationCandidates() {
   const [noteModalId, setNoteModalId] = useState<number | null>(null)
   const [noteModalDraft, setNoteModalDraft] = useState("")
   const [noteSavingId, setNoteSavingId] = useState<number | null>(null)
+  const [createModalId, setCreateModalId] = useState<number | null>(null)
+  const [createCanonicalDraft, setCreateCanonicalDraft] = useState("")
   const [error, setError] = useState<string | null>(null)
 
   const noteModalCandidate = useMemo(
     () => (noteModalId === null ? undefined : candidates.find((x) => x.id === noteModalId)),
     [candidates, noteModalId]
+  )
+
+  const createModalCandidate = useMemo(
+    () => (createModalId === null ? undefined : candidates.find((x) => x.id === createModalId)),
+    [candidates, createModalId]
   )
 
   const orderedTypeFilterOptions = useMemo(
@@ -167,14 +174,35 @@ export default function LocationCandidates() {
     }
   }, [projectSlug, status, debouncedQuery, typeFilter])
 
-  async function handleAcceptNew(c: Candidate) {
-    const name = (c.suggested_name || "").trim()
-    if (!name || !projectSlug) return
-    setAcceptingId(c.id)
+  function defaultNewCanonicalLabel(c: Candidate): string {
+    const fromName = (c.suggested_name ?? "").trim()
+    if (fromName) return fromName
+    return (c.suggested_formatted_address ?? "").trim()
+  }
+
+  function openCreateCanonicalModal(c: Candidate) {
+    setCreateModalId(c.id)
+    setCreateCanonicalDraft(defaultNewCanonicalLabel(c))
+  }
+
+  function closeCreateCanonicalModal() {
+    setCreateModalId(null)
+    setCreateCanonicalDraft("")
+  }
+
+  async function submitCreateCanonicalFromModal() {
+    if (!projectSlug || createModalId === null) return
+    const name = createCanonicalDraft.trim()
+    if (!name) {
+      setError("Enter a label for the new canonical.")
+      return
+    }
+    setAcceptingId(createModalId)
     setError(null)
     try {
-      await acceptCandidate(projectSlug, c.id, { create_new: true, name })
+      await acceptCandidate(projectSlug, createModalId, { create_new: true, name })
       await refreshListQuiet()
+      closeCreateCanonicalModal()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Accept failed")
     } finally {
@@ -473,7 +501,7 @@ export default function LocationCandidates() {
                                 acceptingId === c.id ? "Creating canonical" : "Create new canonical"
                               }
                               disabled={acceptingId === c.id || deferringId === c.id}
-                              onClick={() => void handleAcceptNew(c)}
+                              onClick={() => openCreateCanonicalModal(c)}
                             >
                               {acceptingId === c.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -592,6 +620,57 @@ export default function LocationCandidates() {
         title="Link candidate to canonical"
         onDone={() => void refreshListQuiet()}
       />
+
+      <Dialog
+        open={createModalId !== null}
+        onOpenChange={(open) => {
+          if (!open && acceptingId === createModalId) return
+          if (!open) closeCreateCanonicalModal()
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create new canonical</DialogTitle>
+            <DialogDescription>
+              {createModalCandidate?.suggested_type
+                ? `Set the catalog label for this ${placeExtractTypeLabel(createModalCandidate.suggested_type)}. You can adjust spelling or add context (e.g. county) before saving.`
+                : "Set the catalog label for this location before saving."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="create-canonical-name">Canonical label</Label>
+            <Input
+              id="create-canonical-name"
+              value={createCanonicalDraft}
+              onChange={(e) => setCreateCanonicalDraft(e.target.value)}
+              placeholder="e.g. Dolton, IL"
+              autoFocus
+            />
+            {createModalCandidate?.suggested_formatted_address ? (
+              <p className="text-xs text-muted-foreground">
+                Geocoded address: {createModalCandidate.suggested_formatted_address}
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={acceptingId === createModalId}
+              onClick={() => closeCreateCanonicalModal()}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={acceptingId === createModalId || !createCanonicalDraft.trim()}
+              onClick={() => void submitCreateCanonicalFromModal()}
+            >
+              {acceptingId === createModalId ? "Creating…" : "Create canonical"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={noteModalId !== null}
