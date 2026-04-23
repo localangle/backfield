@@ -16,6 +16,9 @@ from backfield_stylebook.canonical_policy import (
 )
 from sqlmodel import Session, select
 
+# LLM must assert definitive same-place identity; below this we keep review / materialize.
+ADJUDICATION_LINK_MIN_CONFIDENCE = 0.9
+
 
 def _ambiguous_reason(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
     for r in plan.resolution_reasons:
@@ -76,18 +79,33 @@ def adjudicate_ambiguous_plan_with_llm(
     lines = "\n".join(
         f"- id={cid} label={label!r} location_type={lt!r}" for cid, label, lt in candidates
     )
+    floor = ADJUDICATION_LINK_MIN_CONFIDENCE
     prompt = (
-        "You adjudicate which canonical location row best matches a substrate location "
-        "candidate.\n"
+        "You decide whether exactly ONE canonical row denotes the SAME real-world place as "
+        "the substrate row (gazetteer identity), not geographic convenience.\n\n"
         f"Substrate name: {location.name!r}\n"
         f"Normalized name: {location.normalized_name!r}\n"
         f"Location type: {location.location_type!r}\n"
         f"Formatted address: {location.formatted_address!r}\n\n"
-        "Candidates (choose at most one id):\n"
+        "Candidates (at most one id may be chosen):\n"
         f"{lines}\n\n"
-        "Return JSON only with keys canonical_id (int or null), "
-        "confidence (0.0-1.0), and rationale (string). "
-        "Pick null if none fit."
+        "Rules:\n"
+        "- Set canonical_id only when the candidate is the SAME place (same city/town/POI/"
+        "named region the row was created to represent). Minor spelling or formatting variants "
+        "of that same place are OK.\n"
+        "- Set canonical_id to null if the substrate is a different municipality, "
+        "neighborhood, colloquial region, or POI than every candidate—even if one candidate is "
+        "nearby, admin-contained, in the same metro, or the closest listed name.\n"
+        "- Do NOT link: suburb to parent core city; city A to city B because they are in the "
+        "same metro; a regional nickname (e.g. southern part of a state) to the whole state; "
+        "two distinct places that only share a broader region.\n"
+        "- When any candidate is only a rough geographic association, return canonical_id null. "
+        "Prefer null (new canonical / human review) over a stretched link.\n"
+        f"- Use confidence {floor} or higher only for definitive same-place identity you would "
+        f"publish in a catalog; otherwise use confidence below {floor} "
+        f"(the system will not link).\n\n"
+        "Return JSON only: canonical_id (int or null), confidence (0.0-1.0), "
+        "rationale (short string)."
     )
     try:
         raw = call_llm(
@@ -118,7 +136,7 @@ def adjudicate_ambiguous_plan_with_llm(
     if (
         chosen is None
         or chosen not in {c[0] for c in candidates}
-        or confidence < 0.65
+        or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE
         or canon is None
         or not link_pair_allowed(location.location_type, canon.location_type)
     ):
@@ -129,6 +147,7 @@ def adjudicate_ambiguous_plan_with_llm(
             "confidence": confidence,
             "rationale": rationale or None,
             "outcome": "no_high_confidence_link",
+            "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
         }
         merged = tuple(list(plan.resolution_reasons) + [extra])
         if substrate_may_materialize_canonical_after_recall(location):
@@ -145,6 +164,7 @@ def adjudicate_ambiguous_plan_with_llm(
         "confidence": float(confidence),
         "rationale": rationale or None,
         "outcome": "link_existing",
+        "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
     }
     merged = tuple(list(plan.resolution_reasons) + [extra])
     return CanonicalPersistPlan(

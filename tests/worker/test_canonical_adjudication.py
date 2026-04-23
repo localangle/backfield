@@ -13,7 +13,10 @@ from backfield_stylebook.canonical_policy import (
     CanonicalPersistPlan,
 )
 from sqlmodel import Session, SQLModel, create_engine
-from worker.canonical_adjudication import adjudicate_ambiguous_plan_with_llm
+from worker.canonical_adjudication import (
+    ADJUDICATION_LINK_MIN_CONFIDENCE,
+    adjudicate_ambiguous_plan_with_llm,
+)
 
 
 def _bootstrap(session: Session) -> tuple[int, int]:
@@ -117,6 +120,8 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
         codes = [str(r.get("code") or "") for r in out.resolution_reasons]
         assert "ambiguous_canonical_match" in codes
         assert "canonical_adjudication" in codes
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("min_confidence_for_link") == ADJUDICATION_LINK_MIN_CONFIDENCE
 
 
 def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> None:
@@ -182,6 +187,131 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
         assert "ambiguous_canonical_match" in codes
         adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
         assert adj.get("outcome") == "no_high_confidence_link"
+
+
+def test_adjudicate_rejects_link_when_confidence_below_floor(monkeypatch) -> None:
+    """Same-place pick is ignored when confidence is below the link threshold (0.9)."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        c1 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Alpha Place",
+            location_type="place",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(c1)
+        session.commit()
+        session.refresh(c1)
+        id1 = int(c1.id)  # type: ignore[arg-type]
+
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Alpha Place, Minneapolis, MN",
+            normalized_name="alpha place, minneapolis, mn",
+            location_type="place",
+            identity_fingerprint="fp-adj-lowconf",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_canonical_match",
+                    "best_canonical_id": id1,
+                    "best_score": 0.5,
+                    "recall_canonical_ids": [id1],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                f'{{"canonical_id": {id1}, "confidence": 0.85, '
+                f'"rationale": "Probably the same POI."}}'
+            )
+
+        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "no_high_confidence_link"
+        assert adj.get("canonical_id") == id1
+
+
+def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        c1 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Gamma City",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(c1)
+        session.commit()
+        session.refresh(c1)
+        id1 = int(c1.id)  # type: ignore[arg-type]
+
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Gamma City",
+            normalized_name="gamma city",
+            location_type="city",
+            identity_fingerprint="fp-adj-edge",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_canonical_match",
+                    "best_canonical_id": id1,
+                    "best_score": 0.5,
+                    "recall_canonical_ids": [id1],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                f'{{"canonical_id": {id1}, "confidence": {ADJUDICATION_LINK_MIN_CONFIDENCE}, '
+                f'"rationale": "Exact label match."}}'
+            )
+
+        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert out.existing_canonical_id == id1
 
 
 def test_adjudicate_rejects_llm_choice_that_violates_type_matrix(monkeypatch) -> None:
