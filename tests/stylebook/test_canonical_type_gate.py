@@ -1,10 +1,4 @@
-"""Tests for the canonical type compatibility gate.
-
-The gate prevents substrate locations from autolinking to canonicals whose
-``location_type`` belongs to a different strict group (state, city, county,
-neighborhood).  Flexible types (address, place, intersection, region_city, etc.)
-can match each other and can also match canonicals with no type set.
-"""
+"""Tests for :func:`link_pair_allowed` (symmetric substrate ↔ canonical type matrix)."""
 
 from __future__ import annotations
 
@@ -16,136 +10,187 @@ from backfield_db import (
     SubstrateLocation,
 )
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
+from backfield_stylebook.canonical_link_matrix import link_pair_allowed
 from backfield_stylebook.canonical_policy import (
     CanonicalPersistDecision,
     rank_scored_canonical_recall_matches,
-    types_are_autolink_compatible,
 )
+from backfield_stylebook.substrate_canonical_link_actions import link_substrate_to_canonical_atomic
 from sqlmodel import Session, SQLModel, create_engine
 
 # ---------------------------------------------------------------------------
-# Pure unit tests for types_are_autolink_compatible (no DB)
+# Pure unit tests for link_pair_allowed (no DB)
 # ---------------------------------------------------------------------------
 
 
 def test_city_to_city_compatible() -> None:
-    assert types_are_autolink_compatible("city", "city") is True
+    assert link_pair_allowed("city", "city") is True
 
 
 def test_town_to_city_compatible() -> None:
-    # town and city share the same strict group
-    assert types_are_autolink_compatible("town", "city") is True
+    assert link_pair_allowed("town", "city") is True
 
 
 def test_city_to_town_compatible() -> None:
-    assert types_are_autolink_compatible("city", "town") is True
+    assert link_pair_allowed("city", "town") is True
 
 
 def test_state_to_state_compatible() -> None:
-    assert types_are_autolink_compatible("state", "state") is True
+    assert link_pair_allowed("state", "state") is True
 
 
 def test_region_state_to_state_compatible() -> None:
-    assert types_are_autolink_compatible("region_state", "state") is True
+    assert link_pair_allowed("region_state", "state") is True
 
 
 def test_county_to_county_compatible() -> None:
-    assert types_are_autolink_compatible("county", "county") is True
+    assert link_pair_allowed("county", "county") is True
 
 
 def test_neighborhood_to_neighborhood_compatible() -> None:
-    assert types_are_autolink_compatible("neighborhood", "neighborhood") is True
+    assert link_pair_allowed("neighborhood", "neighborhood") is True
 
 
 def test_community_area_to_neighborhood_compatible() -> None:
-    assert types_are_autolink_compatible("community_area", "neighborhood") is True
+    assert link_pair_allowed("community_area", "neighborhood") is True
 
 
 def test_country_to_country_compatible() -> None:
-    assert types_are_autolink_compatible("country", "country") is True
+    assert link_pair_allowed("country", "country") is True
+
+
+def test_region_city_to_region_city_compatible() -> None:
+    assert link_pair_allowed("region_city", "region_city") is True
 
 
 # Cross-strict-group mismatches must be blocked
 def test_address_to_city_incompatible() -> None:
-    assert types_are_autolink_compatible("address", "city") is False
+    assert link_pair_allowed("address", "city") is False
 
 
 def test_intersection_road_to_city_incompatible() -> None:
-    assert types_are_autolink_compatible("intersection_road", "city") is False
+    assert link_pair_allowed("intersection_road", "city") is False
 
 
 def test_intersection_highway_to_city_incompatible() -> None:
-    assert types_are_autolink_compatible("intersection_highway", "city") is False
+    assert link_pair_allowed("intersection_highway", "city") is False
 
 
 def test_place_to_city_incompatible() -> None:
-    assert types_are_autolink_compatible("place", "city") is False
+    assert link_pair_allowed("place", "city") is False
+
+
+def test_city_to_place_incompatible_symmetric() -> None:
+    assert link_pair_allowed("city", "place") is False
 
 
 def test_region_city_to_city_incompatible() -> None:
-    # region_city (ward-like) is flexible; city canonical is strict
-    assert types_are_autolink_compatible("region_city", "city") is False
+    assert link_pair_allowed("region_city", "city") is False
+
+
+def test_region_city_to_neighborhood_incompatible() -> None:
+    assert link_pair_allowed("region_city", "neighborhood") is False
+
+
+def test_region_city_to_place_incompatible() -> None:
+    assert link_pair_allowed("region_city", "place") is False
 
 
 def test_neighborhood_to_city_incompatible() -> None:
-    assert types_are_autolink_compatible("neighborhood", "city") is False
+    assert link_pair_allowed("neighborhood", "city") is False
 
 
 def test_city_to_state_incompatible() -> None:
-    assert types_are_autolink_compatible("city", "state") is False
+    assert link_pair_allowed("city", "state") is False
 
 
 def test_city_to_county_incompatible() -> None:
-    assert types_are_autolink_compatible("city", "county") is False
+    assert link_pair_allowed("city", "county") is False
 
 
 def test_county_to_state_incompatible() -> None:
-    assert types_are_autolink_compatible("county", "state") is False
+    assert link_pair_allowed("county", "state") is False
 
 
 def test_neighborhood_to_county_incompatible() -> None:
-    assert types_are_autolink_compatible("neighborhood", "county") is False
+    assert link_pair_allowed("neighborhood", "county") is False
 
 
-# Flexible types are compatible with each other and with untyped canonicals
+# Explicit address-like ↔ place exception
 def test_address_to_place_compatible() -> None:
-    assert types_are_autolink_compatible("address", "place") is True
+    assert link_pair_allowed("address", "place") is True
 
 
 def test_place_to_address_compatible() -> None:
-    assert types_are_autolink_compatible("place", "address") is True
+    assert link_pair_allowed("place", "address") is True
 
 
 def test_intersection_to_address_compatible() -> None:
-    assert types_are_autolink_compatible("intersection_road", "address") is True
+    assert link_pair_allowed("intersection_road", "address") is True
 
 
-def test_region_city_to_none_compatible() -> None:
-    # Canonical with no type set — flexible
-    assert types_are_autolink_compatible("region_city", None) is True
+def test_region_city_to_none_incompatible() -> None:
+    assert link_pair_allowed("region_city", None) is False
 
 
 def test_address_to_none_compatible() -> None:
-    assert types_are_autolink_compatible("address", None) is True
+    assert link_pair_allowed("address", None) is True
 
 
-def test_city_to_none_compatible() -> None:
-    # Canonical has no type: can't gate on unknown
-    assert types_are_autolink_compatible("city", None) is True
+def test_city_to_none_incompatible() -> None:
+    assert link_pair_allowed("city", None) is False
 
 
 def test_none_substrate_to_city_canonical_compatible() -> None:
-    # Substrate with no type: can't gate on unknown substrate
-    assert types_are_autolink_compatible(None, "city") is True
+    assert link_pair_allowed(None, "city") is True
 
 
 def test_natural_to_natural_compatible() -> None:
-    assert types_are_autolink_compatible("natural", "natural") is True
+    assert link_pair_allowed("natural", "natural") is True
 
 
 def test_natural_to_city_incompatible() -> None:
-    # natural is flexible; city canonical is strict
-    assert types_are_autolink_compatible("natural", "city") is False
+    assert link_pair_allowed("natural", "city") is False
+
+
+def test_link_substrate_atomic_rejects_city_to_place() -> None:
+    """Manual link API uses the same matrix as ingest."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="linkpair")
+        canon_place = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="XOCO",
+            location_type="place",
+            status="active",
+        )
+        session.add(canon_place)
+        session.commit()
+        session.refresh(canon_place)
+        pid = 1
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Chicago, IL",
+            normalized_name="chicago, il",
+            location_type="city",
+            canonical_link_status="pending",
+            stylebook_location_canonical_id=None,
+            identity_fingerprint="fp-link-1",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        try:
+            link_substrate_to_canonical_atomic(
+                session,
+                stylebook_id=sb_id,
+                location=loc,
+                target_canonical_id=int(canon_place.id),  # type: ignore[arg-type]
+            )
+        except ValueError as e:
+            assert "incompatible" in str(e).lower()
+        else:
+            raise AssertionError("expected ValueError")
 
 
 # ---------------------------------------------------------------------------

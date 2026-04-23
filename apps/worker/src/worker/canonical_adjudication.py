@@ -8,6 +8,7 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 from backfield_db import StylebookLocationCanonical, SubstrateLocation
+from backfield_stylebook.canonical_link_matrix import link_pair_allowed
 from backfield_stylebook.canonical_policy import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
@@ -28,7 +29,7 @@ def _candidate_rows(
     *,
     stylebook_id: int,
     canonical_ids: list[int],
-) -> list[tuple[int, str]]:
+) -> list[tuple[int, str, str | None]]:
     if not canonical_ids:
         return []
     rows = session.exec(
@@ -37,11 +38,11 @@ def _candidate_rows(
             StylebookLocationCanonical.id.in_(canonical_ids[:24]),
         )
     ).all()
-    out: list[tuple[int, str]] = []
+    out: list[tuple[int, str, str | None]] = []
     for c in rows:
         if c.id is None:
             continue
-        out.append((int(c.id), str(c.label)))
+        out.append((int(c.id), str(c.label), c.location_type))
     return out
 
 
@@ -72,7 +73,9 @@ def adjudicate_ambiguous_plan_with_llm(
     if not candidates:
         return plan
 
-    lines = "\n".join(f"- id={cid} label={label!r}" for cid, label in candidates)
+    lines = "\n".join(
+        f"- id={cid} label={label!r} location_type={lt!r}" for cid, label, lt in candidates
+    )
     prompt = (
         "You adjudicate which canonical location row best matches a substrate location "
         "candidate.\n"
@@ -111,7 +114,14 @@ def adjudicate_ambiguous_plan_with_llm(
         confidence = float(conf_raw)
     except (TypeError, ValueError):
         confidence = 0.0
-    if chosen is None or chosen not in {c[0] for c in candidates} or confidence < 0.65:
+    canon = session.get(StylebookLocationCanonical, int(chosen)) if chosen is not None else None
+    if (
+        chosen is None
+        or chosen not in {c[0] for c in candidates}
+        or confidence < 0.65
+        or canon is None
+        or not link_pair_allowed(location.location_type, canon.location_type)
+    ):
         extra = {
             "code": "canonical_adjudication",
             "model": model,

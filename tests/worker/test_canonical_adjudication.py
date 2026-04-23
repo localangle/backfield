@@ -54,12 +54,14 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
         c1 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Alpha Place",
+            location_type="place",
             primary_substrate_location_id=None,
             status="active",
         )
         c2 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Beta Place",
+            location_type="place",
             primary_substrate_location_id=None,
             status="active",
         )
@@ -127,6 +129,7 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
         c1 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Austin, TX",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )
@@ -177,5 +180,68 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
         assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
         codes = [str(r.get("code") or "") for r in out.resolution_reasons]
         assert "ambiguous_canonical_match" in codes
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "no_high_confidence_link"
+
+
+def test_adjudicate_rejects_llm_choice_that_violates_type_matrix(monkeypatch) -> None:
+    """High-confidence LLM pick is ignored when substrate ↔ canonical types are not linkable."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        c_city = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(c_city)
+        session.commit()
+        session.refresh(c_city)
+        cid = int(c_city.id)  # type: ignore[arg-type]
+
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Learning Resources, Vernon Hills, IL",
+            normalized_name="learning resources, vernon hills, il",
+            location_type="place",
+            identity_fingerprint="fp-adj-type",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_canonical_match",
+                    "best_canonical_id": cid,
+                    "best_score": 0.9,
+                    "recall_canonical_ids": [cid],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                f'{{"canonical_id": {cid}, "confidence": 0.95, '
+                f'"rationale": "Name overlap."}}'
+            )
+
+        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
         adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
         assert adj.get("outcome") == "no_high_confidence_link"

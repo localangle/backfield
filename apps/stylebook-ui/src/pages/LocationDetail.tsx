@@ -121,15 +121,15 @@ export default function LocationDetail() {
     void loadCanonical(parseInt(id, 10), projectSlug)
   }, [id, projectSlug])
 
-  const loadMentions = useCallback(async (canonicalId: number, slug: string) => {
-    setMentionsLoading(true)
+  const loadMentions = useCallback(async (canonicalId: number, slug: string, quiet = false) => {
+    if (!quiet) setMentionsLoading(true)
     try {
       const m = await getCanonicalLocationMentions(canonicalId, slug, 500, 0)
       setMentions(m.mentions)
     } catch {
       setMentions([])
     } finally {
-      setMentionsLoading(false)
+      if (!quiet) setMentionsLoading(false)
     }
   }, [])
 
@@ -138,15 +138,15 @@ export default function LocationDetail() {
     void loadMentions(parseInt(id, 10), projectSlug)
   }, [id, projectSlug, loadMentions])
 
-  const loadSubstrates = useCallback(async (canonicalId: number, slug: string) => {
+  const loadSubstrates = useCallback(async (canonicalId: number, slug: string, quiet = false) => {
+    if (!quiet) setSubstratesLoading(true)
     try {
-      setSubstratesLoading(true)
       const r = await listCanonicalLinkedSubstrates(canonicalId, slug)
       setSubstrates(r.substrates)
     } catch {
       setSubstrates([])
     } finally {
-      setSubstratesLoading(false)
+      if (!quiet) setSubstratesLoading(false)
     }
   }, [])
 
@@ -155,13 +155,17 @@ export default function LocationDetail() {
     void loadSubstrates(parseInt(id, 10), projectSlug)
   }, [id, projectSlug, loadSubstrates])
 
-  const refreshCanonicalPage = useCallback(async () => {
-    if (!id || !projectSlug) return
-    const cid = parseInt(id, 10)
-    await loadCanonical(cid, projectSlug, true)
-    await loadSubstrates(cid, projectSlug)
-    await loadMentions(cid, projectSlug)
-  }, [id, projectSlug, loadMentions, loadSubstrates])
+  /** @param quiet When true, refresh substrates/mentions without the full-table loading state (avoids a flash after unlink / move). */
+  const refreshCanonicalPage = useCallback(
+    async (quiet = false) => {
+      if (!id || !projectSlug) return
+      const cid = parseInt(id, 10)
+      await loadCanonical(cid, projectSlug, true)
+      await loadSubstrates(cid, projectSlug, quiet)
+      await loadMentions(cid, projectSlug, quiet)
+    },
+    [id, projectSlug, loadMentions, loadSubstrates],
+  )
 
   const mentionsBySubstrateId = useMemo(() => {
     const map = new Map<number, LinkedMention[]>()
@@ -181,7 +185,7 @@ export default function LocationDetail() {
     setUnlinkingId(sub.id)
     try {
       await unlinkSubstrateFromCanonical(sub.id, projectSlug)
-      await refreshCanonicalPage()
+      await refreshCanonicalPage(true)
     } catch (e) {
       alert(e instanceof Error ? e.message : "Unlink failed")
     } finally {
@@ -500,7 +504,7 @@ export default function LocationDetail() {
         projectSlug={projectSlug}
         substrateLocationId={moveSubstrateId}
         title="Move substrate to another canonical"
-        onDone={() => void refreshCanonicalPage()}
+        onDone={() => void refreshCanonicalPage(true)}
       />
     </div>
   )

@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { ChevronRight, Link2, Loader2, PlusCircle, StickyNote } from "lucide-react"
+import { ChevronRight, Clock, Link2, Loader2, PlusCircle, StickyNote } from "lucide-react"
 
 /** Row action aligned with `canonical_suggestion.suggested_action` from the API. */
 function suggestedRowAction(c: Candidate): "link" | "create_new" | "defer" | null {
@@ -113,37 +113,51 @@ export default function LocationCandidates() {
     })()
   }, [projectSlug, status])
 
-  const candidatesFilter = useMemo(() => {
-    const tf = typeFilter === "all" ? undefined : typeFilter
+  /** Re-fetch the queue after an action (link, create, defer, save note) without the full-page loading state. */
+  const refreshListQuiet = useCallback(async () => {
+    if (!projectSlug) return
+    setError(null)
+    const type_filter = typeFilter === "all" ? undefined : typeFilter
     const q = debouncedQuery.trim() || undefined
-    return { q, type_filter: tf }
-  }, [debouncedQuery, typeFilter])
+    try {
+      const res = await listCandidates(projectSlug, status, false, {
+        limit: 100,
+        offset: 0,
+        type_filter,
+        q,
+      })
+      setListTotal(res.total)
+      setCandidates(res.candidates)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Request failed")
+    }
+  }, [projectSlug, status, debouncedQuery, typeFilter])
 
-  const loadFlat = useCallback(async () => {
-    const res = await listCandidates(projectSlug, status, false, {
-      limit: 100,
-      offset: 0,
-      type_filter: candidatesFilter.type_filter,
-      q: candidatesFilter.q,
-    })
-    setListTotal(res.total)
-    setCandidates(res.candidates)
-  }, [projectSlug, status, candidatesFilter])
-
+  // Initial + filter changes: use primitives in deps, not a callback, so row actions
+  // (which call `refreshListQuiet`) never spuriously retrigger this and flash the loader.
   useEffect(() => {
     if (!projectSlug) return
     let cancelled = false
     void (async () => {
       setLoading(true)
       setError(null)
+      const type_filter = typeFilter === "all" ? undefined : typeFilter
+      const q = debouncedQuery.trim() || undefined
       try {
-        await loadFlat()
+        const res = await listCandidates(projectSlug, status, false, {
+          limit: 100,
+          offset: 0,
+          type_filter,
+          q,
+        })
+        if (cancelled) return
+        setListTotal(res.total)
+        setCandidates(res.candidates)
       } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Request failed")
-          setListTotal(0)
-          setCandidates([])
-        }
+        if (cancelled) return
+        setError(e instanceof Error ? e.message : "Request failed")
+        setListTotal(0)
+        setCandidates([])
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -151,7 +165,7 @@ export default function LocationCandidates() {
     return () => {
       cancelled = true
     }
-  }, [projectSlug, status, loadFlat])
+  }, [projectSlug, status, debouncedQuery, typeFilter])
 
   async function handleAcceptNew(c: Candidate) {
     const name = (c.suggested_name || "").trim()
@@ -160,7 +174,7 @@ export default function LocationCandidates() {
     setError(null)
     try {
       await acceptCandidate(projectSlug, c.id, { create_new: true, name })
-      await loadFlat()
+      await refreshListQuiet()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Accept failed")
     } finally {
@@ -174,7 +188,7 @@ export default function LocationCandidates() {
     setError(null)
     try {
       await deferCandidate(projectSlug, c.id)
-      await loadFlat()
+      await refreshListQuiet()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Defer failed")
     } finally {
@@ -225,7 +239,7 @@ export default function LocationCandidates() {
         if (!existing) return prev
         return { ...prev, [id]: { ...existing, note: draft ? draft : null } }
       })
-      await loadFlat()
+      await refreshListQuiet()
       ok = true
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save note")
@@ -411,17 +425,24 @@ export default function LocationCandidates() {
                         <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
                           {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex flex-wrap justify-end gap-2">
+                        <TableCell className="text-right w-[1%] whitespace-nowrap align-top">
+                          <div className="inline-flex flex-nowrap items-center justify-end gap-1">
                             <Button
-                              size="sm"
+                              type="button"
+                              size="icon"
                               variant={rowSug === "create_new" ? "outline" : "default"}
-                              disabled={acceptingId === c.id || deferringId === c.id}
                               className={cn(
+                                "h-8 w-8 shrink-0",
                                 rowSug === "link" &&
                                   "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-sm",
                               )}
-                              title={rowSug === "link" ? "Suggested action for this location" : undefined}
+                              title={
+                                rowSug === "link"
+                                  ? "Suggested: link to existing canonical"
+                                  : "Link to existing canonical"
+                              }
+                              aria-label="Link to existing canonical"
+                              disabled={acceptingId === c.id || deferringId === c.id}
                               onClick={() => {
                                 setLinkModalId(c.id)
                                 const preId =
@@ -432,34 +453,41 @@ export default function LocationCandidates() {
                                 setLinkModalInitialCanonicalId(preId)
                               }}
                             >
-                              <span className="inline-flex items-center gap-1.5">
-                                <Link2 className="h-3.5 w-3.5" aria-hidden />
-                                Link
-                              </span>
+                              <Link2 className="h-4 w-4" aria-hidden />
                             </Button>
                             <Button
-                              size="sm"
+                              type="button"
+                              size="icon"
                               variant={rowSug === "create_new" ? "default" : "secondary"}
-                              disabled={acceptingId === c.id || deferringId === c.id}
                               className={cn(
+                                "h-8 w-8 shrink-0",
                                 rowSug === "create_new" &&
                                   "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-sm",
                               )}
                               title={
                                 rowSug === "create_new"
-                                  ? "Suggested action for this location"
-                                  : undefined
+                                  ? "Suggested: create new canonical from this place"
+                                  : "Create new canonical from this place"
                               }
+                              aria-label={
+                                acceptingId === c.id ? "Creating canonical" : "Create new canonical"
+                              }
+                              disabled={acceptingId === c.id || deferringId === c.id}
                               onClick={() => void handleAcceptNew(c)}
                             >
-                              <span className="inline-flex items-center gap-1.5">
-                                <PlusCircle className="h-3.5 w-3.5" aria-hidden />
-                                {acceptingId === c.id ? "Creating…" : "Create new"}
-                              </span>
+                              {acceptingId === c.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                              ) : (
+                                <PlusCircle className="h-4 w-4" aria-hidden />
+                              )}
                             </Button>
                             <Button
-                              size="sm"
+                              type="button"
+                              size="icon"
                               variant="outline"
+                              className="h-8 w-8 shrink-0"
+                              title={c.note ? "Edit note" : "Add note"}
+                              aria-label={c.note ? "Edit note" : "Add note"}
                               disabled={
                                 acceptingId === c.id ||
                                 deferringId === c.id ||
@@ -467,28 +495,32 @@ export default function LocationCandidates() {
                               }
                               onClick={() => openNoteModal(c)}
                             >
-                              <span className="inline-flex items-center gap-1.5">
-                                <StickyNote className="h-3.5 w-3.5" aria-hidden />
-                                {c.note ? "Edit note" : "Note"}
-                              </span>
+                              <StickyNote className="h-4 w-4" aria-hidden />
                             </Button>
                             {status === "open" && (
                               <Button
-                                size="sm"
+                                type="button"
+                                size="icon"
                                 variant={rowSug === "defer" ? "default" : "outline"}
-                                disabled={acceptingId === c.id || deferringId === c.id}
                                 className={cn(
+                                  "h-8 w-8 shrink-0",
                                   rowSug === "defer" &&
                                     "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-sm",
                                 )}
                                 title={
                                   rowSug === "defer"
-                                    ? "Suggested action for this location"
-                                    : undefined
+                                    ? "Suggested: defer (remove from linking queue)"
+                                    : "Defer — remove from linking queue"
                                 }
+                                aria-label="Defer — remove from linking queue"
+                                disabled={acceptingId === c.id || deferringId === c.id}
                                 onClick={() => void handleDefer(c)}
                               >
-                                {deferringId === c.id ? "Deferring…" : "Defer"}
+                                {deferringId === c.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                                ) : (
+                                  <Clock className="h-4 w-4" aria-hidden />
+                                )}
                               </Button>
                             )}
                           </div>
@@ -558,7 +590,7 @@ export default function LocationCandidates() {
         substrateLocationId={linkModalId}
         initialCanonicalId={linkModalInitialCanonicalId}
         title="Link candidate to canonical"
-        onDone={() => void loadFlat()}
+        onDone={() => void refreshListQuiet()}
       />
 
       <Dialog

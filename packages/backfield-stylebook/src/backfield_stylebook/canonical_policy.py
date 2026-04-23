@@ -9,6 +9,7 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, select
 
+from backfield_stylebook.canonical_link_matrix import link_pair_allowed, strict_type_group
 from backfield_stylebook.canonical_match_score import (
     AUTOLINK_MIN_SCORE,
     RECALL_MIN_SCORE,
@@ -117,53 +118,8 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
     }
 )
 
-# Ordered from broadest to most specific.  When the canonical's ``location_type`` belongs to one
-# of these groups the substrate must belong to the **same** group; a city canonical cannot absorb
-# an address substrate, and vice-versa.  Types absent from every group (address, place, point,
-# intersection_*, region_city, natural, other, …) are "flexible" and may cross-match each other.
-_STRICT_TYPE_GROUPS: tuple[frozenset[str], ...] = (
-    frozenset({"country", "region_national"}),
-    frozenset({"state", "region_state"}),
-    frozenset({"county"}),
-    frozenset({"city", "town"}),
-    frozenset({"neighborhood", "community_area", "district", "borough", "suburb", "village"}),
-)
-
-
-def _type_group_for(location_type: str | None) -> frozenset[str] | None:
-    """Return the strict group for ``location_type``, or ``None`` if it is flexible."""
-    lt = (location_type or "").strip().lower()
-    for group in _STRICT_TYPE_GROUPS:
-        if lt in group:
-            return group
-    return None
-
-
-def types_are_autolink_compatible(
-    substrate_lt: str | None,
-    canonical_lt: str | None,
-) -> bool:
-    """Return ``False`` when a strict type mismatch should block autolink (and ambiguous) tiers.
-
-    If the canonical belongs to a strict group (city, county, state, neighborhood, …) the
-    substrate must be in the **same** group.  Flexible types (address, place, intersection, ward,
-    etc.) are never gated against each other; they can also match canonicals with no type set.
-    If the substrate type is absent (``None`` / empty) the gate cannot apply and the link
-    is allowed.  A substrate with a *known* flexible type (address, place, intersection, ward,
-    etc.) is blocked from autolinking to a strict-group canonical: e.g. an address must not
-    link to a city canonical just because the city name appears as a tail in its name.
-    """
-    canonical_group = _type_group_for(canonical_lt)
-    if canonical_group is None:
-        return True  # canonical has no type or a flexible type → no gate
-    if not (substrate_lt or "").strip():
-        return True  # substrate type is unknown → can't determine incompatibility
-    substrate_group = _type_group_for(substrate_lt)
-    if substrate_group is None:
-        # Substrate has a known flexible type (not in any strict group) and the canonical
-        # is in a strict group → incompatible.
-        return False
-    return substrate_group is canonical_group
+# Backwards-compatible name for :func:`link_pair_allowed` (symmetric matrix).
+types_are_autolink_compatible = link_pair_allowed
 
 
 # When the display name has a multi-token head (e.g. ``West Ridge, Chicago, IL``), require every
@@ -187,6 +143,9 @@ _HEAD_ANCHOR_GATED_TYPES: frozenset[str] = frozenset(
         # string-only fuzzy scoring can otherwise autolink to the city canonical.
         "place",
         "point",
+        # Corridors / lines / ward-scale buckets (PlaceExtract ``region_city``).
+        "region_city",
+        "natural",
     }
 )
 
@@ -284,7 +243,7 @@ def rank_scored_canonical_recall_matches(
         gate_lt = _should_apply_head_anchor_gate(location.location_type)
         if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        if not types_are_autolink_compatible(location.location_type, canon.location_type):
+        if not link_pair_allowed(location.location_type, canon.location_type):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
         rows.append((recall_index, int(canon_id), str(canon.label), sc))
     rows.sort(key=lambda r: (-r[3], -r[0]))
@@ -307,6 +266,32 @@ def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> 
             return False
         return True
     return _should_materialize_new_strict(location)
+
+
+def _intra_strict_group_ambiguous(
+    session: Session,
+    location: SubstrateLocation,
+    ranked: list[tuple[int, str, float, int]],
+) -> bool:
+    """True when two or more candidates share the substrate's strict type group at autolink tier."""
+    sg = strict_type_group(location.location_type)
+    if sg is None:
+        return False
+    n = 0
+    for cid, _lab, sc, _idx in ranked:
+        if sc < AUTOLINK_MIN_SCORE:
+            break
+        canon = session.get(StylebookLocationCanonical, cid)
+        if canon is None:
+            continue
+        if not link_pair_allowed(location.location_type, canon.location_type):
+            continue
+        if strict_type_group(canon.location_type) != sg:
+            continue
+        n += 1
+        if n >= 2:
+            return True
+    return False
 
 
 def substrate_may_materialize_canonical_after_recall(location: SubstrateLocation) -> bool:
@@ -357,7 +342,7 @@ def decide_canonical_persist_plan(
     if cid is not None:
         alias_canon = session.get(StylebookLocationCanonical, cid)
         alias_canon_lt = alias_canon.location_type if alias_canon is not None else None
-        if types_are_autolink_compatible(location.location_type, alias_canon_lt):
+        if link_pair_allowed(location.location_type, alias_canon_lt):
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,
                 existing_canonical_id=cid,
@@ -380,10 +365,12 @@ def decide_canonical_persist_plan(
         query_text=str(location.name),
         normalized_query=str(location.normalized_name),
         formatted_address=location.formatted_address,
+        substrate_location_type=location.location_type,
     )
     best_id: int | None = None
     best_score = 0.0
     recall_canonical_ids: tuple[int, ...] = ()
+    intra_ambiguous = False
     if recall:
         recall_canonical_ids = tuple(int(cid) for cid, _ in recall)
         ranked = rank_scored_canonical_recall_matches(
@@ -392,6 +379,13 @@ def decide_canonical_persist_plan(
         if ranked:
             best_id, best_score = ranked[0][0], ranked[0][2]
         tier = classify_recall_score(best_score)
+        intra_ambiguous = (
+            tier == "autolink"
+            and best_id is not None
+            and _intra_strict_group_ambiguous(session, location, ranked)
+        )
+        if intra_ambiguous:
+            tier = "ambiguous"
         if tier == "autolink" and best_id is not None:
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,
@@ -427,6 +421,7 @@ def decide_canonical_persist_plan(
                             location.location_type
                         ),
                         "type_gate_applied": True,
+                        "intra_strict_group_ambiguous": intra_ambiguous,
                         "recall_canonical_ids": list(recall_canonical_ids[:24]),
                     },
                 ),

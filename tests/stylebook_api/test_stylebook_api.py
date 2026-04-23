@@ -978,6 +978,7 @@ def test_post_unlink_canonical_prunes_alias_when_sole_substrate(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Sole Canon",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )
@@ -1049,6 +1050,7 @@ def test_post_unlink_canonical_keeps_alias_when_second_substrate_shares_norm(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Shared Canon",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )
@@ -1129,12 +1131,14 @@ def test_post_link_canonical_relink_moves_alias_and_prunes_old_when_safe(
         ca = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Canon A",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )
         cb = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Canon B",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )
@@ -1207,6 +1211,7 @@ def test_post_link_canonical_idempotent_same_target(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Idem Canon",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )
@@ -1257,6 +1262,7 @@ def test_get_canonical_linked_substrates(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="List Canon",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )

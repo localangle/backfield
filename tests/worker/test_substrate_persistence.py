@@ -334,6 +334,7 @@ def test_persist_links_preseeded_canonical_alias_without_second_canonical() -> N
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )
@@ -427,6 +428,7 @@ def test_persist_fuzzy_links_preseeded_canonical_when_alias_normalization_differ
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="West Garfield Park, Chicago, IL",
+            location_type="neighborhood",
             primary_substrate_location_id=None,
             status="active",
             geometry_json=WGP_POINT,
@@ -586,6 +588,7 @@ def test_persist_neighborhood_materializes_instead_of_autolinking_city_parent() 
         chicago_canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
             geometry_json=CHICAGO_POINT,
@@ -686,6 +689,7 @@ def test_persist_place_materializes_instead_of_autolinking_city_parent() -> None
         chicago_canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
             geometry_json=CHICAGO_POINT,
@@ -1011,6 +1015,7 @@ def test_persist_auto_apply_false_exact_alias_leaves_pending_with_suggestion() -
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            location_type="city",
             primary_substrate_location_id=None,
             status="active",
         )

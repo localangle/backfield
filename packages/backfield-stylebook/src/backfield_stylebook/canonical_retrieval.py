@@ -8,6 +8,8 @@ from backfield_db import StylebookLocationAlias, StylebookLocationCanonical
 from sqlalchemy import or_, text
 from sqlmodel import Session, col, select
 
+from backfield_stylebook.canonical_link_matrix import link_pair_allowed
+
 # Low threshold: precision is handled in :mod:`canonical_match_score`.
 _PG_SIMILARITY_THRESHOLD: float = 0.12
 _DEFAULT_TOP_K: int = 24
@@ -111,6 +113,7 @@ def retrieve_candidate_canonical_ids(
     normalized_query: str,
     formatted_address: str | None = None,
     limit: int = _DEFAULT_TOP_K,
+    substrate_location_type: str | None = None,
 ) -> list[tuple[int, float | None]]:
     """Return ``(canonical_id, optional_db_string_hint)`` ordered best-first.
 
@@ -120,6 +123,9 @@ def retrieve_candidate_canonical_ids(
 
     On Postgres, the hint is the max ``similarity`` seen for that canonical across
     all query variants. On SQLite, hints are ``None`` (scorer uses :mod:`difflib`).
+
+    When ``substrate_location_type`` is set, canonicals whose ``location_type`` fails
+    :func:`link_pair_allowed` with that substrate type are dropped (order preserved).
     """
     variants = _distinct_query_strings(normalized_query, query_text, formatted_address)
     if not variants:
@@ -137,7 +143,8 @@ def retrieve_candidate_canonical_ids(
                 if sim > best_sim[cid]:
                     best_sim[cid] = sim
         ranked = sorted(best_sim.items(), key=lambda it: -it[1])[:limit]
-        return [(cid, float(s)) for cid, s in ranked]
+        raw = [(cid, float(s)) for cid, s in ranked]
+        return _filter_recall_by_substrate_type(session, raw, substrate_location_type, limit)
 
     seen: set[int] = set()
     ordered: list[int] = []
@@ -153,7 +160,34 @@ def retrieve_candidate_canonical_ids(
                 break
         if len(ordered) >= limit:
             break
-    return [(cid, None) for cid in ordered]
+    raw = [(cid, None) for cid in ordered]
+    return _filter_recall_by_substrate_type(session, raw, substrate_location_type, limit)
+
+
+def _filter_recall_by_substrate_type(
+    session: Session,
+    raw: list[tuple[int, float | None]],
+    substrate_location_type: str | None,
+    limit: int,
+) -> list[tuple[int, float | None]]:
+    if not raw or not (substrate_location_type or "").strip():
+        return raw[:limit]
+    ids = [cid for cid, _ in raw]
+    rows = session.exec(
+        select(StylebookLocationCanonical).where(col(StylebookLocationCanonical.id).in_(ids))
+    ).all()
+    lt_by_id: dict[int, str | None] = {}
+    for c in rows:
+        if c.id is not None:
+            lt_by_id[int(c.id)] = c.location_type
+    out: list[tuple[int, float | None]] = []
+    for cid, hint in raw:
+        lt = lt_by_id.get(int(cid))
+        if link_pair_allowed(substrate_location_type, lt):
+            out.append((cid, hint))
+        if len(out) >= limit:
+            break
+    return out
 
 
 def load_canonical_match_features(

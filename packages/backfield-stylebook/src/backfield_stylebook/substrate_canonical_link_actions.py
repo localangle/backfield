@@ -6,6 +6,7 @@ from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, Sub
 from sqlmodel import Session, col, func, select
 
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_stylebook.canonical_link_matrix import link_pair_allowed
 from backfield_stylebook.canonical_policy import (
     find_existing_canonical_id_by_alias,
     rank_scored_canonical_recall_matches,
@@ -31,6 +32,7 @@ def rank_canonical_suggestions_for_substrate(
         query_text=str(location.name),
         normalized_query=str(location.normalized_name),
         formatted_address=location.formatted_address,
+        substrate_location_type=location.location_type,
     )
     ranked = rank_scored_canonical_recall_matches(session, location=location, recall=list(recall))
     out: list[tuple[int, str]] = []
@@ -38,9 +40,10 @@ def rank_canonical_suggestions_for_substrate(
     if exact_cid is not None:
         canon = session.get(StylebookLocationCanonical, int(exact_cid))
         if canon is not None and int(canon.stylebook_id) == int(stylebook_id):
-            eid = int(exact_cid)
-            out.append((eid, str(canon.label)))
-            seen.add(eid)
+            if link_pair_allowed(location.location_type, canon.location_type):
+                eid = int(exact_cid)
+                out.append((eid, str(canon.label)))
+                seen.add(eid)
     for cid, lab, _sc, _idx in ranked:
         if cid in seen:
             continue
@@ -144,6 +147,11 @@ def link_substrate_to_canonical_atomic(
     canon = session.get(StylebookLocationCanonical, tid)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise ValueError("target canonical not in this stylebook")
+    if not link_pair_allowed(location.location_type, canon.location_type):
+        raise ValueError(
+            "substrate location_type is incompatible with the target canonical location_type "
+            "for linking"
+        )
     lid = int(location.id)
     prev = location.stylebook_location_canonical_id
     prev_int = int(prev) if prev is not None else None
