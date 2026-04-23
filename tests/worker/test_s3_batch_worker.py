@@ -1,7 +1,7 @@
 """S3 batch Celery tasks (eager broker, mocked S3 client).
 
-``execute_s3_batch_setup`` runs child tasks in-process via ``.apply()`` so tests
-and low-concurrency workers do not deadlock on ``group().get()``.
+``execute_s3_batch_setup`` queues a ``chord`` of ``execute_processed_item`` tasks;
+eager mode runs the group and ``finalize_s3_parent_run`` inline.
 """
 
 from __future__ import annotations

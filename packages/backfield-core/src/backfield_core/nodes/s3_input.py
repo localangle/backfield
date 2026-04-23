@@ -3,7 +3,9 @@
 Graph runs that start with ``POST /runs`` and include this node are orchestrated by the worker:
 each valid ``*.json`` object under the configured prefix becomes an ``agate_processed_item`` and
 is executed in parallel (bounded). Direct ``execute_graph`` calls (e.g. tests) still resolve the
-first valid JSON document with a non-empty top-level ``text`` field, same shape as ``TextInput``.
+first valid JSON document with a non-empty top-level ``text`` field. All other top-level keys in
+that object (``headline``, ``url``, ``publication``, …) pass through the same way as
+``JSONInput`` node params, then S3 batch counters are merged on top.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from typing import Any
 
 import boto3
 
+from backfield_core.nodes.json_input import json_input_output_from_dict
 from backfield_core.s3_batch import list_json_keys_under_prefix, parse_s3_text_json_document
 
 
@@ -51,7 +54,7 @@ def run_s3_input(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, An
     if total_files == 0:
         raise ValueError(f"No JSON objects found under s3://{bucket}/{prefix or ''}")
 
-    chosen_text: str | None = None
+    chosen_payload: dict[str, Any] | None = None
     source_file: str | None = None
     processed_files = 0
     skipped_files = 0
@@ -69,23 +72,27 @@ def run_s3_input(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, An
             skipped_files += 1
             continue
 
+        try:
+            normalized = json_input_output_from_dict(file_data)
+        except ValueError:
+            skipped_files += 1
+            continue
+
         processed_files += 1
-        text_val = file_data.get("text")
-        if chosen_text is None:
-            chosen_text = str(text_val)
+        if chosen_payload is None:
+            chosen_payload = normalized
             source_file = file_key
 
-    if not chosen_text:
+    if not chosen_payload:
         raise ValueError(
             "S3Input listed JSON files under the prefix, but none contained a non-empty "
             "top-level 'text' field."
         )
 
-    return {
-        "text": chosen_text,
-        "total_files": total_files,
-        "processed_files": processed_files,
-        "skipped_files": skipped_files,
-        "source_file": source_file,
-        "runs_created": [],
-    }
+    out = dict(chosen_payload)
+    out["total_files"] = total_files
+    out["processed_files"] = processed_files
+    out["skipped_files"] = skipped_files
+    out["source_file"] = source_file
+    out["runs_created"] = []
+    return out

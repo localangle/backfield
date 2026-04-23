@@ -21,4 +21,4 @@ RUN pip install --no-cache-dir -e /app/packages/agate-runtime \
 ENV PYTHONPATH=/app/apps/worker/src
 
 WORKDIR /app/apps/worker
-CMD ["celery", "-A", "worker.tasks", "worker", "--loglevel=info", "-Q", "agate", "--concurrency=2"]
+CMD ["celery", "-A", "worker.tasks", "worker", "--loglevel=info", "-Q", "agate", "--concurrency=8"]

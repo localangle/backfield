@@ -161,7 +161,17 @@ def test_s3_input_first_valid_json_file():
         if key.endswith("bad.json"):
             return {"Body": _Body(json.dumps({"text": ""}).encode())}
         if key.endswith("good.json"):
-            return {"Body": _Body(json.dumps({"text": "Story from S3."}).encode())}
+            return {
+                "Body": _Body(
+                    json.dumps(
+                        {
+                            "text": "Story from S3.",
+                            "headline": "H",
+                            "url": "https://example.com/a",
+                        }
+                    ).encode()
+                )
+            }
         raise AssertionError(key)
 
     client.get_object.side_effect = _get_object
@@ -175,6 +185,8 @@ def test_s3_input_first_valid_json_file():
             out = run_s3_input({"bucket": "my-bucket", "folder_path": "prefix"}, {})
 
     assert out["text"] == "Story from S3."
+    assert out["headline"] == "H"
+    assert out["url"] == "https://example.com/a"
     assert out["total_files"] == 3
     assert out["processed_files"] == 1
     assert out["skipped_files"] == 2  # invalid JSON + empty text

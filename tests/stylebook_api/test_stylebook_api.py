@@ -265,6 +265,23 @@ def test_list_canonical_locations_type_filter(client: TestClient) -> None:
     assert r_bad.status_code == 400
 
 
+def test_list_canonical_locations_orders_by_label_case_insensitive(client: TestClient) -> None:
+    for label in ("Zebra", "alpha", "Mike"):
+        r = client.post(
+            "/v1/canonical-locations?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"label": label},
+        )
+        assert r.status_code == 200
+    r = client.get(
+        "/v1/canonical-locations?project_slug=demo-proj&limit=50",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    labels = [c["label"] for c in r.json()["canonicals"]]
+    assert labels == ["alpha", "Mike", "Zebra"]
+
+
 def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClient) -> None:
     r = client.post(
         "/v1/locations?project_slug=demo-proj",

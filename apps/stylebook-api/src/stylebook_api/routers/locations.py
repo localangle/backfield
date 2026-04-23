@@ -433,7 +433,10 @@ def list_canonical_locations(
     list_stmt = (
         select(StylebookLocationCanonical)
         .where(*filters)
-        .order_by(col(StylebookLocationCanonical.updated_at).desc())
+        .order_by(
+            func.lower(col(StylebookLocationCanonical.label)).asc(),
+            col(StylebookLocationCanonical.id).asc(),
+        )
         .offset(offset)
         .limit(limit)
     )

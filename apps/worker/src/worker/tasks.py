@@ -12,6 +12,7 @@ from typing import Any
 import boto3
 from backfield_core import GraphSpec, execute_graph
 from backfield_core.nodes import NODE_RUNNERS
+from backfield_core.nodes.json_input import json_input_output_from_dict
 from backfield_core.s3_batch import (
     list_json_keys_under_prefix,
     parse_s3_text_json_document,
@@ -20,7 +21,7 @@ from backfield_core.s3_batch import (
 from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, BackfieldProjectSecret
 from backfield_db.crypto import decrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
-from celery import Celery
+from celery import Celery, chord, group
 from sqlmodel import Session, select
 
 from worker.nodes.db_output import run_db_output
@@ -325,20 +326,22 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     session.commit()
                 return
 
-            # Run each child task in-process via ``.apply()`` so we never block a Celery worker
-            # on ``group(...).get()`` while child tasks need the same pool (deadlock at low
-            # concurrency). ``S3_BATCH_MAX_INFLIGHT`` remains documented for a future broker-side
-            # fan-out; today execution is sequential within this task.
+            # Queue all ``execute_processed_item`` tasks and return immediately. A ``chord``
+            # callback finalizes the parent run when every child finishes — unlike
+            # ``group().get()`` inside this task, that does not pin a worker slot while children
+            # are waiting to start (avoids deadlock at concurrency=1).
             logger.info(
-                "execute_s3_batch_setup: running %d processed item task(s) in-process for run %s",
+                "execute_s3_batch_setup: queueing chord of %d execute_processed_item task(s) "
+                "for run %s",
                 len(pending_ids),
                 run_id,
             )
-            for item_id in pending_ids:
-                execute_processed_item.apply(args=(item_id,))
-
-            with Session(engine) as session2:
-                _finalize_s3_parent_run(session2, run_id)
+            header = group(execute_processed_item.s(item_id) for item_id in pending_ids)
+            _queue = os.environ.get("CELERY_QUEUE", "agate")
+            # Use the two-argument ``chord(header, body)`` primitive + ``apply_async()`` so the
+            # group is published to the broker in production. The ``header(body)`` callable form
+            # can return an eager result object (no ``apply_async``) when ``task_always_eager``.
+            chord(header, finalize_s3_parent_run.s(run_id)).apply_async(queue=_queue)
         except Exception as e:
             logger.exception("S3 batch setup failed for run %s", run_id)
             with Session(engine) as session3:
@@ -399,17 +402,18 @@ def execute_processed_item(item_id: int) -> None:
         def s3_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
             del params, inputs
             doc = json.loads(input_json)
-            text = str(doc.get("text") or "").strip()
+            if not isinstance(doc, dict):
+                raise ValueError("S3 batch item JSON must be a JSON object.")
+            base = json_input_output_from_dict(doc)
             total = int(batch_meta.get("total_json_objects", 1))
             sk = int(batch_meta.get("skipped_invalid", 0)) + int(batch_meta.get("skipped_cap", 0))
-            return {
-                "text": text,
-                "total_files": total,
-                "processed_files": 1,
-                "skipped_files": sk,
-                "source_file": source_file,
-                "runs_created": [],
-            }
+            out = dict(base)
+            out["total_files"] = total
+            out["processed_files"] = 1
+            out["skipped_files"] = sk
+            out["source_file"] = source_file
+            out["runs_created"] = []
+            return out
 
         overlay = _project_env_map(session, graph.project_id)
         node_runners = dict(NODE_RUNNERS)
@@ -433,3 +437,12 @@ def execute_processed_item(item_id: int) -> None:
         item.updated_at = datetime.now(UTC)
         session.add(item)
         session.commit()
+
+
+@celery_app.task(name="worker.tasks.finalize_s3_parent_run")
+def finalize_s3_parent_run(header_results: list[Any], run_id: str) -> None:
+    """Chord body: aggregate parent ``agate_run`` after all ``execute_processed_item`` tasks."""
+    del header_results  # each child returns None; status lives on ``agate_processed_item`` rows
+    engine = get_engine()
+    with Session(engine) as session:
+        _finalize_s3_parent_run(session, run_id)

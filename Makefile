@@ -8,7 +8,7 @@ help:
 	@echo "Backfield"
 	@echo "  make up          - Start stack in foreground (logs attached; Ctrl+C stops)"
 	@echo "  make up-detached - Same as up but background (-d)"
-	@echo "  make down        - Stop stack, then docker-trim (system prune only; keeps compose DB volumes)"
+	@echo "  make down        - Stop stack (docker compose down; same as agate-ai-platform), then docker-trim"
 	@echo "  make logs        - Follow compose logs"
 	@echo "  make migrate     - Run Alembic (agate-api container)"
 	@echo "  make reset-db    - Stop stack and remove compose volumes (Postgres data, etc.)"
@@ -39,7 +39,7 @@ up-detached:
 
 down:
 	@echo "Stopping Backfield stack..."
-	$(DC) down --remove-orphans
+	$(DC) down
 	@$(MAKE) --no-print-directory docker-trim
 
 logs:

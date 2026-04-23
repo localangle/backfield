@@ -247,7 +247,10 @@ export default function Locations() {
                             </CardTitle>
                           </div>
                           <CardDescription>
-                            {c.status} • {c.linked_substrate_count} linked place
+                            {c.location_type
+                              ? placeExtractTypeLabel(c.location_type)
+                              : "—"}{" "}
+                            • {c.status} • {c.linked_substrate_count} linked place
                             {c.linked_substrate_count !== 1 ? "s" : ""}
                             {c.mention_count !== undefined && (
                               <>

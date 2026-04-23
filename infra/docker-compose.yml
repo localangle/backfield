@@ -13,6 +13,8 @@ services:
       POSTGRES_PASSWORD: postgres
     ports:
       - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -118,6 +120,18 @@ services:
     build:
       context: ..
       dockerfile: apps/worker/Dockerfile
+    command:
+      [
+        "celery",
+        "-A",
+        "worker.tasks",
+        "worker",
+        "--loglevel=info",
+        "-Q",
+        "agate",
+        "--concurrency",
+        "${CELERY_WORKER_CONCURRENCY:-8}",
+      ]
     env_file:
       - path: ../.env
         required: false
@@ -193,3 +207,6 @@ services:
         condition: service_healthy
       stylebook-api:
         condition: service_started
+
+volumes:
+  postgres_data:

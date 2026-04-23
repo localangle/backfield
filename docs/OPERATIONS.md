@@ -4,7 +4,7 @@
 
 Primary local services are defined in `infra/docker-compose.yml`:
 
-- PostGIS-enabled `postgres` on `localhost:5433`
+- PostGIS-enabled `postgres` on `localhost:5433` (data directory on the **`postgres_data`** named volume, same persistence pattern as agate-ai-platform)
 - `redis` on `localhost:6379`
 - `agate-api` on `localhost:8000`
 - `stylebook-api` on `localhost:8003`
@@ -20,7 +20,7 @@ Primary local services are defined in `infra/docker-compose.yml`:
 ## Canonical commands
 
 - `make up`: bring up the local stack in the foreground. It does **not** run `docker volume prune` or `docker system prune` (only `docker compose up`).
-- `make down`: stop the stack and remove orphans, then run `docker-trim` (`docker system prune -f` only). **Volume prune is omitted** so local Postgres / Compose data volumes are not removed while the stack is down (same pattern as agate-ai-platform local `make down`). Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
+- `make down`: `docker compose down` (stops and removes app containers, **not** Compose-managed volumes) then `docker-trim` (`docker system prune -f` only). Matches agate-ai-platform local `make down` (no `--remove-orphans`). The Postgres data directory lives on the **`postgres_data`** named volume, so `make down` then `make up` keeps your local database. Run `make docker-prune-volumes` or `make docker-trim-full` explicitly when you want to reclaim unused volume disk.
 - `make logs`: inspect compose logs.
 - `make migrate`: run Alembic inside `agate-api`.
 - `make reset-db`: tear down containers and volumes.
@@ -38,8 +38,9 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 - Agate worker queue: `agate`
 - Worker task names:
   - `worker.tasks.execute_agate_run` — default graph execution (single Celery task runs `execute_graph`).
-  - `worker.tasks.execute_s3_batch_setup` — lists/validates S3 JSON under the S3Input prefix, inserts **`agate_processed_item`** rows, then runs child tasks in bounded chunks.
+  - `worker.tasks.execute_s3_batch_setup` — lists/validates S3 JSON under the S3Input prefix, inserts **`agate_processed_item`** rows, then queues a **`chord`** of **`execute_processed_item`** tasks.
   - `worker.tasks.execute_processed_item` — one Celery task per queued item; runs `execute_graph` with an S3Input shim (parent **`agate_run.id`** remains **`BACKFIELD_RUN_ID`** for DBOutput / substrate).
+  - `worker.tasks.finalize_s3_parent_run` — chord callback that aggregates parent **`agate_run`** status after all items finish.
 - Worker app name: `agate_worker`
 - Health endpoints:
   - Agate API: `GET /health`
@@ -50,6 +51,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 - `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: database connection string (required for `agate-api`, **`stylebook-api`**, `worker`, and **`core-api`** — these apps read the same Postgres database; Compose sets the in-network URL `...@postgres:5432/...` so containers do not default to `localhost:5433`, which only works from the host).
 - `REDIS_URL`: Celery broker and backend.
+- `CELERY_WORKER_CONCURRENCY`: optional override for the Agate worker process pool size (Compose passes **`--concurrency`**; default **8** when unset). Higher values improve S3 batch parallelism when many **`execute_processed_item`** tasks are in flight.
 - `STYLEBOOK_API_URL`: worker/node access to Stylebook API.
 - `SERVICE_API_TOKEN`: shared Bearer token for service-to-service calls. **Agate API** requires `Authorization: Bearer` (this token or a project `bfk_` key) on protected routes; `make smoke` sends it automatically (override with `SMOKE_AGATE_BEARER` if needed).
 - `SESSION_SECRET`: signing key for session cookies (`itsdangerous`); shared across services that verify the same `session` cookie (Compose default `dev-session-secret`).
@@ -70,7 +72,7 @@ Graph nodes are executed in the worker using the vendored `agate-runtime` packag
 - **GeocodeAgent** may use `OPENAI_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and optional Stylebook cache via `STYLEBOOK_API_URL` + `PROJECT_SLUG` + `SERVICE_API_TOKEN`.
 - **Who's On First SQLite** (coordinate → WOF ID / bbox helpers in `wof.py`): the database file is not in git (size). Install under `packages/agate-runtime/.../geocoding/data/` or set **`WOF_SQLITE_DB_PATH`** to the `.db` file. See `packages/agate-runtime/src/agate_utils/geocoding/data/README.md`.
 - **Celery limits**: `TASK_SOFT_TIME_LIMIT` / `TASK_HARD_TIME_LIMIT` (defaults `3600` / `4200` seconds on the worker service in Compose) mirror agate-ai-platform worker defaults for long-running geocode flows.
-- **S3 batch fan-out**: `execute_s3_batch_setup` lists S3 keys, inserts **`agate_processed_item`** rows, then runs each **`execute_processed_item`** **in-process** via Celery ``Task.apply()`` (avoids blocking the worker pool on ``group(...).get()``, which deadlocks at low concurrency). Env **`S3_BATCH_MAX_INFLIGHT`** is reserved for a future broker-side chunking story; today execution is sequential inside the setup task. S3 listing and downloads use project secrets merged into the process environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`). The S3Input node param **`max_files`** (default `500`, hard cap `10000`) limits how many valid JSON documents are executed per run; additional valid keys are recorded as **`skipped`** items with reason **`max_files cap`**.
+- **S3 batch fan-out**: `execute_s3_batch_setup` lists S3 keys, inserts **`agate_processed_item`** rows, then submits a Celery **`chord`**: a **`group`** of **`execute_processed_item`** tasks plus a **`finalize_s3_parent_run`** callback when every child completes. The setup task returns immediately (no ``group().get()`` in the parent), so workers can run many file tasks in parallel. **`CELERY_WORKER_CONCURRENCY`** (Compose default **8**, override in repo-root `.env`) controls how many child tasks run at once per worker container. Env **`S3_BATCH_MAX_INFLIGHT`** is reserved for a future bounded chunking story. S3 listing and downloads use project secrets merged into the process environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`). The S3Input node param **`max_files`** (default `500`, hard cap `10000`) limits how many valid JSON documents are executed per run; additional valid keys are recorded as **`skipped`** items with reason **`max_files cap`**.
 
 For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in repo-root `.env` (or ensure they exist in the worker environment) so PlaceExtract (and any other LLM nodes in the flow) can call the model; otherwise the run fails when those nodes execute. For the **session-shaped** smoke, add **`SMOKE_EMAIL`** and **`SMOKE_PASSWORD`** to the same repo-root `.env` (they are loaded automatically; no need to `export`). Run **`core-api`** in Compose. Omit them to use the legacy service-token path on Agate only.
 
@@ -89,7 +91,7 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 
 ## Troubleshooting
 
-- If compose networks stay around, use `make down` first because it removes orphans.
+- If compose networks or stray one-off containers linger, from the repo run `make down`, or `docker compose -f infra/docker-compose.yml down --remove-orphans` if you need to clear orphaned containers from a renamed project.
 - If a run never leaves `pending`, check `worker` logs and Redis connectivity.
 - If secrets calls fail, verify `MASTER_ENCRYPTION_KEY`.
 - If geocode calls fail, check `stylebook-api`, `STYLEBOOK_API_URL`, and `SERVICE_API_TOKEN`.
