@@ -1,4 +1,8 @@
-"""Location ``type`` strings from PlaceExtract (prompt: ``place_extract/prompts/extract.md``)."""
+"""Location ``type`` strings from PlaceExtract (prompt: ``place_extract/prompts/extract.md``).
+
+``private_residence`` is the legacy JSON value for ``address_place_kind`` meaning “not a
+publicly patron-accessible venue” (homes, incident intersections, PO boxes, etc.—see prompt).
+"""
 
 # Values for ``address_place_kind`` (PlaceExtract output); also used by canonical deferral.
 ADDRESS_PLACE_KIND_PUBLIC_NAMED = "public_named"
