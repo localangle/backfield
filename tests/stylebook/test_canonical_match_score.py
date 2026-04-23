@@ -129,7 +129,11 @@ def test_state_abbrev_vs_full_name_token_coverage() -> None:
 
 
 def test_formatted_address_extra_tokens_match_canonical_label() -> None:
-    """Geocoder formatted lines often extend the display name; label tokens still match."""
+    """Geocoder formatted lines often extend the display name; label tokens still match.
+
+    The name itself contains all canonical tokens (same place), so identity heuristics
+    fire via name surfaces even after formatted_address is excluded from them.
+    """
     sub = SubstrateMatchInput(
         name="West Garfield Park, Chicago, IL",
         normalized_name="west garfield park west side chicago il usa",
@@ -141,6 +145,58 @@ def test_formatted_address_extra_tokens_match_canonical_label() -> None:
         normalized_aliases=(),
     )
     assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
+
+
+def test_formatted_address_city_tail_does_not_inflate_score_for_unrelated_place() -> None:
+    """formatted_address trailing ', Chicago, IL' must not produce 1.0 via identity heuristics.
+
+    An address or place whose *name* is unrelated to 'Chicago, IL' but whose
+    formatted_address contains the city/state tail should score well below the
+    autolink threshold against the Chicago, IL canonical.
+    """
+    sub = SubstrateMatchInput(
+        name="1020 W. Sheridan Road, Chicago, IL",
+        normalized_name="1020 w. sheridan road, chicago, il",
+        formatted_address="1020 West Sheridan Road, North Side, Chicago, IL, USA",
+    )
+    chicago_feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="Chicago, IL",
+        normalized_aliases=("chicago, il",),
+    )
+    score = string_score_for_candidate(sub, chicago_feat)
+    # The score may still be nonzero (ratio on shared tokens), but must not hit 1.0
+    # from identity shortcuts triggered only by formatted_address.
+    assert score < 1.0, f"Expected score < 1.0 for address vs city canonical, got {score}"
+
+
+def test_alias_token_coverage_does_not_fire_via_formatted_address() -> None:
+    """Alias token coverage must use name-only surfaces, not formatted_address.
+
+    If canonical 'Chicago, IL' accumulated an alias like
+    'illinois st. and clark st., chicago, il' (from a prior wrong link), a new
+    substrate whose *name* does not contain all alias tokens must not score 1.0.
+    """
+    sub = SubstrateMatchInput(
+        name="39th Street and Kedzie Avenue, Chicago, IL",
+        normalized_name="39th street and kedzie avenue, chicago, il",
+        formatted_address="S Kedzie Ave and W 39th Pl, Chicago, IL 60632",
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="Chicago, IL",
+        # Alias that crept in from a prior wrong link (intersection name)
+        normalized_aliases=(
+            "chicago, il",
+            "illinois st. and clark st., chicago, il",
+        ),
+    )
+    score = string_score_for_candidate(sub, feat)
+    # "illinois st. and clark st." tokens ("illinois", "clark") are NOT in the
+    # substrate *name*, only in formatted_address — so alias coverage must not return 1.0.
+    assert score < 1.0, (
+        f"Alias token coverage should not fire via formatted_address, got score {score}"
+    )
 
 
 def test_policy_match_non_address_ignores_spatial_penalty() -> None:

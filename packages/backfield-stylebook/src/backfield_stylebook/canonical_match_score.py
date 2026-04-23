@@ -134,7 +134,11 @@ def _loose_key(value: str) -> str:
 
 
 def _substrate_surface_strings(substrate: SubstrateMatchInput) -> list[str]:
-    """Distinct non-empty lowercased strings to compare against canonical naming."""
+    """Distinct non-empty lowercased strings to compare against canonical naming.
+
+    Includes ``formatted_address`` for weaker ratio-based comparisons only.
+    Use :func:`_substrate_name_surface_strings` for identity heuristics.
+    """
     seen: set[str] = set()
     out: list[str] = []
     for raw in (
@@ -142,6 +146,24 @@ def _substrate_surface_strings(substrate: SubstrateMatchInput) -> list[str]:
         substrate.name,
         substrate.formatted_address or "",
     ):
+        s = raw.strip().lower()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def _substrate_name_surface_strings(substrate: SubstrateMatchInput) -> list[str]:
+    """Like :func:`_substrate_surface_strings` but excludes ``formatted_address``.
+
+    Used for identity heuristics (token coverage, substring identity) so that a
+    geocoder-supplied ``formatted_address`` containing a trailing city/state tail
+    (e.g. ``…, Chicago, IL, USA``) cannot inflate the score of a broad city canonical
+    to 1.0 for an unrelated specific place.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in (substrate.normalized_name, substrate.name):
         s = raw.strip().lower()
         if s and s not in seen:
             seen.add(s)
@@ -159,9 +181,13 @@ def _token_set_coverage_score(canonical_loose: str, substrate_surfaces: list[str
     Handles geocoder ``formatted_address`` strings that extend the place name with
     neighborhood or country tokens without changing the core location identity.
     """
-    ct = _expand_us_state_tokens(_meaningful_token_set(canonical_loose))
-    if len(ct) < 3:
+    raw_ct = _meaningful_token_set(canonical_loose)
+    # Guard on the raw (pre-expansion) count so that a two-token canonical like
+    # "Chicago, IL" cannot reach 3 tokens via US-state abbreviation expansion and
+    # then spuriously match every Chicago-area location name.
+    if len(raw_ct) < 3:
         return None
+    ct = _expand_us_state_tokens(raw_ct)
     union: set[str] = set()
     for surf in substrate_surfaces:
         union |= _expand_us_state_tokens(_meaningful_token_set(_loose_key(surf)))
@@ -173,13 +199,22 @@ def _token_set_coverage_score(canonical_loose: str, substrate_surfaces: list[str
 
 
 def _loose_substring_identity_score(loose_label: str, surfaces: list[str]) -> float | None:
-    """1.0 when the canonical loose label appears as a contiguous token run in substrate text."""
+    """1.0 for near-identical place name matches (not containment).
+
+    Two cases:
+    - Substrate is a substring of (or equal to) canonical → identity (canonical is broader
+      or same; keep for alias / abbreviation matching).
+    - Canonical is a substring of substrate AND canonical is at least 55 % of the substrate
+      blob length → identity.  The length guard blocks a short canonical like "Chicago, IL"
+      from scoring 1.0 just because ", Chicago, IL" appears as a trailing suffix in every
+      Chicago-area location name (containment, not identity).
+    """
     if len(loose_label) < 10:
         return None
     blob = " ".join(_loose_key(s) for s in surfaces if s.strip())
     if not blob:
         return None
-    if loose_label in blob:
+    if loose_label in blob and len(loose_label) >= 0.55 * len(blob):
         return 1.0
     if len(blob) >= 10 and blob in loose_label:
         return 1.0
@@ -259,7 +294,12 @@ def string_score_for_candidate(
     substrate: SubstrateMatchInput,
     candidate: CanonicalMatchFeatures,
 ) -> float:
+    # All surfaces (including formatted_address) used for weaker ratio-based comparisons.
     surfaces = _substrate_surface_strings(substrate)
+    # Name-only surfaces (no formatted_address) used for identity→1.0 shortcuts so that a
+    # geocoder city/state tail cannot inflate a broad canonical's score to 1.0 for a
+    # specific sub-place whose name merely ends with ``…, Chicago, IL``.
+    name_surfaces = _substrate_name_surface_strings(substrate)
     parts: list[float] = []
     if candidate.retrieval_string_hint is not None:
         parts.append(max(0.0, min(1.0, float(candidate.retrieval_string_hint))))
@@ -267,14 +307,14 @@ def string_score_for_candidate(
         parts.append(_string_score_surface_vs_candidate(surf, candidate))
 
     loose_label = _loose_key(candidate.label)
-    cov = _token_set_coverage_score(loose_label, surfaces)
+    cov = _token_set_coverage_score(loose_label, name_surfaces)
     if cov is not None:
         parts.append(cov)
-    subseq = _loose_substring_identity_score(loose_label, surfaces)
+    subseq = _loose_substring_identity_score(loose_label, name_surfaces)
     if subseq is not None:
         parts.append(subseq)
     for a in candidate.normalized_aliases:
-        acov = _token_set_coverage_score(_loose_key(a), surfaces)
+        acov = _token_set_coverage_score(_loose_key(a), name_surfaces)
         if acov is not None:
             parts.append(acov)
 
