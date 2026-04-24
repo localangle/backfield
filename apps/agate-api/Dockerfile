@@ -13,9 +13,9 @@ COPY packages/backfield-auth /app/packages/backfield-auth
 COPY apps/agate-api /app/apps/agate-api
 
 RUN pip install --no-cache-dir -e /app/packages/agate-runtime \
-    && pip install --no-cache-dir -e /app/packages/backfield-core \
     && pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-stylebook \
+    && pip install --no-cache-dir -e /app/packages/backfield-core \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
     && pip install --no-cache-dir \
         "fastapi>=0.109.0" \

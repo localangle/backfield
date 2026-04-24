@@ -12,6 +12,7 @@ from backfield_stylebook.canonical_match_score import (
     classify_recall_score,
     combined_score,
     haversine_m,
+    head_region_anchored_on_canonical_naming,
     policy_match_score,
     spatial_score_from_distance_m,
     string_score_for_candidate,
@@ -219,3 +220,30 @@ def test_policy_match_non_address_ignores_spatial_penalty() -> None:
     assert s_str == 1.0
     assert p_neighborhood == 1.0
     assert p_address >= s_str
+
+
+def test_head_region_gate_blocks_neighborhood_tail_on_city_canonical() -> None:
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="Chicago, IL",
+        normalized_aliases=("chicago, il",),
+    )
+    assert not head_region_anchored_on_canonical_naming("Chatham, Chicago, IL", feat)
+
+
+def test_head_region_gate_allows_city_query_on_city_canonical() -> None:
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="Chicago, IL",
+        normalized_aliases=("chicago, il",),
+    )
+    assert head_region_anchored_on_canonical_naming("Chicago, IL", feat)
+
+
+def test_head_region_gate_allows_neighborhood_canonical_when_head_matches() -> None:
+    feat = CanonicalMatchFeatures(
+        canonical_id=1,
+        label="Chatham, Chicago, IL",
+        normalized_aliases=("chatham, chicago, il",),
+    )
+    assert head_region_anchored_on_canonical_naming("Chatham, Chicago, IL", feat)

@@ -84,7 +84,7 @@ flowchart LR
 
 ### Geocode cache (worker DB path)
 
-When **`BACKFIELD_PROJECT_ID`** is set and the Geocode node enables **Use cache** with a **`stylebookId`**, `backfield-core` supplies a synchronous **`cache_resolve`** closure (Postgres session + `backfield_stylebook.geocode_cache_resolve.try_resolve_geocode_cache`) so **`agate-runtime`** tries tier 1 (active canonicals, label + aliases, single winner) then tier 2 (**`substrate_location_cache`** by `query_fingerprint`) before external geocoders. Runs **without** `BACKFIELD_PROJECT_ID` skip DB tiers (debug log) and use external geocoding only; saved graphs may still use **legacy** HTTP canonical/cache when URL + slug are present and no resolver is registered.
+When **`BACKFIELD_PROJECT_ID`** is set and the Geocode node enables **Use cache** with a **`stylebookId`**, `backfield-core` supplies a synchronous **`cache_resolve`** closure (Postgres session + `backfield_stylebook.geocode_cache_resolve.try_resolve_geocode_cache`) so **`agate-runtime`** tries tier 1 (active canonicals, label + aliases, single winner) then tier 2 (**`substrate_location_cache`** by `query_fingerprint`) before external geocoders. Tier 1 applies an extra **comma-head precision gate** (`head_region_anchored_on_canonical_naming` in `canonical_match_score`) so strings like **Chatham, Chicago, IL** do not match a bare **Chicago, IL** canonical on string similarity alone. Runs **without** `BACKFIELD_PROJECT_ID` skip DB tiers (debug log) and use external geocoding only; saved graphs may still use **legacy** HTTP canonical/cache when URL + slug are present and no resolver is registered.
 
 ## Important conventions
 

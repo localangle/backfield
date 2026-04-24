@@ -11,6 +11,7 @@ from backfield_stylebook.canonical_match_score import (
     AUTOLINK_MIN_SCORE,
     CanonicalMatchFeatures,
     SubstrateMatchInput,
+    head_region_anchored_on_canonical_naming,
     policy_match_score,
 )
 from backfield_stylebook.substrate_location_cache_fingerprint import (
@@ -133,7 +134,9 @@ def try_resolve_geocode_cache(
             features,
             substrate_location_type=lt,
         )
-        if score >= AUTOLINK_MIN_SCORE:
+        if score >= AUTOLINK_MIN_SCORE and head_region_anchored_on_canonical_naming(
+            location_text, features
+        ):
             scored.append((score, c))
 
     if len(scored) == 1:

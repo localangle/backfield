@@ -111,6 +111,45 @@ def test_try_resolve_single_canonical_winner() -> None:
     assert hit["boundaries"] == [gj]
 
 
+def test_try_resolve_chatham_chicago_il_does_not_hit_city_canonical() -> None:
+    """Precision: neighborhood-style string must not tier-1 to a bare parent city canonical."""
+    gj = {"type": "Point", "coordinates": [-87.0, 41.0]}
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        c = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        session.add(c)
+        session.commit()
+        session.refresh(c)
+        cid = int(c.id)  # type: ignore[arg-type]
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Chatham, Chicago, IL",
+            location_type="neighborhood",
+        )
+    assert hit is None
+
+
 def test_try_resolve_ambiguous_two_canonicals_returns_none() -> None:
     """Two strong name matches → no tier-1 hit (per grill-me)."""
     gj = {"type": "Point", "coordinates": [-87.0, 41.0]}

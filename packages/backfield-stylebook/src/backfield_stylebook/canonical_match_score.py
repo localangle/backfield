@@ -367,3 +367,38 @@ def classify_recall_score(score: float) -> Literal["autolink", "ambiguous", "bel
     if score >= RECALL_MIN_SCORE:
         return "ambiguous"
     return "below_recall"
+
+
+def head_region_anchored_on_canonical_naming(
+    display_name: str,
+    candidate: CanonicalMatchFeatures,
+) -> bool:
+    """For ``Head, City, ST`` strings, require the head to be supported by canonical label/aliases.
+
+    Geocode DB tier-1 uses this for **precision**: string similarity alone can treat
+    ``Chatham, Chicago, IL`` as a strong partial match to a ``Chicago, IL`` city canonical; this
+    gate blocks that by insisting the **first comma-separated segment** is reflected in the
+    candidate's naming blob (substring or per-token hits for tokens of length ≥ 3).
+
+    When there is no comma, or the head is empty, returns True (no extra restriction).
+    """
+    raw = display_name.strip()
+    if "," not in raw:
+        return True
+    head = raw.split(",", 1)[0].strip()
+    if not head:
+        return True
+    loose_head = _loose_key(head)
+    if not loose_head:
+        return True
+    blob_parts = [_loose_key(candidate.label)]
+    blob_parts.extend(_loose_key(a) for a in candidate.normalized_aliases)
+    blob = " ".join(p for p in blob_parts if p).strip()
+    if not blob:
+        return False
+    if loose_head in blob:
+        return True
+    head_tokens = [t for t in loose_head.split() if len(t) >= 3]
+    if not head_tokens:
+        return True
+    return all(t in blob for t in head_tokens)

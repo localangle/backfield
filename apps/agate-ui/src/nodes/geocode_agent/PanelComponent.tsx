@@ -56,7 +56,14 @@ import {
 
 const NONE_STYLEBOOK = '__none__'
 
-const DEFAULTS = { ...nodeMetadata.defaultParams }
+const DEFAULTS = {
+  maxLocations: 100,
+  perLocationTimeout: 300,
+  useCache: false,
+  stylebookId: null as number | null,
+  stylebookApiUrl: '',
+  projectSlug: '',
+}
 
 interface GeocodeAgentPanelProps {
   node: any

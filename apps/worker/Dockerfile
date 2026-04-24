@@ -12,9 +12,9 @@ COPY packages/backfield-stylebook /app/packages/backfield-stylebook
 COPY apps/worker /app/apps/worker
 
 RUN pip install --no-cache-dir -e /app/packages/agate-runtime \
-    && pip install --no-cache-dir -e /app/packages/backfield-core \
     && pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-stylebook \
+    && pip install --no-cache-dir -e /app/packages/backfield-core \
     && pip install --no-cache-dir "celery>=5.3.0" "redis>=5.0.0" \
     && pip install --no-cache-dir -e /app/apps/worker --no-deps
 
