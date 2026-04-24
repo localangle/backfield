@@ -109,6 +109,7 @@ class ProjectOut(BaseModel):
     id: int
     name: str
     slug: str
+    organization_id: int
     system_prompt: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -130,6 +131,7 @@ class ProjectOut(BaseModel):
             id=p.id,
             name=p.name,
             slug=p.slug,
+            organization_id=int(p.organization_id),
             system_prompt=d.get("system_prompt"),
             created_at=p.created_at,
             updated_at=p.updated_at,

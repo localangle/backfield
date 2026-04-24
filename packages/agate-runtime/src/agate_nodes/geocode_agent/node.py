@@ -69,6 +69,10 @@ class GeocodeAgentParams(BaseModel):
         default=None,
         description="Project slug for canonical matching (defaults to PROJECT_SLUG env var)"
     )
+    stylebookId: Optional[int] = Field(
+        default=None,
+        description="Stylebook id for DB-backed cache (worker: BACKFIELD_PROJECT_ID + useCache)",
+    )
 
 # Define Place model locally to avoid cross-node dependencies
 # This is a simplified Place model that only includes the fields actually used by the geocode_agent
@@ -220,6 +224,9 @@ class GeocodeAgent:
         # Get cache parameters
         stylebook_api_url = params.stylebookApiUrl or os.environ.get("STYLEBOOK_API_URL")
         project_slug = params.projectSlug or os.environ.get("PROJECT_SLUG")
+        meta = ctx.metadata if isinstance(ctx.metadata, dict) else {}
+        raw_resolve = meta.get("cache_resolve")
+        cache_resolve = raw_resolve if callable(raw_resolve) else None
         
         # Configuration for timeout handling
         PER_LOCATION_TIMEOUT = params.perLocationTimeout
@@ -298,7 +305,8 @@ class GeocodeAgent:
                         use_cache=params.useCache,
                         stylebook_api_url=stylebook_api_url,
                         project_slug=project_slug,
-                        service_api_token=service_api_token
+                        service_api_token=service_api_token,
+                        cache_resolve=cache_resolve,
                     ),
                     timeout=PER_LOCATION_TIMEOUT
                 )

@@ -13,6 +13,7 @@ export interface Project {
   id: number
   name: string
   slug: string
+  organization_id: number
   system_prompt?: string
   created_at: string
   updated_at?: string

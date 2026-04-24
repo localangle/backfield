@@ -7,6 +7,9 @@ from collections.abc import Iterable
 from typing import Any
 
 from backfield_db import SubstrateLocation, SubstrateLocationCache
+from backfield_stylebook.substrate_location_cache_fingerprint import (
+    substrate_location_cache_query_fingerprint,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
@@ -132,19 +135,6 @@ def _geometry_bind_value(session: Session, geometry_json: dict[str, Any]) -> obj
 
     return wkt
 
-def _cache_fingerprint(*, project_id: int, normalized_query: str, location_type: str | None) -> str:
-    return _sha256_hex(
-        json.dumps(
-            {
-                "project_id": project_id,
-                "normalized_query": normalized_query,
-                "location_type": location_type,
-            },
-            sort_keys=True,
-        )
-    )
-
-
 def _upsert_location_cache(
     session: Session,
     *,
@@ -163,7 +153,7 @@ def _upsert_location_cache(
     if not normalized_query:
         return
 
-    fingerprint = _cache_fingerprint(
+    fingerprint = substrate_location_cache_query_fingerprint(
         project_id=project_id,
         normalized_query=normalized_query,
         location_type=location_type,

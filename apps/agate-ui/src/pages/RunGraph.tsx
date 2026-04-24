@@ -83,6 +83,7 @@ export default function RunGraph() {
   const graphContext = useMemo(() => {
     if (flowProjectLoading) {
       return {
+        organizationId: null as number | null,
         workspaceDefaultStylebookId: null as number | null,
         workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
@@ -92,6 +93,7 @@ export default function RunGraph() {
     const p = resolvedFlowProject
     if (!p) {
       return {
+        organizationId: null as number | null,
         workspaceDefaultStylebookId: null as number | null,
         workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
@@ -103,6 +105,7 @@ export default function RunGraph() {
     const nm =
       typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null
     return {
+      organizationId: p.organization_id ?? null,
       workspaceDefaultStylebookId: sid,
       workspaceStylebookName: nm,
       missingWorkspaceStylebook: sid == null && nm == null,

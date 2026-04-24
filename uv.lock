@@ -209,6 +209,7 @@ version = "0.1.0"
 source = { editable = "packages/backfield-core" }
 dependencies = [
     { name = "agate-runtime" },
+    { name = "backfield-stylebook" },
     { name = "boto3" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -217,6 +218,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "agate-runtime", editable = "packages/agate-runtime" },
+    { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },
     { name = "boto3", specifier = ">=1.34.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pydantic", specifier = ">=2.0.0" },

@@ -18,7 +18,8 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `packages/backfield-core`
   - Owns `GraphSpec`, graph execution, thin node runner entrypoints, node metadata, and node UI source files.
   - Delegates heavy node logic to `agate-runtime` for LLM PlaceExtract and LangGraph GeocodeAgent.
-  - Should stay free of API routing, database persistence, and frontend app state concerns.
+  - Wires **optional Postgres geocode cache** (Stylebook canonicals + `substrate_location_cache`, same fingerprint as ingest) into `agate-runtime` when the worker sets `BACKFIELD_PROJECT_ID` and the Geocode node params include `stylebookId`, via `backfield-stylebook` helpers on `AgateEnvContext.metadata` (`cache_resolve`).
+  - Should stay free of API routing and frontend app state concerns.
 - `packages/agate-runtime`
   - Vendored execution glue (`agate_runtime`), shared helpers (`agate_utils`), and ported nodes under **`agate_nodes/`** (e.g. `geocode_agent`, `place_extract` — no `backfield_` prefix on each node package).
   - Excluded from default Ruff scope in the workspace root config; treat as third-party-style surface when editing.
@@ -58,7 +59,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `agate-api` may depend on `backfield-core`, `backfield-db`, and `backfield-auth` (when wiring shared auth).
 - `worker` may depend on `backfield-core`, `backfield-db`, and `backfield-stylebook` (canonical sync next to substrate persistence).
 - `core-api` may depend on `backfield-auth`, `backfield-db`, and `backfield-stylebook` (default Stylebook + workspace creation defaults).
-- `backfield-core` may depend on `agate-runtime` and must not depend on app code.
+- `backfield-core` may depend on `agate-runtime` and `backfield-stylebook` (for Geocode DB cache wiring) and must not depend on app code.
 - `agate-runtime` must not depend on app code or `backfield-db`.
   - **TypeScript in `agate-runtime`:** vendored node UI under `src/agate_nodes/*/ui` mirrors agate-ai-platform and uses the same `@/…` aliases as Agate UI for shadcn-style imports. For executor output keys it imports **`@backfield/ui/nodeOutputs`**, matching the **`exports`** entry in `packages/backfield-ui/package.json` (not a Python dependency on `backfield-ui`).
 - `backfield-db` must not depend on app code.
@@ -74,14 +75,16 @@ flowchart LR
     Worker -->|load graph and secrets| Postgres
     Worker -->|execute_graph| Core[backfield_core]
     Core --> Runtime[agate_runtime]
-    Runtime -->|optional cache / match| StylebookAPI[StylebookAPI]
+    Runtime -->|legacy HTTP cache (old graphs)| StylebookAPI[StylebookHTTP]
     Runtime -->|LLM and external geocoders| ExternalAPIs[ExternalAPIs]
     Worker -->|write run results (+ DBOutput substrate writes)| Postgres
     AgateUI -->|poll run| AgateAPI
     AgateAPI -->|read status/result| Postgres
 ```
 
+### Geocode cache (worker DB path)
 
+When **`BACKFIELD_PROJECT_ID`** is set and the Geocode node enables **Use cache** with a **`stylebookId`**, `backfield-core` supplies a synchronous **`cache_resolve`** closure (Postgres session + `backfield_stylebook.geocode_cache_resolve.try_resolve_geocode_cache`) so **`agate-runtime`** tries tier 1 (active canonicals, label + aliases, single winner) then tier 2 (**`substrate_location_cache`** by `query_fingerprint`) before external geocoders. Runs **without** `BACKFIELD_PROJECT_ID` skip DB tiers (debug log) and use external geocoding only; saved graphs may still use **legacy** HTTP canonical/cache when URL + slug are present and no resolver is registered.
 
 ## Important conventions
 

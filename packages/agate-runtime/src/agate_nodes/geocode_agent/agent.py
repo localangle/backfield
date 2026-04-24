@@ -1,9 +1,9 @@
 """LangGraph agent for intelligent geocoding with fallback strategies."""
 
-from typing import Optional
+from typing import Any, Optional
 from langgraph.graph import StateGraph, END  # type: ignore
 from .nodes import orchestrate_geocode, consolidate_node, output_node
-from .types import AgentState
+from .types import AgentState, CacheResolveFn
 
 def create_geocoding_agent():
     """
@@ -43,7 +43,8 @@ async def run_geocoding_agent(
     use_cache: bool = False,
     stylebook_api_url: Optional[str] = None,
     project_slug: Optional[str] = None,
-    service_api_token: Optional[str] = None
+    service_api_token: Optional[str] = None,
+    cache_resolve: Optional[CacheResolveFn] = None,
 ) -> Optional[dict]:
     """
     Run the geocoding agent workflow for a single location.
@@ -84,7 +85,8 @@ async def run_geocoding_agent(
         "stylebook_api_url": stylebook_api_url,
         "project_slug": project_slug,
         "service_api_token": service_api_token,
-        "final_output": None
+        "cache_resolve": cache_resolve,
+        "final_output": None,
     }
     
     # Run the agent

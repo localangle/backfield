@@ -341,6 +341,7 @@ def test_create_project_with_workspace_id(tmp_path):
         body = r.json()
         pid = int(body["id"])
         assert body.get("workspace_id") == int(ws.id)
+        assert body.get("organization_id") == oid
         assert body.get("workspace_stylebook_id") == sb_id
         assert body.get("workspace_stylebook_name") == "Default Stylebook"
         with Session(engine) as s:

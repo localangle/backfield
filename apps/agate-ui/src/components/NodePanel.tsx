@@ -10,6 +10,8 @@ import { Suspense } from 'react'
 import { nodeMetadata, panelComponents } from '@/nodes/registry'
 
 export type GraphPanelContext = {
+  /** Organization that owns the resolved flow project (for Stylebook catalog in node panels). */
+  organizationId: number | null
   workspaceDefaultStylebookId: number | null
   workspaceStylebookName: string | null
   /** True when a project is selected but the API did not resolve a workspace Stylebook. */

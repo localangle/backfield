@@ -34,16 +34,29 @@ const nodeMetadata = {
     "maxLocations": 100,
     "perLocationTimeout": 300,
     "useCache": false,
+    "stylebookId": null,
     "stylebookApiUrl": "",
     "projectSlug": ""
   }
 };
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
+import type { GraphPanelContext } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
+import { listOrgStylebooks, type OrgStylebook } from '@/lib/core-api'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+const NONE_STYLEBOOK = '__none__'
+
+const DEFAULTS = { ...nodeMetadata.defaultParams }
 
 interface GeocodeAgentPanelProps {
   node: any
@@ -53,67 +66,89 @@ interface GeocodeAgentPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  graphContext?: GraphPanelContext
   /** When set, resolves `execute_graph` snake_case output keys for this graph. */
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
 export default function GeocodeAgentPanel({
   node,
-  onChange,
-  onRun,
-  running,
-  currentRun,
   editMode,
   setNodes,
+  currentRun,
+  graphContext,
   nodeOutputLookupSpec,
 }: GeocodeAgentPanelProps) {
-  const params = node.data || {
-    maxLocations: 100,
-    perLocationTimeout: 300,
-    useCache: false,
-    stylebookApiUrl: '',
-    projectSlug: '',
-  }
-  
+  const params = { ...DEFAULTS, ...(node.data || {}) }
+
   const isDisabled = !(editMode && setNodes)
+  const orgId = graphContext?.organizationId ?? null
+  const [stylebooks, setStylebooks] = useState<OrgStylebook[]>([])
+  const [stylebooksError, setStylebooksError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!orgId || !params.useCache) {
+      setStylebooks([])
+      setStylebooksError(null)
+      return
+    }
+    let cancelled = false
+    setStylebooksError(null)
+    listOrgStylebooks(orgId)
+      .then((rows) => {
+        if (!cancelled) setStylebooks(rows)
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setStylebooks([])
+          setStylebooksError(e instanceof Error ? e.message : 'Failed to load stylebooks')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [orgId, params.useCache])
 
   const handleUseCacheChange = (checked: boolean) => {
     if (setNodes) {
       setNodes((nodes: any[]) =>
-        nodes.map((n) =>
-          n.id === node.id
-            ? { ...n, data: { ...n.data, useCache: checked } }
-            : n
-        )
+        nodes.map((n) => {
+          if (n.id !== node.id) return n
+          const data: Record<string, unknown> = {
+            ...DEFAULTS,
+            ...(n.data || {}),
+            useCache: checked,
+          }
+          if (
+            checked &&
+            (data.stylebookId === null || data.stylebookId === undefined || data.stylebookId === '') &&
+            graphContext?.workspaceDefaultStylebookId != null
+          ) {
+            data.stylebookId = graphContext.workspaceDefaultStylebookId
+          }
+          return { ...n, data }
+        }),
       )
     }
   }
 
-  const handleStylebookApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (setNodes) {
-      setNodes((nodes: any[]) =>
-        nodes.map((n) =>
-          n.id === node.id
-            ? { ...n, data: { ...n.data, stylebookApiUrl: e.target.value } }
-            : n
-        )
-      )
-    }
+  const stylebookSelectValue =
+    params.stylebookId !== null && params.stylebookId !== undefined && params.stylebookId !== ''
+      ? String(params.stylebookId)
+      : NONE_STYLEBOOK
+
+  const handleStylebookSelect = (value: string) => {
+    if (!setNodes) return
+    const nextId = value === NONE_STYLEBOOK ? null : Number(value)
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? { ...n, data: { ...DEFAULTS, ...(n.data || {}), stylebookId: nextId } }
+          : n,
+      ),
+    )
   }
 
-  const handleProjectSlugChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (setNodes) {
-      setNodes((nodes: any[]) =>
-        nodes.map((n) =>
-          n.id === node.id
-            ? { ...n, data: { ...n.data, projectSlug: e.target.value } }
-            : n
-        )
-      )
-    }
-  }
-
-  // Get latest run data - only show if we have specific node output
   const nodeOutput = getNodeOutputById(
     currentRun?.node_outputs as Record<string, unknown> | undefined,
     node.id,
@@ -148,8 +183,8 @@ export default function GeocodeAgentPanel({
         <div>
           <Label className="text-sm font-medium">Description</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            This node uses LLM reasoning to intelligently geocode locations from Place Extract. 
-            It enhances geocoding accuracy by understanding context and resolving ambiguities.
+            This node uses LLM reasoning to intelligently geocode locations from Place Extract. It
+            enhances geocoding accuracy by understanding context and resolving ambiguities.
           </p>
         </div>
       </div>
@@ -158,14 +193,14 @@ export default function GeocodeAgentPanel({
         <div>
           <Label className="text-sm font-medium">Parameters</Label>
         </div>
-        
+
         <div className="space-y-3 mt-2">
           <div className="pt-2 border-t">
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="useCache"
                 checked={params.useCache || false}
-                onCheckedChange={handleUseCacheChange}
+                onCheckedChange={(c) => handleUseCacheChange(c === true)}
                 disabled={isDisabled}
               />
               <Label htmlFor="useCache" className="text-xs font-medium cursor-pointer">
@@ -173,42 +208,42 @@ export default function GeocodeAgentPanel({
               </Label>
             </div>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
-              Match locations to canonical Stylebook locations before using external geocoding
+              Worker runs: match Stylebook canonicals and location cache in Postgres before external
+              geocoding when a Stylebook is selected. Legacy HTTP Stylebook URL/slug in saved graphs
+              still applies only when no DB resolver is active.
             </p>
           </div>
 
           {params.useCache && (
-            <>
-              <div>
-                <Label htmlFor="stylebookApiUrl" className="text-xs">Stylebook API URL</Label>
-                <Input
-                  id="stylebookApiUrl"
-                  value={params.stylebookApiUrl || ''}
-                  onChange={handleStylebookApiUrlChange}
-                  placeholder="http://stylebook-api:8003"
-                  className="text-xs"
-                  disabled={isDisabled}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Leave empty to use STYLEBOOK_API_URL environment variable
+            <div className="space-y-2">
+              <Label htmlFor="geocode-stylebook" className="text-xs">
+                Stylebook
+              </Label>
+              <Select
+                value={stylebookSelectValue}
+                onValueChange={handleStylebookSelect}
+                disabled={isDisabled || orgId == null}
+              >
+                <SelectTrigger id="geocode-stylebook" className="text-xs">
+                  <SelectValue placeholder="Select a Stylebook" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_STYLEBOOK}>None</SelectItem>
+                  {stylebooks.map((sb) => (
+                    <SelectItem key={sb.id} value={String(sb.id)}>
+                      {sb.name} ({sb.slug})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {orgId == null && (
+                <p className="text-xs text-muted-foreground">
+                  Save the flow to a project (or open an existing project flow) to load organization
+                  Stylebooks.
                 </p>
-              </div>
-
-              <div>
-                <Label htmlFor="projectSlug" className="text-xs">Project Slug</Label>
-                <Input
-                  id="projectSlug"
-                  value={params.projectSlug || ''}
-                  onChange={handleProjectSlugChange}
-                  placeholder="my-project"
-                  className="text-xs"
-                  disabled={isDisabled}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Required for canonical matching
-                </p>
-              </div>
-            </>
+              )}
+              {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
+            </div>
           )}
         </div>
       </div>
@@ -218,9 +253,11 @@ export default function GeocodeAgentPanel({
           <Label className="text-sm font-medium">Latest Run</Label>
           <div className="mt-2 space-y-2">
             <div className="text-xs text-muted-foreground">
-              <div>Geocoded {locationCount} location{locationCount !== 1 ? 's' : ''}</div>
+              <div>
+                Geocoded {locationCount} location{locationCount !== 1 ? 's' : ''}
+              </div>
             </div>
-            
+
             {locationCount > 0 && sampleSnippet && (
               <div>
                 <Label className="text-xs font-medium">Sample Output:</Label>
@@ -236,4 +273,3 @@ export default function GeocodeAgentPanel({
     </>
   )
 }
-
