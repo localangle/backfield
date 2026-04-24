@@ -16,7 +16,7 @@ from backfield_stylebook.substrate_location_cache_fingerprint import (
     normalize_substrate_cache_query,
     substrate_location_cache_query_fingerprint,
 )
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine
 
 
 def test_fingerprint_stable_payload() -> None:
@@ -111,8 +111,52 @@ def test_try_resolve_single_canonical_winner() -> None:
     assert hit["boundaries"] == [gj]
 
 
-def test_try_resolve_chatham_chicago_il_does_not_hit_city_canonical() -> None:
-    """Precision: neighborhood-style string must not tier-1 to a bare parent city canonical."""
+def test_try_resolve_inexact_strings_miss_tier1_canonical() -> None:
+    """Tier 1 is exact normalized label/alias only — no fuzzy parent matches."""
+    gj = {"type": "Point", "coordinates": [-87.0, 41.0]}
+    for loc_text in (
+        "Uptown, Chicago, IL",
+        "Uptown Chicago IL",
+        "Chatham, Chicago, IL",
+    ):
+        engine = _engine()
+        with Session(engine) as session:
+            pid, sb_id, _ = _seed_org_sb_project(session)
+            c = StylebookLocationCanonical(
+                stylebook_id=sb_id,
+                label="Chicago, IL",
+                location_type="city",
+                status="active",
+                geometry_json=gj,
+                geometry_type="Point",
+            )
+            session.add(c)
+            session.commit()
+            session.refresh(c)
+            cid = int(c.id)  # type: ignore[arg-type]
+            session.add(
+                StylebookLocationAlias(
+                    location_canonical_id=cid,
+                    alias_text="Chicago, IL",
+                    normalized_alias="chicago, il",
+                    provenance="test",
+                    suppressed=False,
+                )
+            )
+            session.commit()
+
+            hit = try_resolve_geocode_cache(
+                session,
+                project_id=pid,
+                stylebook_id=sb_id,
+                location_text=loc_text,
+                location_type="neighborhood",
+            )
+        assert hit is None, loc_text
+
+
+def test_try_resolve_chicago_il_without_comma_misses_label_with_comma() -> None:
+    """Punctuation variant: misses unless an alias normalizes the same way."""
     gj = {"type": "Point", "coordinates": [-87.0, 41.0]}
     engine = _engine()
     with Session(engine) as session:
@@ -144,37 +188,40 @@ def test_try_resolve_chatham_chicago_il_does_not_hit_city_canonical() -> None:
             session,
             project_id=pid,
             stylebook_id=sb_id,
-            location_text="Chatham, Chicago, IL",
-            location_type="neighborhood",
+            location_text="Chicago IL",
+            location_type="city",
         )
     assert hit is None
 
 
 def test_try_resolve_ambiguous_two_canonicals_returns_none() -> None:
-    """Two strong name matches → no tier-1 hit (per grill-me)."""
+    """Two canonicals both match the same normalized string → ambiguous tier-1 → miss."""
     gj = {"type": "Point", "coordinates": [-87.0, 41.0]}
     engine = _engine()
     with Session(engine) as session:
         pid, sb_id, _ = _seed_org_sb_project(session)
-        for lab in ("Chicago, IL", "Chicago, Illinois"):
-            c = StylebookLocationCanonical(
-                stylebook_id=sb_id,
-                label=lab,
-                location_type="city",
-                status="active",
-                geometry_json=gj,
-                geometry_type="Point",
-            )
-            session.add(c)
-        session.commit()
-        canons = list(
-            session.exec(
-                select(StylebookLocationCanonical).where(
-                    StylebookLocationCanonical.stylebook_id == sb_id
-                )
-            ).all()
+        c1 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Point",
         )
-        for c in canons:
+        c2 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, Illinois",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        session.add(c1)
+        session.add(c2)
+        session.commit()
+        session.refresh(c1)
+        session.refresh(c2)
+        for c in (c1, c2):
             cid = int(c.id)  # type: ignore[arg-type]
             session.add(
                 StylebookLocationAlias(

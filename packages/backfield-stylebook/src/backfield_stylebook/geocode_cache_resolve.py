@@ -7,13 +7,6 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocationCache
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.canonical_match_score import (
-    AUTOLINK_MIN_SCORE,
-    CanonicalMatchFeatures,
-    SubstrateMatchInput,
-    head_region_anchored_on_canonical_naming,
-    policy_match_score,
-)
 from backfield_stylebook.substrate_location_cache_fingerprint import (
     normalize_substrate_cache_query,
     substrate_location_cache_query_fingerprint,
@@ -76,6 +69,24 @@ def _alias_map_for_canonicals(
     return {cid: tuple(sorted(set(strings))) for cid, strings in acc.items()}
 
 
+def _canonical_matches_normalized_query(
+    c: StylebookLocationCanonical,
+    *,
+    normalized_query: str,
+    alias_map: dict[int, tuple[str, ...]],
+) -> bool:
+    """True when normalized query equals normalized label or any normalized alias string."""
+    if c.id is None:
+        return False
+    cid = int(c.id)
+    if normalize_substrate_cache_query(str(c.label)) == normalized_query:
+        return True
+    for raw_alias in alias_map.get(cid, ()):
+        if normalize_substrate_cache_query(raw_alias) == normalized_query:
+            return True
+    return False
+
+
 def try_resolve_geocode_cache(
     session: Session,
     *,
@@ -86,8 +97,13 @@ def try_resolve_geocode_cache(
 ) -> dict[str, Any] | None:
     """Return a **match dict** for geocode converters, or ``None``.
 
-    Order: (1) single high-confidence canonical (label + aliases only); (2) substrate cache
-    row with geometry; (3) miss.
+    Order: (1) **exact** normalized string match on canonical **label** or a non-suppressed
+    **alias** (same ``normalize_substrate_cache_query`` as ingest / tier-2 fingerprint); at
+    most one canonical may match, else ambiguous → miss; (2) ``substrate_location_cache`` by
+    fingerprint; (3) miss.
+
+    Tier 1 intentionally favors **precision over recall** (no fuzzy string scoring); misses
+    accumulate cache rows / aliases over time.
 
     Match dicts work with ``stylebook_match_to_geocoding_result`` (tier 1) or
     ``cache_match_to_geocoding_result`` (tier 2); callers can distinguish via
@@ -97,13 +113,6 @@ def try_resolve_geocode_cache(
     normalized = normalize_substrate_cache_query(location_text)
     if not normalized:
         return None
-
-    substrate = SubstrateMatchInput(
-        name=location_text.strip(),
-        normalized_name=normalized,
-        geometry_json=None,
-        formatted_address=None,
-    )
 
     canons = list(
         session.exec(
@@ -116,35 +125,19 @@ def try_resolve_geocode_cache(
     ids = [int(c.id) for c in canons if c.id is not None]
     alias_map = _alias_map_for_canonicals(session, ids)
 
-    scored: list[tuple[float, StylebookLocationCanonical]] = []
+    winners: list[StylebookLocationCanonical] = []
     for c in canons:
-        if c.id is None:
-            continue
-        cid = int(c.id)
-        gj = c.geometry_json if isinstance(c.geometry_json, dict) else None
-        features = CanonicalMatchFeatures(
-            canonical_id=cid,
-            label=str(c.label),
-            normalized_aliases=alias_map.get(cid, ()),
-            geometry_json=gj,
-            retrieval_string_hint=None,
-        )
-        score = policy_match_score(
-            substrate,
-            features,
-            substrate_location_type=lt,
-        )
-        if score >= AUTOLINK_MIN_SCORE and head_region_anchored_on_canonical_naming(
-            location_text, features
+        if not _canonical_matches_normalized_query(
+            c, normalized_query=normalized, alias_map=alias_map
         ):
-            scored.append((score, c))
+            continue
+        winners.append(c)
 
-    if len(scored) == 1:
-        _, winner = scored[0]
+    if len(winners) == 1:
+        winner = winners[0]
         if isinstance(winner.geometry_json, dict):
             return _canonical_to_stylebook_match_dict(winner)
-    elif len(scored) > 1:
-        return None
+    # len 0 → fall through; len > 1 → ambiguous, treat as miss for tier 1
 
     fingerprint = substrate_location_cache_query_fingerprint(
         project_id=project_id,
