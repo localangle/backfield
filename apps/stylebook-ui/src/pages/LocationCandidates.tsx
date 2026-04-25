@@ -177,9 +177,9 @@ export default function LocationCandidates() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [contextById, setContextById] = useState<Record<number, CandidateContextResponse>>({})
   const [contextLoadingId, setContextLoadingId] = useState<number | null>(null)
-  const [noteModalId, setNoteModalId] = useState<number | null>(null)
-  const [noteModalDraft, setNoteModalDraft] = useState("")
   const [noteSavingId, setNoteSavingId] = useState<number | null>(null)
+  const [noteEditingId, setNoteEditingId] = useState<number | null>(null)
+  const [noteDraftById, setNoteDraftById] = useState<Record<number, string>>({})
   const [createModalId, setCreateModalId] = useState<number | null>(null)
   const [createCanonicalDraft, setCreateCanonicalDraft] = useState("")
   const [createModalLocationType, setCreateModalLocationType] = useState("")
@@ -200,11 +200,6 @@ export default function LocationCandidates() {
     canonicalId: number
     label: string
   } | null>(null)
-
-  const noteModalCandidate = useMemo(
-    () => (noteModalId === null ? undefined : candidates.find((x) => x.id === noteModalId)),
-    [candidates, noteModalId]
-  )
 
   const createModalCandidate = useMemo(
     () => (createModalId === null ? undefined : candidates.find((x) => x.id === createModalId)),
@@ -534,40 +529,33 @@ export default function LocationCandidates() {
     }
   }
 
-  function openNoteModal(c: Candidate) {
-    setNoteModalId(c.id)
-    const ctx = contextById[c.id]
-    const initial = (c.note ?? ctx?.note ?? "") as string
-    setNoteModalDraft(initial)
+  function openInlineNoteEditor(c: Candidate, initialText: string) {
+    setNoteEditingId(c.id)
+    setNoteDraftById((prev) => {
+      if (prev[c.id] !== undefined) return prev
+      return { ...prev, [c.id]: initialText }
+    })
   }
 
-  function closeNoteModal() {
-    setNoteModalId(null)
-    setNoteModalDraft("")
-  }
-
-  async function saveNoteFromModal() {
-    if (!projectSlug || noteModalId === null) return
-    const draft = noteModalDraft.trim()
-    const id = noteModalId
-    setNoteSavingId(id)
+  async function saveInlineNote(candidateId: number) {
+    if (!projectSlug) return
+    const raw = noteDraftById[candidateId] ?? ""
+    const draft = raw.trim()
+    setNoteSavingId(candidateId)
     setError(null)
-    let ok = false
     try {
-      await updateCandidateNote(projectSlug, id, draft ? draft : null)
+      await updateCandidateNote(projectSlug, candidateId, draft ? draft : null)
       setContextById((prev) => {
-        const existing = prev[id]
+        const existing = prev[candidateId]
         if (!existing) return prev
-        return { ...prev, [id]: { ...existing, note: draft ? draft : null } }
+        return { ...prev, [candidateId]: { ...existing, note: draft ? draft : null } }
       })
       await refreshListQuiet()
-      ok = true
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save note")
     } finally {
       setNoteSavingId(null)
     }
-    if (ok) closeNoteModal()
   }
 
   return (
@@ -924,33 +912,72 @@ export default function LocationCandidates() {
                                 )}
                               </div>
                               <div className="border-t border-border/60 pt-3 mt-3">
-                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                  <div className="text-sm font-medium">Note</div>
-                                  <Button
+                                <div className="text-sm font-medium">Note</div>
+                                {noteEditingId === c.id ? (
+                                  <div className="mt-2 space-y-2">
+                                    <Textarea
+                                      rows={4}
+                                      value={noteDraftById[c.id] ?? ""}
+                                      disabled={
+                                        acceptingId === c.id ||
+                                        deferringId === c.id ||
+                                        noteSavingId === c.id
+                                      }
+                                      onChange={(e) =>
+                                        setNoteDraftById((prev) => ({
+                                          ...prev,
+                                          [c.id]: e.target.value,
+                                        }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (
+                                          e.key === "Enter" &&
+                                          (e.metaKey || e.ctrlKey) &&
+                                          noteSavingId !== c.id
+                                        ) {
+                                          e.preventDefault()
+                                          setNoteEditingId(null)
+                                          void saveInlineNote(c.id)
+                                        } else if (e.key === "Escape") {
+                                          e.preventDefault()
+                                          setNoteEditingId(null)
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        setNoteEditingId(null)
+                                        void saveInlineNote(c.id)
+                                      }}
+                                      autoFocus
+                                      placeholder="Add a brief note…"
+                                    />
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      <StickyNote className="h-3.5 w-3.5" aria-hidden />
+                                      <span>Click outside to save. Cmd/Ctrl+Enter saves.</span>
+                                      {noteSavingId === c.id ? <span>Saving…</span> : null}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
                                     type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    className="shrink-0 gap-1.5 h-8"
-                                    title={savedNoteText ? "Edit note" : "Add note"}
-                                    aria-label={savedNoteText ? "Edit note" : "Add note"}
+                                    className={cn(
+                                      "mt-2 w-full rounded-md border border-border/60 bg-background/60 p-3 text-left text-sm transition-colors",
+                                      "hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                                    )}
                                     disabled={
                                       acceptingId === c.id ||
                                       deferringId === c.id ||
                                       noteSavingId === c.id
                                     }
-                                    onClick={() => openNoteModal(c)}
+                                    onClick={() => openInlineNoteEditor(c, savedNoteText)}
                                   >
-                                    <StickyNote className="h-3.5 w-3.5" aria-hidden />
-                                    {savedNoteText ? "Edit note" : "Add note"}
-                                  </Button>
-                                </div>
-                                {savedNoteText ? (
-                                  <p className="mt-2 text-sm whitespace-pre-wrap">{savedNoteText}</p>
-                                ) : (
-                                  <p className="mt-2 text-sm text-muted-foreground">
-                                    No note yet — use <span className="font-medium">Add note</span> above
-                                    to record context for this candidate.
-                                  </p>
+                                    {savedNoteText ? (
+                                      <p className="whitespace-pre-wrap">{savedNoteText}</p>
+                                    ) : (
+                                      <p className="text-muted-foreground italic">
+                                        Click to add a note…
+                                      </p>
+                                    )}
+                                  </button>
                                 )}
                               </div>
                             </div>
@@ -1180,52 +1207,6 @@ export default function LocationCandidates() {
             </Button>
             <Button type="button" onClick={() => setPotentialLinksOpen(false)}>
               Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={noteModalId !== null}
-        onOpenChange={(open) => {
-          if (!open && noteSavingId !== null) return
-          if (!open) closeNoteModal()
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Review note</DialogTitle>
-            <DialogDescription>
-              {noteModalCandidate?.suggested_name
-                ? `Optional note for “${noteModalCandidate.suggested_name}”.`
-                : "Optional brief note for this candidate."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="candidate-note-modal">Note</Label>
-            <Textarea
-              id="candidate-note-modal"
-              rows={5}
-              value={noteModalDraft}
-              onChange={(e) => setNoteModalDraft(e.target.value)}
-              placeholder="Add a brief note…"
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={noteSavingId !== null}
-              onClick={() => closeNoteModal()}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={noteSavingId !== null}
-              onClick={() => void saveNoteFromModal()}
-            >
-              {noteSavingId !== null ? "Saving…" : "Save note"}
             </Button>
           </DialogFooter>
         </DialogContent>
