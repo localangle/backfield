@@ -11,6 +11,7 @@ import {
   type LinkedMention,
   type LinkedSubstrateItem,
 } from "@/lib/api"
+import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
 import { cn } from "@/lib/utils"
@@ -345,11 +346,9 @@ export default function LocationDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Places and article mentions</CardTitle>
+          <CardTitle>Mentions</CardTitle>
           <CardDescription>
-            Each row contains a distinct representation of this location found in an article. Each
-            article that uses this form of the location is listed below. Unlink or reassign locations
-            here.
+            Article mentions are grouped by place. Unlink or reassign places below.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -379,8 +378,12 @@ export default function LocationDetail() {
                       <TableRow className="bg-muted/50 border-t">
                         <TableCell colSpan={4} className="align-top py-3">
                           <div className="font-medium">{s.name}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            {s.location_type || "—"} · {s.normalized_name || "—"}
+                          <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                            {(s.location_type || "").trim()
+                              ? placeExtractTypeLabel(s.location_type)
+                              : "—"}{" "}
+                            <span className="text-muted-foreground/70">·</span>{" "}
+                            {(s.formatted_address ?? "").trim() || "—"}
                           </div>
                         </TableCell>
                         <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">

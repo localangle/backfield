@@ -389,6 +389,7 @@ class LinkedSubstrateItem(BaseModel):
     normalized_name: str
     location_type: str
     canonical_link_status: str
+    formatted_address: str | None = None
 
 
 class LinkedSubstratesResponse(BaseModel):
@@ -544,6 +545,7 @@ def list_canonical_linked_substrates(
                 normalized_name=str(r.normalized_name or ""),
                 location_type=str(r.location_type or ""),
                 canonical_link_status=str(r.canonical_link_status or ""),
+                formatted_address=(r.formatted_address or "").strip() or None,
             )
             for r in rows
         ]

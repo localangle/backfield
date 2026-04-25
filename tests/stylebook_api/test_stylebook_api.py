@@ -1418,6 +1418,7 @@ def test_get_canonical_linked_substrates(
             name="Listed",
             normalized_name="listed",
             location_type="city",
+            formatted_address="Listed City, ST, USA",
             identity_fingerprint="fp-list-1",
             stylebook_location_canonical_id=None,
             canonical_link_status=CANONICAL_LINK_PENDING,
@@ -1445,6 +1446,7 @@ def test_get_canonical_linked_substrates(
     assert len(data["substrates"]) == 1
     assert data["substrates"][0]["id"] == sid
     assert data["substrates"][0]["normalized_name"] == "listed"
+    assert data["substrates"][0]["formatted_address"] == "Listed City, ST, USA"
 
 
 def test_get_suggested_canonicals_for_pending_candidate(
