@@ -878,6 +878,74 @@ def test_accept_candidate_create_new(
         assert aliases[0].normalized_alias == "newplace"
 
 
+def test_accept_candidate_create_new_location_type_override(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="TypoTown",
+            normalized_name="typotown",
+            location_type="city",
+            formatted_address="TypoTown, IL, USA",
+            identity_fingerprint="fp-type-override-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.post(
+        f"/v1/candidates/{sid}/accept?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"create_new": True, "name": "TypoTown Canon", "location_type": "neighborhood"},
+    )
+    assert r.status_code == 200
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.stylebook_location_canonical_id is not None
+        canon = s.get(StylebookLocationCanonical, int(row.stylebook_location_canonical_id))
+        assert canon is not None
+        assert canon.label == "TypoTown Canon"
+        assert canon.location_type == "neighborhood"
+
+
+def test_accept_candidate_create_new_rejects_invalid_location_type(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="BadType",
+            normalized_name="badtype",
+            location_type="city",
+            identity_fingerprint="fp-bad-type-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.post(
+        f"/v1/candidates/{sid}/accept?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"create_new": True, "name": "X", "location_type": "not_a_placeextract_type"},
+    )
+    assert r.status_code == 400
+
+
 def test_accept_candidate_link_existing_canonical(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:

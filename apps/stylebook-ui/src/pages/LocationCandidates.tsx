@@ -12,7 +12,11 @@ import {
   type Candidate,
   type CandidateContextResponse,
 } from "@/lib/api"
-import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
+import {
+  PLACE_EXTRACT_LOCATION_TYPES,
+  placeExtractTypeLabel,
+  sortReviewQueueTypeFilterOptions,
+} from "@/lib/place-extract-type-label"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -178,6 +182,7 @@ export default function LocationCandidates() {
   const [noteSavingId, setNoteSavingId] = useState<number | null>(null)
   const [createModalId, setCreateModalId] = useState<number | null>(null)
   const [createCanonicalDraft, setCreateCanonicalDraft] = useState("")
+  const [createModalLocationType, setCreateModalLocationType] = useState("")
   const [error, setError] = useState<string | null>(null)
 
   const [createdToast, setCreatedToast] = useState<{
@@ -209,6 +214,11 @@ export default function LocationCandidates() {
   const orderedTypeFilterOptions = useMemo(
     () => sortReviewQueueTypeFilterOptions(types),
     [types],
+  )
+
+  const createModalTypeOptions = useMemo(
+    () => sortReviewQueueTypeFilterOptions([...PLACE_EXTRACT_LOCATION_TYPES]),
+    [],
   )
 
   const listTotalPages = useMemo(
@@ -421,15 +431,23 @@ export default function LocationCandidates() {
     return (c.suggested_formatted_address ?? "").trim()
   }
 
+  function defaultNewCanonicalLocationType(c: Candidate): string {
+    const t = (c.suggested_type ?? "").trim().toLowerCase()
+    if (t && (PLACE_EXTRACT_LOCATION_TYPES as readonly string[]).includes(t)) return t
+    return "place"
+  }
+
   function openCreateCanonicalModal(c: Candidate) {
     setCreateModalId(c.id)
     setCreateCanonicalDraft(defaultNewCanonicalLabel(c))
+    setCreateModalLocationType(defaultNewCanonicalLocationType(c))
     setCreateLinkNudge(null)
   }
 
   function closeCreateCanonicalModal() {
     setCreateModalId(null)
     setCreateCanonicalDraft("")
+    setCreateModalLocationType("")
     setCreateLinkNudge(null)
   }
 
@@ -440,10 +458,19 @@ export default function LocationCandidates() {
       setError("Enter a label for the new canonical.")
       return
     }
+    const location_type = createModalLocationType.trim().toLowerCase()
+    if (!location_type || !(PLACE_EXTRACT_LOCATION_TYPES as readonly string[]).includes(location_type)) {
+      setError("Select a valid location type.")
+      return
+    }
     setAcceptingId(createModalId)
     setError(null)
     try {
-      const acceptRes = await acceptCandidate(projectSlug, createModalId, { create_new: true, name })
+      const acceptRes = await acceptCandidate(projectSlug, createModalId, {
+        create_new: true,
+        name,
+        location_type,
+      })
       await refreshListQuiet()
       closeCreateCanonicalModal()
       const cid = acceptRes.stylebook_location_canonical_id
@@ -964,11 +991,7 @@ export default function LocationCandidates() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create new canonical</DialogTitle>
-            <DialogDescription>
-              {createModalCandidate?.suggested_type
-                ? `Set the catalog label for this ${placeExtractTypeLabel(createModalCandidate.suggested_type)}. You can adjust spelling or add context (e.g. county) before saving.`
-                : "Set the catalog label for this location before saving."}
-            </DialogDescription>
+            <DialogDescription>Change label or add context below.</DialogDescription>
           </DialogHeader>
           {createLinkNudge ? (
             <Alert className="border-amber-500/40 bg-amber-500/5">
@@ -997,15 +1020,32 @@ export default function LocationCandidates() {
               </AlertDescription>
             </Alert>
           ) : null}
-          <div className="space-y-2">
-            <Label htmlFor="create-canonical-name">Canonical label</Label>
-            <Input
-              id="create-canonical-name"
-              value={createCanonicalDraft}
-              onChange={(e) => setCreateCanonicalDraft(e.target.value)}
-              placeholder="e.g. Dolton, IL"
-              autoFocus
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="create-canonical-type">Location type</Label>
+              <Select value={createModalLocationType} onValueChange={setCreateModalLocationType}>
+                <SelectTrigger id="create-canonical-type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {createModalTypeOptions.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {placeExtractTypeLabel(t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-canonical-name">Canonical label</Label>
+              <Input
+                id="create-canonical-name"
+                value={createCanonicalDraft}
+                onChange={(e) => setCreateCanonicalDraft(e.target.value)}
+                placeholder="e.g. Dolton, IL"
+                autoFocus
+              />
+            </div>
             {createModalCandidate?.suggested_formatted_address ? (
               <p className="text-xs text-muted-foreground">
                 Geocoded address: {createModalCandidate.suggested_formatted_address}
@@ -1023,7 +1063,11 @@ export default function LocationCandidates() {
             </Button>
             <Button
               type="button"
-              disabled={acceptingId === createModalId || !createCanonicalDraft.trim()}
+              disabled={
+                acceptingId === createModalId ||
+                !createCanonicalDraft.trim() ||
+                !createModalLocationType.trim()
+              }
               onClick={() => void submitCreateCanonicalFromModal()}
             >
               {acceptingId === createModalId ? "Creating…" : "Create canonical"}

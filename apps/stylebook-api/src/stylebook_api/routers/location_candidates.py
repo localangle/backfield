@@ -26,7 +26,7 @@ from backfield_stylebook.substrate_canonical_link_actions import (
     rank_canonical_suggestions_for_substrate,
 )
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import exists, or_
 from sqlmodel import Session, col, func, select
 
@@ -617,6 +617,10 @@ class AcceptCandidateBody(BaseModel):
     stylebook_location_id: int | None = None
     name: str | None = None
     geometry_json: dict[str, Any] | None = None
+    location_type: str | None = Field(
+        default=None,
+        description="When create_new, optional PlaceExtract type for the new canonical.",
+    )
 
 
 class AcceptCandidateResponse(BaseModel):
@@ -684,7 +688,16 @@ def accept_candidate(
         if not label:
             raise HTTPException(status_code=400, detail="name is required when create_new is true")
         gj = body.geometry_json
-        lt = (loc.location_type or "").strip().lower() or None
+        if body.location_type is not None:
+            lt_candidate = (body.location_type or "").strip().lower() or None
+            if lt_candidate is not None and lt_candidate not in PLACE_EXTRACT_LOCATION_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail="location_type must be a PlaceExtract location type when provided",
+                )
+            lt = lt_candidate
+        else:
+            lt = (loc.location_type or "").strip().lower() or None
         fa = (loc.formatted_address or "").strip() or None
         canon = StylebookLocationCanonical(
             stylebook_id=stylebook_id,

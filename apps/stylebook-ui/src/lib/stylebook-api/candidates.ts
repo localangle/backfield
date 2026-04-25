@@ -112,6 +112,8 @@ export type AcceptCandidateBody = {
   stylebook_location_id?: number | null
   name?: string | null
   geometry_json?: Record<string, unknown> | null
+  /** When ``create_new``, optional PlaceExtract type for the new canonical (else substrate type). */
+  location_type?: string | null
 }
 
 export type AcceptCandidateResponse = {
