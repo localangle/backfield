@@ -718,11 +718,12 @@ export default function LocationCandidates() {
             </div>
             <Table className="table-fixed">
               <colgroup>
-                <col style={{ width: "34%" }} />
+                <col style={{ width: "30%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "28%" }} />
                 <col style={{ width: "10%" }} />
-                <col style={{ width: "32%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "12%" }} />
+                {/* Four icon buttons, gaps, cell padding, and focus rings need a firm minimum. */}
+                <col style={{ width: "15rem" }} />
               </colgroup>
               <TableHeader>
                 <TableRow>
@@ -809,8 +810,8 @@ export default function LocationCandidates() {
                         <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
                           {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
                         </TableCell>
-                        <TableCell className="text-right w-[1%] whitespace-nowrap align-top">
-                          <div className="inline-flex flex-nowrap items-center justify-end gap-1">
+                        <TableCell className="text-right whitespace-nowrap align-top overflow-visible">
+                          <div className="inline-flex flex-nowrap items-center justify-end gap-0.5 pr-0.5">
                             <Button
                               type="button"
                               size="icon"
