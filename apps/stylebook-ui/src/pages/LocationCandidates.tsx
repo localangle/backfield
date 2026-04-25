@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import {
   acceptCandidate,
@@ -44,6 +44,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
 import {
   CheckCircle2,
@@ -126,6 +127,8 @@ function similarityRankScoreForCandidate(c: Candidate, needleRaw: string): numbe
   return jaccard * 10_000 + diceBigramCoefficient(name, needle) * 1000
 }
 
+const REVIEW_QUEUE_PAGE_SIZE = 100
+
 function rankSimilarCandidates(rows: Candidate[], needle: string): Candidate[] {
   const scored = rows.map((c) => ({
     c,
@@ -145,11 +148,21 @@ export default function LocationCandidates() {
   const projectSlug = searchParams.get("project") || ""
   const [loading, setLoading] = useState(false)
   const [listTotal, setListTotal] = useState(0)
+  const [listPage, setListPage] = useState(1)
+  const [listHasNext, setListHasNext] = useState(false)
+  const [listHasPrev, setListHasPrev] = useState(false)
+  /** Bumps when `filterKey` changes so list fetch resets to page 1 without a stale `listPage` fetch. */
+  const [listFetchGen, setListFetchGen] = useState(0)
+  const filterKeySeenRef = useRef<string | null>(null)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [status, setStatus] = useState<"open" | "deferred">("open")
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
+  const filterKey = useMemo(
+    () => `${projectSlug}|${status}|${debouncedQuery}|${typeFilter}`,
+    [projectSlug, status, debouncedQuery, typeFilter],
+  )
   const [types, setTypes] = useState<string[]>([])
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
   const [deferringId, setDeferringId] = useState<number | null>(null)
@@ -197,6 +210,27 @@ export default function LocationCandidates() {
     () => sortReviewQueueTypeFilterOptions(types),
     [types],
   )
+
+  const listTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(listTotal / REVIEW_QUEUE_PAGE_SIZE)),
+    [listTotal],
+  )
+
+  /** When filters change, reset to page 1 and bump generation so the list fetch does not use a stale page. */
+  useEffect(() => {
+    if (!projectSlug) {
+      filterKeySeenRef.current = null
+      return
+    }
+    if (filterKeySeenRef.current === null) {
+      filterKeySeenRef.current = filterKey
+      return
+    }
+    if (filterKeySeenRef.current === filterKey) return
+    filterKeySeenRef.current = filterKey
+    setListFetchGen((g) => g + 1)
+    setListPage(1)
+  }, [filterKey, projectSlug])
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQuery(query), 250)
@@ -276,22 +310,32 @@ export default function LocationCandidates() {
     setError(null)
     const type_filter = typeFilter === "all" ? undefined : typeFilter
     const q = debouncedQuery.trim() || undefined
+    const offset = (listPage - 1) * REVIEW_QUEUE_PAGE_SIZE
     try {
       const res = await listCandidates(projectSlug, status, false, {
-        limit: 100,
-        offset: 0,
+        limit: REVIEW_QUEUE_PAGE_SIZE,
+        offset,
         type_filter,
         q,
       })
       setListTotal(res.total)
       setCandidates(res.candidates)
+      setListHasNext(res.has_next)
+      setListHasPrev(res.has_prev)
+      if (
+        res.candidates.length === 0 &&
+        res.total > 0 &&
+        offset >= REVIEW_QUEUE_PAGE_SIZE
+      ) {
+        setListPage((p) => Math.max(1, p - 1))
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed")
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter])
+  }, [projectSlug, status, debouncedQuery, typeFilter, listPage])
 
-  // Initial + filter changes: use primitives in deps, not a callback, so row actions
-  // (which call `refreshListQuiet`) never spuriously retrigger this and flash the loader.
+  // Initial + filter/pagination changes. `listFetchGen` bumps when filters change so we never fetch
+  // a stale page with new filters (see filterKey effect above).
   useEffect(() => {
     if (!projectSlug) return
     let cancelled = false
@@ -300,21 +344,34 @@ export default function LocationCandidates() {
       setError(null)
       const type_filter = typeFilter === "all" ? undefined : typeFilter
       const q = debouncedQuery.trim() || undefined
+      const offset = (listPage - 1) * REVIEW_QUEUE_PAGE_SIZE
       try {
         const res = await listCandidates(projectSlug, status, false, {
-          limit: 100,
-          offset: 0,
+          limit: REVIEW_QUEUE_PAGE_SIZE,
+          offset,
           type_filter,
           q,
         })
         if (cancelled) return
         setListTotal(res.total)
         setCandidates(res.candidates)
+        setListHasNext(res.has_next)
+        setListHasPrev(res.has_prev)
+        if (
+          !cancelled &&
+          res.candidates.length === 0 &&
+          res.total > 0 &&
+          offset >= REVIEW_QUEUE_PAGE_SIZE
+        ) {
+          setListPage((p) => Math.max(1, p - 1))
+        }
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : "Request failed")
         setListTotal(0)
         setCandidates([])
+        setListHasNext(false)
+        setListHasPrev(false)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -322,7 +379,7 @@ export default function LocationCandidates() {
     return () => {
       cancelled = true
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter])
+  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen])
 
   const prefetchToastFollowupCandidates = useCallback(async () => {
     const label = createdToast?.canonicalLabel?.trim()
@@ -870,6 +927,17 @@ export default function LocationCandidates() {
               </TableBody>
             </Table>
           </div>
+          <Pagination
+            page={listPage}
+            perPage={REVIEW_QUEUE_PAGE_SIZE}
+            total={listTotal}
+            totalPages={listTotalPages}
+            hasNext={listHasNext}
+            hasPrev={listHasPrev}
+            onPageChange={setListPage}
+            className="pt-4"
+            itemLabel="candidates"
+          />
         </CardContent>
       </Card>
 
