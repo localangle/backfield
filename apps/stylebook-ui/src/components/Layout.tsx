@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from "react"
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { ShellProductBrand, UserAccountMenu } from "@backfield/ui"
 import { useAuth } from "@/lib/auth"
-import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -70,14 +70,15 @@ export default function Layout({ children, headerContent }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b bg-background sticky top-0 z-[100] overflow-visible">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center overflow-visible">
-          <Link to={indexPath} className="hover:opacity-80 transition-opacity">
-            <h1 className="text-2xl font-bold">Backfield</h1>
-            <p className="text-sm text-muted-foreground mt-1">Stylebook</p>
-          </Link>
-          <div className="flex items-center gap-4 relative">
-            <div className="relative z-[200]">
+      <header className="border-b shrink-0 bg-background sticky top-0 z-[100] overflow-visible">
+        <div className="px-4 py-4 flex justify-between items-center overflow-visible">
+          <ShellProductBrand
+            to={indexPath}
+            productTitle="Stylebook"
+            platformSubtitle="Backfield Platform"
+          />
+          <div className="flex items-center gap-2 relative">
+            <div className="relative z-[200] flex items-center gap-2">
               {projects.length > 0 ? (
                 <Select value={projectSlug || undefined} onValueChange={handleProjectChange}>
                   <SelectTrigger className="w-[250px] min-w-[200px]">
@@ -95,11 +96,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
               {headerContent}
             </div>
             {username ? (
-              <span className="text-sm text-muted-foreground max-w-[200px] truncate">{username}</span>
+              <UserAccountMenu
+                userLabel={username}
+                isOrgAdmin={false}
+                onLogout={() => void handleLogout()}
+              />
             ) : null}
-            <Button variant="outline" size="sm" onClick={() => void handleLogout()}>
-              Logout
-            </Button>
           </div>
         </div>
       </header>

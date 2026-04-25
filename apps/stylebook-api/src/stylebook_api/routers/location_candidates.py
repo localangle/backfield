@@ -619,6 +619,11 @@ class AcceptCandidateBody(BaseModel):
     geometry_json: dict[str, Any] | None = None
 
 
+class AcceptCandidateResponse(BaseModel):
+    message: str
+    stylebook_location_canonical_id: int
+
+
 @router.post("/candidates/{substrate_location_id}/defer")
 def defer_candidate(
     substrate_location_id: int,
@@ -658,7 +663,7 @@ def accept_candidate(
     body: AcceptCandidateBody = Body(default_factory=AcceptCandidateBody),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
-) -> dict[str, str]:
+) -> AcceptCandidateResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj)
@@ -733,4 +738,7 @@ def accept_candidate(
         ]
     session.add(loc)
     session.commit()
-    return {"message": "linked"}
+    return AcceptCandidateResponse(
+        message="linked",
+        stylebook_location_canonical_id=int(canon.id),  # type: ignore[arg-type]
+    )

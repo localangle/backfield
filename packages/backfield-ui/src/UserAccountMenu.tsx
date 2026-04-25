@@ -7,7 +7,8 @@ export interface UserAccountMenuProps {
   /** Shown in tooltip / aria; typically the user email. */
   userLabel?: string
   isOrgAdmin: boolean
-  onChangePassword: () => void
+  /** When omitted, the “Change password” item is hidden (e.g. Stylebook UI without that route). */
+  onChangePassword?: () => void
   onLogout: () => void
   /** When set and `isOrgAdmin`, shows “Manage users”. */
   onManageUsers?: () => void
@@ -51,15 +52,17 @@ export function UserAccountMenu({
               {userLabel}
             </div>
           ) : null}
-          <DropdownMenu.Item
-            className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-            onSelect={(e) => {
-              e.preventDefault()
-              onChangePassword()
-            }}
-          >
-            Change password
-          </DropdownMenu.Item>
+          {onChangePassword ? (
+            <DropdownMenu.Item
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+              onSelect={(e) => {
+                e.preventDefault()
+                onChangePassword()
+              }}
+            >
+              Change password
+            </DropdownMenu.Item>
+          ) : null}
           {isOrgAdmin && onManageUsers ? (
             <DropdownMenu.Item
               className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
@@ -71,7 +74,9 @@ export function UserAccountMenu({
               Manage users
             </DropdownMenu.Item>
           ) : null}
-          <DropdownMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+          {onChangePassword || (isOrgAdmin && onManageUsers) ? (
+            <DropdownMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
+          ) : null}
           <DropdownMenu.Item
             className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
             onSelect={(e) => {

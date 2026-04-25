@@ -848,7 +848,9 @@ def test_accept_candidate_create_new(
         json={"create_new": True, "name": "Newplace Canon"},
     )
     assert r.status_code == 200
-    assert r.json() == {"message": "linked"}
+    data = r.json()
+    assert data["message"] == "linked"
+    assert "stylebook_location_canonical_id" in data
 
     with Session(engine) as s:
         row = s.get(SubstrateLocation, sid)
@@ -858,6 +860,7 @@ def test_accept_candidate_create_new(
         canon = s.get(StylebookLocationCanonical, int(row.stylebook_location_canonical_id))
         assert canon is not None
         coid = int(canon.id)  # type: ignore[arg-type]
+        assert int(data["stylebook_location_canonical_id"]) == coid
         assert row.canonical_review_reasons_json == [
             {"code": "linked_manual_accept_create_new", "canonical_id": coid}
         ]
@@ -917,6 +920,8 @@ def test_accept_candidate_link_existing_canonical(
         json={"create_new": False, "stylebook_location_id": cid},
     )
     assert r.status_code == 200
+    assert r.json()["message"] == "linked"
+    assert int(r.json()["stylebook_location_canonical_id"]) == cid
 
     with Session(engine) as s:
         row = s.get(SubstrateLocation, sid)

@@ -114,13 +114,18 @@ export type AcceptCandidateBody = {
   geometry_json?: Record<string, unknown> | null
 }
 
+export type AcceptCandidateResponse = {
+  message: string
+  stylebook_location_canonical_id?: number
+}
+
 export async function acceptCandidate(
   projectSlug: string,
   substrateLocationId: number,
   body: AcceptCandidateBody,
-): Promise<{ message: string }> {
+): Promise<AcceptCandidateResponse> {
   const params = new URLSearchParams({ project_slug: projectSlug })
-  return stylebookJsonFetch<{ message: string }>(
+  return stylebookJsonFetch<AcceptCandidateResponse>(
     `/v1/candidates/${substrateLocationId}/accept?${params}`,
     {
       method: "POST",

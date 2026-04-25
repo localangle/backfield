@@ -5,6 +5,7 @@ import {
   deferCandidate,
   getCandidateContext,
   getSuggestedCanonicals,
+  linkSubstrateToCanonical,
   listCandidates,
   listLocationCandidateTypes,
   updateCandidateNote,
@@ -166,17 +167,21 @@ export default function LocationCandidates() {
   const [createCanonicalDraft, setCreateCanonicalDraft] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const [createdToast, setCreatedToast] = useState<{ canonicalLabel: string } | null>(null)
-  const [similarOpen, setSimilarOpen] = useState(false)
-  const [similarLoading, setSimilarLoading] = useState(false)
-  const [similarError, setSimilarError] = useState<string | null>(null)
-  const [similarCandidates, setSimilarCandidates] = useState<Candidate[]>([])
-  const [pendingScrollToId, setPendingScrollToId] = useState<number | null>(null)
+  const [createdToast, setCreatedToast] = useState<{
+    canonicalLabel: string
+    canonicalId: number
+  } | null>(null)
+  /** Same query as “show similar candidates”: open queue + q + limit 100, ranked top 5. */
+  const [toastFollowupLoading, setToastFollowupLoading] = useState(false)
+  const [toastFollowupError, setToastFollowupError] = useState<string | null>(null)
+  const [toastFollowupRows, setToastFollowupRows] = useState<Candidate[]>([])
+  const [potentialLinksOpen, setPotentialLinksOpen] = useState(false)
+  const [toastLinkBusyId, setToastLinkBusyId] = useState<number | null>(null)
+  const [toastLinkError, setToastLinkError] = useState<string | null>(null)
   const [createLinkNudge, setCreateLinkNudge] = useState<{
     canonicalId: number
     label: string
   } | null>(null)
-  const [createLinkNudgeLoading, setCreateLinkNudgeLoading] = useState(false)
 
   const noteModalCandidate = useMemo(
     () => (noteModalId === null ? undefined : candidates.find((x) => x.id === noteModalId)),
@@ -250,23 +255,18 @@ export default function LocationCandidates() {
     const draft = createCanonicalDraft.trim()
     if (!draft) {
       setCreateLinkNudge(null)
-      setCreateLinkNudgeLoading(false)
       return
     }
-    setCreateLinkNudgeLoading(true)
+    // Do not show a loading banner; only surface UI when a similar canonical is found.
+    setCreateLinkNudge(null)
     const t = window.setTimeout(() => {
       void (async () => {
-        try {
-          await refreshCreateLinkNudge(createModalId, draft)
-        } finally {
-          if (!cancelled) setCreateLinkNudgeLoading(false)
-        }
+        if (!cancelled) await refreshCreateLinkNudge(createModalId, draft)
       })()
     }, 280)
     return () => {
       cancelled = true
       window.clearTimeout(t)
-      setCreateLinkNudgeLoading(false)
     }
   }, [createModalId, createCanonicalDraft, projectSlug, refreshCreateLinkNudge])
 
@@ -324,6 +324,40 @@ export default function LocationCandidates() {
     }
   }, [projectSlug, status, debouncedQuery, typeFilter])
 
+  const prefetchToastFollowupCandidates = useCallback(async () => {
+    const label = createdToast?.canonicalLabel?.trim()
+    if (!projectSlug || !label) return
+    setToastFollowupLoading(true)
+    setToastFollowupError(null)
+    try {
+      const res = await listCandidates(projectSlug, "open", false, {
+        limit: 100,
+        offset: 0,
+        q: label,
+      })
+      const ranked = rankSimilarCandidates(res.candidates, label).slice(0, 5)
+      setToastFollowupRows(ranked)
+    } catch (e) {
+      setToastFollowupError(e instanceof Error ? e.message : "Couldn't load candidates")
+      setToastFollowupRows([])
+    } finally {
+      setToastFollowupLoading(false)
+    }
+  }, [projectSlug, createdToast?.canonicalLabel])
+
+  useEffect(() => {
+    if (!createdToast || !projectSlug) {
+      setToastFollowupRows([])
+      setToastFollowupLoading(false)
+      setToastFollowupError(null)
+      setPotentialLinksOpen(false)
+      setToastLinkBusyId(null)
+      setToastLinkError(null)
+      return
+    }
+    void prefetchToastFollowupCandidates()
+  }, [createdToast, projectSlug, prefetchToastFollowupCandidates])
+
   function defaultNewCanonicalLabel(c: Candidate): string {
     const fromName = (c.suggested_name ?? "").trim()
     if (fromName) return fromName
@@ -340,7 +374,6 @@ export default function LocationCandidates() {
     setCreateModalId(null)
     setCreateCanonicalDraft("")
     setCreateLinkNudge(null)
-    setCreateLinkNudgeLoading(false)
   }
 
   async function submitCreateCanonicalFromModal() {
@@ -353,10 +386,17 @@ export default function LocationCandidates() {
     setAcceptingId(createModalId)
     setError(null)
     try {
-      await acceptCandidate(projectSlug, createModalId, { create_new: true, name })
+      const acceptRes = await acceptCandidate(projectSlug, createModalId, { create_new: true, name })
       await refreshListQuiet()
       closeCreateCanonicalModal()
-      setCreatedToast({ canonicalLabel: name })
+      const cid = acceptRes.stylebook_location_canonical_id
+      if (typeof cid !== "number") {
+        setError(
+          "Canonical was created, but the server did not return its id. Reload the page if you need to link similar candidates from the toast.",
+        )
+        return
+      }
+      setCreatedToast({ canonicalLabel: name, canonicalId: cid })
     } catch (e) {
       setError(e instanceof Error ? e.message : "Accept failed")
     } finally {
@@ -364,47 +404,20 @@ export default function LocationCandidates() {
     }
   }
 
-  async function loadSimilarCandidates(label: string) {
-    if (!projectSlug) return
-    setSimilarLoading(true)
-    setSimilarError(null)
+  async function linkToastCandidateToNewCanonical(c: Candidate) {
+    if (!projectSlug || !createdToast) return
+    setToastLinkError(null)
+    setToastLinkBusyId(c.id)
     try {
-      const res = await listCandidates(projectSlug, "open", false, {
-        limit: 100,
-        offset: 0,
-        q: label,
-      })
-      setSimilarCandidates(rankSimilarCandidates(res.candidates, label).slice(0, 5))
+      await linkSubstrateToCanonical(c.id, projectSlug, createdToast.canonicalId)
+      setToastFollowupRows((rows) => rows.filter((r) => r.id !== c.id))
+      await refreshListQuiet()
     } catch (e) {
-      setSimilarError(e instanceof Error ? e.message : "Couldn't load similar candidates")
-      setSimilarCandidates([])
+      setToastLinkError(e instanceof Error ? e.message : "Link failed")
     } finally {
-      setSimilarLoading(false)
+      setToastLinkBusyId(null)
     }
   }
-
-  async function expandCandidateById(id: number) {
-    if (!projectSlug) return
-    setExpandedId(id)
-    if (contextById[id]) return
-    setContextLoadingId(id)
-    try {
-      const ctx = await getCandidateContext(projectSlug, id, 3)
-      setContextById((prev) => ({ ...prev, [id]: ctx }))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load context")
-    } finally {
-      setContextLoadingId(null)
-    }
-  }
-
-  useEffect(() => {
-    if (pendingScrollToId === null) return
-    const el = document.getElementById(`candidate-row-${pendingScrollToId}`)
-    if (!el) return
-    el.scrollIntoView({ behavior: "smooth", block: "center" })
-    setPendingScrollToId(null)
-  }, [candidates, pendingScrollToId])
 
   async function handleDefer(c: Candidate) {
     if (!projectSlug) return
@@ -476,7 +489,14 @@ export default function LocationCandidates() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       {createdToast ? (
-        <div className="fixed bottom-6 right-6 z-50 w-[min(500px,calc(100vw-3rem))]">
+        <div
+          className={cn(
+            "fixed bottom-6 right-6 z-50",
+            toastFollowupLoading || toastFollowupRows.length > 0
+              ? "w-[min(500px,calc(100vw-3rem))]"
+              : "w-[min(360px,calc(100vw-3rem))]",
+          )}
+        >
           <div
             role="status"
             className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
@@ -486,25 +506,31 @@ export default function LocationCandidates() {
                 className="mt-0.5 h-5 w-5 shrink-0 text-primary"
                 aria-hidden
               />
-              <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <div className="min-w-0 space-y-1">
-                  <div className="text-sm font-semibold leading-none">Canonical created</div>
-                  <div className="text-sm text-muted-foreground">
-                    Saved as{" "}
-                    <span className="font-medium text-foreground">{createdToast.canonicalLabel}</span>
-                  </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div className="text-sm font-semibold leading-none">Canonical created</div>
+                <div className="text-sm text-muted-foreground">
+                  Saved as{" "}
+                  <span className="font-medium text-foreground">{createdToast.canonicalLabel}</span>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="w-full shrink-0 sm:w-auto"
-                  onClick={() => {
-                    setSimilarOpen(true)
-                    void loadSimilarCandidates(createdToast.canonicalLabel)
-                  }}
-                >
-                  Show similar candidates
-                </Button>
+                {toastFollowupLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground pt-0.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
+                    <span>Checking the open queue for related locations…</span>
+                  </div>
+                ) : null}
+                {toastFollowupError && !toastFollowupLoading ? (
+                  <p className="text-xs text-destructive">{toastFollowupError}</p>
+                ) : null}
+                {!toastFollowupLoading && toastFollowupRows.length > 0 ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="mt-1 w-full shrink-0 self-start sm:w-auto"
+                    onClick={() => setPotentialLinksOpen(true)}
+                  >
+                    Potential links found
+                  </Button>
+                ) : null}
               </div>
               <Button
                 type="button"
@@ -878,12 +904,6 @@ export default function LocationCandidates() {
                 : "Set the catalog label for this location before saving."}
             </DialogDescription>
           </DialogHeader>
-          {createLinkNudgeLoading ? (
-            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-              <span>Checking for similar existing canonicals…</span>
-            </div>
-          ) : null}
           {createLinkNudge ? (
             <Alert className="border-amber-500/40 bg-amber-500/5">
               <AlertTitle className="text-amber-950 dark:text-amber-100">
@@ -947,35 +967,38 @@ export default function LocationCandidates() {
       </Dialog>
 
       <Dialog
-        open={similarOpen}
+        open={potentialLinksOpen}
         onOpenChange={(open) => {
-          setSimilarOpen(open)
+          setPotentialLinksOpen(open)
           if (!open) {
-            setSimilarCandidates([])
-            setSimilarError(null)
-            setSimilarLoading(false)
+            setToastLinkError(null)
+            setToastLinkBusyId(null)
           }
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-2xl max-h-[min(90vh,720px)] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Similar candidates</DialogTitle>
+            <DialogTitle>Potential links</DialogTitle>
             <DialogDescription>
-              Loose matches across the open review queue for{" "}
-              <span className="font-medium">{createdToast?.canonicalLabel ?? "—"}</span>. Results
-              are ranked by text similarity (top 5).
+              Open-queue locations that may match{" "}
+              <span className="font-medium">{createdToast?.canonicalLabel ?? "—"}</span>. Link a
+              row to attach it to this new canonical (
+              <span className="font-medium">#{createdToast?.canonicalId ?? "—"}</span>). Ranked by
+              text similarity (top 5).
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            {similarLoading ? (
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+            {toastFollowupLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
                 <span>Loading…</span>
               </div>
-            ) : similarError ? (
-              <p className="text-sm text-destructive">{similarError}</p>
-            ) : similarCandidates.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No similar open candidates found.</p>
+            ) : toastFollowupError ? (
+              <p className="text-sm text-destructive">{toastFollowupError}</p>
+            ) : toastFollowupRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No candidates in this list. Use Refresh if the queue has changed, or close when you are done.
+              </p>
             ) : (
               <div className="overflow-hidden rounded-md border">
                 <Table>
@@ -983,26 +1006,36 @@ export default function LocationCandidates() {
                     <TableRow>
                       <TableHead>Location</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead>Address</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {similarCandidates.map((c) => (
-                      <TableRow
-                        key={c.id}
-                        className="cursor-pointer"
-                        onClick={async () => {
-                          if (!createdToast) return
-                          setStatus("open")
-                          setQueryImmediate(createdToast.canonicalLabel)
-                          setSimilarOpen(false)
-                          await refreshListQuiet()
-                          await expandCandidateById(c.id)
-                          setPendingScrollToId(c.id)
-                        }}
-                      >
+                    {toastFollowupRows.map((c) => (
+                      <TableRow key={c.id}>
                         <TableCell className="font-medium">{c.suggested_name || "—"}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                          {c.suggested_formatted_address || "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={toastLinkBusyId !== null || !createdToast}
+                            onClick={() => void linkToastCandidateToNewCanonical(c)}
+                          >
+                            {toastLinkBusyId === c.id ? (
+                              <>
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+                                Linking…
+                              </>
+                            ) : (
+                              "Link"
+                            )}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1010,20 +1043,20 @@ export default function LocationCandidates() {
                 </Table>
               </div>
             )}
+            {toastLinkError ? (
+              <p className="text-sm text-destructive">{toastLinkError}</p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                if (!createdToast) return
-                void loadSimilarCandidates(createdToast.canonicalLabel)
-              }}
-              disabled={similarLoading || !createdToast}
+              onClick={() => void prefetchToastFollowupCandidates()}
+              disabled={toastFollowupLoading || !createdToast}
             >
               Refresh
             </Button>
-            <Button type="button" onClick={() => setSimilarOpen(false)}>
+            <Button type="button" onClick={() => setPotentialLinksOpen(false)}>
               Close
             </Button>
           </DialogFooter>

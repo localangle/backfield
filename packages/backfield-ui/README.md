@@ -18,6 +18,10 @@ Components use Tailwind utility classes (`bg-popover`, `border-input`, …). Eac
 
 2. Use the same **CSS variables / theme** as the host app (`--popover`, `--accent`, …), e.g. Agate’s `index.css` pattern.
 
+## `ShellProductBrand`
+
+Hub-style product title + platform subtitle (`text-3xl` / muted `text-sm`), wrapped in a React Router `Link`. Pass `to`, `productTitle` (e.g. `Agate` or `Stylebook`), and `platformSubtitle` (typically `Backfield Platform`).
+
 ## `UserAccountMenu`
 
-Icon trigger with dropdown: shows `userLabel` (typically email) at the top when set, then Change password, optional Manage users (org admin), Log out. Navigation is via callbacks so hosts can use React Router or any router.
+Icon trigger with dropdown: shows `userLabel` (typically email) at the top when set, then optional **Change password** (only if `onChangePassword` is passed), optional **Manage users** (org admin + `onManageUsers`), and **Log out**. Navigation is via callbacks so hosts keep their own router.
