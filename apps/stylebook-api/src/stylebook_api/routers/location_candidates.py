@@ -27,7 +27,7 @@ from backfield_stylebook.substrate_canonical_link_actions import (
 )
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import exists
+from sqlalchemy import exists, or_
 from sqlmodel import Session, col, func, select
 
 from stylebook_api.deps import get_auth, get_session
@@ -98,7 +98,12 @@ def _open_candidate_filters(
     ]
     if q:
         term = f"%{q.strip()}%"
-        filters.append(col(SubstrateLocation.name).ilike(term))
+        filters.append(
+            or_(
+                col(SubstrateLocation.name).ilike(term),
+                col(SubstrateLocation.normalized_name).ilike(term),
+            )
+        )
     if type_filter:
         tf = type_filter.strip()
         if tf:
@@ -124,7 +129,12 @@ def _deferred_candidate_filters(
     ]
     if q:
         term = f"%{q.strip()}%"
-        filters.append(col(SubstrateLocation.name).ilike(term))
+        filters.append(
+            or_(
+                col(SubstrateLocation.name).ilike(term),
+                col(SubstrateLocation.normalized_name).ilike(term),
+            )
+        )
     if type_filter:
         tf = type_filter.strip()
         if tf:
@@ -262,7 +272,7 @@ def _list_open_candidates(
     stmt = (
         select(SubstrateLocation)
         .where(*filters)
-        .order_by(col(SubstrateLocation.updated_at).desc())
+        .order_by(col(SubstrateLocation.normalized_name).asc(), col(SubstrateLocation.id).asc())
         .offset(offset)
         .limit(limit)
     )
@@ -291,7 +301,7 @@ def _list_deferred_candidates(
     stmt = (
         select(SubstrateLocation)
         .where(*filters)
-        .order_by(col(SubstrateLocation.updated_at).desc())
+        .order_by(col(SubstrateLocation.normalized_name).asc(), col(SubstrateLocation.id).asc())
         .offset(offset)
         .limit(limit)
     )

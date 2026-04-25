@@ -612,6 +612,76 @@ def test_candidates_filters_by_q_and_type_filter(
     assert r_t.json()["candidates"][0]["suggested_name"] == "Chicago"
 
 
+def test_candidates_open_queue_sorted_by_normalized_name(
+    client: TestClient, stylebook_test_engine: object
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        s.add(
+            SubstrateLocation(
+                project_id=pid,
+                name="SortTest B",
+                normalized_name="sorttest b",
+                location_type="city",
+                identity_fingerprint="fp-sorttest-b",
+                stylebook_location_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+            )
+        )
+        s.add(
+            SubstrateLocation(
+                project_id=pid,
+                name="SortTest A",
+                normalized_name="sorttest a",
+                location_type="city",
+                identity_fingerprint="fp-sorttest-a",
+                stylebook_location_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+            )
+        )
+        s.commit()
+
+    r = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open&q=SortTest",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    names = [c["suggested_name"] for c in r.json()["candidates"]]
+    assert "SortTest A" in names and "SortTest B" in names
+    assert names.index("SortTest A") < names.index("SortTest B")
+
+
+def test_candidates_q_matches_normalized_name_when_display_name_differs(
+    client: TestClient, stylebook_test_engine: object
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        s.add(
+            SubstrateLocation(
+                project_id=pid,
+                name="Display Only",
+                normalized_name="normmatchunique chicago il",
+                location_type="city",
+                identity_fingerprint="fp-normmatchunique",
+                stylebook_location_canonical_id=None,
+                canonical_link_status=CANONICAL_LINK_PENDING,
+            )
+        )
+        s.commit()
+
+    r = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open&q=normmatchunique",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    assert r.json()["total"] >= 1
+    assert any(c["suggested_name"] == "Display Only" for c in r.json()["candidates"])
+
+
 def test_candidate_context_and_note_roundtrip(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:
