@@ -84,7 +84,7 @@ def _expand_us_state_tokens(toks: set[str]) -> set[str]:
     return out
 
 # Tunable thresholds (single place for policy + tests).
-AUTOLINK_MIN_SCORE: float = 0.82
+AUTOLINK_MIN_SCORE: float = 0.9
 RECALL_MIN_SCORE: float = 0.28
 
 _STRING_WEIGHT_WITH_SPATIAL: float = 0.86
