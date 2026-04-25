@@ -476,36 +476,35 @@ export default function LocationCandidates() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       {createdToast ? (
-        <div className="fixed bottom-6 right-6 z-50 w-max max-w-[min(420px,calc(100vw-3rem))]">
+        <div className="fixed bottom-6 right-6 z-50 w-[min(500px,calc(100vw-3rem))]">
           <div
             role="status"
             className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
           >
-            <div className="flex items-start gap-2.5 p-3 pr-2">
+            <div className="flex items-start gap-3 p-4 pr-2">
               <CheckCircle2
                 className="mt-0.5 h-5 w-5 shrink-0 text-primary"
                 aria-hidden
               />
-              <div className="min-w-0 space-y-2">
-                <div>
+              <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="min-w-0 space-y-1">
                   <div className="text-sm font-semibold leading-none">Canonical created</div>
-                  <div className="mt-1 text-sm text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     Saved as{" "}
                     <span className="font-medium text-foreground">{createdToast.canonicalLabel}</span>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => {
-                      setSimilarOpen(true)
-                      void loadSimilarCandidates(createdToast.canonicalLabel)
-                    }}
-                  >
-                    Show similar candidates
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full shrink-0 sm:w-auto"
+                  onClick={() => {
+                    setSimilarOpen(true)
+                    void loadSimilarCandidates(createdToast.canonicalLabel)
+                  }}
+                >
+                  Show similar candidates
+                </Button>
               </div>
               <Button
                 type="button"
