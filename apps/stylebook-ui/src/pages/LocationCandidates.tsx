@@ -476,17 +476,17 @@ export default function LocationCandidates() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       {createdToast ? (
-        <div className="fixed bottom-6 right-6 z-50 w-[min(420px,calc(100vw-3rem))]">
+        <div className="fixed bottom-6 right-6 z-50 w-max max-w-[min(420px,calc(100vw-3rem))]">
           <div
             role="status"
             className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
           >
-            <div className="flex items-start gap-3 p-4">
+            <div className="flex items-start gap-2.5 p-3 pr-2">
               <CheckCircle2
                 className="mt-0.5 h-5 w-5 shrink-0 text-primary"
                 aria-hidden
               />
-              <div className="min-w-0 flex-1 space-y-2">
+              <div className="min-w-0 space-y-2">
                 <div>
                   <div className="text-sm font-semibold leading-none">Canonical created</div>
                   <div className="mt-1 text-sm text-muted-foreground">
@@ -511,7 +511,7 @@ export default function LocationCandidates() {
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="h-8 w-8 shrink-0"
+                className="-mr-1 -mt-1 h-8 w-8 shrink-0"
                 onClick={() => setCreatedToast(null)}
                 aria-label="Dismiss"
               >
