@@ -20,28 +20,16 @@ def _build_geocode_cache_resolve(
     """Return a sync callable used by ``orchestrate_geocode`` via ``asyncio.to_thread``."""
 
     # Local imports: keep optional DB stack out of module import graph for non-worker callers.
-    from backfield_db.session import get_database_url
+    from backfield_db.session import get_engine
     from backfield_stylebook.geocode_cache_resolve import try_resolve_geocode_cache
-    from sqlalchemy.engine import make_url
-    from sqlmodel import Session, create_engine
-
-    engine_url = get_database_url()
-    connect_args: dict[str, Any] = {}
-    try:
-        url = make_url(engine_url)
-        if url.get_backend_name() == "sqlite":
-            connect_args["check_same_thread"] = False
-    except Exception:
-        pass
-
-    engine = create_engine(engine_url, connect_args=connect_args)
+    from sqlmodel import Session
 
     def resolve(
         location_text: str,
         location_type: str,
         _components: dict[str, Any],
     ) -> dict[str, Any] | None:
-        with Session(engine) as session:
+        with Session(get_engine()) as session:
             return try_resolve_geocode_cache(
                 session,
                 project_id=project_id,

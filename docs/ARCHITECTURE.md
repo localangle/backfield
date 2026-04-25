@@ -59,7 +59,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `agate-api` may depend on `backfield-core`, `backfield-db`, and `backfield-auth` (when wiring shared auth).
 - `worker` may depend on `backfield-core`, `backfield-db`, and `backfield-stylebook` (canonical sync next to substrate persistence).
 - `core-api` may depend on `backfield-auth`, `backfield-db`, and `backfield-stylebook` (default Stylebook + workspace creation defaults).
-- `backfield-core` may depend on `agate-runtime` and `backfield-stylebook` (for Geocode DB cache wiring) and must not depend on app code.
+- `backfield-core` may depend on `agate-runtime`, `backfield-db`, and `backfield-stylebook` (Geocode DB cache uses `backfield_db.session.get_engine()` with `backfield_stylebook.geocode_cache_resolve`) and must not depend on app code.
 - `agate-runtime` must not depend on app code or `backfield-db`.
   - **TypeScript in `agate-runtime`:** vendored node UI under `src/agate_nodes/*/ui` mirrors agate-ai-platform and uses the same `@/…` aliases as Agate UI for shadcn-style imports. For executor output keys it imports **`@backfield/ui/nodeOutputs`**, matching the **`exports`** entry in `packages/backfield-ui/package.json` (not a Python dependency on `backfield-ui`).
 - `backfield-db` must not depend on app code.

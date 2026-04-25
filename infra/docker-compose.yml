@@ -140,6 +140,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      # One SQLAlchemy pool per Celery child process; keep defaults small so many workers
+      # do not exhaust Postgres max_connections alongside agate-api / core-api / stylebook-api.
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-2}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-3}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # LLM / geocoder keys: repo-root .env via env_file above.

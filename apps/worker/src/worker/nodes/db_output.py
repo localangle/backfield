@@ -24,21 +24,9 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
 
     body = consolidated_body_from_dboutput(params, inputs)
 
-    from backfield_db.session import get_database_url
-    from sqlalchemy.engine import make_url
-    from sqlmodel import create_engine
+    from backfield_db.session import get_engine
 
-    engine_url = get_database_url()
-    connect_args: dict[str, Any] = {}
-    try:
-        url = make_url(engine_url)
-        if url.get_backend_name() == "sqlite":
-            connect_args["check_same_thread"] = False
-    except Exception:
-        pass
-
-    engine = create_engine(engine_url, connect_args=connect_args)
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         article_id = persist_from_consolidated(
             session,
             project_id=project_id,

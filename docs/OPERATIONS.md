@@ -50,6 +50,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 ## Environment variables
 
 - `BACKFIELD_DATABASE_URL` / `DATABASE_URL`: database connection string (required for `agate-api`, **`stylebook-api`**, `worker`, and **`core-api`** — these apps read the same Postgres database; Compose sets the in-network URL `...@postgres:5432/...` so containers do not default to `localhost:5433`, which only works from the host).
+- `BACKFIELD_SQLALCHEMY_POOL_SIZE` / `BACKFIELD_SQLALCHEMY_MAX_OVERFLOW`: optional SQLAlchemy pool sizing for `backfield_db.session.get_engine()` (defaults follow SQLAlchemy when unset: **5** / **10**). The local **`worker`** Compose service sets conservative defaults (**2** / **3**) so many Celery child processes plus API Uvicorn processes are less likely to hit Postgres **`max_connections`**. Raise these on the worker if you see pool timeouts under heavy parallel load.
 - `REDIS_URL`: Celery broker and backend.
 - `CELERY_WORKER_CONCURRENCY`: optional override for the Agate worker process pool size (Compose passes **`--concurrency`**; default **8** when unset). Higher values improve S3 batch parallelism when many **`execute_processed_item`** tasks are in flight.
 - `STYLEBOOK_API_URL`: worker/node access to Stylebook API.
@@ -91,6 +92,7 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 
 ## Troubleshooting
 
+- If Postgres logs **`FATAL: sorry, too many clients already`**, every service process that imports `backfield_db.session` holds one pooled engine: reduce **`CELERY_WORKER_CONCURRENCY`**, lower **`BACKFIELD_SQLALCHEMY_POOL_SIZE`** / **`BACKFIELD_SQLALCHEMY_MAX_OVERFLOW`** on the worker (Compose defaults are already small), or raise Postgres **`max_connections`** in your deployment config. Avoid ad-hoc `create_engine` in long-lived workers — use **`get_engine()`** so each process has a single pool.
 - If compose networks or stray one-off containers linger, from the repo run `make down`, or `docker compose -f infra/docker-compose.yml down --remove-orphans` if you need to clear orphaned containers from a renamed project.
 - If a run never leaves `pending`, check `worker` logs and Redis connectivity.
 - If secrets calls fail, verify `MASTER_ENCRYPTION_KEY`.
