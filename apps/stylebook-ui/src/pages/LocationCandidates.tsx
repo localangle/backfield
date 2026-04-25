@@ -716,14 +716,21 @@ export default function LocationCandidates() {
                 Deferred
               </button>
             </div>
-            <Table>
+            <Table className="table-fixed">
+              <colgroup>
+                <col style={{ width: "34%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "32%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "12%" }} />
+              </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Address</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">
+                  <TableHead className="min-w-0">Location</TableHead>
+                  <TableHead className="whitespace-nowrap">Type</TableHead>
+                  <TableHead className="min-w-0">Address</TableHead>
+                  <TableHead className="whitespace-nowrap">Created</TableHead>
+                  <TableHead className="min-w-0 text-right">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -743,9 +750,9 @@ export default function LocationCandidates() {
                     return (
                     <Fragment key={c.id}>
                       <TableRow id={`candidate-row-${c.id}`}>
-                        <TableCell className="font-medium">
-                          <div className="flex flex-col items-start gap-1">
-                          <div className="flex items-center gap-2">
+                        <TableCell className="font-medium min-w-0">
+                          <div className="flex flex-col items-start gap-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
                             <Button
                               type="button"
                               size="icon"
@@ -768,7 +775,7 @@ export default function LocationCandidates() {
                                 />
                               )}
                             </Button>
-                            <span>{c.suggested_name || "—"}</span>
+                            <span className="min-w-0 break-words">{c.suggested_name || "—"}</span>
                             {c.note ? (
                               <StickyNote
                                 className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -791,12 +798,12 @@ export default function LocationCandidates() {
                           ) : null}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {c.suggested_type
                             ? placeExtractTypeLabel(c.suggested_type)
                             : "—"}
                         </TableCell>
-                        <TableCell className="max-w-xs truncate">
+                        <TableCell className="min-w-0 max-w-xs truncate">
                           {c.suggested_formatted_address || "—"}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
@@ -905,8 +912,8 @@ export default function LocationCandidates() {
                       </TableRow>
                       {expandedId === c.id && (
                         <TableRow>
-                          <TableCell colSpan={5} className="bg-muted/30">
-                            <div className="space-y-3 py-2">
+                          <TableCell colSpan={5} className="bg-muted/30 min-w-0">
+                            <div className="space-y-3 py-2 break-words [overflow-wrap:anywhere]">
                               <div>
                                 <div className="text-sm font-medium">Context</div>
                                 {contextLoadingId === c.id ? (
