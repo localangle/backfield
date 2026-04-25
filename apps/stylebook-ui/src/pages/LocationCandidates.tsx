@@ -723,7 +723,7 @@ export default function LocationCandidates() {
                 <col style={{ width: "28%" }} />
                 <col style={{ width: "10%" }} />
                 {/* Four icon buttons, gaps, cell padding, and focus rings need a firm minimum. */}
-                <col style={{ width: "15rem" }} />
+                <col style={{ width: "13rem" }} />
               </colgroup>
               <TableHeader>
                 <TableRow>
@@ -811,7 +811,7 @@ export default function LocationCandidates() {
                           {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap align-top overflow-visible">
-                          <div className="inline-flex flex-nowrap items-center justify-end gap-0.5 pr-0.5">
+                          <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 px-0.5">
                             <Button
                               type="button"
                               size="icon"
@@ -892,22 +892,6 @@ export default function LocationCandidates() {
                                 )}
                               </Button>
                             )}
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="outline"
-                              className="h-8 w-8 shrink-0"
-                              title={c.note ? "Edit note" : "Add note"}
-                              aria-label={c.note ? "Edit note" : "Add note"}
-                              disabled={
-                                acceptingId === c.id ||
-                                deferringId === c.id ||
-                                noteSavingId === c.id
-                              }
-                              onClick={() => openNoteModal(c)}
-                            >
-                              <StickyNote className="h-4 w-4" aria-hidden />
-                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -940,12 +924,32 @@ export default function LocationCandidates() {
                                 )}
                               </div>
                               <div className="border-t border-border/60 pt-3 mt-3">
-                                <div className="text-sm font-medium">Note</div>
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div className="text-sm font-medium">Note</div>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="shrink-0 gap-1.5 h-8"
+                                    title={savedNoteText ? "Edit note" : "Add note"}
+                                    aria-label={savedNoteText ? "Edit note" : "Add note"}
+                                    disabled={
+                                      acceptingId === c.id ||
+                                      deferringId === c.id ||
+                                      noteSavingId === c.id
+                                    }
+                                    onClick={() => openNoteModal(c)}
+                                  >
+                                    <StickyNote className="h-3.5 w-3.5" aria-hidden />
+                                    {savedNoteText ? "Edit note" : "Add note"}
+                                  </Button>
+                                </div>
                                 {savedNoteText ? (
-                                  <p className="mt-1 text-sm whitespace-pre-wrap">{savedNoteText}</p>
+                                  <p className="mt-2 text-sm whitespace-pre-wrap">{savedNoteText}</p>
                                 ) : (
-                                  <p className="mt-1 text-sm text-muted-foreground italic">
-                                    No note yet. Use the note (sticky note) action in the row to add one.
+                                  <p className="mt-2 text-sm text-muted-foreground">
+                                    No note yet — use <span className="font-medium">Add note</span> above
+                                    to record context for this candidate.
                                   </p>
                                 )}
                               </div>
