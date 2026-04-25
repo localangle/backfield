@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     "backfield-auth",
     "backfield-db",
+    "backfield-stylebook",
     "passlib[bcrypt]>=1.7.4",
     # passlib 1.7.x reads bcrypt.__about__.__version__ (removed in bcrypt 4.1+) and mishandles 5.x.
     "bcrypt>=4.0.1,<4.1",

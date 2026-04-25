@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 from uuid import uuid4
 
 from geoalchemy2 import Geometry
 from pydantic import ConfigDict
-from sqlalchemy import JSON, Column, DateTime, Index, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Text, UniqueConstraint, func, text
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
@@ -57,6 +58,7 @@ class BackfieldWorkspace(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
     name: str = Field(sa_column=Column(Text, nullable=False))
     slug: str = Field(sa_column=Column(Text, nullable=False, index=True))
     created_at: datetime = Field(
@@ -135,6 +137,108 @@ class BackfieldProjectMembership(SQLModel, table=True):
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
     role: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class Stylebook(SQLModel, table=True):
+    """Org-scoped Stylebook (canonical entities, editorial rules)."""
+
+    __tablename__ = "stylebook"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "slug", name="uq_stylebook_organization_slug"),
+        Index(
+            "uq_stylebook_org_one_default",
+            "organization_id",
+            unique=True,
+            postgresql_where=text("is_default = true"),
+            sqlite_where=text("is_default = 1"),
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    slug: str = Field(sa_column=Column(Text, nullable=False))
+    name: str = Field(sa_column=Column(Text, nullable=False))
+    is_default: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookLocationCanonical(SQLModel, table=True):
+    """Canonical location row within a Stylebook."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    __tablename__ = "stylebook_location_canonical"
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    label: str = Field(sa_column=Column(Text, nullable=False))
+    location_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    formatted_address: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    primary_substrate_location_id: int | None = Field(
+        default=None,
+        foreign_key="substrate_location.id",
+        index=True,
+    )
+    status: str = Field(
+        default="active",
+        sa_column=Column(Text, nullable=False, server_default="active"),
+    )
+    geometry: object | None = Field(
+        default=None,
+        sa_column=Column(_PostgresGeometry(), nullable=True),
+    )
+    geometry_type: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True, index=True),
+    )
+    geometry_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookLocationAlias(SQLModel, table=True):
+    """Alias string for a canonical location (hybrid provenance)."""
+
+    __tablename__ = "stylebook_location_alias"
+    __table_args__ = (
+        UniqueConstraint(
+            "location_canonical_id",
+            "normalized_alias",
+            name="uq_stylebook_location_alias_canonical_normalized",
+        ),
+        Index("ix_stylebook_location_alias_normalized", "normalized_alias"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    location_canonical_id: int = Field(foreign_key="stylebook_location_canonical.id", index=True)
+    alias_text: str = Field(sa_column=Column(Text, nullable=False))
+    normalized_alias: str = Field(sa_column=Column(Text, nullable=False))
+    provenance: str = Field(sa_column=Column(Text, nullable=False))
+    suppressed: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 
@@ -278,6 +382,16 @@ class SubstrateLocation(SQLModel, table=True):
         Index("idx_substrate_location_project_status", "project_id", "status"),
         Index("idx_substrate_location_project_name", "project_id", "normalized_name"),
         Index("idx_substrate_location_project_type", "project_id", "location_type"),
+        Index(
+            "ix_substrate_location_project_canonical",
+            "project_id",
+            "stylebook_location_canonical_id",
+        ),
+        Index(
+            "ix_substrate_location_project_link_status",
+            "project_id",
+            "canonical_link_status",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -288,6 +402,19 @@ class SubstrateLocation(SQLModel, table=True):
     status: str = Field(
         default="provisional",
         sa_column=Column(Text, nullable=False, server_default="provisional"),
+    )
+    stylebook_location_canonical_id: int | None = Field(
+        default=None,
+        foreign_key="stylebook_location_canonical.id",
+        index=True,
+    )
+    canonical_link_status: str = Field(
+        default="unlinked",
+        sa_column=Column(Text, nullable=False, server_default="unlinked"),
+    )
+    canonical_review_reasons_json: list[Any] | dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
     )
     external_source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     external_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
@@ -494,6 +621,29 @@ class AgateRun(SQLModel, table=True):
     status: str = Field(default="pending", sa_column=Column(Text, nullable=False))
     result_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class AgateProcessedItem(SQLModel, table=True):
+    """Per-S3-object execution unit for S3Input batch runs (parent ``agate_run``)."""
+
+    __tablename__ = "agate_processed_item"
+
+    id: int | None = Field(default=None, primary_key=True)
+    run_id: str = Field(foreign_key="agate_run.id", index=True)
+    source_file: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    input_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    status: str = Field(
+        default="pending",
+        sa_column=Column(Text, nullable=False),
+    )
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    result_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

@@ -19,6 +19,13 @@ jobs:
         run: uv sync --all-packages
       - name: Lint
         run: make lint
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/stylebook-ui/package-lock.json
+      - name: Stylebook UI build
+        run: make stylebook-ui-build
 
   test:
     runs-on: ubuntu-latest

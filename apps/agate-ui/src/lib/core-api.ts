@@ -82,7 +82,7 @@ export async function listMyWorkspaces(): Promise<WorkspaceWithProjects[]> {
 
 export async function createWorkspace(
   orgId: number,
-  body: { name: string },
+  body: { name: string; stylebook_id?: number | null },
 ): Promise<WorkspaceWithProjects> {
   return jsonFetch(`/v1/organizations/${orgId}/workspaces`, {
     method: "POST",
@@ -109,12 +109,23 @@ export async function patchOrganization(
 export async function patchWorkspace(
   orgId: number,
   workspaceId: number,
-  body: { name: string },
+  body: { name?: string; stylebook_id?: number },
 ): Promise<WorkspaceWithProjects> {
   return jsonFetch(`/v1/organizations/${orgId}/workspaces/${workspaceId}`, {
     method: "PATCH",
     body: JSON.stringify(body),
   })
+}
+
+export interface OrgStylebook {
+  id: number
+  name: string
+  slug: string
+  is_default: boolean
+}
+
+export async function listOrgStylebooks(orgId: number): Promise<OrgStylebook[]> {
+  return jsonFetch(`/v1/organizations/${orgId}/stylebooks`)
 }
 
 export interface ProjectMembershipRow {
@@ -145,6 +156,8 @@ export interface WorkspaceWithProjects {
   name: string
   slug: string
   projects: ProjectSummary[]
+  stylebook_id?: number | null
+  stylebook_name?: string | null
 }
 
 export async function listOrgUsers(

@@ -33,7 +33,12 @@ const nodeMetadata = {
       "type": "string"
     }
   ],
-  "defaultParams": {}
+  "defaultParams": {
+    "stylebook_id": null,
+    "canonicalization_mode": "rules",
+    "auto_apply_canonicalization": true,
+    "adjudication_model": "gpt-5-nano"
+  }
 };
 
 import { memo } from 'react'

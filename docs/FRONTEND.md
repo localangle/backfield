@@ -1,6 +1,20 @@
 # Frontend
 
-This document covers frontend conventions for `apps/agate-ui` and the lighter `apps/stylebook-ui`.
+This document covers frontend conventions for `apps/agate-ui` and `apps/stylebook-ui`.
+
+## Stylebook UI (Backfield)
+
+- **Scope key (first slice):** the UI keeps **agate-ai-platform–style `project_slug`** in the query string (`?project=…`) as the primary navigation scope. **`stylebook-api`** resolves the slug to `backfield_project.id`. **`substrate_location`** rows are project-scoped place instances; the Stylebook **catalog** is **`stylebook_location_canonical`** (one row per editorial canonical), linked via **`substrate_location.stylebook_location_canonical_id`**.
+- **Canonical list ordering:** **`GET /v1/canonical-locations`** returns rows sorted alphabetically by **`label`** (case-insensitive, then **`id`** for a stable order within pagination). Search (`q`) and `type_filter` keep that same sort. The canonical list page shows each row’s **geography type** (canonical **`location_type`**, same PlaceExtract taxonomy as the Type filter) alongside status, linked substrate count, and mention count.
+- **First-slice routes (supported):** `/` (dashboard), `/locations/candidates`, `/locations/canonical` (lists **`GET /v1/canonical-locations`**, ids are **canonical** ids), `/locations/canonical/:id` (detail uses **`GET /v1/canonical-locations/{id}`**, **`…/mentions`**, and **`GET …/linked-substrates`** for substrate rows linked to that canonical), `/locations/create` (creates a catalog canonical only via **`POST /v1/canonical-locations`** or legacy **`POST /v1/locations`** — **no** `substrate_location` row; navigate using the returned canonical **`id`**), plus **stub** pages for import, other entity candidates, and agents so deep links do not 404.
+- **Canonical linking (substrate vs catalog):** open candidates are **`substrate_location`** rows with **`canonical_link_status = pending`** and a **null** `stylebook_location_canonical_id`. The **Deferred** tab lists waived rows (`status=deferred`); list payloads may include **`defer_display_message`** when **`canonical_review_reasons_json`** carries a human-readable **`message`** from ingest or policy (for example **private place or residence**). The candidates table offers **Link to canonical**, which opens a modal: **`GET /v1/candidates/{substrate_location_id}/suggested-canonicals`** (ingest-style ranking; no scores in JSON) plus manual catalog search via **`GET /v1/canonical-locations?q=…`**, then confirm with **`POST /v1/locations/{substrate_location_id}/link-canonical`** (`{ "stylebook_location_canonical_id": <int> }`, idempotent `changed: false` when already on that canonical). The canonical detail page uses **one table** of linked places with article mentions nested under each place (mentions include **`substrate_location_id`** for grouping; the UI loads up to **500** mentions per canonical). **Unlink** is **`POST /v1/locations/{id}/unlink-canonical`** (returns row to the open queue; safe alias cleanup on the old canonical is server-side). **Move…** uses the same modal + link endpoint for atomic A→B relink. Legacy **`POST /v1/candidates/{id}/accept`** remains for “accept as new” / accept-by-id flows. **Create new canonical** opens a **dialog** to confirm or edit the catalog **label** (defaults from the substrate name), then posts **`{ "create_new": true, "name": "<label>" }`** to that accept route.
+- **Auth:** Core API session only — `POST /v1/auth/login`, `GET /v1/auth/me`, `POST /v1/auth/logout` with **`email` + `password`**, same as Agate UI. Use **`VITE_AUTH_API_BASE`** as empty string in dev so the browser stays on the Stylebook UI origin and the Vite proxy forwards `/v1` to Core.
+- **Proxies (local dev):** [`apps/stylebook-ui/vite.config.ts`](../apps/stylebook-ui/vite.config.ts) mirrors Agate UI:
+  - `/v1` → Core API (`VITE_CORE_API_PROXY_TARGET`, default `http://localhost:8004`)
+  - `/api/agate` → Agate API (`VITE_AGATE_API_PROXY_TARGET`, default `http://localhost:8000`), strip prefix
+  - `/api/stylebook` → Stylebook API (`VITE_STYLEBOOK_API_PROXY_TARGET`, default `http://localhost:8003`), strip prefix
+- **API bases:** `VITE_AGATE_API_BASE` defaults to `/api/agate` (project picker: `GET /projects`). `VITE_STYLEBOOK_API_BASE` defaults to `/api/stylebook` (locations and UI-compat stubs under `/v1/...` on the Stylebook service). All fetches use **`credentials: 'include'`** so the Core session cookie is sent to the dev origin.
+- **Client layout:** typed calls are split under `apps/stylebook-ui/src/lib/stylebook-api/` and re-exported from `src/lib/api.ts` for pages that still follow the agate-ai-platform import style.
 
 ## Agate UI responsibilities
 
@@ -43,7 +57,7 @@ This document covers frontend conventions for `apps/agate-ui` and the lighter `a
 - `apps/agate-ui/scripts/sync-nodes.js` copies UI files into `apps/agate-ui/src/nodes`.
 - The sync script also generates `src/nodes/registry.ts`.
 - Avoid hand-editing generated registry output unless the sync flow itself is changing.
-- The default Agate palette includes `TextInput`, `PlaceExtract`, `GeocodeAgent`, and `Output`. `PlaceExtract` performs editorially relevant place extraction in a **single** LLM call; there is no separate Place Filter node.
+- The default Agate palette includes `TextInput`, `JSONInput`, `S3Input`, `PlaceExtract`, `GeocodeAgent`, and `Output`. `PlaceExtract` performs editorially relevant place extraction in a **single** LLM call; there is no separate Place Filter node.
 
 ## TypeScript expectations
 

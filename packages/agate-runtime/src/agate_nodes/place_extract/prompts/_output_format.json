@@ -3,6 +3,7 @@
     {
       "location": "100 Fake St., Minneapolis, MN",
       "type": "address_intersection",
+      "address_place_kind": "unknown",
       "original_text": "The car crash occurred on the 100 block of Fake St.",
       "description": "A car crash happened at the 100 block of Fake St.",
       "nature": "primary",
@@ -57,6 +58,7 @@
     {
       "location": "8th Ave S., Chicago, IL",
       "type": "street_road",
+      "address_place_kind": "public_named",
       "original_text": "The robberies occurred in several places along 8th Ave S. in Chicago",
       "description": "8th Ave S. was the location of several robberies",
       "nature": "primary",

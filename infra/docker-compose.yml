@@ -13,6 +13,8 @@ services:
       POSTGRES_PASSWORD: postgres
     ports:
       - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -38,6 +40,13 @@ services:
     environment:
       <<: *shared-env
       UI_ORIGIN: http://localhost:5175
+      # Same DB as agate-api/core-api; inside Compose use service hostname `postgres:5432`
+      # (not localhost:5433, which is only valid from the host machine).
+      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   core-api:
     build:
@@ -111,6 +120,18 @@ services:
     build:
       context: ..
       dockerfile: apps/worker/Dockerfile
+    command:
+      [
+        "celery",
+        "-A",
+        "worker.tasks",
+        "worker",
+        "--loglevel=info",
+        "-Q",
+        "agate",
+        "--concurrency",
+        "${CELERY_WORKER_CONCURRENCY:-8}",
+      ]
     env_file:
       - path: ../.env
         required: false
@@ -119,6 +140,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      # One SQLAlchemy pool per Celery child process; keep defaults small so many workers
+      # do not exhaust Postgres max_connections alongside agate-api / core-api / stylebook-api.
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-2}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-3}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # LLM / geocoder keys: repo-root .env via env_file above.
@@ -169,7 +194,23 @@ services:
     ports:
       - "5175:5175"
     environment:
-      VITE_STYLEBOOK_API_BASE: http://localhost:8003
+      # Same-origin dev: browser calls /v1, /api/agate, /api/stylebook on :5175; Vite proxies.
+      VITE_AUTH_API_BASE: ""
+      VITE_AGATE_API_BASE: /api/agate
+      VITE_STYLEBOOK_API_BASE: /api/stylebook
+      VITE_CORE_API_PROXY_TARGET: http://core-api:8004
+      VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
+      VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
     volumes:
       - ../apps/stylebook-ui:/app
       - /app/node_modules
+    depends_on:
+      core-api:
+        condition: service_healthy
+      agate-api:
+        condition: service_healthy
+      stylebook-api:
+        condition: service_started
+
+volumes:
+  postgres_data:

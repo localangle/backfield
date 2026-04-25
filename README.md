@@ -11,7 +11,7 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 | **Worker** | — | Celery executes runs (`agate` queue) |
 | **Stylebook API** | 8003 | Geocode helper for `GeocodeAgent` |
 | **Core API** | 8004 | Shared domain API (auth + future import routes) |
-| **Stylebook UI** | 5175 | Shell + health check |
+| **Stylebook UI** | 5175 | Stylebook shell (Core auth + project-scoped locations against `stylebook-api` / `substrate_location`) |
 | **Postgres** | 5433 | `agate_*` application tables (see [docs/DATABASE.md](docs/DATABASE.md)) |
 | **Redis** | 6379 | Celery broker |
 
@@ -42,12 +42,13 @@ make up                # Docker Compose (foreground; Ctrl+C stops all services)
 ```bash
 make lint
 make test
+make stylebook-ui-build   # when apps/stylebook-ui changes
 make smoke   # live stack; see docs/TESTING.md (session vs service-token modes)
 ```
 
 ### Environment
 
-- **LLM / geocoder / Mapbox keys**: add to repo-root `.env` (see [.env.example](.env.example)). Compose loads that file into `agate-api` and `worker` so PlaceExtract and GeocodeAgent can run. The same values are copied into **General** project secrets when local bootstrap runs (Fernet-encrypted in Postgres), including optional **`MAPBOX_API_TOKEN`** for map visualizations.
+- **LLM / geocoder / Mapbox / AWS keys**: add to repo-root `.env` (see [.env.example](.env.example)). Compose loads that file into `agate-api` and `worker` so PlaceExtract and GeocodeAgent can run. The same values are copied into **General** project secrets when local bootstrap runs (Fernet-encrypted in Postgres), including optional **`MAPBOX_API_TOKEN`** for map visualizations and optional **`AWS_ACCESS_KEY_ID`** / **`AWS_SECRET_ACCESS_KEY`** (and **`AWS_SESSION_TOKEN`** if needed) for S3 Input.
 - **Shared service token** (optional): set the same value on agate-api, worker, and stylebook-api:
 
 ```bash
@@ -62,11 +63,12 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 | Target | Purpose |
 |--------|---------|
 | `make help` | List commands |
-| `make up` / `make down` | Compose (`down` then `docker system prune` + `docker volume prune`, same idea as agate-ai-platform) |
+| `make up` / `make down` | Compose; `down` then `docker system prune` only (keeps compose DB volumes; same idea as agate-ai-platform local `down`) |
 | `make logs` | Tail logs |
 | `make migrate` | Re-run Alembic inside `agate-api` |
 | `make reset-db` | `docker compose down -v` (removes Postgres volume) |
-| `make docker-trim` | `docker system prune -f` then `docker volume prune -f` when Docker is low on disk |
+| `make docker-trim` | `docker system prune -f` when Docker is low on disk (does not run `docker volume prune`) |
+| `make docker-trim-full` | `docker-trim` then `docker volume prune -f` for aggressive reclaim |
 | `make test` | All tests |
 | `make lint` / `make format` | Ruff |
 

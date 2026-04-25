@@ -26,12 +26,13 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - `packages/backfield-auth`: Shared session cookies and service Bearer token dependencies for FastAPI apps.
 - `packages/agate-runtime`: Vendored LLM PlaceExtract, LangGraph GeocodeAgent, and geocoding/LLM utilities (ported from agate-ai-platform).
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
+- `packages/backfield-stylebook`: Stylebook domain helpers (default Stylebook per org, `stylebook_id` resolution from project/workspace, canonical/alias sync) shared by worker, core-api, and agate-api bootstrap.
 - `infra/docker-compose.yml`: Local multi-service stack.
 
 ## Canonical commands
 
 - `make bootstrap`: install Python workspace dependencies with `uv` (does not seed DB data; local seeding runs when the stack starts — see `BACKFIELD_LOCAL_BOOTSTRAP` in [docs/OPERATIONS.md](docs/OPERATIONS.md)).
-- `make up` / `make down`: start and stop the local stack (`down` also runs `docker system prune` and `docker volume prune`, matching agate-ai-platform).
+- `make up` / `make down`: start and stop the local stack (`down` also runs `docker system prune` only, matching agate-ai-platform local `down` — no `docker volume prune`, so Postgres/compose volumes survive across `down`/`up`). Use `make docker-prune-volumes` or `make docker-trim-full` when you explicitly want unused volumes removed.
 - `make logs`: follow compose logs.
 - `make migrate`: run Alembic in the `agate-api` container.
 - `make lint`: run Ruff checks.
@@ -58,6 +59,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - Prefer existing commands, docs, and package boundaries over inventing new workflows.
 - Update the matching source-of-truth doc when behavior, architecture, or operations change.
 - Keep work reviewable: one task per branch, one coherent diff, no unrelated cleanup.
+- In user-facing UI copy and frontend docs, prefer **product language** (e.g. “locations”, “candidates”, “canonicals”) over internal database terms like **“substrate”**.
 
 ## Style constraints
 

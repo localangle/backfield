@@ -1,0 +1,21 @@
+{
+  "type": "S3Input",
+  "label": "S3 Input",
+  "icon": "Database",
+  "color": "bg-blue-500",
+  "description": "Load article text from JSON files in S3.",
+  "category": "input",
+  "inputs": [],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
+    }
+  ],
+  "defaultParams": {
+    "bucket": "",
+    "folder_path": "",
+    "max_files": 500
+  }
+}

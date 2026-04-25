@@ -178,11 +178,50 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
         project_slug = state.get("project_slug") or os.environ.get("PROJECT_SLUG")
         service_api_token = state.get("service_api_token") or os.environ.get("SERVICE_API_TOKEN")
 
-        # Try canonical matching and cache lookup if enabled
+        # Try canonical + substrate_location_cache (DB hook) or legacy HTTP Stylebook routes
         geocoding_result = None
-        if use_cache and stylebook_api_url and project_slug:
-            logger.info(f"[CACHE ENABLED] Attempting cache lookup for '{location_text}' (project: {project_slug})")
-            # 1. Try canonical matching (run in thread pool to avoid blocking)
+        cache_resolve_fn = state.get("cache_resolve")
+        if use_cache and cache_resolve_fn is not None:
+            logger.info(f"[CACHE ENABLED] DB cache resolve for '{location_text}'")
+            try:
+                match_dict = await asyncio.to_thread(
+                    cache_resolve_fn,
+                    location_text,
+                    location_type,
+                    components,
+                )
+                if match_dict:
+                    src = (match_dict.get("confidence") or {}).get("source")
+                    try:
+                        if src == "canonical_db":
+                            geocoding_result = stylebook_match_to_geocoding_result(
+                                match_dict, location_text
+                            )
+                        elif src == "location_cache":
+                            geocoding_result = cache_match_to_geocoding_result(
+                                match_dict, location_text
+                            )
+                        else:
+                            geocoding_result = None
+                        if geocoding_result and not geocoding_result.result.geometry:
+                            logger.warning(
+                                f"DB cache match for '{location_text}' has no geometry, "
+                                "falling back to external geocoding"
+                            )
+                            geocoding_result = None
+                        elif geocoding_result:
+                            logger.info(
+                                f"[CACHE HIT] DB cache for '{location_text}' "
+                                f"(source={src}, id={match_dict.get('id')})"
+                            )
+                    except Exception as e:
+                        logger.warning(f"Error converting DB cache match for '{location_text}': {e}")
+                        geocoding_result = None
+            except Exception as e:
+                logger.warning(f"Error during DB cache resolve for '{location_text}': {e}")
+
+        elif use_cache and stylebook_api_url and project_slug:
+            logger.info(f"[CACHE ENABLED] HTTP Stylebook cache for '{location_text}' (project: {project_slug})")
             logger.info(f"Stylebook canonical match: name={location_text}, project_slug={project_slug}")
             try:
                 canonical_match = await asyncio.to_thread(
@@ -190,19 +229,21 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
                     name=location_text,
                     base_url=stylebook_api_url,
                     project_slug=project_slug,
-                    service_token=service_api_token
+                    service_token=service_api_token,
                 )
                 if canonical_match:
                     geocoding_result = stylebook_match_to_geocoding_result(
                         canonical_match, location_text
                     )
-                    logger.info(f"[CACHE HIT] Found canonical match for '{location_text}': {canonical_match.get('id', 'unknown')}")
+                    logger.info(
+                        f"[CACHE HIT] Found canonical match for '{location_text}': "
+                        f"{canonical_match.get('id', 'unknown')}"
+                    )
                 else:
                     logger.info(f"No canonical match found for '{location_text}', trying cache")
             except Exception as e:
                 logger.warning(f"Error during canonical match for '{location_text}': {e}")
 
-            # 2. If no canonical match, try cache lookup
             if not geocoding_result:
                 logger.info(f"Checking LocationCache for '{location_text}' before external geocoding")
                 try:
@@ -211,16 +252,22 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
                         name=location_text,
                         base_url=stylebook_api_url,
                         project_slug=project_slug,
-                        service_token=service_api_token
+                        service_token=service_api_token,
                     )
                     if cache_match:
                         try:
                             geocoding_result = cache_match_to_geocoding_result(cache_match, location_text)
                             if not geocoding_result.result.geometry:
-                                logger.warning(f"Cache match for '{location_text}' has no geometry, falling back to external geocoding")
+                                logger.warning(
+                                    f"Cache match for '{location_text}' has no geometry, "
+                                    "falling back to external geocoding"
+                                )
                                 geocoding_result = None
                             else:
-                                logger.info(f"[CACHE HIT] Found cache match for '{location_text}': {cache_match.get('id', 'unknown')}")
+                                logger.info(
+                                    f"[CACHE HIT] Found cache match for '{location_text}': "
+                                    f"{cache_match.get('id', 'unknown')}"
+                                )
                         except Exception as e:
                             logger.warning(f"Error converting cache match for '{location_text}': {e}")
                             geocoding_result = None
@@ -240,10 +287,10 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
         # Cache not enabled or no cache hit - log why
         if not use_cache:
             logger.info(f"[CACHE SKIP] Cache lookup disabled for '{location_text}'")
-        elif not stylebook_api_url:
-            logger.info(f"[CACHE SKIP] Stylebook API URL not configured for '{location_text}'")
-        elif not project_slug:
-            logger.info(f"[CACHE SKIP] Project slug not provided for '{location_text}'")
+        elif cache_resolve_fn is None and not stylebook_api_url:
+            logger.info(f"[CACHE SKIP] No DB cache_resolve and no Stylebook API URL for '{location_text}'")
+        elif cache_resolve_fn is None and not project_slug:
+            logger.info(f"[CACHE SKIP] No DB cache_resolve and no project slug for '{location_text}'")
         else:
             logger.info(f"[CACHE MISS] No cache/canonical match found for '{location_text}', using external geocoding")
 

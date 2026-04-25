@@ -21,7 +21,17 @@ import NodePanel from '@/components/NodePanel'
 import NodePalette from '@/components/NodePalette'
 import RunPanel from '@/components/RunPanel'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { getGraph, createRun, getRun, updateGraph, deleteGraph, type Graph, type Run } from '@/lib/api'
+import {
+  getGraph,
+  getProject,
+  createRun,
+  getRun,
+  updateGraph,
+  deleteGraph,
+  type Graph,
+  type Project,
+  type Run,
+} from '@/lib/api'
 import { nodeOutputLookupFromReactFlow } from '@/lib/nodeOutputs'
 import { ArrowLeft, Save, Edit, Loader2, Play, Trash2 } from 'lucide-react'
 
@@ -66,6 +76,42 @@ export default function RunGraph() {
     () => nodeOutputLookupFromReactFlow(nodes, edges),
     [nodes, edges],
   )
+
+  const [resolvedFlowProject, setResolvedFlowProject] = useState<Project | null>(null)
+  const [flowProjectLoading, setFlowProjectLoading] = useState(false)
+
+  const graphContext = useMemo(() => {
+    if (flowProjectLoading) {
+      return {
+        organizationId: null as number | null,
+        workspaceDefaultStylebookId: null as number | null,
+        workspaceStylebookName: null as string | null,
+        missingWorkspaceStylebook: false,
+        flowProjectLoading: true,
+      }
+    }
+    const p = resolvedFlowProject
+    if (!p) {
+      return {
+        organizationId: null as number | null,
+        workspaceDefaultStylebookId: null as number | null,
+        workspaceStylebookName: null as string | null,
+        missingWorkspaceStylebook: false,
+        flowProjectLoading: false,
+      }
+    }
+    const sid = p.workspace_stylebook_id ?? null
+    const rawName = p.workspace_stylebook_name
+    const nm =
+      typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null
+    return {
+      organizationId: p.organization_id ?? null,
+      workspaceDefaultStylebookId: sid,
+      workspaceStylebookName: nm,
+      missingWorkspaceStylebook: sid == null && nm == null,
+      flowProjectLoading: false,
+    }
+  }, [resolvedFlowProject, flowProjectLoading])
 
   // Find the selected node
   const selectedNode = nodes.find(n => n.id === selectedNodeId)
@@ -113,6 +159,29 @@ export default function RunGraph() {
       }
     }
   }, [graphId])
+
+  useEffect(() => {
+    if (!graph?.project_id) {
+      setResolvedFlowProject(null)
+      setFlowProjectLoading(false)
+      return
+    }
+    let cancelled = false
+    setFlowProjectLoading(true)
+    void getProject(graph.project_id)
+      .then((proj) => {
+        if (!cancelled) setResolvedFlowProject(proj)
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedFlowProject(null)
+      })
+      .finally(() => {
+        if (!cancelled) setFlowProjectLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [graph?.project_id])
 
   useEffect(() => {
     if (graph) {
@@ -462,6 +531,10 @@ export default function RunGraph() {
         return {
           bucket: '',
           folder_path: '',
+        }
+      case 'JSONInput':
+        return {
+          text: '',
         }
       case 'APIInput':
         return {
@@ -1015,6 +1088,7 @@ export default function RunGraph() {
               editMode={editMode}
               setNodes={setNodes}
               showModal={showModal}
+              graphContext={graphContext}
               nodeOutputLookupSpec={nodeOutputLookupSpec}
             />
           )}

@@ -5,6 +5,7 @@ from __future__ import annotations
 from api.routers import runs
 from backfield_db import (
     AgateGraph,
+    AgateProcessedItem,
     AgateRun,
     AgateTemplate,
     BackfieldProject,
@@ -18,6 +19,7 @@ from worker import tasks as worker_tasks
 def test_agate_tables_use_app_prefix():
     agate_tables = {
         AgateGraph.__tablename__,
+        AgateProcessedItem.__tablename__,
         AgateRun.__tablename__,
         AgateTemplate.__tablename__,
     }
@@ -48,3 +50,6 @@ def test_queue_and_task_contracts_match():
     assert runs.celery_app.main == "agate_worker"
     assert worker_tasks.celery_app.main == "agate_worker"
     assert worker_tasks.execute_agate_run.name == "worker.tasks.execute_agate_run"
+    assert worker_tasks.execute_s3_batch_setup.name == "worker.tasks.execute_s3_batch_setup"
+    assert worker_tasks.execute_processed_item.name == "worker.tasks.execute_processed_item"
+    assert worker_tasks.finalize_s3_parent_run.name == "worker.tasks.finalize_s3_parent_run"

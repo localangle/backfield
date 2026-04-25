@@ -1,0 +1,19 @@
+"""JSONInput and shared document normalization."""
+
+from backfield_core.nodes.json_input import json_input_output_from_dict, run_json_input
+
+
+def test_json_input_output_from_dict_matches_run_json_input():
+    params = {
+        "text": "  body  ",
+        "headline": "A story",
+        "url": "https://example.com/x",
+        "onChange": "strip-me",
+    }
+    a = run_json_input(params, {})
+    b = json_input_output_from_dict(params)
+    assert a == b
+    assert a["text"] == "  body  "
+    assert a["headline"] == "A story"
+    assert a["url"] == "https://example.com/x"
+    assert "onChange" not in a

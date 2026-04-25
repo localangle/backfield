@@ -154,6 +154,18 @@ The description should:
 
 Generally, write this as though you are describing the events of the story for residents of the area in question. Do not make reference to the broader story. Only describe the events, localized for the audience of the geography in question.
 
+## Street-level: public named place vs non-public site (`address_place_kind`)
+
+For each location whose **`type`** is one of **address**, **address_intersection** (if you use that label), **intersection_road**, **intersection_highway**, **street_road**, or **span**, add a top-level string field **`address_place_kind`** with exactly one of:
+
+- **`public_named`** — A named business, landmark, civic building, school, hospital, retail site, or other **identifiable public or semi-public** place the story maps to real-world geography (even when the string looks like an address)—somewhere a member of the public could realistically **enter** as a customer, patron, patient, student, or guest.
+- **`private_residence`** — The JSON value name is legacy; **do not read it as “homes only.”** Use it whenever the geography is **not** a named public venue the public would walk into in that role. **Include** private **homes, apartments, residential lots**, and **anonymous residential blocks** (including generic “N00 block of …” when it reads as housing). **Also include** **road or highway intersections** (or similar corners) when the story cites them as the scene of a **crime, crash, or other incident** but **no** named store, office, or landmark applies; **PO boxes** and other **mail-only** addresses; **generic parking lots, stretches of pavement, or any site that is not a building** (or named campus) **a person could enter as a member of the public**—customer, patron, patient, etc. Prefer **`public_named`** only when the text clearly identifies a **specific** business, institution, or landmark at that location.
+- **`unknown`** — You cannot tell from the article; prefer this over guessing.
+
+Base the judgment on **`original_text`**, **`description`**, and the **full story context**, not only `components`.
+
+For **all other types** (city, neighborhood, `place`, natural, etc.), **omit** `address_place_kind` entirely.
+
 ## Output Format
 
 **IMPORTANT**: Return ONLY valid JSON. Do not include any explanatory text before or after the JSON.

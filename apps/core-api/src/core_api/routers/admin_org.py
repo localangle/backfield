@@ -13,7 +13,9 @@ from backfield_db import (
     BackfieldUser,
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
+    Stylebook,
 )
+from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
@@ -108,6 +110,15 @@ class WorkspaceWithProjectsOut(BaseModel):
     name: str
     slug: str
     projects: list[ProjectSummaryOut]
+    stylebook_id: int | None = None
+    stylebook_name: str | None = None
+
+
+class StylebookListOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    is_default: bool
 
 
 class OrganizationOut(BaseModel):
@@ -122,10 +133,14 @@ class OrganizationPatchBody(BaseModel):
 
 class WorkspaceCreateBody(BaseModel):
     name: str
+    """Attach an existing org Stylebook; default is the org bootstrap Stylebook."""
+
+    stylebook_id: int | None = None
 
 
 class WorkspacePatchBody(BaseModel):
-    name: str
+    name: str | None = None
+    stylebook_id: int | None = None
 
 
 def _org_project_ids(session: Session, org_id: int) -> list[int]:
@@ -133,6 +148,24 @@ def _org_project_ids(session: Session, org_id: int) -> list[int]:
         select(BackfieldProject.id).where(BackfieldProject.organization_id == org_id)
     ).all()
     return [int(r) for r in rows if r is not None]
+
+
+def _stylebook_must_belong_to_org(session: Session, org_id: int, stylebook_id: int) -> None:
+    sb = session.get(Stylebook, stylebook_id)
+    if sb is None or int(sb.organization_id) != org_id:
+        raise HTTPException(status_code=400, detail="Stylebook not found in this organization")
+
+
+def _stylebook_name_map(session: Session, org_id: int, ids: set[int]) -> dict[int, str]:
+    if not ids:
+        return {}
+    rows = session.exec(
+        select(Stylebook).where(
+            Stylebook.organization_id == org_id,
+            col(Stylebook.id).in_(ids),
+        )
+    ).all()
+    return {int(r.id): str(r.name) for r in rows if r.id is not None}
 
 
 def _org_workspace_ids(session: Session, org_id: int) -> list[int]:
@@ -160,11 +193,15 @@ def _workspace_with_projects_out(
         if p.id is not None
     ]
     projects_out.sort(key=lambda x: x.slug)
+    sb_id = int(ws.stylebook_id)
+    sb_names = _stylebook_name_map(session, org_id, {sb_id})
     return WorkspaceWithProjectsOut(
         id=int(ws.id),
         name=str(ws.name),
         slug=str(ws.slug),
         projects=projects_out,
+        stylebook_id=sb_id,
+        stylebook_name=sb_names.get(sb_id, ""),
     )
 
 
@@ -264,6 +301,33 @@ def list_org_projects(
     return sorted(out, key=lambda x: x.slug)
 
 
+@router.get("/{org_id}/stylebooks", response_model=list[StylebookListOut])
+def list_org_stylebooks(
+    org_id: int,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> list[StylebookListOut]:
+    """List org Stylebooks for admin UI (e.g. workspace assignment). Org admins only."""
+    require_org_admin(session, auth, org_id)
+    rows = list(
+        session.exec(select(Stylebook).where(Stylebook.organization_id == org_id)).all()
+    )
+    rows.sort(key=lambda s: (not bool(s.is_default), str(s.name)))
+    out: list[StylebookListOut] = []
+    for s in rows:
+        if s.id is None:
+            continue
+        out.append(
+            StylebookListOut(
+                id=int(s.id),
+                name=str(s.name),
+                slug=str(s.slug),
+                is_default=bool(s.is_default),
+            )
+        )
+    return out
+
+
 @router.get("/{org_id}/workspaces", response_model=list[WorkspaceWithProjectsOut])
 def list_org_workspaces(
     org_id: int,
@@ -283,6 +347,8 @@ def list_org_workspaces(
             continue
         wid = int(p.workspace_id)
         projects_by_ws.setdefault(wid, []).append(p)
+    sb_ids_ws = {int(w.stylebook_id) for w in ws_rows if w.id is not None}
+    sb_name_map = _stylebook_name_map(session, org_id, sb_ids_ws)
     out: list[WorkspaceWithProjectsOut] = []
     for ws in ws_rows:
         if ws.id is None:
@@ -294,12 +360,15 @@ def list_org_workspaces(
             if p.id is not None
         ]
         projects_out.sort(key=lambda x: x.slug)
+        sb_id = int(ws.stylebook_id)
         out.append(
             WorkspaceWithProjectsOut(
                 id=int(ws.id),
                 name=str(ws.name),
                 slug=str(ws.slug),
                 projects=projects_out,
+                stylebook_id=sb_id,
+                stylebook_name=sb_name_map.get(sb_id, ""),
             )
         )
     return sorted(out, key=lambda x: x.slug)
@@ -318,7 +387,12 @@ def create_workspace(
     if not label:
         raise HTTPException(status_code=400, detail="Name is required")
     slug = _allocate_workspace_slug(session, org_id, label)
-    ws = BackfieldWorkspace(organization_id=org_id, name=label, slug=slug)
+    default_sb = ensure_default_stylebook_for_organization(session, org_id)
+    sb_id = int(default_sb.id)  # type: ignore[arg-type]
+    if body.stylebook_id is not None:
+        _stylebook_must_belong_to_org(session, org_id, body.stylebook_id)
+        sb_id = body.stylebook_id
+    ws = BackfieldWorkspace(organization_id=org_id, stylebook_id=sb_id, name=label, slug=slug)
     session.add(ws)
     session.flush()
     if ws.id is None:
@@ -336,11 +410,15 @@ def create_workspace(
             session.add(BackfieldWorkspaceMembership(user_id=uid, workspace_id=wid))
     session.commit()
     session.refresh(ws)
+    sb_id = int(ws.stylebook_id)
+    sb_names = _stylebook_name_map(session, org_id, {sb_id})
     return WorkspaceWithProjectsOut(
         id=wid,
         name=str(ws.name),
         slug=str(ws.slug),
         projects=[],
+        stylebook_id=sb_id,
+        stylebook_name=sb_names.get(sb_id, ""),
     )
 
 
@@ -355,15 +433,31 @@ def patch_workspace(
     session: Session = Depends(get_session),
     auth: dict = Depends(get_auth),
 ) -> WorkspaceWithProjectsOut:
-    """Update workspace display name (slug unchanged). Org admins only."""
+    """Update workspace display name and/or Stylebook (slug unchanged). Org admins only."""
     require_org_admin(session, auth, org_id)
     ws = session.get(BackfieldWorkspace, workspace_id)
     if ws is None or ws.id is None or int(ws.organization_id) != org_id:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Name is required")
-    ws.name = name
+    raw = body.model_dump(exclude_unset=True)
+    if not raw:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    did = False
+    if "name" in raw:
+        if raw["name"] is None:
+            raise HTTPException(status_code=400, detail="Name is required")
+        name = str(raw["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required")
+        ws.name = name
+        did = True
+    if "stylebook_id" in raw:
+        if raw["stylebook_id"] is None:
+            raise HTTPException(status_code=400, detail="stylebook_id is required when provided")
+        _stylebook_must_belong_to_org(session, org_id, int(raw["stylebook_id"]))
+        ws.stylebook_id = int(raw["stylebook_id"])
+        did = True
+    if not did:
+        raise HTTPException(status_code=400, detail="No fields to update")
     session.add(ws)
     session.commit()
     session.refresh(ws)

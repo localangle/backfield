@@ -1,5 +1,6 @@
 from backfield_db.models import (
     AgateGraph,
+    AgateProcessedItem,
     AgateRun,
     AgateTemplate,
     BackfieldApiCredential,
@@ -11,6 +12,9 @@ from backfield_db.models import (
     BackfieldUser,
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
+    Stylebook,
+    StylebookLocationAlias,
+    StylebookLocationCanonical,
     SubstrateArticle,
     SubstrateImage,
     SubstrateLocation,
@@ -22,6 +26,7 @@ from backfield_db.session import get_engine, get_session_factory, get_session_ge
 
 __all__ = [
     "AgateGraph",
+    "AgateProcessedItem",
     "AgateRun",
     "AgateTemplate",
     "BackfieldApiCredential",
@@ -33,6 +38,9 @@ __all__ = [
     "BackfieldUser",
     "BackfieldWorkspace",
     "BackfieldWorkspaceMembership",
+    "Stylebook",
+    "StylebookLocationAlias",
+    "StylebookLocationCanonical",
     "SubstrateArticle",
     "SubstrateImage",
     "SubstrateLocation",

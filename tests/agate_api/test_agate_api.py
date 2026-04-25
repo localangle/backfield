@@ -17,6 +17,7 @@ from backfield_db import (
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
 )
+from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
@@ -155,6 +156,121 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     assert len(list_response.json()) == 1
 
 
+def test_s3_graph_run_enqueues_batch_setup(monkeypatch, client: TestClient):
+    sent_task: dict[str, object] = {}
+
+    def fake_send_task(name: str, args: list[str], queue: str) -> None:
+        sent_task["name"] = name
+        sent_task["args"] = args
+        sent_task["queue"] = queue
+
+    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+
+    project = client.post("/projects", json={"name": "S3 Project", "slug": "s3-proj"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "S3 Flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "s3_flow",
+                "nodes": [
+                    {
+                        "id": "s3",
+                        "type": "S3Input",
+                        "params": {"bucket": "b", "folder_path": ""},
+                        "position": {"x": 0, "y": 0},
+                    },
+                    {
+                        "id": "out",
+                        "type": "Output",
+                        "params": {},
+                        "position": {"x": 200, "y": 0},
+                    },
+                ],
+                "edges": [
+                    {
+                        "source": "s3",
+                        "target": "out",
+                        "sourceHandle": "text",
+                        "targetHandle": "data",
+                    },
+                ],
+            },
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert run["status"] == "pending"
+    assert sent_task == {
+        "name": "worker.tasks.execute_s3_batch_setup",
+        "args": [run["id"]],
+        "queue": "agate",
+    }
+
+
+def test_get_run_includes_processed_items_array(monkeypatch, client: TestClient):
+    def fake_send_task(*_a, **_k):
+        pass
+
+    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+
+    project = client.post("/projects", json={"name": "Runs API", "slug": "runs-api"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Text flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "t",
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "type": "TextInput",
+                        "params": {"text": "Hi"},
+                        "position": {"x": 0, "y": 0},
+                    },
+                ],
+                "edges": [],
+            },
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    detail = client.get(f"/runs/{run['id']}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body.get("processed_items") == []
+
+
+def test_get_run_processed_item_not_found(monkeypatch, client: TestClient):
+    def fake_send_task(*_a, **_k):
+        pass
+
+    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
+
+    project = client.post("/projects", json={"name": "Item 404", "slug": "item-404"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Text flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "t",
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "type": "TextInput",
+                        "params": {"text": "Hi"},
+                        "position": {"x": 0, "y": 0},
+                    },
+                ],
+                "edges": [],
+            },
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert client.get(f"/runs/{run['id']}/items/99999").status_code == 404
+
+
 def test_run_includes_mapbox_api_token_from_project_secrets(monkeypatch, client: TestClient):
     def fake_send_task(*_a, **_k):
         pass
@@ -197,8 +313,14 @@ def test_create_project_with_workspace_id(tmp_path):
         s.add(org)
         s.commit()
         s.refresh(org)
+        oid = int(org.id)
+        sb = ensure_default_stylebook_for_organization(s, oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
         ws = BackfieldWorkspace(
-            organization_id=int(org.id), name="Default Workspace", slug="default"
+            organization_id=oid,
+            stylebook_id=sb_id,
+            name="Default Workspace",
+            slug="default",
         )
         s.add(ws)
         s.commit()
@@ -216,7 +338,12 @@ def test_create_project_with_workspace_id(tmp_path):
             json={"name": "WS Project", "slug": "wsproj", "workspace_id": int(ws.id)},
         )
         assert r.status_code == 200
-        pid = int(r.json()["id"])
+        body = r.json()
+        pid = int(body["id"])
+        assert body.get("workspace_id") == int(ws.id)
+        assert body.get("organization_id") == oid
+        assert body.get("workspace_stylebook_id") == sb_id
+        assert body.get("workspace_stylebook_name") == "Default Stylebook"
         with Session(engine) as s:
             p = s.get(BackfieldProject, pid)
             assert p is not None
@@ -240,11 +367,13 @@ def test_create_project_session_member_denied_without_workspace_membership(tmp_p
         s.commit()
         s.refresh(org)
         oid = int(org.id)
+        sb = ensure_default_stylebook_for_organization(s, oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
         ws_a = BackfieldWorkspace(
-            organization_id=oid, name="Workspace A", slug="ws-a"
+            organization_id=oid, stylebook_id=sb_id, name="Workspace A", slug="ws-a"
         )
         ws_b = BackfieldWorkspace(
-            organization_id=oid, name="Workspace B", slug="ws-b"
+            organization_id=oid, stylebook_id=sb_id, name="Workspace B", slug="ws-b"
         )
         s.add(ws_a)
         s.add(ws_b)
@@ -313,8 +442,10 @@ def test_create_project_session_org_admin_may_use_any_org_workspace(tmp_path) ->
         s.commit()
         s.refresh(org)
         oid = int(org.id)
+        sb = ensure_default_stylebook_for_organization(s, oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
         ws_b = BackfieldWorkspace(
-            organization_id=oid, name="Workspace B", slug="ws-b2"
+            organization_id=oid, stylebook_id=sb_id, name="Workspace B", slug="ws-b2"
         )
         s.add(ws_b)
         s.commit()

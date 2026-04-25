@@ -5,7 +5,13 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
-from backfield_db import BackfieldOrganization, BackfieldProject, BackfieldWorkspace
+from backfield_db import (
+    BackfieldOrganization,
+    BackfieldProject,
+    BackfieldWorkspace,
+    Stylebook,
+)
+from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from core_api.deps import get_session
 from core_api.main import app
 from fastapi.testclient import TestClient
@@ -26,8 +32,21 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
         s.add(org)
         s.commit()
         s.refresh(org)
+        oid = int(org.id)
+        sb = ensure_default_stylebook_for_organization(s, oid)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
+        s.add(
+            Stylebook(
+                organization_id=oid,
+                slug="alt-stylebook",
+                name="Alt Stylebook",
+                is_default=False,
+            )
+        )
+        s.commit()
         ws = BackfieldWorkspace(
-            organization_id=int(org.id),
+            organization_id=oid,
+            stylebook_id=sb_id,
             name="Default Workspace",
             slug="default",
         )
@@ -51,7 +70,8 @@ def client(tmp_path) -> Generator[TestClient, None, None]:
             )
         )
         ws2 = BackfieldWorkspace(
-            organization_id=int(org.id),
+            organization_id=oid,
+            stylebook_id=sb_id,
             name="Investigations",
             slug="investigations",
         )
@@ -143,6 +163,8 @@ def test_me_workspaces_groups_projects_for_org_admin(client: TestClient) -> None
     slugs = {p["slug"] for p in default_ws["projects"]}
     assert "general" in slugs
     assert "other" in slugs
+    assert default_ws.get("stylebook_id") is not None
+    assert default_ws.get("stylebook_name")
 
 
 def test_create_workspace_requires_auth(client: TestClient) -> None:
@@ -176,6 +198,92 @@ def test_patch_workspace_name_org_admin(client: TestClient) -> None:
     assert body["name"] == "Editorial desk"
     assert body["slug"] == "default"
     assert "general" in {p["slug"] for p in body["projects"]}
+    assert body.get("stylebook_id") is not None
+
+
+def test_list_org_stylebooks_requires_auth(client: TestClient) -> None:
+    r = client.get("/v1/organizations/1/stylebooks")
+    assert r.status_code == 401
+
+
+def test_list_org_stylebooks_org_admin(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "sblist@example.com", "password": "sblist-secret-12"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "sblist@example.com", "password": "sblist-secret-12"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    r = client.get(f"/v1/organizations/{org_id}/stylebooks")
+    assert r.status_code == 200
+    books = r.json()
+    assert isinstance(books, list)
+    assert len(books) >= 2
+    slugs = {b["slug"] for b in books}
+    assert "default" in slugs or "alt-stylebook" in slugs
+    assert all("id" in b and "name" in b and "is_default" in b for b in books)
+    assert books[0]["is_default"] is True
+
+
+def test_patch_workspace_stylebook_only_org_admin(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "wsb@example.com", "password": "wsb-secret-12"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "wsb@example.com", "password": "wsb-secret-12"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    books = client.get(f"/v1/organizations/{org_id}/stylebooks").json()
+    alt_id = next(b["id"] for b in books if b["slug"] == "alt-stylebook")
+    wlist = client.get(f"/v1/organizations/{org_id}/workspaces").json()
+    inv = next(w for w in wlist if w["slug"] == "investigations")
+    r = client.patch(
+        f"/v1/organizations/{org_id}/workspaces/{inv['id']}",
+        json={"stylebook_id": alt_id},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["stylebook_id"] == alt_id
+    assert body["stylebook_name"] == "Alt Stylebook"
+
+
+def test_patch_workspace_stylebook_rejects_foreign_id(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "wsbad@example.com", "password": "wsbad-secret-12"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "wsbad@example.com", "password": "wsbad-secret-12"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    wlist = client.get(f"/v1/organizations/{org_id}/workspaces").json()
+    wid = next(w for w in wlist if w["slug"] == "default")["id"]
+    r = client.patch(
+        f"/v1/organizations/{org_id}/workspaces/{wid}",
+        json={"stylebook_id": 999_999_999},
+    )
+    assert r.status_code == 400
+
+
+def test_patch_workspace_empty_body_org_admin(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "wsempty@example.com", "password": "wsempty-secret-12"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "wsempty@example.com", "password": "wsempty-secret-12"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    wlist = client.get(f"/v1/organizations/{org_id}/workspaces").json()
+    wid = next(w for w in wlist if w["slug"] == "default")["id"]
+    r = client.patch(f"/v1/organizations/{org_id}/workspaces/{wid}", json={})
+    assert r.status_code == 400
 
 
 def test_create_workspace_org_admin_and_me_lists_empty(client: TestClient) -> None:

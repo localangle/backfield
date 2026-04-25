@@ -7,9 +7,25 @@ from collections.abc import Iterable
 from typing import Any
 
 from backfield_db import SubstrateLocation, SubstrateLocationCache
+from backfield_stylebook.substrate_location_cache_fingerprint import (
+    substrate_location_cache_query_fingerprint,
+)
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from worker.substrate_common import _normalize_name, _sha256_hex, _utcnow
+
+
+def _place_extract_persist_fields_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Fields from the geocode ``entry`` merged into ``SubstrateLocation.source_details_json``."""
+    out: dict[str, Any] = {}
+    comps = entry.get("components")
+    if isinstance(comps, dict):
+        out["place_extract_components"] = comps
+    kind = entry.get("address_place_kind")
+    if isinstance(kind, str) and kind.strip():
+        out["address_place_kind"] = kind.strip().lower()
+    return out
 
 
 def _coord_pair_wkt(pair: Any) -> str | None:
@@ -119,19 +135,6 @@ def _geometry_bind_value(session: Session, geometry_json: dict[str, Any]) -> obj
 
     return wkt
 
-def _cache_fingerprint(*, project_id: int, normalized_query: str, location_type: str | None) -> str:
-    return _sha256_hex(
-        json.dumps(
-            {
-                "project_id": project_id,
-                "normalized_query": normalized_query,
-                "location_type": location_type,
-            },
-            sort_keys=True,
-        )
-    )
-
-
 def _upsert_location_cache(
     session: Session,
     *,
@@ -150,7 +153,7 @@ def _upsert_location_cache(
     if not normalized_query:
         return
 
-    fingerprint = _cache_fingerprint(
+    fingerprint = substrate_location_cache_query_fingerprint(
         project_id=project_id,
         normalized_query=normalized_query,
         location_type=location_type,
@@ -334,6 +337,69 @@ def _geocode_meta_from_entry(entry: dict[str, Any]) -> tuple[str | None, dict[st
     return geocode_type_str, result
 
 
+def _fetch_substrate_location_after_unique_violation(
+    session: Session,
+    *,
+    project_id: int,
+    external_source: str | None,
+    external_id: str | None,
+    identity_fingerprint: str,
+) -> SubstrateLocation | None:
+    """Re-load row after concurrent insert hit ``uq_substrate_location_*``."""
+    if external_source and external_id:
+        row = session.exec(
+            select(SubstrateLocation).where(
+                col(SubstrateLocation.project_id) == project_id,
+                col(SubstrateLocation.external_source) == external_source,
+                col(SubstrateLocation.external_id) == external_id,
+            )
+        ).first()
+        if row is not None:
+            return row
+    return session.exec(
+        select(SubstrateLocation).where(
+            col(SubstrateLocation.project_id) == project_id,
+            col(SubstrateLocation.identity_fingerprint) == identity_fingerprint,
+        )
+    ).first()
+
+
+def _apply_substrate_location_merge(
+    loc: SubstrateLocation,
+    *,
+    display_name: str,
+    normalized: str,
+    location_type_str: str | None,
+    status: str,
+    external_source: str | None,
+    external_id: str | None,
+    fingerprint: str,
+    geocode_type: str | None,
+    formatted_address: str | None,
+    details: dict[str, Any],
+    geometry_value: object | None,
+    geometry_type_str: str | None,
+    geometry_json: dict[str, Any] | None,
+) -> None:
+    now = _utcnow()
+    loc.name = display_name
+    loc.normalized_name = normalized
+    loc.location_type = location_type_str or loc.location_type
+    loc.status = status
+    loc.external_source = external_source or loc.external_source
+    loc.external_id = external_id or loc.external_id
+    loc.identity_fingerprint = fingerprint
+    loc.geocode_type = geocode_type or loc.geocode_type
+    loc.formatted_address = formatted_address or loc.formatted_address
+    loc.source_kind = "agate_geocode"
+    prev_details = loc.source_details_json if isinstance(loc.source_details_json, dict) else {}
+    loc.source_details_json = {**prev_details, **details}
+    loc.geometry = geometry_value or loc.geometry
+    loc.geometry_type = geometry_type_str or loc.geometry_type
+    loc.geometry_json = geometry_json or loc.geometry_json
+    loc.updated_at = now
+
+
 def _upsert_location(
     session: Session,
     *,
@@ -402,16 +468,16 @@ def _upsert_location(
             )
         ).first()
 
-    now = _utcnow()
     details = {
         "graph_id": graph_id,
         "run_id": run_id,
         "places_bucket": bucket,
         "raw_entry_id": entry.get("id"),
+        **_place_extract_persist_fields_from_entry(entry),
     }
 
     if loc is None:
-        loc = SubstrateLocation(
+        new_loc = SubstrateLocation(
             project_id=project_id,
             name=display_name,
             normalized_name=normalized,
@@ -428,8 +494,43 @@ def _upsert_location(
             geometry_type=geometry_type_str,
             geometry_json=geometry_json,
         )
-        session.add(loc)
-        session.flush()
+        try:
+            with session.begin_nested():
+                session.add(new_loc)
+                session.flush()
+        except IntegrityError as exc:
+            loc = _fetch_substrate_location_after_unique_violation(
+                session,
+                project_id=project_id,
+                external_source=external_source,
+                external_id=external_id,
+                identity_fingerprint=fingerprint,
+            )
+            if loc is None:
+                raise RuntimeError(
+                    "substrate_location insert collided on unique key but concurrent row "
+                    "was not visible; retry the persistence step"
+                ) from exc
+            _apply_substrate_location_merge(
+                loc,
+                display_name=display_name,
+                normalized=normalized,
+                location_type_str=location_type_str,
+                status=status,
+                external_source=external_source,
+                external_id=external_id,
+                fingerprint=fingerprint,
+                geocode_type=geocode_type,
+                formatted_address=formatted_address,
+                details=details,
+                geometry_value=geometry_value,
+                geometry_type_str=geometry_type_str,
+                geometry_json=geometry_json,
+            )
+            session.add(loc)
+            session.flush()
+        else:
+            loc = new_loc
         _upsert_location_cache(
             session,
             project_id=project_id,
@@ -445,21 +546,22 @@ def _upsert_location(
         )
         return loc
 
-    loc.name = display_name
-    loc.normalized_name = normalized
-    loc.location_type = location_type_str or loc.location_type
-    loc.status = status
-    loc.external_source = external_source or loc.external_source
-    loc.external_id = external_id or loc.external_id
-    loc.identity_fingerprint = fingerprint
-    loc.geocode_type = geocode_type or loc.geocode_type
-    loc.formatted_address = formatted_address or loc.formatted_address
-    loc.source_kind = "agate_geocode"
-    loc.source_details_json = details
-    loc.geometry = geometry_value or loc.geometry
-    loc.geometry_type = geometry_type_str or loc.geometry_type
-    loc.geometry_json = geometry_json or loc.geometry_json
-    loc.updated_at = now
+    _apply_substrate_location_merge(
+        loc,
+        display_name=display_name,
+        normalized=normalized,
+        location_type_str=location_type_str,
+        status=status,
+        external_source=external_source,
+        external_id=external_id,
+        fingerprint=fingerprint,
+        geocode_type=geocode_type,
+        formatted_address=formatted_address,
+        details=details,
+        geometry_value=geometry_value,
+        geometry_type_str=geometry_type_str,
+        geometry_json=geometry_json,
+    )
     session.add(loc)
     session.flush()
     _upsert_location_cache(

@@ -16,6 +16,7 @@ dependencies = [
 members = [
     "packages/backfield-core",
     "packages/backfield-auth",
+    "packages/backfield-stylebook",
     "packages/agate-runtime",
     "packages/backfield-db",
     "apps/agate-api",
@@ -29,6 +30,7 @@ backfield-core = { workspace = true }
 backfield-auth = { workspace = true }
 agate-runtime = { workspace = true }
 backfield-db = { workspace = true }
+backfield-stylebook = { workspace = true }
 core-api = { workspace = true }
 
 [tool.pytest.ini_options]
@@ -38,6 +40,7 @@ pythonpath = [
     "packages/backfield-auth/src",
     "packages/agate-runtime/src",
     "packages/backfield-db/src",
+    "packages/backfield-stylebook/src",
     "apps/agate-api/src",
     "apps/worker/src",
     "apps/stylebook-api/src",

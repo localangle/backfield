@@ -1,7 +1,12 @@
 """Shared types for the geocoding agent."""
 
-from typing import TypedDict, Optional, Any
+from collections.abc import Callable
+from typing import Any, Optional, TypedDict
+
 from agate_utils.geocoding.geocoding_types import GeocodingResult
+
+# Sync (run in ``asyncio.to_thread``): returns match dict for stylebook/cache converters, or None.
+CacheResolveFn = Callable[[str, str, dict[str, Any]], dict[str, Any] | None]
 
 
 class AgentState(TypedDict, total=False):
@@ -22,4 +27,6 @@ class AgentState(TypedDict, total=False):
     stylebook_api_url: Optional[str]  # Stylebook API URL for canonical matching
     project_slug: Optional[str]  # Project slug for canonical matching
     service_api_token: Optional[str]  # Service API token for Stylebook API
+    # When set with ``use_cache``, DB-backed canonical + substrate_location_cache (Backfield worker).
+    cache_resolve: Optional[CacheResolveFn]
     final_output: Optional[dict]
