@@ -546,14 +546,7 @@ export default function LocationCandidates() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       {createdToast ? (
-        <div
-          className={cn(
-            "fixed bottom-6 right-6 z-50",
-            toastFollowupLoading || toastFollowupRows.length > 0
-              ? "w-[min(500px,calc(100vw-3rem))]"
-              : "w-[min(360px,calc(100vw-3rem))]",
-          )}
-        >
+        <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
           <div
             role="status"
             className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
@@ -563,11 +556,16 @@ export default function LocationCandidates() {
                 className="mt-0.5 h-5 w-5 shrink-0 text-primary"
                 aria-hidden
               />
-              <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <div className="flex min-w-0 max-w-[min(28rem,calc(100vw-5.5rem))] flex-col gap-2">
                 <div className="text-sm font-semibold leading-none">Canonical created</div>
                 <div className="text-sm text-muted-foreground">
                   Saved as{" "}
-                  <span className="font-medium text-foreground">{createdToast.canonicalLabel}</span>
+                  <Link
+                    to={`/locations/canonical/${createdToast.canonicalId}?project=${encodeURIComponent(projectSlug)}`}
+                    className="font-medium text-foreground underline-offset-4 hover:underline break-words"
+                  >
+                    {createdToast.canonicalLabel}
+                  </Link>
                 </div>
                 {toastFollowupLoading ? (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground pt-0.5">
@@ -782,7 +780,7 @@ export default function LocationCandidates() {
                             <Button
                               type="button"
                               size="icon"
-                              variant={rowSug === "create_new" ? "outline" : "default"}
+                              variant={rowSug === "link" ? "default" : "outline"}
                               className={cn(
                                 "h-8 w-8 shrink-0",
                                 rowSug === "link" &&
@@ -833,22 +831,6 @@ export default function LocationCandidates() {
                                 <PlusCircle className="h-4 w-4" aria-hidden />
                               )}
                             </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="outline"
-                              className="h-8 w-8 shrink-0"
-                              title={c.note ? "Edit note" : "Add note"}
-                              aria-label={c.note ? "Edit note" : "Add note"}
-                              disabled={
-                                acceptingId === c.id ||
-                                deferringId === c.id ||
-                                noteSavingId === c.id
-                              }
-                              onClick={() => openNoteModal(c)}
-                            >
-                              <StickyNote className="h-4 w-4" aria-hidden />
-                            </Button>
                             {status === "open" && (
                               <Button
                                 type="button"
@@ -875,6 +857,22 @@ export default function LocationCandidates() {
                                 )}
                               </Button>
                             )}
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              className="h-8 w-8 shrink-0"
+                              title={c.note ? "Edit note" : "Add note"}
+                              aria-label={c.note ? "Edit note" : "Add note"}
+                              disabled={
+                                acceptingId === c.id ||
+                                deferringId === c.id ||
+                                noteSavingId === c.id
+                              }
+                              onClick={() => openNoteModal(c)}
+                            >
+                              <StickyNote className="h-4 w-4" aria-hidden />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -912,7 +910,7 @@ export default function LocationCandidates() {
                                   <p className="mt-1 text-sm whitespace-pre-wrap">{savedNoteText}</p>
                                 ) : (
                                   <p className="mt-1 text-sm text-muted-foreground italic">
-                                    No note yet. Use the Note button in the row actions to add one.
+                                    No note yet. Use the note (sticky note) action in the row to add one.
                                   </p>
                                 )}
                               </div>
