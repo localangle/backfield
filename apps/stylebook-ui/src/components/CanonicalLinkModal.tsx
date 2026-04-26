@@ -203,7 +203,7 @@ export function CanonicalLinkModal(props: {
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1 py-2 sm:px-2">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="space-y-2">
-            <div className="text-sm font-medium">Ranked suggestions</div>
+            <div className="text-sm font-medium">Suggestions</div>
             {loadingSuggestions ? (
               <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -215,6 +215,7 @@ export function CanonicalLinkModal(props: {
               <div className="max-h-[min(40vh,320px)] overflow-y-auto pr-1">
                 <LinkPickTable
                   rows={suggestionRows}
+                  includeAddress={false}
                   busyKey={linkingCanonicalId}
                   linkDisabled={!substrateLocationId}
                   onLink={(key) => void linkToCanonical(Number(key))}
