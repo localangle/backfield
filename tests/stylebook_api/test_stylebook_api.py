@@ -282,6 +282,60 @@ def test_list_canonical_locations_orders_by_label_case_insensitive(client: TestC
     assert labels == ["alpha", "Mike", "Zebra"]
 
 
+def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    _ = stylebook_test_engine
+    from urllib.parse import quote
+
+    # Contiguous substring filter: every row must contain the full query text.
+    exact_query = "CanonSearchToken Chicago, IL"
+    a = f"{exact_query} Extra Words"
+    b = exact_query
+    c = f"{exact_query} More"
+    for lb in (a, b, c):
+        r = client.post(
+            "/v1/canonical-locations?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"label": lb},
+        )
+        assert r.status_code == 200
+
+    q = quote(exact_query)
+    r = client.get(
+        f"/v1/canonical-locations?project_slug=demo-proj&q={q}&limit=200",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    labels = [row["label"] for row in r.json()["canonicals"]]
+    assert a in labels and b in labels and c in labels
+    assert labels.index(b) < labels.index(a)
+    assert labels.index(b) < labels.index(c)
+
+    prefix_query = "CanonSearchToken2 Chicago"
+    a2 = f"Albany, {prefix_query}, IL"
+    b2 = f"{prefix_query}, IL"
+    c2 = f"United, {prefix_query}, IL"
+    for lb in (a2, b2, c2):
+        r = client.post(
+            "/v1/canonical-locations?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"label": lb},
+        )
+        assert r.status_code == 200
+
+    q2 = quote(prefix_query)
+    r2 = client.get(
+        f"/v1/canonical-locations?project_slug=demo-proj&q={q2}&limit=200",
+        headers=_service_headers(),
+    )
+    assert r2.status_code == 200
+    labels2 = [row["label"] for row in r2.json()["canonicals"]]
+    assert a2 in labels2 and b2 in labels2 and c2 in labels2
+    assert labels2.index(b2) < labels2.index(a2)
+    assert labels2.index(b2) < labels2.index(c2)
+
+
 def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClient) -> None:
     r = client.post(
         "/v1/locations?project_slug=demo-proj",
