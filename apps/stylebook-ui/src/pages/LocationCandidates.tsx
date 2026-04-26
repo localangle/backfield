@@ -1,18 +1,24 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import {
   acceptCandidate,
   deferCandidate,
   getCandidateContext,
   getSuggestedCanonicals,
+  linkSubstrateToCanonical,
   listCandidates,
   listLocationCandidateTypes,
   updateCandidateNote,
   type Candidate,
   type CandidateContextResponse,
 } from "@/lib/api"
-import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
+import {
+  PLACE_EXTRACT_LOCATION_TYPES,
+  placeExtractTypeLabel,
+  sortReviewQueueTypeFilterOptions,
+} from "@/lib/place-extract-type-label"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
+import { LinkPickTable } from "@/components/LinkPickTable"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
@@ -43,6 +49,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
 import {
   CheckCircle2,
@@ -125,6 +132,8 @@ function similarityRankScoreForCandidate(c: Candidate, needleRaw: string): numbe
   return jaccard * 10_000 + diceBigramCoefficient(name, needle) * 1000
 }
 
+const REVIEW_QUEUE_PAGE_SIZE = 100
+
 function rankSimilarCandidates(rows: Candidate[], needle: string): Candidate[] {
   const scored = rows.map((c) => ({
     c,
@@ -144,11 +153,21 @@ export default function LocationCandidates() {
   const projectSlug = searchParams.get("project") || ""
   const [loading, setLoading] = useState(false)
   const [listTotal, setListTotal] = useState(0)
+  const [listPage, setListPage] = useState(1)
+  const [listHasNext, setListHasNext] = useState(false)
+  const [listHasPrev, setListHasPrev] = useState(false)
+  /** Bumps when `filterKey` changes so list fetch resets to page 1 without a stale `listPage` fetch. */
+  const [listFetchGen, setListFetchGen] = useState(0)
+  const filterKeySeenRef = useRef<string | null>(null)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [status, setStatus] = useState<"open" | "deferred">("open")
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
+  const filterKey = useMemo(
+    () => `${projectSlug}|${status}|${debouncedQuery}|${typeFilter}`,
+    [projectSlug, status, debouncedQuery, typeFilter],
+  )
   const [types, setTypes] = useState<string[]>([])
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
   const [deferringId, setDeferringId] = useState<number | null>(null)
@@ -159,29 +178,29 @@ export default function LocationCandidates() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [contextById, setContextById] = useState<Record<number, CandidateContextResponse>>({})
   const [contextLoadingId, setContextLoadingId] = useState<number | null>(null)
-  const [noteModalId, setNoteModalId] = useState<number | null>(null)
-  const [noteModalDraft, setNoteModalDraft] = useState("")
   const [noteSavingId, setNoteSavingId] = useState<number | null>(null)
+  const [noteEditingId, setNoteEditingId] = useState<number | null>(null)
+  const [noteDraftById, setNoteDraftById] = useState<Record<number, string>>({})
   const [createModalId, setCreateModalId] = useState<number | null>(null)
   const [createCanonicalDraft, setCreateCanonicalDraft] = useState("")
+  const [createModalLocationType, setCreateModalLocationType] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const [createdToast, setCreatedToast] = useState<{ canonicalLabel: string } | null>(null)
-  const [similarOpen, setSimilarOpen] = useState(false)
-  const [similarLoading, setSimilarLoading] = useState(false)
-  const [similarError, setSimilarError] = useState<string | null>(null)
-  const [similarCandidates, setSimilarCandidates] = useState<Candidate[]>([])
-  const [pendingScrollToId, setPendingScrollToId] = useState<number | null>(null)
+  const [createdToast, setCreatedToast] = useState<{
+    canonicalLabel: string
+    canonicalId: number
+  } | null>(null)
+  /** Same query as “show similar candidates”: open queue + q + limit 100, ranked top 5. */
+  const [toastFollowupLoading, setToastFollowupLoading] = useState(false)
+  const [toastFollowupError, setToastFollowupError] = useState<string | null>(null)
+  const [toastFollowupRows, setToastFollowupRows] = useState<Candidate[]>([])
+  const [potentialLinksOpen, setPotentialLinksOpen] = useState(false)
+  const [toastLinkBusyId, setToastLinkBusyId] = useState<number | null>(null)
+  const [toastLinkError, setToastLinkError] = useState<string | null>(null)
   const [createLinkNudge, setCreateLinkNudge] = useState<{
     canonicalId: number
     label: string
   } | null>(null)
-  const [createLinkNudgeLoading, setCreateLinkNudgeLoading] = useState(false)
-
-  const noteModalCandidate = useMemo(
-    () => (noteModalId === null ? undefined : candidates.find((x) => x.id === noteModalId)),
-    [candidates, noteModalId]
-  )
 
   const createModalCandidate = useMemo(
     () => (createModalId === null ? undefined : candidates.find((x) => x.id === createModalId)),
@@ -192,6 +211,32 @@ export default function LocationCandidates() {
     () => sortReviewQueueTypeFilterOptions(types),
     [types],
   )
+
+  const createModalTypeOptions = useMemo(
+    () => sortReviewQueueTypeFilterOptions([...PLACE_EXTRACT_LOCATION_TYPES]),
+    [],
+  )
+
+  const listTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(listTotal / REVIEW_QUEUE_PAGE_SIZE)),
+    [listTotal],
+  )
+
+  /** When filters change, reset to page 1 and bump generation so the list fetch does not use a stale page. */
+  useEffect(() => {
+    if (!projectSlug) {
+      filterKeySeenRef.current = null
+      return
+    }
+    if (filterKeySeenRef.current === null) {
+      filterKeySeenRef.current = filterKey
+      return
+    }
+    if (filterKeySeenRef.current === filterKey) return
+    filterKeySeenRef.current = filterKey
+    setListFetchGen((g) => g + 1)
+    setListPage(1)
+  }, [filterKey, projectSlug])
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQuery(query), 250)
@@ -250,23 +295,18 @@ export default function LocationCandidates() {
     const draft = createCanonicalDraft.trim()
     if (!draft) {
       setCreateLinkNudge(null)
-      setCreateLinkNudgeLoading(false)
       return
     }
-    setCreateLinkNudgeLoading(true)
+    // Do not show a loading banner; only surface UI when a similar canonical is found.
+    setCreateLinkNudge(null)
     const t = window.setTimeout(() => {
       void (async () => {
-        try {
-          await refreshCreateLinkNudge(createModalId, draft)
-        } finally {
-          if (!cancelled) setCreateLinkNudgeLoading(false)
-        }
+        if (!cancelled) await refreshCreateLinkNudge(createModalId, draft)
       })()
     }, 280)
     return () => {
       cancelled = true
       window.clearTimeout(t)
-      setCreateLinkNudgeLoading(false)
     }
   }, [createModalId, createCanonicalDraft, projectSlug, refreshCreateLinkNudge])
 
@@ -276,22 +316,32 @@ export default function LocationCandidates() {
     setError(null)
     const type_filter = typeFilter === "all" ? undefined : typeFilter
     const q = debouncedQuery.trim() || undefined
+    const offset = (listPage - 1) * REVIEW_QUEUE_PAGE_SIZE
     try {
       const res = await listCandidates(projectSlug, status, false, {
-        limit: 100,
-        offset: 0,
+        limit: REVIEW_QUEUE_PAGE_SIZE,
+        offset,
         type_filter,
         q,
       })
       setListTotal(res.total)
       setCandidates(res.candidates)
+      setListHasNext(res.has_next)
+      setListHasPrev(res.has_prev)
+      if (
+        res.candidates.length === 0 &&
+        res.total > 0 &&
+        offset >= REVIEW_QUEUE_PAGE_SIZE
+      ) {
+        setListPage((p) => Math.max(1, p - 1))
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed")
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter])
+  }, [projectSlug, status, debouncedQuery, typeFilter, listPage])
 
-  // Initial + filter changes: use primitives in deps, not a callback, so row actions
-  // (which call `refreshListQuiet`) never spuriously retrigger this and flash the loader.
+  // Initial + filter/pagination changes. `listFetchGen` bumps when filters change so we never fetch
+  // a stale page with new filters (see filterKey effect above).
   useEffect(() => {
     if (!projectSlug) return
     let cancelled = false
@@ -300,21 +350,34 @@ export default function LocationCandidates() {
       setError(null)
       const type_filter = typeFilter === "all" ? undefined : typeFilter
       const q = debouncedQuery.trim() || undefined
+      const offset = (listPage - 1) * REVIEW_QUEUE_PAGE_SIZE
       try {
         const res = await listCandidates(projectSlug, status, false, {
-          limit: 100,
-          offset: 0,
+          limit: REVIEW_QUEUE_PAGE_SIZE,
+          offset,
           type_filter,
           q,
         })
         if (cancelled) return
         setListTotal(res.total)
         setCandidates(res.candidates)
+        setListHasNext(res.has_next)
+        setListHasPrev(res.has_prev)
+        if (
+          !cancelled &&
+          res.candidates.length === 0 &&
+          res.total > 0 &&
+          offset >= REVIEW_QUEUE_PAGE_SIZE
+        ) {
+          setListPage((p) => Math.max(1, p - 1))
+        }
       } catch (e) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : "Request failed")
         setListTotal(0)
         setCandidates([])
+        setListHasNext(false)
+        setListHasPrev(false)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -322,7 +385,41 @@ export default function LocationCandidates() {
     return () => {
       cancelled = true
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter])
+  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen])
+
+  const prefetchToastFollowupCandidates = useCallback(async () => {
+    const label = createdToast?.canonicalLabel?.trim()
+    if (!projectSlug || !label) return
+    setToastFollowupLoading(true)
+    setToastFollowupError(null)
+    try {
+      const res = await listCandidates(projectSlug, "open", false, {
+        limit: 100,
+        offset: 0,
+        q: label,
+      })
+      const ranked = rankSimilarCandidates(res.candidates, label).slice(0, 5)
+      setToastFollowupRows(ranked)
+    } catch (e) {
+      setToastFollowupError(e instanceof Error ? e.message : "Couldn't load candidates")
+      setToastFollowupRows([])
+    } finally {
+      setToastFollowupLoading(false)
+    }
+  }, [projectSlug, createdToast?.canonicalLabel])
+
+  useEffect(() => {
+    if (!createdToast || !projectSlug) {
+      setToastFollowupRows([])
+      setToastFollowupLoading(false)
+      setToastFollowupError(null)
+      setPotentialLinksOpen(false)
+      setToastLinkBusyId(null)
+      setToastLinkError(null)
+      return
+    }
+    void prefetchToastFollowupCandidates()
+  }, [createdToast, projectSlug, prefetchToastFollowupCandidates])
 
   function defaultNewCanonicalLabel(c: Candidate): string {
     const fromName = (c.suggested_name ?? "").trim()
@@ -330,17 +427,24 @@ export default function LocationCandidates() {
     return (c.suggested_formatted_address ?? "").trim()
   }
 
+  function defaultNewCanonicalLocationType(c: Candidate): string {
+    const t = (c.suggested_type ?? "").trim().toLowerCase()
+    if (t && (PLACE_EXTRACT_LOCATION_TYPES as readonly string[]).includes(t)) return t
+    return "place"
+  }
+
   function openCreateCanonicalModal(c: Candidate) {
     setCreateModalId(c.id)
     setCreateCanonicalDraft(defaultNewCanonicalLabel(c))
+    setCreateModalLocationType(defaultNewCanonicalLocationType(c))
     setCreateLinkNudge(null)
   }
 
   function closeCreateCanonicalModal() {
     setCreateModalId(null)
     setCreateCanonicalDraft("")
+    setCreateModalLocationType("")
     setCreateLinkNudge(null)
-    setCreateLinkNudgeLoading(false)
   }
 
   async function submitCreateCanonicalFromModal() {
@@ -350,13 +454,29 @@ export default function LocationCandidates() {
       setError("Enter a label for the new canonical.")
       return
     }
+    const location_type = createModalLocationType.trim().toLowerCase()
+    if (!location_type || !(PLACE_EXTRACT_LOCATION_TYPES as readonly string[]).includes(location_type)) {
+      setError("Select a valid location type.")
+      return
+    }
     setAcceptingId(createModalId)
     setError(null)
     try {
-      await acceptCandidate(projectSlug, createModalId, { create_new: true, name })
+      const acceptRes = await acceptCandidate(projectSlug, createModalId, {
+        create_new: true,
+        name,
+        location_type,
+      })
       await refreshListQuiet()
       closeCreateCanonicalModal()
-      setCreatedToast({ canonicalLabel: name })
+      const cid = acceptRes.stylebook_location_canonical_id
+      if (typeof cid !== "number") {
+        setError(
+          "Canonical was created, but the server did not return its id. Reload the page if you need to link similar candidates from the toast.",
+        )
+        return
+      }
+      setCreatedToast({ canonicalLabel: name, canonicalId: cid })
     } catch (e) {
       setError(e instanceof Error ? e.message : "Accept failed")
     } finally {
@@ -364,47 +484,20 @@ export default function LocationCandidates() {
     }
   }
 
-  async function loadSimilarCandidates(label: string) {
-    if (!projectSlug) return
-    setSimilarLoading(true)
-    setSimilarError(null)
+  async function linkToastCandidateToNewCanonical(c: Candidate) {
+    if (!projectSlug || !createdToast) return
+    setToastLinkError(null)
+    setToastLinkBusyId(c.id)
     try {
-      const res = await listCandidates(projectSlug, "open", false, {
-        limit: 100,
-        offset: 0,
-        q: label,
-      })
-      setSimilarCandidates(rankSimilarCandidates(res.candidates, label).slice(0, 5))
+      await linkSubstrateToCanonical(c.id, projectSlug, createdToast.canonicalId)
+      setToastFollowupRows((rows) => rows.filter((r) => r.id !== c.id))
+      await refreshListQuiet()
     } catch (e) {
-      setSimilarError(e instanceof Error ? e.message : "Couldn't load similar candidates")
-      setSimilarCandidates([])
+      setToastLinkError(e instanceof Error ? e.message : "Link failed")
     } finally {
-      setSimilarLoading(false)
+      setToastLinkBusyId(null)
     }
   }
-
-  async function expandCandidateById(id: number) {
-    if (!projectSlug) return
-    setExpandedId(id)
-    if (contextById[id]) return
-    setContextLoadingId(id)
-    try {
-      const ctx = await getCandidateContext(projectSlug, id, 3)
-      setContextById((prev) => ({ ...prev, [id]: ctx }))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load context")
-    } finally {
-      setContextLoadingId(null)
-    }
-  }
-
-  useEffect(() => {
-    if (pendingScrollToId === null) return
-    const el = document.getElementById(`candidate-row-${pendingScrollToId}`)
-    if (!el) return
-    el.scrollIntoView({ behavior: "smooth", block: "center" })
-    setPendingScrollToId(null)
-  }, [candidates, pendingScrollToId])
 
   async function handleDefer(c: Candidate) {
     if (!projectSlug) return
@@ -437,46 +530,39 @@ export default function LocationCandidates() {
     }
   }
 
-  function openNoteModal(c: Candidate) {
-    setNoteModalId(c.id)
-    const ctx = contextById[c.id]
-    const initial = (c.note ?? ctx?.note ?? "") as string
-    setNoteModalDraft(initial)
+  function openInlineNoteEditor(c: Candidate, initialText: string) {
+    setNoteEditingId(c.id)
+    setNoteDraftById((prev) => {
+      if (prev[c.id] !== undefined) return prev
+      return { ...prev, [c.id]: initialText }
+    })
   }
 
-  function closeNoteModal() {
-    setNoteModalId(null)
-    setNoteModalDraft("")
-  }
-
-  async function saveNoteFromModal() {
-    if (!projectSlug || noteModalId === null) return
-    const draft = noteModalDraft.trim()
-    const id = noteModalId
-    setNoteSavingId(id)
+  async function saveInlineNote(candidateId: number) {
+    if (!projectSlug) return
+    const raw = noteDraftById[candidateId] ?? ""
+    const draft = raw.trim()
+    setNoteSavingId(candidateId)
     setError(null)
-    let ok = false
     try {
-      await updateCandidateNote(projectSlug, id, draft ? draft : null)
+      await updateCandidateNote(projectSlug, candidateId, draft ? draft : null)
       setContextById((prev) => {
-        const existing = prev[id]
+        const existing = prev[candidateId]
         if (!existing) return prev
-        return { ...prev, [id]: { ...existing, note: draft ? draft : null } }
+        return { ...prev, [candidateId]: { ...existing, note: draft ? draft : null } }
       })
       await refreshListQuiet()
-      ok = true
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save note")
     } finally {
       setNoteSavingId(null)
     }
-    if (ok) closeNoteModal()
   }
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       {createdToast ? (
-        <div className="fixed bottom-6 right-6 z-50 w-[min(500px,calc(100vw-3rem))]">
+        <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
           <div
             role="status"
             className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
@@ -486,25 +572,36 @@ export default function LocationCandidates() {
                 className="mt-0.5 h-5 w-5 shrink-0 text-primary"
                 aria-hidden
               />
-              <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <div className="min-w-0 space-y-1">
-                  <div className="text-sm font-semibold leading-none">Canonical created</div>
-                  <div className="text-sm text-muted-foreground">
-                    Saved as{" "}
-                    <span className="font-medium text-foreground">{createdToast.canonicalLabel}</span>
-                  </div>
+              <div className="flex min-w-0 max-w-[min(28rem,calc(100vw-5.5rem))] flex-col gap-2">
+                <div className="text-sm font-semibold leading-none">Canonical created</div>
+                <div className="text-sm text-muted-foreground">
+                  Saved as{" "}
+                  <Link
+                    to={`/locations/canonical/${createdToast.canonicalId}?project=${encodeURIComponent(projectSlug)}`}
+                    className="font-medium text-foreground underline-offset-4 hover:underline break-words"
+                  >
+                    {createdToast.canonicalLabel}
+                  </Link>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="w-full shrink-0 sm:w-auto"
-                  onClick={() => {
-                    setSimilarOpen(true)
-                    void loadSimilarCandidates(createdToast.canonicalLabel)
-                  }}
-                >
-                  Show similar candidates
-                </Button>
+                {toastFollowupLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground pt-0.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
+                    <span>Checking the open queue for related locations…</span>
+                  </div>
+                ) : null}
+                {toastFollowupError && !toastFollowupLoading ? (
+                  <p className="text-xs text-destructive">{toastFollowupError}</p>
+                ) : null}
+                {!toastFollowupLoading && toastFollowupRows.length > 0 ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="mt-1 w-full shrink-0 self-start sm:w-auto"
+                    onClick={() => setPotentialLinksOpen(true)}
+                  >
+                    Potential links found
+                  </Button>
+                ) : null}
               </div>
               <Button
                 type="button"
@@ -608,14 +705,22 @@ export default function LocationCandidates() {
                 Deferred
               </button>
             </div>
-            <Table>
+            <Table className="table-fixed">
+              <colgroup>
+                <col style={{ width: "30%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "28%" }} />
+                <col style={{ width: "10%" }} />
+                {/* Four icon buttons, gaps, cell padding, and focus rings need a firm minimum. */}
+                <col style={{ width: "13rem" }} />
+              </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Address</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">
+                  <TableHead className="min-w-0">Location</TableHead>
+                  <TableHead className="whitespace-nowrap">Type</TableHead>
+                  <TableHead className="min-w-0">Address</TableHead>
+                  <TableHead className="whitespace-nowrap">Created</TableHead>
+                  <TableHead className="min-w-0 text-right">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -635,9 +740,9 @@ export default function LocationCandidates() {
                     return (
                     <Fragment key={c.id}>
                       <TableRow id={`candidate-row-${c.id}`}>
-                        <TableCell className="font-medium">
-                          <div className="flex flex-col items-start gap-1">
-                          <div className="flex items-center gap-2">
+                        <TableCell className="font-medium min-w-0">
+                          <div className="flex flex-col items-start gap-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
                             <Button
                               type="button"
                               size="icon"
@@ -660,7 +765,7 @@ export default function LocationCandidates() {
                                 />
                               )}
                             </Button>
-                            <span>{c.suggested_name || "—"}</span>
+                            <span className="min-w-0 break-words">{c.suggested_name || "—"}</span>
                             {c.note ? (
                               <StickyNote
                                 className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -683,23 +788,23 @@ export default function LocationCandidates() {
                           ) : null}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {c.suggested_type
                             ? placeExtractTypeLabel(c.suggested_type)
                             : "—"}
                         </TableCell>
-                        <TableCell className="max-w-xs truncate">
+                        <TableCell className="min-w-0 max-w-xs truncate">
                           {c.suggested_formatted_address || "—"}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
                           {c.created_at ? new Date(c.created_at).toLocaleDateString() : "—"}
                         </TableCell>
-                        <TableCell className="text-right w-[1%] whitespace-nowrap align-top">
-                          <div className="inline-flex flex-nowrap items-center justify-end gap-1">
+                        <TableCell className="text-right whitespace-nowrap align-top overflow-visible">
+                          <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 px-0.5">
                             <Button
                               type="button"
                               size="icon"
-                              variant={rowSug === "create_new" ? "outline" : "default"}
+                              variant={rowSug === "link" ? "default" : "outline"}
                               className={cn(
                                 "h-8 w-8 shrink-0",
                                 rowSug === "link" &&
@@ -750,22 +855,6 @@ export default function LocationCandidates() {
                                 <PlusCircle className="h-4 w-4" aria-hidden />
                               )}
                             </Button>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="outline"
-                              className="h-8 w-8 shrink-0"
-                              title={c.note ? "Edit note" : "Add note"}
-                              aria-label={c.note ? "Edit note" : "Add note"}
-                              disabled={
-                                acceptingId === c.id ||
-                                deferringId === c.id ||
-                                noteSavingId === c.id
-                              }
-                              onClick={() => openNoteModal(c)}
-                            >
-                              <StickyNote className="h-4 w-4" aria-hidden />
-                            </Button>
                             {status === "open" && (
                               <Button
                                 type="button"
@@ -797,8 +886,8 @@ export default function LocationCandidates() {
                       </TableRow>
                       {expandedId === c.id && (
                         <TableRow>
-                          <TableCell colSpan={5} className="bg-muted/30">
-                            <div className="space-y-3 py-2">
+                          <TableCell colSpan={5} className="bg-muted/30 min-w-0">
+                            <div className="space-y-3 py-2 break-words [overflow-wrap:anywhere]">
                               <div>
                                 <div className="text-sm font-medium">Context</div>
                                 {contextLoadingId === c.id ? (
@@ -825,12 +914,71 @@ export default function LocationCandidates() {
                               </div>
                               <div className="border-t border-border/60 pt-3 mt-3">
                                 <div className="text-sm font-medium">Note</div>
-                                {savedNoteText ? (
-                                  <p className="mt-1 text-sm whitespace-pre-wrap">{savedNoteText}</p>
+                                {noteEditingId === c.id ? (
+                                  <div className="mt-2 space-y-2">
+                                    <Textarea
+                                      rows={4}
+                                      value={noteDraftById[c.id] ?? ""}
+                                      disabled={
+                                        acceptingId === c.id ||
+                                        deferringId === c.id ||
+                                        noteSavingId === c.id
+                                      }
+                                      onChange={(e) =>
+                                        setNoteDraftById((prev) => ({
+                                          ...prev,
+                                          [c.id]: e.target.value,
+                                        }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (
+                                          e.key === "Enter" &&
+                                          (e.metaKey || e.ctrlKey) &&
+                                          noteSavingId !== c.id
+                                        ) {
+                                          e.preventDefault()
+                                          setNoteEditingId(null)
+                                          void saveInlineNote(c.id)
+                                        } else if (e.key === "Escape") {
+                                          e.preventDefault()
+                                          setNoteEditingId(null)
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        setNoteEditingId(null)
+                                        void saveInlineNote(c.id)
+                                      }}
+                                      autoFocus
+                                      placeholder="Add a brief note…"
+                                    />
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      <StickyNote className="h-3.5 w-3.5" aria-hidden />
+                                      <span>Click outside to save. Cmd/Ctrl+Enter saves.</span>
+                                      {noteSavingId === c.id ? <span>Saving…</span> : null}
+                                    </div>
+                                  </div>
                                 ) : (
-                                  <p className="mt-1 text-sm text-muted-foreground italic">
-                                    No note yet. Use the Note button in the row actions to add one.
-                                  </p>
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      "mt-2 w-full rounded-md border border-border/60 bg-background/60 p-3 text-left text-sm transition-colors",
+                                      "hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                                    )}
+                                    disabled={
+                                      acceptingId === c.id ||
+                                      deferringId === c.id ||
+                                      noteSavingId === c.id
+                                    }
+                                    onClick={() => openInlineNoteEditor(c, savedNoteText)}
+                                  >
+                                    {savedNoteText ? (
+                                      <p className="whitespace-pre-wrap">{savedNoteText}</p>
+                                    ) : (
+                                      <p className="text-muted-foreground italic">
+                                        Click to add a note…
+                                      </p>
+                                    )}
+                                  </button>
                                 )}
                               </div>
                             </div>
@@ -844,6 +992,17 @@ export default function LocationCandidates() {
               </TableBody>
             </Table>
           </div>
+          <Pagination
+            page={listPage}
+            perPage={REVIEW_QUEUE_PAGE_SIZE}
+            total={listTotal}
+            totalPages={listTotalPages}
+            hasNext={listHasNext}
+            hasPrev={listHasPrev}
+            onPageChange={setListPage}
+            className="pt-4"
+            itemLabel="candidates"
+          />
         </CardContent>
       </Card>
 
@@ -872,18 +1031,8 @@ export default function LocationCandidates() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create new canonical</DialogTitle>
-            <DialogDescription>
-              {createModalCandidate?.suggested_type
-                ? `Set the catalog label for this ${placeExtractTypeLabel(createModalCandidate.suggested_type)}. You can adjust spelling or add context (e.g. county) before saving.`
-                : "Set the catalog label for this location before saving."}
-            </DialogDescription>
+            <DialogDescription>Change label or add context below.</DialogDescription>
           </DialogHeader>
-          {createLinkNudgeLoading ? (
-            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-              <span>Checking for similar existing canonicals…</span>
-            </div>
-          ) : null}
           {createLinkNudge ? (
             <Alert className="border-amber-500/40 bg-amber-500/5">
               <AlertTitle className="text-amber-950 dark:text-amber-100">
@@ -911,15 +1060,32 @@ export default function LocationCandidates() {
               </AlertDescription>
             </Alert>
           ) : null}
-          <div className="space-y-2">
-            <Label htmlFor="create-canonical-name">Canonical label</Label>
-            <Input
-              id="create-canonical-name"
-              value={createCanonicalDraft}
-              onChange={(e) => setCreateCanonicalDraft(e.target.value)}
-              placeholder="e.g. Dolton, IL"
-              autoFocus
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="create-canonical-type">Location type</Label>
+              <Select value={createModalLocationType} onValueChange={setCreateModalLocationType}>
+                <SelectTrigger id="create-canonical-type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {createModalTypeOptions.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {placeExtractTypeLabel(t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-canonical-name">Canonical label</Label>
+              <Input
+                id="create-canonical-name"
+                value={createCanonicalDraft}
+                onChange={(e) => setCreateCanonicalDraft(e.target.value)}
+                placeholder="e.g. Dolton, IL"
+                autoFocus
+              />
+            </div>
             {createModalCandidate?.suggested_formatted_address ? (
               <p className="text-xs text-muted-foreground">
                 Geocoded address: {createModalCandidate.suggested_formatted_address}
@@ -937,7 +1103,11 @@ export default function LocationCandidates() {
             </Button>
             <Button
               type="button"
-              disabled={acceptingId === createModalId || !createCanonicalDraft.trim()}
+              disabled={
+                acceptingId === createModalId ||
+                !createCanonicalDraft.trim() ||
+                !createModalLocationType.trim()
+              }
               onClick={() => void submitCreateCanonicalFromModal()}
             >
               {acceptingId === createModalId ? "Creating…" : "Create canonical"}
@@ -947,130 +1117,69 @@ export default function LocationCandidates() {
       </Dialog>
 
       <Dialog
-        open={similarOpen}
+        open={potentialLinksOpen}
         onOpenChange={(open) => {
-          setSimilarOpen(open)
+          setPotentialLinksOpen(open)
           if (!open) {
-            setSimilarCandidates([])
-            setSimilarError(null)
-            setSimilarLoading(false)
+            setToastLinkError(null)
+            setToastLinkBusyId(null)
           }
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-2xl max-h-[min(90vh,720px)] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Similar candidates</DialogTitle>
+            <DialogTitle>Potential links</DialogTitle>
             <DialogDescription>
-              Loose matches across the open review queue for{" "}
-              <span className="font-medium">{createdToast?.canonicalLabel ?? "—"}</span>. Results
-              are ranked by text similarity (top 5).
+              Candidate locations that may match{" "}
+              <span className="font-medium">{createdToast?.canonicalLabel ?? "—"}</span>
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            {similarLoading ? (
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+            {toastFollowupLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
                 <span>Loading…</span>
               </div>
-            ) : similarError ? (
-              <p className="text-sm text-destructive">{similarError}</p>
-            ) : similarCandidates.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No similar open candidates found.</p>
+            ) : toastFollowupError ? (
+              <p className="text-sm text-destructive">{toastFollowupError}</p>
+            ) : toastFollowupRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No candidates in this list. Use Refresh if the queue has changed, or close when you are done.
+              </p>
             ) : (
-              <div className="overflow-hidden rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Type</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {similarCandidates.map((c) => (
-                      <TableRow
-                        key={c.id}
-                        className="cursor-pointer"
-                        onClick={async () => {
-                          if (!createdToast) return
-                          setStatus("open")
-                          setQueryImmediate(createdToast.canonicalLabel)
-                          setSimilarOpen(false)
-                          await refreshListQuiet()
-                          await expandCandidateById(c.id)
-                          setPendingScrollToId(c.id)
-                        }}
-                      >
-                        <TableCell className="font-medium">{c.suggested_name || "—"}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="max-h-[min(56vh,420px)] overflow-y-auto pr-1">
+                <LinkPickTable
+                  rows={toastFollowupRows.map((c) => ({
+                    rowKey: c.id,
+                    location: c.suggested_name || "—",
+                    typeLabel: c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—",
+                    address: c.suggested_formatted_address || "—",
+                  }))}
+                  busyKey={toastLinkBusyId}
+                  linkDisabled={!createdToast}
+                  onLink={(rowKey) => {
+                    const c = toastFollowupRows.find((x) => x.id === rowKey)
+                    if (c) void linkToastCandidateToNewCanonical(c)
+                  }}
+                  linkActionLabel="Link this candidate to the new canonical"
+                />
               </div>
             )}
+            {toastLinkError ? (
+              <p className="text-sm text-destructive">{toastLinkError}</p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                if (!createdToast) return
-                void loadSimilarCandidates(createdToast.canonicalLabel)
-              }}
-              disabled={similarLoading || !createdToast}
+              onClick={() => void prefetchToastFollowupCandidates()}
+              disabled={toastFollowupLoading || !createdToast}
             >
               Refresh
             </Button>
-            <Button type="button" onClick={() => setSimilarOpen(false)}>
+            <Button type="button" onClick={() => setPotentialLinksOpen(false)}>
               Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={noteModalId !== null}
-        onOpenChange={(open) => {
-          if (!open && noteSavingId !== null) return
-          if (!open) closeNoteModal()
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Review note</DialogTitle>
-            <DialogDescription>
-              {noteModalCandidate?.suggested_name
-                ? `Optional note for “${noteModalCandidate.suggested_name}”.`
-                : "Optional brief note for this candidate."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="candidate-note-modal">Note</Label>
-            <Textarea
-              id="candidate-note-modal"
-              rows={5}
-              value={noteModalDraft}
-              onChange={(e) => setNoteModalDraft(e.target.value)}
-              placeholder="Add a brief note…"
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={noteSavingId !== null}
-              onClick={() => closeNoteModal()}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={noteSavingId !== null}
-              onClick={() => void saveNoteFromModal()}
-            >
-              {noteSavingId !== null ? "Saving…" : "Save note"}
             </Button>
           </DialogFooter>
         </DialogContent>

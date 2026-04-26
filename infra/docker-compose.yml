@@ -189,8 +189,12 @@ services:
 
   stylebook-ui:
     build:
-      context: ../apps/stylebook-ui
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: apps/stylebook-ui/Dockerfile
+    # Must match apps/stylebook-ui/Dockerfile WORKDIR (/app/apps/stylebook-ui) so node_modules
+    # from the image and the anonymous volume align; mounting only stylebook-ui at /app left
+    # file:../../packages/backfield-ui unresolved (@backfield/ui import failure).
+    working_dir: /app/apps/stylebook-ui
     ports:
       - "5175:5175"
     environment:
@@ -202,8 +206,9 @@ services:
       VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
       VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
     volumes:
-      - ../apps/stylebook-ui:/app
-      - /app/node_modules
+      - ../apps/stylebook-ui:/app/apps/stylebook-ui
+      - ../packages:/app/packages
+      - /app/apps/stylebook-ui/node_modules
     depends_on:
       core-api:
         condition: service_healthy

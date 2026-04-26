@@ -1,3 +1,26 @@
+/**
+ * Mirror of ``backfield_stylebook.place_extract_location_types.PLACE_EXTRACT_LOCATION_TYPES``.
+ * Keep in sync when the PlaceExtract taxonomy changes.
+ */
+export const PLACE_EXTRACT_LOCATION_TYPES = [
+  "place",
+  "address",
+  "intersection_road",
+  "intersection_highway",
+  "street_road",
+  "span",
+  "neighborhood",
+  "region_city",
+  "city",
+  "county",
+  "region_state",
+  "state",
+  "region_national",
+  "country",
+  "natural",
+  "other",
+] as const
+
 /** Explicit labels for PlaceExtract ``location.type`` values used in the review queue UI. */
 const TYPE_LABEL_OVERRIDES: Record<string, string> = {
   region_city: "Region (City)",

@@ -24,6 +24,7 @@ from backfield_stylebook.substrate_canonical_link_actions import (
 )
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import case, literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
@@ -32,6 +33,11 @@ from stylebook_api.deps import get_auth, get_session
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
 router = APIRouter(prefix="/v1", tags=["locations"])
+
+
+def _escape_ilike_metacharacters(s: str) -> str:
+    """Escape ``%`` and ``_`` for SQL ``ILIKE`` patterns (use with ``escape='\\\\'``)."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 _ALLOWED_CANONICAL_LIST_TYPE_FILTER = frozenset(PLACE_EXTRACT_LOCATION_TYPES)
 
@@ -389,6 +395,7 @@ class LinkedSubstrateItem(BaseModel):
     normalized_name: str
     location_type: str
     canonical_link_status: str
+    formatted_address: str | None = None
 
 
 class LinkedSubstratesResponse(BaseModel):
@@ -414,9 +421,11 @@ def list_canonical_locations(
     stylebook_id = _require_stylebook_id(session, proj)
 
     filters: list[ColumnElement[bool]] = [StylebookLocationCanonical.stylebook_id == stylebook_id]
-    if q:
-        term = f"%{q.strip()}%"
-        filters.append(col(StylebookLocationCanonical.label).ilike(term))
+    q_text = (q or "").strip()
+    if q_text:
+        esc = _escape_ilike_metacharacters(q_text)
+        term = f"%{esc}%"
+        filters.append(col(StylebookLocationCanonical.label).ilike(term, escape="\\"))
     if type_filter is not None:
         tf = type_filter.strip()
         if tf:
@@ -430,13 +439,30 @@ def list_canonical_locations(
     count_stmt = select(func.count()).select_from(StylebookLocationCanonical).where(*filters)
     total = int(session.scalar(count_stmt) or 0)
 
+    label_lower = func.lower(col(StylebookLocationCanonical.label))
+    label_col = col(StylebookLocationCanonical.label)
+    if q_text:
+        q_lower = q_text.lower()
+        esc = _escape_ilike_metacharacters(q_text)
+        prefix_pat = f"{esc}%"
+        rank = case(
+            (label_lower == literal(q_lower), 0),
+            (label_col.ilike(prefix_pat, escape="\\"), 1),
+            else_=2,
+        )
+        order_by = (
+            rank.asc(),
+            func.length(label_col).asc(),
+            label_lower.asc(),
+            col(StylebookLocationCanonical.id).asc(),
+        )
+    else:
+        order_by = (label_lower.asc(), col(StylebookLocationCanonical.id).asc())
+
     list_stmt = (
         select(StylebookLocationCanonical)
         .where(*filters)
-        .order_by(
-            func.lower(col(StylebookLocationCanonical.label)).asc(),
-            col(StylebookLocationCanonical.id).asc(),
-        )
+        .order_by(*order_by)
         .offset(offset)
         .limit(limit)
     )
@@ -544,6 +570,7 @@ def list_canonical_linked_substrates(
                 normalized_name=str(r.normalized_name or ""),
                 location_type=str(r.location_type or ""),
                 canonical_link_status=str(r.canonical_link_status or ""),
+                formatted_address=(r.formatted_address or "").strip() or None,
             )
             for r in rows
         ]

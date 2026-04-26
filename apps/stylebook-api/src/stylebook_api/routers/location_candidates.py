@@ -26,7 +26,7 @@ from backfield_stylebook.substrate_canonical_link_actions import (
     rank_canonical_suggestions_for_substrate,
 )
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import exists, or_
 from sqlmodel import Session, col, func, select
 
@@ -572,6 +572,8 @@ def candidate_update_note(
 class SuggestedCanonicalItem(BaseModel):
     canonical_id: int
     label: str
+    location_type: str | None = None
+    formatted_address: str | None = None
 
 
 class SuggestedCanonicalsResponse(BaseModel):
@@ -607,9 +609,31 @@ def candidates_suggested_canonicals(
     ranked = rank_canonical_suggestions_for_substrate(
         session, stylebook_id=stylebook_id, location=loc, limit=limit
     )
-    return SuggestedCanonicalsResponse(
-        suggestions=[SuggestedCanonicalItem(canonical_id=cid, label=lab) for cid, lab in ranked]
-    )
+    ids = [int(cid) for cid, _ in ranked]
+    canon_by_id: dict[int, StylebookLocationCanonical] = {}
+    if ids:
+        canon_rows = list(
+            session.exec(
+                select(StylebookLocationCanonical).where(col(StylebookLocationCanonical.id).in_(ids))
+            ).all()
+        )
+        for row in canon_rows:
+            if row.id is not None:
+                canon_by_id[int(row.id)] = row
+    suggestions: list[SuggestedCanonicalItem] = []
+    for cid, lab in ranked:
+        c = canon_by_id.get(int(cid))
+        lt = (str(c.location_type).strip() if c and c.location_type else "") or None
+        fa = (str(c.formatted_address).strip() if c and c.formatted_address else "") or None
+        suggestions.append(
+            SuggestedCanonicalItem(
+                canonical_id=int(cid),
+                label=lab,
+                location_type=lt,
+                formatted_address=fa,
+            )
+        )
+    return SuggestedCanonicalsResponse(suggestions=suggestions)
 
 
 class AcceptCandidateBody(BaseModel):
@@ -617,6 +641,15 @@ class AcceptCandidateBody(BaseModel):
     stylebook_location_id: int | None = None
     name: str | None = None
     geometry_json: dict[str, Any] | None = None
+    location_type: str | None = Field(
+        default=None,
+        description="When create_new, optional PlaceExtract type for the new canonical.",
+    )
+
+
+class AcceptCandidateResponse(BaseModel):
+    message: str
+    stylebook_location_canonical_id: int
 
 
 @router.post("/candidates/{substrate_location_id}/defer")
@@ -658,7 +691,7 @@ def accept_candidate(
     body: AcceptCandidateBody = Body(default_factory=AcceptCandidateBody),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
-) -> dict[str, str]:
+) -> AcceptCandidateResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj)
@@ -679,7 +712,16 @@ def accept_candidate(
         if not label:
             raise HTTPException(status_code=400, detail="name is required when create_new is true")
         gj = body.geometry_json
-        lt = (loc.location_type or "").strip().lower() or None
+        if body.location_type is not None:
+            lt_candidate = (body.location_type or "").strip().lower() or None
+            if lt_candidate is not None and lt_candidate not in PLACE_EXTRACT_LOCATION_TYPES:
+                raise HTTPException(
+                    status_code=400,
+                    detail="location_type must be a PlaceExtract location type when provided",
+                )
+            lt = lt_candidate
+        else:
+            lt = (loc.location_type or "").strip().lower() or None
         fa = (loc.formatted_address or "").strip() or None
         canon = StylebookLocationCanonical(
             stylebook_id=stylebook_id,
@@ -733,4 +775,7 @@ def accept_candidate(
         ]
     session.add(loc)
     session.commit()
-    return {"message": "linked"}
+    return AcceptCandidateResponse(
+        message="linked",
+        stylebook_location_canonical_id=int(canon.id),  # type: ignore[arg-type]
+    )
