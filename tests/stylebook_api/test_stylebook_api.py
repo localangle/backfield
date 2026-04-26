@@ -284,6 +284,60 @@ def test_list_canonical_locations_orders_by_label_case_insensitive(client: TestC
     assert labels == ["alpha", "Mike", "Zebra"]
 
 
+def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    _ = stylebook_test_engine
+    from urllib.parse import quote
+
+    # Contiguous substring filter: every row must contain the full query text.
+    exact_query = "CanonSearchToken Chicago, IL"
+    a = f"{exact_query} Extra Words"
+    b = exact_query
+    c = f"{exact_query} More"
+    for lb in (a, b, c):
+        r = client.post(
+            "/v1/canonical-locations?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"label": lb},
+        )
+        assert r.status_code == 200
+
+    q = quote(exact_query)
+    r = client.get(
+        f"/v1/canonical-locations?project_slug=demo-proj&q={q}&limit=200",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    labels = [row["label"] for row in r.json()["canonicals"]]
+    assert a in labels and b in labels and c in labels
+    assert labels.index(b) < labels.index(a)
+    assert labels.index(b) < labels.index(c)
+
+    prefix_query = "CanonSearchToken2 Chicago"
+    a2 = f"Albany, {prefix_query}, IL"
+    b2 = f"{prefix_query}, IL"
+    c2 = f"United, {prefix_query}, IL"
+    for lb in (a2, b2, c2):
+        r = client.post(
+            "/v1/canonical-locations?project_slug=demo-proj",
+            headers=_service_headers(),
+            json={"label": lb},
+        )
+        assert r.status_code == 200
+
+    q2 = quote(prefix_query)
+    r2 = client.get(
+        f"/v1/canonical-locations?project_slug=demo-proj&q={q2}&limit=200",
+        headers=_service_headers(),
+    )
+    assert r2.status_code == 200
+    labels2 = [row["label"] for row in r2.json()["canonicals"]]
+    assert a2 in labels2 and b2 in labels2 and c2 in labels2
+    assert labels2.index(b2) < labels2.index(a2)
+    assert labels2.index(b2) < labels2.index(c2)
+
+
 def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClient) -> None:
     r = client.post(
         "/v1/locations?project_slug=demo-proj",
@@ -850,7 +904,9 @@ def test_accept_candidate_create_new(
         json={"create_new": True, "name": "Newplace Canon"},
     )
     assert r.status_code == 200
-    assert r.json() == {"message": "linked"}
+    data = r.json()
+    assert data["message"] == "linked"
+    assert "stylebook_location_canonical_id" in data
 
     with Session(engine) as s:
         row = s.get(SubstrateLocation, sid)
@@ -860,6 +916,7 @@ def test_accept_candidate_create_new(
         canon = s.get(StylebookLocationCanonical, int(row.stylebook_location_canonical_id))
         assert canon is not None
         coid = int(canon.id)  # type: ignore[arg-type]
+        assert int(data["stylebook_location_canonical_id"]) == coid
         assert row.canonical_review_reasons_json == [
             {"code": "linked_manual_accept_create_new", "canonical_id": coid}
         ]
@@ -875,6 +932,74 @@ def test_accept_candidate_create_new(
         ).all()
         assert len(aliases) == 1
         assert aliases[0].normalized_alias == "newplace"
+
+
+def test_accept_candidate_create_new_location_type_override(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="TypoTown",
+            normalized_name="typotown",
+            location_type="city",
+            formatted_address="TypoTown, IL, USA",
+            identity_fingerprint="fp-type-override-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.post(
+        f"/v1/candidates/{sid}/accept?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"create_new": True, "name": "TypoTown Canon", "location_type": "neighborhood"},
+    )
+    assert r.status_code == 200
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.stylebook_location_canonical_id is not None
+        canon = s.get(StylebookLocationCanonical, int(row.stylebook_location_canonical_id))
+        assert canon is not None
+        assert canon.label == "TypoTown Canon"
+        assert canon.location_type == "neighborhood"
+
+
+def test_accept_candidate_create_new_rejects_invalid_location_type(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="BadType",
+            normalized_name="badtype",
+            location_type="city",
+            identity_fingerprint="fp-bad-type-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.post(
+        f"/v1/candidates/{sid}/accept?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"create_new": True, "name": "X", "location_type": "not_a_placeextract_type"},
+    )
+    assert r.status_code == 400
 
 
 def test_accept_candidate_link_existing_canonical(
@@ -919,6 +1044,8 @@ def test_accept_candidate_link_existing_canonical(
         json={"create_new": False, "stylebook_location_id": cid},
     )
     assert r.status_code == 200
+    assert r.json()["message"] == "linked"
+    assert int(r.json()["stylebook_location_canonical_id"]) == cid
 
     with Session(engine) as s:
         row = s.get(SubstrateLocation, sid)
@@ -1347,6 +1474,7 @@ def test_get_canonical_linked_substrates(
             name="Listed",
             normalized_name="listed",
             location_type="city",
+            formatted_address="Listed City, ST, USA",
             identity_fingerprint="fp-list-1",
             stylebook_location_canonical_id=None,
             canonical_link_status=CANONICAL_LINK_PENDING,
@@ -1374,6 +1502,7 @@ def test_get_canonical_linked_substrates(
     assert len(data["substrates"]) == 1
     assert data["substrates"][0]["id"] == sid
     assert data["substrates"][0]["normalized_name"] == "listed"
+    assert data["substrates"][0]["formatted_address"] == "Listed City, ST, USA"
 
 
 def test_get_suggested_canonicals_for_pending_candidate(

@@ -309,8 +309,8 @@ export default function Locations() {
           <DialogHeader>
             <DialogTitle>Delete canonical location</DialogTitle>
             <DialogDescription>
-              Delete &quot;{deleteDialog.row?.label}&quot;? Linked substrate places return to the
-              candidate queue. This cannot be undone.
+              Delete &quot;{deleteDialog.row?.label}&quot;? Linked places return to the candidate
+              queue. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

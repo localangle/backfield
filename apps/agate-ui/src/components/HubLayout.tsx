@@ -1,6 +1,6 @@
 import { ReactNode } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { UserAccountMenu } from "@backfield/ui"
+import { useNavigate } from "react-router-dom"
+import { ShellProductBrand, UserAccountMenu } from "@backfield/ui"
 import AppSidebar from "./AppSidebar"
 import { useAuth } from "@/lib/auth"
 
@@ -16,12 +16,11 @@ export default function HubLayout({ children }: HubLayoutProps) {
     <div className="h-dvh min-h-0 bg-background flex flex-col overflow-hidden">
       <header className="border-b shrink-0">
         <div className="px-4 py-4 flex justify-between items-center">
-          <div>
-            <Link to="/" className="text-3xl font-bold tracking-tight block">
-              Agate
-            </Link>
-            <p className="text-sm text-muted-foreground mt-1">Backfield Platform</p>
-          </div>
+          <ShellProductBrand
+            to="/"
+            productTitle="Agate"
+            platformSubtitle="Backfield Platform"
+          />
           <div className="flex items-center gap-2">
             {username ? (
               <UserAccountMenu

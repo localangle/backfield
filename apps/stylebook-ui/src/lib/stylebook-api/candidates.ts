@@ -112,15 +112,22 @@ export type AcceptCandidateBody = {
   stylebook_location_id?: number | null
   name?: string | null
   geometry_json?: Record<string, unknown> | null
+  /** When ``create_new``, optional PlaceExtract type for the new canonical (else substrate type). */
+  location_type?: string | null
+}
+
+export type AcceptCandidateResponse = {
+  message: string
+  stylebook_location_canonical_id?: number
 }
 
 export async function acceptCandidate(
   projectSlug: string,
   substrateLocationId: number,
   body: AcceptCandidateBody,
-): Promise<{ message: string }> {
+): Promise<AcceptCandidateResponse> {
   const params = new URLSearchParams({ project_slug: projectSlug })
-  return stylebookJsonFetch<{ message: string }>(
+  return stylebookJsonFetch<AcceptCandidateResponse>(
     `/v1/candidates/${substrateLocationId}/accept?${params}`,
     {
       method: "POST",
@@ -183,6 +190,8 @@ export async function updateCandidateNote(
 export interface SuggestedCanonicalItem {
   canonical_id: number
   label: string
+  location_type?: string | null
+  formatted_address?: string | null
 }
 
 export interface SuggestedCanonicalsResponse {

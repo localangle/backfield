@@ -119,6 +119,7 @@ export interface LinkedSubstrateItem {
   normalized_name: string
   location_type: string
   canonical_link_status: string
+  formatted_address?: string | null
 }
 
 export interface LinkedSubstratesResponse {
