@@ -195,12 +195,12 @@ export function CanonicalLinkModal(props: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden">
+      <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>{title ?? "Link to canonical"}</DialogTitle>
           <DialogDescription>Search for existing canonicals below</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto py-2">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1 py-2 sm:px-2">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="space-y-2">
             <div className="text-sm font-medium">Ranked suggestions</div>
