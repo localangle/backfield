@@ -247,11 +247,6 @@ export default function Locations() {
                             </CardTitle>
                           </div>
                           <CardDescription>
-                            {c.slug ? (
-                              <span className="font-mono text-xs text-muted-foreground block mb-1">
-                                {c.slug}
-                              </span>
-                            ) : null}
                             {c.location_type
                               ? placeExtractTypeLabel(c.location_type)
                               : "—"}{" "}
