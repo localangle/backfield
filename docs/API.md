@@ -29,6 +29,17 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
 
 Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `me.py`, `admin_org.py`, `credentials.py`).
 
+## Stylebook API (`apps/stylebook-api`)
+
+Companion service for geocode, canonical locations, and Stylebook UI (typically port **8003**). Routes are under **`/v1/...`** and use **`project_slug`** (resolved to `backfield_project.id`) plus the same **session cookie** or **`Authorization: Bearer`** (`SERVICE_API_TOKEN` / project access) as other Backfield HTTP apps.
+
+- **Canonical location metadata:** `GET` / `POST` **`/v1/canonical-locations/{canonical_id}/meta`**, `PATCH` / `DELETE` **`/v1/canonical-locations/{canonical_id}/meta/{meta_id}`** — JSON blobs stored on **`stylebook_location_meta`** (`meta_type` + **`data`**; no separate meta key column). `PATCH` accepts **`data`** and optional **`meta_type`**. List response includes **`location_id`** (the canonical id) for agate-style UI parity.
+- **Canonical location connections:** `GET` / `POST` **`/v1/canonical-locations/{canonical_id}/connections`**, `PATCH` / `DELETE` **`/v1/canonical-locations/{canonical_id}/connections/{connection_id}`** — directed edges in **`stylebook_connections`** (`project_id`, `from_entity_type` / `from_entity_id`, `to_entity_type` / `to_entity_id`, **`nature`**). Listing resolves **location** display names from the project’s Stylebook; other entity types use a fallback label until those canonicals exist.
+- **Connection nature typeahead:** **`GET /v1/connections/natures?project_slug=…`** optional **`q`** — distinct **`nature`** values for the project (substring filter).
+- **Empty canonical lists (UI stubs):** **`GET /v1/people`**, **`GET /v1/organizations`**, **`GET /v1/works`** return paginated **empty** lists (same general shape as agate-ai-platform list endpoints) so connection pickers load; **`POST`** connections to targets that are not yet backed still return **404** from validation.
+
+Routers live under [`apps/stylebook-api/src/stylebook_api/routers/`](../apps/stylebook-api/src/stylebook_api/routers/) (`location_meta.py`, `connections.py`, `locations.py`, `ui_stubs.py`, …).
+
 ## Authentication
 
 All routes except `GET /health` and `GET /nodes/metadata` require authentication:

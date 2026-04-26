@@ -243,6 +243,75 @@ class StylebookLocationAlias(SQLModel, table=True):
     )
 
 
+class StylebookLocationMeta(SQLModel, table=True):
+    """Arbitrary JSON metadata rows for a canonical location (tags, research blobs, etc.)."""
+
+    __tablename__ = "stylebook_location_meta"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_location_meta_canonical_type",
+            "stylebook_location_canonical_id",
+            "meta_type",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    stylebook_location_canonical_id: int = Field(
+        foreign_key="stylebook_location_canonical.id",
+        index=True,
+    )
+    meta_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    data_json: Any | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    added: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    edited: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    deleted: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookConnection(SQLModel, table=True):
+    """Directed edge between two canonical entities within a project (polymorphic int ids)."""
+
+    __tablename__ = "stylebook_connections"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_connection_from",
+            "project_id",
+            "from_entity_type",
+            "from_entity_id",
+        ),
+        Index(
+            "ix_stylebook_connection_to",
+            "project_id",
+            "to_entity_type",
+            "to_entity_id",
+        ),
+        Index("ix_stylebook_connection_nature", "project_id", "nature"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    from_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    from_entity_id: int = Field(index=True)
+    to_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    to_entity_id: int = Field(index=True)
+    nature: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class BackfieldWorkspaceMembership(SQLModel, table=True):
     """User access to a workspace (implies all projects in that workspace for members)."""
 

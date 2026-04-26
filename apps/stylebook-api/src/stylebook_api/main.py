@@ -8,9 +8,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from stylebook_api.routers import (
+    connections,
     geocode,
     health,
     location_candidates,
+    location_meta,
     locations,
     stylebooks,
     ui_stubs,
@@ -44,4 +46,7 @@ app.include_router(stylebooks.router)
 app.include_router(geocode.router)
 app.include_router(locations.router)
 app.include_router(location_candidates.router)
+app.include_router(location_meta.router)
+app.include_router(connections.connections_router, prefix="/v1/connections")
+app.include_router(connections.locations_connections_router)
 app.include_router(ui_stubs.router)

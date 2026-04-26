@@ -28,6 +28,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import SimpleGeoJsonGeometry from "@/components/SimpleGeoJsonGeometry"
+import LocationMetaTab from "@/components/LocationMetaTab"
+import ConnectionsSection from "@/components/ConnectionsSection"
 import {
   Dialog,
   DialogContent,
@@ -94,7 +96,6 @@ export default function LocationDetail() {
   const [mentionsLoading, setMentionsLoading] = useState(false)
   const [moveSubstrateId, setMoveSubstrateId] = useState<number | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
-
   useEffect(() => {
     const slug = searchParams.get("project") || ""
     setProjectSlug(slug)
@@ -475,6 +476,19 @@ export default function LocationDetail() {
           )}
         </CardContent>
       </Card>
+
+      <LocationMetaTab
+        locationId={canonical.id}
+        projectSlug={projectSlug}
+        onMetaUpdated={() => void loadCanonical(canonical.id, projectSlug, true)}
+      />
+
+      <ConnectionsSection
+        entityType="location"
+        entityId={canonical.id}
+        projectSlug={projectSlug}
+        entityDisplayName={canonical.label}
+      />
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
