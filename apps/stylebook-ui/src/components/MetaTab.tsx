@@ -12,7 +12,25 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Edit, Save, X, Loader2, Trash2, Plus } from "lucide-react"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Edit, Save, X, Loader2, Trash2, Plus, Code2, Table2 } from "lucide-react"
+import {
+  emptyKeyValueRows,
+  flatRecordToRows,
+  isFlatScalarRecord,
+  newKeyValueRow,
+  rowsToFlatRecord,
+  valueToCellString,
+  type KeyValueRow,
+  type ScalarJson,
+} from "@/lib/metaDataHeuristic"
 
 export interface MetaItem {
   id: number
@@ -48,6 +66,17 @@ export interface MetaTabConfig {
   }
 }
 
+type EditorMode = "table" | "json"
+
+interface PerItemEdit {
+  jsonText: string
+  jsonError: string | null
+  metaType: string
+  editorMode: EditorMode
+  kvRows: KeyValueRow[]
+  tableError: string | null
+}
+
 interface MetaTabProps {
   entityId: number | null
   projectSlug: string
@@ -55,19 +84,52 @@ interface MetaTabProps {
   onMetaUpdated?: () => void
 }
 
+function MetaDataReadOnly({ data }: { data: unknown }) {
+  if (isFlatScalarRecord(data)) {
+    const keys = Object.keys(data).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+    if (keys.length === 0) {
+      return <p className="text-sm text-muted-foreground">Empty object</p>
+    }
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[40%]">Key</TableHead>
+            <TableHead>Value</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {keys.map((k) => (
+            <TableRow key={k}>
+              <TableCell className="font-medium align-top">{k}</TableCell>
+              <TableCell className="text-muted-foreground align-top font-mono text-sm">
+                {valueToCellString(data[k] as ScalarJson)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    )
+  }
+  return (
+    <pre className="bg-muted p-4 rounded-md overflow-x-auto text-sm">{JSON.stringify(data, null, 2)}</pre>
+  )
+}
+
 export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }: MetaTabProps) {
   const [meta, setMeta] = useState<MetaResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [editingMeta, setEditingMeta] = useState<
-    Record<number, { jsonText: string; jsonError: string | null; metaType: string }>
-  >({})
+  const [editingMeta, setEditingMeta] = useState<Record<number, PerItemEdit>>({})
   const [saving, setSaving] = useState<Record<number, boolean>>({})
   const [deleting, setDeleting] = useState<Record<number, boolean>>({})
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [metaToDelete, setMetaToDelete] = useState<MetaItem | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [newMetaType, setNewMetaType] = useState("")
-  const [newMetaData, setNewMetaData] = useState("")
+  const [createEditorMode, setCreateEditorMode] = useState<EditorMode>("table")
+  const [createKvRows, setCreateKvRows] = useState<KeyValueRow[]>(() => emptyKeyValueRows())
+  const [createJsonText, setCreateJsonText] = useState("{}")
+  const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
   const loadMeta = useCallback(async () => {
@@ -93,37 +155,6 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
     void loadMeta()
   }, [loadMeta])
 
-  const handleStartEdit = useCallback((metaItem: MetaItem) => {
-    try {
-      const jsonText = JSON.stringify(metaItem.data, null, 2)
-      setEditingMeta((prev) => ({
-        ...prev,
-        [metaItem.id]: {
-          jsonText,
-          jsonError: null,
-          metaType: metaItem.meta_type,
-        },
-      }))
-    } catch {
-      setEditingMeta((prev) => ({
-        ...prev,
-        [metaItem.id]: {
-          jsonText: String(metaItem.data),
-          jsonError: "Failed to serialize JSON",
-          metaType: metaItem.meta_type,
-        },
-      }))
-    }
-  }, [])
-
-  const handleCancelEdit = useCallback((metaId: number) => {
-    setEditingMeta((prev) => {
-      const newState = { ...prev }
-      delete newState[metaId]
-      return newState
-    })
-  }, [])
-
   const validateJSON = useCallback((jsonText: string): { valid: boolean; data?: unknown; error?: string } => {
     try {
       const parsed: unknown = JSON.parse(jsonText)
@@ -135,6 +166,111 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
       }
     }
   }, [])
+
+  const handleStartEdit = useCallback((metaItem: MetaItem) => {
+    const data = metaItem.data
+    let jsonText: string
+    try {
+      jsonText = JSON.stringify(data, null, 2)
+    } catch {
+      setEditingMeta((prev) => ({
+        ...prev,
+        [metaItem.id]: {
+          jsonText: String(data),
+          jsonError: "Failed to serialize JSON",
+          metaType: metaItem.meta_type,
+          editorMode: "json",
+          kvRows: emptyKeyValueRows(),
+          tableError: null,
+        },
+      }))
+      return
+    }
+
+    const useTable = isFlatScalarRecord(data)
+    setEditingMeta((prev) => ({
+      ...prev,
+      [metaItem.id]: {
+        jsonText,
+        jsonError: null,
+        metaType: metaItem.meta_type,
+        editorMode: useTable ? "table" : "json",
+        kvRows: useTable ? flatRecordToRows(data) : emptyKeyValueRows(),
+        tableError: null,
+      },
+    }))
+  }, [])
+
+  const handleCancelEdit = useCallback((metaId: number) => {
+    setEditingMeta((prev) => {
+      const newState = { ...prev }
+      delete newState[metaId]
+      return newState
+    })
+  }, [])
+
+  const setEditToJsonMode = useCallback((metaId: number) => {
+    setEditingMeta((prev) => {
+      const cur = prev[metaId]
+      if (!cur) return prev
+      if (cur.editorMode === "json") {
+        return prev
+      }
+      const built = rowsToFlatRecord(cur.kvRows)
+      if (!built.ok) {
+        return {
+          ...prev,
+          [metaId]: { ...cur, tableError: built.error },
+        }
+      }
+      return {
+        ...prev,
+        [metaId]: {
+          ...cur,
+          editorMode: "json",
+          jsonText: JSON.stringify(built.data, null, 2),
+          jsonError: null,
+          tableError: null,
+        },
+      }
+    })
+  }, [])
+
+  const setEditToTableMode = useCallback((metaId: number) => {
+    setEditingMeta((prev) => {
+      const cur = prev[metaId]
+      if (!cur) return prev
+      if (cur.editorMode === "table") {
+        return prev
+      }
+      const validation = validateJSON(cur.jsonText)
+      if (!validation.valid) {
+        return {
+          ...prev,
+          [metaId]: { ...cur, jsonError: validation.error || "Invalid JSON" },
+        }
+      }
+      if (!isFlatScalarRecord(validation.data)) {
+        return {
+          ...prev,
+          [metaId]: {
+            ...cur,
+            jsonError: "Only flat key/value objects (string keys, scalar values) can use table view.",
+          },
+        }
+      }
+      return {
+        ...prev,
+        [metaId]: {
+          ...cur,
+          editorMode: "table",
+          kvRows: flatRecordToRows(validation.data),
+          jsonError: null,
+          tableError: null,
+        },
+      }
+    })
+  }, [validateJSON])
 
   const handleSaveEdit = useCallback(
     async (metaItem: MetaItem) => {
@@ -150,27 +286,43 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
           [metaItem.id]: {
             ...prev[metaItem.id],
             jsonError: "Meta type is required",
+            tableError: null,
           },
         }))
         return
       }
 
-      const validation = validateJSON(editState.jsonText)
-      if (!validation.valid) {
-        setEditingMeta((prev) => ({
-          ...prev,
-          [metaItem.id]: {
-            ...prev[metaItem.id],
-            jsonError: validation.error || "Invalid JSON",
-          },
-        }))
-        return
+      let payload: unknown
+      if (editState.editorMode === "table") {
+        const built = rowsToFlatRecord(editState.kvRows)
+        if (!built.ok) {
+          setEditingMeta((prev) => ({
+            ...prev,
+            [metaItem.id]: { ...prev[metaItem.id], tableError: built.error, jsonError: null },
+          }))
+          return
+        }
+        payload = built.data
+      } else {
+        const validation = validateJSON(editState.jsonText)
+        if (!validation.valid) {
+          setEditingMeta((prev) => ({
+            ...prev,
+            [metaItem.id]: {
+              ...prev[metaItem.id],
+              jsonError: validation.error || "Invalid JSON",
+              tableError: null,
+            },
+          }))
+          return
+        }
+        payload = validation.data
       }
 
       try {
         setSaving((prev) => ({ ...prev, [metaItem.id]: true }))
         await config.api.updateMeta(entityId, metaItem.id, projectSlug, {
-          data: validation.data,
+          data: payload,
           meta_type: typeTrim,
         })
         await loadMeta()
@@ -183,6 +335,7 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
           [metaItem.id]: {
             ...prev[metaItem.id],
             jsonError: error instanceof Error ? error.message : "Failed to update",
+            tableError: null,
           },
         }))
       } finally {
@@ -222,31 +375,91 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
     }
   }, [entityId, metaToDelete, projectSlug, config, loadMeta, onMetaUpdated])
 
+  const openCreateDialog = useCallback(() => {
+    setNewMetaType("")
+    setCreateEditorMode("table")
+    setCreateKvRows(emptyKeyValueRows())
+    setCreateJsonText("{}")
+    setCreateError(null)
+    setShowCreateDialog(true)
+  }, [])
+
   const handleCreate = useCallback(async () => {
     if (!entityId || !newMetaType.trim()) return
 
-    const validation = validateJSON(newMetaData || "{}")
-    if (!validation.valid) {
-      return
+    let data: unknown
+    if (createEditorMode === "table") {
+      const built = rowsToFlatRecord(createKvRows)
+      if (!built.ok) {
+        setCreateError(built.error)
+        return
+      }
+      data = built.data
+    } else {
+      const validation = validateJSON(createJsonText.trim() || "{}")
+      if (!validation.valid) {
+        setCreateError(validation.error || "Invalid JSON")
+        return
+      }
+      data = validation.data
     }
 
     try {
       setCreating(true)
+      setCreateError(null)
       await config.api.createMeta(entityId, projectSlug, {
         meta_type: newMetaType.trim(),
-        data: validation.data,
+        data,
       })
       await loadMeta()
       setShowCreateDialog(false)
-      setNewMetaType("")
-      setNewMetaData("")
       onMetaUpdated?.()
     } catch (error) {
       console.error("Failed to create meta:", error)
+      setCreateError(error instanceof Error ? error.message : "Failed to create")
     } finally {
       setCreating(false)
     }
-  }, [entityId, projectSlug, newMetaType, newMetaData, config, validateJSON, loadMeta, onMetaUpdated])
+  }, [
+    entityId,
+    projectSlug,
+    newMetaType,
+    createEditorMode,
+    createKvRows,
+    createJsonText,
+    config,
+    validateJSON,
+    loadMeta,
+    onMetaUpdated,
+  ])
+
+  const switchCreateToJson = useCallback(() => {
+    if (createEditorMode === "json") return
+    const built = rowsToFlatRecord(createKvRows)
+    if (!built.ok) {
+      setCreateError(built.error)
+      return
+    }
+    setCreateJsonText(JSON.stringify(built.data, null, 2))
+    setCreateEditorMode("json")
+    setCreateError(null)
+  }, [createEditorMode, createKvRows])
+
+  const switchCreateToTable = useCallback(() => {
+    if (createEditorMode === "table") return
+    const validation = validateJSON(createJsonText.trim() || "{}")
+    if (!validation.valid) {
+      setCreateError(validation.error || "Invalid JSON")
+      return
+    }
+    if (!isFlatScalarRecord(validation.data)) {
+      setCreateError("Only flat key/value objects can use table view. Edit JSON to simplify, or stay in JSON mode.")
+      return
+    }
+    setCreateKvRows(flatRecordToRows(validation.data))
+    setCreateEditorMode("table")
+    setCreateError(null)
+  }, [createEditorMode, createJsonText, validateJSON])
 
   const description =
     loading || !meta
@@ -264,12 +477,7 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
               <CardTitle>Metadata</CardTitle>
               <CardDescription>{description}</CardDescription>
             </div>
-            <Button
-              type="button"
-              className="shrink-0"
-              onClick={() => setShowCreateDialog(true)}
-              disabled={!entityId || loading}
-            >
+            <Button type="button" className="shrink-0" onClick={openCreateDialog} disabled={!entityId || loading}>
               <Plus className="h-4 w-4 mr-2" />
               Add Meta
             </Button>
@@ -312,6 +520,7 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
                                       ...prev[item.id],
                                       metaType: e.target.value,
                                       jsonError: null,
+                                      tableError: null,
                                     },
                                   }))
                                 }
@@ -341,11 +550,11 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
                             </Button>
                           </div>
                         ) : (
-                          <div className="flex shrink-0 gap-2">
+                          <div className="flex shrink-0 flex-wrap gap-2">
                             <Button
                               size="sm"
                               onClick={() => void handleSaveEdit(item)}
-                              disabled={saving[item.id] || !!editState?.jsonError}
+                              disabled={saving[item.id]}
                             >
                               {saving[item.id] ? (
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -367,32 +576,172 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
                         )}
                       </div>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="space-y-3">
                       {isEditing ? (
-                        <div>
-                          <Textarea
-                            value={editState.jsonText}
-                            onChange={(e) => {
-                              setEditingMeta((prev) => ({
-                                ...prev,
-                                [item.id]: {
-                                  ...prev[item.id],
-                                  jsonText: e.target.value,
-                                  jsonError: null,
-                                },
-                              }))
-                            }}
-                            className={`font-mono text-sm ${editState.jsonError ? "border-red-500" : ""}`}
-                            rows={10}
-                          />
-                          {editState.jsonError && (
-                            <p className="text-sm text-red-500 mt-2">{editState.jsonError}</p>
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              Data
+                            </span>
+                            <div className="flex rounded-md border border-border p-0.5">
+                              <Button
+                                type="button"
+                                variant={editState.editorMode === "table" ? "secondary" : "ghost"}
+                                size="sm"
+                                className="h-8 px-2"
+                                onClick={() => setEditToTableMode(item.id)}
+                              >
+                                <Table2 className="h-4 w-4 mr-1.5" />
+                                Table
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={editState.editorMode === "json" ? "secondary" : "ghost"}
+                                size="sm"
+                                className="h-8 px-2"
+                                onClick={() => setEditToJsonMode(item.id)}
+                              >
+                                <Code2 className="h-4 w-4 mr-1.5" />
+                                JSON
+                              </Button>
+                            </div>
+                          </div>
+                          {editState.editorMode === "table" ? (
+                            <div className="space-y-2">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-[38%]">Key</TableHead>
+                                    <TableHead>Value</TableHead>
+                                    <TableHead className="w-[52px] text-right"> </TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {editState.kvRows.map((row) => (
+                                    <TableRow key={row.id}>
+                                      <TableCell>
+                                        <Input
+                                          value={row.key}
+                                          onChange={(e) => {
+                                            const v = e.target.value
+                                            setEditingMeta((prev) => ({
+                                              ...prev,
+                                              [item.id]: {
+                                                ...prev[item.id],
+                                                kvRows: prev[item.id].kvRows.map((r) =>
+                                                  r.id === row.id ? { ...r, key: v } : r,
+                                                ),
+                                                tableError: null,
+                                              },
+                                            }))
+                                          }}
+                                          placeholder="e.g. Party"
+                                          className="h-9"
+                                        />
+                                      </TableCell>
+                                      <TableCell>
+                                        <Input
+                                          value={row.valueStr}
+                                          onChange={(e) => {
+                                            const v = e.target.value
+                                            setEditingMeta((prev) => ({
+                                              ...prev,
+                                              [item.id]: {
+                                                ...prev[item.id],
+                                                kvRows: prev[item.id].kvRows.map((r) =>
+                                                  r.id === row.id ? { ...r, valueStr: v } : r,
+                                                ),
+                                                tableError: null,
+                                              },
+                                            }))
+                                          }}
+                                          placeholder='e.g. Democrat or 1000 or "quoted"'
+                                          className="h-9 font-mono text-sm"
+                                        />
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 shrink-0"
+                                          disabled={editState.kvRows.length <= 1}
+                                          onClick={() =>
+                                            setEditingMeta((prev) => ({
+                                              ...prev,
+                                              [item.id]: {
+                                                ...prev[item.id],
+                                                kvRows: prev[item.id].kvRows.filter((r) => r.id !== row.id),
+                                                tableError: null,
+                                              },
+                                            }))
+                                          }
+                                          aria-label="Remove row"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  setEditingMeta((prev) => {
+                                    const cur = prev[item.id]
+                                    if (!cur) return prev
+                                    return {
+                                      ...prev,
+                                      [item.id]: {
+                                        ...cur,
+                                        kvRows: [...cur.kvRows, newKeyValueRow()],
+                                        tableError: null,
+                                      },
+                                    }
+                                  })
+                                }
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Add row
+                              </Button>
+                              <p className="text-xs text-muted-foreground">
+                                Values can be plain text, or JSON literals for numbers and booleans (
+                                <code className="text-xs">42</code>, <code className="text-xs">true</code>,{" "}
+                                <code className="text-xs">null</code>, <code className="text-xs">{`"text"`}</code>
+                                ). Use JSON mode for nested structures.
+                              </p>
+                              {editState.tableError && (
+                                <p className="text-sm text-destructive">{editState.tableError}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <div>
+                              <Textarea
+                                value={editState.jsonText}
+                                onChange={(e) => {
+                                  setEditingMeta((prev) => ({
+                                    ...prev,
+                                    [item.id]: {
+                                      ...prev[item.id],
+                                      jsonText: e.target.value,
+                                      jsonError: null,
+                                    },
+                                  }))
+                                }}
+                                className={`font-mono text-sm ${editState.jsonError ? "border-destructive" : ""}`}
+                                rows={12}
+                              />
+                              {editState.jsonError && (
+                                <p className="text-sm text-destructive mt-2">{editState.jsonError}</p>
+                              )}
+                            </div>
                           )}
                         </div>
                       ) : (
-                        <pre className="bg-muted p-4 rounded-md overflow-x-auto text-sm">
-                          {JSON.stringify(item.data, null, 2)}
-                        </pre>
+                        <MetaDataReadOnly data={item.data} />
                       )}
                     </CardContent>
                   </Card>
@@ -404,11 +753,12 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
       </Card>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Metadata</DialogTitle>
             <DialogDescription>
-              Add new metadata for this {config.displayName.singular.toLowerCase()}
+              Add new metadata for this {config.displayName.singular.toLowerCase()}. Use the table for simple
+              fields, or JSON for nested data.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -417,18 +767,112 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
               <Input
                 value={newMetaType}
                 onChange={(e) => setNewMetaType(e.target.value)}
-                placeholder="e.g., source, notes, etc."
+                placeholder="e.g., demographics, source, notes"
               />
             </div>
-            <div>
-              <Label>Data (JSON) *</Label>
-              <Textarea
-                value={newMetaData}
-                onChange={(e) => setNewMetaData(e.target.value)}
-                placeholder='{"key": "value"}'
-                rows={8}
-                className="font-mono text-sm"
-              />
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Label className="text-sm">Data</Label>
+                <div className="flex rounded-md border border-border p-0.5">
+                  <Button
+                    type="button"
+                    variant={createEditorMode === "table" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={switchCreateToTable}
+                  >
+                    <Table2 className="h-4 w-4 mr-1.5" />
+                    Table
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={createEditorMode === "json" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={switchCreateToJson}
+                  >
+                    <Code2 className="h-4 w-4 mr-1.5" />
+                    JSON
+                  </Button>
+                </div>
+              </div>
+              {createEditorMode === "table" ? (
+                <div className="space-y-2">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[38%]">Key</TableHead>
+                        <TableHead>Value</TableHead>
+                        <TableHead className="w-[52px] text-right"> </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {createKvRows.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell>
+                            <Input
+                              value={row.key}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setCreateKvRows((rows) => rows.map((r) => (r.id === row.id ? { ...r, key: v } : r)))
+                                setCreateError(null)
+                              }}
+                              placeholder="Key"
+                              className="h-9"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={row.valueStr}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                setCreateKvRows((rows) => rows.map((r) => (r.id === row.id ? { ...r, valueStr: v } : r)))
+                                setCreateError(null)
+                              }}
+                              placeholder="Value"
+                              className="h-9 font-mono text-sm"
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={createKvRows.length <= 1}
+                              onClick={() => setCreateKvRows((rows) => rows.filter((r) => r.id !== row.id))}
+                              aria-label="Remove row"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCreateKvRows((rows) => [...rows, newKeyValueRow()])}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add row
+                  </Button>
+                </div>
+              ) : (
+                <Textarea
+                  value={createJsonText}
+                  onChange={(e) => {
+                    setCreateJsonText(e.target.value)
+                    setCreateError(null)
+                  }}
+                  placeholder="{}"
+                  rows={10}
+                  className="font-mono text-sm"
+                />
+              )}
+              {createError && <p className="text-sm text-destructive">{createError}</p>}
             </div>
           </div>
           <DialogFooter>
