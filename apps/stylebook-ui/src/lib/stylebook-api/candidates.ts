@@ -190,6 +190,8 @@ export async function updateCandidateNote(
 export interface SuggestedCanonicalItem {
   canonical_id: number
   label: string
+  location_type?: string | null
+  formatted_address?: string | null
 }
 
 export interface SuggestedCanonicalsResponse {

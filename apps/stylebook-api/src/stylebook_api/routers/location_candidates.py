@@ -572,6 +572,8 @@ def candidate_update_note(
 class SuggestedCanonicalItem(BaseModel):
     canonical_id: int
     label: str
+    location_type: str | None = None
+    formatted_address: str | None = None
 
 
 class SuggestedCanonicalsResponse(BaseModel):
@@ -607,9 +609,31 @@ def candidates_suggested_canonicals(
     ranked = rank_canonical_suggestions_for_substrate(
         session, stylebook_id=stylebook_id, location=loc, limit=limit
     )
-    return SuggestedCanonicalsResponse(
-        suggestions=[SuggestedCanonicalItem(canonical_id=cid, label=lab) for cid, lab in ranked]
-    )
+    ids = [int(cid) for cid, _ in ranked]
+    canon_by_id: dict[int, StylebookLocationCanonical] = {}
+    if ids:
+        canon_rows = list(
+            session.exec(
+                select(StylebookLocationCanonical).where(col(StylebookLocationCanonical.id).in_(ids))
+            ).all()
+        )
+        for row in canon_rows:
+            if row.id is not None:
+                canon_by_id[int(row.id)] = row
+    suggestions: list[SuggestedCanonicalItem] = []
+    for cid, lab in ranked:
+        c = canon_by_id.get(int(cid))
+        lt = (str(c.location_type).strip() if c and c.location_type else "") or None
+        fa = (str(c.formatted_address).strip() if c and c.formatted_address else "") or None
+        suggestions.append(
+            SuggestedCanonicalItem(
+                canonical_id=int(cid),
+                label=lab,
+                location_type=lt,
+                formatted_address=fa,
+            )
+        )
+    return SuggestedCanonicalsResponse(suggestions=suggestions)
 
 
 class AcceptCandidateBody(BaseModel):

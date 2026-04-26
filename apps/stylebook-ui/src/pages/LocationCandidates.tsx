@@ -18,6 +18,7 @@ import {
   sortReviewQueueTypeFilterOptions,
 } from "@/lib/place-extract-type-label"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
+import { LinkPickTable } from "@/components/LinkPickTable"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
@@ -1146,47 +1147,22 @@ export default function LocationCandidates() {
                 No candidates in this list. Use Refresh if the queue has changed, or close when you are done.
               </p>
             ) : (
-              <div className="overflow-hidden rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Address</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {toastFollowupRows.map((c) => (
-                      <TableRow key={c.id}>
-                        <TableCell className="font-medium">{c.suggested_name || "—"}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
-                          {c.suggested_formatted_address || "—"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={toastLinkBusyId !== null || !createdToast}
-                            onClick={() => void linkToastCandidateToNewCanonical(c)}
-                          >
-                            {toastLinkBusyId === c.id ? (
-                              <>
-                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
-                                Linking…
-                              </>
-                            ) : (
-                              "Link"
-                            )}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="max-h-[min(56vh,420px)] overflow-y-auto pr-1">
+                <LinkPickTable
+                  rows={toastFollowupRows.map((c) => ({
+                    rowKey: c.id,
+                    location: c.suggested_name || "—",
+                    typeLabel: c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—",
+                    address: c.suggested_formatted_address || "—",
+                  }))}
+                  busyKey={toastLinkBusyId}
+                  linkDisabled={!createdToast}
+                  onLink={(rowKey) => {
+                    const c = toastFollowupRows.find((x) => x.id === rowKey)
+                    if (c) void linkToastCandidateToNewCanonical(c)
+                  }}
+                  linkActionLabel="Link this candidate to the new canonical"
+                />
               </div>
             )}
             {toastLinkError ? (

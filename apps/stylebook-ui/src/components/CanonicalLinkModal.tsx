@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   getCanonicalLocation,
   getSuggestedCanonicals,
@@ -7,6 +7,7 @@ import {
   type CanonicalLocation,
   type SuggestedCanonicalItem,
 } from "@/lib/api"
+import { LinkPickTable, type LinkPickTableRow } from "@/components/LinkPickTable"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -18,9 +19,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { Loader2 } from "lucide-react"
 
-type PickRow = { canonical_id: number; label: string }
+function canonicalToSuggestedRow(c: CanonicalLocation): SuggestedCanonicalItem {
+  return {
+    canonical_id: c.id,
+    label: c.label,
+    location_type: c.location_type ?? null,
+    formatted_address: c.formatted_address ?? null,
+  }
+}
+
+function suggestedItemsToPickRows(items: SuggestedCanonicalItem[]): LinkPickTableRow[] {
+  return items.map((s) => ({
+    rowKey: s.canonical_id,
+    location: s.label,
+    typeLabel:
+      s.location_type && String(s.location_type).trim()
+        ? placeExtractTypeLabel(s.location_type)
+        : "—",
+    address: (s.formatted_address ?? "").trim() || "—",
+  }))
+}
 
 export function CanonicalLinkModal(props: {
   open: boolean
@@ -30,7 +51,7 @@ export function CanonicalLinkModal(props: {
   substrateLocationId: number | null
   onDone: () => void
   title?: string
-  /** When set, pre-select this canonical after loading its label. */
+  /** When set, surface this canonical first (e.g. pre-filled from row suggestion). */
   initialCanonicalId?: number | null
 }) {
   const { open, onOpenChange, projectSlug, substrateLocationId, onDone, title, initialCanonicalId } =
@@ -40,34 +61,42 @@ export function CanonicalLinkModal(props: {
   const [searchQ, setSearchQ] = useState("")
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchHits, setSearchHits] = useState<CanonicalLocation[]>([])
-  const [selected, setSelected] = useState<PickRow | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const [linkingCanonicalId, setLinkingCanonicalId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [initialCanonExtra, setInitialCanonExtra] = useState<CanonicalLocation | null>(null)
 
   useEffect(() => {
-    if (!open) return
-    setSearchQ("")
-    setSearchHits([])
-    setError(null)
-    setSelected(null)
-    if (!initialCanonicalId || !projectSlug) {
+    if (!open) {
+      setSearchQ("")
+      setSearchHits([])
+      setError(null)
+      setLinkingCanonicalId(null)
+      setInitialCanonExtra(null)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open || !initialCanonicalId || !projectSlug) {
+      setInitialCanonExtra(null)
+      return
+    }
+    if (suggestions.some((s) => s.canonical_id === initialCanonicalId)) {
+      setInitialCanonExtra(null)
       return
     }
     let cancelled = false
     void (async () => {
       try {
         const c = await getCanonicalLocation(initialCanonicalId, projectSlug)
-        if (!cancelled && c) {
-          setSelected({ canonical_id: c.id, label: c.label })
-        }
+        if (!cancelled) setInitialCanonExtra(c)
       } catch {
-        if (!cancelled) setSelected(null)
+        if (!cancelled) setInitialCanonExtra(null)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [open, substrateLocationId, projectSlug, initialCanonicalId])
+  }, [open, initialCanonicalId, projectSlug, suggestions])
 
   useEffect(() => {
     if (!open || !substrateLocationId || !projectSlug) {
@@ -122,111 +151,112 @@ export function CanonicalLinkModal(props: {
     }
   }, [searchQ, open, projectSlug])
 
-  async function onConfirm() {
-    if (!substrateLocationId || !projectSlug || !selected) return
-    setSubmitting(true)
+  const mergedSuggestions: SuggestedCanonicalItem[] = useMemo(() => {
+    const merged: SuggestedCanonicalItem[] = [...suggestions]
+    if (initialCanonExtra) {
+      const exId = initialCanonExtra.id
+      if (!merged.some((s) => s.canonical_id === exId)) {
+        merged.unshift(canonicalToSuggestedRow(initialCanonExtra))
+      }
+    }
+    if (initialCanonicalId) {
+      const ix = merged.findIndex((s) => s.canonical_id === initialCanonicalId)
+      if (ix > 0) {
+        const [picked] = merged.splice(ix, 1)
+        merged.unshift(picked)
+      }
+    }
+    return merged
+  }, [suggestions, initialCanonExtra, initialCanonicalId])
+
+  const suggestionRows = useMemo(
+    () => suggestedItemsToPickRows(mergedSuggestions),
+    [mergedSuggestions],
+  )
+
+  const searchRows = useMemo(() => suggestedItemsToPickRows(searchHits.map(canonicalToSuggestedRow)), [
+    searchHits,
+  ])
+
+  async function linkToCanonical(canonicalId: number) {
+    if (!substrateLocationId || !projectSlug) return
+    setLinkingCanonicalId(canonicalId)
     setError(null)
     try {
-      await linkSubstrateToCanonical(
-        substrateLocationId,
-        projectSlug,
-        selected.canonical_id,
-      )
+      await linkSubstrateToCanonical(substrateLocationId, projectSlug, canonicalId)
       onDone()
       onOpenChange(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Link failed")
     } finally {
-      setSubmitting(false)
+      setLinkingCanonicalId(null)
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{title ?? "Link to canonical"}</DialogTitle>
-          <DialogDescription>
-            Pick a Stylebook canonical. Suggestions use the same retrieval and scoring as ingest;
-            search the full catalog by label.
-          </DialogDescription>
+          <DialogDescription>Search for existing canonicals below</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <div>
-            <Label className="text-muted-foreground">Suggestions</Label>
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto py-2">
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Ranked suggestions</div>
             {loadingSuggestions ? (
               <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 Loading…
               </div>
-            ) : suggestions.length === 0 ? (
+            ) : suggestionRows.length === 0 ? (
               <p className="text-sm text-muted-foreground py-2">No ranked suggestions for this row.</p>
             ) : (
-              <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto border rounded-md p-2">
-                {suggestions.map((s) => (
-                  <li key={s.canonical_id}>
-                    <button
-                      type="button"
-                      className={`w-full text-left text-sm rounded px-2 py-1.5 hover:bg-muted ${
-                        selected?.canonical_id === s.canonical_id ? "bg-muted font-medium" : ""
-                      }`}
-                      onClick={() =>
-                        setSelected({ canonical_id: s.canonical_id, label: s.label })
-                      }
-                    >
-                      {s.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="max-h-[min(40vh,320px)] overflow-y-auto pr-1">
+                <LinkPickTable
+                  rows={suggestionRows}
+                  busyKey={linkingCanonicalId}
+                  linkDisabled={!substrateLocationId}
+                  onLink={(key) => void linkToCanonical(Number(key))}
+                  linkActionLabel="Link to this canonical"
+                />
+              </div>
             )}
           </div>
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="canon-search">Search catalog</Label>
             <Input
               id="canon-search"
-              className="mt-1"
               placeholder="Type to search canonical labels…"
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
             />
-            {searchLoading && (
-              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" />
+            {searchLoading ? (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
                 Searching…
               </p>
-            )}
-            {searchHits.length > 0 && (
-              <ul className="mt-2 space-y-1 max-h-36 overflow-y-auto border rounded-md p-2">
-                {searchHits.map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      className={`w-full text-left text-sm rounded px-2 py-1.5 hover:bg-muted ${
-                        selected?.canonical_id === c.id ? "bg-muted font-medium" : ""
-                      }`}
-                      onClick={() => setSelected({ canonical_id: c.id, label: c.label })}
-                    >
-                      {c.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            ) : null}
+            {searchRows.length > 0 ? (
+              <div className="max-h-[min(36vh,280px)] overflow-y-auto pr-1">
+                <LinkPickTable
+                  rows={searchRows}
+                  busyKey={linkingCanonicalId}
+                  linkDisabled={!substrateLocationId}
+                  onLink={(key) => void linkToCanonical(Number(key))}
+                  linkActionLabel="Link to this canonical"
+                />
+              </div>
+            ) : null}
           </div>
-          {selected && (
-            <p className="text-sm">
-              Selected: <span className="font-medium">{selected.label}</span> (#{selected.canonical_id})
-            </p>
-          )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={linkingCanonicalId !== null}
+          >
             Cancel
-          </Button>
-          <Button onClick={() => void onConfirm()} disabled={!selected || submitting}>
-            {submitting ? "Linking…" : "Link"}
           </Button>
         </DialogFooter>
       </DialogContent>
