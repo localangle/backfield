@@ -90,4 +90,5 @@ smoke:
 	uv run python -u tests/smoke/golden_path_stack.py
 
 stylebook-ui-build:
+	cd packages/backfield-ui && npm ci
 	cd apps/stylebook-ui && npm ci && npm run build

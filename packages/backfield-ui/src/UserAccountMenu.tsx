@@ -55,7 +55,7 @@ export function UserAccountMenu({
           {onChangePassword ? (
             <DropdownMenu.Item
               className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-              onSelect={(e) => {
+              onSelect={(e: Event) => {
                 e.preventDefault()
                 onChangePassword()
               }}
@@ -66,7 +66,7 @@ export function UserAccountMenu({
           {isOrgAdmin && onManageUsers ? (
             <DropdownMenu.Item
               className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-              onSelect={(e) => {
+              onSelect={(e: Event) => {
                 e.preventDefault()
                 onManageUsers()
               }}
@@ -79,7 +79,7 @@ export function UserAccountMenu({
           ) : null}
           <DropdownMenu.Item
             className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
-            onSelect={(e) => {
+            onSelect={(e: Event) => {
               e.preventDefault()
               void onLogout()
             }}
