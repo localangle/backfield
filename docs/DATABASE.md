@@ -10,7 +10,7 @@ Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix*
 | Agate graphs, runs, templates                    | `packages/backfield-db` | Alembic migrations live here only                                      |
 | Backfield orgs, users, projects, credentials     | `packages/backfield-db` | Same migration chain                                                   |
 | Shared content/location substrate                | `packages/backfield-db` | `substrate_article`, `substrate_location`, mentions, occurrences, cache |
-| Stylebook editorial / canonical tables           | `packages/backfield-db` | `stylebook`, `stylebook_location_canonical`, `stylebook_location_alias`; helpers in `packages/backfield-stylebook` |
+| Stylebook editorial / canonical tables           | `packages/backfield-db` | `stylebook`, `stylebook_location_canonical`, `stylebook_location_alias`, **`stylebook_location_meta`**, **`stylebook_connections`**; helpers in `packages/backfield-stylebook` |
 
 
 Do **not** run multiple services that each invoke `alembic upgrade` on startup for the same revision path; pick **one** migration runner (the `agate-api` entrypoint on deploy, or `make migrate` locally).
@@ -71,6 +71,7 @@ Revision **`013_substrate_slc_status`** adds **`canonical_link_status`** (defaul
 Revision **`014_pg_trgm_canon_geom`** enables **`pg_trgm`** on Postgres (extension creation is not caught—migration fails if the extension cannot be installed), adds the trigram index on **`stylebook_location_alias.normalized_alias`**, and adds optional geometry columns on **`stylebook_location_canonical`**. Non-Postgres upgrades skip the extension and trigram index; **`geometry`** is stored as plain text where PostGIS is not used.
 
 Revision **`015_canon_geo_meta`** adds nullable **`location_type`** and **`formatted_address`** text columns on **`stylebook_location_canonical`**.
+Revision **`017_sb_loc_meta_conn`** adds **`stylebook_location_meta`** (JSON metadata per catalog canonical + project) and **`stylebook_connections`** (directed edges between canonical entities within a project, polymorphic int ids + **`nature`**). Revision **`018_drop_sb_loc_meta_key`** removes legacy **`meta_key`** from **`stylebook_location_meta`** on databases that created the column from an older revision of `017`.
 
 Revision **`016_agate_processed_item`** creates **`agate_processed_item`** with FK to **`agate_run.id`** (`ON DELETE CASCADE`) and index **`ix_agate_processed_item_run_id`**.
 

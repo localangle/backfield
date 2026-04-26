@@ -1,0 +1,102 @@
+"""Helpers for stylebook_connections (directed graph between canonicals)."""
+
+from __future__ import annotations
+
+from backfield_db import StylebookLocationCanonical
+from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
+from fastapi import HTTPException
+from sqlmodel import Session, select
+
+CONNECTION_ENTITY_TYPES = ("person", "location", "organization", "work")
+
+ALLOWED_CONNECTION_PAIRS = (
+    ("location", "person"),
+    ("person", "location"),
+    ("organization", "location"),
+    ("location", "organization"),
+    ("organization", "person"),
+    ("person", "organization"),
+    ("work", "person"),
+    ("person", "work"),
+    ("work", "organization"),
+    ("organization", "work"),
+    ("work", "location"),
+    ("location", "work"),
+    ("person", "person"),
+    ("organization", "organization"),
+    ("location", "location"),
+    ("work", "work"),
+)
+
+
+def _location_display_name(
+    session: Session,
+    *,
+    project_id: int,
+    location_canonical_id: int,
+) -> str | None:
+    try:
+        stylebook_id = resolve_stylebook_id_for_project_id(session, project_id)
+    except LookupError:
+        return None
+    row = session.exec(
+        select(StylebookLocationCanonical).where(
+            StylebookLocationCanonical.id == location_canonical_id,
+            StylebookLocationCanonical.stylebook_id == int(stylebook_id),
+        )
+    ).first()
+    if row is None:
+        return None
+    return (row.label or "").strip() or None
+
+
+def get_canonical_display_name(
+    session: Session,
+    project_id: int,
+    entity_type: str,
+    entity_id: int,
+) -> str | None:
+    if entity_type == "location":
+        return _location_display_name(
+            session,
+            project_id=project_id,
+            location_canonical_id=entity_id,
+        )
+    return None
+
+
+def validate_canonical_exists(
+    session: Session,
+    project_id: int,
+    entity_type: str,
+    entity_id: int,
+) -> None:
+    if entity_type not in CONNECTION_ENTITY_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid entity_type: {entity_type}. Allowed: {list(CONNECTION_ENTITY_TYPES)}",
+        )
+    name = get_canonical_display_name(session, project_id, entity_type, entity_id)
+    if name is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Canonical {entity_type} with id {entity_id} not found in project",
+        )
+
+
+def validate_connection_pair(from_entity_type: str, to_entity_type: str) -> None:
+    if (from_entity_type, to_entity_type) not in ALLOWED_CONNECTION_PAIRS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Connections from {from_entity_type} to {to_entity_type} are not allowed",
+        )
+
+
+def validate_not_self_connection(
+    from_entity_type: str,
+    from_entity_id: int,
+    to_entity_type: str,
+    to_entity_id: int,
+) -> None:
+    if from_entity_type == to_entity_type and from_entity_id == to_entity_id:
+        raise HTTPException(status_code=400, detail="Cannot connect an entity to itself")

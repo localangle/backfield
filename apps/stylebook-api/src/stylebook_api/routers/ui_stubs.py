@@ -9,7 +9,7 @@ from backfield_db import BackfieldProject, StylebookLocationCanonical, Substrate
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, col, func, select
 
 from stylebook_api.deps import get_auth, get_session
@@ -78,3 +78,83 @@ def agent_types(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     return []
+
+
+def _empty_page(*, limit: int, offset: int) -> tuple[int, int, bool, bool]:
+    page = (offset // limit) + 1 if limit > 0 else 1
+    return page, limit, False, False
+
+
+class PaginatedPeopleStub(BaseModel):
+    """Empty canonical people list (EntitySelector shape until people are migrated)."""
+
+    people: list[Any] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    per_page: int = 25
+    has_next: bool = False
+    has_prev: bool = False
+
+
+class PaginatedOrganizationsStub(BaseModel):
+    organizations: list[Any] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    per_page: int = 25
+    has_next: bool = False
+    has_prev: bool = False
+
+
+class PaginatedWorksStub(BaseModel):
+    works: list[Any] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    per_page: int = 25
+    has_next: bool = False
+    has_prev: bool = False
+
+
+@router.get("/people", response_model=PaginatedPeopleStub)
+def list_people_stub(
+    project_slug: str = Query(...),
+    limit: int = Query(25, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedPeopleStub:
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
+    return PaginatedPeopleStub(
+        page=page, per_page=limit, has_next=has_next, has_prev=has_prev
+    )
+
+
+@router.get("/organizations", response_model=PaginatedOrganizationsStub)
+def list_organizations_stub(
+    project_slug: str = Query(...),
+    limit: int = Query(25, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedOrganizationsStub:
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
+    return PaginatedOrganizationsStub(
+        page=page, per_page=limit, has_next=has_next, has_prev=has_prev
+    )
+
+
+@router.get("/works", response_model=PaginatedWorksStub)
+def list_works_stub(
+    project_slug: str = Query(...),
+    limit: int = Query(25, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedWorksStub:
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
+    return PaginatedWorksStub(page=page, per_page=limit, has_next=has_next, has_prev=has_prev)

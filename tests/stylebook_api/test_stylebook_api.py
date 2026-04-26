@@ -10,8 +10,10 @@ from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
     Stylebook,
+    StylebookConnection,
     StylebookLocationAlias,
     StylebookLocationCanonical,
+    StylebookLocationMeta,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
@@ -1403,3 +1405,143 @@ def test_get_suggested_canonicals_for_pending_candidate(
     body = r.json()
     assert "suggestions" in body
     assert isinstance(body["suggestions"], list)
+
+
+def test_get_people_stub_empty(client: TestClient) -> None:
+    r = client.get(
+        "/v1/people?project_slug=demo-proj&limit=10&offset=0",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["people"] == []
+    assert body["total"] == 0
+
+
+def test_canonical_location_meta_crud(client: TestClient, stylebook_test_engine: Engine) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Meta Canon",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.commit()
+        s.refresh(canon)
+        cid = int(canon.id)  # type: ignore[arg-type]
+
+    r0 = client.get(
+        f"/v1/canonical-locations/{cid}/meta?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r0.status_code == 200
+    assert r0.json()["count"] == 0
+
+    r1 = client.post(
+        f"/v1/canonical-locations/{cid}/meta?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"meta_type": "tag", "data": {"x": 1}},
+    )
+    assert r1.status_code == 200
+    mid = int(r1.json()["id"])
+
+    r2 = client.get(
+        f"/v1/canonical-locations/{cid}/meta?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r2.json()["count"] == 1
+
+    r3 = client.patch(
+        f"/v1/canonical-locations/{cid}/meta/{mid}?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"data": {"x": 2}, "meta_type": "note"},
+    )
+    assert r3.status_code == 200
+    assert r3.json()["data"] == {"x": 2}
+    assert r3.json()["meta_type"] == "note"
+
+    r4 = client.delete(
+        f"/v1/canonical-locations/{cid}/meta/{mid}?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r4.status_code == 200
+
+    with Session(engine) as s:
+        n = s.exec(select(StylebookLocationMeta).where(StylebookLocationMeta.id == mid)).first()
+        assert n is None
+
+
+def test_canonical_location_connections_roundtrip(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        ca = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Conn A",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        cb = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Conn B",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(ca)
+        s.add(cb)
+        s.commit()
+        s.refresh(ca)
+        s.refresh(cb)
+        aid = int(ca.id)  # type: ignore[arg-type]
+        bid = int(cb.id)  # type: ignore[arg-type]
+
+    r0 = client.get(
+        f"/v1/canonical-locations/{aid}/connections?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r0.status_code == 200
+    assert r0.json()["connections"] == []
+
+    r1 = client.post(
+        f"/v1/canonical-locations/{aid}/connections?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"to_entity_type": "location", "to_entity_id": bid, "nature": "near"},
+    )
+    assert r1.status_code == 200
+    conn_id = int(r1.json()["id"])
+
+    r2 = client.get(
+        f"/v1/canonical-locations/{aid}/connections?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert len(r2.json()["connections"]) == 1
+
+    r3 = client.patch(
+        f"/v1/canonical-locations/{aid}/connections/{conn_id}?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"nature": "adjacent"},
+    )
+    assert r3.status_code == 200
+    assert r3.json()["nature"] == "adjacent"
+
+    r4 = client.delete(
+        f"/v1/canonical-locations/{aid}/connections/{conn_id}?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r4.status_code == 200
+
+    with Session(engine) as s:
+        row = s.get(StylebookConnection, conn_id)
+        assert row is None
