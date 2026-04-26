@@ -1129,11 +1129,8 @@ export default function LocationCandidates() {
           <DialogHeader>
             <DialogTitle>Potential links</DialogTitle>
             <DialogDescription>
-              Open-queue locations that may match{" "}
-              <span className="font-medium">{createdToast?.canonicalLabel ?? "—"}</span>. Link a
-              row to attach it to this new canonical (
-              <span className="font-medium">#{createdToast?.canonicalId ?? "—"}</span>). Ranked by
-              text similarity (top 5).
+              Candidate locations that may match{" "}
+              <span className="font-medium">{createdToast?.canonicalLabel ?? "—"}</span>
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
