@@ -241,6 +241,7 @@ export function CanonicalLinkModal(props: {
               <div className="max-h-[min(36vh,280px)] overflow-y-auto pr-1">
                 <LinkPickTable
                   rows={searchRows}
+                  includeAddress={false}
                   busyKey={linkingCanonicalId}
                   linkDisabled={!substrateLocationId}
                   onLink={(key) => void linkToCanonical(Number(key))}
