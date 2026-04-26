@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from backfield_db import StylebookLocationCanonical
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import HTTPException
@@ -33,7 +35,7 @@ def _location_display_name(
     session: Session,
     *,
     project_id: int,
-    location_canonical_id: int,
+    location_canonical_id: str,
 ) -> str | None:
     try:
         stylebook_id = resolve_stylebook_id_for_project_id(session, project_id)
@@ -50,17 +52,32 @@ def _location_display_name(
     return (row.label or "").strip() or None
 
 
+def normalize_connection_entity_id(entity_type: str, entity_id: str | int | UUID) -> str:
+    """Normalize API ids to the TEXT stored on ``stylebook_connections``."""
+    if entity_type == "location":
+        if isinstance(entity_id, UUID):
+            return str(entity_id)
+        s = str(entity_id).strip()
+        try:
+            UUID(s)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="location entity_id must be a UUID") from e
+        return s
+    return str(int(entity_id))
+
+
 def get_canonical_display_name(
     session: Session,
     project_id: int,
     entity_type: str,
-    entity_id: int,
+    entity_id: str | int | UUID,
 ) -> str | None:
+    eid = normalize_connection_entity_id(entity_type, entity_id)
     if entity_type == "location":
         return _location_display_name(
             session,
             project_id=project_id,
-            location_canonical_id=entity_id,
+            location_canonical_id=eid,
         )
     return None
 
@@ -69,18 +86,19 @@ def validate_canonical_exists(
     session: Session,
     project_id: int,
     entity_type: str,
-    entity_id: int,
+    entity_id: str | int | UUID,
 ) -> None:
     if entity_type not in CONNECTION_ENTITY_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid entity_type: {entity_type}. Allowed: {list(CONNECTION_ENTITY_TYPES)}",
         )
-    name = get_canonical_display_name(session, project_id, entity_type, entity_id)
+    eid = normalize_connection_entity_id(entity_type, entity_id)
+    name = get_canonical_display_name(session, project_id, entity_type, eid)
     if name is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Canonical {entity_type} with id {entity_id} not found in project",
+            detail=f"Canonical {entity_type} with id {eid} not found in project",
         )
 
 
@@ -94,9 +112,9 @@ def validate_connection_pair(from_entity_type: str, to_entity_type: str) -> None
 
 def validate_not_self_connection(
     from_entity_type: str,
-    from_entity_id: int,
+    from_entity_id: str,
     to_entity_type: str,
-    to_entity_id: int,
+    to_entity_id: str,
 ) -> None:
     if from_entity_type == to_entity_type and from_entity_id == to_entity_id:
         raise HTTPException(status_code=400, detail="Cannot connect an entity to itself")

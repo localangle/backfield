@@ -24,6 +24,8 @@ Primary local services are defined in `infra/docker-compose.yml`:
 - `make logs`: inspect compose logs.
 - `make migrate`: run Alembic inside `agate-api`.
 - `make reset-db`: tear down containers and volumes.
+
+When a migration is **destructive** toward existing Stylebook catalog data (for example revision **`019_stylebook_loc_canon_uuid`**), wipe the Postgres volume with **`make reset-db`** before **`make up`** / **`make migrate`** so Alembic applies cleanly; do not expect in-place upgrades from pre-UUID canonical integer ids.
 - `make smoke`: run the HTTP golden-path smoke against a live stack (`tests/smoke/golden_path_stack.py`). With **`SMOKE_EMAIL`** and **`SMOKE_PASSWORD`** set, exercises Core login and **`GET /v1/me/workspaces`** before Agate; otherwise uses the service Bearer on Agate only.
 - `make docker-prune-build`: reclaim disk from Docker build cache only (`docker builder prune -f`).
 - `make docker-prune-system`: remove stopped containers, dangling images, unused networks, and build cache (`docker system prune -f`).

@@ -78,6 +78,7 @@ def test_try_resolve_single_canonical_winner() -> None:
         c = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             status="active",
             geometry_json=gj,
@@ -86,7 +87,7 @@ def test_try_resolve_single_canonical_winner() -> None:
         session.add(c)
         session.commit()
         session.refresh(c)
-        cid = int(c.id)  # type: ignore[arg-type]
+        cid = str(c.id)
         session.add(
             StylebookLocationAlias(
                 location_canonical_id=cid,
@@ -125,6 +126,7 @@ def test_try_resolve_inexact_strings_miss_tier1_canonical() -> None:
             c = StylebookLocationCanonical(
                 stylebook_id=sb_id,
                 label="Chicago, IL",
+                slug="chicago-il",
                 location_type="city",
                 status="active",
                 geometry_json=gj,
@@ -133,7 +135,7 @@ def test_try_resolve_inexact_strings_miss_tier1_canonical() -> None:
             session.add(c)
             session.commit()
             session.refresh(c)
-            cid = int(c.id)  # type: ignore[arg-type]
+            cid = str(c.id)
             session.add(
                 StylebookLocationAlias(
                     location_canonical_id=cid,
@@ -164,6 +166,7 @@ def test_try_resolve_chicago_il_without_comma_misses_label_with_comma() -> None:
         c = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             status="active",
             geometry_json=gj,
@@ -172,7 +175,7 @@ def test_try_resolve_chicago_il_without_comma_misses_label_with_comma() -> None:
         session.add(c)
         session.commit()
         session.refresh(c)
-        cid = int(c.id)  # type: ignore[arg-type]
+        cid = str(c.id)
         session.add(
             StylebookLocationAlias(
                 location_canonical_id=cid,
@@ -203,6 +206,7 @@ def test_try_resolve_ambiguous_two_canonicals_returns_none() -> None:
         c1 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             status="active",
             geometry_json=gj,
@@ -211,6 +215,7 @@ def test_try_resolve_ambiguous_two_canonicals_returns_none() -> None:
         c2 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, Illinois",
+            slug="chicago-illinois",
             location_type="city",
             status="active",
             geometry_json=gj,
@@ -222,7 +227,7 @@ def test_try_resolve_ambiguous_two_canonicals_returns_none() -> None:
         session.refresh(c1)
         session.refresh(c2)
         for c in (c1, c2):
-            cid = int(c.id)  # type: ignore[arg-type]
+            cid = str(c.id)
             session.add(
                 StylebookLocationAlias(
                     location_canonical_id=cid,

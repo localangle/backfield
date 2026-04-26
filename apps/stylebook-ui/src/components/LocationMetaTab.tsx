@@ -19,7 +19,7 @@ const locationMetaTabConfig: MetaTabConfig = {
 }
 
 interface LocationMetaTabProps {
-  locationId: number | null
+  locationId: string | null
   projectSlug: string
   onMetaUpdated?: () => void
 }

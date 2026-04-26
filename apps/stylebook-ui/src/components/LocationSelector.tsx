@@ -5,7 +5,7 @@ import type { LocationPickerRow } from "@/lib/entityConfigs/connectionPickers"
 interface LocationSelectorProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSelect: (locationId: number, displayName?: string) => void
+  onSelect: (locationId: string | number, displayName?: string) => void
   projectSlug: string
   candidateNames?: string[]
   excludeIds?: number[]

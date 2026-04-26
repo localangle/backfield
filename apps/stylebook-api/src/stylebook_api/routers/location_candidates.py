@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from backfield_auth.gate import require_project_access
 from backfield_db import (
@@ -19,6 +20,7 @@ from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
+from backfield_stylebook.canonical_slug import allocate_unique_canonical_slug
 from backfield_stylebook.locations import refresh_aliases_for_linked_location
 from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
@@ -166,7 +168,7 @@ def _canonical_suggestion_payload(loc: SubstrateLocation) -> dict[str, Any] | No
     if sug is not None:
         out["suggested_action"] = sug.get("suggested_action")
         cid = sug.get("stylebook_location_canonical_id")
-        out["stylebook_location_canonical_id"] = int(cid) if cid is not None else None
+        out["stylebook_location_canonical_id"] = str(cid) if cid is not None else None
         out["source"] = sug.get("source")
     if adj is not None:
         out["adjudication_confidence"] = adj.get("confidence")
@@ -177,10 +179,9 @@ def _canonical_suggestion_payload(loc: SubstrateLocation) -> dict[str, Any] | No
             out.get("stylebook_location_canonical_id") is None
             and adj.get("canonical_id") is not None
         ):
-            try:
-                out["stylebook_location_canonical_id"] = int(adj["canonical_id"])
-            except (TypeError, ValueError):
-                pass
+            raw_c = adj.get("canonical_id")
+            if raw_c is not None:
+                out["stylebook_location_canonical_id"] = str(raw_c).strip() or None
     return out or None
 
 
@@ -570,7 +571,7 @@ def candidate_update_note(
 
 
 class SuggestedCanonicalItem(BaseModel):
-    canonical_id: int
+    canonical_id: str
     label: str
     location_type: str | None = None
     formatted_address: str | None = None
@@ -609,8 +610,8 @@ def candidates_suggested_canonicals(
     ranked = rank_canonical_suggestions_for_substrate(
         session, stylebook_id=stylebook_id, location=loc, limit=limit
     )
-    ids = [int(cid) for cid, _ in ranked]
-    canon_by_id: dict[int, StylebookLocationCanonical] = {}
+    ids = [str(cid) for cid, _ in ranked]
+    canon_by_id: dict[str, StylebookLocationCanonical] = {}
     if ids:
         canon_rows = list(
             session.exec(
@@ -619,15 +620,15 @@ def candidates_suggested_canonicals(
         )
         for row in canon_rows:
             if row.id is not None:
-                canon_by_id[int(row.id)] = row
+                canon_by_id[str(row.id)] = row
     suggestions: list[SuggestedCanonicalItem] = []
     for cid, lab in ranked:
-        c = canon_by_id.get(int(cid))
+        c = canon_by_id.get(str(cid))
         lt = (str(c.location_type).strip() if c and c.location_type else "") or None
         fa = (str(c.formatted_address).strip() if c and c.formatted_address else "") or None
         suggestions.append(
             SuggestedCanonicalItem(
-                canonical_id=int(cid),
+                canonical_id=str(cid),
                 label=lab,
                 location_type=lt,
                 formatted_address=fa,
@@ -638,7 +639,7 @@ def candidates_suggested_canonicals(
 
 class AcceptCandidateBody(BaseModel):
     create_new: bool = False
-    stylebook_location_id: int | None = None
+    stylebook_location_id: UUID | None = None
     name: str | None = None
     geometry_json: dict[str, Any] | None = None
     location_type: str | None = Field(
@@ -649,7 +650,7 @@ class AcceptCandidateBody(BaseModel):
 
 class AcceptCandidateResponse(BaseModel):
     message: str
-    stylebook_location_canonical_id: int
+    stylebook_location_canonical_id: str
 
 
 @router.post("/candidates/{substrate_location_id}/defer")
@@ -723,9 +724,11 @@ def accept_candidate(
         else:
             lt = (loc.location_type or "").strip().lower() or None
         fa = (loc.formatted_address or "").strip() or None
+        slug = allocate_unique_canonical_slug(session, stylebook_id=stylebook_id, label=label)
         canon = StylebookLocationCanonical(
             stylebook_id=stylebook_id,
             label=label,
+            slug=slug,
             location_type=lt,
             formatted_address=fa,
             primary_substrate_location_id=None,
@@ -735,14 +738,14 @@ def accept_candidate(
         )
         session.add(canon)
         session.flush()
-        loc.stylebook_location_canonical_id = int(canon.id)  # type: ignore[arg-type]
+        loc.stylebook_location_canonical_id = str(canon.id)
     else:
         if body.stylebook_location_id is None:
             raise HTTPException(
                 status_code=400,
                 detail="stylebook_location_id is required when create_new is false",
             )
-        canon = session.get(StylebookLocationCanonical, body.stylebook_location_id)
+        canon = session.get(StylebookLocationCanonical, str(body.stylebook_location_id))
         if canon is None:
             raise HTTPException(status_code=404, detail="Canonical location not found")
         if int(canon.stylebook_id) != int(stylebook_id):
@@ -750,7 +753,7 @@ def accept_candidate(
                 status_code=400,
                 detail="Canonical is not in this project's Stylebook",
             )
-        loc.stylebook_location_canonical_id = int(canon.id)  # type: ignore[arg-type]
+        loc.stylebook_location_canonical_id = str(canon.id)
 
     refresh_aliases_for_linked_location(
         session,
@@ -763,19 +766,19 @@ def accept_candidate(
         loc.canonical_review_reasons_json = [
             {
                 "code": "linked_manual_accept_create_new",
-                "canonical_id": int(canon.id),  # type: ignore[arg-type]
+                "canonical_id": str(canon.id),
             }
         ]
     else:
         loc.canonical_review_reasons_json = [
             {
                 "code": "linked_manual_accept_existing",
-                "canonical_id": int(canon.id),  # type: ignore[arg-type]
+                "canonical_id": str(canon.id),
             }
         ]
     session.add(loc)
     session.commit()
     return AcceptCandidateResponse(
         message="linked",
-        stylebook_location_canonical_id=int(canon.id),  # type: ignore[arg-type]
+        stylebook_location_canonical_id=str(canon.id),
     )

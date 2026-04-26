@@ -20,15 +20,15 @@ type SortDirection = 'asc' | 'desc'
 interface EntitySelectorProps<T> {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSelect: (entityId: number, displayName?: string) => void
+  onSelect: (entityId: string | number, displayName?: string) => void
   projectSlug: string
   candidateNames?: string[]
   /** IDs to exclude from the list (e.g. current entity when reassigning) */
-  excludeIds?: number[]
+  excludeIds?: Array<string | number>
   config: EntityConfig<T>
 }
 
-export default function EntitySelector<T extends { id: number }>({
+export default function EntitySelector<T extends { id: string | number }>({
   open,
   onOpenChange,
   onSelect,
@@ -53,8 +53,8 @@ export default function EntitySelector<T extends { id: number }>({
   // Exclude specific entities (e.g. current entity when reassigning)
   const filteredEntities = useMemo(() => {
     if (!excludeIds.length) return entities
-    const exclude = new Set(excludeIds)
-    return entities.filter(e => !exclude.has(e.id))
+    const exclude = new Set(excludeIds.map(String))
+    return entities.filter((e) => !exclude.has(String(e.id)))
   }, [entities, excludeIds])
 
   useEffect(() => {
@@ -148,8 +148,8 @@ export default function EntitySelector<T extends { id: number }>({
     // When user is searching, show all results in the main list (Suggested is hidden).
     // When search is empty, dedupe so suggested matches appear only in the Suggested section.
     if (!searchQuery.trim()) {
-      const suggestedIds = new Set(suggestedEntities.map(e => e.id))
-      result = result.filter(entity => !suggestedIds.has(entity.id))
+      const suggestedIds = new Set(suggestedEntities.map((e) => String(e.id)))
+      result = result.filter((entity) => !suggestedIds.has(String(entity.id)))
     }
 
     return result

@@ -43,26 +43,26 @@ export interface MetaItem {
 export interface MetaResponse {
   meta: MetaItem[]
   count: number
-  location_id?: number
+  location_id?: string | number
 }
 
 export interface MetaTabConfig {
   type: string
   displayName: { singular: string; plural: string }
   api: {
-    getMeta: (entityId: number, projectSlug: string) => Promise<MetaResponse>
+    getMeta: (entityId: string | number, projectSlug: string) => Promise<MetaResponse>
     createMeta: (
-      entityId: number,
+      entityId: string | number,
       projectSlug: string,
       data: { meta_type: string; data: unknown },
     ) => Promise<unknown>
     updateMeta: (
-      entityId: number,
+      entityId: string | number,
       metaId: number,
       projectSlug: string,
       data: { data: unknown; meta_type?: string },
     ) => Promise<unknown>
-    deleteMeta: (entityId: number, metaId: number, projectSlug: string) => Promise<unknown>
+    deleteMeta: (entityId: string | number, metaId: number, projectSlug: string) => Promise<unknown>
   }
 }
 
@@ -78,7 +78,7 @@ interface PerItemEdit {
 }
 
 interface MetaTabProps {
-  entityId: number | null
+  entityId: string | number | null
   projectSlug: string
   config: MetaTabConfig
   onMetaUpdated?: () => void

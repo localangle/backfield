@@ -338,13 +338,17 @@ def stylebook_match_to_geocoding_result(
     
     # Build confidence dict (without geometry_json - geometry goes in result.geometry)
     confidence = stylebook_match.get("confidence", {})
+    raw_sb_id = stylebook_match.get("id")
+    sb_id_str = str(raw_sb_id).strip() if raw_sb_id is not None else None
     confidence.update({
         "source": "canonical",
-        "canonical_id": stylebook_match.get("id")
+        "canonical_id": sb_id_str,
     })
-    
+
+    stylebook_result_id = f"stylebook:{sb_id_str}" if sb_id_str else None
+
     result_data = GeocodingResultData(
-        id=f"stylebook:{stylebook_match.get('id')}",
+        id=stylebook_result_id,
         processed_str=processed_str,
         geometry=geometry,
         confidence=confidence,

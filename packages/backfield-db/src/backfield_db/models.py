@@ -178,10 +178,18 @@ class StylebookLocationCanonical(SQLModel, table=True):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     __tablename__ = "stylebook_location_canonical"
+    __table_args__ = (
+        UniqueConstraint(
+            "stylebook_id",
+            "slug",
+            name="uq_stylebook_location_canonical_stylebook_slug",
+        ),
+    )
 
-    id: int | None = Field(default=None, primary_key=True)
+    id: str = Field(default_factory=_uuid, primary_key=True)
     stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
     label: str = Field(sa_column=Column(Text, nullable=False))
+    slug: str = Field(sa_column=Column(Text, nullable=False))
     location_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     formatted_address: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     primary_substrate_location_id: int | None = Field(
@@ -227,7 +235,7 @@ class StylebookLocationAlias(SQLModel, table=True):
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    location_canonical_id: int = Field(foreign_key="stylebook_location_canonical.id", index=True)
+    location_canonical_id: str = Field(foreign_key="stylebook_location_canonical.id", index=True)
     alias_text: str = Field(sa_column=Column(Text, nullable=False))
     normalized_alias: str = Field(sa_column=Column(Text, nullable=False))
     provenance: str = Field(sa_column=Column(Text, nullable=False))
@@ -257,7 +265,7 @@ class StylebookLocationMeta(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
-    stylebook_location_canonical_id: int = Field(
+    stylebook_location_canonical_id: str = Field(
         foreign_key="stylebook_location_canonical.id",
         index=True,
     )
@@ -281,7 +289,11 @@ class StylebookLocationMeta(SQLModel, table=True):
 
 
 class StylebookConnection(SQLModel, table=True):
-    """Directed edge between two canonical entities within a project (polymorphic int ids)."""
+    """Directed edge between two canonical entities within a project (polymorphic entity ids).
+
+    ``from_entity_id`` / ``to_entity_id`` are TEXT: UUID strings for ``location`` entities,
+    decimal strings for stub person/organization/work ids until those catalogs use UUIDs.
+    """
 
     __tablename__ = "stylebook_connections"
     __table_args__ = (
@@ -303,9 +315,9 @@ class StylebookConnection(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
     from_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
-    from_entity_id: int = Field(index=True)
+    from_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     to_entity_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
-    to_entity_id: int = Field(index=True)
+    to_entity_id: str = Field(sa_column=Column(Text, nullable=False, index=True))
     nature: str = Field(sa_column=Column(Text, nullable=False, index=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -472,7 +484,7 @@ class SubstrateLocation(SQLModel, table=True):
         default="provisional",
         sa_column=Column(Text, nullable=False, server_default="provisional"),
     )
-    stylebook_location_canonical_id: int | None = Field(
+    stylebook_location_canonical_id: str | None = Field(
         default=None,
         foreign_key="stylebook_location_canonical.id",
         index=True,

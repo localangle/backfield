@@ -17,11 +17,15 @@ const CENTER_X = 280
 const CENTER_Y = 200
 const RADIUS = 220
 
-function nodeId(entityType: string, entityId: number): string {
+function nodeId(entityType: string, entityId: string | number): string {
   return `${entityType}-${entityId}`
 }
 
-function getDetailUrl(entityType: ConnectionsEntityType, entityId: number, projectSlug: string): string {
+function getDetailUrl(
+  entityType: ConnectionsEntityType,
+  entityId: string | number,
+  projectSlug: string,
+): string {
   const base = window.location.origin
   if (entityType === 'person') {
     return `${base}/people/canonical/${entityId}?project=${projectSlug}`
@@ -37,7 +41,7 @@ function getDetailUrl(entityType: ConnectionsEntityType, entityId: number, proje
 
 interface ConnectionsGraphProps {
   entityType: ConnectionsEntityType
-  entityId: number
+  entityId: string | number
   projectSlug: string
   entityDisplayName: string
   connections: Connection[]

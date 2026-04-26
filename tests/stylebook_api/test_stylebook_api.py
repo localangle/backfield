@@ -190,7 +190,7 @@ def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
     body = r.json()
     assert body["label"] == "West Garfield Park, Chicago, IL"
     assert body.get("location_type") == "neighborhood"
-    cid = int(body["id"])
+    cid = str(body["id"])
     assert body.get("linked_substrate_count", 0) == 0
     with Session(stylebook_test_engine) as s:
         q2 = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
@@ -226,7 +226,7 @@ def test_create_canonical_location_post_alias_no_substrate(
     assert r.status_code == 200
     body = r.json()
     assert body["label"] == "Solo Canonical, Evanston, IL"
-    cid = int(body["id"])
+    cid = str(body["id"])
     with Session(stylebook_test_engine) as s:
         canon = s.get(StylebookLocationCanonical, cid)
         assert canon is not None
@@ -346,14 +346,14 @@ def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClie
     )
     assert r.status_code == 200
     created = r.json()
-    canon_fk = int(created["id"])
+    canon_fk = str(created["id"])
     assert created["label"] == "Catalog Test Place"
     r2 = client.get("/v1/canonical-locations?project_slug=demo-proj", headers=_service_headers())
     assert r2.status_code == 200
     data = r2.json()
     assert data["total"] >= 1
     canon = next(c for c in data["canonicals"] if c["label"] == "Catalog Test Place")
-    assert int(canon["id"]) == int(canon_fk)
+    assert str(canon["id"]) == str(canon_fk)
     assert canon.get("linked_substrate_count", 0) == 0
     r3 = client.get(
         f"/v1/canonical-locations/{canon['id']}?project_slug=demo-proj",
@@ -373,7 +373,7 @@ def test_patch_canonical_location_updates_location_type_and_formatted_address(
         json={"label": "Patchable Canon Row"},
     )
     assert r.status_code == 200
-    cid = int(r.json()["id"])
+    cid = str(r.json()["id"])
     r2 = client.patch(
         f"/v1/canonical-locations/{cid}?project_slug=demo-proj",
         headers=_service_headers(),
@@ -913,10 +913,10 @@ def test_accept_candidate_create_new(
         assert row is not None
         assert row.stylebook_location_canonical_id is not None
         assert row.canonical_link_status == CANONICAL_LINK_LINKED
-        canon = s.get(StylebookLocationCanonical, int(row.stylebook_location_canonical_id))
+        canon = s.get(StylebookLocationCanonical, str(row.stylebook_location_canonical_id))
         assert canon is not None
-        coid = int(canon.id)  # type: ignore[arg-type]
-        assert int(data["stylebook_location_canonical_id"]) == coid
+        coid = str(canon.id)
+        assert data["stylebook_location_canonical_id"] == coid
         assert row.canonical_review_reasons_json == [
             {"code": "linked_manual_accept_create_new", "canonical_id": coid}
         ]
@@ -924,7 +924,7 @@ def test_accept_candidate_create_new(
         assert canon.location_type == "city"
         assert canon.formatted_address == "Newplace, IL, USA"
         assert canon.primary_substrate_location_id is None
-        canon_id = int(canon.id)  # type: ignore[arg-type]
+        canon_id = str(canon.id)
         aliases = s.exec(
             select(StylebookLocationAlias).where(
                 StylebookLocationAlias.location_canonical_id == canon_id,
@@ -967,7 +967,7 @@ def test_accept_candidate_create_new_location_type_override(
         row = s.get(SubstrateLocation, sid)
         assert row is not None
         assert row.stylebook_location_canonical_id is not None
-        canon = s.get(StylebookLocationCanonical, int(row.stylebook_location_canonical_id))
+        canon = s.get(StylebookLocationCanonical, str(row.stylebook_location_canonical_id))
         assert canon is not None
         assert canon.label == "TypoTown Canon"
         assert canon.location_type == "neighborhood"
@@ -1013,6 +1013,7 @@ def test_accept_candidate_link_existing_canonical(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Existing",
+            slug="existing",
             location_type="neighborhood",
             formatted_address="Canon card only",
             primary_substrate_location_id=None,
@@ -1021,7 +1022,7 @@ def test_accept_candidate_link_existing_canonical(
         s.add(canon)
         s.commit()
         s.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
 
         loc = SubstrateLocation(
             project_id=int(proj.id),
@@ -1045,12 +1046,12 @@ def test_accept_candidate_link_existing_canonical(
     )
     assert r.status_code == 200
     assert r.json()["message"] == "linked"
-    assert int(r.json()["stylebook_location_canonical_id"]) == cid
+    assert r.json()["stylebook_location_canonical_id"] == cid
 
     with Session(engine) as s:
         row = s.get(SubstrateLocation, sid)
         assert row is not None
-        assert int(row.stylebook_location_canonical_id or 0) == cid
+        assert row.stylebook_location_canonical_id == cid
         assert row.canonical_link_status == CANONICAL_LINK_LINKED
         assert row.canonical_review_reasons_json == [
             {"code": "linked_manual_accept_existing", "canonical_id": cid}
@@ -1152,7 +1153,7 @@ def test_list_location_mentions_includes_article_and_occurrence_quote(
     assert r.status_code == 200
     data = r.json()
     assert data["total"] == 1
-    assert data["canonical_location_id"] == lid
+    assert data["canonical_location_id"] == str(lid)
     assert len(data["mentions"]) == 1
     m0 = data["mentions"][0]
     assert m0["substrate_location_id"] == lid
@@ -1177,6 +1178,7 @@ def test_post_unlink_canonical_prunes_alias_when_sole_substrate(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Sole Canon",
+            slug="sole-canon",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1184,7 +1186,7 @@ def test_post_unlink_canonical_prunes_alias_when_sole_substrate(
         s.add(canon)
         s.commit()
         s.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
         loc = SubstrateLocation(
             project_id=pid,
             name="Soleplace",
@@ -1249,6 +1251,7 @@ def test_post_unlink_canonical_keeps_alias_when_second_substrate_shares_norm(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Shared Canon",
+            slug="shared-canon",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1256,7 +1259,7 @@ def test_post_unlink_canonical_keeps_alias_when_second_substrate_shares_norm(
         s.add(canon)
         s.commit()
         s.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
         loc1 = SubstrateLocation(
             project_id=pid,
             name="Dup A",
@@ -1330,6 +1333,7 @@ def test_post_link_canonical_relink_moves_alias_and_prunes_old_when_safe(
         ca = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Canon A",
+            slug="canon-a",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1337,6 +1341,7 @@ def test_post_link_canonical_relink_moves_alias_and_prunes_old_when_safe(
         cb = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Canon B",
+            slug="canon-b",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1346,8 +1351,8 @@ def test_post_link_canonical_relink_moves_alias_and_prunes_old_when_safe(
         s.commit()
         s.refresh(ca)
         s.refresh(cb)
-        aid = int(ca.id)  # type: ignore[arg-type]
-        bid = int(cb.id)  # type: ignore[arg-type]
+        aid = str(ca.id)
+        bid = str(cb.id)
         loc = SubstrateLocation(
             project_id=pid,
             name="Moveme",
@@ -1381,7 +1386,7 @@ def test_post_link_canonical_relink_moves_alias_and_prunes_old_when_safe(
     with Session(engine) as s:
         row = s.get(SubstrateLocation, sid)
         assert row is not None
-        assert int(row.stylebook_location_canonical_id or 0) == bid
+        assert row.stylebook_location_canonical_id == bid
         on_b = s.exec(
             select(StylebookLocationAlias).where(
                 StylebookLocationAlias.location_canonical_id == bid,
@@ -1410,6 +1415,7 @@ def test_post_link_canonical_idempotent_same_target(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Idem Canon",
+            slug="idem-canon",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1417,7 +1423,7 @@ def test_post_link_canonical_idempotent_same_target(
         s.add(canon)
         s.commit()
         s.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
         loc = SubstrateLocation(
             project_id=pid,
             name="Idem",
@@ -1461,6 +1467,7 @@ def test_get_canonical_linked_substrates(
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="List Canon",
+            slug="list-canon",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1468,7 +1475,7 @@ def test_get_canonical_linked_substrates(
         s.add(canon)
         s.commit()
         s.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
         loc = SubstrateLocation(
             project_id=pid,
             name="Listed",
@@ -1556,6 +1563,7 @@ def test_canonical_location_meta_crud(client: TestClient, stylebook_test_engine:
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Meta Canon",
+            slug="meta-canon",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1563,7 +1571,7 @@ def test_canonical_location_meta_crud(client: TestClient, stylebook_test_engine:
         s.add(canon)
         s.commit()
         s.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
 
     r0 = client.get(
         f"/v1/canonical-locations/{cid}/meta?project_slug=demo-proj",
@@ -1617,6 +1625,7 @@ def test_canonical_location_connections_roundtrip(
         ca = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Conn A",
+            slug="conn-a",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1624,6 +1633,7 @@ def test_canonical_location_connections_roundtrip(
         cb = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Conn B",
+            slug="conn-b",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1633,8 +1643,8 @@ def test_canonical_location_connections_roundtrip(
         s.commit()
         s.refresh(ca)
         s.refresh(cb)
-        aid = int(ca.id)  # type: ignore[arg-type]
-        bid = int(cb.id)  # type: ignore[arg-type]
+        aid = str(ca.id)
+        bid = str(cb.id)
 
     r0 = client.get(
         f"/v1/canonical-locations/{aid}/connections?project_slug=demo-proj",

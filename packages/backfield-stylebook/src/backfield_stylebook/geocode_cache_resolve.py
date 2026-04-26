@@ -18,7 +18,7 @@ def _canonical_to_stylebook_match_dict(canon: StylebookLocationCanonical) -> dic
     gj = canon.geometry_json if isinstance(canon.geometry_json, dict) else None
     boundaries: list[dict[str, Any]] = [dict(gj)] if gj else []
     gt = (canon.geometry_type or (gj.get("type") if gj else None) or "Point")
-    cid = int(canon.id)  # type: ignore[arg-type]
+    cid = str(canon.id)
     return {
         "id": cid,
         "label": str(canon.label),
@@ -48,8 +48,8 @@ def _substrate_cache_row_to_cache_match_dict(row: SubstrateLocationCache) -> dic
 
 
 def _alias_map_for_canonicals(
-    session: Session, canonical_ids: list[int]
-) -> dict[int, tuple[str, ...]]:
+    session: Session, canonical_ids: list[str]
+) -> dict[str, tuple[str, ...]]:
     if not canonical_ids:
         return {}
     rows = session.exec(
@@ -58,9 +58,9 @@ def _alias_map_for_canonicals(
             col(StylebookLocationAlias.suppressed).is_(False),
         )
     ).all()
-    acc: dict[int, list[str]] = {cid: [] for cid in canonical_ids}
+    acc: dict[str, list[str]] = {cid: [] for cid in canonical_ids}
     for a in rows:
-        cid = int(a.location_canonical_id)
+        cid = str(a.location_canonical_id)
         if cid not in acc:
             continue
         norm = (a.normalized_alias or "").strip().lower()
@@ -73,12 +73,12 @@ def _canonical_matches_normalized_query(
     c: StylebookLocationCanonical,
     *,
     normalized_query: str,
-    alias_map: dict[int, tuple[str, ...]],
+    alias_map: dict[str, tuple[str, ...]],
 ) -> bool:
     """True when normalized query equals normalized label or any normalized alias string."""
     if c.id is None:
         return False
-    cid = int(c.id)
+    cid = str(c.id)
     if normalize_substrate_cache_query(str(c.label)) == normalized_query:
         return True
     for raw_alias in alias_map.get(cid, ()):
@@ -122,7 +122,7 @@ def try_resolve_geocode_cache(
             )
         ).all()
     )
-    ids = [int(c.id) for c in canons if c.id is not None]
+    ids = [str(c.id) for c in canons if c.id is not None]
     alias_map = _alias_map_for_canonicals(session, ids)
 
     winners: list[StylebookLocationCanonical] = []

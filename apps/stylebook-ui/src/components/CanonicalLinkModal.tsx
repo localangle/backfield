@@ -52,7 +52,7 @@ export function CanonicalLinkModal(props: {
   onDone: () => void
   title?: string
   /** When set, surface this canonical first (e.g. pre-filled from row suggestion). */
-  initialCanonicalId?: number | null
+  initialCanonicalId?: string | null
 }) {
   const { open, onOpenChange, projectSlug, substrateLocationId, onDone, title, initialCanonicalId } =
     props
@@ -61,7 +61,7 @@ export function CanonicalLinkModal(props: {
   const [searchQ, setSearchQ] = useState("")
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchHits, setSearchHits] = useState<CanonicalLocation[]>([])
-  const [linkingCanonicalId, setLinkingCanonicalId] = useState<number | null>(null)
+  const [linkingCanonicalId, setLinkingCanonicalId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [initialCanonExtra, setInitialCanonExtra] = useState<CanonicalLocation | null>(null)
 
@@ -178,7 +178,7 @@ export function CanonicalLinkModal(props: {
     searchHits,
   ])
 
-  async function linkToCanonical(canonicalId: number) {
+  async function linkToCanonical(canonicalId: string) {
     if (!substrateLocationId || !projectSlug) return
     setLinkingCanonicalId(canonicalId)
     setError(null)
@@ -218,7 +218,7 @@ export function CanonicalLinkModal(props: {
                   includeAddress={false}
                   busyKey={linkingCanonicalId}
                   linkDisabled={!substrateLocationId}
-                  onLink={(key) => void linkToCanonical(Number(key))}
+                  onLink={(key) => void linkToCanonical(String(key))}
                   linkActionLabel="Link to this canonical"
                 />
               </div>
@@ -245,7 +245,7 @@ export function CanonicalLinkModal(props: {
                   includeAddress={false}
                   busyKey={linkingCanonicalId}
                   linkDisabled={!substrateLocationId}
-                  onLink={(key) => void linkToCanonical(Number(key))}
+                  onLink={(key) => void linkToCanonical(String(key))}
                   linkActionLabel="Link to this canonical"
                 />
               </div>

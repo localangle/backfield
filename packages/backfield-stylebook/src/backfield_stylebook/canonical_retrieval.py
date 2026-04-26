@@ -46,7 +46,7 @@ def _postgres_recall_chunk(
     stylebook_id: int,
     query_lower: str,
     limit: int,
-) -> list[tuple[int, float]]:
+) -> list[tuple[str, float]]:
     stmt = text(
         """
         SELECT slc.id,
@@ -71,9 +71,9 @@ def _postgres_recall_chunk(
             "lim": limit,
         },
     ).all()
-    out: list[tuple[int, float]] = []
+    out: list[tuple[str, float]] = []
     for row in rows:
-        cid = int(row[0])
+        cid = str(row[0])
         sim = float(row[1]) if row[1] is not None else 0.0
         out.append((cid, sim))
     return out
@@ -85,7 +85,7 @@ def _sqlite_recall_chunk(
     stylebook_id: int,
     query_lower: str,
     limit: int,
-) -> list[int]:
+) -> list[str]:
     conds = _sqlite_token_conditions(query_lower)
     stmt = (
         select(StylebookLocationCanonical.id)
@@ -102,7 +102,7 @@ def _sqlite_recall_chunk(
         .limit(limit)
     )
     ids = session.exec(stmt).all()
-    return [int(i) for i in ids]
+    return [str(i) for i in ids]
 
 
 def retrieve_candidate_canonical_ids(
@@ -114,7 +114,7 @@ def retrieve_candidate_canonical_ids(
     formatted_address: str | None = None,
     limit: int = _DEFAULT_TOP_K,
     substrate_location_type: str | None = None,
-) -> list[tuple[int, float | None]]:
+) -> list[tuple[str, float | None]]:
     """Return ``(canonical_id, optional_db_string_hint)`` ordered best-first.
 
     Merges recall across ``normalized_query``, ``query_text``, and optional
@@ -135,7 +135,7 @@ def retrieve_candidate_canonical_ids(
     per = max(8, min(limit, 32) // len(variants))
 
     if bind.dialect.name == "postgresql":
-        best_sim: dict[int, float] = defaultdict(float)
+        best_sim: dict[str, float] = defaultdict(float)
         for v in variants:
             for cid, sim in _postgres_recall_chunk(
                 session, stylebook_id=stylebook_id, query_lower=v, limit=per
@@ -146,8 +146,8 @@ def retrieve_candidate_canonical_ids(
         raw = [(cid, float(s)) for cid, s in ranked]
         return _filter_recall_by_substrate_type(session, raw, substrate_location_type, limit)
 
-    seen: set[int] = set()
-    ordered: list[int] = []
+    seen: set[str] = set()
+    ordered: list[str] = []
     for v in variants:
         chunk = _sqlite_recall_chunk(
             session, stylebook_id=stylebook_id, query_lower=v, limit=per
@@ -166,23 +166,23 @@ def retrieve_candidate_canonical_ids(
 
 def _filter_recall_by_substrate_type(
     session: Session,
-    raw: list[tuple[int, float | None]],
+    raw: list[tuple[str, float | None]],
     substrate_location_type: str | None,
     limit: int,
-) -> list[tuple[int, float | None]]:
+) -> list[tuple[str, float | None]]:
     if not raw or not (substrate_location_type or "").strip():
         return raw[:limit]
     ids = [cid for cid, _ in raw]
     rows = session.exec(
         select(StylebookLocationCanonical).where(col(StylebookLocationCanonical.id).in_(ids))
     ).all()
-    lt_by_id: dict[int, str | None] = {}
+    lt_by_id: dict[str, str | None] = {}
     for c in rows:
         if c.id is not None:
-            lt_by_id[int(c.id)] = c.location_type
-    out: list[tuple[int, float | None]] = []
+            lt_by_id[str(c.id)] = c.location_type
+    out: list[tuple[str, float | None]] = []
     for cid, hint in raw:
-        lt = lt_by_id.get(int(cid))
+        lt = lt_by_id.get(str(cid))
         if link_pair_allowed(substrate_location_type, lt):
             out.append((cid, hint))
         if len(out) >= limit:
@@ -193,32 +193,32 @@ def _filter_recall_by_substrate_type(
 def load_canonical_match_features(
     session: Session,
     *,
-    canonical_ids: list[int],
-) -> dict[int, tuple[StylebookLocationCanonical, tuple[str, ...]]]:
+    canonical_ids: list[str],
+) -> dict[str, tuple[StylebookLocationCanonical, tuple[str, ...]]]:
     """Map canonical id → (row, normalized_aliases including label as alias-like string)."""
     if not canonical_ids:
         return {}
     canon_rows = session.exec(
         select(StylebookLocationCanonical).where(col(StylebookLocationCanonical.id).in_(canonical_ids))
     ).all()
-    by_id: dict[int, StylebookLocationCanonical] = {}
+    by_id: dict[str, StylebookLocationCanonical] = {}
     for c in canon_rows:
         if c.id is not None:
-            by_id[int(c.id)] = c
+            by_id[str(c.id)] = c
     alias_rows = session.exec(
         select(StylebookLocationAlias).where(
             col(StylebookLocationAlias.location_canonical_id).in_(canonical_ids),
             StylebookLocationAlias.suppressed == False,  # noqa: E712
         )
     ).all()
-    aliases_by_canon: dict[int, list[str]] = {cid: [] for cid in canonical_ids}
+    aliases_by_canon: dict[str, list[str]] = {cid: [] for cid in canonical_ids}
     for a in alias_rows:
         if a.location_canonical_id is None:
             continue
-        cid = int(a.location_canonical_id)
+        cid = str(a.location_canonical_id)
         if cid in aliases_by_canon:
             aliases_by_canon[cid].append(str(a.normalized_alias))
-    out: dict[int, tuple[StylebookLocationCanonical, tuple[str, ...]]] = {}
+    out: dict[str, tuple[StylebookLocationCanonical, tuple[str, ...]]] = {}
     for cid in canonical_ids:
         c = by_id.get(cid)
         if c is None:

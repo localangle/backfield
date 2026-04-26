@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from backfield_auth.gate import require_project_access
 from backfield_db import BackfieldProject, StylebookLocationCanonical, StylebookLocationMeta
@@ -34,10 +35,10 @@ class CreateMetaRequest(BaseModel):
 def _canonical_for_project_or_404(
     session: Session,
     project: BackfieldProject,
-    canonical_id: int,
+    canonical_id: UUID,
 ) -> StylebookLocationCanonical:
     stylebook_id = _require_stylebook_id(session, project)
-    canon = session.get(StylebookLocationCanonical, canonical_id)
+    canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
     return canon
@@ -45,7 +46,7 @@ def _canonical_for_project_or_404(
 
 @router.get("/canonical-locations/{canonical_id}/meta")
 def get_location_meta(
-    canonical_id: int,
+    canonical_id: UUID,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -53,9 +54,10 @@ def get_location_meta(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     _canonical_for_project_or_404(session, proj, canonical_id)
+    cid = str(canonical_id)
     rows = session.exec(
         select(StylebookLocationMeta)
-        .where(StylebookLocationMeta.stylebook_location_canonical_id == canonical_id)
+        .where(StylebookLocationMeta.stylebook_location_canonical_id == cid)
         .order_by(StylebookLocationMeta.meta_type, StylebookLocationMeta.id)
     ).all()
     meta_out: list[dict[str, Any]] = []
@@ -69,7 +71,7 @@ def get_location_meta(
             }
         )
     return {
-        "location_id": canonical_id,
+        "location_id": cid,
         "meta": meta_out,
         "count": len(meta_out),
     }
@@ -77,7 +79,7 @@ def get_location_meta(
 
 @router.post("/canonical-locations/{canonical_id}/meta")
 def create_location_meta(
-    canonical_id: int,
+    canonical_id: UUID,
     payload: CreateMetaRequest,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
@@ -86,10 +88,11 @@ def create_location_meta(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     _canonical_for_project_or_404(session, proj, canonical_id)
+    cid = str(canonical_id)
     validate_meta_json(payload.data)
     row = StylebookLocationMeta(
         project_id=int(proj.id),
-        stylebook_location_canonical_id=canonical_id,
+        stylebook_location_canonical_id=cid,
         meta_type=payload.meta_type.strip(),
         data_json=payload.data,
         added=True,
@@ -108,7 +111,7 @@ def create_location_meta(
 
 @router.patch("/canonical-locations/{canonical_id}/meta/{meta_id}")
 def update_location_meta(
-    canonical_id: int,
+    canonical_id: UUID,
     meta_id: int,
     request: UpdateMetaRequest,
     project_slug: str = Query(...),
@@ -118,10 +121,11 @@ def update_location_meta(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     _canonical_for_project_or_404(session, proj, canonical_id)
+    cid = str(canonical_id)
     meta_row = session.exec(
         select(StylebookLocationMeta).where(
             StylebookLocationMeta.id == meta_id,
-            StylebookLocationMeta.stylebook_location_canonical_id == canonical_id,
+            StylebookLocationMeta.stylebook_location_canonical_id == cid,
             StylebookLocationMeta.project_id == int(proj.id),
         )
     ).first()
@@ -148,7 +152,7 @@ def update_location_meta(
 
 @router.delete("/canonical-locations/{canonical_id}/meta/{meta_id}")
 def delete_location_meta(
-    canonical_id: int,
+    canonical_id: UUID,
     meta_id: int,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
@@ -157,10 +161,11 @@ def delete_location_meta(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     _canonical_for_project_or_404(session, proj, canonical_id)
+    cid = str(canonical_id)
     meta_row = session.exec(
         select(StylebookLocationMeta).where(
             StylebookLocationMeta.id == meta_id,
-            StylebookLocationMeta.stylebook_location_canonical_id == canonical_id,
+            StylebookLocationMeta.stylebook_location_canonical_id == cid,
             StylebookLocationMeta.project_id == int(proj.id),
         )
     ).first()

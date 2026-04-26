@@ -42,7 +42,7 @@ class CanonicalPersistPlan:
     decision: CanonicalPersistDecision
     """When ``LINK_EXISTING``, the canonical row id to attach."""
 
-    existing_canonical_id: int | None = None
+    existing_canonical_id: str | None = None
     """Structured audit trail persisted on ``SubstrateLocation.canonical_review_reasons_json``."""
 
     resolution_reasons: tuple[dict[str, Any], ...] = ()
@@ -53,7 +53,7 @@ def find_existing_canonical_id_by_alias(
     *,
     stylebook_id: int,
     normalized_name: str,
-) -> int | None:
+) -> str | None:
     """Return ``StylebookLocationCanonical.id`` if an alias matches in this Stylebook."""
     norm = str(normalized_name)
     stmt = (
@@ -71,7 +71,7 @@ def find_existing_canonical_id_by_alias(
     canon = session.exec(stmt).first()
     if canon is None or canon.id is None:
         return None
-    return int(canon.id)
+    return str(canon.id)
 
 
 def _address_place_kind_from_entry(entry: dict[str, Any] | None) -> str:
@@ -202,8 +202,8 @@ def rank_scored_canonical_recall_matches(
     session: Session,
     *,
     location: SubstrateLocation,
-    recall: list[tuple[int, str]],
-) -> list[tuple[int, str, float, int]]:
+    recall: list[tuple[str, float | None]],
+) -> list[tuple[str, str, float, int]]:
     """Score each recalled canonical; return best-first rows.
 
     Each tuple is ``(canonical_id, label, score, recall_index)``. Tie-break on equal
@@ -220,7 +220,7 @@ def rank_scored_canonical_recall_matches(
         geometry_json=location.geometry_json,
         formatted_address=location.formatted_address,
     )
-    rows: list[tuple[int, int, str, float]] = []
+    rows: list[tuple[int, str, str, float]] = []
     for recall_index, (canon_id, hint) in enumerate(recall):
         row = bundles.get(canon_id)
         if row is None:
@@ -245,7 +245,7 @@ def rank_scored_canonical_recall_matches(
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
         if not link_pair_allowed(location.location_type, canon.location_type):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        rows.append((recall_index, int(canon_id), str(canon.label), sc))
+        rows.append((recall_index, str(canon_id), str(canon.label), sc))
     rows.sort(key=lambda r: (-r[3], -r[0]))
     return [(r[1], r[2], r[3], r[0]) for r in rows]
 
@@ -271,7 +271,7 @@ def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> 
 def _intra_strict_group_ambiguous(
     session: Session,
     location: SubstrateLocation,
-    ranked: list[tuple[int, str, float, int]],
+    ranked: list[tuple[str, str, float, int]],
 ) -> bool:
     """True when two or more candidates share the substrate's strict type group at autolink tier."""
     sg = strict_type_group(location.location_type)
@@ -349,7 +349,7 @@ def decide_canonical_persist_plan(
                 resolution_reasons=(
                     {
                         "code": "linked_exact_normalized_alias",
-                        "canonical_id": int(cid),
+                        "canonical_id": str(cid),
                         "normalized_name": str(location.normalized_name),
                         "match_basis": "exact_alias_lookup",
                         "type_gate_applied": True,
@@ -367,12 +367,12 @@ def decide_canonical_persist_plan(
         formatted_address=location.formatted_address,
         substrate_location_type=location.location_type,
     )
-    best_id: int | None = None
+    best_id: str | None = None
     best_score = 0.0
-    recall_canonical_ids: tuple[int, ...] = ()
+    recall_canonical_ids: tuple[str, ...] = ()
     intra_ambiguous = False
     if recall:
-        recall_canonical_ids = tuple(int(cid) for cid, _ in recall)
+        recall_canonical_ids = tuple(str(cid) for cid, _ in recall)
         ranked = rank_scored_canonical_recall_matches(
             session, location=location, recall=list(recall)
         )
@@ -389,11 +389,11 @@ def decide_canonical_persist_plan(
         if tier == "autolink" and best_id is not None:
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,
-                existing_canonical_id=int(best_id),
+                existing_canonical_id=str(best_id),
                 resolution_reasons=(
                     {
                         "code": "linked_fuzzy_autolink",
-                        "canonical_id": int(best_id),
+                        "canonical_id": str(best_id),
                         "best_score": float(best_score),
                         "autolink_min_score": float(AUTOLINK_MIN_SCORE),
                         "recall_min_score": float(RECALL_MIN_SCORE),
@@ -412,7 +412,7 @@ def decide_canonical_persist_plan(
                 resolution_reasons=(
                     {
                         "code": "ambiguous_canonical_match",
-                        "best_canonical_id": int(best_id),
+                        "best_canonical_id": str(best_id),
                         "best_score": float(best_score),
                         "autolink_min_score": float(AUTOLINK_MIN_SCORE),
                         "recall_min_score": float(RECALL_MIN_SCORE),

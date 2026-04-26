@@ -21,7 +21,7 @@ def rank_canonical_suggestions_for_substrate(
     stylebook_id: int,
     location: SubstrateLocation,
     limit: int = 24,
-) -> list[tuple[int, str]]:
+) -> list[tuple[str, str]]:
     """Ordered ``(canonical_id, label)`` for UI: exact alias hit first, then ingest-style recall."""
     exact_cid = find_existing_canonical_id_by_alias(
         session, stylebook_id=stylebook_id, normalized_name=str(location.normalized_name)
@@ -35,13 +35,13 @@ def rank_canonical_suggestions_for_substrate(
         substrate_location_type=location.location_type,
     )
     ranked = rank_scored_canonical_recall_matches(session, location=location, recall=list(recall))
-    out: list[tuple[int, str]] = []
-    seen: set[int] = set()
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
     if exact_cid is not None:
-        canon = session.get(StylebookLocationCanonical, int(exact_cid))
+        canon = session.get(StylebookLocationCanonical, str(exact_cid))
         if canon is not None and int(canon.stylebook_id) == int(stylebook_id):
             if link_pair_allowed(location.location_type, canon.location_type):
-                eid = int(exact_cid)
+                eid = str(exact_cid)
                 out.append((eid, str(canon.label)))
                 seen.add(eid)
     for cid, lab, _sc, _idx in ranked:
@@ -57,7 +57,7 @@ def rank_canonical_suggestions_for_substrate(
 def delete_canonical_alias_if_no_other_linked_substrate(
     session: Session,
     *,
-    canonical_id: int,
+    canonical_id: str,
     normalized_name: str,
     exclude_substrate_location_id: int,
 ) -> bool:
@@ -69,7 +69,7 @@ def delete_canonical_alias_if_no_other_linked_substrate(
         select(func.count())
         .select_from(SubstrateLocation)
         .where(
-            col(SubstrateLocation.stylebook_location_canonical_id) == int(canonical_id),
+            col(SubstrateLocation.stylebook_location_canonical_id) == str(canonical_id),
             SubstrateLocation.normalized_name == norm,
             col(SubstrateLocation.id) != int(exclude_substrate_location_id),
         )
@@ -79,7 +79,7 @@ def delete_canonical_alias_if_no_other_linked_substrate(
         return False
     alias = session.exec(
         select(StylebookLocationAlias).where(
-            StylebookLocationAlias.location_canonical_id == int(canonical_id),
+            StylebookLocationAlias.location_canonical_id == str(canonical_id),
             StylebookLocationAlias.normalized_alias == norm,
             StylebookLocationAlias.suppressed.is_(False),
         )
@@ -105,11 +105,11 @@ def unlink_substrate_from_canonical(
     cid = location.stylebook_location_canonical_id
     if cid is None:
         raise ValueError("linked location missing stylebook_location_canonical_id")
-    canon = session.get(StylebookLocationCanonical, int(cid))
+    canon = session.get(StylebookLocationCanonical, str(cid))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise ValueError("canonical not in this stylebook")
     lid = int(location.id)
-    old = int(cid)
+    old = str(cid)
     norm = str(location.normalized_name)
     delete_canonical_alias_if_no_other_linked_substrate(
         session,
@@ -134,7 +134,7 @@ def link_substrate_to_canonical_atomic(
     *,
     stylebook_id: int,
     location: SubstrateLocation,
-    target_canonical_id: int,
+    target_canonical_id: str,
     provenance: str = "stylebook_ui_link",
 ) -> bool:
     """Attach substrate to canonical B, refresh aliases on B, prune alias on old A when safe.
@@ -143,7 +143,7 @@ def link_substrate_to_canonical_atomic(
     """
     if location.id is None:
         raise ValueError("location must be persisted")
-    tid = int(target_canonical_id)
+    tid = str(target_canonical_id)
     canon = session.get(StylebookLocationCanonical, tid)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise ValueError("target canonical not in this stylebook")
@@ -154,13 +154,13 @@ def link_substrate_to_canonical_atomic(
         )
     lid = int(location.id)
     prev = location.stylebook_location_canonical_id
-    prev_int = int(prev) if prev is not None else None
+    prev_str = str(prev) if prev is not None else None
     st = str(location.canonical_link_status)
     if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED):
         raise ValueError("location canonical_link_status does not allow manual link")
-    if st == CANONICAL_LINK_PENDING and prev_int is not None:
+    if st == CANONICAL_LINK_PENDING and prev_str is not None:
         raise ValueError("invalid state: pending with non-null canonical FK")
-    if prev_int == tid and st == CANONICAL_LINK_LINKED:
+    if prev_str == tid and st == CANONICAL_LINK_LINKED:
         return False
 
     if st == CANONICAL_LINK_PENDING:
@@ -171,7 +171,7 @@ def link_substrate_to_canonical_atomic(
         location.canonical_review_reasons_json = [
             {
                 "code": "relinked_canonical",
-                "from_canonical_id": prev_int,
+                "from_canonical_id": prev_str,
                 "to_canonical_id": tid,
                 "provenance": provenance,
             }
@@ -183,10 +183,10 @@ def link_substrate_to_canonical_atomic(
     refresh_aliases_for_linked_location(
         session, stylebook_id=stylebook_id, location=location, provenance=provenance
     )
-    if prev_int is not None and prev_int != tid:
+    if prev_str is not None and prev_str != tid:
         delete_canonical_alias_if_no_other_linked_substrate(
             session,
-            canonical_id=prev_int,
+            canonical_id=prev_str,
             normalized_name=str(location.normalized_name),
             exclude_substrate_location_id=lid,
         )

@@ -161,6 +161,7 @@ def test_link_substrate_atomic_rejects_city_to_place() -> None:
         canon_place = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="XOCO",
+            slug="xoco",
             location_type="place",
             status="active",
         )
@@ -185,7 +186,7 @@ def test_link_substrate_atomic_rejects_city_to_place() -> None:
                 session,
                 stylebook_id=sb_id,
                 location=loc,
-                target_canonical_id=int(canon_place.id),  # type: ignore[arg-type]
+                target_canonical_id=str(canon_place.id),
             )
         except ValueError as e:
             assert "incompatible" in str(e).lower()
@@ -232,13 +233,14 @@ def test_rank_caps_incompatible_type_below_recall() -> None:
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             status="active",
         )
         session.add(canon)
         session.commit()
         session.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
 
         alias = StylebookLocationAlias(
             location_canonical_id=cid,
@@ -286,13 +288,14 @@ def test_rank_allows_same_type_city_to_city() -> None:
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             status="active",
         )
         session.add(canon)
         session.commit()
         session.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
 
         alias = StylebookLocationAlias(
             location_canonical_id=cid,
@@ -336,13 +339,14 @@ def test_rank_caps_intersection_to_city() -> None:
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             status="active",
         )
         session.add(canon)
         session.commit()
         session.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
 
         alias = StylebookLocationAlias(
             location_canonical_id=cid,
@@ -385,13 +389,14 @@ def test_rank_allows_address_to_place() -> None:
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="XOCO",
+            slug="xoco",
             location_type="place",
             status="active",
         )
         session.add(canon)
         session.commit()
         session.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
 
         alias = StylebookLocationAlias(
             location_canonical_id=cid,
@@ -433,13 +438,14 @@ def test_decide_canonical_persist_plan_type_gate_prevents_city_mismatch() -> Non
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             status="active",
         )
         session.add(canon)
         session.commit()
         session.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
 
         for alias_text, norm in [
             ("Chicago, IL", "chicago, il"),

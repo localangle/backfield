@@ -218,7 +218,7 @@ def _upsert_location_cache(
 def _external_identity_from_geocode_result(result: dict[str, Any]) -> tuple[str | None, str | None]:
     canonical_id = result.get("canonical_id")
     if canonical_id is not None:
-        return "stylebook_location", str(int(canonical_id))
+        return "stylebook_location", str(canonical_id).strip()
 
     rid = result.get("id")
     if rid is None:
