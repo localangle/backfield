@@ -40,11 +40,10 @@ const nodeMetadata = {
   }
 };
 
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { LeafletMap, LayerFilterPopover, layersFromFeatures, defaultVisibility } from '@backfield/ui'
 import type { MapPointFeature, MapBoundingBoxFeature, VisualizationProps, VisualizationDescriptor } from '@/lib/visualizations'
-import { useEffect, useMemo, useState } from 'react'
 
 /**
  * Build visualization descriptor for GeocodeAgent node output.
@@ -303,53 +302,53 @@ export function buildVisualization(
     return null
   }
 
-  function pointsToGeoJSON(features: MapPointFeature[]) {
-    return {
-      type: 'FeatureCollection' as const,
-      features: features.map((p) => ({
-        type: 'Feature' as const,
-        properties: {
-          id: p.id,
-          label: p.label ?? '',
-          description: p.description ?? '',
-          group: p.group ?? 'points',
-        },
-        geometry: { type: 'Point' as const, coordinates: p.coordinates },
-      })),
-    }
-  }
-
-  function polygonsToGeoJSON(features: MapBoundingBoxFeature[]) {
-    const ringFromBbox = (bbox: [number, number, number, number]) => {
-      const [w, s, e, n] = bbox
-      return [
-        [w, s],
-        [e, s],
-        [e, n],
-        [w, n],
-        [w, s],
-      ] as [number, number][]
-    }
-    return {
-      type: 'FeatureCollection' as const,
-      features: features.map((p) => ({
-        type: 'Feature' as const,
-        properties: {
-          id: p.id,
-          label: p.label ?? '',
-          description: p.description ?? '',
-          group: p.group ?? 'areas',
-        },
-        geometry: (p.geometry
-          ? p.geometry
-          : { type: 'Polygon' as const, coordinates: [ringFromBbox(p.bbox)] }) as any,
-      })),
-    }
-  }
-
   // Visualization component
   const GeocodeVisualization: React.FC<VisualizationProps> = ({ data }) => {
     if (!data) return null
+
+    function pointsToGeoJSON(features: MapPointFeature[]) {
+      return {
+        type: 'FeatureCollection' as const,
+        features: features.map((p) => ({
+          type: 'Feature' as const,
+          properties: {
+            id: p.id,
+            label: p.label ?? '',
+            description: p.description ?? '',
+            group: p.group ?? 'points',
+          },
+          geometry: { type: 'Point' as const, coordinates: p.coordinates },
+        })),
+      }
+    }
+
+    function polygonsToGeoJSON(features: MapBoundingBoxFeature[]) {
+      const ringFromBbox = (bbox: [number, number, number, number]) => {
+        const [w, s, e, n] = bbox
+        return [
+          [w, s],
+          [e, s],
+          [e, n],
+          [w, n],
+          [w, s],
+        ] as [number, number][]
+      }
+      return {
+        type: 'FeatureCollection' as const,
+        features: features.map((p) => ({
+          type: 'Feature' as const,
+          properties: {
+            id: p.id,
+            label: p.label ?? '',
+            description: p.description ?? '',
+            group: p.group ?? 'areas',
+          },
+          geometry: (p.geometry
+            ? p.geometry
+            : { type: 'Polygon' as const, coordinates: [ringFromBbox(p.bbox)] }) as any,
+        })),
+      }
+    }
 
     const layers = useMemo(() => {
       return layersFromFeatures([
@@ -361,7 +360,6 @@ export function buildVisualization(
     const [visibility, setVisibility] = useState(() => defaultVisibility(layers))
     useEffect(() => {
       setVisibility((prev) => {
-        // Merge: keep existing toggles, default new layers to visible
         const next = { ...prev }
         for (const layer of layers) {
           if (!(layer.id in next)) next[layer.id] = true
@@ -389,7 +387,10 @@ export function buildVisualization(
         <CardContent>
           <div className="space-y-3">
             <LayerFilterPopover layers={layers} visibility={visibility} onChange={setVisibility} />
-            <LeafletMap points={pointsToGeoJSON(filteredPoints) as any} polygons={polygonsToGeoJSON(filteredPolygons) as any} />
+            <LeafletMap
+              points={pointsToGeoJSON(filteredPoints) as any}
+              polygons={polygonsToGeoJSON(filteredPolygons) as any}
+            />
           </div>
         </CardContent>
       </Card>
