@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useAppMessage } from '@/components/AppMessageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +14,7 @@ import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangl
 import JsonView from '@uiw/react-json-view'
 
 export default function ProcessedItemDetail() {
+  const { showError } = useAppMessage()
   const { runId, itemId } = useParams<{ runId: string; itemId: string }>()
   const navigate = useNavigate()
   const [run, setRun] = useState<Run | null>(null)
@@ -381,7 +383,7 @@ export default function ProcessedItemDetail() {
                 await loadItemData()
               } catch (e) {
                 console.error('Failed to rerun item:', e)
-                alert('Failed to rerun item. Please try again.')
+                showError('Failed to rerun item. Please try again.')
               } finally {
                 setRerunning(false)
               }

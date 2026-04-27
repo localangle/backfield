@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { Building2, UserX } from "lucide-react"
+import { useAppMessage } from "@/components/AppMessageProvider"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -38,6 +39,7 @@ import {
 } from "@/lib/core-api"
 
 export default function ManageUsersPage() {
+  const { showConfirm } = useAppMessage()
   const { organizationId } = useAuth()
   const [users, setUsers] = useState<OrgUserRow[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceWithProjects[]>([])
@@ -228,13 +230,15 @@ export default function ManageUsersPage() {
                       disabled={!!u.disabled_at}
                       aria-label={`Disable ${u.email}`}
                       onClick={async () => {
-                        if (
-                          !window.confirm(
-                            `Disable ${u.email}? They will not be able to sign in.`,
-                          )
-                        ) {
-                          return
-                        }
+                        const ok = await showConfirm(
+                          `Disable ${u.email}? They will not be able to sign in.`,
+                          {
+                            title: "Disable user",
+                            confirmLabel: "Disable",
+                            destructive: true,
+                          },
+                        )
+                        if (!ok) return
                         await disableOrgUser(orgId, u.id)
                         await reload()
                       }}
@@ -370,6 +374,7 @@ function OrgRoleSelect({
   user: OrgUserRow
   onUpdated: () => Promise<void>
 }) {
+  const { showError } = useAppMessage()
   const [value, setValue] = useState(user.role)
   const [saving, setSaving] = useState(false)
 
@@ -388,7 +393,7 @@ function OrgRoleSelect({
           .then(() => onUpdated())
           .catch((err) => {
             setValue(user.role)
-            window.alert(err instanceof Error ? err.message : "Could not update role")
+            showError(err instanceof Error ? err.message : "Could not update role")
           })
           .finally(() => setSaving(false))
       }}

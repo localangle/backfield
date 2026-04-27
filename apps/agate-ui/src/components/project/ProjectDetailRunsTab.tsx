@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAppMessage } from '@/components/AppMessageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +33,7 @@ export type ProjectDetailRunsTabHandle = {
 
 const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetailRunsTabProps>(
   function ProjectDetailRunsTab({ projectId, onDataChanged }, ref) {
+  const { showConfirm, showError } = useAppMessage()
   const [runs, setRuns] = useState<Run[]>([])
   const [graphs, setGraphs] = useState<Graph[]>([])
   const [loading, setLoading] = useState(true)
@@ -76,7 +78,12 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
 
   const handleCancelRun = async (runId: string, event: React.MouseEvent) => {
     event.stopPropagation()
-    if (!confirm('Cancel this run? Pending and running work will stop.')) return
+    const ok = await showConfirm('Cancel this run? Pending and running work will stop.', {
+      title: 'Cancel run',
+      confirmLabel: 'Cancel run',
+      destructive: true,
+    })
+    if (!ok) return
     setCancellingRuns((prev) => new Set(prev).add(runId))
     try {
       await cancelRun(runId)
@@ -85,7 +92,7 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
       onDataChanged?.()
     } catch (error) {
       console.error('Failed to cancel run:', error)
-      alert('Failed to cancel run.')
+      showError('Failed to cancel run.')
     } finally {
       setCancellingRuns((prev) => {
         const next = new Set(prev)

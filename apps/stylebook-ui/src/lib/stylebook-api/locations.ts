@@ -254,7 +254,7 @@ export async function updateLocationGeometry(
 export async function updateCanonicalLocationGeometry(
   canonicalId: string,
   projectSlug: string,
-  geometryJson: Record<string, unknown>,
+  geometryJson: Record<string, unknown> | null,
 ): Promise<{ message: string; id: string }> {
   return stylebookJsonFetch<{ message: string; id: string }>(
     `/v1/canonical-locations/${encodeURIComponent(canonicalId)}/geometry?project_slug=${encodeURIComponent(projectSlug)}`,

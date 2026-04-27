@@ -2,6 +2,14 @@ export { UserAccountMenu, type UserAccountMenuProps } from "./UserAccountMenu"
 export { ShellProductBrand, type ShellProductBrandProps } from "./ShellProductBrand"
 export { cn } from "./cn"
 export { LeafletMap, type LeafletMapProps, type LeafletMapFeatureClick } from "./LeafletMap"
+export {
+  normalizeLngLat,
+  polygonFromAxisAlignedBounds,
+  boundsFromPolygonGeometry,
+  isAxisAlignedRectanglePolygon,
+  type AxisAlignedBounds,
+  type LngLat,
+} from "./axisAlignedRectangle"
 export { LayerFilterPopover, type LayerFilterPopoverProps } from "./LayerFilterPopover"
 export {
   layersFromFeatures,

@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Key, Plus, Trash2, RefreshCw, AlertCircle, Copy } from "lucide-react"
 import { format } from "date-fns"
+import { useAppMessage } from "@/components/AppMessageProvider"
 import { useAuth } from "@/lib/auth"
 import {
   createProjectAccessKey,
@@ -43,6 +44,7 @@ const ProjectAccessKeysPanel = forwardRef<
     primaryActionsInToolbar?: boolean
   }
 >(function ProjectAccessKeysPanel({ projectId, primaryActionsInToolbar = false }, ref) {
+  const { showConfirm } = useAppMessage()
   const { userId, isOrgAdmin } = useAuth()
   const [rows, setRows] = useState<ProjectAccessCredential[]>([])
   const [loading, setLoading] = useState(true)
@@ -115,13 +117,15 @@ const ProjectAccessKeysPanel = forwardRef<
 
   const handleRevoke = async (row: ProjectAccessCredential) => {
     if (!canRevoke(row)) return
-    if (
-      !window.confirm(
-        "Revoke this key? Clients using it will get 401 until they use a new key.",
-      )
-    ) {
-      return
-    }
+    const ok = await showConfirm(
+      "Revoke this key? Clients using it will get 401 until they use a new key.",
+      {
+        title: "Revoke key",
+        confirmLabel: "Revoke",
+        destructive: true,
+      },
+    )
+    if (!ok) return
     setSaving(true)
     setError(null)
     try {
@@ -136,13 +140,15 @@ const ProjectAccessKeysPanel = forwardRef<
 
   const handleRotate = async (row: ProjectAccessCredential) => {
     if (!canRotate(row)) return
-    if (
-      !window.confirm(
-        "Create a new key and revoke this one? Copy the new key before closing — the old key stops working after revoke.",
-      )
-    ) {
-      return
-    }
+    const ok = await showConfirm(
+      "Create a new key and revoke this one? Copy the new key before closing — the old key stops working after revoke.",
+      {
+        title: "Rotate key",
+        confirmLabel: "Rotate",
+        destructive: true,
+      },
+    )
+    if (!ok) return
     setSaving(true)
     setError(null)
     try {

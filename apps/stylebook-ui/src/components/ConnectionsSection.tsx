@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
+import { useAppMessage } from "@/components/AppMessageProvider"
 import type { Connection } from "@/lib/stylebook-api/connections"
 import {
   listConnectionsForLocation,
@@ -58,6 +59,7 @@ export default function ConnectionsSection({
   projectSlug,
   entityDisplayName,
 }: ConnectionsSectionProps) {
+  const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -143,7 +145,7 @@ export default function ConnectionsSection({
       setAddOpen(false)
       fetchConnections()
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to create connection')
+      showError(e instanceof Error ? e.message : "Failed to create connection")
     } finally {
       setSubmitting(false)
     }
@@ -167,7 +169,7 @@ export default function ConnectionsSection({
       setEditConnection(null)
       fetchConnections()
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to update connection')
+      showError(e instanceof Error ? e.message : "Failed to update connection")
     } finally {
       setEditSubmitting(false)
     }
@@ -184,7 +186,7 @@ export default function ConnectionsSection({
       setDeleteConnection(null)
       fetchConnections()
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to delete connection')
+      showError(e instanceof Error ? e.message : "Failed to delete connection")
     } finally {
       setDeleting(false)
     }

@@ -34,6 +34,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 ## Shared UI package (`@backfield/ui`)
 
 - Reusable shell components for multiple Backfield apps (Agate UI and Stylebook UI) live in `[packages/backfield-ui](../packages/backfield-ui)`.
+- **`LeafletMap` geocoder:** optional **`geocoder`** prop shows a compact place/address search while editing geography. It uses the public **[Photon](https://photon.komoot.io)** API (OpenStreetMap data, no API key): viewport **`lat`/`lon`/`zoom`** bias and **`location_bias_scale`**, **`dedupe=0`** when the query contains digits (better house-level matches), a **global** `/api` retry if the biased search is empty, optional **`/structured`** fallback for `housenumber street, city` patterns, then **fly** / **fit bounds** plus a **temporary blue dot** at the hit (cleared when the geocoder unmounts). Results do not change saved geometry by themselves.
 - **`nodeOutputs`:** `@backfield/ui/nodeOutputs` holds the canonical mapping from graph topology + node types to **`execute_graph` output keys** (snake_case slugs, legacy keys, `__outputKeysByNodeId`). Agate UI imports it through `[apps/agate-ui/src/lib/nodeOutputs.ts](../apps/agate-ui/src/lib/nodeOutputs.ts)`. Synced `backfield-core` panels use `@/lib/nodeOutputs` (resolved to that re-export). **`packages/agate-runtime`** Geocode UI sources import the same subpath so parity copies stay aligned with `backfield-ui`’s package **`exports`** (no separate filesystem-relative path).
 - **Tailwind:** add `../../packages/backfield-ui/src/**/*.{ts,tsx}` to the app’s Tailwind `content` array (see `[apps/agate-ui/tailwind.config.js](../apps/agate-ui/tailwind.config.js)`).
 - **Exports:** `ShellProductBrand` (large product title + “Backfield Platform” subtitle, `Link` to home); `UserAccountMenu` (account icon + dropdown: signed-in email when `userLabel` is set, optional change password when `onChangePassword` is provided, optional manage users for org admins, log out). Navigation is via callbacks so hosts keep their own router.
@@ -43,6 +44,16 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 - Write UI strings for a **general audience**, including people who are **not** developers.
 - Avoid internal product names for infrastructure (services, ports, proxies, cookies, paths) unless the user must act on them—and even then, prefer plain language or hide details behind help links.
 - Technical detail belongs in developer docs (this file’s other sections, `docs/API.md`, `docs/OPERATIONS.md`), not in labels, descriptions, or empty states shown to typical users.
+
+## In-app messages (no browser `alert` / `confirm`)
+
+- **Do not use** `alert()`, `window.alert`, `confirm()`, or `window.confirm` for user-visible notices or confirmations. They break visual consistency and are poor for accessibility.
+- **Do use** the shared **`AppMessageProvider`** + **`useAppMessage()`** hook from each app’s `@/components/AppMessageProvider` (same implementation in **`apps/agate-ui`** and **`apps/stylebook-ui`**). The provider is mounted in each app’s root **`App.tsx`**, wrapping routes **inside** **`AuthProvider`** so every screen can call it.
+- **API:**
+  - **`showMessage(description, { title?, variant? })`** — single-action notice (OK). Default title is “Notice”; use **`variant: "destructive"`** (or **`showError`**) for failures.
+  - **`showError(description, { title? })`** — shorthand for an error-styled notice (default title “Error”).
+  - **`showConfirm(description, { title?, confirmLabel?, cancelLabel?, destructive? })`** → **`Promise<boolean>`** — two-action modal; resolves **`true`** when the user confirms, **`false`** on cancel or dismiss.
+- Implementation uses the app’s existing **shadcn `Dialog`** primitives (`DialogContent` at **`sm:max-w-md`**) so copy matches the rest of the shell. Prefer this for **`catch`** blocks, validation messages, and destructive confirmations (revoke key, cancel run, delete geometry, etc.).
 
 ## Key conventions
 
@@ -68,6 +79,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 
 ## Frontend change checklist
 
+- For new user-facing errors or confirmations, use **`useAppMessage`** (see **In-app messages** above), not browser dialogs.
 - If API contracts changed, update `src/lib/api.ts`.
 - If node metadata or node UI changed, rerun the node sync/build flow.
 - If browser storage or custom events changed, keep prefixes and docs aligned.

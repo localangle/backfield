@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { Link, useSearchParams } from "react-router-dom"
+import { useAppMessage } from "@/components/AppMessageProvider"
 import {
   deleteCanonicalLocation,
   listCanonicalLocations,
@@ -31,6 +32,7 @@ import Pagination from "@/components/Pagination"
 import CanonicalSourceIcon from "@/components/CanonicalSourceIcon"
 
 export default function Locations() {
+  const { showError } = useAppMessage()
   const [searchParams, setSearchParams] = useSearchParams()
   const [canonicals, setCanonicals] = useState<CanonicalLocation[]>([])
   const [loading, setLoading] = useState(true)
@@ -337,7 +339,7 @@ export default function Locations() {
                   )
                 } catch (error) {
                   console.error("Failed to delete canonical:", error)
-                  alert("Failed to delete canonical location")
+                  showError("Failed to delete canonical location")
                 } finally {
                   setDeleting(false)
                 }

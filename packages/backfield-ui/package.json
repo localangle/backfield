@@ -10,7 +10,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./nodeOutputs": "./src/nodeOutputs.ts",
-    "./LeafletMap": "./src/LeafletMap.tsx"
+    "./LeafletMap": "./src/LeafletMap.tsx",
+    "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts"
   },
   "scripts": {
     "test": "vitest run"
