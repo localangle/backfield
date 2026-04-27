@@ -84,6 +84,50 @@ function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v)
 }
 
+/** Normalize map-click coordinates (wrap longitude; prefer DOM-based projection when available). */
+function latLngFromMapInteraction(map: L.Map, e: { latlng?: L.LatLng; originalEvent?: unknown }): { lat: number; lng: number } | null {
+  const raw = e?.latlng
+  let lat: number | undefined
+  let lng: number | undefined
+  const oe = e?.originalEvent
+  if (oe instanceof MouseEvent && typeof (map as unknown as { mouseEventToLatLng?: (ev: MouseEvent) => L.LatLng }).mouseEventToLatLng === "function") {
+    try {
+      const px = (map as unknown as { mouseEventToLatLng: (ev: MouseEvent) => L.LatLng }).mouseEventToLatLng(oe)
+      if (px && isFiniteNumber(px.lat) && isFiniteNumber(px.lng)) {
+        lat = px.lat
+        lng = px.lng
+      }
+    } catch {
+      // fall through to e.latlng
+    }
+  }
+  if (lat === undefined || lng === undefined) {
+    if (!raw || !isFiniteNumber(raw.lat) || !isFiniteNumber(raw.lng)) return null
+    lat = raw.lat
+    lng = raw.lng
+  }
+  const ll = L.latLng(lat, lng)
+  const wrapped = typeof (ll as unknown as { wrap?: () => L.LatLng }).wrap === "function" ? (ll as unknown as { wrap: () => L.LatLng }).wrap() : ll
+  return { lat: wrapped.lat, lng: wrapped.lng }
+}
+
+function scheduleMapInvalidateSize(map: L.Map) {
+  requestAnimationFrame(() => {
+    try {
+      map.invalidateSize(false)
+    } catch {
+      // ignore
+    }
+    requestAnimationFrame(() => {
+      try {
+        map.invalidateSize(false)
+      } catch {
+        // ignore
+      }
+    })
+  })
+}
+
 function normalizeFeatureCollection(input: unknown): GeoJsonFeatureCollection {
   if (!input || typeof input !== "object") {
     return { type: "FeatureCollection", features: [] }
@@ -501,14 +545,21 @@ function GeocoderPanel({ map }: { map: L.Map }) {
     }
     try {
       if (hit.extent) {
-        map.fitBounds(photonExtentToLeafletLatLngBounds(hit.extent), { padding: [40, 40], maxZoom: 16 })
+        map.fitBounds(photonExtentToLeafletLatLngBounds(hit.extent), {
+          padding: [40, 40],
+          maxZoom: 16,
+          animate: false,
+        })
       } else {
-        map.flyTo([hit.lat, hit.lng], 14, { duration: 0.75 })
+        // Instant view — animated flyTo can leave pixel→latlng out of sync until moveend, breaking the next map click.
+        map.setView([hit.lat, hit.lng], 14, { animate: false })
       }
       showGeocoderSelectionPreview(map, markLat, markLng)
+      scheduleMapInvalidateSize(map)
     } catch {
-      map.flyTo([hit.lat, hit.lng], 14, { duration: 0.75 })
+      map.setView([hit.lat, hit.lng], 14, { animate: false })
       showGeocoderSelectionPreview(map, markLat, markLng)
+      scheduleMapInvalidateSize(map)
     }
   }
 
@@ -621,15 +672,24 @@ type MapClickHandlerProps = {
 }
 
 function MapClickHandler({ onMapClick, rectangleDrawingRef }: MapClickHandlerProps) {
-  useMapEvents({
-    click: (e) => {
-      if (!onMapClick) return
-      if (rectangleDrawingRef.current) return
-      const latlng = e?.latlng
-      if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
-      onMapClick({ latlng: { lat: latlng.lat, lng: latlng.lng } })
-    },
-  })
+  const map = useMap()
+  const onMapClickRef = useRef(onMapClick)
+  onMapClickRef.current = onMapClick
+
+  const handlers = useMemo(
+    () => ({
+      click(e: L.LeafletMouseEvent) {
+        if (!onMapClickRef.current) return
+        if (rectangleDrawingRef.current) return
+        const latlng = latLngFromMapInteraction(map, e)
+        if (!latlng) return
+        onMapClickRef.current({ latlng })
+      },
+    }),
+    [map, rectangleDrawingRef],
+  )
+
+  useMapEvents(handlers)
   return null
 }
 
@@ -1224,7 +1284,12 @@ export function LeafletMap({
               dragend: (e: any) => {
                 const latlng = e?.target?.getLatLng?.()
                 if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
-                editablePoint.onChange({ lng: latlng.lng, lat: latlng.lat })
+                const w = L.latLng(latlng.lat, latlng.lng)
+                const wrapped =
+                  typeof (w as unknown as { wrap?: () => L.LatLng }).wrap === "function"
+                    ? (w as unknown as { wrap: () => L.LatLng }).wrap()
+                    : w
+                editablePoint.onChange({ lng: wrapped.lng, lat: wrapped.lat })
               },
             }}
           />
