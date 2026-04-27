@@ -78,6 +78,7 @@ export default function LeafletMapHarness() {
           <LeafletMap
             points={points as any}
             polygons={polygons as any}
+            geocoder
             onFeatureClick={(e) => setLastClick(e.featureId ?? "(no id)")}
           />
         </CardContent>

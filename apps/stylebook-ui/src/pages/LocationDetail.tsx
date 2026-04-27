@@ -661,6 +661,7 @@ export default function LocationDetail() {
             <LeafletMap
               points={leafletCollections.points as any}
               polygons={leafletCollections.polygons as any}
+              geocoder={geometryEditing}
               showPopups={false}
               // While editing, geometry updates constantly (drag/resize). Auto fitBounds would fight manual zoom.
               fitToData={!geometryEditing}
