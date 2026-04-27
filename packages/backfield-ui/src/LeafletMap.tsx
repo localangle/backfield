@@ -399,6 +399,11 @@ export function LeafletMap({
       { key: "nw", position: nw, kind: "nw" },
     ]
 
+    const onChangeRef = useRef(onChange)
+    useEffect(() => {
+      onChangeRef.current = onChange
+    }, [onChange])
+
     const applyCornerDrag = (kind: "sw" | "se" | "ne" | "nw", latlng: L.LatLng) => {
       let west = Math.min(sw.lng, ne.lng)
       let east = Math.max(sw.lng, ne.lng)
@@ -425,7 +430,7 @@ export function LeafletMap({
 
       if (Math.abs(east - west) < 1e-12 || Math.abs(north - south) < 1e-12) return
 
-      onChange({
+      onChangeRef.current({
         southWest: { lat: south, lng: west },
         northEast: { lat: north, lng: east },
       })
@@ -438,11 +443,6 @@ export function LeafletMap({
       startEast: number
       startNorth: number
     } | null>(null)
-
-    const onChangeRef = useRef(onChange)
-    useEffect(() => {
-      onChangeRef.current = onChange
-    }, [onChange])
 
     const translateMoveListenerRef = useRef<(ev: MouseEvent) => void>(() => {})
     const translateUpListenerRef = useRef<() => void>(() => {})
@@ -542,6 +542,11 @@ export function LeafletMap({
                 if (original) {
                   L.DomEvent.stop(original)
                 }
+              },
+              drag: (e: any) => {
+                const ll = e?.target?.getLatLng?.()
+                if (!ll || !isFiniteNumber(ll.lat) || !isFiniteNumber(ll.lng)) return
+                applyCornerDrag(c.kind, ll)
               },
               dragend: (e: any) => {
                 const ll = e?.target?.getLatLng?.()
