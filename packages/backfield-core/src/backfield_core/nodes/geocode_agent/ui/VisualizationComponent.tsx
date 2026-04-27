@@ -260,6 +260,9 @@ export function buildVisualization(
     return null
   }
 
+  const displayNodeLabel =
+    nodeLabel !== nodeId ? nodeLabel.replace(/\s*\(n\d+\)\s*$/, '') : null
+
   // Visualization component
   const GeocodeVisualization: React.FC<VisualizationProps> = ({ data }) => {
     if (!data) return null
@@ -336,20 +339,26 @@ export function buildVisualization(
 
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>Locations</CardTitle>
-          {nodeLabel !== nodeId && (
-            <CardDescription>{nodeLabel}</CardDescription>
-          )}
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <CardTitle className="flex items-baseline gap-3">
+            <span>Locations</span>
+            {displayNodeLabel && (
+              <span className="text-sm font-normal text-muted-foreground">{displayNodeLabel}</span>
+            )}
+          </CardTitle>
+
+          <LayerFilterPopover
+            layers={layers}
+            visibility={visibility}
+            onChange={setVisibility}
+            buttonLabel="Layers"
+          />
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            <LayerFilterPopover layers={layers} visibility={visibility} onChange={setVisibility} />
-            <LeafletMap
-              points={pointsToGeoJSON(filteredPoints) as any}
-              polygons={polygonsToGeoJSON(filteredPolygons) as any}
-            />
-          </div>
+          <LeafletMap
+            points={pointsToGeoJSON(filteredPoints) as any}
+            polygons={polygonsToGeoJSON(filteredPolygons) as any}
+          />
         </CardContent>
       </Card>
     )
