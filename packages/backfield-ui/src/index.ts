@@ -1,6 +1,7 @@
 export { UserAccountMenu, type UserAccountMenuProps } from "./UserAccountMenu"
 export { ShellProductBrand, type ShellProductBrandProps } from "./ShellProductBrand"
 export { cn } from "./cn"
+export { LeafletMap, type LeafletMapProps, type LeafletMapFeatureClick } from "./LeafletMap"
 export {
   NODE_OUTPUT_KEY_INDEX,
   buildNodeIdToPublicOutputKey,

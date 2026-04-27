@@ -11,6 +11,7 @@ import RunGraph from './pages/RunGraph'
 import GraphBuilder from './pages/GraphBuilder'
 import RunDetail from './pages/RunDetail'
 import ProcessedItemDetail from './pages/ProcessedItemDetail'
+import LeafletMapHarness from './pages/LeafletMapHarness'
 import Login from './pages/Login'
 import ChangePasswordPage from './pages/ChangePassword'
 import ManageUsers from './pages/ManageUsers'
@@ -195,6 +196,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <HubLayout>
               <ProcessedItemDetail />
+            </HubLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dev/leaflet-map"
+        element={
+          <ProtectedRoute>
+            <HubLayout>
+              <LeafletMapHarness />
             </HubLayout>
           </ProtectedRoute>
         }
