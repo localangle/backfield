@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAppMessage } from '@/components/AppMessageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -11,6 +12,7 @@ import { Loader2, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw, Building2,
 const RUNS_PER_PAGE = 50
 
 export default function RunsList() {
+  const { showConfirm, showError } = useAppMessage()
   const [runs, setRuns] = useState<Run[]>([])
   const [allRuns, setAllRuns] = useState<Run[]>([]) // Store all fetched runs
   const [graphs, setGraphs] = useState<Graph[]>([])
@@ -126,10 +128,16 @@ export default function RunsList() {
 
   async function handleCancelRun(runId: string, event: React.MouseEvent) {
     event.stopPropagation()
-    
-    if (!confirm('Are you sure you want to cancel this run? This will stop all pending and running items.')) {
-      return
-    }
+
+    const ok = await showConfirm(
+      'Are you sure you want to cancel this run? This will stop all pending and running items.',
+      {
+        title: 'Cancel run',
+        confirmLabel: 'Cancel run',
+        destructive: true,
+      },
+    )
+    if (!ok) return
 
     setCancellingRuns(prev => new Set(prev).add(runId))
     
@@ -138,7 +146,7 @@ export default function RunsList() {
       await loadRuns() // Refresh the list
     } catch (error) {
       console.error('Failed to cancel run:', error)
-      alert('Failed to cancel run. Please try again.')
+      showError('Failed to cancel run. Please try again.')
     } finally {
       setCancellingRuns(prev => {
         const next = new Set(prev)

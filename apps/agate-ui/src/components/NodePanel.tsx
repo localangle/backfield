@@ -1,4 +1,5 @@
 import { X, Play, Loader2, Trash2 } from 'lucide-react'
+import { useAppMessage } from '@/components/AppMessageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -57,6 +58,7 @@ export default function NodePanel({
   graphContext,
   nodeOutputLookupSpec,
 }: NodePanelProps) {
+  const { showConfirm } = useAppMessage()
   if (!selectedNode) return null
 
   const nodePanelTitle =
@@ -85,10 +87,17 @@ export default function NodePanel({
         onConfirm: () => onDelete?.(selectedNode.id),
       })
     } else {
-      // Fallback to confirm if showModal is not provided
-      if (confirm(`Delete ${selectedNode.type} node?`)) {
-        onDelete?.(selectedNode.id)
-      }
+      void (async () => {
+        const ok = await showConfirm(
+          `Are you sure you want to delete the ${selectedNode.type} node? This action cannot be undone.`,
+          {
+            title: 'Delete node',
+            confirmLabel: 'Delete',
+            destructive: true,
+          },
+        )
+        if (ok) onDelete?.(selectedNode.id)
+      })()
     }
   }
 

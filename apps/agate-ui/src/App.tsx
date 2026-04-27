@@ -16,6 +16,7 @@ import Login from './pages/Login'
 import ChangePasswordPage from './pages/ChangePassword'
 import ManageUsers from './pages/ManageUsers'
 import HubLayout from './components/HubLayout'
+import { AppMessageProvider } from '@/components/AppMessageProvider'
 import { AuthProvider, useAuth } from './lib/auth'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -217,7 +218,9 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <AppMessageProvider>
+        <AppRoutes />
+      </AppMessageProvider>
     </AuthProvider>
   )
 }

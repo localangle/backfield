@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useAppMessage } from '@/components/AppMessageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +11,7 @@ import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangl
 import { Checkbox } from '@/components/ui/checkbox'
 
 export default function RunDetail() {
+  const { showConfirm, showError } = useAppMessage()
   const { runId } = useParams<{ runId: string }>()
   const navigate = useNavigate()
   const [run, setRun] = useState<Run | null>(null)
@@ -102,9 +104,15 @@ export default function RunDetail() {
   async function handleCancelRun() {
     if (!run || !runId) return
 
-    if (!confirm('Are you sure you want to cancel this run? This will stop all pending and running items.')) {
-      return
-    }
+    const ok = await showConfirm(
+      'Are you sure you want to cancel this run? This will stop all pending and running items.',
+      {
+        title: 'Cancel run',
+        confirmLabel: 'Cancel run',
+        destructive: true,
+      },
+    )
+    if (!ok) return
 
     try {
       setCancelling(true)
@@ -112,7 +120,7 @@ export default function RunDetail() {
       await loadRunData() // Refresh the run data
     } catch (error) {
       console.error('Failed to cancel run:', error)
-      alert('Failed to cancel run. Please try again.')
+      showError('Failed to cancel run. Please try again.')
     } finally {
       setCancelling(false)
     }
@@ -154,9 +162,11 @@ export default function RunDetail() {
   async function handleBulkRerun() {
     if (!runId || selectedItems.size === 0) return
 
-    if (!confirm(`Are you sure you want to rerun ${selectedItems.size} item(s)?`)) {
-      return
-    }
+    const ok = await showConfirm(`Are you sure you want to rerun ${selectedItems.size} item(s)?`, {
+      title: 'Rerun items',
+      confirmLabel: 'Rerun',
+    })
+    if (!ok) return
 
     const itemIds = Array.from(selectedItems)
     setRerunningItems(new Set(itemIds))
@@ -172,7 +182,7 @@ export default function RunDetail() {
       await loadRunData()
     } catch (error) {
       console.error('Failed to rerun items:', error)
-      alert('Failed to rerun some items. Please check the console for details.')
+      showError('Failed to rerun some items. Please check the console for details.')
     } finally {
       setRerunningItems(new Set())
     }

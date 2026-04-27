@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { useAppMessage } from "@/components/AppMessageProvider"
 import { createLocation } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,6 +10,7 @@ import SimpleGeoJsonGeometry from "@/components/SimpleGeoJsonGeometry"
 import { Loader2 } from "lucide-react"
 
 export default function CreateLocation() {
+  const { showMessage, showError } = useAppMessage()
   const navigate = useNavigate()
   const [projectSlug, setProjectSlug] = useState("")
   const [name, setName] = useState("")
@@ -24,7 +26,7 @@ export default function CreateLocation() {
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      alert("Please enter a location name")
+      showMessage("Please enter a location name", { title: "Name required" })
       return
     }
     try {
@@ -39,7 +41,9 @@ export default function CreateLocation() {
       navigate(`/locations/canonical/${location.id}?project=${projectSlug}`)
     } catch (error) {
       console.error("Failed to create location:", error)
-      alert(`Failed to create location: ${error instanceof Error ? error.message : "Unknown error"}`)
+      showError(
+        `Failed to create location: ${error instanceof Error ? error.message : "Unknown error"}`,
+      )
     } finally {
       setCreating(false)
     }

@@ -44,6 +44,16 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 - Avoid internal product names for infrastructure (services, ports, proxies, cookies, paths) unless the user must act on them—and even then, prefer plain language or hide details behind help links.
 - Technical detail belongs in developer docs (this file’s other sections, `docs/API.md`, `docs/OPERATIONS.md`), not in labels, descriptions, or empty states shown to typical users.
 
+## In-app messages (no browser `alert` / `confirm`)
+
+- **Do not use** `alert()`, `window.alert`, `confirm()`, or `window.confirm` for user-visible notices or confirmations. They break visual consistency and are poor for accessibility.
+- **Do use** the shared **`AppMessageProvider`** + **`useAppMessage()`** hook from each app’s `@/components/AppMessageProvider` (same implementation in **`apps/agate-ui`** and **`apps/stylebook-ui`**). The provider is mounted in each app’s root **`App.tsx`**, wrapping routes **inside** **`AuthProvider`** so every screen can call it.
+- **API:**
+  - **`showMessage(description, { title?, variant? })`** — single-action notice (OK). Default title is “Notice”; use **`variant: "destructive"`** (or **`showError`**) for failures.
+  - **`showError(description, { title? })`** — shorthand for an error-styled notice (default title “Error”).
+  - **`showConfirm(description, { title?, confirmLabel?, cancelLabel?, destructive? })`** → **`Promise<boolean>`** — two-action modal; resolves **`true`** when the user confirms, **`false`** on cancel or dismiss.
+- Implementation uses the app’s existing **shadcn `Dialog`** primitives (`DialogContent` at **`sm:max-w-md`**) so copy matches the rest of the shell. Prefer this for **`catch`** blocks, validation messages, and destructive confirmations (revoke key, cancel run, delete geometry, etc.).
+
 ## Key conventions
 
 - Prefer clear React components over clever abstractions.
@@ -68,6 +78,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 
 ## Frontend change checklist
 
+- For new user-facing errors or confirmations, use **`useAppMessage`** (see **In-app messages** above), not browser dialogs.
 - If API contracts changed, update `src/lib/api.ts`.
 - If node metadata or node UI changed, rerun the node sync/build flow.
 - If browser storage or custom events changed, keep prefixes and docs aligned.

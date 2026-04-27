@@ -12,6 +12,7 @@ import {
   type LinkedSubstrateItem,
 } from "@/lib/api"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import { useAppMessage } from "@/components/AppMessageProvider"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
 import { cn } from "@/lib/utils"
@@ -183,6 +184,7 @@ function geometryToFeatureCollections(
 }
 
 export default function LocationDetail() {
+  const { showError, showConfirm } = useAppMessage()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -303,7 +305,7 @@ export default function LocationDetail() {
       await unlinkSubstrateFromCanonical(sub.id, projectSlug)
       await refreshCanonicalPage(true)
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Unlink failed")
+      showError(e instanceof Error ? e.message : "Unlink failed")
     } finally {
       setUnlinkingId(null)
     }
@@ -326,7 +328,7 @@ export default function LocationDetail() {
       await loadMentions(canonicalId, projectSlug)
     } catch (e) {
       console.error(e)
-      alert(e instanceof Error ? e.message : "Save failed")
+      showError(e instanceof Error ? e.message : "Save failed")
     } finally {
       setSaving(false)
     }
@@ -346,7 +348,7 @@ export default function LocationDetail() {
       console.error(e)
       const msg =
         e instanceof Error ? e.message : typeof e === "string" ? e : "Save geometry failed"
-      alert(msg)
+      showError(msg)
     } finally {
       setGeometrySaving(false)
     }
@@ -359,7 +361,7 @@ export default function LocationDetail() {
       await deleteCanonicalLocation(id, projectSlug)
       navigate(`/locations/canonical?project=${projectSlug}`)
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Delete failed")
+      showError(e instanceof Error ? e.message : "Delete failed")
     } finally {
       setDeleting(false)
       setDeleteOpen(false)
@@ -630,10 +632,17 @@ export default function LocationDetail() {
                   size="sm"
                   disabled={geometrySaving}
                   onClick={() => {
-                    if (!window.confirm("Delete this geometry?")) return
-                    setGeometryDraft(null)
-                    setGeometryAddMode(null)
-                    setRectanglePreview(null)
+                    void (async () => {
+                      const ok = await showConfirm("Delete this geometry?", {
+                        title: "Delete geometry",
+                        confirmLabel: "Delete",
+                        destructive: true,
+                      })
+                      if (!ok) return
+                      setGeometryDraft(null)
+                      setGeometryAddMode(null)
+                      setRectanglePreview(null)
+                    })()
                   }}
                 >
                   <Trash2 className="h-4 w-4 mr-2" />

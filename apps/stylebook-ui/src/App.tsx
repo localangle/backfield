@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
+import { AppMessageProvider } from "@/components/AppMessageProvider"
 import { AuthProvider, useAuth } from "@/lib/auth"
 import Layout from "@/components/Layout"
 import Index from "@/pages/Index"
@@ -34,6 +35,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 export default function App() {
   return (
     <AuthProvider>
+      <AppMessageProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route
@@ -118,6 +120,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </AppMessageProvider>
     </AuthProvider>
   )
 }
