@@ -35,5 +35,21 @@ describe("LeafletMap", () => {
       />,
     )
   })
+
+  it("renders an interactive map in rectangle draw mode even with no features", () => {
+    render(
+      <LeafletMap
+        points={null}
+        polygons={null}
+        showPopups={false}
+        fitToData={false}
+        rectangleDraw={{
+          enabled: true,
+          onPreview: () => {},
+          onCommit: () => {},
+        }}
+      />,
+    )
+  })
 })
 

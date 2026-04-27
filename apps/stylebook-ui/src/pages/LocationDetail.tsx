@@ -33,6 +33,11 @@ import LocationMetaTab from "@/components/LocationMetaTab"
 import ConnectionsSection from "@/components/ConnectionsSection"
 import { LeafletMap } from "@backfield/ui/LeafletMap"
 import {
+  boundsFromPolygonGeometry,
+  isAxisAlignedRectanglePolygon,
+  polygonFromAxisAlignedBounds,
+} from "@backfield/ui/axisAlignedRectangle"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -40,7 +45,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Trash2 } from "lucide-react"
+import { Info, Loader2, MousePointer, Square, Trash2 } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 function mentionArticleDisplayTitle(m: LinkedMention): string {
   const trimmed = (m.article_headline ?? "").trim()
@@ -91,6 +97,28 @@ function isPointGeometry(geometry: Record<string, unknown> | null): geometry is 
   if (g.type !== "Point") return false
   const c = g.coordinates
   return Array.isArray(c) && c.length === 2 && typeof c[0] === "number" && typeof c[1] === "number"
+}
+
+function isPolygonGeometry(geometry: Record<string, unknown> | null): geometry is {
+  type: "Polygon"
+  coordinates: number[][][]
+} {
+  if (!geometry || typeof geometry !== "object") return false
+  const g = geometry as Record<string, unknown>
+  if (g.type !== "Polygon") return false
+  const c = g.coordinates
+  return Array.isArray(c) && c.length > 0
+}
+
+function isMultiPolygonGeometry(geometry: Record<string, unknown> | null): boolean {
+  if (!geometry || typeof geometry !== "object") return false
+  const g = geometry as Record<string, unknown>
+  return g.type === "MultiPolygon"
+}
+
+function axisAlignedRectangleDraft(geometry: Record<string, unknown> | null): boolean {
+  if (!isPolygonGeometry(geometry)) return false
+  return isAxisAlignedRectanglePolygon(geometry)
 }
 
 function geometryToFeatureCollections(
@@ -165,6 +193,11 @@ export default function LocationDetail() {
   const [geometryEditing, setGeometryEditing] = useState(false)
   const [geometryDraft, setGeometryDraft] = useState<Record<string, unknown> | null>(null)
   const [geometrySaving, setGeometrySaving] = useState(false)
+  const [geometryAddMode, setGeometryAddMode] = useState<"point" | "rectangle" | null>(null)
+  const [rectanglePreview, setRectanglePreview] = useState<{
+    southWest: { lat: number; lng: number }
+    northEast: { lat: number; lng: number }
+  } | null>(null)
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -305,6 +338,8 @@ export default function LocationDetail() {
       const canonicalId = id
       await updateCanonicalLocationGeometry(canonicalId, projectSlug, geometryDraft)
       setGeometryEditing(false)
+      setGeometryAddMode(null)
+      setRectanglePreview(null)
       await loadCanonical(canonicalId, projectSlug, true)
     } catch (e) {
       console.error(e)
@@ -327,6 +362,56 @@ export default function LocationDetail() {
       setDeleteOpen(false)
     }
   }
+
+  const geometrySource = geometryEditing ? geometryDraft : geometry
+
+  const leafletCollections = useMemo(() => {
+    const base = geometryToFeatureCollections(geometrySource as any)
+
+    const stripCanonicalPolygon = (polygons: any) => {
+      const fc = polygons as any
+      if (!fc || typeof fc !== "object" || fc.type !== "FeatureCollection" || !Array.isArray(fc.features)) return fc
+      return {
+        ...fc,
+        features: fc.features.filter((f: any) => {
+          const id = f?.properties?.id
+          return id !== "canonical"
+        }),
+      }
+    }
+
+    const hideCanonicalPolygon =
+      geometryEditing &&
+      (geometryAddMode === "rectangle" || rectanglePreview != null || axisAlignedRectangleDraft(geometryDraft))
+
+    return {
+      points: base.points,
+      polygons: hideCanonicalPolygon ? stripCanonicalPolygon(base.polygons) : base.polygons,
+    }
+  }, [geometryAddMode, geometryDraft, geometryEditing, geometrySource, rectanglePreview])
+
+  const leafletInitialCenter = useMemo((): [number, number] | null => {
+    const g = (geometryEditing ? geometryDraft : geometry) as Record<string, unknown> | null
+    if (!g) return null
+    if (isPointGeometry(g)) {
+      const c = g.coordinates
+      return [c[1], c[0]]
+    }
+    if (isPolygonGeometry(g)) {
+      const b = boundsFromPolygonGeometry(g as any)
+      if (!b) return null
+      const lat = (b.south + b.north) / 2
+      const lng = (b.west + b.east) / 2
+      return [lat, lng]
+    }
+    if (isMultiPolygonGeometry(g)) {
+      const coords = (g as any).coordinates?.[0]?.[0]?.[0]
+      if (Array.isArray(coords) && coords.length >= 2 && typeof coords[0] === "number" && typeof coords[1] === "number") {
+        return [coords[1], coords[0]]
+      }
+    }
+    return null
+  }, [geometry, geometryDraft, geometryEditing])
 
   if (loading || !canonical) {
     return (
@@ -449,7 +534,13 @@ export default function LocationDetail() {
               ) : null}
             </CardTitle>
             <CardDescription>
-              {geometryEditing ? "Edit canonical geometry (draft) and save or cancel." : "View canonical geometry."}
+              {geometryEditing
+                ? geometryAddMode === "point"
+                  ? "Click the map to place a point."
+                  : geometryAddMode === "rectangle"
+                    ? "Click and drag on the map to draw an axis-aligned rectangle."
+                    : "Edit canonical geometry (draft) and save or cancel."
+                : "View canonical geometry."}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -459,6 +550,8 @@ export default function LocationDetail() {
                   variant="outline"
                   onClick={() => {
                     setGeometryDraft(geometry)
+                    setGeometryAddMode(null)
+                    setRectanglePreview(null)
                     setGeometryEditing(false)
                   }}
                   disabled={geometrySaving}
@@ -474,8 +567,11 @@ export default function LocationDetail() {
                 variant="outline"
                 onClick={() => {
                   setGeometryDraft(geometry)
+                  setGeometryAddMode(null)
+                  setRectanglePreview(null)
                   setGeometryEditing(true)
                 }}
+                disabled={isMultiPolygonGeometry(geometry)}
               >
                 Edit geography
               </Button>
@@ -483,6 +579,67 @@ export default function LocationDetail() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {!geometryEditing && isMultiPolygonGeometry(geometry) ? (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Editing is disabled for MultiPolygon geometries. These complex geometries contain multiple polygons and
+                require specialized editing tools.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {geometryEditing ? (
+            <div className="flex flex-wrap gap-2">
+              {!geometryDraft ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={geometryAddMode === "point" || geometrySaving}
+                    onClick={() => {
+                      setGeometryAddMode("point")
+                      setRectanglePreview(null)
+                    }}
+                  >
+                    <MousePointer className="h-4 w-4 mr-2" />
+                    Add point
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={geometryAddMode === "rectangle" || geometrySaving}
+                    onClick={() => {
+                      setGeometryAddMode("rectangle")
+                      setRectanglePreview(null)
+                    }}
+                  >
+                    <Square className="h-4 w-4 mr-2" />
+                    Add rectangle
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={geometrySaving}
+                  onClick={() => {
+                    if (!window.confirm("Delete this geometry?")) return
+                    setGeometryDraft(null)
+                    setGeometryAddMode(null)
+                    setRectanglePreview(null)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete geometry
+                </Button>
+              )}
+            </div>
+          ) : null}
+
           <div
             className={cn(
               "rounded-md overflow-hidden",
@@ -490,9 +647,12 @@ export default function LocationDetail() {
             )}
           >
             <LeafletMap
-              points={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).points as any}
-              polygons={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).polygons as any}
+              points={leafletCollections.points as any}
+              polygons={leafletCollections.polygons as any}
               showPopups={false}
+              fitToData={!(geometryEditing && geometryAddMode === "rectangle" && !geometryDraft)}
+              initialCenter={leafletInitialCenter}
+              initialZoom={geometryEditing && geometryAddMode === "rectangle" && !geometryDraft ? 11 : null}
               tileUrl={
                 geometryEditing
                   ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
@@ -504,14 +664,15 @@ export default function LocationDetail() {
                   : undefined
               }
               onMapClick={
-                geometryEditing && (!geometryDraft || isPointGeometry(geometryDraft))
+                geometryEditing && geometryAddMode === "point" && (!geometryDraft || isPointGeometry(geometryDraft))
                   ? ({ latlng }) => {
                       setGeometryDraft({ type: "Point", coordinates: [latlng.lng, latlng.lat] })
+                      setGeometryAddMode(null)
                     }
                   : undefined
               }
               editablePoint={
-                geometryEditing && isPointGeometry(geometryDraft)
+                geometryEditing && isPointGeometry(geometryDraft) && geometryAddMode !== "rectangle"
                   ? {
                       featureId: "canonical",
                       onChange: ({ lng, lat }) =>
@@ -519,15 +680,53 @@ export default function LocationDetail() {
                     }
                   : null
               }
+              rectanglePreview={geometryEditing ? rectanglePreview : null}
+              editableRectangle={
+                geometryEditing &&
+                axisAlignedRectangleDraft(geometryDraft) &&
+                geometryAddMode !== "rectangle" &&
+                boundsFromPolygonGeometry(geometryDraft as any)
+                  ? (() => {
+                      const b = boundsFromPolygonGeometry(geometryDraft as any)!
+                      return {
+                        southWest: { lat: b.south, lng: b.west },
+                        northEast: { lat: b.north, lng: b.east },
+                        onChange: (next) => {
+                          setGeometryDraft(
+                            polygonFromAxisAlignedBounds({
+                              west: next.southWest.lng,
+                              south: next.southWest.lat,
+                              east: next.northEast.lng,
+                              north: next.northEast.lat,
+                            }) as any,
+                          )
+                        },
+                      }
+                    })()
+                  : null
+              }
+              rectangleDraw={
+                geometryEditing && geometryAddMode === "rectangle"
+                  ? {
+                      enabled: true,
+                      onPreview: setRectanglePreview,
+                      onCommit: (bounds) => {
+                        setGeometryDraft(
+                          polygonFromAxisAlignedBounds({
+                            west: bounds.southWest.lng,
+                            south: bounds.southWest.lat,
+                            east: bounds.northEast.lng,
+                            north: bounds.northEast.lat,
+                          }) as any,
+                        )
+                        setRectanglePreview(null)
+                        setGeometryAddMode(null)
+                      },
+                    }
+                  : null
+              }
             />
           </div>
-          {geometryEditing && isPointGeometry(geometryDraft) ? (
-            <div className="flex items-center justify-end">
-              <Button variant="outline" onClick={() => setGeometryDraft(null)} disabled={geometrySaving}>
-                Clear point
-              </Button>
-            </div>
-          ) : null}
           {geometryEditing ? (
             <SimpleGeoJsonGeometry value={geometryDraft} onChange={setGeometryDraft} />
           ) : null}
