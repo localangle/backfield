@@ -399,6 +399,22 @@ export function LeafletMap({
       { key: "nw", position: nw, kind: "nw" },
     ]
 
+    // react-leaflet Marker updates with `props.position !== prevProps.position` (reference).
+    // A fresh [lat, lng] array every render forces setLatLng and kills Leaflet drag on the active handle.
+    const cornerPositions = useMemo(
+      () =>
+        ({
+          sw: [sw.lat, sw.lng] as [number, number],
+          se: [se.lat, se.lng] as [number, number],
+          ne: [ne.lat, ne.lng] as [number, number],
+          nw: [nw.lat, nw.lng] as [number, number],
+        }) as const,
+      [sw.lat, sw.lng, se.lat, se.lng, ne.lat, ne.lng, nw.lat, nw.lng],
+    )
+
+    /** While dragging a corner, keep one stable [lat,lng] tuple ref for that Marker only. */
+    const cornerDragFreezeRef = useRef<{ kind: "sw" | "se" | "ne" | "nw"; pos: [number, number] } | null>(null)
+
     const onChangeRef = useRef(onChange)
     useEffect(() => {
       onChangeRef.current = onChange
@@ -530,10 +546,15 @@ export function LeafletMap({
           }}
         />
 
-        {corners.map((c) => (
+        {corners.map((c) => {
+          const freeze = cornerDragFreezeRef.current
+          const position: [number, number] =
+            freeze?.kind === c.kind ? freeze.pos : cornerPositions[c.kind]
+
+          return (
           <Marker
             key={c.key}
-            position={[c.position.lat, c.position.lng]}
+            position={position}
             draggable
             icon={cornerIcon as any}
             eventHandlers={{
@@ -543,19 +564,27 @@ export function LeafletMap({
                   L.DomEvent.stop(original)
                 }
               },
+              dragstart: (e: any) => {
+                const ll = e?.target?.getLatLng?.()
+                if (!ll || !isFiniteNumber(ll.lat) || !isFiniteNumber(ll.lng)) return
+                const pos: [number, number] = [ll.lat, ll.lng]
+                cornerDragFreezeRef.current = { kind: c.kind, pos }
+              },
               drag: (e: any) => {
                 const ll = e?.target?.getLatLng?.()
                 if (!ll || !isFiniteNumber(ll.lat) || !isFiniteNumber(ll.lng)) return
                 applyCornerDrag(c.kind, ll)
               },
               dragend: (e: any) => {
+                cornerDragFreezeRef.current = null
                 const ll = e?.target?.getLatLng?.()
                 if (!ll || !isFiniteNumber(ll.lat) || !isFiniteNumber(ll.lng)) return
                 applyCornerDrag(c.kind, ll)
               },
             }}
           />
-        ))}
+          )
+        })}
       </>
     )
   }
