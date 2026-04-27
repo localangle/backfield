@@ -39,6 +39,7 @@ export type LeafletMapProps = {
   emptyState?: ReactNode
   onFeatureClick?: (event: LeafletMapFeatureClick) => void
   fitToData?: boolean
+  showPopups?: boolean
 }
 
 const DEFAULT_CENTER: LatLng = [39.8283, -98.5795] // continental US
@@ -178,6 +179,7 @@ export function LeafletMap({
   emptyState,
   onFeatureClick,
   fitToData = true,
+  showPopups = true,
 }: LeafletMapProps) {
   const [error, setError] = useState<string | null>(null)
   const clickHandlerRef = useRef(onFeatureClick)
@@ -192,6 +194,10 @@ export function LeafletMap({
     description: string | null
     feature: GeoJsonFeature
   } | null>(null)
+
+  useEffect(() => {
+    if (!showPopups) setPopup(null)
+  }, [showPopups])
 
   const normalizedPoints = useMemo(() => normalizeFeatureCollection(points), [points])
   const normalizedPolygons = useMemo(() => normalizeFeatureCollection(polygons), [polygons])
@@ -258,13 +264,15 @@ export function LeafletMap({
                 click: (e: any) => {
                   const latlng = e?.latlng
                   if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
-                  setPopup({
-                    latlng: { lat: latlng.lat, lng: latlng.lng },
-                    title: featureLabelOf(feature),
-                    role: featureRoleOf(feature),
-                    description: featureDescriptionOf(feature),
-                    feature,
-                  })
+                  if (showPopups) {
+                    setPopup({
+                      latlng: { lat: latlng.lat, lng: latlng.lng },
+                      title: featureLabelOf(feature),
+                      role: featureRoleOf(feature),
+                      description: featureDescriptionOf(feature),
+                      feature,
+                    })
+                  }
                   clickHandlerRef.current?.({ featureId: featureIdOf(feature), feature, latlng })
                 },
               }}
@@ -288,13 +296,15 @@ export function LeafletMap({
                 click: (e: any) => {
                   const latlng = e?.latlng
                   if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
-                  setPopup({
-                    latlng: { lat: latlng.lat, lng: latlng.lng },
-                    title: featureLabelOf(feature),
-                    role: featureRoleOf(feature),
-                    description: featureDescriptionOf(feature),
-                    feature,
-                  })
+                  if (showPopups) {
+                    setPopup({
+                      latlng: { lat: latlng.lat, lng: latlng.lng },
+                      title: featureLabelOf(feature),
+                      role: featureRoleOf(feature),
+                      description: featureDescriptionOf(feature),
+                      feature,
+                    })
+                  }
                   clickHandlerRef.current?.({ featureId: featureIdOf(feature), feature, latlng })
                 },
               }}
@@ -302,7 +312,7 @@ export function LeafletMap({
           )
         })}
 
-        {popup ? (
+        {showPopups && popup ? (
           <Popup
             position={[popup.latlng.lat, popup.latlng.lng]}
             closeButton
