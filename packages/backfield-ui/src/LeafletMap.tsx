@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import * as L from "leaflet"
-import { CircleMarker, MapContainer, Polygon, TileLayer, useMap } from "react-leaflet"
+import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, useMap } from "react-leaflet"
 import "leaflet/dist/leaflet.css"
 
 type LngLat = [number, number] // [lng, lat]
+type LatLng = [number, number] // [lat, lng]
 
 type FeatureId = string
 
@@ -28,6 +29,7 @@ type GeoJsonFeatureCollection = {
 export type LeafletMapFeatureClick = {
   featureId: string | null
   feature: GeoJsonFeature
+  latlng: { lat: number; lng: number }
 }
 
 export type LeafletMapProps = {
@@ -39,7 +41,7 @@ export type LeafletMapProps = {
   fitToData?: boolean
 }
 
-const DEFAULT_CENTER: LngLat = [-98.5795, 39.8283] // continental US
+const DEFAULT_CENTER: LatLng = [39.8283, -98.5795] // continental US
 const DEFAULT_ZOOM = 3
 
 function isFiniteNumber(v: unknown): v is number {
@@ -70,7 +72,7 @@ function normalizeFeatureCollection(input: unknown): GeoJsonFeatureCollection {
   return { type: "FeatureCollection", features }
 }
 
-function extractLngLatBounds(collections: GeoJsonFeatureCollection[]): [LngLat, LngLat] | null {
+function extractLatLngBounds(collections: GeoJsonFeatureCollection[]): [LatLng, LatLng] | null {
   let minLng = Infinity
   let minLat = Infinity
   let maxLng = -Infinity
@@ -124,12 +126,12 @@ function extractLngLatBounds(collections: GeoJsonFeatureCollection[]): [LngLat, 
 
   if (!has) return null
   return [
-    [minLng, minLat],
-    [maxLng, maxLat],
+    [minLat, minLng],
+    [maxLat, maxLng],
   ]
 }
 
-function FitToData({ bounds }: { bounds: [LngLat, LngLat] | null }) {
+function FitToData({ bounds }: { bounds: [LatLng, LatLng] | null }) {
   const map = useMap()
   useEffect(() => {
     if (!bounds) return
@@ -149,6 +151,26 @@ function featureIdOf(feature: GeoJsonFeature): string | null {
   return null
 }
 
+function featureLabelOf(feature: GeoJsonFeature): string {
+  const props = (feature.properties ?? {}) as Record<string, unknown>
+  const label = typeof props.label === "string" ? props.label.trim() : ""
+  if (label) return label
+  const id = featureIdOf(feature)
+  return id ?? "Feature"
+}
+
+function featureRoleOf(feature: GeoJsonFeature): string | null {
+  const props = (feature.properties ?? {}) as Record<string, unknown>
+  const role = typeof props.group === "string" ? props.group.trim() : ""
+  return role || null
+}
+
+function featureDescriptionOf(feature: GeoJsonFeature): string | null {
+  const props = (feature.properties ?? {}) as Record<string, unknown>
+  const desc = typeof props.description === "string" ? props.description.trim() : ""
+  return desc || null
+}
+
 export function LeafletMap({
   points,
   polygons,
@@ -163,13 +185,21 @@ export function LeafletMap({
     clickHandlerRef.current = onFeatureClick
   }, [onFeatureClick])
 
+  const [popup, setPopup] = useState<{
+    latlng: { lat: number; lng: number }
+    title: string
+    role: string | null
+    description: string | null
+    feature: GeoJsonFeature
+  } | null>(null)
+
   const normalizedPoints = useMemo(() => normalizeFeatureCollection(points), [points])
   const normalizedPolygons = useMemo(() => normalizeFeatureCollection(polygons), [polygons])
 
   const hasAny = normalizedPoints.features.length > 0 || normalizedPolygons.features.length > 0
 
   const bounds = useMemo(
-    () => (fitToData ? extractLngLatBounds([normalizedPoints, normalizedPolygons]) : null),
+    () => (fitToData ? extractLatLngBounds([normalizedPoints, normalizedPolygons]) : null),
     [fitToData, normalizedPoints, normalizedPolygons],
   )
 
@@ -225,8 +255,17 @@ export function LeafletMap({
               positions={positions}
               pathOptions={{ color: "#1d4ed8", weight: 2, fillColor: "#3b82f6", fillOpacity: 0.2 }}
               eventHandlers={{
-                click: () => {
-                  clickHandlerRef.current?.({ featureId: featureIdOf(feature), feature })
+                click: (e: any) => {
+                  const latlng = e?.latlng
+                  if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
+                  setPopup({
+                    latlng: { lat: latlng.lat, lng: latlng.lng },
+                    title: featureLabelOf(feature),
+                    role: featureRoleOf(feature),
+                    description: featureDescriptionOf(feature),
+                    feature,
+                  })
+                  clickHandlerRef.current?.({ featureId: featureIdOf(feature), feature, latlng })
                 },
               }}
             />
@@ -246,13 +285,46 @@ export function LeafletMap({
               radius={6}
               pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#ef4444", fillOpacity: 0.9 }}
               eventHandlers={{
-                click: () => {
-                  clickHandlerRef.current?.({ featureId: featureIdOf(feature), feature })
+                click: (e: any) => {
+                  const latlng = e?.latlng
+                  if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
+                  setPopup({
+                    latlng: { lat: latlng.lat, lng: latlng.lng },
+                    title: featureLabelOf(feature),
+                    role: featureRoleOf(feature),
+                    description: featureDescriptionOf(feature),
+                    feature,
+                  })
+                  clickHandlerRef.current?.({ featureId: featureIdOf(feature), feature, latlng })
                 },
               }}
             />
           )
         })}
+
+        {popup ? (
+          <Popup
+            position={[popup.latlng.lat, popup.latlng.lng]}
+            closeButton
+            closeOnClick
+            autoPan
+            eventHandlers={{
+              remove: () => setPopup(null),
+            }}
+          >
+            <div className="text-sm">
+              <div className="font-medium">{popup.title}</div>
+              {popup.role ? (
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  Role: <span className="capitalize">{popup.role}</span>
+                </div>
+              ) : null}
+              {popup.description ? (
+                <div className="mt-1 text-xs text-muted-foreground">{popup.description}</div>
+              ) : null}
+            </div>
+          </Popup>
+        ) : null}
       </MapContainer>
     </div>
   )
