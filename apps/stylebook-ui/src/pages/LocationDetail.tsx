@@ -31,7 +31,7 @@ import {
 import SimpleGeoJsonGeometry from "@/components/SimpleGeoJsonGeometry"
 import LocationMetaTab from "@/components/LocationMetaTab"
 import ConnectionsSection from "@/components/ConnectionsSection"
-import { LeafletMap } from "@backfield/ui"
+import { LeafletMap } from "@backfield/ui/LeafletMap"
 import {
   Dialog,
   DialogContent,
@@ -285,6 +285,10 @@ export default function LocationDetail() {
 
   const saveGeometry = async () => {
     if (!canonical || !id || !projectSlug) return
+    if (!geometryDraft) {
+      alert("No geometry to save")
+      return
+    }
     setGeometrySaving(true)
     try {
       const canonicalId = id
