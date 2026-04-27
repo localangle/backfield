@@ -82,6 +82,17 @@ type GeoJsonGeometry =
   | { type: "Polygon"; coordinates: [number, number][][] }
   | { type: "MultiPolygon"; coordinates: [number, number][][][] }
 
+function isPointGeometry(geometry: Record<string, unknown> | null): geometry is {
+  type: "Point"
+  coordinates: [number, number]
+} {
+  if (!geometry || typeof geometry !== "object") return false
+  const g = geometry as Record<string, unknown>
+  if (g.type !== "Point") return false
+  const c = g.coordinates
+  return Array.isArray(c) && c.length === 2 && typeof c[0] === "number" && typeof c[1] === "number"
+}
+
 function geometryToFeatureCollections(
   geometry: Record<string, unknown> | null,
 ): { points: unknown; polygons: unknown } {
@@ -421,10 +432,22 @@ export default function LocationDetail() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card
+        className={cn(
+          geometryEditing &&
+            "border-2 border-foreground/80 bg-white shadow-sm transition-colors",
+        )}
+      >
         <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
           <div>
-            <CardTitle>Geography</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <span>Geography</span>
+              {geometryEditing ? (
+                <Badge variant="secondary" className="font-normal">
+                  Editing draft
+                </Badge>
+              ) : null}
+            </CardTitle>
             <CardDescription>
               {geometryEditing ? "Edit canonical geometry (draft) and save or cancel." : "View canonical geometry."}
             </CardDescription>
@@ -460,11 +483,51 @@ export default function LocationDetail() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <LeafletMap
-            points={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).points as any}
-            polygons={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).polygons as any}
-            showPopups={false}
-          />
+          <div
+            className={cn(
+              "rounded-md overflow-hidden",
+              geometryEditing && "bg-white ring-1 ring-foreground/25 border border-foreground/30",
+            )}
+          >
+            <LeafletMap
+              points={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).points as any}
+              polygons={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).polygons as any}
+              showPopups={false}
+              tileUrl={
+                geometryEditing
+                  ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                  : undefined
+              }
+              tileAttribution={
+                geometryEditing
+                  ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                  : undefined
+              }
+              onMapClick={
+                geometryEditing && (!geometryDraft || isPointGeometry(geometryDraft))
+                  ? ({ latlng }) => {
+                      setGeometryDraft({ type: "Point", coordinates: [latlng.lng, latlng.lat] })
+                    }
+                  : undefined
+              }
+              editablePoint={
+                geometryEditing && isPointGeometry(geometryDraft)
+                  ? {
+                      featureId: "canonical",
+                      onChange: ({ lng, lat }) =>
+                        setGeometryDraft({ type: "Point", coordinates: [lng, lat] }),
+                    }
+                  : null
+              }
+            />
+          </div>
+          {geometryEditing && isPointGeometry(geometryDraft) ? (
+            <div className="flex items-center justify-end">
+              <Button variant="outline" onClick={() => setGeometryDraft(null)} disabled={geometrySaving}>
+                Clear point
+              </Button>
+            </div>
+          ) : null}
           {geometryEditing ? (
             <SimpleGeoJsonGeometry value={geometryDraft} onChange={setGeometryDraft} />
           ) : null}

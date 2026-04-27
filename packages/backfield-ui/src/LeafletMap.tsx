@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import * as L from "leaflet"
-import { CircleMarker, MapContainer, Polygon, Popup, TileLayer, useMap } from "react-leaflet"
+import { CircleMarker, MapContainer, Marker, Polygon, Popup, TileLayer, useMap, useMapEvents } from "react-leaflet"
 import "leaflet/dist/leaflet.css"
 
 type LngLat = [number, number] // [lng, lat]
@@ -40,6 +40,13 @@ export type LeafletMapProps = {
   onFeatureClick?: (event: LeafletMapFeatureClick) => void
   fitToData?: boolean
   showPopups?: boolean
+  onMapClick?: (event: { latlng: { lat: number; lng: number } }) => void
+  editablePoint?: {
+    featureId: string
+    onChange: (next: { lng: number; lat: number }) => void
+  } | null
+  tileUrl?: string
+  tileAttribution?: string
 }
 
 const DEFAULT_CENTER: LatLng = [39.8283, -98.5795] // continental US
@@ -180,6 +187,10 @@ export function LeafletMap({
   onFeatureClick,
   fitToData = true,
   showPopups = true,
+  onMapClick,
+  editablePoint = null,
+  tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }: LeafletMapProps) {
   const [error, setError] = useState<string | null>(null)
   const clickHandlerRef = useRef(onFeatureClick)
@@ -239,14 +250,56 @@ export function LeafletMap({
     })
     .flat()
 
+  const editablePointFeature = useMemo(() => {
+    if (!editablePoint) return null
+    return normalizedPoints.features.find((f) => featureIdOf(f) === editablePoint.featureId) ?? null
+  }, [editablePoint, normalizedPoints.features])
+
+  const editablePointCenter = useMemo((): [number, number] | null => {
+    if (!editablePointFeature) return null
+    const c = editablePointFeature.geometry.coordinates
+    if (!Array.isArray(c) || c.length < 2) return null
+    const lng = c[0]
+    const lat = c[1]
+    if (!isFiniteNumber(lng) || !isFiniteNumber(lat)) return null
+    return [lat, lng]
+  }, [editablePointFeature])
+
+  const editablePointIcon = useMemo(() => {
+    if (!editablePointCenter) return null
+    return L.divIcon({
+      className: "",
+      html: `<div style="
+        width: 14px;
+        height: 14px;
+        border-radius: 9999px;
+        background: #ef4444;
+        border: 2px solid #ffffff;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+      "></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    })
+  }, [editablePointCenter])
+
+  function MapClickHandler() {
+    useMapEvents({
+      click: (e) => {
+        if (!onMapClick) return
+        const latlng = e?.latlng
+        if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
+        onMapClick({ latlng: { lat: latlng.lat, lng: latlng.lng } })
+      },
+    })
+    return null
+  }
+
   return (
     <div className="rounded-md overflow-hidden border border-border" style={{ height }}>
       {error ? <div className="p-3 text-sm text-destructive">{error}</div> : null}
       <MapContainer center={DEFAULT_CENTER as any} zoom={DEFAULT_ZOOM} style={{ height: "100%", width: "100%" }}>
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <MapClickHandler />
+        <TileLayer attribution={tileAttribution} url={tileUrl} />
         {fitToData ? <FitToData bounds={bounds} /> : null}
         {polygonPaths.map((feature, idx) => {
           const coords = feature.geometry.coordinates?.[0]
@@ -281,6 +334,7 @@ export function LeafletMap({
         })}
 
         {normalizedPoints.features.map((feature, idx) => {
+          if (editablePoint && featureIdOf(feature) === editablePoint.featureId) return null
           const c = feature.geometry.coordinates
           if (!Array.isArray(c) || c.length < 2) return null
           const lng = c[0]
@@ -311,6 +365,21 @@ export function LeafletMap({
             />
           )
         })}
+
+        {editablePoint && editablePointCenter && editablePointIcon ? (
+          <Marker
+            position={editablePointCenter}
+            draggable
+            icon={editablePointIcon as any}
+            eventHandlers={{
+              dragend: (e: any) => {
+                const latlng = e?.target?.getLatLng?.()
+                if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
+                editablePoint.onChange({ lng: latlng.lng, lat: latlng.lat })
+              },
+            }}
+          />
+        ) : null}
 
         {showPopups && popup ? (
           <Popup

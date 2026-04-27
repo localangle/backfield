@@ -14,5 +14,26 @@ describe("LeafletMap", () => {
     // It may render empty-state after normalization; the key is “no crash”.
     expect(getAllByText("No geographic features.").length).toBeGreaterThan(0)
   })
+
+  it("renders with point editing enabled", () => {
+    const points: any = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: { id: "canonical", label: "Canonical" },
+          geometry: { type: "Point", coordinates: [-87.6298, 41.8781] },
+        },
+      ],
+    }
+    render(
+      <LeafletMap
+        points={points}
+        polygons={null}
+        showPopups={false}
+        editablePoint={{ featureId: "canonical", onChange: () => {} }}
+      />,
+    )
+  })
 })
 

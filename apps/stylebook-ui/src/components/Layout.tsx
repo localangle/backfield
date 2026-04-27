@@ -41,7 +41,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b shrink-0 bg-background sticky top-0 z-[100] overflow-visible">
+      <header className="border-b shrink-0 bg-background sticky top-0 z-[5000] overflow-visible">
         <div className="px-4 py-4 flex justify-between items-center overflow-visible">
           <ShellProductBrand
             to={indexPath}
@@ -60,7 +60,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           </div>
         </div>
       </header>
-      <main className="container mx-auto px-4 py-8 overflow-visible">{children}</main>
+      <main className="container relative z-0 mx-auto px-4 py-8 overflow-visible">{children}</main>
     </div>
   )
 }
