@@ -486,7 +486,7 @@ export default function LocationDetail() {
           <div
             className={cn(
               "rounded-md overflow-hidden",
-              geometryEditing && "ring-1 ring-foreground/25 border border-foreground/30",
+              geometryEditing && "bg-white ring-1 ring-foreground/25 border border-foreground/30",
             )}
           >
             <LeafletMap
