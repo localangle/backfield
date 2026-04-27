@@ -215,7 +215,7 @@ type PhotonHit = {
   label: string
   lat: number
   lng: number
-  /** minLon, minLat, maxLon, maxLat when Photon returns a bbox. */
+  /** Photon bbox: `[lon, lat, lon, lat]` for two corners (see `photonExtentToLeafletLatLngBounds`). */
   extent: [number, number, number, number] | null
 }
 
@@ -245,6 +245,7 @@ function showGeocoderSelectionPreview(map: L.Map, lat: number, lng: number) {
     fillColor: "#60a5fa",
     fillOpacity: 0.92,
     pane: "markerPane",
+    interactive: false,
   })
   dot.addTo(map)
   ;(map as unknown as Record<string, L.Layer>)[GEOCODER_PREVIEW_LAYER_PROP] = dot
@@ -285,6 +286,26 @@ function formatPhotonLabel(props: Record<string, unknown>): string {
 
   const mid = [localityLine, tail].filter(Boolean).join(" · ")
   return [name, mid].filter(Boolean).join(" · ") || name || "Place"
+}
+
+/**
+ * Photon `properties.extent` is four numbers as two corners in **lon, lat, lon, lat** order
+ * (not `[min_lon, min_lat, max_lon, max_lat]`). Derive an axis-aligned bbox for Leaflet.
+ *
+ * @returns `[[southLat, westLng], [northLat, eastLng]]` for `map.fitBounds`.
+ */
+export function photonExtentToLeafletLatLngBounds(
+  extent: readonly [number, number, number, number],
+): [[number, number], [number, number]] {
+  const [lon1, lat1, lon2, lat2] = extent
+  const minLon = Math.min(lon1, lon2)
+  const maxLon = Math.max(lon1, lon2)
+  const minLat = Math.min(lat1, lat2)
+  const maxLat = Math.max(lat1, lat2)
+  return [
+    [minLat, minLon],
+    [maxLat, maxLon],
+  ]
 }
 
 function parsePhotonResponse(json: unknown): PhotonHit[] {
@@ -474,20 +495,13 @@ function GeocoderPanel({ map }: { map: L.Map }) {
     let markLat = hit.lat
     let markLng = hit.lng
     if (hit.extent) {
-      const [minLon, minLat, maxLon, maxLat] = hit.extent
-      markLat = (minLat + maxLat) / 2
-      markLng = (minLon + maxLon) / 2
+      const [[south, west], [north, east]] = photonExtentToLeafletLatLngBounds(hit.extent)
+      markLat = (south + north) / 2
+      markLng = (west + east) / 2
     }
     try {
       if (hit.extent) {
-        const [minLon, minLat, maxLon, maxLat] = hit.extent
-        map.fitBounds(
-          [
-            [minLat, minLon],
-            [maxLat, maxLon],
-          ],
-          { padding: [40, 40], maxZoom: 16 },
-        )
+        map.fitBounds(photonExtentToLeafletLatLngBounds(hit.extent), { padding: [40, 40], maxZoom: 16 })
       } else {
         map.flyTo([hit.lat, hit.lng], 14, { duration: 0.75 })
       }

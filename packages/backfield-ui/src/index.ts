@@ -1,7 +1,12 @@
 export { UserAccountMenu, type UserAccountMenuProps } from "./UserAccountMenu"
 export { ShellProductBrand, type ShellProductBrandProps } from "./ShellProductBrand"
 export { cn } from "./cn"
-export { LeafletMap, type LeafletMapProps, type LeafletMapFeatureClick } from "./LeafletMap"
+export {
+  LeafletMap,
+  photonExtentToLeafletLatLngBounds,
+  type LeafletMapProps,
+  type LeafletMapFeatureClick,
+} from "./LeafletMap"
 export {
   normalizeLngLat,
   polygonFromAxisAlignedBounds,
