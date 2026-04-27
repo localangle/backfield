@@ -48,6 +48,11 @@ import {
 import { Info, Loader2, MousePointer, Square, Trash2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
+/** Continental US when adding the first geometry from an empty draft (matches LeafletMap defaults). */
+const ADD_GEOMETRY_MAP_CENTER: [number, number] = [39.8283, -98.5795]
+/** Match @backfield/ui LeafletMap continental US default framing. */
+const ADD_GEOMETRY_MAP_ZOOM = 3
+
 function mentionArticleDisplayTitle(m: LinkedMention): string {
   const trimmed = (m.article_headline ?? "").trim()
   if (trimmed.length > 0) return trimmed
@@ -339,7 +344,9 @@ export default function LocationDetail() {
       await loadCanonical(canonicalId, projectSlug, true)
     } catch (e) {
       console.error(e)
-      alert(e instanceof Error ? e.message : "Save geometry failed")
+      const msg =
+        e instanceof Error ? e.message : typeof e === "string" ? e : "Save geometry failed"
+      alert(msg)
     } finally {
       setGeometrySaving(false)
     }
@@ -648,10 +655,18 @@ export default function LocationDetail() {
               showPopups={false}
               // While editing, geometry updates constantly (drag/resize). Auto fitBounds would fight manual zoom.
               fitToData={!geometryEditing}
-              initialCenter={leafletInitialCenter}
+              initialCenter={
+                geometryEditing &&
+                !geometryDraft &&
+                (geometryAddMode === "point" || geometryAddMode === "rectangle")
+                  ? ADD_GEOMETRY_MAP_CENTER
+                  : leafletInitialCenter
+              }
               initialZoom={
-                geometryEditing && !geometryDraft && (geometryAddMode === "rectangle" || geometryAddMode === "point")
-                  ? 11
+                geometryEditing &&
+                !geometryDraft &&
+                (geometryAddMode === "point" || geometryAddMode === "rectangle")
+                  ? ADD_GEOMETRY_MAP_ZOOM
                   : null
               }
               interactiveWhenEmpty={
