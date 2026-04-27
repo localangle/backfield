@@ -45,6 +45,8 @@ export type LeafletMapProps = {
     featureId: string
     onChange: (next: { lng: number; lat: number }) => void
   } | null
+  tileUrl?: string
+  tileAttribution?: string
 }
 
 const DEFAULT_CENTER: LatLng = [39.8283, -98.5795] // continental US
@@ -187,6 +189,8 @@ export function LeafletMap({
   showPopups = true,
   onMapClick,
   editablePoint = null,
+  tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }: LeafletMapProps) {
   const [error, setError] = useState<string | null>(null)
   const clickHandlerRef = useRef(onFeatureClick)
@@ -295,10 +299,7 @@ export function LeafletMap({
       {error ? <div className="p-3 text-sm text-destructive">{error}</div> : null}
       <MapContainer center={DEFAULT_CENTER as any} zoom={DEFAULT_ZOOM} style={{ height: "100%", width: "100%" }}>
         <MapClickHandler />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <TileLayer attribution={tileAttribution} url={tileUrl} />
         {fitToData ? <FitToData bounds={bounds} /> : null}
         {polygonPaths.map((feature, idx) => {
           const coords = feature.geometry.coordinates?.[0]

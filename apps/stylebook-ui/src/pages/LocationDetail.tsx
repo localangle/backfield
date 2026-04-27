@@ -435,7 +435,7 @@ export default function LocationDetail() {
       <Card
         className={cn(
           geometryEditing &&
-            "border-primary/40 bg-primary/5 shadow-sm ring-1 ring-primary/20 transition-colors",
+            "border-2 border-foreground/80 bg-primary/5 shadow-sm transition-colors",
         )}
       >
         <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
@@ -483,27 +483,44 @@ export default function LocationDetail() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <LeafletMap
-            points={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).points as any}
-            polygons={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).polygons as any}
-            showPopups={false}
-            onMapClick={
-              geometryEditing && (!geometryDraft || isPointGeometry(geometryDraft))
-                ? ({ latlng }) => {
-                    setGeometryDraft({ type: "Point", coordinates: [latlng.lng, latlng.lat] })
-                  }
-                : undefined
-            }
-            editablePoint={
-              geometryEditing && isPointGeometry(geometryDraft)
-                ? {
-                    featureId: "canonical",
-                    onChange: ({ lng, lat }) =>
-                      setGeometryDraft({ type: "Point", coordinates: [lng, lat] }),
-                  }
-                : null
-            }
-          />
+          <div
+            className={cn(
+              "rounded-md overflow-hidden",
+              geometryEditing && "ring-1 ring-foreground/25 border border-foreground/30",
+            )}
+          >
+            <LeafletMap
+              points={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).points as any}
+              polygons={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).polygons as any}
+              showPopups={false}
+              tileUrl={
+                geometryEditing
+                  ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                  : undefined
+              }
+              tileAttribution={
+                geometryEditing
+                  ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                  : undefined
+              }
+              onMapClick={
+                geometryEditing && (!geometryDraft || isPointGeometry(geometryDraft))
+                  ? ({ latlng }) => {
+                      setGeometryDraft({ type: "Point", coordinates: [latlng.lng, latlng.lat] })
+                    }
+                  : undefined
+              }
+              editablePoint={
+                geometryEditing && isPointGeometry(geometryDraft)
+                  ? {
+                      featureId: "canonical",
+                      onChange: ({ lng, lat }) =>
+                        setGeometryDraft({ type: "Point", coordinates: [lng, lat] }),
+                    }
+                  : null
+              }
+            />
+          </div>
           {geometryEditing && isPointGeometry(geometryDraft) ? (
             <div className="flex items-center justify-end">
               <Button variant="outline" onClick={() => setGeometryDraft(null)} disabled={geometrySaving}>
