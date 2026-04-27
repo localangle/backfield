@@ -2,7 +2,7 @@ import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
 
 export interface CanonicalSuggestion {
   suggested_action?: string | null
-  stylebook_location_canonical_id?: number | null
+  stylebook_location_canonical_id?: string | null
   source?: string | null
   adjudication_confidence?: number | null
   adjudication_rationale?: string | null
@@ -109,7 +109,7 @@ export async function listLocationCandidateTypes(
 
 export type AcceptCandidateBody = {
   create_new: boolean
-  stylebook_location_id?: number | null
+  stylebook_location_id?: string | null
   name?: string | null
   geometry_json?: Record<string, unknown> | null
   /** When ``create_new``, optional PlaceExtract type for the new canonical (else substrate type). */
@@ -118,7 +118,7 @@ export type AcceptCandidateBody = {
 
 export type AcceptCandidateResponse = {
   message: string
-  stylebook_location_canonical_id?: number
+  stylebook_location_canonical_id?: string
 }
 
 export async function acceptCandidate(
@@ -188,7 +188,7 @@ export async function updateCandidateNote(
 }
 
 export interface SuggestedCanonicalItem {
-  canonical_id: number
+  canonical_id: string
   label: string
   location_type?: string | null
   formatted_address?: string | null

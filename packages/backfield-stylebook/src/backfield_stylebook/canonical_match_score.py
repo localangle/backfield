@@ -112,7 +112,7 @@ class SubstrateMatchInput:
 class CanonicalMatchFeatures:
     """Per-candidate fields used by the scorer."""
 
-    canonical_id: int
+    canonical_id: str
     label: str
     normalized_aliases: tuple[str, ...]
     geometry_json: dict[str, Any] | None = None

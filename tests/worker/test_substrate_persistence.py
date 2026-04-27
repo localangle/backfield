@@ -167,7 +167,7 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         assert len(canon_rows) == 1
         assert canon_rows[0].primary_substrate_location_id is None
         assert locations[0].stylebook_location_canonical_id is not None
-        assert int(locations[0].stylebook_location_canonical_id) == int(canon_rows[0].id)  # type: ignore[arg-type]
+        assert locations[0].stylebook_location_canonical_id == canon_rows[0].id
         assert locations[0].canonical_link_status == CANONICAL_LINK_LINKED
         assert_canonical_link_invariant(locations[0])
         alias_rows = session.exec(select(StylebookLocationAlias)).all()
@@ -334,6 +334,7 @@ def test_persist_links_preseeded_canonical_alias_without_second_canonical() -> N
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -341,7 +342,7 @@ def test_persist_links_preseeded_canonical_alias_without_second_canonical() -> N
         session.add(canon)
         session.commit()
         session.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
         session.add(
             StylebookLocationAlias(
                 location_canonical_id=cid,
@@ -402,11 +403,11 @@ def test_persist_links_preseeded_canonical_alias_without_second_canonical() -> N
 
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 1
-        assert int(canon_rows[0].id) == cid  # type: ignore[arg-type]
+        assert canon_rows[0].id == cid
 
         locs = session.exec(select(SubstrateLocation)).all()
         assert len(locs) == 1
-        assert int(locs[0].stylebook_location_canonical_id or 0) == cid
+        assert locs[0].stylebook_location_canonical_id == cid
         assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
         assert_canonical_link_invariant(locs[0])
 
@@ -428,6 +429,7 @@ def test_persist_fuzzy_links_preseeded_canonical_when_alias_normalization_differ
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="West Garfield Park, Chicago, IL",
+            slug="west-garfield-park-chicago-il",
             location_type="neighborhood",
             primary_substrate_location_id=None,
             status="active",
@@ -437,7 +439,7 @@ def test_persist_fuzzy_links_preseeded_canonical_when_alias_normalization_differ
         session.add(canon)
         session.commit()
         session.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
         session.add(
             StylebookLocationAlias(
                 location_canonical_id=cid,
@@ -494,11 +496,11 @@ def test_persist_fuzzy_links_preseeded_canonical_when_alias_normalization_differ
 
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 1
-        assert int(canon_rows[0].id) == cid  # type: ignore[arg-type]
+        assert canon_rows[0].id == cid
 
         locs = session.exec(select(SubstrateLocation)).all()
         assert len(locs) == 1
-        assert int(locs[0].stylebook_location_canonical_id or 0) == cid
+        assert locs[0].stylebook_location_canonical_id == cid
         assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
         assert_canonical_link_invariant(locs[0])
 
@@ -564,7 +566,7 @@ def test_persist_materializes_canonical_for_city_without_geometry_when_no_match(
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 1
         fk = locs[0].stylebook_location_canonical_id
-        canon = session.get(StylebookLocationCanonical, int(fk or 0))
+        canon = session.get(StylebookLocationCanonical, str(fk))
         assert canon is not None
         assert canon.location_type == "city"
         assert canon.formatted_address and "Peoria" in canon.formatted_address
@@ -588,6 +590,7 @@ def test_persist_neighborhood_materializes_instead_of_autolinking_city_parent() 
         chicago_canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -597,7 +600,7 @@ def test_persist_neighborhood_materializes_instead_of_autolinking_city_parent() 
         session.add(chicago_canon)
         session.commit()
         session.refresh(chicago_canon)
-        chicago_id = int(chicago_canon.id)  # type: ignore[arg-type]
+        chicago_id = str(chicago_canon.id)
         session.add(
             StylebookLocationAlias(
                 location_canonical_id=chicago_id,
@@ -659,7 +662,7 @@ def test_persist_neighborhood_materializes_instead_of_autolinking_city_parent() 
         assert len(locs) == 1
         assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
         assert locs[0].stylebook_location_canonical_id is not None
-        assert int(locs[0].stylebook_location_canonical_id) != chicago_id
+        assert locs[0].stylebook_location_canonical_id != chicago_id
 
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 2
@@ -689,6 +692,7 @@ def test_persist_place_materializes_instead_of_autolinking_city_parent() -> None
         chicago_canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -698,7 +702,7 @@ def test_persist_place_materializes_instead_of_autolinking_city_parent() -> None
         session.add(chicago_canon)
         session.commit()
         session.refresh(chicago_canon)
-        chicago_id = int(chicago_canon.id)  # type: ignore[arg-type]
+        chicago_id = str(chicago_canon.id)
         session.add(
             StylebookLocationAlias(
                 location_canonical_id=chicago_id,
@@ -759,7 +763,7 @@ def test_persist_place_materializes_instead_of_autolinking_city_parent() -> None
         assert len(locs) == 1
         assert locs[0].location_type == "place"
         assert locs[0].canonical_link_status == CANONICAL_LINK_LINKED
-        assert int(locs[0].stylebook_location_canonical_id or 0) != chicago_id
+        assert locs[0].stylebook_location_canonical_id != chicago_id
 
         canon_rows = session.exec(select(StylebookLocationCanonical)).all()
         assert len(canon_rows) == 2
@@ -1015,6 +1019,7 @@ def test_persist_auto_apply_false_exact_alias_leaves_pending_with_suggestion() -
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il-aa",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -1022,7 +1027,7 @@ def test_persist_auto_apply_false_exact_alias_leaves_pending_with_suggestion() -
         session.add(canon)
         session.commit()
         session.refresh(canon)
-        cid = int(canon.id)  # type: ignore[arg-type]
+        cid = str(canon.id)
         session.add(
             StylebookLocationAlias(
                 location_canonical_id=cid,
@@ -1098,4 +1103,4 @@ def test_persist_auto_apply_false_exact_alias_leaves_pending_with_suggestion() -
             x for x in raw if isinstance(x, dict) and x.get("code") == "canonical_suggestion"
         )
         assert sug.get("suggested_action") == "link_existing"
-        assert int(sug.get("stylebook_location_canonical_id") or 0) == cid
+        assert sug.get("stylebook_location_canonical_id") == cid

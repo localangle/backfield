@@ -9,7 +9,7 @@ import type { EntityConfig } from "@/lib/entityTypes"
 
 /** Canonical location row as used by EntitySelector (name matches agate ``Location`` shape). */
 export interface LocationPickerRow {
-  id: number
+  id: string
   project_id: number
   name: string
   location_type: string

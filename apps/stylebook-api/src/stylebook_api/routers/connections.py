@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from backfield_auth.gate import require_project_access
 from backfield_db import StylebookConnection
@@ -15,6 +16,7 @@ from sqlmodel import Session, select
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.helpers.connections_utils import (
     get_canonical_display_name,
+    normalize_connection_entity_id,
     validate_canonical_exists,
     validate_connection_pair,
     validate_not_self_connection,
@@ -33,10 +35,10 @@ locations_connections_router = APIRouter(prefix="/v1", tags=["connections"])
 class ConnectionResponse(BaseModel):
     id: int
     from_entity_type: str
-    from_entity_id: int
+    from_entity_id: str
     from_display_name: str
     to_entity_type: str
-    to_entity_id: int
+    to_entity_id: str
     to_display_name: str
     nature: str
     created_at: datetime | None = None
@@ -48,7 +50,10 @@ class ConnectionListResponse(BaseModel):
 
 class CreateConnectionRequest(BaseModel):
     to_entity_type: str = Field(..., description="person, location, organization, or work")
-    to_entity_id: int = Field(..., gt=0)
+    to_entity_id: int | str | UUID = Field(
+        ...,
+        description="UUID string for location; int for stubs",
+    )
     nature: str = Field(..., min_length=1)
 
 
@@ -60,18 +65,21 @@ class NaturesResponse(BaseModel):
     natures: list[str]
 
 
-def _display_name(session: Session, project_id: int, entity_type: str, entity_id: int) -> str:
+def _display_name(
+    session: Session, project_id: int, entity_type: str, entity_id: str | int | UUID
+) -> str:
     name = get_canonical_display_name(session, project_id, entity_type, entity_id)
     if name:
         return name
-    return f"{entity_type} #{entity_id}"
+    sid = normalize_connection_entity_id(entity_type, entity_id)
+    return f"{entity_type} #{sid}"
 
 
 def _list_connections_for_entity(
     session: Session,
     project_id: int,
     entity_type: str,
-    entity_id: int,
+    entity_id: str,
 ) -> list[ConnectionResponse]:
     conns = session.exec(
         select(StylebookConnection)
@@ -142,15 +150,16 @@ def list_connection_natures(
     response_model=ConnectionListResponse,
 )
 def list_location_connections(
-    location_id: int,
+    location_id: UUID,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> ConnectionListResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
+    loc_key = str(location_id)
     validate_canonical_exists(session, int(proj.id), "location", location_id)
-    rows = _list_connections_for_entity(session, int(proj.id), "location", location_id)
+    rows = _list_connections_for_entity(session, int(proj.id), "location", loc_key)
     return ConnectionListResponse(connections=rows)
 
 
@@ -159,7 +168,7 @@ def list_location_connections(
     response_model=ConnectionResponse,
 )
 def create_location_connection(
-    location_id: int,
+    location_id: UUID,
     project_slug: str = Query(...),
     payload: CreateConnectionRequest = Body(...),
     session: Session = Depends(get_session),
@@ -167,21 +176,23 @@ def create_location_connection(
 ) -> ConnectionResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
+    loc_key = str(location_id)
     validate_canonical_exists(session, int(proj.id), "location", location_id)
     validate_connection_pair("location", payload.to_entity_type)
     validate_canonical_exists(session, int(proj.id), payload.to_entity_type, payload.to_entity_id)
+    to_key = normalize_connection_entity_id(payload.to_entity_type, payload.to_entity_id)
     validate_not_self_connection(
         "location",
-        location_id,
+        loc_key,
         payload.to_entity_type,
-        payload.to_entity_id,
+        to_key,
     )
     conn = StylebookConnection(
         project_id=int(proj.id),
         from_entity_type="location",
-        from_entity_id=location_id,
+        from_entity_id=loc_key,
         to_entity_type=payload.to_entity_type,
-        to_entity_id=payload.to_entity_id,
+        to_entity_id=to_key,
         nature=payload.nature.strip(),
     )
     session.add(conn)
@@ -210,7 +221,7 @@ def create_location_connection(
     response_model=ConnectionResponse,
 )
 def update_location_connection(
-    location_id: int,
+    location_id: UUID,
     connection_id: int,
     project_slug: str = Query(...),
     payload: UpdateConnectionRequest = Body(...),
@@ -219,6 +230,7 @@ def update_location_connection(
 ) -> ConnectionResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
+    loc_key = str(location_id)
     validate_canonical_exists(session, int(proj.id), "location", location_id)
     conn = session.exec(
         select(StylebookConnection).where(
@@ -227,11 +239,11 @@ def update_location_connection(
             or_(
                 and_(
                     StylebookConnection.from_entity_type == "location",
-                    StylebookConnection.from_entity_id == location_id,
+                    StylebookConnection.from_entity_id == loc_key,
                 ),
                 and_(
                     StylebookConnection.to_entity_type == "location",
-                    StylebookConnection.to_entity_id == location_id,
+                    StylebookConnection.to_entity_id == loc_key,
                 ),
             ),
         )
@@ -267,7 +279,7 @@ def update_location_connection(
 
 @locations_connections_router.delete("/canonical-locations/{location_id}/connections/{connection_id}")
 def delete_location_connection(
-    location_id: int,
+    location_id: UUID,
     connection_id: int,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
@@ -275,6 +287,7 @@ def delete_location_connection(
 ) -> dict[str, bool]:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
+    loc_key = str(location_id)
     conn = session.exec(
         select(StylebookConnection).where(
             StylebookConnection.id == connection_id,
@@ -282,11 +295,11 @@ def delete_location_connection(
             or_(
                 and_(
                     StylebookConnection.from_entity_type == "location",
-                    StylebookConnection.from_entity_id == location_id,
+                    StylebookConnection.from_entity_id == loc_key,
                 ),
                 and_(
                     StylebookConnection.to_entity_type == "location",
-                    StylebookConnection.to_entity_id == location_id,
+                    StylebookConnection.to_entity_id == loc_key,
                 ),
             ),
         )

@@ -11,15 +11,18 @@ const locationMetaTabConfig: MetaTabConfig = {
   type: "location",
   displayName: { singular: "Location", plural: "Locations" },
   api: {
-    getMeta: getCanonicalLocationMeta,
-    createMeta: createCanonicalLocationMeta,
-    updateMeta: updateCanonicalLocationMeta,
-    deleteMeta: deleteCanonicalLocationMeta,
+    getMeta: (entityId, projectSlug) => getCanonicalLocationMeta(String(entityId), projectSlug),
+    createMeta: (entityId, projectSlug, data) =>
+      createCanonicalLocationMeta(String(entityId), projectSlug, data),
+    updateMeta: (entityId, metaId, projectSlug, data) =>
+      updateCanonicalLocationMeta(String(entityId), metaId, projectSlug, data),
+    deleteMeta: (entityId, metaId, projectSlug) =>
+      deleteCanonicalLocationMeta(String(entityId), metaId, projectSlug),
   },
 }
 
 interface LocationMetaTabProps {
-  locationId: number | null
+  locationId: string | null
   projectSlug: string
   onMetaUpdated?: () => void
 }

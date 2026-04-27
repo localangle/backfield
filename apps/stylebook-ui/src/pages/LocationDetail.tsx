@@ -102,7 +102,7 @@ export default function LocationDetail() {
     setProjectSlug(slug)
   }, [searchParams])
 
-  const loadCanonical = async (canonicalId: number, slug: string, quiet = false) => {
+  const loadCanonical = async (canonicalId: string, slug: string, quiet = false) => {
     try {
       if (!quiet) setLoading(true)
       const row = await getCanonicalLocation(canonicalId, slug)
@@ -120,10 +120,10 @@ export default function LocationDetail() {
 
   useEffect(() => {
     if (!id || !projectSlug) return
-    void loadCanonical(parseInt(id, 10), projectSlug)
+    void loadCanonical(id, projectSlug)
   }, [id, projectSlug])
 
-  const loadMentions = useCallback(async (canonicalId: number, slug: string, quiet = false) => {
+  const loadMentions = useCallback(async (canonicalId: string, slug: string, quiet = false) => {
     if (!quiet) setMentionsLoading(true)
     try {
       const m = await getCanonicalLocationMentions(canonicalId, slug, 500, 0)
@@ -137,10 +137,10 @@ export default function LocationDetail() {
 
   useEffect(() => {
     if (!id || !projectSlug) return
-    void loadMentions(parseInt(id, 10), projectSlug)
+    void loadMentions(id, projectSlug)
   }, [id, projectSlug, loadMentions])
 
-  const loadSubstrates = useCallback(async (canonicalId: number, slug: string, quiet = false) => {
+  const loadSubstrates = useCallback(async (canonicalId: string, slug: string, quiet = false) => {
     if (!quiet) setSubstratesLoading(true)
     try {
       const r = await listCanonicalLinkedSubstrates(canonicalId, slug)
@@ -154,17 +154,16 @@ export default function LocationDetail() {
 
   useEffect(() => {
     if (!id || !projectSlug) return
-    void loadSubstrates(parseInt(id, 10), projectSlug)
+    void loadSubstrates(id, projectSlug)
   }, [id, projectSlug, loadSubstrates])
 
   /** @param quiet When true, refresh substrates/mentions without the full-table loading state (avoids a flash after unlink / move). */
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
       if (!id || !projectSlug) return
-      const cid = parseInt(id, 10)
-      await loadCanonical(cid, projectSlug, true)
-      await loadSubstrates(cid, projectSlug, quiet)
-      await loadMentions(cid, projectSlug, quiet)
+      await loadCanonical(id, projectSlug, true)
+      await loadSubstrates(id, projectSlug, quiet)
+      await loadMentions(id, projectSlug, quiet)
     },
     [id, projectSlug, loadMentions, loadSubstrates],
   )
@@ -199,7 +198,7 @@ export default function LocationDetail() {
     if (!canonical || !id || !projectSlug) return
     setSaving(true)
     try {
-      const canonicalId = parseInt(id, 10)
+      const canonicalId = id
       const updated = await patchCanonicalLocation(canonicalId, projectSlug, {
         label: label.trim(),
         location_type: locationType.trim() === "" ? null : locationType.trim().toLowerCase(),
@@ -225,7 +224,7 @@ export default function LocationDetail() {
     if (!canonical || !id || !projectSlug) return
     setDeleting(true)
     try {
-      await deleteCanonicalLocation(parseInt(id, 10), projectSlug)
+      await deleteCanonicalLocation(id, projectSlug)
       navigate(`/locations/canonical?project=${projectSlug}`)
     } catch (e) {
       alert(e instanceof Error ? e.message : "Delete failed")

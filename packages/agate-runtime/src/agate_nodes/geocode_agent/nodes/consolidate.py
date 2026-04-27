@@ -96,11 +96,11 @@ async def consolidate_node(state: AgentState) -> AgentState:
     # Stylebook canonical id when this result came from a Stylebook canonical match (for core-api to create link)
     confidence = getattr(geocoding_result.result, "confidence", None) or {}
     canonical_id = confidence.get("canonical_id")
-    if canonical_id is None and geocoding_result.result.id and str(geocoding_result.result.id).startswith("stylebook:"):
-        try:
-            canonical_id = int(str(geocoding_result.result.id).replace("stylebook:", ""))
-        except (ValueError, TypeError):
-            pass
+    if canonical_id is None and geocoding_result.result.id and str(
+        geocoding_result.result.id
+    ).startswith("stylebook:"):
+        tail = str(geocoding_result.result.id).removeprefix("stylebook:").strip()
+        canonical_id = tail or None
     result_base = {
         "id": geocoding_result.result.id,
         "formatted_address": geocoding_result.result.processed_str,
@@ -110,7 +110,7 @@ async def consolidate_node(state: AgentState) -> AgentState:
         },
     }
     if canonical_id is not None:
-        result_base["canonical_id"] = int(canonical_id)
+        result_base["canonical_id"] = str(canonical_id).strip()
 
     location_entry = {
         "id": entry_id,

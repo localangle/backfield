@@ -31,8 +31,8 @@ def _candidate_rows(
     session: Session,
     *,
     stylebook_id: int,
-    canonical_ids: list[int],
-) -> list[tuple[int, str, str | None]]:
+    canonical_ids: list[str],
+) -> list[tuple[str, str, str | None]]:
     if not canonical_ids:
         return []
     rows = session.exec(
@@ -41,11 +41,11 @@ def _candidate_rows(
             StylebookLocationCanonical.id.in_(canonical_ids[:24]),
         )
     ).all()
-    out: list[tuple[int, str, str | None]] = []
+    out: list[tuple[str, str, str | None]] = []
     for c in rows:
         if c.id is None:
             continue
-        out.append((int(c.id), str(c.label), c.location_type))
+        out.append((str(c.id), str(c.label), c.location_type))
     return out
 
 
@@ -64,12 +64,13 @@ def adjudicate_ambiguous_plan_with_llm(
     raw_ids = amb.get("recall_canonical_ids")
     if not isinstance(raw_ids, list) or not raw_ids:
         return plan
-    cids: list[int] = []
+    cids: list[str] = []
     for x in raw_ids:
-        try:
-            cids.append(int(x))
-        except (TypeError, ValueError):
+        if x is None:
             continue
+        s = str(x).strip()
+        if s:
+            cids.append(s)
     if not cids:
         return plan
     candidates = _candidate_rows(session, stylebook_id=stylebook_id, canonical_ids=cids)
@@ -104,8 +105,8 @@ def adjudicate_ambiguous_plan_with_llm(
         f"- Use confidence {floor} or higher only for definitive same-place identity you would "
         f"publish in a catalog; otherwise use confidence below {floor} "
         f"(the system will not link).\n\n"
-        "Return JSON only: canonical_id (int or null), confidence (0.0-1.0), "
-        "rationale (short string)."
+        "Return JSON only: canonical_id (UUID string matching one candidate id, or null), "
+        "confidence (0.0-1.0), rationale (short string)."
     )
     try:
         raw = call_llm(
@@ -124,18 +125,19 @@ def adjudicate_ambiguous_plan_with_llm(
     cid_raw = data.get("canonical_id")
     conf_raw = data.get("confidence", 0.0)
     rationale = str(data.get("rationale") or "").strip()
-    try:
-        chosen = int(cid_raw) if cid_raw is not None else None
-    except (TypeError, ValueError):
+    chosen: str | None
+    if cid_raw is None or cid_raw == "":
         chosen = None
+    else:
+        chosen = str(cid_raw).strip() or None
     try:
         confidence = float(conf_raw)
     except (TypeError, ValueError):
         confidence = 0.0
-    canon = session.get(StylebookLocationCanonical, int(chosen)) if chosen is not None else None
+    canon = session.get(StylebookLocationCanonical, str(chosen)) if chosen is not None else None
     if (
         chosen is None
-        or chosen not in {c[0] for c in candidates}
+        or chosen not in {str(c[0]) for c in candidates}
         or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE
         or canon is None
         or not link_pair_allowed(location.location_type, canon.location_type)
@@ -160,7 +162,7 @@ def adjudicate_ambiguous_plan_with_llm(
     extra = {
         "code": "canonical_adjudication",
         "model": model,
-        "canonical_id": int(chosen),
+        "canonical_id": str(chosen),
         "confidence": float(confidence),
         "rationale": rationale or None,
         "outcome": "link_existing",
@@ -169,6 +171,6 @@ def adjudicate_ambiguous_plan_with_llm(
     merged = tuple(list(plan.resolution_reasons) + [extra])
     return CanonicalPersistPlan(
         decision=CanonicalPersistDecision.LINK_EXISTING,
-        existing_canonical_id=int(chosen),
+        existing_canonical_id=str(chosen),
         resolution_reasons=merged,
     )

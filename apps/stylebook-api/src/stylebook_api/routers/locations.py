@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from backfield_auth.gate import require_project_access
 from backfield_db import (
@@ -90,7 +91,7 @@ class LocationResponse(BaseModel):
     notes: str | None = None
     canonical_link_status: str | None = None
     canonical_review_reasons_json: list[Any] | dict[str, Any] | None = None
-    stylebook_location_canonical_id: int | None = None
+    stylebook_location_canonical_id: str | None = None
 
     @classmethod
     def from_row(cls, row: SubstrateLocation, mention_count: int = 0) -> LocationResponse:
@@ -112,7 +113,7 @@ class LocationResponse(BaseModel):
             notes=None,
             canonical_link_status=str(row.canonical_link_status),
             canonical_review_reasons_json=row.canonical_review_reasons_json,
-            stylebook_location_canonical_id=int(canon_fk) if canon_fk is not None else None,
+            stylebook_location_canonical_id=str(canon_fk) if canon_fk is not None else None,
         )
 
 
@@ -198,7 +199,7 @@ def _persist_new_catalog_canonical(
     )
     session.commit()
     session.refresh(canon)
-    cid = int(canon.id)  # type: ignore[arg-type]
+    cid = str(canon.id)
     mc = _mention_counts_by_canonical(session, project_id=int(project.id), canonical_ids=[cid])
     lc = _linked_substrate_counts(session, project_id=int(project.id), canonical_ids=[cid])
     return CanonicalLocationResponse.from_canonical(
@@ -256,8 +257,8 @@ def _mention_counts(session: Session, location_ids: list[int]) -> dict[int, int]
 
 
 def _mention_counts_by_canonical(
-    session: Session, *, project_id: int, canonical_ids: list[int]
-) -> dict[int, int]:
+    session: Session, *, project_id: int, canonical_ids: list[str]
+) -> dict[str, int]:
     if not canonical_ids:
         return {}
     rows = session.exec(
@@ -274,16 +275,16 @@ def _mention_counts_by_canonical(
         )
         .group_by(SubstrateLocation.stylebook_location_canonical_id)
     ).all()
-    out: dict[int, int] = {}
+    out: dict[str, int] = {}
     for cid, cnt in rows:
         if cid is not None:
-            out[int(cid)] = int(cnt)
+            out[str(cid)] = int(cnt)
     return out
 
 
 def _linked_substrate_counts(
-    session: Session, *, project_id: int, canonical_ids: list[int]
-) -> dict[int, int]:
+    session: Session, *, project_id: int, canonical_ids: list[str]
+) -> dict[str, int]:
     if not canonical_ids:
         return {}
     rows = session.exec(
@@ -297,17 +298,18 @@ def _linked_substrate_counts(
         )
         .group_by(SubstrateLocation.stylebook_location_canonical_id)
     ).all()
-    out: dict[int, int] = {}
+    out: dict[str, int] = {}
     for cid, cnt in rows:
         if cid is not None:
-            out[int(cid)] = int(cnt)
+            out[str(cid)] = int(cnt)
     return out
 
 
 class CanonicalLocationResponse(BaseModel):
     """One ``stylebook_location_canonical`` row (not a substrate location)."""
 
-    id: int
+    id: str
+    slug: str
     label: str
     location_type: str | None = None
     formatted_address: str | None = None
@@ -328,7 +330,8 @@ class CanonicalLocationResponse(BaseModel):
         mention_count: int = 0,
     ) -> CanonicalLocationResponse:
         return cls(
-            id=int(canon.id),  # type: ignore[arg-type]
+            id=str(canon.id),
+            slug=str(canon.slug),
             label=str(canon.label),
             location_type=canon.location_type,
             formatted_address=canon.formatted_address,
@@ -381,7 +384,7 @@ class LinkedMention(BaseModel):
 
 
 class LocationMentionsResponse(BaseModel):
-    canonical_location_id: int
+    canonical_location_id: str
     canonical_name: str
     mentions: list[LinkedMention]
     total: int
@@ -467,14 +470,14 @@ def list_canonical_locations(
         .limit(limit)
     )
     rows = list(session.exec(list_stmt).all())
-    cids = [int(r.id) for r in rows if r.id is not None]
+    cids = [str(r.id) for r in rows if r.id is not None]
     mc = _mention_counts_by_canonical(session, project_id=int(proj.id), canonical_ids=cids)
     lc = _linked_substrate_counts(session, project_id=int(proj.id), canonical_ids=cids)
     out = [
         CanonicalLocationResponse.from_canonical(
             r,
-            linked_substrate_count=lc.get(int(r.id), 0),  # type: ignore[arg-type]
-            mention_count=mc.get(int(r.id), 0),  # type: ignore[arg-type]
+            linked_substrate_count=lc.get(str(r.id), 0),
+            mention_count=mc.get(str(r.id), 0),
         )
         for r in rows
     ]
@@ -514,7 +517,7 @@ def create_canonical_location(
 
 @router.get("/canonical-locations/{canonical_id}", response_model=CanonicalLocationResponse)
 def get_canonical_location(
-    canonical_id: int,
+    canonical_id: UUID,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -522,10 +525,10 @@ def get_canonical_location(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj)
-    canon = session.get(StylebookLocationCanonical, canonical_id)
+    canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
-    cid = int(canon.id)  # type: ignore[arg-type]
+    cid = str(canon.id)
     mc = _mention_counts_by_canonical(session, project_id=int(proj.id), canonical_ids=[cid])
     lc = _linked_substrate_counts(session, project_id=int(proj.id), canonical_ids=[cid])
     return CanonicalLocationResponse.from_canonical(
@@ -540,7 +543,7 @@ def get_canonical_location(
     response_model=LinkedSubstratesResponse,
 )
 def list_canonical_linked_substrates(
-    canonical_id: int,
+    canonical_id: UUID,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -549,7 +552,7 @@ def list_canonical_linked_substrates(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj)
-    canon = session.get(StylebookLocationCanonical, canonical_id)
+    canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
     rows = list(
@@ -557,7 +560,7 @@ def list_canonical_linked_substrates(
             select(SubstrateLocation)
             .where(
                 SubstrateLocation.project_id == int(proj.id),
-                SubstrateLocation.stylebook_location_canonical_id == int(canonical_id),
+                SubstrateLocation.stylebook_location_canonical_id == str(canonical_id),
             )
             .order_by(col(SubstrateLocation.name))
         ).all()
@@ -582,7 +585,7 @@ def list_canonical_linked_substrates(
     response_model=LocationMentionsResponse,
 )
 def list_canonical_location_mentions(
-    canonical_id: int,
+    canonical_id: UUID,
     project_slug: str = Query(...),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -598,12 +601,12 @@ def list_canonical_location_mentions(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj)
-    canon = session.get(StylebookLocationCanonical, canonical_id)
+    canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
 
     base_where: list[ColumnElement[bool]] = [
-        SubstrateLocation.stylebook_location_canonical_id == canonical_id,
+        SubstrateLocation.stylebook_location_canonical_id == str(canonical_id),
         SubstrateLocation.project_id == int(proj.id),
         SubstrateLocationMention.deleted == False,  # noqa: E712
         SubstrateArticle.project_id == int(proj.id),
@@ -671,7 +674,7 @@ def list_canonical_location_mentions(
         )
 
     return LocationMentionsResponse(
-        canonical_location_id=canonical_id,
+        canonical_location_id=str(canonical_id),
         canonical_name=str(canon.label),
         mentions=mentions_out,
         total=total,
@@ -682,7 +685,7 @@ def list_canonical_location_mentions(
 
 @router.patch("/canonical-locations/{canonical_id}", response_model=CanonicalLocationResponse)
 def patch_canonical_location(
-    canonical_id: int,
+    canonical_id: UUID,
     body: PatchCanonicalLocationBody,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
@@ -691,7 +694,7 @@ def patch_canonical_location(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj)
-    canon = session.get(StylebookLocationCanonical, canonical_id)
+    canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
     updates = body.model_dump(exclude_unset=True)
@@ -714,7 +717,7 @@ def patch_canonical_location(
     session.add(canon)
     session.commit()
     session.refresh(canon)
-    cid = int(canon.id)  # type: ignore[arg-type]
+    cid = str(canon.id)
     mc = _mention_counts_by_canonical(session, project_id=int(proj.id), canonical_ids=[cid])
     lc = _linked_substrate_counts(session, project_id=int(proj.id), canonical_ids=[cid])
     return CanonicalLocationResponse.from_canonical(
@@ -726,7 +729,7 @@ def patch_canonical_location(
 
 @router.delete("/canonical-locations/{canonical_id}")
 def delete_canonical_location(
-    canonical_id: int,
+    canonical_id: UUID,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -735,14 +738,14 @@ def delete_canonical_location(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj)
-    canon = session.get(StylebookLocationCanonical, canonical_id)
+    canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
 
     linked = session.exec(
         select(SubstrateLocation).where(
             SubstrateLocation.project_id == int(proj.id),
-            SubstrateLocation.stylebook_location_canonical_id == canonical_id,
+            SubstrateLocation.stylebook_location_canonical_id == str(canonical_id),
         )
     ).all()
     for loc in linked:
@@ -751,14 +754,18 @@ def delete_canonical_location(
         loc.canonical_review_reasons_json = [
             {
                 "code": "reset_pending_after_canonical_deleted",
-                "deleted_canonical_id": int(canonical_id),
+                "deleted_canonical_id": str(canonical_id),
             }
         ]
         session.add(loc)
 
     session.delete(canon)
     session.commit()
-    return {"message": "deleted", "id": canonical_id, "unlinked_substrate_count": len(linked)}
+    return {
+        "message": "deleted",
+        "id": str(canonical_id),
+        "unlinked_substrate_count": len(linked),
+    }
 
 
 @router.get("/locations", response_model=PaginatedLocationResponse)
@@ -876,7 +883,7 @@ def get_location(
 
 
 class LinkCanonicalBody(BaseModel):
-    stylebook_location_canonical_id: int
+    stylebook_location_canonical_id: UUID
 
 
 class LinkCanonicalResponse(BaseModel):
@@ -925,7 +932,7 @@ def link_substrate_to_canonical_route(
             session,
             stylebook_id=stylebook_id,
             location=loc,
-            target_canonical_id=int(body.stylebook_location_canonical_id),
+            target_canonical_id=str(body.stylebook_location_canonical_id),
             provenance="stylebook_ui_link",
         )
     except ValueError as e:
@@ -1013,7 +1020,7 @@ def patch_location_geometry(
 
 @router.patch("/canonical-locations/{canonical_id}/geometry")
 def patch_canonical_location_geometry(
-    canonical_id: int,
+    canonical_id: UUID,
     body: PatchCanonicalGeometryBody,
     project_slug: str = Query(...),
     session: Session = Depends(get_session),
@@ -1023,14 +1030,14 @@ def patch_canonical_location_geometry(
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     stylebook_id = _require_stylebook_id(session, proj)
-    canon = session.get(StylebookLocationCanonical, canonical_id)
+    canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
     canon.geometry_json = body.geometry_json
     canon.geometry_type = body.geometry_json.get("type") if body.geometry_json else None
     session.add(canon)
     session.commit()
-    return {"message": "updated", "id": int(canon.id)}  # type: ignore[arg-type]
+    return {"message": "updated", "id": str(canon.id)}
 
 
 @router.delete("/locations/{location_id}")
@@ -1142,7 +1149,7 @@ def list_location_mentions(
         )
 
     return LocationMentionsResponse(
-        canonical_location_id=location_id,
+        canonical_location_id=str(loc.stylebook_location_canonical_id or location_id),
         canonical_name=str(loc.name),
         mentions=mentions_out,
         total=total,

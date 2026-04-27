@@ -33,12 +33,12 @@ export type EntityType = ConnectionsEntityType
 
 interface ConnectionsSectionProps {
   entityType: EntityType
-  entityId: number
+  entityId: string | number
   projectSlug: string
   entityDisplayName: string
 }
 
-function getDetailUrl(entityType: EntityType, entityId: number, projectSlug: string): string {
+function getDetailUrl(entityType: EntityType, entityId: string | number, projectSlug: string): string {
   const base = window.location.origin
   if (entityType === 'person') {
     return `${base}/people/canonical/${entityId}?project=${projectSlug}`
@@ -64,7 +64,7 @@ export default function ConnectionsSection({
 
   const [addOpen, setAddOpen] = useState(false)
   const [selectorOpen, setSelectorOpen] = useState(false)
-  const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null)
+  const [selectedTargetId, setSelectedTargetId] = useState<string | number | null>(null)
   const [selectedTargetName, setSelectedTargetName] = useState<string | null>(null)
   const [addTargetType, setAddTargetType] = useState<'person' | 'location' | 'organization' | 'work'>('person')
   const [nature, setNature] = useState('')
@@ -85,7 +85,7 @@ export default function ConnectionsSection({
     setError(null)
     try {
       if (entityType === "location") {
-        const res = await listConnectionsForLocation(entityId, projectSlug)
+        const res = await listConnectionsForLocation(String(entityId), projectSlug)
         setConnections(res.connections)
       } else {
         setConnections([])
@@ -135,7 +135,7 @@ export default function ConnectionsSection({
       if (entityType !== "location") {
         throw new Error("Connections can only be edited from canonical location detail in this build.")
       }
-      await createConnectionForLocation(entityId, projectSlug, {
+      await createConnectionForLocation(String(entityId), projectSlug, {
         to_entity_type: toType,
         to_entity_id: selectedTargetId,
         nature: nature.trim(),
@@ -161,7 +161,7 @@ export default function ConnectionsSection({
       if (entityType !== "location") {
         throw new Error("Connections can only be edited from canonical location detail in this build.")
       }
-      await updateConnectionForLocation(entityId, editConnection.id, projectSlug, {
+      await updateConnectionForLocation(String(entityId), editConnection.id, projectSlug, {
         nature: editNature.trim(),
       })
       setEditConnection(null)
@@ -180,7 +180,7 @@ export default function ConnectionsSection({
       if (entityType !== "location") {
         throw new Error("Connections can only be edited from canonical location detail in this build.")
       }
-      await deleteConnectionForLocation(entityId, deleteConnection.id, projectSlug)
+      await deleteConnectionForLocation(String(entityId), deleteConnection.id, projectSlug)
       setDeleteConnection(null)
       fetchConnections()
     } catch (e) {
@@ -191,7 +191,7 @@ export default function ConnectionsSection({
   }
 
   const isFrom = (conn: Connection) =>
-    conn.from_entity_type === entityType && conn.from_entity_id === entityId
+    conn.from_entity_type === entityType && String(conn.from_entity_id) === String(entityId)
   const otherDisplayName = (conn: Connection) =>
     isFrom(conn) ? conn.to_display_name : conn.from_display_name
   const otherType = (conn: Connection): EntityType =>

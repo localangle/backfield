@@ -5,10 +5,10 @@ import type { WorkPickerRow } from "@/lib/entityConfigs/connectionPickers"
 interface WorkSelectorProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSelect: (workId: number, displayName?: string) => void
+  onSelect: (workId: string | number, displayName?: string) => void
   projectSlug: string
   candidateNames?: string[]
-  excludeIds?: number[]
+  excludeIds?: Array<string | number>
 }
 
 export default function WorkSelector({

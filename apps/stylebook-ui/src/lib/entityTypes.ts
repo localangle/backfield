@@ -48,20 +48,20 @@ export interface ApiConfig<T> {
     limit?: number,
     offset?: number,
   ) => Promise<unknown>
-  getDetail: (id: number, projectSlug: string) => Promise<T>
+  getDetail: (id: string | number, projectSlug: string) => Promise<T>
   createCanonical: (projectSlug: string, data: unknown) => Promise<T>
-  updateCanonical: (id: number, projectSlug: string, data: unknown) => Promise<T>
-  deleteCanonical: (id: number, projectSlug: string) => Promise<unknown>
+  updateCanonical: (id: string | number, projectSlug: string, data: unknown) => Promise<T>
+  deleteCanonical: (id: string | number, projectSlug: string) => Promise<unknown>
   acceptCandidate: (candidateId: number, projectSlug: string, data: unknown) => Promise<unknown>
   bulkAcceptCandidates: (projectSlug: string, data: unknown) => Promise<unknown>
-  linkCandidateToExisting: (candidateId: number, projectSlug: string, canonicalId: number) => Promise<unknown>
+  linkCandidateToExisting: (candidateId: number, projectSlug: string, canonicalId: string | number) => Promise<unknown>
   createCanonicalFromCluster: (
     projectSlug: string,
     candidateIds: number[],
     useRepresentative?: boolean,
   ) => Promise<unknown>
   getMentions: (
-    id: number,
+    id: string | number,
     projectSlug: string,
     limit?: number,
     offset?: number,
@@ -70,10 +70,10 @@ export interface ApiConfig<T> {
   ) => Promise<unknown>
   unlink: (id: number, projectSlug: string, data: unknown) => Promise<unknown>
   bulkUnlink: (id: number, projectSlug: string, links: unknown[]) => Promise<unknown>
-  getMeta: (id: number, projectSlug: string) => Promise<unknown>
-  createMeta: (id: number, projectSlug: string, data: unknown) => Promise<unknown>
-  updateMeta: (id: number, metaId: number, projectSlug: string, data: unknown) => Promise<unknown>
-  deleteMeta: (id: number, metaId: number, projectSlug: string) => Promise<unknown>
+  getMeta: (id: string | number, projectSlug: string) => Promise<unknown>
+  createMeta: (id: string | number, projectSlug: string, data: unknown) => Promise<unknown>
+  updateMeta: (id: string | number, metaId: number, projectSlug: string, data: unknown) => Promise<unknown>
+  deleteMeta: (id: string | number, metaId: number, projectSlug: string) => Promise<unknown>
 }
 
 export interface EntityConfig<T> {

@@ -172,8 +172,8 @@ export default function LocationCandidates() {
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
   const [deferringId, setDeferringId] = useState<number | null>(null)
   const [linkModalId, setLinkModalId] = useState<number | null>(null)
-  const [linkModalInitialCanonicalId, setLinkModalInitialCanonicalId] = useState<number | null>(
-    null
+  const [linkModalInitialCanonicalId, setLinkModalInitialCanonicalId] = useState<string | null>(
+    null,
   )
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [contextById, setContextById] = useState<Record<number, CandidateContextResponse>>({})
@@ -188,7 +188,7 @@ export default function LocationCandidates() {
 
   const [createdToast, setCreatedToast] = useState<{
     canonicalLabel: string
-    canonicalId: number
+    canonicalId: string
   } | null>(null)
   /** Same query as “show similar candidates”: open queue + q + limit 100, ranked top 5. */
   const [toastFollowupLoading, setToastFollowupLoading] = useState(false)
@@ -198,7 +198,7 @@ export default function LocationCandidates() {
   const [toastLinkBusyId, setToastLinkBusyId] = useState<number | null>(null)
   const [toastLinkError, setToastLinkError] = useState<string | null>(null)
   const [createLinkNudge, setCreateLinkNudge] = useState<{
-    canonicalId: number
+    canonicalId: string
     label: string
   } | null>(null)
 
@@ -258,7 +258,7 @@ export default function LocationCandidates() {
       }
       try {
         const res = await getSuggestedCanonicals(projectSlug, substrateLocationId, 16)
-        let best: { canonicalId: number; label: string; score: number } | null = null
+        let best: { canonicalId: string; label: string; score: number } | null = null
         for (const s of res.suggestions) {
           const score = stringSimilarityForLabels(draft, s.label)
           if (!best || score > best.score) {
@@ -470,7 +470,7 @@ export default function LocationCandidates() {
       await refreshListQuiet()
       closeCreateCanonicalModal()
       const cid = acceptRes.stylebook_location_canonical_id
-      if (typeof cid !== "number") {
+      if (typeof cid !== "string" || !cid.trim()) {
         setError(
           "Canonical was created, but the server did not return its id. Reload the page if you need to link similar candidates from the toast.",
         )

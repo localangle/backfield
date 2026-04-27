@@ -24,7 +24,7 @@ def test_string_score_exact_normalized_alias() -> None:
         normalized_name="west garfield park, chicago, il",
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="Other",
         normalized_aliases=("west garfield park, chicago, il",),
     )
@@ -37,7 +37,7 @@ def test_loose_normalization_treats_punctuation_variants_as_exact() -> None:
         normalized_name="west garfield park chicago il",
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="West Garfield Park, Chicago, IL",
         normalized_aliases=(),
     )
@@ -50,7 +50,7 @@ def test_string_score_fuzzy_close_strings() -> None:
         normalized_name="west garfield park, chicago, il",
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="West Garfield Park, Chicago, IL",
         normalized_aliases=("west garfield park chicago il",),
     )
@@ -66,7 +66,7 @@ def test_combined_score_boosts_when_geometry_agrees() -> None:
         geometry_json=pt,
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="x",
         normalized_aliases=("x",),
         geometry_json=pt,
@@ -105,7 +105,7 @@ def test_combined_score_never_below_string_only() -> None:
         geometry_json=chicago,
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="hello earth",
         normalized_aliases=("hello earth",),
         geometry_json=far,
@@ -121,7 +121,7 @@ def test_state_abbrev_vs_full_name_token_coverage() -> None:
         normalized_name="chicago, il",
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="Chicago, Illinois",
         normalized_aliases=(),
     )
@@ -140,7 +140,7 @@ def test_formatted_address_extra_tokens_match_canonical_label() -> None:
         formatted_address="West Garfield Park, West Side, Chicago, IL, USA",
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="West Garfield Park, Chicago, IL",
         normalized_aliases=(),
     )
@@ -160,7 +160,7 @@ def test_formatted_address_city_tail_does_not_inflate_score_for_unrelated_place(
         formatted_address="1020 West Sheridan Road, North Side, Chicago, IL, USA",
     )
     chicago_feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="Chicago, IL",
         normalized_aliases=("chicago, il",),
     )
@@ -183,7 +183,7 @@ def test_alias_token_coverage_does_not_fire_via_formatted_address() -> None:
         formatted_address="S Kedzie Ave and W 39th Pl, Chicago, IL 60632",
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="Chicago, IL",
         # Alias that crept in from a prior wrong link (intersection name)
         normalized_aliases=(
@@ -208,7 +208,7 @@ def test_policy_match_non_address_ignores_spatial_penalty() -> None:
         geometry_json=chicago,
     )
     feat = CanonicalMatchFeatures(
-        canonical_id=1,
+        canonical_id="1",
         label="West Garfield Park, Chicago, IL",
         normalized_aliases=(),
         geometry_json=far,

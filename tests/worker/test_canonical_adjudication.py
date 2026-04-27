@@ -57,6 +57,7 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
         c1 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Alpha Place",
+            slug="alpha-place",
             location_type="place",
             primary_substrate_location_id=None,
             status="active",
@@ -64,6 +65,7 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
         c2 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Beta Place",
+            slug="beta-place",
             location_type="place",
             primary_substrate_location_id=None,
             status="active",
@@ -73,8 +75,8 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
         session.commit()
         session.refresh(c1)
         session.refresh(c2)
-        id1 = int(c1.id)  # type: ignore[arg-type]
-        id2 = int(c2.id)  # type: ignore[arg-type]
+        id1 = str(c1.id)
+        id2 = str(c2.id)
 
         loc = SubstrateLocation(
             project_id=pid,
@@ -101,7 +103,7 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": {id1}, "confidence": 0.92, '
+                f'{{"canonical_id": "{id1}", "confidence": 0.92, '
                 f'"rationale": "Name matches Alpha."}}'
             )
 
@@ -134,6 +136,7 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
         c1 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Austin, TX",
+            slug="austin-tx",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -141,7 +144,7 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
         session.add(c1)
         session.commit()
         session.refresh(c1)
-        id1 = int(c1.id)  # type: ignore[arg-type]
+        id1 = str(c1.id)
 
         loc = SubstrateLocation(
             project_id=pid,
@@ -199,6 +202,7 @@ def test_adjudicate_rejects_link_when_confidence_below_floor(monkeypatch) -> Non
         c1 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Alpha Place",
+            slug="alpha-place-lowconf",
             location_type="place",
             primary_substrate_location_id=None,
             status="active",
@@ -206,7 +210,7 @@ def test_adjudicate_rejects_link_when_confidence_below_floor(monkeypatch) -> Non
         session.add(c1)
         session.commit()
         session.refresh(c1)
-        id1 = int(c1.id)  # type: ignore[arg-type]
+        id1 = str(c1.id)
 
         loc = SubstrateLocation(
             project_id=pid,
@@ -233,7 +237,7 @@ def test_adjudicate_rejects_link_when_confidence_below_floor(monkeypatch) -> Non
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": {id1}, "confidence": 0.85, '
+                f'{{"canonical_id": "{id1}", "confidence": 0.85, '
                 f'"rationale": "Probably the same POI."}}'
             )
 
@@ -262,6 +266,7 @@ def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
         c1 = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Gamma City",
+            slug="gamma-city",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -269,7 +274,7 @@ def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
         session.add(c1)
         session.commit()
         session.refresh(c1)
-        id1 = int(c1.id)  # type: ignore[arg-type]
+        id1 = str(c1.id)
 
         loc = SubstrateLocation(
             project_id=pid,
@@ -296,7 +301,7 @@ def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": {id1}, "confidence": {ADJUDICATION_LINK_MIN_CONFIDENCE}, '
+                f'{{"canonical_id": "{id1}", "confidence": {ADJUDICATION_LINK_MIN_CONFIDENCE}, '
                 f'"rationale": "Exact label match."}}'
             )
 
@@ -324,6 +329,7 @@ def test_adjudicate_rejects_llm_choice_that_violates_type_matrix(monkeypatch) ->
         c_city = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Chicago, IL",
+            slug="chicago-il",
             location_type="city",
             primary_substrate_location_id=None,
             status="active",
@@ -331,7 +337,7 @@ def test_adjudicate_rejects_llm_choice_that_violates_type_matrix(monkeypatch) ->
         session.add(c_city)
         session.commit()
         session.refresh(c_city)
-        cid = int(c_city.id)  # type: ignore[arg-type]
+        cid = str(c_city.id)
 
         loc = SubstrateLocation(
             project_id=pid,
@@ -358,7 +364,7 @@ def test_adjudicate_rejects_llm_choice_that_violates_type_matrix(monkeypatch) ->
 
         def _fake_llm(*_a, **_k) -> str:
             return (
-                f'{{"canonical_id": {cid}, "confidence": 0.95, '
+                f'{{"canonical_id": "{cid}", "confidence": 0.95, '
                 f'"rationale": "Name overlap."}}'
             )
 

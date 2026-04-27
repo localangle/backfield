@@ -13,6 +13,7 @@ from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_stylebook.canonical_policy import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_stylebook.canonical_slug import allocate_unique_canonical_slug
 
 
 def assert_canonical_link_invariant(location: SubstrateLocation) -> None:
@@ -37,7 +38,7 @@ def _normalize_alias_text(text: str) -> str:
 def upsert_alias_for_canonical_text(
     session: Session,
     *,
-    canon_id: int,
+    canon_id: str,
     alias_text: str,
     normalized_alias: str,
     provenance: str,
@@ -69,7 +70,7 @@ def upsert_alias_for_canonical_text(
 def _upsert_alias_for_canonical(
     session: Session,
     *,
-    canon_id: int,
+    canon_id: str,
     location: SubstrateLocation,
     provenance: str,
 ) -> None:
@@ -92,7 +93,7 @@ def refresh_aliases_for_linked_location(
     """Upsert alias for a substrate row that already has ``stylebook_location_canonical_id``."""
     if location.id is None or location.stylebook_location_canonical_id is None:
         return
-    canon_id = int(location.stylebook_location_canonical_id)
+    canon_id = str(location.stylebook_location_canonical_id)
     canon = session.get(StylebookLocationCanonical, canon_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return
@@ -109,7 +110,7 @@ def link_to_existing_canonical(
     *,
     stylebook_id: int,
     location: SubstrateLocation,
-    canonical_id: int,
+    canonical_id: str,
     provenance: str = "substrate_ingest",
     audit_reasons: list[dict[str, Any]] | None = None,
 ) -> None:
@@ -119,14 +120,14 @@ def link_to_existing_canonical(
     canon = session.get(StylebookLocationCanonical, canonical_id)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         return
-    location.stylebook_location_canonical_id = int(canon.id)  # type: ignore[arg-type]
+    location.stylebook_location_canonical_id = str(canon.id)
     location.canonical_link_status = CANONICAL_LINK_LINKED
     location.canonical_review_reasons_json = (
         [dict(r) for r in audit_reasons] if audit_reasons is not None else None
     )
     session.add(location)
     session.flush()
-    cid = int(canon.id)  # type: ignore[arg-type]
+    cid = str(canon.id)
     _upsert_alias_for_canonical(
         session,
         canon_id=cid,
@@ -154,9 +155,11 @@ def create_standalone_canonical(
     geometry_type_str = str(gt_raw) if gt_raw is not None else None
     lt = (location_type or "").strip().lower() or None
     fa = (formatted_address or "").strip() or None
+    slug = allocate_unique_canonical_slug(session, stylebook_id=stylebook_id, label=clean)
     canon = StylebookLocationCanonical(
         stylebook_id=stylebook_id,
         label=clean,
+        slug=slug,
         location_type=lt,
         formatted_address=fa,
         primary_substrate_location_id=None,
@@ -167,7 +170,7 @@ def create_standalone_canonical(
     )
     session.add(canon)
     session.flush()
-    cid = int(canon.id)  # type: ignore[arg-type]
+    cid = str(canon.id)
     upsert_alias_for_canonical_text(
         session,
         canon_id=cid,
@@ -193,9 +196,13 @@ def materialize_new_canonical_and_link(
     gj = location.geometry_json
     lt = (location.location_type or "").strip().lower() or None
     fa = (location.formatted_address or "").strip() or None
+    slug = allocate_unique_canonical_slug(
+        session, stylebook_id=stylebook_id, label=str(location.name)
+    )
     canon = StylebookLocationCanonical(
         stylebook_id=stylebook_id,
         label=str(location.name),
+        slug=slug,
         location_type=lt,
         formatted_address=fa,
         primary_substrate_location_id=None,
@@ -206,7 +213,7 @@ def materialize_new_canonical_and_link(
     )
     session.add(canon)
     session.flush()
-    cid = int(canon.id)  # type: ignore[arg-type]
+    cid = str(canon.id)
     location.stylebook_location_canonical_id = cid
     location.canonical_link_status = CANONICAL_LINK_LINKED
     location.canonical_review_reasons_json = (
@@ -239,7 +246,7 @@ def _canonical_suggestion_from_rules_plan(plan: CanonicalPersistPlan) -> dict[st
             "code": "canonical_suggestion",
             "source": "rules_plan",
             "suggested_action": "link_existing",
-            "stylebook_location_canonical_id": int(plan.existing_canonical_id),
+            "stylebook_location_canonical_id": str(plan.existing_canonical_id),
         }
     if plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW:
         return {
@@ -304,7 +311,7 @@ def apply_canonical_persist_plan(
             session,
             stylebook_id=stylebook_id,
             location=location,
-            canonical_id=int(plan.existing_canonical_id),
+            canonical_id=str(plan.existing_canonical_id),
             provenance=provenance,
             audit_reasons=reasons,
         )
