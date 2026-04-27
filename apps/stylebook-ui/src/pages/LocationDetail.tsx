@@ -435,7 +435,7 @@ export default function LocationDetail() {
       <Card
         className={cn(
           geometryEditing &&
-            "border-2 border-foreground/80 bg-primary/5 shadow-sm transition-colors",
+            "border-2 border-foreground/80 bg-white shadow-sm transition-colors",
         )}
       >
         <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
