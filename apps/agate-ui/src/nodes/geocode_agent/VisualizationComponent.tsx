@@ -42,9 +42,9 @@ const nodeMetadata = {
 
 import React from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import MapboxMap from '@/components/visualizations/MapboxMap'
+import { LeafletMap, LayerFilterPopover, layersFromFeatures, defaultVisibility } from '@backfield/ui'
 import type { MapPointFeature, MapBoundingBoxFeature, VisualizationProps, VisualizationDescriptor } from '@/lib/visualizations'
+import { useEffect, useMemo, useState } from 'react'
 
 /**
  * Build visualization descriptor for GeocodeAgent node output.
@@ -303,10 +303,81 @@ export function buildVisualization(
     return null
   }
 
+  function pointsToGeoJSON(features: MapPointFeature[]) {
+    return {
+      type: 'FeatureCollection' as const,
+      features: features.map((p) => ({
+        type: 'Feature' as const,
+        properties: {
+          id: p.id,
+          label: p.label ?? '',
+          description: p.description ?? '',
+          group: p.group ?? 'points',
+        },
+        geometry: { type: 'Point' as const, coordinates: p.coordinates },
+      })),
+    }
+  }
+
+  function polygonsToGeoJSON(features: MapBoundingBoxFeature[]) {
+    const ringFromBbox = (bbox: [number, number, number, number]) => {
+      const [w, s, e, n] = bbox
+      return [
+        [w, s],
+        [e, s],
+        [e, n],
+        [w, n],
+        [w, s],
+      ] as [number, number][]
+    }
+    return {
+      type: 'FeatureCollection' as const,
+      features: features.map((p) => ({
+        type: 'Feature' as const,
+        properties: {
+          id: p.id,
+          label: p.label ?? '',
+          description: p.description ?? '',
+          group: p.group ?? 'areas',
+        },
+        geometry: (p.geometry
+          ? p.geometry
+          : { type: 'Polygon' as const, coordinates: [ringFromBbox(p.bbox)] }) as any,
+      })),
+    }
+  }
+
   // Visualization component
-  const GeocodeVisualization: React.FC<VisualizationProps> = ({ mapboxToken, data }) => {
+  const GeocodeVisualization: React.FC<VisualizationProps> = ({ data }) => {
     if (!data) return null
-    
+
+    const layers = useMemo(() => {
+      return layersFromFeatures([
+        ...data.points.map((p) => ({ group: p.group ?? 'points' })),
+        ...data.polygons.map((p) => ({ group: p.group ?? 'areas' })),
+      ])
+    }, [data.points, data.polygons])
+
+    const [visibility, setVisibility] = useState(() => defaultVisibility(layers))
+    useEffect(() => {
+      setVisibility((prev) => {
+        // Merge: keep existing toggles, default new layers to visible
+        const next = { ...prev }
+        for (const layer of layers) {
+          if (!(layer.id in next)) next[layer.id] = true
+        }
+        return next
+      })
+    }, [layers])
+
+    const filteredPoints = useMemo(() => {
+      return data.points.filter((p) => visibility[p.group ?? 'points'] ?? true)
+    }, [data.points, visibility])
+
+    const filteredPolygons = useMemo(() => {
+      return data.polygons.filter((p) => visibility[p.group ?? 'areas'] ?? true)
+    }, [data.polygons, visibility])
+
     return (
       <Card>
         <CardHeader>
@@ -316,19 +387,10 @@ export function buildVisualization(
           )}
         </CardHeader>
         <CardContent>
-          {mapboxToken ? (
-            <MapboxMap
-              accessToken={mapboxToken}
-              points={data.points}
-              polygons={data.polygons}
-            />
-          ) : (
-            <Alert>
-              <AlertDescription>
-                A Mapbox API token is required to view this map. Add a <code>MAPBOX_API_TOKEN</code> in the project settings to enable map visualizations.
-              </AlertDescription>
-            </Alert>
-          )}
+          <div className="space-y-3">
+            <LayerFilterPopover layers={layers} visibility={visibility} onChange={setVisibility} />
+            <LeafletMap points={pointsToGeoJSON(filteredPoints) as any} polygons={polygonsToGeoJSON(filteredPolygons) as any} />
+          </div>
         </CardContent>
       </Card>
     )
@@ -340,7 +402,7 @@ export function buildVisualization(
     title: 'Locations',
     description: nodeLabel !== nodeId ? nodeLabel : undefined,
     component: GeocodeVisualization,
-    requiresMapboxToken: true,
+    requiresMapboxToken: false,
     data: {
       points,
       polygons,
