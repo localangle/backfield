@@ -82,6 +82,17 @@ type GeoJsonGeometry =
   | { type: "Polygon"; coordinates: [number, number][][] }
   | { type: "MultiPolygon"; coordinates: [number, number][][][] }
 
+function isPointGeometry(geometry: Record<string, unknown> | null): geometry is {
+  type: "Point"
+  coordinates: [number, number]
+} {
+  if (!geometry || typeof geometry !== "object") return false
+  const g = geometry as Record<string, unknown>
+  if (g.type !== "Point") return false
+  const c = g.coordinates
+  return Array.isArray(c) && c.length === 2 && typeof c[0] === "number" && typeof c[1] === "number"
+}
+
 function geometryToFeatureCollections(
   geometry: Record<string, unknown> | null,
 ): { points: unknown; polygons: unknown } {
@@ -464,7 +475,30 @@ export default function LocationDetail() {
             points={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).points as any}
             polygons={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).polygons as any}
             showPopups={false}
+            onMapClick={
+              geometryEditing && (!geometryDraft || isPointGeometry(geometryDraft))
+                ? ({ latlng }) => {
+                    setGeometryDraft({ type: "Point", coordinates: [latlng.lng, latlng.lat] })
+                  }
+                : undefined
+            }
+            editablePoint={
+              geometryEditing && isPointGeometry(geometryDraft)
+                ? {
+                    featureId: "canonical",
+                    onChange: ({ lng, lat }) =>
+                      setGeometryDraft({ type: "Point", coordinates: [lng, lat] }),
+                  }
+                : null
+            }
           />
+          {geometryEditing && isPointGeometry(geometryDraft) ? (
+            <div className="flex items-center justify-end">
+              <Button variant="outline" onClick={() => setGeometryDraft(null)} disabled={geometrySaving}>
+                Clear point
+              </Button>
+            </div>
+          ) : null}
           {geometryEditing ? (
             <SimpleGeoJsonGeometry value={geometryDraft} onChange={setGeometryDraft} />
           ) : null}
