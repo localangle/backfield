@@ -432,10 +432,22 @@ export default function LocationDetail() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card
+        className={cn(
+          geometryEditing &&
+            "border-primary/40 bg-primary/5 shadow-sm ring-1 ring-primary/20 transition-colors",
+        )}
+      >
         <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
           <div>
-            <CardTitle>Geography</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <span>Geography</span>
+              {geometryEditing ? (
+                <Badge variant="secondary" className="font-normal">
+                  Editing draft
+                </Badge>
+              ) : null}
+            </CardTitle>
             <CardDescription>
               {geometryEditing ? "Edit canonical geometry (draft) and save or cancel." : "View canonical geometry."}
             </CardDescription>
