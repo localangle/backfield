@@ -5,10 +5,10 @@ import type { PersonPickerRow } from "@/lib/entityConfigs/connectionPickers"
 interface PersonSelectorProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSelect: (personId: number, displayName?: string) => void
+  onSelect: (personId: string | number, displayName?: string) => void
   projectSlug: string
   candidateNames?: string[]
-  excludeIds?: number[]
+  excludeIds?: Array<string | number>
 }
 
 export default function PersonSelector({

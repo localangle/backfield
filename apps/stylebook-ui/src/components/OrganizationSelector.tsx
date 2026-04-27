@@ -5,10 +5,10 @@ import type { OrganizationPickerRow } from "@/lib/entityConfigs/connectionPicker
 interface OrganizationSelectorProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSelect: (organizationId: number, displayName?: string) => void
+  onSelect: (organizationId: string | number, displayName?: string) => void
   projectSlug: string
   candidateNames?: string[]
-  excludeIds?: number[]
+  excludeIds?: Array<string | number>
 }
 
 export default function OrganizationSelector({

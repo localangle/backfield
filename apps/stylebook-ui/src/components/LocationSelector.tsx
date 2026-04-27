@@ -8,7 +8,7 @@ interface LocationSelectorProps {
   onSelect: (locationId: string | number, displayName?: string) => void
   projectSlug: string
   candidateNames?: string[]
-  excludeIds?: number[]
+  excludeIds?: Array<string | number>
 }
 
 export default function LocationSelector({
