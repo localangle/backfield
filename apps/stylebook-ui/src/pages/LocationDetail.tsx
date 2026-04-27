@@ -31,6 +31,7 @@ import {
 import SimpleGeoJsonGeometry from "@/components/SimpleGeoJsonGeometry"
 import LocationMetaTab from "@/components/LocationMetaTab"
 import ConnectionsSection from "@/components/ConnectionsSection"
+import { LeafletMap } from "@backfield/ui/LeafletMap"
 import {
   Dialog,
   DialogContent,
@@ -76,6 +77,67 @@ function mentionNatureBadgeClass(raw: string | null | undefined): string {
   }
 }
 
+type GeoJsonGeometry =
+  | { type: "Point"; coordinates: [number, number] }
+  | { type: "Polygon"; coordinates: [number, number][][] }
+  | { type: "MultiPolygon"; coordinates: [number, number][][][] }
+
+function geometryToFeatureCollections(
+  geometry: Record<string, unknown> | null,
+): { points: unknown; polygons: unknown } {
+  if (!geometry || typeof geometry !== "object") {
+    return {
+      points: { type: "FeatureCollection", features: [] },
+      polygons: { type: "FeatureCollection", features: [] },
+    }
+  }
+
+  const g = geometry as Partial<GeoJsonGeometry>
+  const type = typeof g.type === "string" ? g.type : null
+
+  if (type === "Point" && Array.isArray(g.coordinates) && g.coordinates.length === 2) {
+    const coords = g.coordinates as [number, number]
+    return {
+      points: {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: { id: "canonical", label: "Canonical", group: "canonical" },
+            geometry: { type: "Point", coordinates: coords },
+          },
+        ],
+      },
+      polygons: { type: "FeatureCollection", features: [] },
+    }
+  }
+
+  if (
+    (type === "Polygon" || type === "MultiPolygon") &&
+    Array.isArray(g.coordinates) &&
+    g.coordinates.length > 0
+  ) {
+    return {
+      points: { type: "FeatureCollection", features: [] },
+      polygons: {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: { id: "canonical", label: "Canonical", group: "canonical" },
+            geometry: { type, coordinates: g.coordinates },
+          },
+        ],
+      },
+    }
+  }
+
+  return {
+    points: { type: "FeatureCollection", features: [] },
+    polygons: { type: "FeatureCollection", features: [] },
+  }
+}
+
 export default function LocationDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -89,6 +151,9 @@ export default function LocationDetail() {
   const [locationType, setLocationType] = useState("")
   const [formattedAddress, setFormattedAddress] = useState("")
   const [geometry, setGeometry] = useState<Record<string, unknown> | null>(null)
+  const [geometryEditing, setGeometryEditing] = useState(false)
+  const [geometryDraft, setGeometryDraft] = useState<Record<string, unknown> | null>(null)
+  const [geometrySaving, setGeometrySaving] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -111,6 +176,7 @@ export default function LocationDetail() {
       setLocationType(row.location_type ?? "")
       setFormattedAddress(row.formatted_address ?? "")
       setGeometry((row.geometry_json as Record<string, unknown> | undefined) ?? null)
+      setGeometryDraft((row.geometry_json as Record<string, unknown> | undefined) ?? null)
     } catch (e) {
       console.error(e)
     } finally {
@@ -204,9 +270,6 @@ export default function LocationDetail() {
         location_type: locationType.trim() === "" ? null : locationType.trim().toLowerCase(),
         formatted_address: formattedAddress.trim() === "" ? null : formattedAddress.trim(),
       })
-      if (geometry) {
-        await updateCanonicalLocationGeometry(canonicalId, projectSlug, geometry)
-      }
       setCanonical(updated)
       setEditing(false)
       await loadCanonical(canonicalId, projectSlug)
@@ -217,6 +280,26 @@ export default function LocationDetail() {
       alert(e instanceof Error ? e.message : "Save failed")
     } finally {
       setSaving(false)
+    }
+  }
+
+  const saveGeometry = async () => {
+    if (!canonical || !id || !projectSlug) return
+    if (!geometryDraft) {
+      alert("No geometry to save")
+      return
+    }
+    setGeometrySaving(true)
+    try {
+      const canonicalId = id
+      await updateCanonicalLocationGeometry(canonicalId, projectSlug, geometryDraft)
+      setGeometryEditing(false)
+      await loadCanonical(canonicalId, projectSlug, true)
+    } catch (e) {
+      console.error(e)
+      alert(e instanceof Error ? e.message : "Save geometry failed")
+    } finally {
+      setGeometrySaving(false)
     }
   }
 
@@ -256,7 +339,10 @@ export default function LocationDetail() {
                     setLabel(canonical.label)
                     setLocationType(canonical.location_type ?? "")
                     setFormattedAddress(canonical.formatted_address ?? "")
-                    setGeometry((canonical.geometry_json as Record<string, unknown> | undefined) ?? null)
+                    const nextGeom =
+                      (canonical.geometry_json as Record<string, unknown> | undefined) ?? null
+                    setGeometry(nextGeom)
+                    setGeometryDraft(nextGeom)
                   }
                   setEditing(false)
                 }}
@@ -277,7 +363,10 @@ export default function LocationDetail() {
                     setLabel(canonical.label)
                     setLocationType(canonical.location_type ?? "")
                     setFormattedAddress(canonical.formatted_address ?? "")
-                    setGeometry((canonical.geometry_json as Record<string, unknown> | undefined) ?? null)
+                    const nextGeom =
+                      (canonical.geometry_json as Record<string, unknown> | undefined) ?? null
+                    setGeometry(nextGeom)
+                    setGeometryDraft(nextGeom)
                   }
                   setEditing(true)
                 }}
@@ -332,17 +421,55 @@ export default function LocationDetail() {
         </CardContent>
       </Card>
 
-      {editing && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Geometry (GeoJSON)</CardTitle>
-            <CardDescription>Updates canonical geometry when you save</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SimpleGeoJsonGeometry value={geometry} onChange={setGeometry} />
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle>Geography</CardTitle>
+            <CardDescription>
+              {geometryEditing ? "Edit canonical geometry (draft) and save or cancel." : "View canonical geometry."}
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            {geometryEditing ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setGeometryDraft(geometry)
+                    setGeometryEditing(false)
+                  }}
+                  disabled={geometrySaving}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={() => void saveGeometry()} disabled={geometrySaving}>
+                  {geometrySaving ? "Saving…" : "Save"}
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setGeometryDraft(geometry)
+                  setGeometryEditing(true)
+                }}
+              >
+                Edit geography
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <LeafletMap
+            points={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).points as any}
+            polygons={geometryToFeatureCollections(geometryEditing ? geometryDraft : geometry).polygons as any}
+            showPopups={false}
+          />
+          {geometryEditing ? (
+            <SimpleGeoJsonGeometry value={geometryDraft} onChange={setGeometryDraft} />
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
