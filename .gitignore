@@ -1,3 +1,6 @@
+# Local PRD / issues / tasks trees (see .cursor/skills/write-a-prd, prd-to-issues, issues-to-tasks)
+prd/
+
 .venv/
 __pycache__/
 *.py[cod]
