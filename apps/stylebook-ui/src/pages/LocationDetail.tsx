@@ -650,7 +650,8 @@ export default function LocationDetail() {
               points={leafletCollections.points as any}
               polygons={leafletCollections.polygons as any}
               showPopups={false}
-              fitToData={!(geometryEditing && geometryAddMode === "rectangle" && !geometryDraft)}
+              // While editing, geometry updates constantly (drag/resize). Auto fitBounds would fight manual zoom.
+              fitToData={!geometryEditing}
               initialCenter={leafletInitialCenter}
               initialZoom={geometryEditing && geometryAddMode === "rectangle" && !geometryDraft ? 11 : null}
               tileUrl={
