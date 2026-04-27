@@ -5,6 +5,7 @@ import { CircleMarker, MapContainer, Polygon, TileLayer, useMap } from "react-le
 import "leaflet/dist/leaflet.css"
 
 type LngLat = [number, number] // [lng, lat]
+type LatLng = [number, number] // [lat, lng]
 
 type FeatureId = string
 
@@ -39,7 +40,7 @@ export type LeafletMapProps = {
   fitToData?: boolean
 }
 
-const DEFAULT_CENTER: LngLat = [-98.5795, 39.8283] // continental US
+const DEFAULT_CENTER: LatLng = [39.8283, -98.5795] // continental US
 const DEFAULT_ZOOM = 3
 
 function isFiniteNumber(v: unknown): v is number {
@@ -70,7 +71,7 @@ function normalizeFeatureCollection(input: unknown): GeoJsonFeatureCollection {
   return { type: "FeatureCollection", features }
 }
 
-function extractLngLatBounds(collections: GeoJsonFeatureCollection[]): [LngLat, LngLat] | null {
+function extractLatLngBounds(collections: GeoJsonFeatureCollection[]): [LatLng, LatLng] | null {
   let minLng = Infinity
   let minLat = Infinity
   let maxLng = -Infinity
@@ -124,12 +125,12 @@ function extractLngLatBounds(collections: GeoJsonFeatureCollection[]): [LngLat, 
 
   if (!has) return null
   return [
-    [minLng, minLat],
-    [maxLng, maxLat],
+    [minLat, minLng],
+    [maxLat, maxLng],
   ]
 }
 
-function FitToData({ bounds }: { bounds: [LngLat, LngLat] | null }) {
+function FitToData({ bounds }: { bounds: [LatLng, LatLng] | null }) {
   const map = useMap()
   useEffect(() => {
     if (!bounds) return
@@ -169,7 +170,7 @@ export function LeafletMap({
   const hasAny = normalizedPoints.features.length > 0 || normalizedPolygons.features.length > 0
 
   const bounds = useMemo(
-    () => (fitToData ? extractLngLatBounds([normalizedPoints, normalizedPolygons]) : null),
+    () => (fitToData ? extractLatLngBounds([normalizedPoints, normalizedPolygons]) : null),
     [fitToData, normalizedPoints, normalizedPolygons],
   )
 
