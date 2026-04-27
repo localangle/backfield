@@ -329,10 +329,6 @@ export default function LocationDetail() {
 
   const saveGeometry = async () => {
     if (!canonical || !id || !projectSlug) return
-    if (!geometryDraft) {
-      alert("No geometry to save")
-      return
-    }
     setGeometrySaving(true)
     try {
       const canonicalId = id
@@ -653,7 +649,14 @@ export default function LocationDetail() {
               // While editing, geometry updates constantly (drag/resize). Auto fitBounds would fight manual zoom.
               fitToData={!geometryEditing}
               initialCenter={leafletInitialCenter}
-              initialZoom={geometryEditing && geometryAddMode === "rectangle" && !geometryDraft ? 11 : null}
+              initialZoom={
+                geometryEditing && !geometryDraft && (geometryAddMode === "rectangle" || geometryAddMode === "point")
+                  ? 11
+                  : null
+              }
+              interactiveWhenEmpty={
+                geometryEditing && geometryAddMode === "point" && !geometryDraft
+              }
               tileUrl={
                 geometryEditing
                   ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"

@@ -73,5 +73,17 @@ describe("LeafletMap", () => {
       />,
     )
   })
+
+  it("renders an interactive map when interactiveWhenEmpty (add-point style UX)", () => {
+    render(
+      <LeafletMap
+        points={null}
+        polygons={null}
+        showPopups={false}
+        fitToData={false}
+        interactiveWhenEmpty
+      />,
+    )
+  })
 })
 

@@ -167,7 +167,9 @@ class PatchGeometryBody(BaseModel):
 
 
 class PatchCanonicalGeometryBody(BaseModel):
-    geometry_json: dict[str, Any]
+    """Set GeoJSON geometry, or null to clear the canonical pin/footprint."""
+
+    geometry_json: dict[str, Any] | None  # required field; use explicit JSON null to clear
 
 
 def _require_stylebook_id(session: Session, project: BackfieldProject) -> int:

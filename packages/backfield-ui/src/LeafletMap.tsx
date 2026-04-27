@@ -62,6 +62,11 @@ export type LeafletMapProps = {
     onPreview: (preview: AxisAlignedRectangleLngLat | null) => void
     onCommit: (bounds: AxisAlignedRectangleLngLat) => void
   } | null
+  /**
+   * When true, render the interactive map even if there are no points/polygons/previews yet
+   * (e.g. click-to-add point before the first geometry exists).
+   */
+  interactiveWhenEmpty?: boolean
   tileUrl?: string
   tileAttribution?: string
 }
@@ -583,6 +588,7 @@ export function LeafletMap({
   rectanglePreview = null,
   editableRectangle = null,
   rectangleDraw = null,
+  interactiveWhenEmpty = false,
   tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
   tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }: LeafletMapProps) {
@@ -663,7 +669,8 @@ export function LeafletMap({
     polygonPaths.length > 0 ||
     !!previewLeafletBounds ||
     !!editableLeafletBounds ||
-    !!rectangleDraw?.enabled
+    !!rectangleDraw?.enabled ||
+    !!interactiveWhenEmpty
 
   const bounds = useMemo(
     () => (fitToData ? extractLatLngBounds([normalizedPoints, normalizedPolygons], extraFitBounds) : null),
