@@ -36,6 +36,28 @@ describe("LeafletMap", () => {
     )
   })
 
+  it("keeps hook order when clearing data after showing the map (e.g. delete geometry)", () => {
+    const points: any = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: { id: "canonical" },
+          geometry: { type: "Point", coordinates: [-87.6298, 41.8781] },
+        },
+      ],
+    }
+    const { rerender } = render(
+      <LeafletMap
+        points={points}
+        polygons={null}
+        showPopups={false}
+        editablePoint={{ featureId: "canonical", onChange: () => {} }}
+      />,
+    )
+    rerender(<LeafletMap points={null} polygons={null} showPopups={false} editablePoint={null} />)
+  })
+
   it("renders an interactive map in rectangle draw mode even with no features", () => {
     render(
       <LeafletMap

@@ -676,14 +676,6 @@ export function LeafletMap({
     setError(null)
   }, [points, polygons])
 
-  if (!hasAny) {
-    return (
-      <div style={{ height }} className="rounded-md border border-dashed border-muted flex items-center justify-center">
-        {emptyState ?? <div className="text-sm text-muted-foreground">No geographic features.</div>}
-      </div>
-    )
-  }
-
   const editablePointFeature = useMemo(() => {
     if (!editablePoint) return null
     return normalizedPoints.features.find((f) => featureIdOf(f) === editablePoint.featureId) ?? null
@@ -715,6 +707,14 @@ export function LeafletMap({
       iconAnchor: [7, 7],
     })
   }, [editablePointCenter])
+
+  if (!hasAny) {
+    return (
+      <div style={{ height }} className="rounded-md border border-dashed border-muted flex items-center justify-center">
+        {emptyState ?? <div className="text-sm text-muted-foreground">No geographic features.</div>}
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-md overflow-hidden border border-border" style={{ height }}>
