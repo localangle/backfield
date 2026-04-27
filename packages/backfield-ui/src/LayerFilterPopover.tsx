@@ -43,7 +43,8 @@ export function LayerFilterPopover({
             sideOffset={8}
             align="end"
             className={cn(
-              "z-50 min-w-[15rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+              // Leaflet panes use high z-index values; ensure this renders above the map.
+              "z-[2000] min-w-[15rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
             )}
           >
             <div className="flex items-center justify-between gap-2 px-2 py-1.5">
