@@ -66,4 +66,6 @@ export {
 export {
   type AnalyzeGeoJsonResponse,
   analyzeImportGeoJson,
+  type ImportGeoJsonResponse,
+  importGeoJson,
 } from "@/lib/stylebook-api/imports"

@@ -11,6 +11,47 @@ export type GeoJsonFeatureCollection = {
   features: GeoJsonFeature[]
 }
 
+function _isRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === "object"
+}
+
+/**
+ * Normalize a FeatureCollection for import UX.
+ *
+ * - Splits `GeometryCollection` geometries into individual Features (same properties).
+ * - Leaves Multi* geometries unchanged (they're already a single geometry payload).
+ */
+export function normalizeFeatureCollectionForImport(
+  fc: GeoJsonFeatureCollection,
+): GeoJsonFeatureCollection {
+  const out: GeoJsonFeature[] = []
+
+  for (const f of fc.features) {
+    const geom = f?.geometry
+    const geomType = _getGeometryType(geom)
+    if (geomType !== "GeometryCollection" || !_isRecord(geom)) {
+      out.push(f)
+      continue
+    }
+
+    const geoms = (geom as Record<string, unknown>).geometries
+    if (!Array.isArray(geoms) || geoms.length === 0) {
+      out.push({ ...f, geometry: null })
+      continue
+    }
+
+    for (const g of geoms) {
+      if (!_isRecord(g)) continue
+      out.push({
+        ...f,
+        geometry: g,
+      })
+    }
+  }
+
+  return { type: "FeatureCollection", features: out }
+}
+
 export type GeoJsonFieldMappings = {
   /** Feature.properties key for label/name. */
   labelProperty?: string | null

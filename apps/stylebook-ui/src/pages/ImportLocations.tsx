@@ -22,11 +22,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { analyzeImportGeoJson, type AnalyzeGeoJsonResponse } from "@/lib/api"
+import {
+  analyzeImportGeoJson,
+  importGeoJson,
+  type AnalyzeGeoJsonResponse,
+  type ImportGeoJsonResponse,
+} from "@/lib/api"
 import {
   buildFeatureCollectionForImport,
   canProceedFromMapping,
   deriveImportRows,
+  normalizeFeatureCollectionForImport,
   validateDerivedRows,
   type DerivedImportRow,
   type GeoJsonFeatureCollection,
@@ -35,6 +41,8 @@ import {
 } from "@/lib/import/geojsonImport"
 
 type WizardStep = "upload" | "mapping" | "review" | "importing" | "complete"
+
+const MAX_GEOJSON_BYTES = 25 * 1024 * 1024
 
 const STEP_LABELS: Record<WizardStep, string> = {
   upload: "Upload",
@@ -50,6 +58,7 @@ export default function ImportLocations() {
   const projectSlug = useMemo(() => searchParams.get("project") || "", [searchParams])
   const [step, setStep] = useState<WizardStep>("upload")
   const [geojsonText, setGeojsonText] = useState<string>("")
+  const [geojsonTooLarge, setGeojsonTooLarge] = useState(false)
   const [parsedGeojson, setParsedGeojson] = useState<Record<string, unknown> | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [analyzeResult, setAnalyzeResult] = useState<AnalyzeGeoJsonResponse | null>(null)
@@ -62,10 +71,13 @@ export default function ImportLocations() {
   const [derivedRows, setDerivedRows] = useState<DerivedImportRow[] | null>(null)
   const [reviewEdits, setReviewEdits] = useState<ReviewEditsByFeatureIndex>({})
   const [excluded, setExcluded] = useState<Set<number>>(() => new Set())
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<ImportGeoJsonResponse | null>(null)
 
   useEffect(() => {
     setStep("upload")
     setGeojsonText("")
+    setGeojsonTooLarge(false)
     setParsedGeojson(null)
     setAnalyzeResult(null)
     setMappings({
@@ -77,6 +89,8 @@ export default function ImportLocations() {
     setDerivedRows(null)
     setReviewEdits({})
     setExcluded(new Set())
+    setImporting(false)
+    setImportResult(null)
   }, [projectSlug])
 
   const backHref = useMemo(() => {
@@ -88,8 +102,17 @@ export default function ImportLocations() {
     const trimmed = text.trim()
     if (!trimmed) {
       setParsedGeojson(null)
+      setGeojsonTooLarge(false)
       return false
     }
+    const byteSize = new Blob([text]).size
+    if (byteSize > MAX_GEOJSON_BYTES) {
+      setParsedGeojson(null)
+      setGeojsonTooLarge(true)
+      showError("GeoJSON exceeds 25MB. Please split it into smaller files.")
+      return false
+    }
+    setGeojsonTooLarge(false)
     let obj: unknown
     try {
       obj = JSON.parse(trimmed)
@@ -109,7 +132,8 @@ export default function ImportLocations() {
       showError("GeoJSON must be a FeatureCollection with a features array.")
       return false
     }
-    setParsedGeojson(o)
+    const normalized = normalizeFeatureCollectionForImport(o as GeoJsonFeatureCollection)
+    setParsedGeojson(normalized as unknown as Record<string, unknown>)
     return true
   }
 
@@ -194,6 +218,14 @@ export default function ImportLocations() {
                 onChange={(e) => {
                   const f = e.target.files?.[0]
                   if (!f) return
+                  if (f.size > MAX_GEOJSON_BYTES) {
+                    setGeojsonText("")
+                    setParsedGeojson(null)
+                    setAnalyzeResult(null)
+                    setGeojsonTooLarge(true)
+                    showError("GeoJSON file exceeds 25MB. Please split it into smaller files.")
+                    return
+                  }
                   void (async () => {
                     const text = await f.text()
                     setGeojsonText(text)
@@ -202,6 +234,7 @@ export default function ImportLocations() {
                   })()
                 }}
               />
+              <p className="text-xs text-muted-foreground">Max file size: 25MB.</p>
             </div>
 
             <div className="space-y-2">
@@ -219,6 +252,9 @@ export default function ImportLocations() {
                 placeholder='{"type":"FeatureCollection","features":[...]}'
                 className="min-h-[12rem] font-mono text-xs"
               />
+              {geojsonTooLarge ? (
+                <div className="text-sm text-destructive">GeoJSON exceeds 25MB.</div>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-2">
@@ -543,7 +579,108 @@ export default function ImportLocations() {
               <Button type="button" variant="outline" onClick={() => setStep("mapping")}>
                 Back to mapping
               </Button>
+              <Button
+                type="button"
+                disabled={!projectSlug || !importPayload || importPayload.features.length === 0 || importing}
+                onClick={async () => {
+                  if (!projectSlug || !importPayload) return
+                  setImporting(true)
+                  setStep("importing")
+                  try {
+                    const res = await importGeoJson(projectSlug, importPayload, {
+                      label_property: mappings.labelProperty ?? null,
+                      location_type_property: mappings.locationTypeProperty ?? null,
+                      formatted_address_property: mappings.formattedAddressProperty ?? null,
+                      location_type_value: mappings.locationTypeValue ?? null,
+                    })
+                    setImportResult(res)
+                    setStep("complete")
+                  } catch (e) {
+                    setStep("review")
+                    showError("Import failed. See console/network logs for details.")
+                  } finally {
+                    setImporting(false)
+                  }
+                }}
+              >
+                Import
+              </Button>
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {step === "importing" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Importing</CardTitle>
+            <CardDescription>Creating canonicals…</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm text-muted-foreground">This may take a moment for large files.</div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {step === "complete" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Complete</CardTitle>
+            <CardDescription>Import results</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {importResult ? (
+              <>
+                <div className="text-sm">
+                  Created: <span className="font-medium">{importResult.created_count}</span> • Failed:{" "}
+                  <span className="font-medium">{importResult.failed_count}</span> • Total:{" "}
+                  <span className="font-medium">{importResult.total_features}</span>
+                </div>
+
+                {importResult.failed.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Failures</div>
+                    <div className="rounded border bg-muted/40 p-3 text-sm space-y-1">
+                      {importResult.failed.slice(0, 20).map((f) => (
+                        <div key={f.feature_index} className="flex gap-2">
+                          <div className="w-16 text-muted-foreground">#{f.feature_index + 1}</div>
+                          <div className="flex-1">{f.error}</div>
+                        </div>
+                      ))}
+                      {importResult.failed.length > 20 ? (
+                        <div className="text-muted-foreground">
+                          (Showing first 20 of {importResult.failed.length} failures.)
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="flex items-center gap-2">
+                  <Link to={backHref}>
+                    <Button type="button">Back to canonicals</Button>
+                  </Link>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setStep("upload")
+                      setGeojsonText("")
+                      setParsedGeojson(null)
+                      setAnalyzeResult(null)
+                      setDerivedRows(null)
+                      setReviewEdits({})
+                      setExcluded(new Set())
+                      setImportResult(null)
+                    }}
+                  >
+                    Import another file
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground">No import results.</div>
+            )}
           </CardContent>
         </Card>
       ) : null}
