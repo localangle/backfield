@@ -337,16 +337,19 @@ export default function ImportLocations() {
               <div className="space-y-2">
                 <Label>Label / name property</Label>
                 <Select
-                  value={mappings.labelProperty ?? ""}
+                  value={mappings.labelProperty ?? "__none__"}
                   onValueChange={(v) =>
-                    setMappings((prev) => ({ ...prev, labelProperty: v ? v : null }))
+                    setMappings((prev) => ({
+                      ...prev,
+                      labelProperty: v === "__none__" ? null : v,
+                    }))
                   }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select property…" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {availableProperties.map((p) => (
                       <SelectItem key={p} value={p}>
                         {p}
@@ -359,9 +362,12 @@ export default function ImportLocations() {
               <div className="space-y-2">
                 <Label>Location type property</Label>
                 <Select
-                  value={mappings.locationTypeProperty ?? ""}
+                  value={mappings.locationTypeProperty ?? "__none__"}
                   onValueChange={(v) =>
-                    setMappings((prev) => ({ ...prev, locationTypeProperty: v ? v : null }))
+                    setMappings((prev) => ({
+                      ...prev,
+                      locationTypeProperty: v === "__none__" ? null : v,
+                    }))
                   }
                   disabled={Boolean((mappings.locationTypeValue ?? "").trim())}
                 >
@@ -369,7 +375,7 @@ export default function ImportLocations() {
                     <SelectValue placeholder="Select property…" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {availableProperties.map((p) => (
                       <SelectItem key={p} value={p}>
                         {p}
@@ -385,16 +391,19 @@ export default function ImportLocations() {
               <div className="space-y-2">
                 <Label>Formatted address property (optional)</Label>
                 <Select
-                  value={mappings.formattedAddressProperty ?? ""}
+                  value={mappings.formattedAddressProperty ?? "__none__"}
                   onValueChange={(v) =>
-                    setMappings((prev) => ({ ...prev, formattedAddressProperty: v ? v : null }))
+                    setMappings((prev) => ({
+                      ...prev,
+                      formattedAddressProperty: v === "__none__" ? null : v,
+                    }))
                   }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select property…" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {availableProperties.map((p) => (
                       <SelectItem key={p} value={p}>
                         {p}
