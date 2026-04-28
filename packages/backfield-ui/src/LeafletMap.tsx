@@ -394,6 +394,14 @@ function installGeocoderOnMap(map: L.Map): () => void {
   inner.style.pointerEvents = "auto"
   wrap.appendChild(inner)
   container.appendChild(wrap)
+  // Prevent clicks/scrolls inside the geocoder UI from bubbling into Leaflet's map handlers
+  // (e.g. click-to-add point accidentally firing underneath the search box).
+  try {
+    L.DomEvent.disableClickPropagation(inner)
+    L.DomEvent.disableScrollPropagation(inner)
+  } catch {
+    // ignore
+  }
   const root = createRoot(inner)
   root.render(<GeocoderPanel map={map} />)
   return () => {
