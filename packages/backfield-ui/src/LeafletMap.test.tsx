@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
-import { LeafletMap } from "./LeafletMap"
+import { LeafletMap, photonExtentToLeafletLatLngBounds } from "./LeafletMap"
 
 describe("LeafletMap", () => {
   it("renders stable empty state for empty inputs", () => {
@@ -84,6 +84,26 @@ describe("LeafletMap", () => {
         interactiveWhenEmpty
       />,
     )
+  })
+})
+
+describe("photonExtentToLeafletLatLngBounds", () => {
+  it("derives south-west / north-east from Photon lon,lat,lon,lat extent (White House sample)", () => {
+    const ext = [-77.0368541, 38.8977959, -77.0362517, 38.8974904] as const
+    const [[south, west], [north, east]] = photonExtentToLeafletLatLngBounds(ext)
+    expect(south).toBeCloseTo(38.8974904, 5)
+    expect(north).toBeCloseTo(38.8977959, 5)
+    expect(west).toBeCloseTo(-77.0368541, 5)
+    expect(east).toBeCloseTo(-77.0362517, 5)
+  })
+
+  it("handles city-scale Photon extent (Chicago sample)", () => {
+    const ext = [-87.9400876, 42.0230529, -87.5240812, 41.644531] as const
+    const [[south, west], [north, east]] = photonExtentToLeafletLatLngBounds(ext)
+    expect(south).toBeCloseTo(41.644531, 5)
+    expect(north).toBeCloseTo(42.0230529, 5)
+    expect(west).toBeCloseTo(-87.9400876, 5)
+    expect(east).toBeCloseTo(-87.5240812, 5)
   })
 })
 

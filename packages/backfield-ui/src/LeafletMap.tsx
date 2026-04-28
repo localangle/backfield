@@ -84,6 +84,50 @@ function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v)
 }
 
+/** Normalize map-click coordinates (wrap longitude; prefer DOM-based projection when available). */
+function latLngFromMapInteraction(map: L.Map, e: { latlng?: L.LatLng; originalEvent?: unknown }): { lat: number; lng: number } | null {
+  const raw = e?.latlng
+  let lat: number | undefined
+  let lng: number | undefined
+  const oe = e?.originalEvent
+  if (oe instanceof MouseEvent && typeof (map as unknown as { mouseEventToLatLng?: (ev: MouseEvent) => L.LatLng }).mouseEventToLatLng === "function") {
+    try {
+      const px = (map as unknown as { mouseEventToLatLng: (ev: MouseEvent) => L.LatLng }).mouseEventToLatLng(oe)
+      if (px && isFiniteNumber(px.lat) && isFiniteNumber(px.lng)) {
+        lat = px.lat
+        lng = px.lng
+      }
+    } catch {
+      // fall through to e.latlng
+    }
+  }
+  if (lat === undefined || lng === undefined) {
+    if (!raw || !isFiniteNumber(raw.lat) || !isFiniteNumber(raw.lng)) return null
+    lat = raw.lat
+    lng = raw.lng
+  }
+  const ll = L.latLng(lat, lng)
+  const wrapped = typeof (ll as unknown as { wrap?: () => L.LatLng }).wrap === "function" ? (ll as unknown as { wrap: () => L.LatLng }).wrap() : ll
+  return { lat: wrapped.lat, lng: wrapped.lng }
+}
+
+function scheduleMapInvalidateSize(map: L.Map) {
+  requestAnimationFrame(() => {
+    try {
+      map.invalidateSize(false)
+    } catch {
+      // ignore
+    }
+    requestAnimationFrame(() => {
+      try {
+        map.invalidateSize(false)
+      } catch {
+        // ignore
+      }
+    })
+  })
+}
+
 function normalizeFeatureCollection(input: unknown): GeoJsonFeatureCollection {
   if (!input || typeof input !== "object") {
     return { type: "FeatureCollection", features: [] }
@@ -215,13 +259,14 @@ type PhotonHit = {
   label: string
   lat: number
   lng: number
-  /** minLon, minLat, maxLon, maxLat when Photon returns a bbox. */
+  /** Photon bbox: `[lon, lat, lon, lat]` for two corners (see `photonExtentToLeafletLatLngBounds`). */
   extent: [number, number, number, number] | null
 }
 
 const PHOTON_SEARCH_URL = "https://photon.komoot.io/api"
 const PHOTON_STRUCTURED_URL = "https://photon.komoot.io/structured"
 const GEOCODER_PREVIEW_LAYER_PROP = "__bfGeocoderPreviewLayer" as const
+const GEOCODER_PREVIEW_PANE = "bfGeocoderPreviewPane" as const
 
 function clearGeocoderSelectionPreview(map: L.Map) {
   const bag = map as unknown as Record<string, L.Layer | undefined>
@@ -244,7 +289,9 @@ function showGeocoderSelectionPreview(map: L.Map, lat: number, lng: number) {
     weight: 2,
     fillColor: "#60a5fa",
     fillOpacity: 0.92,
-    pane: "markerPane",
+    // Render behind user geometry markers so the canonical red point is always on top.
+    pane: GEOCODER_PREVIEW_PANE,
+    interactive: false,
   })
   dot.addTo(map)
   ;(map as unknown as Record<string, L.Layer>)[GEOCODER_PREVIEW_LAYER_PROP] = dot
@@ -287,6 +334,26 @@ function formatPhotonLabel(props: Record<string, unknown>): string {
   return [name, mid].filter(Boolean).join(" · ") || name || "Place"
 }
 
+/**
+ * Photon `properties.extent` is four numbers as two corners in **lon, lat, lon, lat** order
+ * (not `[min_lon, min_lat, max_lon, max_lat]`). Derive an axis-aligned bbox for Leaflet.
+ *
+ * @returns `[[southLat, westLng], [northLat, eastLng]]` for `map.fitBounds`.
+ */
+export function photonExtentToLeafletLatLngBounds(
+  extent: readonly [number, number, number, number],
+): [[number, number], [number, number]] {
+  const [lon1, lat1, lon2, lat2] = extent
+  const minLon = Math.min(lon1, lon2)
+  const maxLon = Math.max(lon1, lon2)
+  const minLat = Math.min(lat1, lat2)
+  const maxLat = Math.max(lat1, lat2)
+  return [
+    [minLat, minLon],
+    [maxLat, maxLon],
+  ]
+}
+
 function parsePhotonResponse(json: unknown): PhotonHit[] {
   if (!json || typeof json !== "object") return []
   const features = (json as { features?: unknown }).features
@@ -321,6 +388,14 @@ function parsePhotonResponse(json: unknown): PhotonHit[] {
 }
 
 function installGeocoderOnMap(map: L.Map): () => void {
+  // Ensure the preview pane exists and is click-through + behind normal overlays.
+  try {
+    const pane = map.getPane(GEOCODER_PREVIEW_PANE) ?? map.createPane(GEOCODER_PREVIEW_PANE)
+    pane.style.zIndex = "350" // below overlayPane (400) and markerPane (600)
+    pane.style.pointerEvents = "none"
+  } catch {
+    // ignore
+  }
   const container = map.getContainer()
   const wrap = document.createElement("div")
   wrap.style.cssText =
@@ -329,6 +404,14 @@ function installGeocoderOnMap(map: L.Map): () => void {
   inner.style.pointerEvents = "auto"
   wrap.appendChild(inner)
   container.appendChild(wrap)
+  // Prevent clicks/scrolls inside the geocoder UI from bubbling into Leaflet's map handlers
+  // (e.g. click-to-add point accidentally firing underneath the search box).
+  try {
+    L.DomEvent.disableClickPropagation(inner)
+    L.DomEvent.disableScrollPropagation(inner)
+  } catch {
+    // ignore
+  }
   const root = createRoot(inner)
   root.render(<GeocoderPanel map={map} />)
   return () => {
@@ -474,32 +557,41 @@ function GeocoderPanel({ map }: { map: L.Map }) {
     let markLat = hit.lat
     let markLng = hit.lng
     if (hit.extent) {
-      const [minLon, minLat, maxLon, maxLat] = hit.extent
-      markLat = (minLat + maxLat) / 2
-      markLng = (minLon + maxLon) / 2
+      const [[south, west], [north, east]] = photonExtentToLeafletLatLngBounds(hit.extent)
+      markLat = (south + north) / 2
+      markLng = (west + east) / 2
     }
     try {
       if (hit.extent) {
-        const [minLon, minLat, maxLon, maxLat] = hit.extent
-        map.fitBounds(
-          [
-            [minLat, minLon],
-            [maxLat, maxLon],
-          ],
-          { padding: [40, 40], maxZoom: 16 },
-        )
+        map.fitBounds(photonExtentToLeafletLatLngBounds(hit.extent), {
+          padding: [40, 40],
+          maxZoom: 16,
+          animate: false,
+        })
       } else {
-        map.flyTo([hit.lat, hit.lng], 14, { duration: 0.75 })
+        // Instant view — animated flyTo can leave pixel→latlng out of sync until moveend, breaking the next map click.
+        map.setView([hit.lat, hit.lng], 14, { animate: false })
       }
       showGeocoderSelectionPreview(map, markLat, markLng)
+      scheduleMapInvalidateSize(map)
     } catch {
-      map.flyTo([hit.lat, hit.lng], 14, { duration: 0.75 })
+      map.setView([hit.lat, hit.lng], 14, { animate: false })
       showGeocoderSelectionPreview(map, markLat, markLng)
+      scheduleMapInvalidateSize(map)
     }
   }
 
   return (
-    <div ref={rootRef} className="w-full rounded-md border border-border bg-background/95 text-foreground shadow-md backdrop-blur-sm" aria-live="polite">
+    <div
+      ref={rootRef}
+      className="w-full rounded-md border border-border bg-background/95 text-foreground shadow-md backdrop-blur-sm"
+      aria-live="polite"
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
         <div className="border-b border-border px-2 py-1.5">
           <label className="sr-only" htmlFor="bf-leaflet-geocoder-q">
             Search map by place name or address
@@ -607,15 +699,24 @@ type MapClickHandlerProps = {
 }
 
 function MapClickHandler({ onMapClick, rectangleDrawingRef }: MapClickHandlerProps) {
-  useMapEvents({
-    click: (e) => {
-      if (!onMapClick) return
-      if (rectangleDrawingRef.current) return
-      const latlng = e?.latlng
-      if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
-      onMapClick({ latlng: { lat: latlng.lat, lng: latlng.lng } })
-    },
-  })
+  const map = useMap()
+  const onMapClickRef = useRef(onMapClick)
+  onMapClickRef.current = onMapClick
+
+  const handlers = useMemo(
+    () => ({
+      click(e: L.LeafletMouseEvent) {
+        if (!onMapClickRef.current) return
+        if (rectangleDrawingRef.current) return
+        const latlng = latLngFromMapInteraction(map, e)
+        if (!latlng) return
+        onMapClickRef.current({ latlng })
+      },
+    }),
+    [map, rectangleDrawingRef],
+  )
+
+  useMapEvents(handlers)
   return null
 }
 
@@ -1210,7 +1311,12 @@ export function LeafletMap({
               dragend: (e: any) => {
                 const latlng = e?.target?.getLatLng?.()
                 if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
-                editablePoint.onChange({ lng: latlng.lng, lat: latlng.lat })
+                const w = L.latLng(latlng.lat, latlng.lng)
+                const wrapped =
+                  typeof (w as unknown as { wrap?: () => L.LatLng }).wrap === "function"
+                    ? (w as unknown as { wrap: () => L.LatLng }).wrap()
+                    : w
+                editablePoint.onChange({ lng: wrapped.lng, lat: wrapped.lat })
               },
             }}
           />
