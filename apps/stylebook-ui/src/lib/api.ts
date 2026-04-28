@@ -62,3 +62,8 @@ export {
   getAgentTypes,
   getStats,
 } from "@/lib/stylebook-api/stats-stub"
+
+export {
+  type AnalyzeGeoJsonResponse,
+  analyzeImportGeoJson,
+} from "@/lib/stylebook-api/imports"

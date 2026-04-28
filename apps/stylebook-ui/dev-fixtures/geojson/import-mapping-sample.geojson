@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-87.6298, 41.8781] },
+      "properties": { "name": "Chicago", "type": "city", "formatted_address": "Chicago, IL, USA" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-87.6232, 41.8818] },
+      "properties": { "type": "city", "formatted_address": "Missing name property" }
+    },
+    {
+      "type": "Feature",
+      "geometry": null,
+      "properties": { "name": "Missing geometry", "type": "city" }
+    }
+  ]
+}
+

@@ -158,6 +158,14 @@ def test_list_locations_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_import_geojson_analyze_requires_auth(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson/analyze?project_slug=demo-proj",
+        json={"geojson": {"type": "FeatureCollection", "features": []}},
+    )
+    assert r.status_code == 401
+
+
 def test_list_locations_empty_with_service_token(client: TestClient) -> None:
     r = client.get(
         "/v1/locations?project_slug=demo-proj",
@@ -167,6 +175,44 @@ def test_list_locations_empty_with_service_token(client: TestClient) -> None:
     data = r.json()
     assert data["total"] == 0
     assert data["locations"] == []
+
+
+def test_import_geojson_analyze_returns_properties(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson/analyze?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.62, 41.88]},
+                        "properties": {"name": "A", "type": "city"},
+                    },
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.61, 41.89]},
+                        "properties": {"formatted_address": "X", "name": "B"},
+                    },
+                ],
+            }
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["feature_count"] == 2
+    assert body["available_properties"] == ["formatted_address", "name", "type"]
+    assert body["sample_feature"] is not None
+
+
+def test_import_geojson_analyze_rejects_non_featurecollection(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson/analyze?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"geojson": {"type": "Point", "coordinates": [0, 0]}},
+    )
+    assert r.status_code == 400
 
 
 def test_create_location_creates_standalone_canonical_and_alias_no_substrate(

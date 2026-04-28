@@ -11,6 +11,7 @@ from stylebook_api.routers import (
     connections,
     geocode,
     health,
+  imports,
     location_candidates,
     location_meta,
     locations,
@@ -45,6 +46,7 @@ app.include_router(health.router)
 app.include_router(stylebooks.router)
 app.include_router(geocode.router)
 app.include_router(locations.router)
+app.include_router(imports.router)
 app.include_router(location_candidates.router)
 app.include_router(location_meta.router)
 app.include_router(connections.connections_router, prefix="/v1/connections")
