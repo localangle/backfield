@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { Button } from "@/components/ui/button"
@@ -28,21 +28,32 @@ import {
   type AnalyzeGeoJsonResponse,
   type ImportGeoJsonResponse,
 } from "@/lib/api"
+import { fetchPlaceExtractLocationTypes } from "@/lib/stylebook-api/taxonomy"
+import {
+  PLACE_EXTRACT_LOCATION_TYPES,
+  placeExtractTypeLabel,
+  sortReviewQueueTypeFilterOptions,
+} from "@/lib/place-extract-type-label"
 import {
   buildFeatureCollectionForImport,
   canProceedFromMapping,
   deriveImportRows,
   normalizeFeatureCollectionForImport,
+  slugifyLocationTypeLabel,
   validateDerivedRows,
   type DerivedImportRow,
   type GeoJsonFeatureCollection,
   type GeoJsonFieldMappings,
   type ReviewEditsByFeatureIndex,
 } from "@/lib/import/geojsonImport"
+import { cn } from "@/lib/utils"
+import { CheckCircle2, ChevronRight } from "lucide-react"
 
 type WizardStep = "upload" | "mapping" | "review" | "importing" | "complete"
 
 const MAX_GEOJSON_BYTES = 25 * 1024 * 1024
+
+const WIZARD_STEP_ORDER: WizardStep[] = ["upload", "mapping", "review", "importing", "complete"]
 
 const STEP_LABELS: Record<WizardStep, string> = {
   upload: "Upload",
@@ -52,12 +63,37 @@ const STEP_LABELS: Record<WizardStep, string> = {
   complete: "Complete",
 }
 
+/** Radix Select value when no manual type is chosen */
+const MANUAL_LOCATION_TYPE_NONE = "__none__"
+/** Manual type: Custom + — enter a label → slug (not from the taxonomy list). */
+const MANUAL_LOCATION_TYPE_OTHER = "__other__"
+
+function formatPropertyExample(v: unknown): string | null {
+  if (v == null) return null
+  let s: string
+  if (typeof v === "string") s = v
+  else if (typeof v === "number" || typeof v === "boolean") s = String(v)
+  else {
+    try {
+      s = JSON.stringify(v)
+    } catch {
+      s = String(v)
+    }
+  }
+  s = s.replaceAll(/\s+/g, " ").trim()
+  if (!s) return null
+  const MAX = 48
+  if (s.length > MAX) return `${s.slice(0, MAX - 1)}…`
+  return s
+}
+
 export default function ImportLocations() {
   const [searchParams] = useSearchParams()
   const { showError } = useAppMessage()
   const projectSlug = useMemo(() => searchParams.get("project") || "", [searchParams])
   const [step, setStep] = useState<WizardStep>("upload")
   const [geojsonText, setGeojsonText] = useState<string>("")
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
   const [geojsonTooLarge, setGeojsonTooLarge] = useState(false)
   const [parsedGeojson, setParsedGeojson] = useState<Record<string, unknown> | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -65,7 +101,6 @@ export default function ImportLocations() {
   const [mappings, setMappings] = useState<GeoJsonFieldMappings>({
     labelProperty: null,
     locationTypeProperty: null,
-    formattedAddressProperty: null,
     locationTypeValue: null,
   })
   const [derivedRows, setDerivedRows] = useState<DerivedImportRow[] | null>(null)
@@ -73,17 +108,66 @@ export default function ImportLocations() {
   const [excluded, setExcluded] = useState<Set<number>>(() => new Set())
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<ImportGeoJsonResponse | null>(null)
+  const [locationTypeMode, setLocationTypeMode] = useState<"manual" | "geojson">("manual")
+  const [manualLocationTypeLabel, setManualLocationTypeLabel] = useState("")
+  const [placeExtractTypesList, setPlaceExtractTypesList] = useState<string[]>(() => [
+    ...PLACE_EXTRACT_LOCATION_TYPES,
+  ])
+  const [manualLocationSelect, setManualLocationSelect] = useState<string>(
+    MANUAL_LOCATION_TYPE_NONE,
+  )
+  const prevWizardStepRef = useRef<WizardStep>(step)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetchPlaceExtractLocationTypes()
+        if (!cancelled && Array.isArray(res.types) && res.types.length > 0) {
+          setPlaceExtractTypesList(res.types)
+        }
+      } catch {
+        // Keep bundled ``PLACE_EXTRACT_LOCATION_TYPES`` fallback.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const enteredMapping =
+      step === "mapping" && prevWizardStepRef.current !== "mapping"
+    prevWizardStepRef.current = step
+    if (!enteredMapping || locationTypeMode !== "manual") return
+
+    // Sync manual type UI from ``mappings`` only when entering Mapping (not on each keystroke).
+    const v = (mappings.locationTypeValue ?? "").trim()
+    const presets = new Set(placeExtractTypesList)
+    if (!v) {
+      setManualLocationSelect(MANUAL_LOCATION_TYPE_NONE)
+      setManualLocationTypeLabel("")
+      return
+    }
+    if (presets.has(v)) {
+      setManualLocationSelect(v)
+      setManualLocationTypeLabel("")
+      return
+    }
+    setManualLocationSelect(MANUAL_LOCATION_TYPE_OTHER)
+    setManualLocationTypeLabel(v.replace(/_/g, " "))
+  }, [step, locationTypeMode, placeExtractTypesList])
 
   useEffect(() => {
     setStep("upload")
     setGeojsonText("")
+    setUploadedFileName(null)
     setGeojsonTooLarge(false)
     setParsedGeojson(null)
     setAnalyzeResult(null)
     setMappings({
       labelProperty: null,
       locationTypeProperty: null,
-      formattedAddressProperty: null,
       locationTypeValue: null,
     })
     setDerivedRows(null)
@@ -91,6 +175,10 @@ export default function ImportLocations() {
     setExcluded(new Set())
     setImporting(false)
     setImportResult(null)
+    setLocationTypeMode("manual")
+    setManualLocationTypeLabel("")
+    setPlaceExtractTypesList([...PLACE_EXTRACT_LOCATION_TYPES])
+    setManualLocationSelect(MANUAL_LOCATION_TYPE_NONE)
   }, [projectSlug])
 
   const backHref = useMemo(() => {
@@ -137,8 +225,16 @@ export default function ImportLocations() {
     return true
   }
 
-  const canAnalyze = Boolean(projectSlug && parsedGeojson && step === "upload" && !analyzing)
+  const canValidate = Boolean(projectSlug && parsedGeojson && step === "upload" && !analyzing)
+
+  const clearUploadedGeoJson = () => {
+    setGeojsonText("")
+    setUploadedFileName(null)
+    setParsedGeojson(null)
+    setAnalyzeResult(null)
+  }
   const availableProperties = analyzeResult?.available_properties ?? []
+  const sampleProperties = analyzeResult?.sample_feature?.properties ?? null
 
   const fc = parsedGeojson as GeoJsonFeatureCollection | null
   const rowsForValidation = useMemo(() => {
@@ -155,58 +251,90 @@ export default function ImportLocations() {
     return buildFeatureCollectionForImport(fc, mappings, reviewEdits, excluded)
   }, [excluded, fc, derivedRows, mappings, reviewEdits])
 
+  const sortedManualLocationTypes = useMemo(
+    () => sortReviewQueueTypeFilterOptions([...placeExtractTypesList]),
+    [placeExtractTypesList],
+  )
+
+  const handleManualLocationTypeSelect = (value: string) => {
+    setManualLocationSelect(value)
+    if (value === MANUAL_LOCATION_TYPE_NONE) {
+      setManualLocationTypeLabel("")
+      setMappings((prev) => ({
+        ...prev,
+        locationTypeValue: null,
+        locationTypeProperty: null,
+      }))
+      return
+    }
+    if (value === MANUAL_LOCATION_TYPE_OTHER) {
+      setManualLocationTypeLabel("")
+      setMappings((prev) => ({
+        ...prev,
+        locationTypeValue: null,
+        locationTypeProperty: null,
+      }))
+      return
+    }
+    setManualLocationTypeLabel("")
+    setMappings((prev) => ({
+      ...prev,
+      locationTypeValue: value,
+      locationTypeProperty: null,
+    }))
+  }
+
+  const manualStoredSlugPreview =
+    manualLocationSelect === MANUAL_LOCATION_TYPE_OTHER
+      ? slugifyLocationTypeLabel(manualLocationTypeLabel)
+      : (mappings.locationTypeValue ?? "").trim()
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Import locations (GeoJSON)</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {projectSlug ? (
-              <>
-                Project: <span className="font-medium">{projectSlug}</span>
-              </>
-            ) : (
-              "Project: —"
-            )}
-          </p>
         </div>
         <Link to={backHref}>
           <Button variant="outline">Back to canonicals</Button>
         </Link>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Wizard</CardTitle>
-          <CardDescription>
-            Upload → Mapping → Review → Importing → Complete
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {(Object.keys(STEP_LABELS) as WizardStep[]).map((s) => (
-              <Button
-                key={s}
-                type="button"
-                variant={s === step ? "default" : "outline"}
-                onClick={() => setStep(s)}
-              >
-                {STEP_LABELS[s]}
-              </Button>
-            ))}
-          </div>
-          <div className="text-sm text-muted-foreground">
-            Current step: <span className="font-medium text-foreground">{STEP_LABELS[step]}</span>
-          </div>
-        </CardContent>
-      </Card>
+      <nav
+        aria-label="Import steps"
+        className="flex flex-wrap items-center gap-x-0 gap-y-1 border-b border-border/60 pb-4 text-sm"
+      >
+        {WIZARD_STEP_ORDER.map((s, i) => (
+          <Fragment key={s}>
+            {i > 0 ? (
+              <ChevronRight
+                aria-hidden
+                className="mx-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/35"
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setStep(s)}
+              aria-current={s === step ? "step" : undefined}
+              className={cn(
+                "rounded-sm px-1 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                s === step
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground/85",
+              )}
+            >
+              {STEP_LABELS[s]}
+            </button>
+          </Fragment>
+        ))}
+      </nav>
 
       {step === "upload" ? (
         <Card>
           <CardHeader>
             <CardTitle>Upload or paste GeoJSON</CardTitle>
             <CardDescription>
-              Choose a GeoJSON file or paste a FeatureCollection, then click Analyze to discover available properties.
+              Upload a file or paste GeoJSON directly.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -220,12 +348,14 @@ export default function ImportLocations() {
                   if (!f) return
                   if (f.size > MAX_GEOJSON_BYTES) {
                     setGeojsonText("")
+                    setUploadedFileName(null)
                     setParsedGeojson(null)
                     setAnalyzeResult(null)
                     setGeojsonTooLarge(true)
                     showError("GeoJSON file exceeds 25MB. Please split it into smaller files.")
                     return
                   }
+                  setUploadedFileName(f.name)
                   void (async () => {
                     const text = await f.text()
                     setGeojsonText(text)
@@ -237,81 +367,114 @@ export default function ImportLocations() {
               <p className="text-xs text-muted-foreground">Max file size: 25MB.</p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Or paste GeoJSON</Label>
-              <Textarea
-                value={geojsonText}
-                onChange={(e) => {
-                  const t = e.target.value
-                  setGeojsonText(t)
-                  setAnalyzeResult(null)
-                  // Validate only on non-empty to avoid spamming dialogs while typing.
-                  if (t.trim().length > 0) validateAndSetGeojson(t)
-                  else setParsedGeojson(null)
-                }}
-                placeholder='{"type":"FeatureCollection","features":[...]}'
-                className="min-h-[12rem] font-mono text-xs"
-              />
-              {geojsonTooLarge ? (
-                <div className="text-sm text-destructive">GeoJSON exceeds 25MB.</div>
-              ) : null}
-            </div>
+            {uploadedFileName ? (
+              <div className="flex items-center justify-between gap-3 rounded border bg-muted/30 px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <span className="text-muted-foreground">Using uploaded file:</span>{" "}
+                  <span className="font-medium truncate">{uploadedFileName}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setUploadedFileName(null)
+                    setGeojsonText("")
+                    setParsedGeojson(null)
+                    setAnalyzeResult(null)
+                  }}
+                >
+                  Paste instead
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Or paste GeoJSON</Label>
+                <Textarea
+                  value={geojsonText}
+                  onChange={(e) => {
+                    const t = e.target.value
+                    setUploadedFileName(null)
+                    setGeojsonText(t)
+                    setAnalyzeResult(null)
+                    // Validate only on non-empty to avoid spamming dialogs while typing.
+                    if (t.trim().length > 0) validateAndSetGeojson(t)
+                    else setParsedGeojson(null)
+                  }}
+                  placeholder='{"type":"FeatureCollection","features":[...]}'
+                  className="min-h-[12rem] font-mono text-xs"
+                />
+                {geojsonTooLarge ? (
+                  <div className="text-sm text-destructive">GeoJSON exceeds 25MB.</div>
+                ) : null}
+              </div>
+            )}
 
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                disabled={!canAnalyze}
-                onClick={async () => {
-                  if (!projectSlug || !parsedGeojson) return
-                  setAnalyzing(true)
-                  try {
-                    const res = await analyzeImportGeoJson(projectSlug, parsedGeojson)
-                    setAnalyzeResult(res)
-                  } catch (e) {
-                    console.error(e)
-                    showError(e instanceof Error ? e.message : "Analyze failed")
-                  } finally {
-                    setAnalyzing(false)
-                  }
-                }}
-              >
-                {analyzing ? "Analyzing…" : "Analyze"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setGeojsonText("")
-                  setParsedGeojson(null)
-                  setAnalyzeResult(null)
-                }}
-              >
-                Clear
-              </Button>
-            </div>
+            {!analyzeResult ? (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  disabled={!canValidate}
+                  onClick={async () => {
+                    if (!projectSlug || !parsedGeojson) return
+                    setAnalyzing(true)
+                    try {
+                      const res = await analyzeImportGeoJson(projectSlug, parsedGeojson)
+                      setAnalyzeResult(res)
+                    } catch (e) {
+                      console.error(e)
+                      showError(e instanceof Error ? e.message : "Validation failed")
+                    } finally {
+                      setAnalyzing(false)
+                    }
+                  }}
+                >
+                  {analyzing ? "Validating…" : "Validate"}
+                </Button>
+                <Button type="button" variant="outline" onClick={clearUploadedGeoJson}>
+                  Clear
+                </Button>
+              </div>
+            ) : null}
 
             {analyzeResult ? (
               <div className="space-y-2 pt-2">
-                <div className="text-sm">
-                  Features: <span className="font-medium">{analyzeResult.feature_count}</span>
+                <div className="rounded border bg-muted/40 p-3 text-sm">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2
+                      className="mt-0.5 h-4 w-4 shrink-0 text-green-600"
+                      aria-hidden
+                      strokeWidth={2}
+                    />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div>
+                        Features:{" "}
+                        <span className="font-medium">{analyzeResult.feature_count}</span>
+                      </div>
+                      <div>
+                        <div className="text-sm">
+                          Available properties ({analyzeResult.available_properties.length}):
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {analyzeResult.available_properties.map((p) => (
+                            <span
+                              key={p}
+                              className="rounded border bg-muted px-2 py-1 text-xs text-muted-foreground"
+                            >
+                              {p}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-sm">
-                  Available properties ({analyzeResult.available_properties.length}):
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {analyzeResult.available_properties.map((p) => (
-                    <span
-                      key={p}
-                      className="rounded border bg-muted px-2 py-1 text-xs text-muted-foreground"
-                    >
-                      {p}
-                    </span>
-                  ))}
-                </div>
-                <div className="pt-2">
+                <div className="flex items-center gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={clearUploadedGeoJson}>
+                    Clear
+                  </Button>
                   <Button
                     type="button"
-                    variant="outline"
                     disabled={!parsedGeojson || !projectSlug}
                     onClick={() => setStep("mapping")}
                   >
@@ -329,11 +492,12 @@ export default function ImportLocations() {
           <CardHeader>
             <CardTitle>Mapping</CardTitle>
             <CardDescription>
-              Choose which GeoJSON properties map to required canonical fields. Import requires label, type, and geometry.
+              Map label and location type. Formatted address uses the same GeoJSON property as
+              label/name.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-6">
               <div className="space-y-2">
                 <Label>Label / name property</Label>
                 <Select
@@ -345,105 +509,192 @@ export default function ImportLocations() {
                     }))
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-10 w-full max-w-xl">
                     <SelectValue placeholder="Select property…" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">None</SelectItem>
                     {availableProperties.map((p) => (
                       <SelectItem key={p} value={p}>
-                        {p}
+                        <div className="flex w-full items-center justify-between gap-3">
+                          <span className="truncate">{p}</span>
+                          {sampleProperties ? (
+                            <span className="max-w-[18rem] truncate text-muted-foreground">
+                              {formatPropertyExample(sampleProperties[p]) ?? "—"}
+                            </span>
+                          ) : null}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>Location type property</Label>
-                <Select
-                  value={mappings.locationTypeProperty ?? "__none__"}
-                  onValueChange={(v) =>
-                    setMappings((prev) => ({
-                      ...prev,
-                      locationTypeProperty: v === "__none__" ? null : v,
-                    }))
-                  }
-                  disabled={Boolean((mappings.locationTypeValue ?? "").trim())}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select property…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {availableProperties.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Disabled when “Type for all” is set.
-                </p>
-              </div>
+              <div className="space-y-2 max-w-xl">
+                <Label>Location type</Label>
+                {locationTypeMode === "manual" ? (
+                  <>
+                    <div className="space-y-3">
+                      <Select
+                        value={manualLocationSelect}
+                        onValueChange={handleManualLocationTypeSelect}
+                      >
+                        <SelectTrigger className="h-10 w-full max-w-xl">
+                          <SelectValue placeholder="Select location type…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={MANUAL_LOCATION_TYPE_NONE}>None</SelectItem>
+                          {sortedManualLocationTypes.map((slug) => (
+                            <SelectItem key={slug} value={slug}>
+                              {placeExtractTypeLabel(slug)}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value={MANUAL_LOCATION_TYPE_OTHER}>Custom +</SelectItem>
+                        </SelectContent>
+                      </Select>
 
-              <div className="space-y-2">
-                <Label>Formatted address property (optional)</Label>
-                <Select
-                  value={mappings.formattedAddressProperty ?? "__none__"}
-                  onValueChange={(v) =>
-                    setMappings((prev) => ({
-                      ...prev,
-                      formattedAddressProperty: v === "__none__" ? null : v,
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select property…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {availableProperties.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      {manualLocationSelect === MANUAL_LOCATION_TYPE_OTHER ? (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-start sm:max-w-xl">
+                          <div className="min-w-0 space-y-1.5">
+                            <span className="text-xs text-muted-foreground">Label</span>
+                            <Input
+                              value={manualLocationTypeLabel}
+                              placeholder="e.g. Congressional District"
+                              className="h-10 font-normal"
+                              onChange={(e) => {
+                                const next = e.target.value
+                                setManualLocationTypeLabel(next)
+                                const slug = slugifyLocationTypeLabel(next)
+                                setMappings((prev) => ({
+                                  ...prev,
+                                  locationTypeValue: slug || null,
+                                  locationTypeProperty: null,
+                                }))
+                              }}
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-1.5">
+                            <span className="text-xs text-muted-foreground">Stored as (slug)</span>
+                            <Input
+                              readOnly
+                              tabIndex={-1}
+                              value={manualStoredSlugPreview}
+                              placeholder="custom_type"
+                              className="h-10 font-mono text-sm bg-muted/40"
+                            />
+                          </div>
+                        </div>
+                      ) : manualLocationSelect !== MANUAL_LOCATION_TYPE_NONE ? (
+                        <div className="max-w-xl space-y-1.5">
+                          <span className="text-xs text-muted-foreground">Stored as (slug)</span>
+                          <Input
+                            readOnly
+                            tabIndex={-1}
+                            value={manualStoredSlugPreview}
+                            className="h-10 font-mono text-sm bg-muted/40"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      <button
+                        type="button"
+                        className="underline-offset-4 hover:underline"
+                        onClick={() => {
+                          setLocationTypeMode("geojson")
+                          setManualLocationTypeLabel("")
+                          setManualLocationSelect(MANUAL_LOCATION_TYPE_NONE)
+                          setMappings((prev) => ({
+                            ...prev,
+                            locationTypeValue: null,
+                          }))
+                        }}
+                      >
+                        Import from GeoJSON
+                      </button>
+                      <span className="text-muted-foreground/80">
+                        {" "}
+                        — map type from a property on each feature instead.
+                      </span>
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Select
+                      value={mappings.locationTypeProperty ?? "__none__"}
+                      onValueChange={(v) =>
+                        setMappings((prev) => ({
+                          ...prev,
+                          locationTypeProperty: v === "__none__" ? null : v,
+                          locationTypeValue: null,
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="h-10 w-full">
+                        <SelectValue placeholder="Select property…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">None</SelectItem>
+                        {availableProperties.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            <div className="flex w-full items-center justify-between gap-3">
+                              <span className="truncate">{p}</span>
+                              {sampleProperties ? (
+                                <span className="max-w-[18rem] truncate text-muted-foreground">
+                                  {formatPropertyExample(sampleProperties[p]) ?? "—"}
+                                </span>
+                              ) : null}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      <button
+                        type="button"
+                        className="underline-offset-4 hover:underline"
+                        onClick={() => {
+                          setLocationTypeMode("manual")
+                          setManualLocationSelect(MANUAL_LOCATION_TYPE_NONE)
+                          setManualLocationTypeLabel("")
+                          setMappings((prev) => ({
+                            ...prev,
+                            locationTypeProperty: null,
+                          }))
+                        }}
+                      >
+                        Use manual type instead
+                      </button>
+                    </p>
+                  </>
+                )}
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Type for all imported locations (optional override)</Label>
-              <Input
-                value={mappings.locationTypeValue ?? ""}
-                placeholder="e.g. city"
-                onChange={(e) => {
-                  const v = e.target.value
-                  setMappings((prev) => ({ ...prev, locationTypeValue: v }))
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                When set, this value overrides the per-feature type mapping.
-              </p>
             </div>
 
             {validationSummary ? (
               <div className="rounded border bg-muted/40 p-3 text-sm">
-                <div>
-                  Rows: <span className="font-medium">{validationSummary.total_rows}</span>
-                </div>
-                <div className="mt-1 text-muted-foreground">
-                  Missing label: {validationSummary.missing_label_count} • Missing type:{" "}
-                  {validationSummary.missing_location_type_count} • Missing geometry:{" "}
-                  {validationSummary.missing_geometry_count}
+                <div className="flex items-start gap-2">
+                  {canProceed && rowsForValidation ? (
+                    <CheckCircle2
+                      className="mt-0.5 h-4 w-4 shrink-0 text-green-600"
+                      aria-hidden
+                      strokeWidth={2}
+                    />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <div>
+                      Rows: <span className="font-medium">{validationSummary.total_rows}</span>
+                    </div>
+                    <div className="mt-1 text-muted-foreground">
+                      Missing label: {validationSummary.missing_label_count} • Missing type:{" "}
+                      {validationSummary.missing_location_type_count} • Missing geometry:{" "}
+                      {validationSummary.missing_geometry_count}
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-muted-foreground">
-                Analyze a FeatureCollection first.
-              </div>
+              <div className="text-sm text-muted-foreground">Validate a FeatureCollection first.</div>
             )}
 
             <div className="flex items-center gap-2">
@@ -573,15 +824,6 @@ export default function ImportLocations() {
                     })}
                   </TableBody>
                 </Table>
-
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Computed import payload (debug)</div>
-                  <Textarea
-                    readOnly
-                    value={importPayload ? JSON.stringify(importPayload, null, 2) : ""}
-                    className="min-h-[12rem] font-mono text-xs"
-                  />
-                </div>
               </>
             )}
             <div className="flex items-center gap-2">
@@ -599,7 +841,7 @@ export default function ImportLocations() {
                     const res = await importGeoJson(projectSlug, importPayload, {
                       label_property: mappings.labelProperty ?? null,
                       location_type_property: mappings.locationTypeProperty ?? null,
-                      formatted_address_property: mappings.formattedAddressProperty ?? null,
+                      formatted_address_property: mappings.labelProperty ?? null,
                       location_type_value: mappings.locationTypeValue ?? null,
                     })
                     setImportResult(res)
@@ -646,6 +888,34 @@ export default function ImportLocations() {
                   <span className="font-medium">{importResult.total_features}</span>
                 </div>
 
+                {importResult.created.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">Imported locations</div>
+                    <ul className="max-h-[min(24rem,50vh)] divide-y divide-border overflow-y-auto rounded border bg-muted/40 text-sm">
+                      {[...importResult.created]
+                        .sort((a, b) => a.feature_index - b.feature_index)
+                        .map((row) => (
+                          <li
+                            key={`${row.feature_index}-${row.canonical_id}`}
+                            className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-3 py-2"
+                          >
+                            <span className="shrink-0 tabular-nums text-muted-foreground">
+                              #{row.feature_index + 1}
+                            </span>
+                            <Link
+                              className="break-words font-medium text-primary underline-offset-4 hover:underline"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              to={`/locations/canonical/${encodeURIComponent(row.canonical_id)}?project=${encodeURIComponent(projectSlug)}`}
+                            >
+                              {(row.label ?? "").trim() || row.canonical_id}
+                            </Link>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ) : null}
+
                 {importResult.failed.length > 0 ? (
                   <div className="space-y-2">
                     <div className="text-sm font-medium">Failures</div>
@@ -675,12 +945,20 @@ export default function ImportLocations() {
                     onClick={() => {
                       setStep("upload")
                       setGeojsonText("")
+                      setUploadedFileName(null)
                       setParsedGeojson(null)
                       setAnalyzeResult(null)
                       setDerivedRows(null)
                       setReviewEdits({})
                       setExcluded(new Set())
                       setImportResult(null)
+                      setLocationTypeMode("manual")
+                      setManualLocationTypeLabel("")
+                      setMappings({
+                        labelProperty: null,
+                        locationTypeProperty: null,
+                        locationTypeValue: null,
+                      })
                     }}
                   >
                     Import another file

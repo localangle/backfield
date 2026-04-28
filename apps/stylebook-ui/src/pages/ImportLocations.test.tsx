@@ -15,7 +15,6 @@ describe("ImportLocations", () => {
     )
 
     expect(screen.getByText("Import locations (GeoJSON)")).toBeInTheDocument()
-    expect(screen.getByText("demo-proj")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Back to canonicals" }).getAttribute("href")).toContain(
       "/locations/canonical?project=demo-proj",
     )

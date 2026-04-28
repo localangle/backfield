@@ -57,8 +57,6 @@ export type GeoJsonFieldMappings = {
   labelProperty?: string | null
   /** Feature.properties key for location_type. */
   locationTypeProperty?: string | null
-  /** Feature.properties key for formatted_address. */
-  formattedAddressProperty?: string | null
   /** When set, overrides all per-feature type values. */
   locationTypeValue?: string | null
 }
@@ -120,7 +118,8 @@ export function deriveImportRows(
       typeOverride ??
       _getStringProp(props, mappings.locationTypeProperty) ??
       null
-    const formattedAddress = _getStringProp(props, mappings.formattedAddressProperty) ?? null
+    /** Same source as label — canonical formatted_address mirrors that display string. */
+    const formattedAddress = label
 
     out.push({
       feature_index: i,
@@ -133,6 +132,15 @@ export function deriveImportRows(
   }
 
   return out
+}
+
+/** Normalize a human-readable location type label to snake_case (underscores). Used for optional manual type override. */
+export function slugifyLocationTypeLabel(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
 }
 
 export function validateDerivedRows(rows: DerivedImportRow[]): ImportValidationSummary {
@@ -188,9 +196,10 @@ export function buildFeatureCollectionForImport(
 ): GeoJsonFeatureCollection {
   const outFeatures: GeoJsonFeature[] = []
 
-  const nameKey = mappings.labelProperty || "name"
+  const lp = mappings.labelProperty
+  const nameKey = lp || "name"
   const typeKey = mappings.locationTypeProperty || "type"
-  const addressKey = mappings.formattedAddressProperty || "formatted_address"
+  const addressKey = lp || "formatted_address"
 
   const typeOverride = (mappings.locationTypeValue ?? "").trim() || null
 
@@ -206,8 +215,14 @@ export function buildFeatureCollectionForImport(
     const nextProps: Record<string, unknown> = { ...baseProps }
 
     const edits = editsByFeatureIndex[i] || {}
-    _upsertStringProp(nextProps, nameKey, edits.label ?? null)
-    _upsertStringProp(nextProps, addressKey, edits.formatted_address ?? null)
+    const labelEdit = edits.label ?? null
+    const addrEdit = edits.formatted_address ?? null
+    if (nameKey === addressKey) {
+      _upsertStringProp(nextProps, nameKey, addrEdit ?? labelEdit)
+    } else {
+      _upsertStringProp(nextProps, nameKey, labelEdit)
+      _upsertStringProp(nextProps, addressKey, addrEdit)
+    }
     if (typeOverride) {
       _upsertStringProp(nextProps, typeKey, typeOverride)
     } else {
