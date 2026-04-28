@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { Navigate, Route, Routes } from "react-router-dom"
+import { Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { AppMessageProvider } from "@/components/AppMessageProvider"
 import { AuthProvider, useAuth } from "@/lib/auth"
 import Layout from "@/components/Layout"
@@ -9,6 +9,7 @@ import Locations from "@/pages/Locations"
 import LocationDetail from "@/pages/LocationDetail"
 import CreateLocation from "@/pages/CreateLocation"
 import LocationCandidates from "@/pages/LocationCandidates"
+import ImportLocations from "@/pages/ImportLocations"
 import StubPage from "@/pages/StubPage"
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -30,6 +31,11 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   }
 
   return <Layout>{children}</Layout>
+}
+
+function LegacyImportRedirect() {
+  const location = useLocation()
+  return <Navigate to={`/import/locations${location.search || ""}`} replace />
 }
 
 export default function App() {
@@ -82,7 +88,15 @@ export default function App() {
           path="/import"
           element={
             <ProtectedRoute>
-              <StubPage title="Import" />
+              <LegacyImportRedirect />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/import/locations"
+          element={
+            <ProtectedRoute>
+              <ImportLocations />
             </ProtectedRoute>
           }
         />
