@@ -572,7 +572,16 @@ function GeocoderPanel({ map }: { map: L.Map }) {
   }
 
   return (
-    <div ref={rootRef} className="w-full rounded-md border border-border bg-background/95 text-foreground shadow-md backdrop-blur-sm" aria-live="polite">
+    <div
+      ref={rootRef}
+      className="w-full rounded-md border border-border bg-background/95 text-foreground shadow-md backdrop-blur-sm"
+      aria-live="polite"
+      onMouseDownCapture={(e) => e.stopPropagation()}
+      onClickCapture={(e) => e.stopPropagation()}
+      onDoubleClickCapture={(e) => e.stopPropagation()}
+      onWheelCapture={(e) => e.stopPropagation()}
+      onTouchStartCapture={(e) => e.stopPropagation()}
+    >
         <div className="border-b border-border px-2 py-1.5">
           <label className="sr-only" htmlFor="bf-leaflet-geocoder-q">
             Search map by place name or address
