@@ -266,6 +266,7 @@ type PhotonHit = {
 const PHOTON_SEARCH_URL = "https://photon.komoot.io/api"
 const PHOTON_STRUCTURED_URL = "https://photon.komoot.io/structured"
 const GEOCODER_PREVIEW_LAYER_PROP = "__bfGeocoderPreviewLayer" as const
+const GEOCODER_PREVIEW_PANE = "bfGeocoderPreviewPane" as const
 
 function clearGeocoderSelectionPreview(map: L.Map) {
   const bag = map as unknown as Record<string, L.Layer | undefined>
@@ -288,7 +289,8 @@ function showGeocoderSelectionPreview(map: L.Map, lat: number, lng: number) {
     weight: 2,
     fillColor: "#60a5fa",
     fillOpacity: 0.92,
-    pane: "markerPane",
+    // Render behind user geometry markers so the canonical red point is always on top.
+    pane: GEOCODER_PREVIEW_PANE,
     interactive: false,
   })
   dot.addTo(map)
@@ -386,6 +388,14 @@ function parsePhotonResponse(json: unknown): PhotonHit[] {
 }
 
 function installGeocoderOnMap(map: L.Map): () => void {
+  // Ensure the preview pane exists and is click-through + behind normal overlays.
+  try {
+    const pane = map.getPane(GEOCODER_PREVIEW_PANE) ?? map.createPane(GEOCODER_PREVIEW_PANE)
+    pane.style.zIndex = "350" // below overlayPane (400) and markerPane (600)
+    pane.style.pointerEvents = "none"
+  } catch {
+    // ignore
+  }
   const container = map.getContainer()
   const wrap = document.createElement("div")
   wrap.style.cssText =
