@@ -80,7 +80,7 @@ function formatPropertyExample(v: unknown): string | null {
       s = String(v)
     }
   }
-  s = s.replaceAll(/\s+/g, " ").trim()
+  s = s.replace(/\s+/g, " ").trim()
   if (!s) return null
   const MAX = 48
   if (s.length > MAX) return `${s.slice(0, MAX - 1)}…`
