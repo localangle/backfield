@@ -57,6 +57,32 @@ def test_ordinal_suffix_normalization_makes_ward_variants_match() -> None:
     assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
 
 
+def test_word_ordinal_normalization_matches_digit_congressional_district() -> None:
+    sub = SubstrateMatchInput(
+        name="Fifth Congressional District, Illinois",
+        normalized_name="fifth congressional district, illinois",
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id="1",
+        label="Congressional District 5, Illinois",
+        normalized_aliases=("congressional district 5, illinois",),
+    )
+    assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
+
+
+def test_compound_word_ordinal_twenty_first_normalizes() -> None:
+    sub = SubstrateMatchInput(
+        name="Illinois Congressional District Twenty-First",
+        normalized_name="illinois congressional district twenty-first",
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id="1",
+        label="Congressional District 21, Illinois",
+        normalized_aliases=("congressional district 21, illinois",),
+    )
+    assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
+
+
 def test_string_score_fuzzy_close_strings() -> None:
     sub = SubstrateMatchInput(
         name="West Garfield Park, Chicago, IL",

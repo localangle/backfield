@@ -13,6 +13,63 @@ from typing import Any, Literal
 _LOOSE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
 _ORDINAL_SUFFIX_RE = re.compile(r"\b(\d+)(st|nd|rd|th)\b", re.IGNORECASE)
 
+# Spelled ordinals that are two tokens after punctuation is collapsed to spaces
+# (``twenty-first`` → ``twenty first``). Applied before single-token mapping so
+# ``twenty second`` becomes ``22`` rather than ``twenty`` + ``2``.
+_COMPOUND_WORD_ORDINAL_RES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(rf"\btwenty {w}\b"), str(n))
+    for w, n in (
+        ("first", 21),
+        ("second", 22),
+        ("third", 23),
+        ("fourth", 24),
+        ("fifth", 25),
+        ("sixth", 26),
+        ("seventh", 27),
+        ("eighth", 28),
+        ("ninth", 29),
+    )
+) + ((re.compile(r"\bthirty first\b"), "31"),)
+
+# English word ordinals → digits (v1: common district / civic numbering forms).
+# Applied before :data:`_ORDINAL_SUFFIX_RE` so ``fifth`` → ``5`` → consistent token sets
+# with ``5th`` / ``5`` spellings.
+_WORD_ORDINAL_TO_DIGIT: dict[str, str] = {
+    "zeroth": "0",
+    "first": "1",
+    "second": "2",
+    "third": "3",
+    "fourth": "4",
+    "fifth": "5",
+    "sixth": "6",
+    "seventh": "7",
+    "eighth": "8",
+    "ninth": "9",
+    "tenth": "10",
+    "eleventh": "11",
+    "twelfth": "12",
+    "thirteenth": "13",
+    "fourteenth": "14",
+    "fifteenth": "15",
+    "sixteenth": "16",
+    "seventeenth": "17",
+    "eighteenth": "18",
+    "nineteenth": "19",
+    "twentieth": "20",
+    # Concatenated forms (no separator) still tokenize as one "word".
+    "twentyfirst": "21",
+    "twentysecond": "22",
+    "twentythird": "23",
+    "twentyfourth": "24",
+    "twentyfifth": "25",
+    "twentysixth": "26",
+    "twentyseventh": "27",
+    "twentyeighth": "28",
+    "twentyninth": "29",
+    "thirtieth": "30",
+    "thirtyfirst": "31",
+}
+
 # Map common US state tokens so ``IL`` vs ``Illinois`` does not break token-coverage checks.
 _US_STATE_ABBR_FULL: dict[str, str] = {
     "al": "alabama",
@@ -131,8 +188,20 @@ def _ratio(a: str, b: str) -> float:
 def _loose_key(value: str) -> str:
     """Lowercase alnum tokens joined by single spaces (commas/dashes ignored)."""
     raw = value.strip().lower()
-    raw = _ORDINAL_SUFFIX_RE.sub(r"\1", raw)
-    t = _LOOSE_TOKEN_RE.sub(" ", raw).strip()
+    # Collapse punctuation to spaces once so hyphenated ordinals (``twenty-first``)
+    # become two-token compounds (``twenty first``) for :data:`_COMPOUND_WORD_ORDINAL_RES`.
+    norm = " ".join(_LOOSE_TOKEN_RE.sub(" ", raw).split())
+    for pat, repl in _COMPOUND_WORD_ORDINAL_RES:
+        norm = pat.sub(repl, norm)
+    if norm:
+        toks = [t for t in norm.split() if t]
+        mapped: list[str] = []
+        for t in toks:
+            repl = _WORD_ORDINAL_TO_DIGIT.get(t)
+            mapped.append(repl if repl is not None else t)
+        norm = " ".join(mapped)
+    norm = _ORDINAL_SUFFIX_RE.sub(r"\1", norm)
+    t = _LOOSE_TOKEN_RE.sub(" ", norm).strip()
     return " ".join(t.split())
 
 
