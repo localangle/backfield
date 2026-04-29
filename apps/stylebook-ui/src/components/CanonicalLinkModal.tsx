@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import {
   getCanonicalLocation,
+  getLocation,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
   listCanonicalLocations,
@@ -64,6 +65,8 @@ export function CanonicalLinkModal(props: {
   const [linkingCanonicalId, setLinkingCanonicalId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [initialCanonExtra, setInitialCanonExtra] = useState<CanonicalLocation | null>(null)
+  const [linkedCanonicalId, setLinkedCanonicalId] = useState<string | null>(null)
+  const [linkedMetaLoaded, setLinkedMetaLoaded] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -72,11 +75,45 @@ export function CanonicalLinkModal(props: {
       setError(null)
       setLinkingCanonicalId(null)
       setInitialCanonExtra(null)
+      setLinkedCanonicalId(null)
+      setLinkedMetaLoaded(false)
     }
   }, [open])
 
   useEffect(() => {
+    if (!open || !substrateLocationId || !projectSlug) {
+      setLinkedCanonicalId(null)
+      setLinkedMetaLoaded(false)
+      return
+    }
+    let cancelled = false
+    setLinkedMetaLoaded(false)
+    void (async () => {
+      try {
+        const loc = await getLocation(substrateLocationId, projectSlug)
+        const cid = (loc.stylebook_location_canonical_id ?? "").trim()
+        if (!cancelled) {
+          setLinkedCanonicalId(cid ? cid : null)
+          setLinkedMetaLoaded(true)
+        }
+      } catch {
+        if (!cancelled) {
+          setLinkedCanonicalId(null)
+          setLinkedMetaLoaded(true)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, substrateLocationId, projectSlug])
+
+  useEffect(() => {
     if (!open || !initialCanonicalId || !projectSlug) {
+      setInitialCanonExtra(null)
+      return
+    }
+    if (linkedCanonicalId && initialCanonicalId === linkedCanonicalId) {
       setInitialCanonExtra(null)
       return
     }
@@ -96,10 +133,14 @@ export function CanonicalLinkModal(props: {
     return () => {
       cancelled = true
     }
-  }, [open, initialCanonicalId, projectSlug, suggestions])
+  }, [open, initialCanonicalId, projectSlug, suggestions, linkedCanonicalId])
 
   useEffect(() => {
     if (!open || !substrateLocationId || !projectSlug) {
+      setSuggestions([])
+      return
+    }
+    if (!linkedMetaLoaded) {
       setSuggestions([])
       return
     }
@@ -108,7 +149,11 @@ export function CanonicalLinkModal(props: {
       setLoadingSuggestions(true)
       try {
         const res = await getSuggestedCanonicals(projectSlug, substrateLocationId)
-        if (!cancelled) setSuggestions(res.suggestions)
+        if (!cancelled) {
+          const exclude = (linkedCanonicalId ?? "").trim()
+          const next = exclude ? res.suggestions.filter((s) => String(s.canonical_id) !== exclude) : res.suggestions
+          setSuggestions(next)
+        }
       } catch (e) {
         if (!cancelled) {
           setSuggestions([])
@@ -121,10 +166,15 @@ export function CanonicalLinkModal(props: {
     return () => {
       cancelled = true
     }
-  }, [open, substrateLocationId, projectSlug])
+  }, [open, substrateLocationId, projectSlug, linkedMetaLoaded, linkedCanonicalId])
 
   useEffect(() => {
     if (!open || !projectSlug) return
+    if (!linkedMetaLoaded) {
+      setSearchHits([])
+      setSearchLoading(false)
+      return
+    }
     const q = searchQ.trim()
     if (!q) {
       setSearchHits([])
@@ -137,7 +187,11 @@ export function CanonicalLinkModal(props: {
       void (async () => {
         try {
           const res = await listCanonicalLocations(projectSlug, q, 20, 0)
-          if (!cancelled) setSearchHits(res.canonicals)
+          if (!cancelled) {
+            const exclude = (linkedCanonicalId ?? "").trim()
+            const next = exclude ? res.canonicals.filter((c) => String(c.id) !== exclude) : res.canonicals
+            setSearchHits(next)
+          }
         } catch {
           if (!cancelled) setSearchHits([])
         } finally {
@@ -149,25 +203,32 @@ export function CanonicalLinkModal(props: {
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [searchQ, open, projectSlug])
+  }, [searchQ, open, projectSlug, linkedCanonicalId, linkedMetaLoaded])
 
   const mergedSuggestions: SuggestedCanonicalItem[] = useMemo(() => {
-    const merged: SuggestedCanonicalItem[] = [...suggestions]
+    const exclude = (linkedCanonicalId ?? "").trim()
+    const merged: SuggestedCanonicalItem[] = exclude
+      ? suggestions.filter((s) => String(s.canonical_id) !== exclude)
+      : [...suggestions]
     if (initialCanonExtra) {
       const exId = initialCanonExtra.id
-      if (!merged.some((s) => s.canonical_id === exId)) {
-        merged.unshift(canonicalToSuggestedRow(initialCanonExtra))
+      if (!exclude || exId !== exclude) {
+        if (!merged.some((s) => s.canonical_id === exId)) {
+          merged.unshift(canonicalToSuggestedRow(initialCanonExtra))
+        }
       }
     }
     if (initialCanonicalId) {
-      const ix = merged.findIndex((s) => s.canonical_id === initialCanonicalId)
-      if (ix > 0) {
-        const [picked] = merged.splice(ix, 1)
-        merged.unshift(picked)
+      if (!exclude || initialCanonicalId !== exclude) {
+        const ix = merged.findIndex((s) => s.canonical_id === initialCanonicalId)
+        if (ix > 0) {
+          const [picked] = merged.splice(ix, 1)
+          merged.unshift(picked)
+        }
       }
     }
     return merged
-  }, [suggestions, initialCanonExtra, initialCanonicalId])
+  }, [suggestions, initialCanonExtra, initialCanonicalId, linkedCanonicalId, linkedMetaLoaded])
 
   const suggestionRows = useMemo(
     () => suggestedItemsToPickRows(mergedSuggestions),

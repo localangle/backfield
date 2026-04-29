@@ -8,7 +8,7 @@ from backfield_db import StylebookLocationAlias, StylebookLocationCanonical
 from sqlalchemy import or_, text
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.canonical_link_matrix import link_pair_allowed
+from backfield_stylebook.canonical_link_matrix import types_are_comparable
 
 # Low threshold: precision is handled in :mod:`canonical_match_score`.
 _PG_SIMILARITY_THRESHOLD: float = 0.12
@@ -125,7 +125,7 @@ def retrieve_candidate_canonical_ids(
     all query variants. On SQLite, hints are ``None`` (scorer uses :mod:`difflib`).
 
     When ``substrate_location_type`` is set, canonicals whose ``location_type`` fails
-    :func:`link_pair_allowed` with that substrate type are dropped (order preserved).
+    :func:`types_are_comparable` with that substrate type are dropped (order preserved).
     """
     variants = _distinct_query_strings(normalized_query, query_text, formatted_address)
     if not variants:
@@ -183,7 +183,7 @@ def _filter_recall_by_substrate_type(
     out: list[tuple[str, float | None]] = []
     for cid, hint in raw:
         lt = lt_by_id.get(str(cid))
-        if link_pair_allowed(substrate_location_type, lt):
+        if types_are_comparable(substrate_location_type, lt):
             out.append((cid, hint))
         if len(out) >= limit:
             break

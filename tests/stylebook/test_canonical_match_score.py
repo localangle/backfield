@@ -44,6 +44,19 @@ def test_loose_normalization_treats_punctuation_variants_as_exact() -> None:
     assert string_score_for_candidate(sub, feat) == 1.0
 
 
+def test_ordinal_suffix_normalization_makes_ward_variants_match() -> None:
+    sub = SubstrateMatchInput(
+        name="15th Ward, Chicago, IL",
+        normalized_name="15th ward, chicago, il",
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id="1",
+        label="Ward 15, Chicago, IL",
+        normalized_aliases=("ward 15, chicago, il",),
+    )
+    assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
+
+
 def test_string_score_fuzzy_close_strings() -> None:
     sub = SubstrateMatchInput(
         name="West Garfield Park, Chicago, IL",

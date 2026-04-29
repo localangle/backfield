@@ -268,9 +268,7 @@ def test_rank_caps_incompatible_type_below_recall() -> None:
 
     assert len(ranked) == 1
     _, _label, score, _ = ranked[0]
-    assert score < RECALL_MIN_SCORE, (
-        f"Expected address→city score below RECALL_MIN_SCORE ({RECALL_MIN_SCORE}), got {score}"
-    )
+    assert score >= RECALL_MIN_SCORE
     assert score < AUTOLINK_MIN_SCORE
 
 
@@ -327,7 +325,7 @@ def test_rank_allows_same_type_city_to_city() -> None:
 
 def test_rank_caps_intersection_to_city() -> None:
     """An intersection substrate must not autolink to a city canonical."""
-    from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
+    from backfield_stylebook.canonical_match_score import AUTOLINK_MIN_SCORE, RECALL_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -372,7 +370,8 @@ def test_rank_caps_intersection_to_city() -> None:
 
     assert len(ranked) == 1
     _, _label, score, _ = ranked[0]
-    assert score < RECALL_MIN_SCORE
+    assert score >= RECALL_MIN_SCORE
+    assert score < AUTOLINK_MIN_SCORE
 
 
 def test_rank_allows_address_to_place() -> None:
@@ -422,6 +421,50 @@ def test_rank_allows_address_to_place() -> None:
     assert len(ranked) == 1
     _, _label, score, _ = ranked[0]
     assert score >= AUTOLINK_MIN_SCORE
+
+
+def test_rank_does_not_drop_strict_to_flexible_candidates() -> None:
+    """Recall/scoring should compare across type labels, even when strict autolink disallows."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-compare-1")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 15, Chicago, IL",
+            slug="ward-15-chicago-il",
+            location_type="ward",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        alias = StylebookLocationAlias(
+            location_canonical_id=cid,
+            alias_text="Ward 15, Chicago, IL",
+            normalized_alias="ward 15, chicago, il",
+            provenance="test",
+            suppressed=False,
+        )
+        session.add(alias)
+        session.commit()
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="15th Ward, Chicago, IL",
+            normalized_name="15th ward, chicago, il",
+            location_type="region_city",
+            identity_fingerprint="fp-compare-1",
+        )
+
+        ranked = rank_scored_canonical_recall_matches(
+            session,
+            location=loc,
+            recall=[(cid, None)],
+        )
+
+    assert len(ranked) == 1
 
 
 def test_decide_canonical_persist_plan_type_gate_prevents_city_mismatch() -> None:

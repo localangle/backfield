@@ -9,7 +9,11 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, select
 
-from backfield_stylebook.canonical_link_matrix import link_pair_allowed, strict_type_group
+from backfield_stylebook.canonical_link_matrix import (
+    link_pair_allowed,
+    strict_type_group,
+    types_are_comparable,
+)
 from backfield_stylebook.canonical_match_score import (
     AUTOLINK_MIN_SCORE,
     RECALL_MIN_SCORE,
@@ -243,7 +247,7 @@ def rank_scored_canonical_recall_matches(
         gate_lt = _should_apply_head_anchor_gate(location.location_type)
         if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        if not link_pair_allowed(location.location_type, canon.location_type):
+        if not types_are_comparable(location.location_type, canon.location_type):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
         rows.append((recall_index, str(canon_id), str(canon.label), sc))
     rows.sort(key=lambda r: (-r[3], -r[0]))
@@ -386,6 +390,12 @@ def decide_canonical_persist_plan(
         )
         if intra_ambiguous:
             tier = "ambiguous"
+        if tier == "autolink" and best_id is not None:
+            best_canon = session.get(StylebookLocationCanonical, str(best_id))
+            best_lt = best_canon.location_type if best_canon is not None else None
+            if not link_pair_allowed(location.location_type, best_lt):
+                tier = "ambiguous"
+                intra_ambiguous = True
         if tier == "autolink" and best_id is not None:
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,

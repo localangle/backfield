@@ -75,3 +75,22 @@ def link_pair_allowed(substrate_lt: str | None, canonical_lt: str | None) -> boo
     if sg is None or cg is None:
         return False
     return sg is cg
+
+
+def types_are_comparable(substrate_lt: str | None, canonical_lt: str | None) -> bool:
+    """Return True when a substrate/canonical pair should be *compared* for matching.
+
+    This is intentionally **more permissive** than :func:`link_pair_allowed`, because:
+    - Canonical `location_type` may be user-defined (uploaded geometries), not from PlaceExtract.
+    - Substrate `location_type` may reflect a geocoder/LLM label that we do not control.
+
+    The strict safety decision (whether we may automatically link) remains with
+    :func:`link_pair_allowed`.
+    """
+    # Missing types: allow comparison; we can't infer incompatibility.
+    if not (substrate_lt or "").strip():
+        return True
+    if not (canonical_lt or "").strip():
+        return True
+    # Default posture: compare broadly; link narrowly.
+    return True

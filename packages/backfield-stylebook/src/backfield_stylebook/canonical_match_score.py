@@ -11,6 +11,7 @@ from typing import Any, Literal
 # Collapse punctuation so "West Garfield Park, Chicago, IL" and "West Garfield Park — Chicago IL"
 # compare as the same place name for scoring.
 _LOOSE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
+_ORDINAL_SUFFIX_RE = re.compile(r"\b(\d+)(st|nd|rd|th)\b", re.IGNORECASE)
 
 # Map common US state tokens so ``IL`` vs ``Illinois`` does not break token-coverage checks.
 _US_STATE_ABBR_FULL: dict[str, str] = {
@@ -129,7 +130,9 @@ def _ratio(a: str, b: str) -> float:
 
 def _loose_key(value: str) -> str:
     """Lowercase alnum tokens joined by single spaces (commas/dashes ignored)."""
-    t = _LOOSE_TOKEN_RE.sub(" ", value.strip().lower()).strip()
+    raw = value.strip().lower()
+    raw = _ORDINAL_SUFFIX_RE.sub(r"\1", raw)
+    t = _LOOSE_TOKEN_RE.sub(" ", raw).strip()
     return " ".join(t.split())
 
 
