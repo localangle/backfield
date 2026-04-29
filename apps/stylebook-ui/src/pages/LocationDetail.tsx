@@ -543,7 +543,7 @@ export default function LocationDetail() {
                 ? geometryAddMode === "point"
                   ? "Click the map to place a point."
                   : geometryAddMode === "rectangle"
-                    ? "Click and drag on the map to draw an axis-aligned rectangle."
+                    ? "Hold Shift and drag on the map to draw an axis-aligned rectangle."
                     : "Edit canonical geometry (draft) and save or cancel."
                 : "View canonical geometry."}
             </CardDescription>

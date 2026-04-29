@@ -158,6 +158,14 @@ def test_list_locations_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_import_geojson_analyze_requires_auth(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson/analyze?project_slug=demo-proj",
+        json={"geojson": {"type": "FeatureCollection", "features": []}},
+    )
+    assert r.status_code == 401
+
+
 def test_list_locations_empty_with_service_token(client: TestClient) -> None:
     r = client.get(
         "/v1/locations?project_slug=demo-proj",
@@ -167,6 +175,178 @@ def test_list_locations_empty_with_service_token(client: TestClient) -> None:
     data = r.json()
     assert data["total"] == 0
     assert data["locations"] == []
+
+
+def test_import_geojson_analyze_returns_properties(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson/analyze?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.62, 41.88]},
+                        "properties": {"name": "A", "type": "city"},
+                    },
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.61, 41.89]},
+                        "properties": {"formatted_address": "X", "name": "B"},
+                    },
+                ],
+            }
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["feature_count"] == 2
+    assert body["available_properties"] == ["formatted_address", "name", "type"]
+    assert body["sample_feature"] is not None
+
+
+def test_import_geojson_analyze_splits_geometrycollection(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson/analyze?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "GeometryCollection",
+                            "geometries": [
+                                {"type": "Point", "coordinates": [-87.62, 41.88]},
+                                {"type": "Point", "coordinates": [-87.61, 41.89]},
+                            ],
+                        },
+                        "properties": {"name": "A", "type": "city"},
+                    }
+                ],
+            }
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["feature_count"] == 2
+
+
+def test_import_geojson_analyze_rejects_non_featurecollection(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson/analyze?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"geojson": {"type": "Point", "coordinates": [0, 0]}},
+    )
+    assert r.status_code == 400
+
+
+def test_import_geojson_analyze_rejects_over_25mb(client: TestClient, monkeypatch) -> None:
+    import stylebook_api.routers.imports as imports_router
+
+    monkeypatch.setattr(imports_router, "MAX_IMPORT_BYTES", 10)
+    # No Content-Length is sent by TestClient here, so the router will use the JSON-dumped
+    # size as a best-effort fallback.
+    r = client.post(
+        "/v1/import/geojson/analyze?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"geojson": {"type": "FeatureCollection", "features": [], "pad": "x" * 100}},
+    )
+    assert r.status_code == 413
+
+
+def test_import_geojson_creates_canonicals_with_partial_failures(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.62, 41.88]},
+                        "properties": {"name": "A", "type": "city"},
+                    },
+                    {
+                        "type": "Feature",
+                        "geometry": None,
+                        "properties": {"name": "B", "type": "city"},
+                    },
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.61, 41.89]},
+                        "properties": {"name": "C"},
+                    },
+                ],
+            },
+            "mappings": {
+                "label_property": "name",
+                "location_type_property": "type",
+                "formatted_address_property": "formatted_address",
+            },
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total_features"] == 3
+    assert body["created_count"] == 1
+    assert body["failed_count"] == 2
+    assert len(body["created"]) == 1
+    assert body["created"][0]["label"] == "A"
+    assert len(body["failed"]) == 2
+
+
+def test_import_geojson_rejects_over_25mb(client: TestClient, monkeypatch) -> None:
+    import stylebook_api.routers.imports as imports_router
+
+    monkeypatch.setattr(imports_router, "MAX_IMPORT_BYTES", 10)
+    r = client.post(
+        "/v1/import/geojson?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [],
+                "pad": "x" * 100,
+            },
+            "mappings": {"label_property": "name", "location_type_property": "type"},
+        },
+    )
+    assert r.status_code == 413
+
+
+def test_import_geojson_splits_geometrycollection_on_import(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "GeometryCollection",
+                            "geometries": [
+                                {"type": "Point", "coordinates": [-87.62, 41.88]},
+                                {"type": "Point", "coordinates": [-87.61, 41.89]},
+                            ],
+                        },
+                        "properties": {"name": "A", "type": "city"},
+                    }
+                ],
+            },
+            "mappings": {"label_property": "name", "location_type_property": "type"},
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total_features"] == 2
+    assert body["created_count"] == 2
+    assert body["failed_count"] == 0
 
 
 def test_create_location_creates_standalone_canonical_and_alias_no_substrate(

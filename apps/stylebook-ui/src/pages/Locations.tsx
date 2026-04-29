@@ -155,7 +155,7 @@ export default function Locations() {
           <Link to={`/locations/create?project=${projectSlug}`}>
             <Button variant="outline">Create</Button>
           </Link>
-          <Link to={`/import?project=${projectSlug}`}>
+          <Link to={`/import/locations?project=${projectSlug}`}>
             <Button variant="outline">Import</Button>
           </Link>
         </div>

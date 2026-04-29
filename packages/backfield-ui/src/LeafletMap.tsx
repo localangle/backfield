@@ -749,6 +749,10 @@ function RectangleDrawController({ rectangleDrawRef, rectangleDrawingRef }: Rect
   useMapEvents({
     mousedown: (e: any) => {
       if (!rectangleDrawRef.current?.enabled) return
+      // Prevent rectangle draw from hijacking normal map panning:
+      // require Shift-drag (mouse) to start a draw gesture.
+      const oe = e?.originalEvent
+      if (oe instanceof MouseEvent && !oe.shiftKey) return
       const latlng = e?.latlng
       if (!latlng || !isFiniteNumber(latlng.lat) || !isFiniteNumber(latlng.lng)) return
 
