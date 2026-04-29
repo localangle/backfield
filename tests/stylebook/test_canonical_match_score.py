@@ -9,6 +9,7 @@ from backfield_stylebook.canonical_match_score import (
     RECALL_MIN_SCORE,
     CanonicalMatchFeatures,
     SubstrateMatchInput,
+    _loose_key,
     classify_recall_score,
     combined_score,
     haversine_m,
@@ -81,6 +82,25 @@ def test_compound_word_ordinal_twenty_first_normalizes() -> None:
         normalized_aliases=("congressional district 21, illinois",),
     )
     assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
+
+
+def test_fifty_third_spelled_ordinal_matches_digit_district() -> None:
+    sub = SubstrateMatchInput(
+        name="Fifty-Third Congressional District, Illinois",
+        normalized_name="fifty-third congressional district, illinois",
+    )
+    feat = CanonicalMatchFeatures(
+        canonical_id="1",
+        label="Congressional District 53, Illinois",
+        normalized_aliases=("congressional district 53, illinois",),
+    )
+    assert string_score_for_candidate(sub, feat) >= AUTOLINK_MIN_SCORE
+
+
+def test_loose_key_does_not_apply_full_sentence_number_parsing() -> None:
+    """Guardrail: do not use ``number_parser.parse`` semantics on whole strings."""
+    assert _loose_key("Six Flags, Gurnee, IL") == "six flags gurnee il"
+    assert _loose_key("twentyfirst ward") == "21 ward"
 
 
 def test_string_score_fuzzy_close_strings() -> None:

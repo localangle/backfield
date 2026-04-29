@@ -8,67 +8,71 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any, Literal
 
+from number_parser import parse_number, parse_ordinal
+
 # Collapse punctuation so "West Garfield Park, Chicago, IL" and "West Garfield Park — Chicago IL"
 # compare as the same place name for scoring.
 _LOOSE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
 _ORDINAL_SUFFIX_RE = re.compile(r"\b(\d+)(st|nd|rd|th)\b", re.IGNORECASE)
 
-# Spelled ordinals that are two tokens after punctuation is collapsed to spaces
-# (``twenty-first`` → ``twenty first``). Applied before single-token mapping so
-# ``twenty second`` becomes ``22`` rather than ``twenty`` + ``2``.
-_COMPOUND_WORD_ORDINAL_RES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
-    (re.compile(rf"\btwenty {w}\b"), str(n))
-    for w, n in (
-        ("first", 21),
-        ("second", 22),
-        ("third", 23),
-        ("fourth", 24),
-        ("fifth", 25),
-        ("sixth", 26),
-        ("seventh", 27),
-        ("eighth", 28),
-        ("ninth", 29),
-    )
-) + ((re.compile(r"\bthirty first\b"), "31"),)
+# ``number_parser.parse`` rewrites bare cardinals (``Six Flags`` → ``6 Flags``); we only use
+# :func:`parse_ordinal` / :func:`parse_number` on token windows with a cardinal guard.
+_NUMBER_PARSER_LANG = "en"
+# Longest English ordinals in practice (e.g. ``one hundred twenty first``).
+_MAX_WORD_ORDINAL_WINDOW = 12
+_CONCAT_COMPOUND_ORDINAL_RE = re.compile(
+    r"^(twenty|thirty)(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)$"
+)
 
-# English word ordinals → digits (v1: common district / civic numbering forms).
-# Applied before :data:`_ORDINAL_SUFFIX_RE` so ``fifth`` → ``5`` → consistent token sets
-# with ``5th`` / ``5`` spellings.
-_WORD_ORDINAL_TO_DIGIT: dict[str, str] = {
-    "zeroth": "0",
-    "first": "1",
-    "second": "2",
-    "third": "3",
-    "fourth": "4",
-    "fifth": "5",
-    "sixth": "6",
-    "seventh": "7",
-    "eighth": "8",
-    "ninth": "9",
-    "tenth": "10",
-    "eleventh": "11",
-    "twelfth": "12",
-    "thirteenth": "13",
-    "fourteenth": "14",
-    "fifteenth": "15",
-    "sixteenth": "16",
-    "seventeenth": "17",
-    "eighteenth": "18",
-    "nineteenth": "19",
-    "twentieth": "20",
-    # Concatenated forms (no separator) still tokenize as one "word".
-    "twentyfirst": "21",
-    "twentysecond": "22",
-    "twentythird": "23",
-    "twentyfourth": "24",
-    "twentyfifth": "25",
-    "twentysixth": "26",
-    "twentyseventh": "27",
-    "twentyeighth": "28",
-    "twentyninth": "29",
-    "thirtieth": "30",
-    "thirtyfirst": "31",
-}
+
+def _expand_concat_compound_ordinal_token(token: str) -> list[str]:
+    """Split rare glued forms (``twentyfirst``) so :func:`parse_ordinal` can read them."""
+    m = _CONCAT_COMPOUND_ORDINAL_RE.match(token)
+    if not m:
+        return [token]
+    return [m.group(1), m.group(2)]
+
+
+def _normalize_word_ordinal_tokens(tokens: list[str]) -> list[str]:
+    """Replace spelled ordinals with digit tokens using ``number-parser``.
+
+    Skips pure cardinal phrases (``twenty one``, ``six``) so we do not mimic
+    :func:`number_parser.parse` on full strings.
+    """
+    expanded: list[str] = []
+    for t in tokens:
+        expanded.extend(_expand_concat_compound_ordinal_token(t))
+    tpl = expanded
+    out: list[str] = []
+    i = 0
+    lang = _NUMBER_PARSER_LANG
+    while i < len(tpl):
+        max_w = min(_MAX_WORD_ORDINAL_WINDOW, len(tpl) - i)
+        replaced = False
+        for w in range(max_w, 1, -1):
+            phrase = " ".join(tpl[i : i + w])
+            ord_val = parse_ordinal(phrase, language=lang)
+            if ord_val is None:
+                continue
+            num_val = parse_number(phrase, language=lang)
+            if num_val is not None and num_val == ord_val:
+                continue
+            out.append(str(ord_val))
+            i += w
+            replaced = True
+            break
+        if replaced:
+            continue
+        t = tpl[i]
+        ord_val = parse_ordinal(t, language=lang)
+        num_val = parse_number(t, language=lang)
+        if ord_val is not None and not (num_val is not None and num_val == ord_val):
+            out.append(str(ord_val))
+        else:
+            out.append(t)
+        i += 1
+    return out
+
 
 # Map common US state tokens so ``IL`` vs ``Illinois`` does not break token-coverage checks.
 _US_STATE_ABBR_FULL: dict[str, str] = {
@@ -188,18 +192,12 @@ def _ratio(a: str, b: str) -> float:
 def _loose_key(value: str) -> str:
     """Lowercase alnum tokens joined by single spaces (commas/dashes ignored)."""
     raw = value.strip().lower()
-    # Collapse punctuation to spaces once so hyphenated ordinals (``twenty-first``)
-    # become two-token compounds (``twenty first``) for :data:`_COMPOUND_WORD_ORDINAL_RES`.
+    # Collapse punctuation to spaces so hyphenated ordinals (``twenty-first``) become
+    # separate tokens (``twenty``, ``first``) for :func:`_normalize_word_ordinal_tokens`.
     norm = " ".join(_LOOSE_TOKEN_RE.sub(" ", raw).split())
-    for pat, repl in _COMPOUND_WORD_ORDINAL_RES:
-        norm = pat.sub(repl, norm)
     if norm:
         toks = [t for t in norm.split() if t]
-        mapped: list[str] = []
-        for t in toks:
-            repl = _WORD_ORDINAL_TO_DIGIT.get(t)
-            mapped.append(repl if repl is not None else t)
-        norm = " ".join(mapped)
+        norm = " ".join(_normalize_word_ordinal_tokens(toks))
     norm = _ORDINAL_SUFFIX_RE.sub(r"\1", norm)
     t = _LOOSE_TOKEN_RE.sub(" ", norm).strip()
     return " ".join(t.split())
