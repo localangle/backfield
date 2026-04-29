@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   deleteCanonicalLocation,
@@ -213,6 +213,19 @@ export default function LocationDetail() {
   const [mentionsLoading, setMentionsLoading] = useState(false)
   const [moveSubstrateId, setMoveSubstrateId] = useState<number | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
+  const prevMentionCountRef = useRef<number | null>(null)
+  const prevSubstrateCountRef = useRef<number | null>(null)
+  const lastCanonicalKeyRef = useRef<string>("")
+
+  useEffect(() => {
+    const key = `${projectSlug}:${id ?? ""}`
+    if (key !== lastCanonicalKeyRef.current) {
+      lastCanonicalKeyRef.current = key
+      prevMentionCountRef.current = null
+      prevSubstrateCountRef.current = null
+    }
+  }, [id, projectSlug])
+
   useEffect(() => {
     const slug = searchParams.get("project") || ""
     setProjectSlug(slug)
@@ -282,7 +295,7 @@ export default function LocationDetail() {
       await loadSubstrates(id, projectSlug, quiet)
       await loadMentions(id, projectSlug, quiet)
     },
-    [id, projectSlug, loadMentions, loadSubstrates],
+    [id, projectSlug, loadCanonical, loadMentions, loadSubstrates],
   )
 
   const mentionsBySubstrateId = useMemo(() => {
@@ -354,7 +367,7 @@ export default function LocationDetail() {
     }
   }
 
-  const onDelete = async () => {
+  const onDelete = useCallback(async () => {
     if (!canonical || !id || !projectSlug) return
     setDeleting(true)
     try {
@@ -366,7 +379,60 @@ export default function LocationDetail() {
       setDeleting(false)
       setDeleteOpen(false)
     }
-  }
+  }, [canonical, id, navigate, projectSlug, showError])
+
+  useEffect(() => {
+    if (!id || !projectSlug) return
+    if (mentionsLoading || substratesLoading) return
+
+    const mentionCount = mentions.length
+    const substrateCount = substrates.length
+
+    const prevMentions = prevMentionCountRef.current
+    const prevSubs = prevSubstrateCountRef.current
+
+    // Establish baseline after first successful refresh for this canonical.
+    if (prevMentions === null || prevSubs === null) {
+      prevMentionCountRef.current = mentionCount
+      prevSubstrateCountRef.current = substrateCount
+      return
+    }
+
+    const mentionsCleared = prevMentions > 0 && mentionCount === 0
+    const noLinkedSubstrates = substrateCount === 0
+
+    if (mentionsCleared && noLinkedSubstrates) {
+      void (async () => {
+        const ok = await showConfirm(
+          "All mentions for this canonical have been removed. Would you like to delete it?",
+          {
+            title: "Delete canonical?",
+            confirmLabel: "Delete canonical",
+            cancelLabel: "Keep",
+            destructive: true,
+          },
+        )
+        if (ok) {
+          await onDelete()
+        }
+        prevMentionCountRef.current = mentionCount
+        prevSubstrateCountRef.current = substrateCount
+      })()
+      return
+    }
+
+    prevMentionCountRef.current = mentionCount
+    prevSubstrateCountRef.current = substrateCount
+  }, [
+    id,
+    projectSlug,
+    mentions,
+    mentionsLoading,
+    substrates,
+    substratesLoading,
+    showConfirm,
+    onDelete,
+  ])
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
 
