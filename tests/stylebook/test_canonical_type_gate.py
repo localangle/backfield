@@ -154,7 +154,7 @@ def test_natural_to_city_incompatible() -> None:
 
 
 def test_link_substrate_atomic_rejects_city_to_place() -> None:
-    """Manual link API uses the same matrix as ingest."""
+    """Manual link is an editorial override and does not enforce the type matrix."""
     engine = _make_engine()
     with Session(engine) as session:
         _, sb_id = _bootstrap(session, org_slug="linkpair")
@@ -181,17 +181,14 @@ def test_link_substrate_atomic_rejects_city_to_place() -> None:
         session.add(loc)
         session.commit()
         session.refresh(loc)
-        try:
-            link_substrate_to_canonical_atomic(
-                session,
-                stylebook_id=sb_id,
-                location=loc,
-                target_canonical_id=str(canon_place.id),
-            )
-        except ValueError as e:
-            assert "incompatible" in str(e).lower()
-        else:
-            raise AssertionError("expected ValueError")
+        changed = link_substrate_to_canonical_atomic(
+            session,
+            stylebook_id=sb_id,
+            location=loc,
+            target_canonical_id=str(canon_place.id),
+        )
+        assert changed is True
+        assert loc.stylebook_location_canonical_id == str(canon_place.id)
 
 
 # ---------------------------------------------------------------------------

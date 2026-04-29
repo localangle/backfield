@@ -40,10 +40,9 @@ def rank_canonical_suggestions_for_substrate(
     if exact_cid is not None:
         canon = session.get(StylebookLocationCanonical, str(exact_cid))
         if canon is not None and int(canon.stylebook_id) == int(stylebook_id):
-            if link_pair_allowed(location.location_type, canon.location_type):
-                eid = str(exact_cid)
-                out.append((eid, str(canon.label)))
-                seen.add(eid)
+            eid = str(exact_cid)
+            out.append((eid, str(canon.label)))
+            seen.add(eid)
     for cid, lab, _sc, _idx in ranked:
         if cid in seen:
             continue
@@ -136,6 +135,7 @@ def link_substrate_to_canonical_atomic(
     location: SubstrateLocation,
     target_canonical_id: str,
     provenance: str = "stylebook_ui_link",
+    enforce_type_gate: bool = False,
 ) -> bool:
     """Attach substrate to canonical B, refresh aliases on B, prune alias on old A when safe.
 
@@ -147,7 +147,7 @@ def link_substrate_to_canonical_atomic(
     canon = session.get(StylebookLocationCanonical, tid)
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise ValueError("target canonical not in this stylebook")
-    if not link_pair_allowed(location.location_type, canon.location_type):
+    if enforce_type_gate and not link_pair_allowed(location.location_type, canon.location_type):
         raise ValueError(
             "substrate location_type is incompatible with the target canonical location_type "
             "for linking"
