@@ -1,5 +1,6 @@
 """Agate node implementations."""
 
+from backfield_core.nodes.advanced_geocode_agent import run_advanced_geocode_agent
 from backfield_core.nodes.db_output import run_db_output
 from backfield_core.nodes.geocode_agent import run_geocode_agent
 from backfield_core.nodes.json_input import run_json_input
@@ -14,6 +15,7 @@ NODE_RUNNERS: dict[str, callable] = {
     "S3Input": run_s3_input,
     "PlaceExtract": run_place_extract,
     "GeocodeAgent": run_geocode_agent,
+    "AdvancedGeocodeAgent": run_advanced_geocode_agent,
     "Output": run_output,
     "DBOutput": run_db_output,
 }

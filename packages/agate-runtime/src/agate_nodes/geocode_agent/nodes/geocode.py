@@ -4,6 +4,7 @@ import os
 import asyncio
 import logging
 from ..models import (
+    Area,
     State,
     County,
     City,
@@ -300,7 +301,11 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
             state["geocoding_result"] = None
             state["geocoding_model"] = None
             return state
-        
+
+        eval_model = state.get("evaluation_llm_model")
+        if isinstance(model, Area) and eval_model:
+            model._evaluation_llm_model = eval_model  # type: ignore[attr-defined]
+
         # Geocode using the model
         geocode_kwargs = {
             "pelias_api_key": pelias_api_key,

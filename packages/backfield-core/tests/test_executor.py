@@ -330,6 +330,48 @@ def test_dboutput_direct_upstream_without_json_output():
     assert cities and cities[0]["name"] == "Austin"
 
 
+def test_advanced_geocode_agent_dboutput_direct_upstream():
+    """AdvancedGeocodeAgent uses the same places merge path as GeocodeAgent for DBOutput."""
+    spec = GraphSpec(
+        name="pipeline-advanced-geocode",
+        nodes=[
+            NodeConfig(id="n1", type="TextInput", params={"text": "Meetings in Austin, TX."}),
+            NodeConfig(id="n2", type="PlaceExtract", params={}),
+            NodeConfig(
+                id="n3",
+                type="AdvancedGeocodeAgent",
+                params={"evaluationModel": "gpt-5-mini", "routerModel": "gpt-5-nano"},
+            ),
+            NodeConfig(id="n5", type="DBOutput", params={}),
+        ],
+        edges=[
+            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(source="n2", target="n3", sourceHandle="locations", targetHandle="locations"),
+            Edge(source="n3", target="n5", sourceHandle="locations", targetHandle="data"),
+        ],
+    )
+
+    with (
+        patch(
+            "agate_nodes.place_extract.node_port.call_llm",
+            return_value=_mock_place_extract_json("Austin", "Texas", "TX"),
+        ),
+        patch(
+            "agate_nodes.geocode_agent.node.run_geocoding_agent",
+            side_effect=_fake_run_geocoding_agent,
+        ),
+    ):
+        out = execute_graph(spec)
+
+    assert "advanced_geocode_agent" in out
+    assert "__outputKeysByNodeId" not in out
+    db_out = out["stylebook_output"]
+    assert db_out.get("success") is True
+    assert "places" in db_out
+    cities = db_out["places"]["areas"]["cities"]
+    assert cities and cities[0]["name"] == "Austin"
+
+
 def test_json_input_article_fields_reach_dboutput_after_geocode():
     """Geocode must flatten executor namespacing so headline/url survive DBOutput merge."""
     spec = GraphSpec(

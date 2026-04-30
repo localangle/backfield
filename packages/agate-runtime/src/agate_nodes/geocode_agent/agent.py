@@ -45,6 +45,8 @@ async def run_geocoding_agent(
     project_slug: Optional[str] = None,
     service_api_token: Optional[str] = None,
     cache_resolve: Optional[CacheResolveFn] = None,
+    evaluation_llm_model: Optional[str] = None,
+    router_llm_model: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Run the geocoding agent workflow for a single location.
@@ -61,7 +63,9 @@ async def run_geocoding_agent(
         geocodio_api_key: Geocodio API key for fallback geocoding
         openai_api_key: OpenAI API key for LLM evaluation
         brave_search_api_key: Brave Search API key for place address finding
-        
+        evaluation_llm_model: Optional OpenAI model id for area geocoder evaluation.
+        router_llm_model: Reserved for future routing LLM steps in hybrid graphs.
+
     Returns:
         Consolidated output dict if successful, None otherwise
     """
@@ -87,6 +91,8 @@ async def run_geocoding_agent(
         "service_api_token": service_api_token,
         "cache_resolve": cache_resolve,
         "final_output": None,
+        "evaluation_llm_model": evaluation_llm_model,
+        "router_llm_model": router_llm_model,
     }
     
     # Run the agent

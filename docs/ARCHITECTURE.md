@@ -17,11 +17,11 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 
 - `packages/backfield-core`
   - Owns `GraphSpec`, graph execution, thin node runner entrypoints, node metadata, and node UI source files.
-  - Delegates heavy node logic to `agate-runtime` for LLM PlaceExtract and LangGraph GeocodeAgent.
-  - Wires **optional Postgres geocode cache** (Stylebook canonicals + `substrate_location_cache`, same fingerprint as ingest) into `agate-runtime` when the worker sets `BACKFIELD_PROJECT_ID` and the Geocode node params include `stylebookId`, via `backfield-stylebook` helpers on `AgateEnvContext.metadata` (`cache_resolve`).
+  - Delegates heavy node logic to `agate-runtime` for LLM PlaceExtract and LangGraph GeocodeAgent / AdvancedGeocodeAgent.
+  - Wires **optional Postgres geocode cache** (Stylebook canonicals + `substrate_location_cache`, same fingerprint as ingest) into `agate-runtime` when the worker sets `BACKFIELD_PROJECT_ID` and the Geocode (or Advanced Geocode) node params include `stylebookId`, via `backfield-stylebook` helpers on `AgateEnvContext.metadata` (`cache_resolve`).
   - Should stay free of API routing and frontend app state concerns.
 - `packages/agate-runtime`
-  - Vendored execution glue (`agate_runtime`), shared helpers (`agate_utils`), and ported nodes under **`agate_nodes/`** (e.g. `geocode_agent`, `place_extract` — no `backfield_` prefix on each node package).
+  - Vendored execution glue (`agate_runtime`), shared helpers (`agate_utils`), and ported nodes under **`agate_nodes/`** (e.g. `geocode_agent`, `advanced_geocode_agent`, `place_extract` — no `backfield_` prefix on each node package).
   - Excluded from default Ruff scope in the workspace root config; treat as third-party-style surface when editing.
 - `packages/backfield-db`
   - Owns SQLModel models, DB session helpers, encryption helpers, and Alembic migrations.

@@ -75,9 +75,10 @@ class Area(Location):
                 coordinates=str(coordinates),
             )
 
+            model_name = getattr(self, "_evaluation_llm_model", None) or LLM_EVALUATION_MODEL
             response = call_llm(
                 prompt=prompt,
-                model=LLM_EVALUATION_MODEL,
+                model=model_name,
                 openai_api_key=openai_api_key,
             )
 

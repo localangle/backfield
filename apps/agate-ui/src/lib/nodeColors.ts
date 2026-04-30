@@ -33,7 +33,14 @@ export const categoryBgColors = {
 } as const
 
 // Category type sets
-export const geographyTypes = new Set(['GeocodeSimple', 'GeocodeAgent', 'CustomGeographies', 'PlaceExtract', 'PlaceReview'])
+export const geographyTypes = new Set([
+  'GeocodeSimple',
+  'GeocodeAgent',
+  'AdvancedGeocodeAgent',
+  'CustomGeographies',
+  'PlaceExtract',
+  'PlaceReview',
+])
 export const imageTypes = new Set(['EmbedImages', 'ImageEnrich'])
 export const textTypes = new Set(['Embed', 'LLMEnrich', 'StatsNode'])
 export const peopleTypes = new Set(['PeopleExtract', 'PeopleClassify'])
