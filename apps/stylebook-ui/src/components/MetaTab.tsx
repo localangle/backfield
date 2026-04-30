@@ -49,6 +49,8 @@ export interface MetaResponse {
 export interface MetaTabConfig {
   type: string
   displayName: { singular: string; plural: string }
+  /** When set, shown under the Metadata title after load instead of the meta-item count. */
+  subtitle?: string
   api: {
     getMeta: (entityId: string | number, projectSlug: string) => Promise<MetaResponse>
     createMeta: (
@@ -466,7 +468,8 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
       ? loading
         ? "Loading…"
         : "Could not load metadata."
-      : `${meta.count} meta item${meta.count !== 1 ? "s" : ""} for this ${config.displayName.singular.toLowerCase()}`
+      : (config.subtitle ??
+          `${meta.count} meta item${meta.count !== 1 ? "s" : ""} for this ${config.displayName.singular.toLowerCase()}`)
 
   return (
     <>
@@ -479,7 +482,7 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
             </div>
             <Button type="button" className="shrink-0" onClick={openCreateDialog} disabled={!entityId || loading}>
               <Plus className="h-4 w-4 mr-2" />
-              Add Meta
+              Add metadata
             </Button>
           </div>
         </CardHeader>
@@ -492,9 +495,7 @@ export default function MetaTab({ entityId, projectSlug, config, onMetaUpdated }
           ) : !meta ? (
             <div className="py-6 text-center text-muted-foreground">No metadata available.</div>
           ) : meta.meta.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No metadata yet. Use Add Meta to create an entry.
-            </div>
+            <div className="text-center py-8 text-muted-foreground">No metadata yet.</div>
           ) : (
             <div className="space-y-4">
               {meta.meta.map((item) => {

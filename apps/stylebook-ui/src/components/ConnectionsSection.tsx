@@ -208,7 +208,7 @@ export default function ConnectionsSection({
             <div className="space-y-1.5 min-w-0">
               <CardTitle>Connections</CardTitle>
               <CardDescription>
-                Directed links between this {entityType} and other canonicals (e.g. mayor, born in).
+                Directed links between this {entityType} and other canonicals.
               </CardDescription>
             </div>
             <Button
@@ -241,9 +241,7 @@ export default function ConnectionsSection({
               </TabsList>
               <TabsContent value="list" className="mt-4">
                 {connections.length === 0 ? (
-                  <div className="text-center py-4 text-muted-foreground">
-                    No connections yet. Use Add connection to link this {entityType} to another canonical.
-                  </div>
+                  <div className="text-center py-4 text-muted-foreground">No connections yet.</div>
                 ) : (
                   <Table>
               <TableHeader>
