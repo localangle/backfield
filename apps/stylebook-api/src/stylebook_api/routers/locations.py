@@ -434,11 +434,6 @@ def list_canonical_locations(
     if type_filter is not None:
         tf = type_filter.strip()
         if tf:
-            if tf not in _ALLOWED_CANONICAL_LIST_TYPE_FILTER:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Invalid type_filter for canonical list",
-                )
             filters.append(col(StylebookLocationCanonical.location_type) == tf)
 
     count_stmt = select(func.count()).select_from(StylebookLocationCanonical).where(*filters)
@@ -492,6 +487,30 @@ def list_canonical_locations(
         has_next=offset + len(out) < total,
         has_prev=offset > 0,
     )
+
+
+@router.get("/canonical-locations/types")
+def list_canonical_location_types(
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> dict[str, Any]:
+    """Return distinct canonical ``location_type`` values for filter dropdowns.
+
+    Includes custom (non-PlaceExtract) types that may come from user uploads/imports.
+    """
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    stylebook_id = _require_stylebook_id(session, proj)
+    rows = session.exec(
+        select(func.distinct(StylebookLocationCanonical.location_type)).where(
+            StylebookLocationCanonical.stylebook_id == stylebook_id,
+            col(StylebookLocationCanonical.location_type).is_not(None),
+            func.length(func.trim(col(StylebookLocationCanonical.location_type))) > 0,
+        )
+    ).all()
+    types = sorted({str(r).strip() for r in rows if r is not None and str(r).strip()})
+    return {"types": types}
 
 
 @router.post("/canonical-locations", response_model=CanonicalLocationResponse)

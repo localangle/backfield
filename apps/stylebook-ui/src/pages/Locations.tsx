@@ -4,7 +4,7 @@ import { useAppMessage } from "@/components/AppMessageProvider"
 import {
   deleteCanonicalLocation,
   listCanonicalLocations,
-  listLocationCandidateTypes,
+  listCanonicalLocationTypes,
   type CanonicalLocation,
 } from "@/lib/api"
 import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
@@ -79,7 +79,7 @@ export default function Locations() {
     if (!projectSlug) return
     void (async () => {
       try {
-        const res = await listLocationCandidateTypes(projectSlug, "open")
+        const res = await listCanonicalLocationTypes(projectSlug)
         setTypes(res.types)
       } catch {
         setTypes([])

@@ -446,7 +446,11 @@ def test_list_canonical_locations_type_filter(client: TestClient) -> None:
         "/v1/canonical-locations?project_slug=demo-proj&type_filter=not_a_real_type",
         headers=_service_headers(),
     )
-    assert r_bad.status_code == 400
+    # Canonical types include custom values; unknown filters are treated as "no matches" rather
+    # than a hard 400.
+    assert r_bad.status_code == 200
+    data_bad = r_bad.json()
+    assert data_bad["canonicals"] == []
 
 
 def test_list_canonical_locations_orders_by_label_case_insensitive(client: TestClient) -> None:
