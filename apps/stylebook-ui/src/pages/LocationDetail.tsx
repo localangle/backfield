@@ -4,6 +4,7 @@ import {
   deleteCanonicalLocation,
   getCanonicalLocation,
   getCanonicalLocationMentions,
+  getLocation,
   listCanonicalLinkedSubstrates,
   patchCanonicalLocation,
   unlinkSubstrateFromCanonical,
@@ -129,6 +130,7 @@ function axisAlignedRectangleDraft(geometry: Record<string, unknown> | null): bo
 
 function geometryToFeatureCollections(
   geometry: Record<string, unknown> | null,
+  opts?: { featureId?: string; label?: string; group?: string },
 ): { points: unknown; polygons: unknown } {
   if (!geometry || typeof geometry !== "object") {
     return {
@@ -136,6 +138,10 @@ function geometryToFeatureCollections(
       polygons: { type: "FeatureCollection", features: [] },
     }
   }
+
+  const featureId = opts?.featureId ?? "canonical"
+  const label = opts?.label ?? "Canonical"
+  const group = opts?.group ?? "canonical"
 
   const g = geometry as Partial<GeoJsonGeometry>
   const type = typeof g.type === "string" ? g.type : null
@@ -148,7 +154,7 @@ function geometryToFeatureCollections(
         features: [
           {
             type: "Feature",
-            properties: { id: "canonical", label: "Canonical", group: "canonical" },
+            properties: { id: featureId, label, group },
             geometry: { type: "Point", coordinates: coords },
           },
         ],
@@ -169,7 +175,7 @@ function geometryToFeatureCollections(
         features: [
           {
             type: "Feature",
-            properties: { id: "canonical", label: "Canonical", group: "canonical" },
+            properties: { id: featureId, label, group },
             geometry: { type, coordinates: g.coordinates },
           },
         ],
@@ -213,6 +219,14 @@ export default function LocationDetail() {
   const [mentionsLoading, setMentionsLoading] = useState(false)
   const [moveSubstrateId, setMoveSubstrateId] = useState<number | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
+  const [substrateGeometryOpen, setSubstrateGeometryOpen] = useState(false)
+  const [substrateGeometryLoading, setSubstrateGeometryLoading] = useState(false)
+  const [substrateGeometrySubstrate, setSubstrateGeometrySubstrate] =
+    useState<LinkedSubstrateItem | null>(null)
+  const [substrateGeometryJson, setSubstrateGeometryJson] = useState<Record<string, unknown> | null>(
+    null,
+  )
+  const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
   const prevMentionCountRef = useRef<number | null>(null)
   const prevSubstrateCountRef = useRef<number | null>(null)
   const lastCanonicalKeyRef = useRef<string>("")
@@ -437,7 +451,11 @@ export default function LocationDetail() {
   const geometrySource = geometryEditing ? geometryDraft : geometry
 
   const leafletCollections = useMemo(() => {
-    const base = geometryToFeatureCollections(geometrySource as any)
+    const base = geometryToFeatureCollections(geometrySource as any, {
+      featureId: "canonical",
+      label: "Canonical",
+      group: "canonical",
+    })
 
     const stripCanonicalPolygon = (polygons: any) => {
       const fc = polygons as any
@@ -460,6 +478,48 @@ export default function LocationDetail() {
       polygons: hideCanonicalPolygon ? stripCanonicalPolygon(base.polygons) : base.polygons,
     }
   }, [geometryAddMode, geometryDraft, geometryEditing, geometrySource, rectanglePreview])
+
+  const openSubstrateGeometry = useCallback(
+    async (sub: LinkedSubstrateItem) => {
+      if (!projectSlug) return
+      setSubstrateGeometrySubstrate(sub)
+      setSubstrateGeometryJson(null)
+      setSubstrateGeometryOpen(true)
+      setSubstrateGeometryLoading(true)
+      try {
+        const row = await getLocation(sub.id, projectSlug)
+        const g = (row.geometry_json as Record<string, unknown> | undefined) ?? null
+        setSubstrateGeometryJson(g)
+      } catch (e) {
+        showError(e instanceof Error ? e.message : "Could not load substrate geometry")
+      } finally {
+        setSubstrateGeometryLoading(false)
+      }
+    },
+    [projectSlug, showError],
+  )
+
+  const handleAdoptSubstrateGeometry = useCallback(async () => {
+    if (!canonical || !projectSlug || !substrateGeometrySubstrate) return
+    if (!substrateGeometryJson || typeof substrateGeometryJson !== "object") return
+    setAdoptingSubstrateGeometry(true)
+    try {
+      await updateCanonicalLocationGeometry(canonical.id, projectSlug, substrateGeometryJson)
+      await loadCanonical(canonical.id, projectSlug, true)
+      setSubstrateGeometryOpen(false)
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not adopt geometry")
+    } finally {
+      setAdoptingSubstrateGeometry(false)
+    }
+  }, [
+    canonical,
+    loadCanonical,
+    projectSlug,
+    showError,
+    substrateGeometryJson,
+    substrateGeometrySubstrate,
+  ])
 
   const leafletInitialCenter = useMemo((): [number, number] | null => {
     const g = (geometryEditing ? geometryDraft : geometry) as Record<string, unknown> | null
@@ -861,7 +921,16 @@ export default function LocationDetail() {
                     <Fragment key={`group-${s.id}`}>
                       <TableRow className="bg-muted/50 border-t">
                         <TableCell colSpan={4} className="align-top py-3">
-                          <div className="font-medium">{s.name}</div>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="font-medium min-w-0 break-words">{s.name}</div>
+                            <button
+                              type="button"
+                              className="text-xs text-primary hover:underline shrink-0"
+                              onClick={() => void openSubstrateGeometry(s)}
+                            >
+                              View geometry
+                            </button>
+                          </div>
                           <div className="text-xs text-muted-foreground mt-0.5 break-words">
                             {(s.location_type || "").trim()
                               ? placeExtractTypeLabel(s.location_type)
@@ -975,6 +1044,74 @@ export default function LocationDetail() {
         projectSlug={projectSlug}
         entityDisplayName={canonical.label}
       />
+
+      <Dialog open={substrateGeometryOpen} onOpenChange={setSubstrateGeometryOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Substrate geometry</DialogTitle>
+            <DialogDescription>
+              {substrateGeometrySubstrate ? substrateGeometrySubstrate.name : "—"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {substrateGeometryLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading geometry…
+            </div>
+          ) : !substrateGeometryJson ? (
+            <p className="text-sm text-muted-foreground">No geometry found on this substrate.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="h-[18rem] rounded-md border overflow-hidden">
+                <LeafletMap
+                  points={
+                    geometryToFeatureCollections(substrateGeometryJson, {
+                      featureId: "substrate",
+                      label: "Substrate",
+                      group: "substrate",
+                    }).points as any
+                  }
+                  polygons={
+                    geometryToFeatureCollections(substrateGeometryJson, {
+                      featureId: "substrate",
+                      label: "Substrate",
+                      group: "substrate",
+                    }).polygons as any
+                  }
+                  showPopups={false}
+                  fitToData
+                  initialCenter={ADD_GEOMETRY_MAP_CENTER}
+                  initialZoom={ADD_GEOMETRY_MAP_ZOOM}
+                />
+              </div>
+              <div className="rounded-md border bg-muted/30 p-3">
+                <pre className="text-xs whitespace-pre-wrap break-words">
+                  {JSON.stringify(substrateGeometryJson, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSubstrateGeometryOpen(false)}>
+              Close
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={
+                substrateGeometryLoading ||
+                adoptingSubstrateGeometry ||
+                !substrateGeometryJson ||
+                !canonical
+              }
+              onClick={() => void handleAdoptSubstrateGeometry()}
+            >
+              {adoptingSubstrateGeometry ? "Adopting…" : "Adopt for canonical"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
