@@ -4,6 +4,7 @@ import {
   acceptCandidate,
   deferCandidate,
   getCandidateContext,
+  getCanonicalLocation,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
   listCandidates,
@@ -195,12 +196,20 @@ export default function LocationCandidates() {
   const [toastFollowupError, setToastFollowupError] = useState<string | null>(null)
   const [toastFollowupRows, setToastFollowupRows] = useState<Candidate[]>([])
   const [potentialLinksOpen, setPotentialLinksOpen] = useState(false)
+  /** Opacity transition before clearing `createdToast` after auto-dismiss timer. */
+  const [canonicalCreatedToastLeaving, setCanonicalCreatedToastLeaving] = useState(false)
   const [toastLinkBusyId, setToastLinkBusyId] = useState<number | null>(null)
   const [toastLinkError, setToastLinkError] = useState<string | null>(null)
   const [createLinkNudge, setCreateLinkNudge] = useState<{
     canonicalId: string
     label: string
   } | null>(null)
+  const [linkedToast, setLinkedToast] = useState<{
+    canonicalId: string
+    canonicalLabel: string
+    candidateLabel: string
+  } | null>(null)
+  const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
 
   const createModalCandidate = useMemo(
     () => (createModalId === null ? undefined : candidates.find((x) => x.id === createModalId)),
@@ -421,6 +430,31 @@ export default function LocationCandidates() {
     void prefetchToastFollowupCandidates()
   }, [createdToast, projectSlug, prefetchToastFollowupCandidates])
 
+  useEffect(() => {
+    if (!createdToast) {
+      setCanonicalCreatedToastLeaving(false)
+      return
+    }
+    setCanonicalCreatedToastLeaving(false)
+    if (toastFollowupLoading || toastFollowupRows.length > 0) {
+      return
+    }
+
+    const timeouts = { main: 0 as number, fade: undefined as number | undefined }
+    timeouts.main = window.setTimeout(() => {
+      setCanonicalCreatedToastLeaving(true)
+      timeouts.fade = window.setTimeout(() => {
+        setCreatedToast(null)
+        setCanonicalCreatedToastLeaving(false)
+      }, 300)
+    }, 3000)
+
+    return () => {
+      window.clearTimeout(timeouts.main)
+      if (timeouts.fade !== undefined) window.clearTimeout(timeouts.fade)
+    }
+  }, [createdToast, toastFollowupLoading, toastFollowupRows.length])
+
   function defaultNewCanonicalLabel(c: Candidate): string {
     const fromName = (c.suggested_name ?? "").trim()
     if (fromName) return fromName
@@ -499,6 +533,34 @@ export default function LocationCandidates() {
     }
   }
 
+  async function linkCandidateToSuggestedCanonical(c: Candidate) {
+    if (!projectSlug) return
+    const cid = (c.canonical_suggestion?.stylebook_location_canonical_id ?? "").trim()
+    if (!cid) return
+    setLinkingSuggestedId(c.id)
+    setError(null)
+    try {
+      await linkSubstrateToCanonical(c.id, projectSlug, cid)
+      let canonLabel = cid
+      try {
+        const canon = await getCanonicalLocation(cid, projectSlug)
+        canonLabel = (canon.label ?? "").trim() || cid
+      } catch {
+        // ignore; fall back to id
+      }
+      setLinkedToast({
+        canonicalId: cid,
+        canonicalLabel: canonLabel,
+        candidateLabel: (c.suggested_name ?? "").trim() || `Location ${c.id}`,
+      })
+      await refreshListQuiet()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Link failed")
+    } finally {
+      setLinkingSuggestedId(null)
+    }
+  }
+
   async function handleDefer(c: Candidate) {
     if (!projectSlug) return
     setDeferringId(c.id)
@@ -565,7 +627,10 @@ export default function LocationCandidates() {
         <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
           <div
             role="status"
-            className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
+            className={cn(
+              "rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15 transition-opacity duration-300",
+              canonicalCreatedToastLeaving ? "opacity-0" : "opacity-100",
+            )}
           >
             <div className="flex items-start gap-3 p-4 pr-2">
               <CheckCircle2
@@ -608,7 +673,47 @@ export default function LocationCandidates() {
                 size="icon"
                 variant="ghost"
                 className="-mr-1 -mt-1 h-8 w-8 shrink-0"
-                onClick={() => setCreatedToast(null)}
+                onClick={() => {
+                  setCanonicalCreatedToastLeaving(false)
+                  setCreatedToast(null)
+                }}
+                aria-label="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {linkedToast ? (
+        <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
+          <div
+            role="status"
+            className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
+          >
+            <div className="flex items-start gap-3 p-4 pr-2">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
+              <div className="flex min-w-0 max-w-[min(28rem,calc(100vw-5.5rem))] flex-col gap-1.5">
+                <div className="text-sm font-semibold leading-none">Linked to canonical</div>
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground break-words">
+                    {linkedToast.candidateLabel}
+                  </span>{" "}
+                  →{" "}
+                  <Link
+                    to={`/locations/canonical/${linkedToast.canonicalId}?project=${encodeURIComponent(projectSlug)}`}
+                    className="font-medium text-foreground underline-offset-4 hover:underline break-words"
+                  >
+                    {linkedToast.canonicalLabel}
+                  </Link>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="-mr-1 -mt-1 h-8 w-8 shrink-0"
+                onClick={() => setLinkedToast(null)}
                 aria-label="Dismiss"
               >
                 <X className="h-4 w-4" />
@@ -737,6 +842,11 @@ export default function LocationCandidates() {
                     const savedNoteText = String(contextById[c.id]?.note ?? c.note ?? "").trim()
                     const rowSug = suggestedRowAction(c)
                     const rowSugLabel = suggestedActionShortLabel(c)
+                    const suggestedCanonicalId =
+                      rowSug === "link" &&
+                      c.canonical_suggestion?.stylebook_location_canonical_id != null
+                        ? String(c.canonical_suggestion.stylebook_location_canonical_id).trim()
+                        : ""
                     return (
                     <Fragment key={c.id}>
                       <TableRow id={`candidate-row-${c.id}`}>
@@ -811,23 +921,36 @@ export default function LocationCandidates() {
                                   "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-sm",
                               )}
                               title={
-                                rowSug === "link"
-                                  ? "Suggested: link to existing canonical"
+                                rowSug === "link" && suggestedCanonicalId
+                                  ? "Suggested: link now"
+                                  : rowSug === "link"
+                                    ? "Suggested: link to existing canonical"
+                                    : "Link to existing canonical"
+                              }
+                              aria-label={
+                                rowSug === "link" && suggestedCanonicalId
+                                  ? "Link to suggested canonical"
                                   : "Link to existing canonical"
                               }
-                              aria-label="Link to existing canonical"
-                              disabled={acceptingId === c.id || deferringId === c.id}
+                              disabled={
+                                acceptingId === c.id ||
+                                deferringId === c.id ||
+                                linkingSuggestedId === c.id
+                              }
                               onClick={() => {
+                                if (rowSug === "link" && suggestedCanonicalId) {
+                                  void linkCandidateToSuggestedCanonical(c)
+                                  return
+                                }
                                 setLinkModalId(c.id)
-                                const preId =
-                                  rowSug === "link" &&
-                                  c.canonical_suggestion?.stylebook_location_canonical_id != null
-                                    ? c.canonical_suggestion.stylebook_location_canonical_id
-                                    : null
-                                setLinkModalInitialCanonicalId(preId)
+                                setLinkModalInitialCanonicalId(null)
                               }}
                             >
-                              <Link2 className="h-4 w-4" aria-hidden />
+                              {linkingSuggestedId === c.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                              ) : (
+                                <Link2 className="h-4 w-4" aria-hidden />
+                              )}
                             </Button>
                             <Button
                               type="button"
@@ -1018,6 +1141,15 @@ export default function LocationCandidates() {
         substrateLocationId={linkModalId}
         initialCanonicalId={linkModalInitialCanonicalId}
         title="Link candidate to canonical"
+        onLinked={({ id, label }) => {
+          setLinkedToast({
+            canonicalId: id,
+            canonicalLabel: label,
+            candidateLabel:
+              (candidates.find((c) => c.id === linkModalId)?.suggested_name ?? "").trim() ||
+              (linkModalId != null ? `Location ${linkModalId}` : "Location"),
+          })
+        }}
         onDone={() => void refreshListQuiet()}
       />
 

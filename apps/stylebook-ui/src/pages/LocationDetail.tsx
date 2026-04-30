@@ -1,9 +1,10 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   deleteCanonicalLocation,
   getCanonicalLocation,
   getCanonicalLocationMentions,
+  getLocation,
   listCanonicalLinkedSubstrates,
   patchCanonicalLocation,
   unlinkSubstrateFromCanonical,
@@ -129,6 +130,7 @@ function axisAlignedRectangleDraft(geometry: Record<string, unknown> | null): bo
 
 function geometryToFeatureCollections(
   geometry: Record<string, unknown> | null,
+  opts?: { featureId?: string; label?: string; group?: string },
 ): { points: unknown; polygons: unknown } {
   if (!geometry || typeof geometry !== "object") {
     return {
@@ -136,6 +138,10 @@ function geometryToFeatureCollections(
       polygons: { type: "FeatureCollection", features: [] },
     }
   }
+
+  const featureId = opts?.featureId ?? "canonical"
+  const label = opts?.label ?? "Canonical"
+  const group = opts?.group ?? "canonical"
 
   const g = geometry as Partial<GeoJsonGeometry>
   const type = typeof g.type === "string" ? g.type : null
@@ -148,7 +154,7 @@ function geometryToFeatureCollections(
         features: [
           {
             type: "Feature",
-            properties: { id: "canonical", label: "Canonical", group: "canonical" },
+            properties: { id: featureId, label, group },
             geometry: { type: "Point", coordinates: coords },
           },
         ],
@@ -169,7 +175,7 @@ function geometryToFeatureCollections(
         features: [
           {
             type: "Feature",
-            properties: { id: "canonical", label: "Canonical", group: "canonical" },
+            properties: { id: featureId, label, group },
             geometry: { type, coordinates: g.coordinates },
           },
         ],
@@ -213,6 +219,27 @@ export default function LocationDetail() {
   const [mentionsLoading, setMentionsLoading] = useState(false)
   const [moveSubstrateId, setMoveSubstrateId] = useState<number | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
+  const [substrateGeometryOpen, setSubstrateGeometryOpen] = useState(false)
+  const [substrateGeometryLoading, setSubstrateGeometryLoading] = useState(false)
+  const [substrateGeometrySubstrate, setSubstrateGeometrySubstrate] =
+    useState<LinkedSubstrateItem | null>(null)
+  const [substrateGeometryJson, setSubstrateGeometryJson] = useState<Record<string, unknown> | null>(
+    null,
+  )
+  const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
+  const prevMentionCountRef = useRef<number | null>(null)
+  const prevSubstrateCountRef = useRef<number | null>(null)
+  const lastCanonicalKeyRef = useRef<string>("")
+
+  useEffect(() => {
+    const key = `${projectSlug}:${id ?? ""}`
+    if (key !== lastCanonicalKeyRef.current) {
+      lastCanonicalKeyRef.current = key
+      prevMentionCountRef.current = null
+      prevSubstrateCountRef.current = null
+    }
+  }, [id, projectSlug])
+
   useEffect(() => {
     const slug = searchParams.get("project") || ""
     setProjectSlug(slug)
@@ -282,7 +309,7 @@ export default function LocationDetail() {
       await loadSubstrates(id, projectSlug, quiet)
       await loadMentions(id, projectSlug, quiet)
     },
-    [id, projectSlug, loadMentions, loadSubstrates],
+    [id, projectSlug, loadCanonical, loadMentions, loadSubstrates],
   )
 
   const mentionsBySubstrateId = useMemo(() => {
@@ -354,7 +381,7 @@ export default function LocationDetail() {
     }
   }
 
-  const onDelete = async () => {
+  const onDelete = useCallback(async () => {
     if (!canonical || !id || !projectSlug) return
     setDeleting(true)
     try {
@@ -366,12 +393,71 @@ export default function LocationDetail() {
       setDeleting(false)
       setDeleteOpen(false)
     }
-  }
+  }, [canonical, id, navigate, projectSlug, showError])
+
+  useEffect(() => {
+    if (!id || !projectSlug) return
+    if (mentionsLoading || substratesLoading) return
+
+    const mentionCount = mentions.length
+    const substrateCount = substrates.length
+
+    const prevMentions = prevMentionCountRef.current
+    const prevSubs = prevSubstrateCountRef.current
+
+    // Establish baseline after first successful refresh for this canonical.
+    if (prevMentions === null || prevSubs === null) {
+      prevMentionCountRef.current = mentionCount
+      prevSubstrateCountRef.current = substrateCount
+      return
+    }
+
+    const mentionsCleared = prevMentions > 0 && mentionCount === 0
+    const noLinkedSubstrates = substrateCount === 0
+
+    if (mentionsCleared && noLinkedSubstrates) {
+      void (async () => {
+        const ok = await showConfirm(
+          "All mentions for this canonical have been removed. Would you like to delete it?",
+          {
+            title: "Delete canonical?",
+            confirmLabel: "Delete canonical",
+            cancelLabel: "Keep",
+            destructive: true,
+          },
+        )
+        if (ok) {
+          await onDelete()
+        }
+        prevMentionCountRef.current = mentionCount
+        prevSubstrateCountRef.current = substrateCount
+      })()
+      return
+    }
+
+    prevMentionCountRef.current = mentionCount
+    prevSubstrateCountRef.current = substrateCount
+  }, [
+    id,
+    projectSlug,
+    mentions,
+    mentionsLoading,
+    substrates,
+    substratesLoading,
+    showConfirm,
+    onDelete,
+  ])
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
+  const geometryDraftIsMultiPolygon = geometryEditing && isMultiPolygonGeometry(geometryDraft)
+  const allowGeometryMapEditing = geometryEditing && !geometryDraftIsMultiPolygon
 
   const leafletCollections = useMemo(() => {
-    const base = geometryToFeatureCollections(geometrySource as any)
+    const base = geometryToFeatureCollections(geometrySource as any, {
+      featureId: "canonical",
+      label: "Canonical",
+      group: "canonical",
+    })
 
     const stripCanonicalPolygon = (polygons: any) => {
       const fc = polygons as any
@@ -394,6 +480,48 @@ export default function LocationDetail() {
       polygons: hideCanonicalPolygon ? stripCanonicalPolygon(base.polygons) : base.polygons,
     }
   }, [geometryAddMode, geometryDraft, geometryEditing, geometrySource, rectanglePreview])
+
+  const openSubstrateGeometry = useCallback(
+    async (sub: LinkedSubstrateItem) => {
+      if (!projectSlug) return
+      setSubstrateGeometrySubstrate(sub)
+      setSubstrateGeometryJson(null)
+      setSubstrateGeometryOpen(true)
+      setSubstrateGeometryLoading(true)
+      try {
+        const row = await getLocation(sub.id, projectSlug)
+        const g = (row.geometry_json as Record<string, unknown> | undefined) ?? null
+        setSubstrateGeometryJson(g)
+      } catch (e) {
+        showError(e instanceof Error ? e.message : "Could not load substrate geometry")
+      } finally {
+        setSubstrateGeometryLoading(false)
+      }
+    },
+    [projectSlug, showError],
+  )
+
+  const handleAdoptSubstrateGeometry = useCallback(async () => {
+    if (!canonical || !projectSlug || !substrateGeometrySubstrate) return
+    if (!substrateGeometryJson || typeof substrateGeometryJson !== "object") return
+    setAdoptingSubstrateGeometry(true)
+    try {
+      await updateCanonicalLocationGeometry(canonical.id, projectSlug, substrateGeometryJson)
+      await loadCanonical(canonical.id, projectSlug, true)
+      setSubstrateGeometryOpen(false)
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Could not adopt geometry")
+    } finally {
+      setAdoptingSubstrateGeometry(false)
+    }
+  }, [
+    canonical,
+    loadCanonical,
+    projectSlug,
+    showError,
+    substrateGeometryJson,
+    substrateGeometrySubstrate,
+  ])
 
   const leafletInitialCenter = useMemo((): [number, number] | null => {
     const g = (geometryEditing ? geometryDraft : geometry) as Record<string, unknown> | null
@@ -504,7 +632,9 @@ export default function LocationDetail() {
                 placeholder="e.g. city, neighborhood"
               />
             ) : (
-              <p className="text-sm mt-1.5">{canonical.location_type || "—"}</p>
+              <p className="text-sm mt-1.5">
+                {canonical.location_type ? placeExtractTypeLabel(canonical.location_type) : "—"}
+              </p>
             )}
           </div>
           <div>
@@ -576,7 +706,6 @@ export default function LocationDetail() {
                   setRectanglePreview(null)
                   setGeometryEditing(true)
                 }}
-                disabled={isMultiPolygonGeometry(geometry)}
               >
                 Edit geography
               </Button>
@@ -584,12 +713,12 @@ export default function LocationDetail() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!geometryEditing && isMultiPolygonGeometry(geometry) ? (
+          {geometryEditing && isMultiPolygonGeometry(geometryDraft) ? (
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
                 Editing is disabled for MultiPolygon geometries. These complex geometries contain multiple polygons and
-                require specialized editing tools.
+                require specialized editing tools. You can delete the geometry, then add a point or rectangle replacement.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -661,39 +790,41 @@ export default function LocationDetail() {
             <LeafletMap
               points={leafletCollections.points as any}
               polygons={leafletCollections.polygons as any}
-              geocoder={geometryEditing}
+              geocoder={allowGeometryMapEditing}
               showPopups={false}
               // While editing, geometry updates constantly (drag/resize). Auto fitBounds would fight manual zoom.
-              fitToData={!geometryEditing}
+              fitToData={!allowGeometryMapEditing}
               initialCenter={
-                geometryEditing &&
+                allowGeometryMapEditing &&
                 !geometryDraft &&
                 (geometryAddMode === "point" || geometryAddMode === "rectangle")
                   ? ADD_GEOMETRY_MAP_CENTER
                   : leafletInitialCenter
               }
               initialZoom={
-                geometryEditing &&
+                allowGeometryMapEditing &&
                 !geometryDraft &&
                 (geometryAddMode === "point" || geometryAddMode === "rectangle")
                   ? ADD_GEOMETRY_MAP_ZOOM
                   : null
               }
               interactiveWhenEmpty={
-                geometryEditing && geometryAddMode === "point" && !geometryDraft
+                allowGeometryMapEditing && geometryAddMode === "point" && !geometryDraft
               }
               tileUrl={
-                geometryEditing
+                allowGeometryMapEditing
                   ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                   : undefined
               }
               tileAttribution={
-                geometryEditing
+                allowGeometryMapEditing
                   ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
                   : undefined
               }
               onMapClick={
-                geometryEditing && geometryAddMode === "point" && (!geometryDraft || isPointGeometry(geometryDraft))
+                allowGeometryMapEditing &&
+                geometryAddMode === "point" &&
+                (!geometryDraft || isPointGeometry(geometryDraft))
                   ? ({ latlng }) => {
                       setGeometryDraft({ type: "Point", coordinates: [latlng.lng, latlng.lat] })
                       setGeometryAddMode(null)
@@ -701,7 +832,9 @@ export default function LocationDetail() {
                   : undefined
               }
               editablePoint={
-                geometryEditing && isPointGeometry(geometryDraft) && geometryAddMode !== "rectangle"
+                allowGeometryMapEditing &&
+                isPointGeometry(geometryDraft) &&
+                geometryAddMode !== "rectangle"
                   ? {
                       featureId: "canonical",
                       onChange: ({ lng, lat }) =>
@@ -709,9 +842,9 @@ export default function LocationDetail() {
                     }
                   : null
               }
-              rectanglePreview={geometryEditing ? rectanglePreview : null}
+              rectanglePreview={allowGeometryMapEditing ? rectanglePreview : null}
               editableRectangle={
-                geometryEditing &&
+                allowGeometryMapEditing &&
                 axisAlignedRectangleDraft(geometryDraft) &&
                 geometryAddMode !== "rectangle" &&
                 boundsFromPolygonGeometry(geometryDraft as any)
@@ -735,7 +868,7 @@ export default function LocationDetail() {
                   : null
               }
               rectangleDraw={
-                geometryEditing && geometryAddMode === "rectangle"
+                allowGeometryMapEditing && geometryAddMode === "rectangle"
                   ? {
                       enabled: true,
                       onPreview: setRectanglePreview,
@@ -756,7 +889,7 @@ export default function LocationDetail() {
               }
             />
           </div>
-          {geometryEditing ? (
+          {geometryEditing && !geometryDraftIsMultiPolygon ? (
             <SimpleGeoJsonGeometry value={geometryDraft} onChange={setGeometryDraft} />
           ) : null}
         </CardContent>
@@ -778,84 +911,94 @@ export default function LocationDetail() {
           ) : substrates.length === 0 ? (
             <p className="text-sm text-muted-foreground">No linked substrate places.</p>
           ) : (
-            <Table className="table-fixed w-full">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[26%] min-w-[9rem]">Place / article</TableHead>
-                  <TableHead className="w-[6.5rem] min-w-[5.5rem]">Nature</TableHead>
-                  <TableHead className="w-[10rem]">Type / role</TableHead>
-                  <TableHead>Quoted text</TableHead>
-                  <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {substrates.map((s) => {
-                  const group = mentionsBySubstrateId.get(s.id) ?? []
-                  return (
-                    <Fragment key={`group-${s.id}`}>
-                      <TableRow className="bg-muted/50 border-t">
-                        <TableCell colSpan={4} className="align-top py-3">
-                          <div className="font-medium">{s.name}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5 break-words">
-                            {(s.location_type || "").trim()
-                              ? placeExtractTypeLabel(s.location_type)
-                              : "—"}{" "}
-                            <span className="text-muted-foreground/70">·</span>{" "}
-                            {(s.formatted_address ?? "").trim() || "—"}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="shrink-0"
-                              disabled={unlinkingId === s.id}
-                              onClick={() => setMoveSubstrateId(s.id)}
-                            >
-                              Move…
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="shrink-0"
-                              disabled={unlinkingId === s.id}
-                              onClick={() => void handleUnlinkSubstrate(s)}
-                            >
-                              {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {group.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="pl-8 text-sm text-muted-foreground py-2">
-                            No article mentions for this place.
+            <div className="w-full overflow-x-auto">
+              <Table className="w-full min-w-[56rem]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[26%] min-w-[9rem]">Place / article</TableHead>
+                    <TableHead className="w-[6.5rem] min-w-[5.5rem]">Nature</TableHead>
+                    <TableHead className="w-[10rem] min-w-[10rem]">Type / role</TableHead>
+                    <TableHead className="min-w-[18rem]">Quoted text</TableHead>
+                    <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {substrates.map((s) => {
+                    const group = mentionsBySubstrateId.get(s.id) ?? []
+                    return (
+                      <Fragment key={`group-${s.id}`}>
+                        <TableRow className="bg-muted/50 border-t">
+                          <TableCell colSpan={4} className="align-top py-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="font-medium min-w-0 break-words">{s.name}</div>
+                              <button
+                                type="button"
+                                className="text-xs text-primary hover:underline shrink-0"
+                                onClick={() => void openSubstrateGeometry(s)}
+                              >
+                                View geometry
+                              </button>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                              {(s.location_type || "").trim()
+                                ? placeExtractTypeLabel(s.location_type)
+                                : "—"}{" "}
+                              <span className="text-muted-foreground/70">·</span>{" "}
+                              {(s.formatted_address ?? "").trim() || "—"}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="shrink-0"
+                                disabled={unlinkingId === s.id}
+                                onClick={() => setMoveSubstrateId(s.id)}
+                              >
+                                Move…
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="shrink-0"
+                                disabled={unlinkingId === s.id}
+                                onClick={() => void handleUnlinkSubstrate(s)}
+                              >
+                                {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
-                      ) : (
-                        group.map((m) => {
-                          const articleHref = mentionArticleHref(m)
-                          const articleLabel = mentionArticleDisplayTitle(m)
-                          return (
-                          <TableRow key={m.mention_id} className="hover:bg-muted/30">
-                            <TableCell className="pl-8 align-top min-w-0">
-                              <div className="flex items-start gap-1 min-w-0">
-                                <span
-                                  className="text-muted-foreground select-none shrink-0 pt-0.5"
-                                  aria-hidden
-                                >
-                                  ↳
-                                </span>
-                                <div className="min-w-0">
-                                  {articleHref ? (
-                                    <a
-                                      href={articleHref}
-                                      className="font-medium text-primary hover:underline break-words"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      title={articleLabel}
-                                    >
+                        {group.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="pl-8 text-sm text-muted-foreground py-2">
+                              No article mentions for this place.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          group.map((m) => {
+                            const articleHref = mentionArticleHref(m)
+                            const articleLabel = mentionArticleDisplayTitle(m)
+                            return (
+                            <TableRow key={m.mention_id} className="hover:bg-muted/30">
+                              <TableCell className="pl-8 align-top min-w-0">
+                                <div className="flex items-start gap-1 min-w-0">
+                                  <span
+                                    className="text-muted-foreground select-none shrink-0 pt-0.5"
+                                    aria-hidden
+                                  >
+                                    ↳
+                                  </span>
+                                  <div className="min-w-0">
+                                    {articleHref ? (
+                                      <a
+                                        href={articleHref}
+                                        className="font-medium text-primary hover:underline break-words"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={articleLabel}
+                                      >
                                       {articleLabel}
                                     </a>
                                   ) : (
@@ -893,6 +1036,7 @@ export default function LocationDetail() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -909,6 +1053,74 @@ export default function LocationDetail() {
         projectSlug={projectSlug}
         entityDisplayName={canonical.label}
       />
+
+      <Dialog open={substrateGeometryOpen} onOpenChange={setSubstrateGeometryOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Substrate geometry</DialogTitle>
+            <DialogDescription>
+              {substrateGeometrySubstrate ? substrateGeometrySubstrate.name : "—"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {substrateGeometryLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading geometry…
+            </div>
+          ) : !substrateGeometryJson ? (
+            <p className="text-sm text-muted-foreground">No geometry found on this substrate.</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="h-[18rem] rounded-md border overflow-hidden">
+                <LeafletMap
+                  points={
+                    geometryToFeatureCollections(substrateGeometryJson, {
+                      featureId: "substrate",
+                      label: "Substrate",
+                      group: "substrate",
+                    }).points as any
+                  }
+                  polygons={
+                    geometryToFeatureCollections(substrateGeometryJson, {
+                      featureId: "substrate",
+                      label: "Substrate",
+                      group: "substrate",
+                    }).polygons as any
+                  }
+                  showPopups={false}
+                  fitToData
+                  initialCenter={ADD_GEOMETRY_MAP_CENTER}
+                  initialZoom={ADD_GEOMETRY_MAP_ZOOM}
+                />
+              </div>
+              <div className="rounded-md border bg-muted/30 p-3">
+                <pre className="text-xs whitespace-pre-wrap break-words">
+                  {JSON.stringify(substrateGeometryJson, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSubstrateGeometryOpen(false)}>
+              Close
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={
+                substrateGeometryLoading ||
+                adoptingSubstrateGeometry ||
+                !substrateGeometryJson ||
+                !canonical
+              }
+              onClick={() => void handleAdoptSubstrateGeometry()}
+            >
+              {adoptingSubstrateGeometry ? "Adopting…" : "Adopt for canonical"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>

@@ -100,6 +100,7 @@ export default function ImportLocations() {
   const [analyzeResult, setAnalyzeResult] = useState<AnalyzeGeoJsonResponse | null>(null)
   const [mappings, setMappings] = useState<GeoJsonFieldMappings>({
     labelProperty: null,
+    formattedAddressProperty: null,
     locationTypeProperty: null,
     locationTypeValue: null,
   })
@@ -167,6 +168,7 @@ export default function ImportLocations() {
     setAnalyzeResult(null)
     setMappings({
       labelProperty: null,
+      formattedAddressProperty: null,
       locationTypeProperty: null,
       locationTypeValue: null,
     })
@@ -492,8 +494,9 @@ export default function ImportLocations() {
           <CardHeader>
             <CardTitle>Mapping</CardTitle>
             <CardDescription>
-              Map label and location type. Formatted address uses the same GeoJSON property as
-              label/name.
+              Map the canonical label and location type. Formatted address is read from the property
+              you choose below; leave it unset to use the{" "}
+              <span className="font-mono text-xs">formatted_address</span> field on each feature.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -514,6 +517,42 @@ export default function ImportLocations() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">None</SelectItem>
+                    {availableProperties.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        <div className="flex w-full items-center justify-between gap-3">
+                          <span className="truncate">{p}</span>
+                          {sampleProperties ? (
+                            <span className="max-w-[18rem] truncate text-muted-foreground">
+                              {formatPropertyExample(sampleProperties[p]) ?? "—"}
+                            </span>
+                          ) : null}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Formatted address property</Label>
+                <p className="text-xs text-muted-foreground max-w-xl">
+                  Canonical name comes from the label mapping only. This property fills formatted
+                  address only.
+                </p>
+                <Select
+                  value={mappings.formattedAddressProperty ?? "__default__"}
+                  onValueChange={(v) =>
+                    setMappings((prev) => ({
+                      ...prev,
+                      formattedAddressProperty: v === "__default__" ? null : v,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="h-10 w-full max-w-xl">
+                    <SelectValue placeholder="Default: formatted_address" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">Default: formatted_address property</SelectItem>
                     {availableProperties.map((p) => (
                       <SelectItem key={p} value={p}>
                         <div className="flex w-full items-center justify-between gap-3">
@@ -841,7 +880,7 @@ export default function ImportLocations() {
                     const res = await importGeoJson(projectSlug, importPayload, {
                       label_property: mappings.labelProperty ?? null,
                       location_type_property: mappings.locationTypeProperty ?? null,
-                      formatted_address_property: mappings.labelProperty ?? null,
+                      formatted_address_property: mappings.formattedAddressProperty ?? null,
                       location_type_value: mappings.locationTypeValue ?? null,
                     })
                     setImportResult(res)
@@ -956,6 +995,7 @@ export default function ImportLocations() {
                       setManualLocationTypeLabel("")
                       setMappings({
                         labelProperty: null,
+                        formattedAddressProperty: null,
                         locationTypeProperty: null,
                         locationTypeValue: null,
                       })

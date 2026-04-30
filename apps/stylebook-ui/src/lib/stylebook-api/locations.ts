@@ -105,6 +105,11 @@ export async function listCanonicalLocations(
   return stylebookJsonFetch<PaginatedCanonicalLocationResponse>(`/v1/canonical-locations?${params}`)
 }
 
+export async function listCanonicalLocationTypes(projectSlug: string): Promise<{ types: string[] }> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  return stylebookJsonFetch(`/v1/canonical-locations/types?${params}`)
+}
+
 export async function getCanonicalLocation(
   canonicalId: string,
   projectSlug: string,

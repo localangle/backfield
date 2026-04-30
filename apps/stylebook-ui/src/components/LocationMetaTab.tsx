@@ -10,6 +10,7 @@ import {
 const locationMetaTabConfig: MetaTabConfig = {
   type: "location",
   displayName: { singular: "Location", plural: "Locations" },
+  subtitle: "Additional details about this location.",
   api: {
     getMeta: (entityId, projectSlug) => getCanonicalLocationMeta(String(entityId), projectSlug),
     createMeta: (entityId, projectSlug, data) =>

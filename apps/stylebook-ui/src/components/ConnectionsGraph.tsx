@@ -131,7 +131,7 @@ export default function ConnectionsGraph({
   if (connections.length === 0) {
     return (
       <div className="h-[300px] flex items-center justify-center rounded-md border bg-muted/30 text-muted-foreground">
-        No connections to show in graph. Add connections in the list view.
+        No connections yet.
       </div>
     )
   }

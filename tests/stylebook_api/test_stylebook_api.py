@@ -385,8 +385,10 @@ def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
                 StylebookLocationAlias.location_canonical_id == cid,
             )
         ).all()
-        assert len(aliases) == 1
-        assert aliases[0].normalized_alias == "west garfield park, chicago, il"
+        norms = {str(a.normalized_alias) for a in aliases}
+        # We store a conservative ordinal/punctuation-stripped variant for better recall.
+        assert "west garfield park, chicago, il" in norms
+        assert "west garfield park chicago il" in norms
 
 
 def test_create_canonical_location_post_alias_no_substrate(
@@ -444,7 +446,11 @@ def test_list_canonical_locations_type_filter(client: TestClient) -> None:
         "/v1/canonical-locations?project_slug=demo-proj&type_filter=not_a_real_type",
         headers=_service_headers(),
     )
-    assert r_bad.status_code == 400
+    # Canonical types include custom values; unknown filters are treated as "no matches" rather
+    # than a hard 400.
+    assert r_bad.status_code == 200
+    data_bad = r_bad.json()
+    assert data_bad["canonicals"] == []
 
 
 def test_list_canonical_locations_orders_by_label_case_insensitive(client: TestClient) -> None:

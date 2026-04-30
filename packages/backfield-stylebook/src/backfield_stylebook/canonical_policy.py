@@ -7,9 +7,13 @@ from enum import StrEnum
 from typing import Any
 
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
-from backfield_stylebook.canonical_link_matrix import link_pair_allowed, strict_type_group
+from backfield_stylebook.canonical_link_matrix import (
+    link_pair_allowed,
+    strict_type_group,
+    types_are_comparable,
+)
 from backfield_stylebook.canonical_match_score import (
     AUTOLINK_MIN_SCORE,
     RECALL_MIN_SCORE,
@@ -243,11 +247,45 @@ def rank_scored_canonical_recall_matches(
         gate_lt = _should_apply_head_anchor_gate(location.location_type)
         if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        if not link_pair_allowed(location.location_type, canon.location_type):
+        if not types_are_comparable(location.location_type, canon.location_type):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
         rows.append((recall_index, str(canon_id), str(canon.label), sc))
     rows.sort(key=lambda r: (-r[3], -r[0]))
     return [(r[1], r[2], r[3], r[0]) for r in rows]
+
+
+def _best_allowed_recall_score(
+    session: Session,
+    *,
+    substrate_location_type: str | None,
+    ranked: list[tuple[str, str, float, int]],
+) -> float | None:
+    """Return best recall score among canonicals allowed to link (strict matrix).
+
+    When we "compare broadly" for retrieval, cross-type candidates can land in the
+    ambiguous band and block materializing a new canonical even when there is no
+    *linkable* candidate. This helper lets policy treat "ambiguous but disallowed"
+    as "no match" for materialization decisions.
+    """
+    if not ranked:
+        return None
+    s_lt = (substrate_location_type or "").strip().lower()
+    if not s_lt:
+        return max(sc for _cid, _lab, sc, _idx in ranked)
+    ids = [cid for cid, _lab, _sc, _idx in ranked[:24]]
+    rows = session.exec(
+        select(StylebookLocationCanonical).where(col(StylebookLocationCanonical.id).in_(ids))
+    ).all()
+    lt_by_id: dict[str, str | None] = {}
+    for c in rows:
+        if c.id is not None:
+            lt_by_id[str(c.id)] = c.location_type
+    best: float | None = None
+    for cid, _lab, sc, _idx in ranked:
+        c_lt = lt_by_id.get(str(cid))
+        if link_pair_allowed(s_lt, c_lt):
+            best = sc if best is None else max(best, sc)
+    return best
 
 
 def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> bool:
@@ -387,6 +425,12 @@ def decide_canonical_persist_plan(
         if intra_ambiguous:
             tier = "ambiguous"
         if tier == "autolink" and best_id is not None:
+            best_canon = session.get(StylebookLocationCanonical, str(best_id))
+            best_lt = best_canon.location_type if best_canon is not None else None
+            if not link_pair_allowed(location.location_type, best_lt):
+                tier = "ambiguous"
+                intra_ambiguous = True
+        if tier == "autolink" and best_id is not None:
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,
                 existing_canonical_id=str(best_id),
@@ -407,6 +451,33 @@ def decide_canonical_persist_plan(
                 ),
             )
         if tier == "ambiguous" and best_id is not None:
+            # If recall is only "ambiguous" because of cross-type candidates we would never
+            # auto-link, treat it as "no match" so the substrate may materialize its own canonical.
+            if _should_materialize_when_no_canonical_match(location):
+                best_allowed = _best_allowed_recall_score(
+                    session,
+                    substrate_location_type=location.location_type,
+                    ranked=ranked,
+                )
+                if best_allowed is None or best_allowed < RECALL_MIN_SCORE:
+                    return CanonicalPersistPlan(
+                        decision=CanonicalPersistDecision.MATERIALIZE_NEW,
+                        resolution_reasons=(
+                            {
+                                "code": "materialized_new_canonical",
+                                "had_fuzzy_recall": bool(recall_canonical_ids),
+                                "match_basis": _match_basis_for_audit(location.location_type),
+                                "head_anchor_gate_applied": _should_apply_head_anchor_gate(
+                                    location.location_type
+                                ),
+                                "fuzzy_best_score_before_materialize": float(best_score),
+                                "fuzzy_recall_canonical_ids": list(recall_canonical_ids[:24]),
+                                "fuzzy_best_link_allowed_score": float(best_allowed)
+                                if best_allowed is not None
+                                else None,
+                            },
+                        ),
+                    )
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.DEFER,
                 resolution_reasons=(

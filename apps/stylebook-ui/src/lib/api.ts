@@ -24,6 +24,7 @@ export {
   linkSubstrateToCanonical,
   listCanonicalLinkedSubstrates,
   listCanonicalLocations,
+  listCanonicalLocationTypes,
   listLocationOptions,
   listLocations,
   patchCanonicalLocation,

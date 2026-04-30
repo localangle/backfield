@@ -154,7 +154,7 @@ def test_natural_to_city_incompatible() -> None:
 
 
 def test_link_substrate_atomic_rejects_city_to_place() -> None:
-    """Manual link API uses the same matrix as ingest."""
+    """Manual link is an editorial override and does not enforce the type matrix."""
     engine = _make_engine()
     with Session(engine) as session:
         _, sb_id = _bootstrap(session, org_slug="linkpair")
@@ -181,17 +181,14 @@ def test_link_substrate_atomic_rejects_city_to_place() -> None:
         session.add(loc)
         session.commit()
         session.refresh(loc)
-        try:
-            link_substrate_to_canonical_atomic(
-                session,
-                stylebook_id=sb_id,
-                location=loc,
-                target_canonical_id=str(canon_place.id),
-            )
-        except ValueError as e:
-            assert "incompatible" in str(e).lower()
-        else:
-            raise AssertionError("expected ValueError")
+        changed = link_substrate_to_canonical_atomic(
+            session,
+            stylebook_id=sb_id,
+            location=loc,
+            target_canonical_id=str(canon_place.id),
+        )
+        assert changed is True
+        assert loc.stylebook_location_canonical_id == str(canon_place.id)
 
 
 # ---------------------------------------------------------------------------
@@ -271,9 +268,7 @@ def test_rank_caps_incompatible_type_below_recall() -> None:
 
     assert len(ranked) == 1
     _, _label, score, _ = ranked[0]
-    assert score < RECALL_MIN_SCORE, (
-        f"Expected address→city score below RECALL_MIN_SCORE ({RECALL_MIN_SCORE}), got {score}"
-    )
+    assert score >= RECALL_MIN_SCORE
     assert score < AUTOLINK_MIN_SCORE
 
 
@@ -330,7 +325,7 @@ def test_rank_allows_same_type_city_to_city() -> None:
 
 def test_rank_caps_intersection_to_city() -> None:
     """An intersection substrate must not autolink to a city canonical."""
-    from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
+    from backfield_stylebook.canonical_match_score import AUTOLINK_MIN_SCORE, RECALL_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -375,7 +370,8 @@ def test_rank_caps_intersection_to_city() -> None:
 
     assert len(ranked) == 1
     _, _label, score, _ = ranked[0]
-    assert score < RECALL_MIN_SCORE
+    assert score >= RECALL_MIN_SCORE
+    assert score < AUTOLINK_MIN_SCORE
 
 
 def test_rank_allows_address_to_place() -> None:
@@ -425,6 +421,50 @@ def test_rank_allows_address_to_place() -> None:
     assert len(ranked) == 1
     _, _label, score, _ = ranked[0]
     assert score >= AUTOLINK_MIN_SCORE
+
+
+def test_rank_does_not_drop_strict_to_flexible_candidates() -> None:
+    """Recall/scoring should compare across type labels, even when strict autolink disallows."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-compare-1")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 15, Chicago, IL",
+            slug="ward-15-chicago-il",
+            location_type="ward",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        alias = StylebookLocationAlias(
+            location_canonical_id=cid,
+            alias_text="Ward 15, Chicago, IL",
+            normalized_alias="ward 15, chicago, il",
+            provenance="test",
+            suppressed=False,
+        )
+        session.add(alias)
+        session.commit()
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="15th Ward, Chicago, IL",
+            normalized_name="15th ward, chicago, il",
+            location_type="region_city",
+            identity_fingerprint="fp-compare-1",
+        )
+
+        ranked = rank_scored_canonical_recall_matches(
+            session,
+            location=loc,
+            recall=[(cid, None)],
+        )
+
+    assert len(ranked) == 1
 
 
 def test_decide_canonical_persist_plan_type_gate_prevents_city_mismatch() -> None:
@@ -481,3 +521,54 @@ def test_decide_canonical_persist_plan_type_gate_prevents_city_mismatch() -> Non
     assert plan.decision != CanonicalPersistDecision.LINK_EXISTING, (
         f"Intersection should not autolink to city canonical; got {plan.decision}"
     )
+
+
+def test_ambiguous_cross_type_recall_does_not_block_materialize_new() -> None:
+    """Neighborhood should materialize when only fuzzy recall is cross-type (unlinkable)."""
+    from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-materialize-ambig-x")
+
+        # Only canonical present is a ward (not linkable to neighborhood by strict matrix),
+        # but token overlap ('Chicago, IL') will still surface it in broad recall.
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 15, Chicago, IL",
+            slug="ward-15-chicago-il",
+            location_type="ward",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Ward 15, Chicago, IL",
+                normalized_alias="ward 15, chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Avondale, Chicago, IL",
+            normalized_name="avondale, chicago, il",
+            location_type="neighborhood",
+            status="resolved",
+            identity_fingerprint="fp-mat-ambig-x",
+        )
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry=None,
+        )
+
+    assert plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW

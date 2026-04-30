@@ -12,6 +12,7 @@ from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
+from backfield_stylebook.canonical_match_score import _loose_key
 from backfield_stylebook.canonical_policy import CanonicalPersistDecision, CanonicalPersistPlan
 from backfield_stylebook.canonical_slug import allocate_unique_canonical_slug
 
@@ -33,6 +34,22 @@ def assert_canonical_link_invariant(location: SubstrateLocation) -> None:
 
 def _normalize_alias_text(text: str) -> str:
     return text.strip().lower()
+
+
+def _normalized_alias_variants(normalized_alias: str) -> tuple[str, ...]:
+    """Stable variants for recall/exact matching.
+
+    We keep this conservative: only add an ordinal-stripped form so that strings like
+    ``15th Ward`` and ``Ward 15`` share more overlap in recall.
+    """
+    norm = str(normalized_alias).strip().lower()
+    if not norm:
+        return ()
+    # Use the same ordinal normalization as the scorer's loose-key path.
+    stripped = _loose_key(norm)
+    if stripped and stripped != norm:
+        return (norm, stripped)
+    return (norm,)
 
 
 def upsert_alias_for_canonical_text(
@@ -74,13 +91,14 @@ def _upsert_alias_for_canonical(
     location: SubstrateLocation,
     provenance: str,
 ) -> None:
-    upsert_alias_for_canonical_text(
-        session,
-        canon_id=canon_id,
-        alias_text=str(location.name),
-        normalized_alias=str(location.normalized_name),
-        provenance=provenance,
-    )
+    for norm in _normalized_alias_variants(str(location.normalized_name)):
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=canon_id,
+            alias_text=str(location.name),
+            normalized_alias=norm,
+            provenance=provenance,
+        )
 
 
 def refresh_aliases_for_linked_location(
@@ -171,13 +189,14 @@ def create_standalone_canonical(
     session.add(canon)
     session.flush()
     cid = str(canon.id)
-    upsert_alias_for_canonical_text(
-        session,
-        canon_id=cid,
-        alias_text=clean,
-        normalized_alias=_normalize_alias_text(clean),
-        provenance=provenance,
-    )
+    for norm in _normalized_alias_variants(_normalize_alias_text(clean)):
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=cid,
+            alias_text=clean,
+            normalized_alias=norm,
+            provenance=provenance,
+        )
     session.flush()
     return canon
 

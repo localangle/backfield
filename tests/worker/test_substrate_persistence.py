@@ -171,7 +171,9 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         assert locations[0].canonical_link_status == CANONICAL_LINK_LINKED
         assert_canonical_link_invariant(locations[0])
         alias_rows = session.exec(select(StylebookLocationAlias)).all()
-        assert len(alias_rows) == 1
+        norms = {str(a.normalized_alias) for a in alias_rows}
+        assert "chicago, il" in norms
+        assert "chicago il" in norms
         assert alias_rows[0].normalized_alias == locations[0].normalized_name
 
         mentions = session.exec(select(SubstrateLocationMention)).all()
