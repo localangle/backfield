@@ -4,7 +4,7 @@
  * Legacy payloads may still include `__outputKeysByNodeId` plus human-readable keys.
  *
  * Canonical copy for Agate UI, backfield-core node sources (via `@/lib/nodeOutputs` re-export),
- * and agate-runtime panels (relative import).
+ * and backfield-agate panels (relative import).
  */
 
 export const NODE_OUTPUT_KEY_INDEX = '__outputKeysByNodeId' as const

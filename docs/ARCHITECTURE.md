@@ -17,11 +17,11 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 
 - `packages/backfield-core`
   - Owns `GraphSpec`, graph execution, thin node runner entrypoints, node metadata, and node UI source files.
-  - Delegates heavy node logic to `agate-runtime` for LLM PlaceExtract and LangGraph GeocodeAgent.
-  - Wires **optional Postgres geocode cache** (Stylebook canonicals + `substrate_location_cache`, same fingerprint as ingest) into `agate-runtime` when the worker sets `BACKFIELD_PROJECT_ID` and the Geocode node params include `stylebookId`, via `backfield-stylebook` helpers on `AgateEnvContext.metadata` (`cache_resolve`).
+  - Delegates heavy node logic to `backfield-agate` for LLM PlaceExtract and LangGraph GeocodeAgent.
+  - Wires **optional Postgres geocode cache** (Stylebook canonicals + `substrate_location_cache`, same fingerprint as ingest) into `backfield-agate` when the worker sets `BACKFIELD_PROJECT_ID` and the Geocode node params include `stylebookId`, via `backfield-stylebook` helpers on `AgateEnvContext.metadata` (`cache_resolve`).
   - Should stay free of API routing and frontend app state concerns.
-- `packages/agate-runtime`
-  - Vendored execution glue (`agate_runtime`), shared helpers (`agate_utils`), and ported nodes under **`agate_nodes/`** (e.g. `geocode_agent`, `place_extract` — no `backfield_` prefix on each node package).
+- `packages/backfield-agate`
+  - Vendored execution glue (`backfield_agate`), shared helpers (`agate_utils`), and ported nodes under **`agate_nodes/`** (e.g. `geocode_agent`, `place_extract` — no `backfield_` prefix on each node package).
   - Excluded from default Ruff scope in the workspace root config; treat as third-party-style surface when editing.
 - `packages/backfield-db`
   - Owns SQLModel models, DB session helpers, encryption helpers, and Alembic migrations.
@@ -45,7 +45,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
   - Owns Stylebook HTTP routes: org Stylebook catalog (`/v1/organizations/{org_id}/stylebooks`), starter **`/v1/geocode/resolve`**, substrate-backed **location candidate** list/accept under **`/v1/candidates*`** (project slug + workspace-resolved Stylebook), and health.
   - Manual catalog create: **`POST /v1/canonical-locations`** (and legacy **`POST /v1/locations`**) calls **`create_standalone_canonical`** in **`packages/backfield-stylebook`** and inserts **`stylebook_location_canonical`** + primary alias **without** a **`substrate_location`** row (optional **`location_type`** / **`formatted_address`** on the canonical when provided). Ingest/worker paths still upsert substrate first, then link or **`materialize_new_canonical_and_link`**, which **one-time copies** those geography hints from the originating substrate onto a new canonical; linking an existing canonical does **not** overwrite canonical fields from substrate rows.
   - Uses the same **`resolve_auth`** pattern as Agate (session cookie, service Bearer, `bfk_` project key) via `backfield-auth` + `backfield-db` sessions.
-  - Editorial/canonical HTTP stays here; **worker** materializes `stylebook_*` rows during DBOutput using **`packages/backfield-stylebook`** (no `agate-runtime` → DB dependency). Ingest policy in `canonical_policy.decide_canonical_persist_plan` auto-creates a canonical when no alias/fuzzy link matches for most `location_type` values; **address** stays deferred up front, and **intersection** (`intersection_highway`, `intersection_road`), **street_road**, and types whose name contains **`span`** still require resolved geocode **with** geometry before materializing. Non-address fuzzy matching is **string-only** (geometry is not blended into the autolink score for neighborhoods/cities/POIs such as **``place``** / **``point``**, etc.); a **head-token gate** blocks fuzzy autolinks when the first comma-separated segment has multiple distinctive tokens that do not all appear on the candidate canonical label/aliases (reduces false links like a neighborhood or school row attaching to a bare ``Chicago, IL`` canonical). Every ingest outcome persists a structured trace on ``substrate_location.canonical_review_reasons_json`` (exact alias, fuzzy autolink, materialize, defer, or ambiguous), not only deferrals.
+  - Editorial/canonical HTTP stays here; **worker** materializes `stylebook_*` rows during DBOutput using **`packages/backfield-stylebook`** (no `backfield-agate` → DB dependency). Ingest policy in `canonical_policy.decide_canonical_persist_plan` auto-creates a canonical when no alias/fuzzy link matches for most `location_type` values; **address** stays deferred up front, and **intersection** (`intersection_highway`, `intersection_road`), **street_road**, and types whose name contains **`span`** still require resolved geocode **with** geometry before materializing. Non-address fuzzy matching is **string-only** (geometry is not blended into the autolink score for neighborhoods/cities/POIs such as **``place``** / **``point``**, etc.); a **head-token gate** blocks fuzzy autolinks when the first comma-separated segment has multiple distinctive tokens that do not all appear on the candidate canonical label/aliases (reduces false links like a neighborhood or school row attaching to a bare ``Chicago, IL`` canonical). Every ingest outcome persists a structured trace on ``substrate_location.canonical_review_reasons_json`` (exact alias, fuzzy autolink, materialize, defer, or ambiguous), not only deferrals.
 - `apps/stylebook-ui`
   - Owns the minimal Stylebook browser shell.
 - `packages/backfield-auth`
@@ -59,9 +59,9 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 - `agate-api` may depend on `backfield-core`, `backfield-db`, and `backfield-auth` (when wiring shared auth).
 - `worker` may depend on `backfield-core`, `backfield-db`, and `backfield-stylebook` (canonical sync next to substrate persistence).
 - `core-api` may depend on `backfield-auth`, `backfield-db`, and `backfield-stylebook` (default Stylebook + workspace creation defaults).
-- `backfield-core` may depend on `agate-runtime`, `backfield-db`, and `backfield-stylebook` (Geocode DB cache uses `backfield_db.session.get_engine()` with `backfield_stylebook.geocode_cache_resolve`) and must not depend on app code.
-- `agate-runtime` must not depend on app code or `backfield-db`.
-  - **TypeScript in `agate-runtime`:** vendored node UI under `src/agate_nodes/*/ui` mirrors agate-ai-platform and uses the same `@/…` aliases as Agate UI for shadcn-style imports. For executor output keys it imports **`@backfield/ui/nodeOutputs`**, matching the **`exports`** entry in `packages/backfield-ui/package.json` (not a Python dependency on `backfield-ui`).
+- `backfield-core` may depend on `backfield-agate`, `backfield-db`, and `backfield-stylebook` (Geocode DB cache uses `backfield_db.session.get_engine()` with `backfield_stylebook.geocode_cache_resolve`) and must not depend on app code.
+- `backfield-agate` must not depend on app code or `backfield-db`.
+  - **TypeScript in `backfield-agate`:** vendored node UI under `src/agate_nodes/*/ui` mirrors agate-ai-platform and uses the same `@/…` aliases as Agate UI for shadcn-style imports. For executor output keys it imports **`@backfield/ui/nodeOutputs`**, matching the **`exports`** entry in `packages/backfield-ui/package.json` (not a Python dependency on `backfield-ui`).
 - `backfield-db` must not depend on app code.
 
 ## Runtime flow
@@ -74,7 +74,7 @@ flowchart LR
     Redis --> Worker[Worker]
     Worker -->|load graph and secrets| Postgres
     Worker -->|execute_graph| Core[backfield_core]
-    Core --> Runtime[agate_runtime]
+    Core --> Runtime[backfield_agate]
     Runtime -->|legacy HTTP cache (old graphs)| StylebookAPI[StylebookHTTP]
     Runtime -->|LLM and external geocoders| ExternalAPIs[ExternalAPIs]
     Worker -->|write run results (+ DBOutput substrate writes)| Postgres
@@ -84,7 +84,7 @@ flowchart LR
 
 ### Geocode cache (worker DB path)
 
-When **`BACKFIELD_PROJECT_ID`** is set and the Geocode node enables **Use cache** with a **`stylebookId`**, `backfield-core` supplies a synchronous **`cache_resolve`** closure (Postgres session + `backfield_stylebook.geocode_cache_resolve.try_resolve_geocode_cache`) so **`agate-runtime`** tries tier 1 (active canonicals, label + aliases, single winner) then tier 2 (**`substrate_location_cache`** by `query_fingerprint`) before external geocoders. Tier 1 is **exact only**: the normalized query must equal the normalized canonical **label** or a non-suppressed **alias** (same `normalize_substrate_cache_query` as ingest / tier-2 fingerprint). There is **no** fuzzy string scoring—misses are expected until aliases or substrate cache rows cover common variants. Runs **without** `BACKFIELD_PROJECT_ID` skip DB tiers (debug log) and use external geocoding only; saved graphs may still use **legacy** HTTP canonical/cache when URL + slug are present and no resolver is registered.
+When **`BACKFIELD_PROJECT_ID`** is set and the Geocode node enables **Use cache** with a **`stylebookId`**, `backfield-core` supplies a synchronous **`cache_resolve`** closure (Postgres session + `backfield_stylebook.geocode_cache_resolve.try_resolve_geocode_cache`) so **`backfield-agate`** tries tier 1 (active canonicals, label + aliases, single winner) then tier 2 (**`substrate_location_cache`** by `query_fingerprint`) before external geocoders. Tier 1 is **exact only**: the normalized query must equal the normalized canonical **label** or a non-suppressed **alias** (same `normalize_substrate_cache_query` as ingest / tier-2 fingerprint). There is **no** fuzzy string scoring—misses are expected until aliases or substrate cache rows cover common variants. Runs **without** `BACKFIELD_PROJECT_ID` skip DB tiers (debug log) and use external geocoding only; saved graphs may still use **legacy** HTTP canonical/cache when URL + slug are present and no resolver is registered.
 
 ## Important conventions
 

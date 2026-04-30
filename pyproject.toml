@@ -17,7 +17,7 @@ members = [
     "packages/backfield-core",
     "packages/backfield-auth",
     "packages/backfield-stylebook",
-    "packages/agate-runtime",
+    "packages/backfield-agate",
     "packages/backfield-db",
     "apps/agate-api",
     "apps/worker",
@@ -28,7 +28,7 @@ members = [
 [tool.uv.sources]
 backfield-core = { workspace = true }
 backfield-auth = { workspace = true }
-agate-runtime = { workspace = true }
+backfield-agate = { workspace = true }
 backfield-db = { workspace = true }
 backfield-stylebook = { workspace = true }
 core-api = { workspace = true }
@@ -38,7 +38,7 @@ testpaths = ["packages/backfield-core/tests", "packages/backfield-auth/tests", "
 pythonpath = [
     "packages/backfield-core/src",
     "packages/backfield-auth/src",
-    "packages/agate-runtime/src",
+    "packages/backfield-agate/src",
     "packages/backfield-db/src",
     "packages/backfield-stylebook/src",
     "apps/agate-api/src",
@@ -53,7 +53,7 @@ target-version = "py311"
 extend-exclude = [
     "packages/backfield-db/alembic",
     "**/node_modules",
-    "packages/agate-runtime",
+    "packages/backfield-agate",
 ]
 
 [tool.ruff.lint]
