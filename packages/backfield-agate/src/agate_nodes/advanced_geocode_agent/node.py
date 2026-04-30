@@ -23,7 +23,7 @@ class AdvancedGeocodeAgentParams(GeocodeAgentParams):
     )
     routerModel: str = Field(
         default="gpt-5-nano",
-        description="Reserved for future routing / decision LLM steps",
+        description="OpenAI model for post-cache route_strategy JSON (Advanced graph only)",
     )
 
 
@@ -51,4 +51,5 @@ class AdvancedGeocodeAgent:
             evaluation_llm_model=params.evaluationModel,
             router_llm_model=params.routerModel,
             log_label="AdvancedGeocodeAgent",
+            use_advanced_geocode_graph=True,
         )

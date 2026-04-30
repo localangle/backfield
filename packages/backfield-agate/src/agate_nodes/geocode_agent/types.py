@@ -33,3 +33,8 @@ class AgentState(TypedDict, total=False):
     # Optional per-run OpenAI model overrides (AdvancedGeocodeAgent / future hybrid graphs).
     evaluation_llm_model: Optional[str]
     router_llm_model: Optional[str]
+    # AdvancedGeocodeAgent graph only (explicit routing + quieter logs).
+    advanced_quiet_logs: Optional[bool]
+    geocode_strategy: Optional[str]
+    suppress_brave_search: Optional[bool]
+    router_audit: Optional[dict[str, Any]]

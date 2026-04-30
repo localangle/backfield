@@ -17,7 +17,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
 
 - `packages/backfield-core`
   - Owns `GraphSpec`, graph execution, thin node runner entrypoints, node metadata, and node UI source files.
-  - Delegates heavy node logic to `backfield-agate` for LLM PlaceExtract and LangGraph GeocodeAgent / AdvancedGeocodeAgent.
+  - Delegates heavy node logic to `backfield-agate` for LLM PlaceExtract and LangGraph GeocodeAgent / AdvancedGeocodeAgent (Advanced uses a separate graph: cache resolve → **`route_strategy`** LLM → external geocode; router audits can persist on **`substrate_location.geocode_router_audit_json`** when worker ingest sees **`agate_geocode_router_audit`** on place entries).
   - Wires **optional Postgres geocode cache** (Stylebook canonicals + `substrate_location_cache`, same fingerprint as ingest) into `backfield-agate` when the worker sets `BACKFIELD_PROJECT_ID` and the Geocode (or Advanced Geocode) node params include `stylebookId`, via `backfield-stylebook` helpers on `AgateEnvContext.metadata` (`cache_resolve`).
   - Should stay free of API routing and frontend app state concerns.
 - `packages/backfield-agate`

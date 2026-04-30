@@ -15,6 +15,14 @@ from sqlmodel import Session, col, select
 
 from worker.substrate_common import _normalize_name, _sha256_hex, _utcnow
 
+# Consolidated place payload key from AdvancedGeocodeAgent (ignored by geometry/canonical logic).
+_AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
+
+
+def _router_audit_from_place_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    raw = entry.get(_AGATE_GEOCODE_ROUTER_AUDIT_KEY)
+    return raw if isinstance(raw, dict) else None
+
 
 def _place_extract_persist_fields_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
     """Fields from the geocode ``entry`` merged into ``SubstrateLocation.source_details_json``."""
@@ -380,6 +388,7 @@ def _apply_substrate_location_merge(
     geometry_value: object | None,
     geometry_type_str: str | None,
     geometry_json: dict[str, Any] | None,
+    geocode_router_audit_json: dict[str, Any] | None,
 ) -> None:
     now = _utcnow()
     loc.name = display_name
@@ -397,6 +406,9 @@ def _apply_substrate_location_merge(
     loc.geometry = geometry_value or loc.geometry
     loc.geometry_type = geometry_type_str or loc.geometry_type
     loc.geometry_json = geometry_json or loc.geometry_json
+    # Latest ingest wins when the payload carries an audit dict (Advanced path).
+    if geocode_router_audit_json is not None:
+        loc.geocode_router_audit_json = geocode_router_audit_json
     loc.updated_at = now
 
 
@@ -436,6 +448,8 @@ def _upsert_location(
         formatted_address=formatted_address,
         display_name=display_name,
     )
+
+    router_audit = _router_audit_from_place_entry(entry)
 
     # Status semantics (intentionally simple for now):
     # - provisional: extracted/geocoded-ish row but not editorially confirmed
@@ -493,6 +507,7 @@ def _upsert_location(
             geometry=geometry_value,
             geometry_type=geometry_type_str,
             geometry_json=geometry_json,
+            geocode_router_audit_json=router_audit,
         )
         try:
             with session.begin_nested():
@@ -526,6 +541,7 @@ def _upsert_location(
                 geometry_value=geometry_value,
                 geometry_type_str=geometry_type_str,
                 geometry_json=geometry_json,
+                geocode_router_audit_json=router_audit,
             )
             session.add(loc)
             session.flush()
@@ -561,6 +577,7 @@ def _upsert_location(
         geometry_value=geometry_value,
         geometry_type_str=geometry_type_str,
         geometry_json=geometry_json,
+        geocode_router_audit_json=router_audit,
     )
     session.add(loc)
     session.flush()

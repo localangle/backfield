@@ -357,7 +357,7 @@ def test_advanced_geocode_agent_dboutput_direct_upstream():
             return_value=_mock_place_extract_json("Austin", "Texas", "TX"),
         ),
         patch(
-            "agate_nodes.geocode_agent.node.run_geocoding_agent",
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
             side_effect=_fake_run_geocoding_agent,
         ),
     ):

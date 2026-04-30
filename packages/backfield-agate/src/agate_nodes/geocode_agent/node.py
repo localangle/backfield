@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from backfield_agate.context import AgateEnvContext
 
-from .agent import run_geocoding_agent
+from .agent import run_advanced_geocoding_agent, run_geocoding_agent
 
 logger = logging.getLogger(__name__)
 
@@ -98,12 +98,24 @@ async def run_geocode_agent_pipeline(
     evaluation_llm_model: Optional[str] = None,
     router_llm_model: Optional[str] = None,
     log_label: str = "GeocodeAgent",
+    use_advanced_geocode_graph: bool = False,
 ) -> GeocodeAgentOutput:
     """Geocode locations using LLM-enhanced geocoding (shared by GeocodeAgent and AdvancedGeocodeAgent).
 
     When ``evaluation_llm_model`` / ``router_llm_model`` are set, they are passed into
-    the per-location LangGraph state (see ``run_geocoding_agent``).
+    the per-location LangGraph state (see ``run_geocoding_agent`` /
+    ``run_advanced_geocoding_agent``).
+
+    When ``use_advanced_geocode_graph`` is True (AdvancedGeocodeAgent), the Advanced
+    LangGraph runs (post-cache ``route_strategy`` + quieter INFO logs).
     """
+
+    def _pipe_log(msg: str, *args: object) -> None:
+        if use_advanced_geocode_graph:
+            logger.debug(msg, *args)
+        else:
+            logger.info(msg, *args)
+
     # Get all state (namespaced by upstream node id from the Backfield executor)
     state_dict = inp.model_dump()
     flat_state = _flatten_executor_upstream_inputs(state_dict)
@@ -127,7 +139,7 @@ async def run_geocode_agent_pipeline(
 
     # If no locations found, return empty places structure
     if not locations_data:
-        logger.info("No locations found in input state. Returning empty places structure.")
+        _pipe_log("No locations found in input state. Returning empty places structure.")
         output_data = {
             **flat_state,
             "places": {
@@ -150,7 +162,7 @@ async def run_geocode_agent_pipeline(
         
     # Handle empty locations list
     if not isinstance(locations_data, list) or len(locations_data) == 0:
-        logger.info("Empty locations list found. Returning empty places structure.")
+        _pipe_log("Empty locations list found. Returning empty places structure.")
         output_data = {
             **flat_state,
             "places": {
@@ -193,14 +205,18 @@ async def run_geocode_agent_pipeline(
         loc for loc in locations_data 
         if loc.get('location', {}).get('type', '').lower() in supported_types
     ]
-        
+
     skipped_count = len(locations_data) - len(filtered_locations)
     if skipped_count > 0:
-        logger.info(f"Skipping {skipped_count} location(s) with unsupported types")
-        
+        _pipe_log("Skipping %s location(s) with unsupported types", skipped_count)
+
     # Show what types we're processing
     types_being_processed = set(loc.get('location', {}).get('type', '').lower() for loc in filtered_locations)
-    logger.info(f"Processing {len(filtered_locations)} location(s) of type: {', '.join(types_being_processed)}")
+    _pipe_log(
+        "Processing %s location(s) of type: %s",
+        len(filtered_locations),
+        ", ".join(types_being_processed),
+    )
         
     # Get API keys from context
     pelias_api_key = ctx.get_api_key("PELIAS_API_KEY")
@@ -261,9 +277,12 @@ async def run_geocode_agent_pipeline(
         location_name = location_info.get('full', '')
             
         try:
-            logger.info(
-                f"Processing [{idx+1}/{len(locations_to_process)}]: "
-                f"{location_name} (type: {location_info.get('type', '')})"
+            _pipe_log(
+                "Processing [%s/%s]: %s (type: %s)",
+                idx + 1,
+                len(locations_to_process),
+                location_name,
+                location_info.get("type", ""),
             )
                 
             # Extract extra fields (everything except nested location + verbatim quote).
@@ -278,9 +297,14 @@ async def run_geocode_agent_pipeline(
                 if isinstance(comps, dict):
                     extra_fields = {**extra_fields, "components": comps}
                 
+            run_one = (
+                run_advanced_geocoding_agent
+                if use_advanced_geocode_graph
+                else run_geocoding_agent
+            )
             # Run the agent for this location with per-location timeout
             consolidated_result = await asyncio.wait_for(
-                run_geocoding_agent(
+                run_one(
                     location_text=location_name,
                     location_type=location_info.get('type', ''),
                     location_components=location_info.get('components', {}),
@@ -298,7 +322,7 @@ async def run_geocode_agent_pipeline(
                     evaluation_llm_model=evaluation_llm_model,
                     router_llm_model=router_llm_model,
                 ),
-                timeout=PER_LOCATION_TIMEOUT
+                timeout=PER_LOCATION_TIMEOUT,
             )
                 
             return (loc, consolidated_result, None)
@@ -393,7 +417,7 @@ async def run_geocode_agent_pipeline(
                 if places.get("needs_review"):
                     all_consolidated_places["needs_review"].extend(places["needs_review"])
                     
-                logger.info(f"Success: {location_name}")
+                _pipe_log("Success: %s", location_name)
                 processed_count += 1
             else:
                 logger.warning(f"No result for: {location_name}")

@@ -1,11 +1,23 @@
 """LangGraph consolidate node for organizing geocoded results into structured format."""
 
-import logging
 import hashlib
-from ..types import AgentState
+import logging
+
 from agate_utils.geocoding.h3 import h3_cell
 
+from ..types import AgentState
+from .geocode import _adv_info
+
 logger = logging.getLogger(__name__)
+
+AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
+
+
+def _attach_router_audit(entry: dict, state: AgentState) -> None:
+    audit = state.get("router_audit")
+    if audit is not None:
+        entry[AGATE_GEOCODE_ROUTER_AUDIT_KEY] = audit
+
 
 ########## CONSOLIDATE NODE ##########
 
@@ -24,7 +36,11 @@ async def consolidate_node(state: AgentState) -> AgentState:
     
     # Handle non-addressable places (None geocoding result)
     if not geocoding_result:
-        logger.info(f"No geocoding result for {location_text} - creating non-geocoded entry")
+        _adv_info(
+            state,
+            "No geocoding result for %s - creating non-geocoded entry",
+            location_text,
+        )
         
         # Get the failure reason from state
         failure_reason = state.get(
@@ -45,7 +61,9 @@ async def consolidate_node(state: AgentState) -> AgentState:
         # Preserve all extra fields (including 'mural' and any other custom fields)
         for key, value in extra_fields.items():
             non_geocoded_entry[key] = value
-        
+
+        _attach_router_audit(non_geocoded_entry, state)
+
         state["final_output"] = {
             "places": {
                 "areas": {
@@ -91,7 +109,13 @@ async def consolidate_node(state: AgentState) -> AgentState:
     # Debug logging for geometry
     geometry_type = geocoding_result.result.geometry.type
     geometry_coords = geocoding_result.result.geometry.coordinates
-    logger.info(f"Consolidating geometry: type={geometry_type}, coords_length={len(str(geometry_coords)) if geometry_coords else 0}, coords_type={type(geometry_coords).__name__}")
+    _adv_info(
+        state,
+        "Consolidating geometry: type=%s, coords_length=%s, coords_type=%s",
+        geometry_type,
+        len(str(geometry_coords)) if geometry_coords else 0,
+        type(geometry_coords).__name__,
+    )
 
     # Stylebook canonical id when this result came from a Stylebook canonical match (for core-api to create link)
     confidence = getattr(geocoding_result.result, "confidence", None) or {}
@@ -128,7 +152,9 @@ async def consolidate_node(state: AgentState) -> AgentState:
     for key, value in extra_fields.items():
         if key not in ["description"]:  # Description is already handled above
             location_entry[key] = value
-    
+
+    _attach_router_audit(location_entry, state)
+
     # Organize by location type
     if location_type in ["state"]:
         consolidated["places"]["areas"]["states"].append(location_entry)
@@ -168,7 +194,9 @@ async def consolidate_node(state: AgentState) -> AgentState:
         for key, value in extra_fields.items():
             if key not in ["description"]:  # Description is already handled above
                 point_entry[key] = value
-        
+
+        _attach_router_audit(point_entry, state)
+
         consolidated["places"]["points"].append(point_entry)
     else:
         consolidated["places"]["areas"]["other"].append(location_entry)

@@ -23,6 +23,18 @@ from agate_utils.geocoding.geocoding_types import stylebook_match_to_geocoding_r
 
 logger = logging.getLogger(__name__)
 
+
+def _advanced_quiet(state: AgentState) -> bool:
+    return bool(state.get("advanced_quiet_logs"))
+
+
+def _adv_info(state: AgentState, msg: str, *args: object) -> None:
+    if _advanced_quiet(state):
+        logger.debug(msg, *args)
+    else:
+        logger.info(msg, *args)
+
+
 ########## HELPER FUNCTIONS ##########
 
 def _create_model(location_type: str, location_text: str, components: dict, state: AgentState):
@@ -154,150 +166,182 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
 
     return None
 
-########## GEOCODE NODE ##########
+########## GEOCODE NODES ##########
 
-async def orchestrate_geocode(state: AgentState) -> AgentState:
-    """
-    Orchestrate geocoding by routing to the appropriate geography model.
-    
-    This LangGraph node determines which model (State, County, Address) to use
-    and calls its geocode() method, which contains the actual geocoding logic.
-    """
+async def resolve_cache_or_miss(state: AgentState) -> AgentState:
+    """Populate ``geocoding_result`` from Stylebook / DB cache when configured; else leave unset."""
     location_type = state["location_type"].lower()
     location_text = state["location_text"]
     components = state.get("location_components", {})
-    
-    logger.info(f"Geocoding {location_type}: {location_text}")
-    
-    try:
-        pelias_api_key = state.get("pelias_api_key")
-        geocodio_api_key = state.get("geocodio_api_key")
-        openai_api_key = state.get("openai_api_key")
-        brave_search_api_key = state.get("brave_search_api_key")
-        use_cache = state.get("use_cache", False)
-        stylebook_api_url = state.get("stylebook_api_url") or os.environ.get("STYLEBOOK_API_URL")
-        project_slug = state.get("project_slug") or os.environ.get("PROJECT_SLUG")
-        service_api_token = state.get("service_api_token") or os.environ.get("SERVICE_API_TOKEN")
 
-        # Try canonical + substrate_location_cache (DB hook) or legacy HTTP Stylebook routes
-        geocoding_result = None
-        cache_resolve_fn = state.get("cache_resolve")
-        if use_cache and cache_resolve_fn is not None:
-            logger.info(f"[CACHE ENABLED] DB cache resolve for '{location_text}'")
-            try:
-                match_dict = await asyncio.to_thread(
-                    cache_resolve_fn,
-                    location_text,
-                    location_type,
-                    components,
-                )
-                if match_dict:
-                    src = (match_dict.get("confidence") or {}).get("source")
-                    try:
-                        if src == "canonical_db":
-                            geocoding_result = stylebook_match_to_geocoding_result(
-                                match_dict, location_text
-                            )
-                        elif src == "location_cache":
-                            geocoding_result = cache_match_to_geocoding_result(
-                                match_dict, location_text
-                            )
-                        else:
-                            geocoding_result = None
-                        if geocoding_result and not geocoding_result.result.geometry:
-                            logger.warning(
-                                f"DB cache match for '{location_text}' has no geometry, "
-                                "falling back to external geocoding"
-                            )
-                            geocoding_result = None
-                        elif geocoding_result:
-                            logger.info(
-                                f"[CACHE HIT] DB cache for '{location_text}' "
-                                f"(source={src}, id={match_dict.get('id')})"
-                            )
-                    except Exception as e:
-                        logger.warning(f"Error converting DB cache match for '{location_text}': {e}")
+    _adv_info(state, "Geocoding %s: %s", location_type, location_text)
+
+    use_cache = state.get("use_cache", False)
+    stylebook_api_url = state.get("stylebook_api_url") or os.environ.get("STYLEBOOK_API_URL")
+    project_slug = state.get("project_slug") or os.environ.get("PROJECT_SLUG")
+    service_api_token = state.get("service_api_token") or os.environ.get("SERVICE_API_TOKEN")
+
+    geocoding_result = None
+    cache_resolve_fn = state.get("cache_resolve")
+    if use_cache and cache_resolve_fn is not None:
+        _adv_info(state, "[CACHE ENABLED] DB cache resolve for '%s'", location_text)
+        try:
+            match_dict = await asyncio.to_thread(
+                cache_resolve_fn,
+                location_text,
+                location_type,
+                components,
+            )
+            if match_dict:
+                src = (match_dict.get("confidence") or {}).get("source")
+                try:
+                    if src == "canonical_db":
+                        geocoding_result = stylebook_match_to_geocoding_result(match_dict, location_text)
+                    elif src == "location_cache":
+                        geocoding_result = cache_match_to_geocoding_result(match_dict, location_text)
+                    else:
                         geocoding_result = None
-            except Exception as e:
-                logger.warning(f"Error during DB cache resolve for '{location_text}': {e}")
+                    if geocoding_result and not geocoding_result.result.geometry:
+                        logger.warning(
+                            "DB cache match for '%s' has no geometry, falling back to external geocoding",
+                            location_text,
+                        )
+                        geocoding_result = None
+                    elif geocoding_result:
+                        _adv_info(
+                            state,
+                            "[CACHE HIT] DB cache for '%s' (source=%s, id=%s)",
+                            location_text,
+                            src,
+                            match_dict.get("id"),
+                        )
+                except Exception as e:
+                    logger.warning("Error converting DB cache match for '%s': %s", location_text, e)
+                    geocoding_result = None
+        except Exception as e:
+            logger.warning("Error during DB cache resolve for '%s': %s", location_text, e)
 
-        elif use_cache and stylebook_api_url and project_slug:
-            logger.info(f"[CACHE ENABLED] HTTP Stylebook cache for '{location_text}' (project: {project_slug})")
-            logger.info(f"Stylebook canonical match: name={location_text}, project_slug={project_slug}")
+    elif use_cache and stylebook_api_url and project_slug:
+        _adv_info(
+            state,
+            "[CACHE ENABLED] HTTP Stylebook cache for '%s' (project: %s)",
+            location_text,
+            project_slug,
+        )
+        _adv_info(
+            state,
+            "Stylebook canonical match: name=%s, project_slug=%s",
+            location_text,
+            project_slug,
+        )
+        try:
+            canonical_match = await asyncio.to_thread(
+                match_canonical_location,
+                name=location_text,
+                base_url=stylebook_api_url,
+                project_slug=project_slug,
+                service_token=service_api_token,
+            )
+            if canonical_match:
+                geocoding_result = stylebook_match_to_geocoding_result(canonical_match, location_text)
+                _adv_info(
+                    state,
+                    "[CACHE HIT] Found canonical match for '%s': %s",
+                    location_text,
+                    canonical_match.get("id", "unknown"),
+                )
+            else:
+                _adv_info(state, "No canonical match found for '%s', trying cache", location_text)
+        except Exception as e:
+            logger.warning("Error during canonical match for '%s': %s", location_text, e)
+
+        if not geocoding_result:
+            _adv_info(state, "Checking LocationCache for '%s' before external geocoding", location_text)
             try:
-                canonical_match = await asyncio.to_thread(
-                    match_canonical_location,
+                cache_match = await asyncio.to_thread(
+                    get_location_cache,
                     name=location_text,
                     base_url=stylebook_api_url,
                     project_slug=project_slug,
                     service_token=service_api_token,
                 )
-                if canonical_match:
-                    geocoding_result = stylebook_match_to_geocoding_result(
-                        canonical_match, location_text
-                    )
-                    logger.info(
-                        f"[CACHE HIT] Found canonical match for '{location_text}': "
-                        f"{canonical_match.get('id', 'unknown')}"
-                    )
-                else:
-                    logger.info(f"No canonical match found for '{location_text}', trying cache")
-            except Exception as e:
-                logger.warning(f"Error during canonical match for '{location_text}': {e}")
-
-            if not geocoding_result:
-                logger.info(f"Checking LocationCache for '{location_text}' before external geocoding")
-                try:
-                    cache_match = await asyncio.to_thread(
-                        get_location_cache,
-                        name=location_text,
-                        base_url=stylebook_api_url,
-                        project_slug=project_slug,
-                        service_token=service_api_token,
-                    )
-                    if cache_match:
-                        try:
-                            geocoding_result = cache_match_to_geocoding_result(cache_match, location_text)
-                            if not geocoding_result.result.geometry:
-                                logger.warning(
-                                    f"Cache match for '{location_text}' has no geometry, "
-                                    "falling back to external geocoding"
-                                )
-                                geocoding_result = None
-                            else:
-                                logger.info(
-                                    f"[CACHE HIT] Found cache match for '{location_text}': "
-                                    f"{cache_match.get('id', 'unknown')}"
-                                )
-                        except Exception as e:
-                            logger.warning(f"Error converting cache match for '{location_text}': {e}")
+                if cache_match:
+                    try:
+                        geocoding_result = cache_match_to_geocoding_result(cache_match, location_text)
+                        if not geocoding_result.result.geometry:
+                            logger.warning(
+                                "Cache match for '%s' has no geometry, falling back to external geocoding",
+                                location_text,
+                            )
                             geocoding_result = None
-                    else:
-                        logger.info(f"No cache match found for '{location_text}', proceeding to external geocoding")
-                except Exception as e:
-                    logger.warning(f"Error looking up cache for '{location_text}': {e}")
+                        else:
+                            _adv_info(
+                                state,
+                                "[CACHE HIT] Found cache match for '%s': %s",
+                                location_text,
+                                cache_match.get("id", "unknown"),
+                            )
+                    except Exception as e:
+                        logger.warning("Error converting cache match for '%s': %s", location_text, e)
+                        geocoding_result = None
+                else:
+                    _adv_info(
+                        state,
+                        "No cache match found for '%s', proceeding to external geocoding",
+                        location_text,
+                    )
+            except Exception as e:
+                logger.warning("Error looking up cache for '%s': %s", location_text, e)
 
-        # If we have a result from cache/canonical, use it; otherwise proceed with model geocoding
-        if geocoding_result:
-            state["geocoding_result"] = geocoding_result
-            state["geocoding_model"] = None  # No model used for cache/canonical matches
-            state["geocoding_failure_reason"] = None
-            logger.info(f"[CACHE SUCCESS] Geocoding success (cache/canonical): {geocoding_result.result.processed_str}")
-            return state
-        
-        # Cache not enabled or no cache hit - log why
-        if not use_cache:
-            logger.info(f"[CACHE SKIP] Cache lookup disabled for '{location_text}'")
-        elif cache_resolve_fn is None and not stylebook_api_url:
-            logger.info(f"[CACHE SKIP] No DB cache_resolve and no Stylebook API URL for '{location_text}'")
-        elif cache_resolve_fn is None and not project_slug:
-            logger.info(f"[CACHE SKIP] No DB cache_resolve and no project slug for '{location_text}'")
-        else:
-            logger.info(f"[CACHE MISS] No cache/canonical match found for '{location_text}', using external geocoding")
+    if geocoding_result:
+        state["geocoding_result"] = geocoding_result
+        state["geocoding_model"] = None
+        state["geocoding_failure_reason"] = None
+        _adv_info(
+            state,
+            "[CACHE SUCCESS] Geocoding success (cache/canonical): %s",
+            geocoding_result.result.processed_str,
+        )
+        return state
+
+    if not use_cache:
+        _adv_info(state, "[CACHE SKIP] Cache lookup disabled for '%s'", location_text)
+    elif cache_resolve_fn is None and not stylebook_api_url:
+        _adv_info(
+            state,
+            "[CACHE SKIP] No DB cache_resolve and no Stylebook API URL for '%s'",
+            location_text,
+        )
+    elif cache_resolve_fn is None and not project_slug:
+        _adv_info(state, "[CACHE SKIP] No DB cache_resolve and no project slug for '%s'", location_text)
+    else:
+        _adv_info(
+            state,
+            "[CACHE MISS] No cache/canonical match found for '%s', using external geocoding",
+            location_text,
+        )
+
+    return state
+
+
+async def orchestrate_external_geocode(state: AgentState) -> AgentState:
+    """External geocoding path after cache miss (and optional routing)."""
+    if state.get("geocoding_result") is not None:
+        return state
+
+    location_type = state["location_type"].lower()
+    location_text = state["location_text"]
+    components = state.get("location_components", {})
+
+    try:
+        pelias_api_key = state.get("pelias_api_key")
+        geocodio_api_key = state.get("geocodio_api_key")
+        openai_api_key = state.get("openai_api_key")
+        brave_search_api_key = state.get("brave_search_api_key")
 
         model = _create_model(location_type, location_text, components, state)
         if model is None:
-            logger.warning(f"Unsupported location type: {location_type}")
+            logger.warning("Unsupported location type: %s", location_type)
             state["geocoding_result"] = None
             state["geocoding_model"] = None
             return state
@@ -306,8 +350,7 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
         if isinstance(model, Area) and eval_model:
             model._evaluation_llm_model = eval_model  # type: ignore[attr-defined]
 
-        # Geocode using the model
-        geocode_kwargs = {
+        geocode_kwargs: dict = {
             "pelias_api_key": pelias_api_key,
             "geocodio_api_key": geocodio_api_key,
             "openai_api_key": openai_api_key,
@@ -317,21 +360,21 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
             geocode_kwargs = {"openai_api_key": openai_api_key}
         else:
             if isinstance(model, Place):
-                geocode_kwargs["brave_search_api_key"] = brave_search_api_key
+                brave = brave_search_api_key
+                if state.get("suppress_brave_search"):
+                    brave = None
+                geocode_kwargs["brave_search_api_key"] = brave
             if isinstance(model, StreetRoad):
                 geocode_kwargs["original_text"] = state.get("original_text", "")
 
         result = await model.geocode(**geocode_kwargs)
-        
-        # Store both the result and the model instance
+
         state["geocoding_result"] = result
         state["geocoding_model"] = model
-        
-        # Store failure reason if available
-        if isinstance(model, Place) and hasattr(model, '_failure_reason') and model._failure_reason:
+
+        if isinstance(model, Place) and hasattr(model, "_failure_reason") and model._failure_reason:
             state["geocoding_failure_reason"] = model._failure_reason
         elif isinstance(model, Intersection) and not result:
-            # Intersection-specific failure reason
             state["geocoding_failure_reason"] = "Intersection geocoding failed"
         elif not result:
             state["geocoding_failure_reason"] = (
@@ -340,18 +383,28 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
             )
         else:
             state["geocoding_failure_reason"] = None
-            
+
         if result:
             try:
-                logger.info(f"Geocoding success: {result.result.processed_str}")
+                _adv_info(state, "Geocoding success: %s", result.result.processed_str)
             except Exception as e:
-                logger.error(f"Error logging geocoding success: {str(e)}")
+                logger.error("Error logging geocoding success: %s", e)
         else:
-            logger.warning(f"Geocoding failed for {location_text}")
-            
+            logger.warning("Geocoding failed for %s", location_text)
+
     except Exception as e:
-        logger.error(f"Error geocoding {location_text}: {str(e)}")
+        logger.error("Error geocoding %s: %s", location_text, e)
         state["geocoding_result"] = None
         state["geocoding_model"] = None
-    
+
     return state
+
+
+async def orchestrate_geocode(state: AgentState) -> AgentState:
+    """
+    Baseline graph entry: cache resolution then external geocoding when needed.
+    """
+    await resolve_cache_or_miss(state)
+    if state.get("geocoding_result") is not None:
+        return state
+    return await orchestrate_external_geocode(state)
