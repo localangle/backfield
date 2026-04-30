@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from agate_runtime.context import AgateEnvContext
+from backfield_agate.context import AgateEnvContext
 
 from agate_nodes.geocode_agent.node import (
     GeocodeAgentInput,
