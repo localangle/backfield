@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import contextlib
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from backfield_auth.gate import require_project_access
-from backfield_db import BackfieldProject
+from backfield_db import BackfieldProject, StylebookLocationMeta
 from backfield_stylebook.locations import create_standalone_canonical
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.helpers.meta_utils import validate_meta_json
 from stylebook_api.imports.registry import get_importer, register_importer
 
 router = APIRouter(prefix="/v1/import", tags=["import"])
@@ -65,9 +67,17 @@ class ImportGeoJSONFieldMappings(BaseModel):
     location_type_value: str | None = None
 
 
+class ImportGeoJsonMetaPropertyMapping(BaseModel):
+    """Maps one GeoJSON ``properties`` key to a ``StylebookLocationMeta.meta_type``."""
+
+    meta_type: str
+    property_key: str
+
+
 class ImportGeoJSONRequest(BaseModel):
     geojson: dict[str, Any]
     mappings: ImportGeoJSONFieldMappings = ImportGeoJSONFieldMappings()
+    meta_property_mappings: list[ImportGeoJsonMetaPropertyMapping] = Field(default_factory=list)
 
 
 class ImportGeoJSONCreatedRow(BaseModel):
@@ -88,6 +98,66 @@ class ImportGeoJSONResponse(BaseModel):
     failed_count: int
     created: list[ImportGeoJSONCreatedRow]
     failed: list[ImportGeoJSONFailedRow]
+
+
+class _ImportMetaJsonError(Exception):
+    """Non-HTTP error for invalid meta payloads inside per-feature import (becomes a failed row)."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
+def _property_keys_union_from_features(
+    exploded_features: list[dict[str, Any]],
+) -> set[str]:
+    keys: set[str] = set()
+    for feat in exploded_features:
+        props = feat.get("properties")
+        if isinstance(props, dict):
+            for k in props.keys():
+                if isinstance(k, str):
+                    keys.add(k)
+    return keys
+
+
+def _normalize_and_validate_meta_mappings_or_400(
+    raw: list[ImportGeoJsonMetaPropertyMapping],
+    *,
+    allowed_keys: set[str],
+) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for i, m in enumerate(raw):
+        mt = (m.meta_type or "").strip()
+        pk = (m.property_key or "").strip()
+        if not mt:
+            raise HTTPException(
+                status_code=400,
+                detail=f"meta_property_mappings[{i}].meta_type must be non-empty",
+            )
+        if not pk:
+            raise HTTPException(
+                status_code=400,
+                detail=f"meta_property_mappings[{i}].property_key must be non-empty",
+            )
+        if pk not in allowed_keys:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"meta_property_mappings[{i}].property_key {pk!r} "
+                    "is not present on any feature in this GeoJSON"
+                ),
+            )
+        out.append((mt, pk))
+    return out
+
+
+def _meta_value_skipped_as_empty(raw: Any) -> bool:
+    if raw is None:
+        return True
+    if isinstance(raw, str) and not raw.strip():
+        return True
+    return False
 
 
 class _GeoJsonLocationsImporter:
@@ -154,7 +224,11 @@ class _GeoJsonLocationsImporter:
     ) -> ImportGeoJSONResponse:
         _enforce_request_size_limit(
             request,
-            approx_payload={"geojson": payload.geojson, "mappings": payload.mappings.model_dump()},
+            approx_payload={
+                "geojson": payload.geojson,
+                "mappings": payload.mappings.model_dump(),
+                "meta_property_mappings": [m.model_dump() for m in payload.meta_property_mappings],
+            },
         )
         proj = _project_by_slug(session, project_slug)
         require_project_access(session, auth, int(proj.id))
@@ -167,6 +241,12 @@ class _GeoJsonLocationsImporter:
         if not isinstance(features, list):
             raise HTTPException(status_code=400, detail="geojson.features must be an array")
         exploded_features = _explode_geometry_collections(features)
+
+        allowed_prop_keys = _property_keys_union_from_features(exploded_features)
+        normalized_meta = _normalize_and_validate_meta_mappings_or_400(
+            payload.meta_property_mappings,
+            allowed_keys=allowed_prop_keys,
+        )
 
         mappings = payload.mappings
         label_key = mappings.label_property or "name"
@@ -231,13 +311,36 @@ class _GeoJsonLocationsImporter:
                         provenance="stylebook_ui_import_geojson",
                     )
                     session.flush()
+                    canon_id = str(canon.id)
+                    project_id = int(proj.id)
+                    for mt, pk in normalized_meta:
+                        raw_val = props.get(pk)
+                        if _meta_value_skipped_as_empty(raw_val):
+                            continue
+                        try:
+                            validate_meta_json(raw_val)
+                        except HTTPException as exc:
+                            raise _ImportMetaJsonError(str(exc.detail)) from exc
+                        session.add(
+                            StylebookLocationMeta(
+                                project_id=project_id,
+                                stylebook_location_canonical_id=canon_id,
+                                meta_type=mt,
+                                data_json=raw_val,
+                                added=True,
+                                created_at=datetime.now(UTC),
+                            )
+                        )
+                    session.flush()
                     created.append(
                         ImportGeoJSONCreatedRow(
                             feature_index=i,
-                            canonical_id=str(canon.id),
+                            canonical_id=canon_id,
                             label=str(canon.label),
                         )
                     )
+            except _ImportMetaJsonError as e:
+                failed.append(ImportGeoJSONFailedRow(feature_index=i, error=e.message))
             except Exception as e:  # noqa: BLE001 - boundary layer; surface message per-row
                 failed.append(ImportGeoJSONFailedRow(feature_index=i, error=str(e)))
 

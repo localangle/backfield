@@ -67,6 +67,7 @@ export {
 export {
   type AnalyzeGeoJsonResponse,
   analyzeImportGeoJson,
+  type ImportGeoJsonMetaPropertyMapping,
   type ImportGeoJsonResponse,
   importGeoJson,
 } from "@/lib/stylebook-api/imports"
