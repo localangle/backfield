@@ -122,7 +122,7 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
     }
 )
 
-# Backwards-compatible name for :func:`link_pair_allowed` (symmetric matrix).
+# Backwards-compatible name for :func:`link_pair_allowed` (permissive type policy).
 types_are_autolink_compatible = link_pair_allowed
 
 

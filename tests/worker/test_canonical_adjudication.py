@@ -319,8 +319,12 @@ def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
         assert out.existing_canonical_id == id1
 
 
-def test_adjudicate_rejects_llm_choice_that_violates_type_matrix(monkeypatch) -> None:
-    """High-confidence LLM pick is ignored when substrate ↔ canonical types are not linkable."""
+def test_adjudicate_rejects_llm_choice_when_link_pair_denied(monkeypatch) -> None:
+    """High-confidence LLM pick is ignored when :func:`link_pair_allowed` returns False."""
+    monkeypatch.setattr(
+        "worker.canonical_adjudication.link_pair_allowed",
+        lambda _s, _c: False,
+    )
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
 

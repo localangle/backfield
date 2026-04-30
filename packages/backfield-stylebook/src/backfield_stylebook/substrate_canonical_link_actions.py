@@ -139,6 +139,10 @@ def link_substrate_to_canonical_atomic(
 ) -> bool:
     """Attach substrate to canonical B, refresh aliases on B, prune alias on old A when safe.
 
+    When ``enforce_type_gate`` is true, linking is allowed only if
+    :func:`~backfield_stylebook.canonical_link_matrix.link_pair_allowed` returns true
+    (today always true; reserved for a future deny-list).
+
     Returns ``False`` if already linked to ``target_canonical_id`` (idempotent no-op).
     """
     if location.id is None:
