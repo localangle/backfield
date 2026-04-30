@@ -694,18 +694,65 @@ export default function LocationDetail() {
                 </Button>
               </>
             ) : (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setGeometryDraft(geometry)
-                  setGeometryAddMode(null)
-                  setRectanglePreview(null)
-                  setGeometryEditing(true)
-                }}
-                disabled={isMultiPolygonGeometry(geometry)}
-              >
-                Edit geography
-              </Button>
+              <>
+                {isMultiPolygonGeometry(geometry) && geometry ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        // MultiPolygons are not editable in-place, but we allow replacement by
+                        // starting a fresh draft (point / rectangle).
+                        setGeometryDraft(null)
+                        setGeometryAddMode(null)
+                        setRectanglePreview(null)
+                        setGeometryEditing(true)
+                      }}
+                    >
+                      Replace geometry
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        void (async () => {
+                          const ok = await showConfirm("Delete this geometry?", {
+                            title: "Delete geometry",
+                            confirmLabel: "Delete",
+                            destructive: true,
+                          })
+                          if (!ok || !canonical || !projectSlug) return
+                          setGeometrySaving(true)
+                          try {
+                            await updateCanonicalLocationGeometry(canonical.id, projectSlug, null)
+                            await loadCanonical(canonical.id, projectSlug, true)
+                          } catch (e) {
+                            console.error(e)
+                            showError(
+                              e instanceof Error ? e.message : "Save geometry failed",
+                            )
+                          } finally {
+                            setGeometrySaving(false)
+                          }
+                        })()
+                      }}
+                      disabled={geometrySaving}
+                    >
+                      Delete geometry
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setGeometryDraft(geometry)
+                      setGeometryAddMode(null)
+                      setRectanglePreview(null)
+                      setGeometryEditing(true)
+                    }}
+                  >
+                    Edit geography
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </CardHeader>
@@ -714,8 +761,7 @@ export default function LocationDetail() {
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Editing is disabled for MultiPolygon geometries. These complex geometries contain multiple polygons and
-                require specialized editing tools.
+                MultiPolygon geometries can’t be edited in-place here, but you can delete or replace them.
               </AlertDescription>
             </Alert>
           ) : null}
