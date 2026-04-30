@@ -317,8 +317,10 @@ class _GeoJsonLocationsImporter:
                         raw_val = props.get(pk)
                         if _meta_value_skipped_as_empty(raw_val):
                             continue
+                        # Single-key object so catalog UI shows Key / Value (property name → value).
+                        data_payload: dict[str, Any] = {pk: raw_val}
                         try:
-                            validate_meta_json(raw_val)
+                            validate_meta_json(data_payload)
                         except HTTPException as exc:
                             raise _ImportMetaJsonError(str(exc.detail)) from exc
                         session.add(
@@ -326,7 +328,7 @@ class _GeoJsonLocationsImporter:
                                 project_id=project_id,
                                 stylebook_location_canonical_id=canon_id,
                                 meta_type=mt,
-                                data_json=raw_val,
+                                data_json=data_payload,
                                 added=True,
                                 created_at=datetime.now(UTC),
                             )

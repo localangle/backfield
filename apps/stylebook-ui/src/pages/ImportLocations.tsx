@@ -813,8 +813,9 @@ export default function ImportLocations() {
             ) : (
               <div className="space-y-3">
                 <div className="rounded border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  Each row adds one metadata entry on each imported location when that property has a
-                  non-empty value.
+                  Each row adds one metadata entry per imported location when that property has a
+                  non-empty value. Values are stored under the property name as a key (so the
+                  canonical detail view can show a Key / Value table).
                 </div>
                 <Table>
                   <TableHeader>

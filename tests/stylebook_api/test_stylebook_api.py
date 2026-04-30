@@ -382,7 +382,7 @@ def test_import_geojson_with_meta_property_mappings(
         ).all()
         assert len(metas) == 1
         assert metas[0].meta_type == "import_ref"
-        assert metas[0].data_json == 99
+        assert metas[0].data_json == {"ref": 99}
 
 
 def test_import_geojson_meta_rejects_unknown_property_key(client: TestClient) -> None:
@@ -464,7 +464,7 @@ def test_import_geojson_meta_skips_empty_property_silently(
         assert len(metas) == 1
         assert metas[0].stylebook_location_canonical_id in cids
         assert metas[0].meta_type == "note"
-        assert metas[0].data_json == "saved"
+        assert metas[0].data_json == {"notes": "saved"}
 
 
 def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
