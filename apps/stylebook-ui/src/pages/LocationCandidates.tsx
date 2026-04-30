@@ -196,6 +196,8 @@ export default function LocationCandidates() {
   const [toastFollowupError, setToastFollowupError] = useState<string | null>(null)
   const [toastFollowupRows, setToastFollowupRows] = useState<Candidate[]>([])
   const [potentialLinksOpen, setPotentialLinksOpen] = useState(false)
+  /** Opacity transition before clearing `createdToast` after auto-dismiss timer. */
+  const [canonicalCreatedToastLeaving, setCanonicalCreatedToastLeaving] = useState(false)
   const [toastLinkBusyId, setToastLinkBusyId] = useState<number | null>(null)
   const [toastLinkError, setToastLinkError] = useState<string | null>(null)
   const [createLinkNudge, setCreateLinkNudge] = useState<{
@@ -428,6 +430,31 @@ export default function LocationCandidates() {
     void prefetchToastFollowupCandidates()
   }, [createdToast, projectSlug, prefetchToastFollowupCandidates])
 
+  useEffect(() => {
+    if (!createdToast) {
+      setCanonicalCreatedToastLeaving(false)
+      return
+    }
+    setCanonicalCreatedToastLeaving(false)
+    if (toastFollowupLoading || toastFollowupRows.length > 0) {
+      return
+    }
+
+    const timeouts = { main: 0 as number, fade: undefined as number | undefined }
+    timeouts.main = window.setTimeout(() => {
+      setCanonicalCreatedToastLeaving(true)
+      timeouts.fade = window.setTimeout(() => {
+        setCreatedToast(null)
+        setCanonicalCreatedToastLeaving(false)
+      }, 300)
+    }, 3000)
+
+    return () => {
+      window.clearTimeout(timeouts.main)
+      if (timeouts.fade !== undefined) window.clearTimeout(timeouts.fade)
+    }
+  }, [createdToast, toastFollowupLoading, toastFollowupRows.length])
+
   function defaultNewCanonicalLabel(c: Candidate): string {
     const fromName = (c.suggested_name ?? "").trim()
     if (fromName) return fromName
@@ -600,7 +627,10 @@ export default function LocationCandidates() {
         <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
           <div
             role="status"
-            className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
+            className={cn(
+              "rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15 transition-opacity duration-300",
+              canonicalCreatedToastLeaving ? "opacity-0" : "opacity-100",
+            )}
           >
             <div className="flex items-start gap-3 p-4 pr-2">
               <CheckCircle2
@@ -643,7 +673,10 @@ export default function LocationCandidates() {
                 size="icon"
                 variant="ghost"
                 className="-mr-1 -mt-1 h-8 w-8 shrink-0"
-                onClick={() => setCreatedToast(null)}
+                onClick={() => {
+                  setCanonicalCreatedToastLeaving(false)
+                  setCreatedToast(null)
+                }}
                 aria-label="Dismiss"
               >
                 <X className="h-4 w-4" />
