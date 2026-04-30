@@ -1046,7 +1046,7 @@ export default function LocationDetail() {
       />
 
       <Dialog open={substrateGeometryOpen} onOpenChange={setSubstrateGeometryOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Substrate geometry</DialogTitle>
             <DialogDescription>
