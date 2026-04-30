@@ -22,9 +22,15 @@ export type ImportGeoJsonMappings = {
   location_type_value?: string | null
 }
 
+export type ImportGeoJsonMetaPropertyMapping = {
+  meta_type: string
+  property_key: string
+}
+
 export type ImportGeoJsonRequest = {
   geojson: GeoJsonFeatureCollection | Record<string, unknown>
   mappings: ImportGeoJsonMappings
+  meta_property_mappings?: ImportGeoJsonMetaPropertyMapping[]
 }
 
 export type ImportGeoJsonResponse = {
@@ -51,11 +57,17 @@ export async function importGeoJson(
   projectSlug: string,
   geojson: Record<string, unknown>,
   mappings: ImportGeoJsonMappings,
+  meta_property_mappings?: ImportGeoJsonMetaPropertyMapping[],
 ): Promise<ImportGeoJsonResponse> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  const body: ImportGeoJsonRequest = {
+    geojson,
+    mappings,
+    meta_property_mappings: meta_property_mappings?.length ? meta_property_mappings : [],
+  }
   return stylebookJsonFetch<ImportGeoJsonResponse>(`/v1/import/geojson?${params}`, {
     method: "POST",
-    body: JSON.stringify({ geojson, mappings } satisfies ImportGeoJsonRequest),
+    body: JSON.stringify(body),
   })
 }
 

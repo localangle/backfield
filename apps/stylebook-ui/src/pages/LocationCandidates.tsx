@@ -63,6 +63,10 @@ import {
   X,
 } from "lucide-react"
 
+/** Fixed toast auto-dismiss + fade-out (matches ``transition-opacity duration-300``). */
+const CANDIDATE_TOAST_AUTO_DISMISS_MS = 3000
+const CANDIDATE_TOAST_FADE_MS = 300
+
 /** Row action aligned with `canonical_suggestion.suggested_action` from the API. */
 function suggestedRowAction(c: Candidate): "link" | "create_new" | "defer" | null {
   const raw = c.canonical_suggestion?.suggested_action
@@ -209,6 +213,8 @@ export default function LocationCandidates() {
     canonicalLabel: string
     candidateLabel: string
   } | null>(null)
+  /** Opacity transition before clearing ``linkedToast`` after auto-dismiss timer. */
+  const [linkedToastLeaving, setLinkedToastLeaving] = useState(false)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
 
   const createModalCandidate = useMemo(
@@ -446,14 +452,35 @@ export default function LocationCandidates() {
       timeouts.fade = window.setTimeout(() => {
         setCreatedToast(null)
         setCanonicalCreatedToastLeaving(false)
-      }, 300)
-    }, 3000)
+      }, CANDIDATE_TOAST_FADE_MS)
+    }, CANDIDATE_TOAST_AUTO_DISMISS_MS)
 
     return () => {
       window.clearTimeout(timeouts.main)
       if (timeouts.fade !== undefined) window.clearTimeout(timeouts.fade)
     }
   }, [createdToast, toastFollowupLoading, toastFollowupRows.length])
+
+  useEffect(() => {
+    if (!linkedToast) {
+      setLinkedToastLeaving(false)
+      return
+    }
+    setLinkedToastLeaving(false)
+    const timeouts = { main: 0 as number, fade: undefined as number | undefined }
+    timeouts.main = window.setTimeout(() => {
+      setLinkedToastLeaving(true)
+      timeouts.fade = window.setTimeout(() => {
+        setLinkedToast(null)
+        setLinkedToastLeaving(false)
+      }, CANDIDATE_TOAST_FADE_MS)
+    }, CANDIDATE_TOAST_AUTO_DISMISS_MS)
+
+    return () => {
+      window.clearTimeout(timeouts.main)
+      if (timeouts.fade !== undefined) window.clearTimeout(timeouts.fade)
+    }
+  }, [linkedToast])
 
   function defaultNewCanonicalLabel(c: Candidate): string {
     const fromName = (c.suggested_name ?? "").trim()
@@ -689,7 +716,10 @@ export default function LocationCandidates() {
         <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
           <div
             role="status"
-            className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15"
+            className={cn(
+              "rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15 transition-opacity duration-300",
+              linkedToastLeaving ? "opacity-0" : "opacity-100",
+            )}
           >
             <div className="flex items-start gap-3 p-4 pr-2">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
@@ -713,7 +743,10 @@ export default function LocationCandidates() {
                 size="icon"
                 variant="ghost"
                 className="-mr-1 -mt-1 h-8 w-8 shrink-0"
-                onClick={() => setLinkedToast(null)}
+                onClick={() => {
+                  setLinkedToastLeaving(false)
+                  setLinkedToast(null)
+                }}
                 aria-label="Dismiss"
               >
                 <X className="h-4 w-4" />

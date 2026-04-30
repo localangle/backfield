@@ -349,6 +349,124 @@ def test_import_geojson_splits_geometrycollection_on_import(client: TestClient) 
     assert body["failed_count"] == 0
 
 
+def test_import_geojson_with_meta_property_mappings(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    r = client.post(
+        "/v1/import/geojson?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.62, 41.88]},
+                        "properties": {"name": "Spot A", "type": "place", "ref": 99},
+                    }
+                ],
+            },
+            "mappings": {"label_property": "name", "location_type_property": "type"},
+            "meta_property_mappings": [{"property_key": "ref", "meta_type": "import_ref"}],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["created_count"] == 1
+    cid = body["created"][0]["canonical_id"]
+    with Session(stylebook_test_engine) as s:
+        metas = s.exec(
+            select(StylebookLocationMeta).where(
+                StylebookLocationMeta.stylebook_location_canonical_id == cid
+            )
+        ).all()
+        assert len(metas) == 1
+        assert metas[0].meta_type == "import_ref"
+        assert metas[0].data_json == {"ref": 99}
+
+
+def test_import_geojson_meta_rejects_unknown_property_key(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.62, 41.88]},
+                        "properties": {"name": "X", "type": "city"},
+                    }
+                ],
+            },
+            "mappings": {"label_property": "name", "location_type_property": "type"},
+            "meta_property_mappings": [{"property_key": "not_a_key", "meta_type": "t"}],
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_import_geojson_meta_rejects_blank_meta_type(client: TestClient) -> None:
+    r = client.post(
+        "/v1/import/geojson?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.62, 41.88]},
+                        "properties": {"name": "X", "type": "city"},
+                    }
+                ],
+            },
+            "mappings": {"label_property": "name", "location_type_property": "type"},
+            "meta_property_mappings": [{"property_key": "name", "meta_type": "   "}],
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_import_geojson_meta_skips_empty_property_silently(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    r = client.post(
+        "/v1/import/geojson?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "geojson": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.62, 41.88]},
+                        "properties": {"name": "A", "type": "city", "notes": ""},
+                    },
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-87.61, 41.89]},
+                        "properties": {"name": "B", "type": "city", "notes": "saved"},
+                    },
+                ],
+            },
+            "mappings": {"label_property": "name", "location_type_property": "type"},
+            "meta_property_mappings": [{"property_key": "notes", "meta_type": "note"}],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["created_count"] == 2
+    cids = [row["canonical_id"] for row in body["created"]]
+    with Session(stylebook_test_engine) as s:
+        metas = s.exec(select(StylebookLocationMeta)).all()
+        assert len(metas) == 1
+        assert metas[0].stylebook_location_canonical_id in cids
+        assert metas[0].meta_type == "note"
+        assert metas[0].data_json == {"notes": "saved"}
+
+
 def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:

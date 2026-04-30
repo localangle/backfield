@@ -1,7 +1,8 @@
-"""Tests for :func:`link_pair_allowed` (symmetric substrate ↔ canonical type matrix)."""
+"""Tests for :func:`link_pair_allowed` (permissive substrate ↔ canonical type policy)."""
 
 from __future__ import annotations
 
+import pytest
 from backfield_db import (
     BackfieldOrganization,
     BackfieldWorkspace,
@@ -23,138 +24,36 @@ from sqlmodel import Session, SQLModel, create_engine
 # ---------------------------------------------------------------------------
 
 
-def test_city_to_city_compatible() -> None:
-    assert link_pair_allowed("city", "city") is True
-
-
-def test_town_to_city_compatible() -> None:
-    assert link_pair_allowed("town", "city") is True
-
-
-def test_city_to_town_compatible() -> None:
-    assert link_pair_allowed("city", "town") is True
-
-
-def test_state_to_state_compatible() -> None:
-    assert link_pair_allowed("state", "state") is True
-
-
-def test_region_state_to_state_compatible() -> None:
-    assert link_pair_allowed("region_state", "state") is True
-
-
-def test_county_to_county_compatible() -> None:
-    assert link_pair_allowed("county", "county") is True
-
-
-def test_neighborhood_to_neighborhood_compatible() -> None:
-    assert link_pair_allowed("neighborhood", "neighborhood") is True
-
-
-def test_community_area_to_neighborhood_compatible() -> None:
-    assert link_pair_allowed("community_area", "neighborhood") is True
-
-
-def test_country_to_country_compatible() -> None:
-    assert link_pair_allowed("country", "country") is True
-
-
-def test_region_city_to_region_city_compatible() -> None:
-    assert link_pair_allowed("region_city", "region_city") is True
-
-
-# Cross-strict-group mismatches must be blocked
-def test_address_to_city_incompatible() -> None:
-    assert link_pair_allowed("address", "city") is False
-
-
-def test_intersection_road_to_city_incompatible() -> None:
-    assert link_pair_allowed("intersection_road", "city") is False
-
-
-def test_intersection_highway_to_city_incompatible() -> None:
-    assert link_pair_allowed("intersection_highway", "city") is False
-
-
-def test_place_to_city_incompatible() -> None:
-    assert link_pair_allowed("place", "city") is False
-
-
-def test_city_to_place_incompatible_symmetric() -> None:
-    assert link_pair_allowed("city", "place") is False
-
-
-def test_region_city_to_city_incompatible() -> None:
-    assert link_pair_allowed("region_city", "city") is False
-
-
-def test_region_city_to_neighborhood_incompatible() -> None:
-    assert link_pair_allowed("region_city", "neighborhood") is False
-
-
-def test_region_city_to_place_incompatible() -> None:
-    assert link_pair_allowed("region_city", "place") is False
-
-
-def test_neighborhood_to_city_incompatible() -> None:
-    assert link_pair_allowed("neighborhood", "city") is False
-
-
-def test_city_to_state_incompatible() -> None:
-    assert link_pair_allowed("city", "state") is False
-
-
-def test_city_to_county_incompatible() -> None:
-    assert link_pair_allowed("city", "county") is False
-
-
-def test_county_to_state_incompatible() -> None:
-    assert link_pair_allowed("county", "state") is False
-
-
-def test_neighborhood_to_county_incompatible() -> None:
-    assert link_pair_allowed("neighborhood", "county") is False
-
-
-# Explicit address-like ↔ place exception
-def test_address_to_place_compatible() -> None:
-    assert link_pair_allowed("address", "place") is True
-
-
-def test_place_to_address_compatible() -> None:
-    assert link_pair_allowed("place", "address") is True
-
-
-def test_intersection_to_address_compatible() -> None:
-    assert link_pair_allowed("intersection_road", "address") is True
-
-
-def test_region_city_to_none_incompatible() -> None:
-    assert link_pair_allowed("region_city", None) is False
-
-
-def test_address_to_none_compatible() -> None:
-    assert link_pair_allowed("address", None) is True
-
-
-def test_city_to_none_incompatible() -> None:
-    assert link_pair_allowed("city", None) is False
-
-
-def test_none_substrate_to_city_canonical_compatible() -> None:
-    assert link_pair_allowed(None, "city") is True
-
-
-def test_natural_to_natural_compatible() -> None:
-    assert link_pair_allowed("natural", "natural") is True
-
-
-def test_natural_to_city_incompatible() -> None:
-    assert link_pair_allowed("natural", "city") is False
+@pytest.mark.parametrize(
+    ("substrate_lt", "canonical_lt"),
+    [
+        ("city", "city"),
+        ("town", "city"),
+        ("city", "town"),
+        ("address", "city"),
+        ("intersection_road", "city"),
+        ("place", "city"),
+        ("city", "place"),
+        ("region_city", "city"),
+        ("region_city", "ward"),
+        ("ward", "region_city"),
+        ("neighborhood", "county"),
+        ("natural", "city"),
+        ("region_city", None),
+        ("address", None),
+        ("city", None),
+        (None, "city"),
+    ],
+)
+def test_link_pair_allowed_is_permissive(
+    substrate_lt: str | None,
+    canonical_lt: str | None,
+) -> None:
+    assert link_pair_allowed(substrate_lt, canonical_lt) is True
 
 
 def test_link_substrate_atomic_rejects_city_to_place() -> None:
-    """Manual link is an editorial override and does not enforce the type matrix."""
+    """Manual link succeeds with default ``enforce_type_gate=False`` (permissive types)."""
     engine = _make_engine()
     with Session(engine) as session:
         _, sb_id = _bootstrap(session, org_slug="linkpair")
@@ -424,7 +323,7 @@ def test_rank_allows_address_to_place() -> None:
 
 
 def test_rank_does_not_drop_strict_to_flexible_candidates() -> None:
-    """Recall/scoring should compare across type labels, even when strict autolink disallows."""
+    """Recall/scoring should still rank ``region_city`` substrate against a ``ward`` canonical."""
     engine = _make_engine()
     with Session(engine) as session:
         _, sb_id = _bootstrap(session, org_slug="tg-compare-1")
@@ -467,8 +366,8 @@ def test_rank_does_not_drop_strict_to_flexible_candidates() -> None:
     assert len(ranked) == 1
 
 
-def test_decide_canonical_persist_plan_type_gate_prevents_city_mismatch() -> None:
-    """End-to-end: intersection substrate does not link to a city canonical."""
+def test_decide_canonical_persist_plan_alias_links_intersection_to_city() -> None:
+    """Exact normalized alias hits city canonical; permissive type policy allows the link."""
     from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
 
     engine = _make_engine()
@@ -518,21 +417,22 @@ def test_decide_canonical_persist_plan_type_gate_prevents_city_mismatch() -> Non
             entry={"address_place_kind": "public_named"},
         )
 
-    assert plan.decision != CanonicalPersistDecision.LINK_EXISTING, (
-        f"Intersection should not autolink to city canonical; got {plan.decision}"
-    )
+    assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
+    assert plan.existing_canonical_id == cid
+    reasons = plan.resolution_reasons[0]
+    assert reasons.get("code") == "linked_exact_normalized_alias"
 
 
-def test_ambiguous_cross_type_recall_does_not_block_materialize_new() -> None:
-    """Neighborhood should materialize when only fuzzy recall is cross-type (unlinkable)."""
+def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None:
+    """With permissive types, ambiguous-tier fuzzy recall defers for human/LLM review."""
     from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
 
     engine = _make_engine()
     with Session(engine) as session:
         _, sb_id = _bootstrap(session, org_slug="tg-materialize-ambig-x")
 
-        # Only canonical present is a ward (not linkable to neighborhood by strict matrix),
-        # but token overlap ('Chicago, IL') will still surface it in broad recall.
+        # Ward canonical; token overlap on ``Chicago, IL`` can surface it in recall with a
+        # mid-tier string score (not autolink): policy defers rather than materializing.
         canon = StylebookLocationCanonical(
             stylebook_id=sb_id,
             label="Ward 15, Chicago, IL",
@@ -571,4 +471,6 @@ def test_ambiguous_cross_type_recall_does_not_block_materialize_new() -> None:
             entry=None,
         )
 
-    assert plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+    assert plan.decision == CanonicalPersistDecision.DEFER
+    assert plan.resolution_reasons
+    assert plan.resolution_reasons[0].get("code") == "ambiguous_canonical_match"

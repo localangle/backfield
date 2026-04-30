@@ -7,9 +7,9 @@ with :mod:`canonical_retrieval`.
 
 from __future__ import annotations
 
-from backfield_stylebook.place_extract_location_types import is_address_like_location_type
-
 # Disjoint strict groups.  Types not in any group are "flexible" for pairing rules.
+# Used by :func:`strict_type_group` for **intra-recall ambiguity** (multiple autolink-tier
+# candidates in the same group), not for blocking links.
 _STRICT_TYPE_GROUPS: tuple[frozenset[str], ...] = (
     frozenset({"country", "region_national"}),
     frozenset({"state", "region_state"}),
@@ -38,59 +38,22 @@ def strict_type_group(location_type: str | None) -> frozenset[str] | None:
     return None
 
 
-def _cross_type_place_address_pair(substrate_lt: str, canonical_lt: str) -> bool:
-    """Intentional exception: address-like types may link with ``place`` (both directions)."""
-    s = substrate_lt.strip().lower()
-    c = canonical_lt.strip().lower()
-    return (is_address_like_location_type(s) and c == "place") or (
-        is_address_like_location_type(c) and s == "place"
-    )
+def link_pair_allowed(_substrate_lt: str | None, _canonical_lt: str | None) -> bool:
+    """Return ``True`` when substrate ↔ canonical types may be linked (symmetric).
 
+    Policy is **permissive**: any ``location_type`` pair is allowed for auto-link,
+    alias link, and adjudication. Wrong merges are meant to be prevented by scoring,
+    recall, head-anchor gates, and human review—not by a fixed type matrix.
 
-def link_pair_allowed(substrate_lt: str | None, canonical_lt: str | None) -> bool:
-    """Return ``True`` when a substrate type may link to a canonical type (symmetric).
-
-    Rules:
-    - Missing **substrate** type: allow (cannot infer incompatibility).
-    - Explicit **address-like ↔ place** cross (see :func:`is_address_like_location_type`).
-    - If both sides are outside strict groups (fully flexible): allow.
-    - If **either** side is in a strict group and the other is not: deny (no strict↔flexible
-      except the place/address exception above).
-    - If **both** are strict: allow only when they share the same strict group.
+    Add explicit ``False`` cases here later if product rules require a deny-list.
     """
-    if not (substrate_lt or "").strip():
-        return True
-
-    s = (substrate_lt or "").strip().lower()
-    c_raw = (canonical_lt or "").strip().lower() if (canonical_lt or "").strip() else ""
-
-    if c_raw and _cross_type_place_address_pair(s, c_raw):
-        return True
-
-    sg = strict_type_group(s)
-    cg = strict_type_group(c_raw) if c_raw else None
-
-    if sg is None and cg is None:
-        return True
-    if sg is None or cg is None:
-        return False
-    return sg is cg
+    return True
 
 
-def types_are_comparable(substrate_lt: str | None, canonical_lt: str | None) -> bool:
+def types_are_comparable(_substrate_lt: str | None, _canonical_lt: str | None) -> bool:
     """Return True when a substrate/canonical pair should be *compared* for matching.
 
-    This is intentionally **more permissive** than :func:`link_pair_allowed`, because:
-    - Canonical `location_type` may be user-defined (uploaded geometries), not from PlaceExtract.
-    - Substrate `location_type` may reflect a geocoder/LLM label that we do not control.
-
-    The strict safety decision (whether we may automatically link) remains with
-    :func:`link_pair_allowed`.
+    Recall scoring compares candidates broadly. :func:`link_pair_allowed` is equally
+    permissive for automatic linking; both default to allowing the pair.
     """
-    # Missing types: allow comparison; we can't infer incompatibility.
-    if not (substrate_lt or "").strip():
-        return True
-    if not (canonical_lt or "").strip():
-        return True
-    # Default posture: compare broadly; link narrowly.
     return True

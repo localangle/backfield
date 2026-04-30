@@ -26,6 +26,7 @@ import {
   analyzeImportGeoJson,
   importGeoJson,
   type AnalyzeGeoJsonResponse,
+  type ImportGeoJsonMetaPropertyMapping,
   type ImportGeoJsonResponse,
 } from "@/lib/api"
 import { fetchPlaceExtractLocationTypes } from "@/lib/stylebook-api/taxonomy"
@@ -49,18 +50,47 @@ import {
 import { cn } from "@/lib/utils"
 import { CheckCircle2, ChevronRight } from "lucide-react"
 
-type WizardStep = "upload" | "mapping" | "review" | "importing" | "complete"
+type WizardStep = "upload" | "mapping" | "metadata" | "review" | "importing" | "complete"
 
 const MAX_GEOJSON_BYTES = 25 * 1024 * 1024
 
-const WIZARD_STEP_ORDER: WizardStep[] = ["upload", "mapping", "review", "importing", "complete"]
+const WIZARD_STEP_ORDER: WizardStep[] = [
+  "upload",
+  "mapping",
+  "metadata",
+  "review",
+  "importing",
+  "complete",
+]
 
 const STEP_LABELS: Record<WizardStep, string> = {
   upload: "Upload",
   mapping: "Mapping",
+  metadata: "Metadata",
   review: "Review",
   importing: "Importing",
   complete: "Complete",
+}
+
+type MetaMappingRow = { rowId: string; propertyKey: string; metaType: string }
+
+function newMetaMappingRow(): MetaMappingRow {
+  const rowId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `meta-row-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return { rowId, propertyKey: "", metaType: "" }
+}
+
+function buildMetaPropertyMappingsForImport(rows: MetaMappingRow[]): ImportGeoJsonMetaPropertyMapping[] {
+  const out: ImportGeoJsonMetaPropertyMapping[] = []
+  for (const r of rows) {
+    const pk = r.propertyKey.trim()
+    const mt = r.metaType.trim()
+    if (!pk || !mt) continue
+    out.push({ property_key: pk, meta_type: mt })
+  }
+  return out
 }
 
 /** Radix Select value when no manual type is chosen */
@@ -109,6 +139,7 @@ export default function ImportLocations() {
   const [excluded, setExcluded] = useState<Set<number>>(() => new Set())
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<ImportGeoJsonResponse | null>(null)
+  const [metaMappingRows, setMetaMappingRows] = useState<MetaMappingRow[]>([])
   const [locationTypeMode, setLocationTypeMode] = useState<"manual" | "geojson">("manual")
   const [manualLocationTypeLabel, setManualLocationTypeLabel] = useState("")
   const [placeExtractTypesList, setPlaceExtractTypesList] = useState<string[]>(() => [
@@ -177,6 +208,7 @@ export default function ImportLocations() {
     setExcluded(new Set())
     setImporting(false)
     setImportResult(null)
+    setMetaMappingRows([])
     setLocationTypeMode("manual")
     setManualLocationTypeLabel("")
     setPlaceExtractTypesList([...PLACE_EXTRACT_LOCATION_TYPES])
@@ -754,9 +786,145 @@ export default function ImportLocations() {
                     return
                   }
                   setDerivedRows(rowsForValidation)
+                  setStep("metadata")
+                }}
+              >
+                Next: Metadata
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {step === "metadata" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Metadata (optional)</CardTitle>
+            <CardDescription>
+              Map GeoJSON property values onto canonical metadata types. Skip this step if you do
+              not need extra fields on imported locations.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {availableProperties.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No feature properties were detected. You can skip this step.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  Each row adds one metadata entry per imported location when that property has a
+                  non-empty value. Values are stored under the property name as a key (so the
+                  canonical detail view can show a Key / Value table).
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[42%]">GeoJSON property</TableHead>
+                      <TableHead className="w-[42%]">Meta type</TableHead>
+                      <TableHead className="w-24 text-right"> </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {metaMappingRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-sm text-muted-foreground">
+                          No mappings yet. Use &quot;Add mapping&quot; or skip.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      metaMappingRows.map((row) => (
+                        <TableRow key={row.rowId}>
+                          <TableCell>
+                            <Select
+                              value={row.propertyKey || "__none__"}
+                              onValueChange={(v) =>
+                                setMetaMappingRows((prev) =>
+                                  prev.map((r) =>
+                                    r.rowId === row.rowId
+                                      ? { ...r, propertyKey: v === "__none__" ? "" : v }
+                                      : r,
+                                  ),
+                                )
+                              }
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Property…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">Select property…</SelectItem>
+                                {availableProperties.map((p) => (
+                                  <SelectItem key={p} value={p}>
+                                    {p}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-9"
+                              placeholder="e.g. source_id"
+                              value={row.metaType}
+                              onChange={(e) =>
+                                setMetaMappingRows((prev) =>
+                                  prev.map((r) =>
+                                    r.rowId === row.rowId ? { ...r, metaType: e.target.value } : r,
+                                  ),
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                setMetaMappingRows((prev) => prev.filter((r) => r.rowId !== row.rowId))
+                              }
+                            >
+                              Remove
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={availableProperties.length === 0}
+                  onClick={() => setMetaMappingRows((prev) => [...prev, newMetaMappingRow()])}
+                >
+                  Add mapping
+                </Button>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDerivedRows(null)
+                  setStep("mapping")
+                }}
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setMetaMappingRows([])
                   setStep("review")
                 }}
               >
+                Skip
+              </Button>
+              <Button type="button" onClick={() => setStep("review")}>
                 Next: Review
               </Button>
             </div>
@@ -866,8 +1034,8 @@ export default function ImportLocations() {
               </>
             )}
             <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={() => setStep("mapping")}>
-                Back to mapping
+              <Button type="button" variant="outline" onClick={() => setStep("metadata")}>
+                Back
               </Button>
               <Button
                 type="button"
@@ -877,12 +1045,18 @@ export default function ImportLocations() {
                   setImporting(true)
                   setStep("importing")
                   try {
-                    const res = await importGeoJson(projectSlug, importPayload, {
-                      label_property: mappings.labelProperty ?? null,
-                      location_type_property: mappings.locationTypeProperty ?? null,
-                      formatted_address_property: mappings.formattedAddressProperty ?? null,
-                      location_type_value: mappings.locationTypeValue ?? null,
-                    })
+                    const metaPayload = buildMetaPropertyMappingsForImport(metaMappingRows)
+                    const res = await importGeoJson(
+                      projectSlug,
+                      importPayload,
+                      {
+                        label_property: mappings.labelProperty ?? null,
+                        location_type_property: mappings.locationTypeProperty ?? null,
+                        formatted_address_property: mappings.formattedAddressProperty ?? null,
+                        location_type_value: mappings.locationTypeValue ?? null,
+                      },
+                      metaPayload,
+                    )
                     setImportResult(res)
                     setStep("complete")
                   } catch (e) {
@@ -999,6 +1173,7 @@ export default function ImportLocations() {
                         locationTypeProperty: null,
                         locationTypeValue: null,
                       })
+                      setMetaMappingRows([])
                     }}
                   >
                     Import another file
