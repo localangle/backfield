@@ -521,3 +521,54 @@ def test_decide_canonical_persist_plan_type_gate_prevents_city_mismatch() -> Non
     assert plan.decision != CanonicalPersistDecision.LINK_EXISTING, (
         f"Intersection should not autolink to city canonical; got {plan.decision}"
     )
+
+
+def test_ambiguous_cross_type_recall_does_not_block_materialize_new() -> None:
+    """Neighborhood should materialize when only fuzzy recall is cross-type (unlinkable)."""
+    from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-materialize-ambig-x")
+
+        # Only canonical present is a ward (not linkable to neighborhood by strict matrix),
+        # but token overlap ('Chicago, IL') will still surface it in broad recall.
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 15, Chicago, IL",
+            slug="ward-15-chicago-il",
+            location_type="ward",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Ward 15, Chicago, IL",
+                normalized_alias="ward 15, chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Avondale, Chicago, IL",
+            normalized_name="avondale, chicago, il",
+            location_type="neighborhood",
+            status="resolved",
+            identity_fingerprint="fp-mat-ambig-x",
+        )
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry=None,
+        )
+
+    assert plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW
