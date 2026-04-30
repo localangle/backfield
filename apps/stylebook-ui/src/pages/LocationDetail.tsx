@@ -449,6 +449,8 @@ export default function LocationDetail() {
   ])
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
+  const geometryDraftIsMultiPolygon = geometryEditing && isMultiPolygonGeometry(geometryDraft)
+  const allowGeometryMapEditing = geometryEditing && !geometryDraftIsMultiPolygon
 
   const leafletCollections = useMemo(() => {
     const base = geometryToFeatureCollections(geometrySource as any, {
@@ -694,74 +696,27 @@ export default function LocationDetail() {
                 </Button>
               </>
             ) : (
-              <>
-                {isMultiPolygonGeometry(geometry) && geometry ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        // MultiPolygons are not editable in-place, but we allow replacement by
-                        // starting a fresh draft (point / rectangle).
-                        setGeometryDraft(null)
-                        setGeometryAddMode(null)
-                        setRectanglePreview(null)
-                        setGeometryEditing(true)
-                      }}
-                    >
-                      Replace geometry
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={() => {
-                        void (async () => {
-                          const ok = await showConfirm("Delete this geometry?", {
-                            title: "Delete geometry",
-                            confirmLabel: "Delete",
-                            destructive: true,
-                          })
-                          if (!ok || !canonical || !projectSlug) return
-                          setGeometrySaving(true)
-                          try {
-                            await updateCanonicalLocationGeometry(canonical.id, projectSlug, null)
-                            await loadCanonical(canonical.id, projectSlug, true)
-                          } catch (e) {
-                            console.error(e)
-                            showError(
-                              e instanceof Error ? e.message : "Save geometry failed",
-                            )
-                          } finally {
-                            setGeometrySaving(false)
-                          }
-                        })()
-                      }}
-                      disabled={geometrySaving}
-                    >
-                      Delete geometry
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setGeometryDraft(geometry)
-                      setGeometryAddMode(null)
-                      setRectanglePreview(null)
-                      setGeometryEditing(true)
-                    }}
-                  >
-                    Edit geography
-                  </Button>
-                )}
-              </>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setGeometryDraft(geometry)
+                  setGeometryAddMode(null)
+                  setRectanglePreview(null)
+                  setGeometryEditing(true)
+                }}
+              >
+                Edit geography
+              </Button>
             )}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!geometryEditing && isMultiPolygonGeometry(geometry) ? (
+          {geometryEditing && isMultiPolygonGeometry(geometryDraft) ? (
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                MultiPolygon geometries can’t be edited in-place here, but you can delete or replace them.
+                Editing is disabled for MultiPolygon geometries. These complex geometries contain multiple polygons and
+                require specialized editing tools. You can delete the geometry, then add a point or rectangle replacement.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -833,39 +788,41 @@ export default function LocationDetail() {
             <LeafletMap
               points={leafletCollections.points as any}
               polygons={leafletCollections.polygons as any}
-              geocoder={geometryEditing}
+              geocoder={allowGeometryMapEditing}
               showPopups={false}
               // While editing, geometry updates constantly (drag/resize). Auto fitBounds would fight manual zoom.
-              fitToData={!geometryEditing}
+              fitToData={!allowGeometryMapEditing}
               initialCenter={
-                geometryEditing &&
+                allowGeometryMapEditing &&
                 !geometryDraft &&
                 (geometryAddMode === "point" || geometryAddMode === "rectangle")
                   ? ADD_GEOMETRY_MAP_CENTER
                   : leafletInitialCenter
               }
               initialZoom={
-                geometryEditing &&
+                allowGeometryMapEditing &&
                 !geometryDraft &&
                 (geometryAddMode === "point" || geometryAddMode === "rectangle")
                   ? ADD_GEOMETRY_MAP_ZOOM
                   : null
               }
               interactiveWhenEmpty={
-                geometryEditing && geometryAddMode === "point" && !geometryDraft
+                allowGeometryMapEditing && geometryAddMode === "point" && !geometryDraft
               }
               tileUrl={
-                geometryEditing
+                allowGeometryMapEditing
                   ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                   : undefined
               }
               tileAttribution={
-                geometryEditing
+                allowGeometryMapEditing
                   ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
                   : undefined
               }
               onMapClick={
-                geometryEditing && geometryAddMode === "point" && (!geometryDraft || isPointGeometry(geometryDraft))
+                allowGeometryMapEditing &&
+                geometryAddMode === "point" &&
+                (!geometryDraft || isPointGeometry(geometryDraft))
                   ? ({ latlng }) => {
                       setGeometryDraft({ type: "Point", coordinates: [latlng.lng, latlng.lat] })
                       setGeometryAddMode(null)
@@ -873,7 +830,9 @@ export default function LocationDetail() {
                   : undefined
               }
               editablePoint={
-                geometryEditing && isPointGeometry(geometryDraft) && geometryAddMode !== "rectangle"
+                allowGeometryMapEditing &&
+                isPointGeometry(geometryDraft) &&
+                geometryAddMode !== "rectangle"
                   ? {
                       featureId: "canonical",
                       onChange: ({ lng, lat }) =>
@@ -881,9 +840,9 @@ export default function LocationDetail() {
                     }
                   : null
               }
-              rectanglePreview={geometryEditing ? rectanglePreview : null}
+              rectanglePreview={allowGeometryMapEditing ? rectanglePreview : null}
               editableRectangle={
-                geometryEditing &&
+                allowGeometryMapEditing &&
                 axisAlignedRectangleDraft(geometryDraft) &&
                 geometryAddMode !== "rectangle" &&
                 boundsFromPolygonGeometry(geometryDraft as any)
@@ -907,7 +866,7 @@ export default function LocationDetail() {
                   : null
               }
               rectangleDraw={
-                geometryEditing && geometryAddMode === "rectangle"
+                allowGeometryMapEditing && geometryAddMode === "rectangle"
                   ? {
                       enabled: true,
                       onPreview: setRectanglePreview,
@@ -928,7 +887,7 @@ export default function LocationDetail() {
               }
             />
           </div>
-          {geometryEditing ? (
+          {geometryEditing && !geometryDraftIsMultiPolygon ? (
             <SimpleGeoJsonGeometry value={geometryDraft} onChange={setGeometryDraft} />
           ) : null}
         </CardContent>
