@@ -632,7 +632,9 @@ export default function LocationDetail() {
                 placeholder="e.g. city, neighborhood"
               />
             ) : (
-              <p className="text-sm mt-1.5">{canonical.location_type || "—"}</p>
+              <p className="text-sm mt-1.5">
+                {canonical.location_type ? placeExtractTypeLabel(canonical.location_type) : "—"}
+              </p>
             )}
           </div>
           <div>
@@ -909,93 +911,94 @@ export default function LocationDetail() {
           ) : substrates.length === 0 ? (
             <p className="text-sm text-muted-foreground">No linked substrate places.</p>
           ) : (
-            <Table className="table-fixed w-full">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[26%] min-w-[9rem]">Place / article</TableHead>
-                  <TableHead className="w-[6.5rem] min-w-[5.5rem]">Nature</TableHead>
-                  <TableHead className="w-[10rem]">Type / role</TableHead>
-                  <TableHead>Quoted text</TableHead>
-                  <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {substrates.map((s) => {
-                  const group = mentionsBySubstrateId.get(s.id) ?? []
-                  return (
-                    <Fragment key={`group-${s.id}`}>
-                      <TableRow className="bg-muted/50 border-t">
-                        <TableCell colSpan={4} className="align-top py-3">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="font-medium min-w-0 break-words">{s.name}</div>
-                            <button
-                              type="button"
-                              className="text-xs text-primary hover:underline shrink-0"
-                              onClick={() => void openSubstrateGeometry(s)}
-                            >
-                              View geometry
-                            </button>
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5 break-words">
-                            {(s.location_type || "").trim()
-                              ? placeExtractTypeLabel(s.location_type)
-                              : "—"}{" "}
-                            <span className="text-muted-foreground/70">·</span>{" "}
-                            {(s.formatted_address ?? "").trim() || "—"}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="shrink-0"
-                              disabled={unlinkingId === s.id}
-                              onClick={() => setMoveSubstrateId(s.id)}
-                            >
-                              Move…
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="shrink-0"
-                              disabled={unlinkingId === s.id}
-                              onClick={() => void handleUnlinkSubstrate(s)}
-                            >
-                              {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {group.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="pl-8 text-sm text-muted-foreground py-2">
-                            No article mentions for this place.
+            <div className="w-full overflow-x-auto">
+              <Table className="w-full min-w-[56rem]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[26%] min-w-[9rem]">Place / article</TableHead>
+                    <TableHead className="w-[6.5rem] min-w-[5.5rem]">Nature</TableHead>
+                    <TableHead className="w-[10rem] min-w-[10rem]">Type / role</TableHead>
+                    <TableHead className="min-w-[18rem]">Quoted text</TableHead>
+                    <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {substrates.map((s) => {
+                    const group = mentionsBySubstrateId.get(s.id) ?? []
+                    return (
+                      <Fragment key={`group-${s.id}`}>
+                        <TableRow className="bg-muted/50 border-t">
+                          <TableCell colSpan={4} className="align-top py-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="font-medium min-w-0 break-words">{s.name}</div>
+                              <button
+                                type="button"
+                                className="text-xs text-primary hover:underline shrink-0"
+                                onClick={() => void openSubstrateGeometry(s)}
+                              >
+                                View geometry
+                              </button>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                              {(s.location_type || "").trim()
+                                ? placeExtractTypeLabel(s.location_type)
+                                : "—"}{" "}
+                              <span className="text-muted-foreground/70">·</span>{" "}
+                              {(s.formatted_address ?? "").trim() || "—"}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="shrink-0"
+                                disabled={unlinkingId === s.id}
+                                onClick={() => setMoveSubstrateId(s.id)}
+                              >
+                                Move…
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="shrink-0"
+                                disabled={unlinkingId === s.id}
+                                onClick={() => void handleUnlinkSubstrate(s)}
+                              >
+                                {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
-                      ) : (
-                        group.map((m) => {
-                          const articleHref = mentionArticleHref(m)
-                          const articleLabel = mentionArticleDisplayTitle(m)
-                          return (
-                          <TableRow key={m.mention_id} className="hover:bg-muted/30">
-                            <TableCell className="pl-8 align-top min-w-0">
-                              <div className="flex items-start gap-1 min-w-0">
-                                <span
-                                  className="text-muted-foreground select-none shrink-0 pt-0.5"
-                                  aria-hidden
-                                >
-                                  ↳
-                                </span>
-                                <div className="min-w-0">
-                                  {articleHref ? (
-                                    <a
-                                      href={articleHref}
-                                      className="font-medium text-primary hover:underline break-words"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      title={articleLabel}
-                                    >
+                        {group.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="pl-8 text-sm text-muted-foreground py-2">
+                              No article mentions for this place.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          group.map((m) => {
+                            const articleHref = mentionArticleHref(m)
+                            const articleLabel = mentionArticleDisplayTitle(m)
+                            return (
+                            <TableRow key={m.mention_id} className="hover:bg-muted/30">
+                              <TableCell className="pl-8 align-top min-w-0">
+                                <div className="flex items-start gap-1 min-w-0">
+                                  <span
+                                    className="text-muted-foreground select-none shrink-0 pt-0.5"
+                                    aria-hidden
+                                  >
+                                    ↳
+                                  </span>
+                                  <div className="min-w-0">
+                                    {articleHref ? (
+                                      <a
+                                        href={articleHref}
+                                        className="font-medium text-primary hover:underline break-words"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={articleLabel}
+                                      >
                                       {articleLabel}
                                     </a>
                                   ) : (
@@ -1033,6 +1036,7 @@ export default function LocationDetail() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
