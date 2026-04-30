@@ -19,7 +19,7 @@ import re
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field, ConfigDict
 
-from agate_runtime.context import AgateEnvContext
+from backfield_agate.context import AgateEnvContext
 from agate_utils.llm import call_llm
 
 # Get Celery timeout limits from environment (defaults match worker/tasks.py)

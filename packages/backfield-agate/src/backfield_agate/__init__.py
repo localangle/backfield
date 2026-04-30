@@ -1,5 +1,5 @@
 """Backfield vendored Agate node runtime (PlaceExtract, GeocodeAgent, Output consolidation)."""
 
-from agate_runtime.context import AgateEnvContext
+from backfield_agate.context import AgateEnvContext
 
 __all__ = ["AgateEnvContext"]

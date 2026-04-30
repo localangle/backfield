@@ -15,4 +15,4 @@ node_modules/
 apps/*/src/**/nodes/registry.ts
 
 # Who's On First SQLite (multi-GB; obtain separately — see geocoding/data/README.md)
-packages/agate-runtime/src/agate_utils/geocoding/data/*.db
+packages/backfield-agate/src/agate_utils/geocoding/data/*.db

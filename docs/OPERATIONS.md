@@ -33,7 +33,7 @@ When a migration is **destructive** toward existing Stylebook catalog data (for 
 - `make docker-trim`: runs `docker-prune-system` only (safe default before `make up` when the daemon is low on disk; preserves Postgres and other compose volumes across `down`/`up`).
 - `make docker-trim-full`: runs `docker-trim` then `docker-prune-volumes` (aggressive reclaim; can wipe local DB data if nothing references those volumes).
 
-Docker builds use the repo root as context; [.dockerignore](../.dockerignore) excludes large local files such as Who's On First `*.db` under `packages/agate-runtime/.../geocoding/data/` so images do not try to copy multi-gigabyte databases.
+Docker builds use the repo root as context; [.dockerignore](../.dockerignore) excludes large local files such as Who's On First `*.db` under `packages/backfield-agate/.../geocoding/data/` so images do not try to copy multi-gigabyte databases.
 
 ## Runtime contracts
 
@@ -69,11 +69,11 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 ### Flow execution (PlaceExtract, GeocodeAgent)
 
-Graph nodes are executed in the worker using the vendored `agate-runtime` package (ported from agate-ai-platform). The worker reads API keys from the process environment after applying decrypted `backfield_project_secret` rows for the graph’s project.
+Graph nodes are executed in the worker using the vendored `backfield-agate` package (ported from agate-ai-platform). The worker reads API keys from the process environment after applying decrypted `backfield_project_secret` rows for the graph’s project.
 
 - **Required for LLM PlaceExtract**: `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` (see `agate_utils.llm.call_llm`).
 - **GeocodeAgent** may use `OPENAI_API_KEY`, `PELIAS_API_KEY`, `GEOCODIO_API_KEY`, `BRAVE_SEARCH_API_KEY`, and optional Stylebook cache via `STYLEBOOK_API_URL` + `PROJECT_SLUG` + `SERVICE_API_TOKEN`.
-- **Who's On First SQLite** (coordinate → WOF ID / bbox helpers in `wof.py`): the database file is not in git (size). Install under `packages/agate-runtime/.../geocoding/data/` or set **`WOF_SQLITE_DB_PATH`** to the `.db` file. See `packages/agate-runtime/src/agate_utils/geocoding/data/README.md`.
+- **Who's On First SQLite** (coordinate → WOF ID / bbox helpers in `wof.py`): the database file is not in git (size). Install under `packages/backfield-agate/.../geocoding/data/` or set **`WOF_SQLITE_DB_PATH`** to the `.db` file. See `packages/backfield-agate/src/agate_utils/geocoding/data/README.md`.
 - **Celery limits**: `TASK_SOFT_TIME_LIMIT` / `TASK_HARD_TIME_LIMIT` (defaults `3600` / `4200` seconds on the worker service in Compose) mirror agate-ai-platform worker defaults for long-running geocode flows.
 - **S3 batch fan-out**: `execute_s3_batch_setup` lists S3 keys, inserts **`agate_processed_item`** rows, then submits a Celery **`chord`**: a **`group`** of **`execute_processed_item`** tasks plus a **`finalize_s3_parent_run`** callback when every child completes. The setup task returns immediately (no ``group().get()`` in the parent), so workers can run many file tasks in parallel. **`CELERY_WORKER_CONCURRENCY`** (Compose default **8**, override in repo-root `.env`) controls how many child tasks run at once per worker container. Env **`S3_BATCH_MAX_INFLIGHT`** is reserved for a future bounded chunking story. S3 listing and downloads use project secrets merged into the process environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`). The S3Input node param **`max_files`** (default `500`, hard cap `10000`) limits how many valid JSON documents are executed per run; additional valid keys are recorded as **`skipped`** items with reason **`max_files cap`**.
 
@@ -102,4 +102,4 @@ For `make smoke`, set at least `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` in re
 - If PlaceExtract or GeocodeAgent fail with auth errors, verify LLM and geocoder keys on the worker (Compose env or project secrets).
 - If **`agate-ui` fails with `vite: not found`**, the image may be stale or an old anonymous `node_modules` volume may be wrong: rebuild the service (`docker compose build agate-ui --no-cache`) and bring the stack up again. Compose mounts `apps/agate-ui` at `/app/apps/agate-ui` to match the Dockerfile `WORKDIR` so `node_modules` (including Vite) resolves correctly.
 - **`stylebook-ui`** uses the same pattern: repo-root image build, `WORKDIR` `/app/apps/stylebook-ui`, mounts `apps/stylebook-ui` and `packages/` under `/app/…` so `@backfield/ui` (`file:../../packages/backfield-ui`) resolves. If Vite reports **Failed to resolve import `@backfield/ui`**, rebuild `stylebook-ui` (`docker compose build stylebook-ui --no-cache`) and ensure compose volumes match the Dockerfile paths above.
-- If `make up` / image build fails with **no space left on device**, run `make docker-trim` first; if space is still tight, run `make docker-trim-full` or `make docker-prune-volumes` knowing it may remove unused volumes (including a stopped stack’s DB volume). Remove any huge local `.db` under `packages/agate-runtime/.../geocoding/data/` if you do not need it. The WOF database must not live in the image; [.dockerignore](../.dockerignore) keeps it out of the build context.
+- If `make up` / image build fails with **no space left on device**, run `make docker-trim` first; if space is still tight, run `make docker-trim-full` or `make docker-prune-volumes` knowing it may remove unused volumes (including a stopped stack’s DB volume). Remove any huge local `.db` under `packages/backfield-agate/.../geocoding/data/` if you do not need it. The WOF database must not live in the image; [.dockerignore](../.dockerignore) keeps it out of the build context.
