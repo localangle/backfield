@@ -55,6 +55,8 @@ export function normalizeFeatureCollectionForImport(
 export type GeoJsonFieldMappings = {
   /** Feature.properties key for label/name. */
   labelProperty?: string | null
+  /** Feature.properties key for formatted_address (backend defaults to `formatted_address` when unset). */
+  formattedAddressProperty?: string | null
   /** Feature.properties key for location_type. */
   locationTypeProperty?: string | null
   /** When set, overrides all per-feature type values. */
@@ -118,8 +120,11 @@ export function deriveImportRows(
       typeOverride ??
       _getStringProp(props, mappings.locationTypeProperty) ??
       null
-    /** Same source as label — canonical formatted_address mirrors that display string. */
-    const formattedAddress = label
+    const addrKey =
+      mappings.formattedAddressProperty != null && mappings.formattedAddressProperty.trim() !== ""
+        ? mappings.formattedAddressProperty.trim()
+        : "formatted_address"
+    const formattedAddress = _getStringProp(props, addrKey) ?? null
 
     out.push({
       feature_index: i,
@@ -196,10 +201,18 @@ export function buildFeatureCollectionForImport(
 ): GeoJsonFeatureCollection {
   const outFeatures: GeoJsonFeature[] = []
 
-  const lp = mappings.labelProperty
-  const nameKey = lp || "name"
-  const typeKey = mappings.locationTypeProperty || "type"
-  const addressKey = lp || "formatted_address"
+  const nameKey =
+    mappings.labelProperty != null && mappings.labelProperty.trim() !== ""
+      ? mappings.labelProperty.trim()
+      : "name"
+  const typeKey =
+    mappings.locationTypeProperty != null && mappings.locationTypeProperty.trim() !== ""
+      ? mappings.locationTypeProperty.trim()
+      : "type"
+  const addressKey =
+    mappings.formattedAddressProperty != null && mappings.formattedAddressProperty.trim() !== ""
+      ? mappings.formattedAddressProperty.trim()
+      : "formatted_address"
 
   const typeOverride = (mappings.locationTypeValue ?? "").trim() || null
 
