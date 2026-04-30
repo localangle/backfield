@@ -51,6 +51,7 @@ export function CanonicalLinkModal(props: {
   /** Substrate location id (open candidate or linked row for relink/move). */
   substrateLocationId: number | null
   onDone: () => void
+  onLinked?: (canonical: { id: string; label: string }) => void
   title?: string
   /** When set, surface this canonical first (e.g. pre-filled from row suggestion). */
   initialCanonicalId?: string | null
@@ -244,7 +245,12 @@ export function CanonicalLinkModal(props: {
     setLinkingCanonicalId(canonicalId)
     setError(null)
     try {
+      const pickedLabel =
+        mergedSuggestions.find((s) => String(s.canonical_id) === String(canonicalId))?.label ??
+        searchHits.find((s) => String(s.id) === String(canonicalId))?.label ??
+        (initialCanonExtra?.id === canonicalId ? initialCanonExtra.label : canonicalId)
       await linkSubstrateToCanonical(substrateLocationId, projectSlug, canonicalId)
+      props.onLinked?.({ id: canonicalId, label: pickedLabel })
       onDone()
       onOpenChange(false)
     } catch (e) {
