@@ -16,6 +16,7 @@ def _mock_place_extract_json(city: str, state_name: str, state_abbr: str) -> str
                 {
                     "original_text": f"{city}, {state_abbr}",
                     "description": f"Mention of {city}",
+                    "geocode_hints": "",
                     "location": f"{city}, {state_abbr}",
                     "type": "city",
                     "components": {

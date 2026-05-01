@@ -16,7 +16,7 @@ from ..models import (
     Region,
     NaturalPlace,
 )
-from ..types import AgentState
+from ..types import AgentState, normalized_geocode_hints
 from agate_utils.geocoding.localize import match_canonical_location, get_location_cache
 from agate_utils.geocoding.geocoding_types import stylebook_match_to_geocoding_result, cache_match_to_geocoding_result
 
@@ -79,6 +79,8 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         model = Place(name=place_name, city=city_name, state_abbr=state_abbr, country="US")
         model._input_addressability = is_addressable
         model._original_text = state.get("original_text", "")
+        hints = state.get("geocode_hints") or normalized_geocode_hints(state.get("extra_fields"))
+        model._geocode_hints = hints or None
         return model
 
     if location_type in {"intersection_road", "intersection_highway"}:

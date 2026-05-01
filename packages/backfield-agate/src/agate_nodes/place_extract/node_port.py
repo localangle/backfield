@@ -114,6 +114,10 @@ class Place(BaseModel):
     """A place extracted from text."""
     original_text: str = Field(description="The original text from which this location was extracted")
     description: str = Field(description="Brief description of the location and its relevance")
+    geocode_hints: str = Field(
+        default="",
+        description="Concise story context for downstream geocoding (disambiguation, vague areas, ties to other mentions)",
+    )
     location: LocationInfo = Field(description="Location information with components")
     model_config = ConfigDict(extra='allow')  # Allow additional fields like 'mural'
 

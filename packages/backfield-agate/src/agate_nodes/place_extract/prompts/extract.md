@@ -154,6 +154,24 @@ The description should:
 
 Generally, write this as though you are describing the events of the story for residents of the area in question. Do not make reference to the broader story. Only describe the events, localized for the audience of the geography in question.
 
+## Geocode hints (`geocode_hints`)
+
+For **every** location object, include a string field **`geocode_hints`**.
+
+Purpose: give downstream geocoding agents **short, actionable prose** from the story that is **not already obvious** from `location`, `components`, or `original_text` alone—material that helps **disambiguate** duplicate names (which branch, which corridor), narrow **vague** geography (“north industrial pocket east of the river”), relate this mention to **other sites or zones** elsewhere in the article, or capture framing that pins the intended real-world site.
+
+Guidelines:
+
+1. **Be concise** — typically one or two sentences, or a few comma-separated clauses; prefer staying under ~400 characters.
+2. **Add information**, don’t copy the verbatim quote; pull **glue** from other sentences when it helps the geocoder choose the right feature.
+3. Use **`""`** (empty string) when nothing beyond `original_text` and structured fields is needed.
+
+Illustrative examples (your output still follows the JSON schema):
+
+- `"Story identifies this as the East Lake St. café location; mayor spoke outside after the rally, not the roasting warehouse mentioned earlier."`
+- `"Industrial pocket east of the river where overnight truck queues were described two paragraphs above."`
+- `"County fairgrounds hosting the livestock auction the same weekend as the storm damage."`
+
 ## Street-level: public named place vs non-public site (`address_place_kind`)
 
 For each location whose **`type`** is one of **address**, **address_intersection** (if you use that label), **intersection_road**, **intersection_highway**, **street_road**, or **span**, add a top-level string field **`address_place_kind`** with exactly one of:
