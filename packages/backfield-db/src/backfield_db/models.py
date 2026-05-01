@@ -522,6 +522,11 @@ class SubstrateLocation(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    # AdvancedGeocodeAgent-only structured router audit (from ``agate_geocode_router_audit``).
+    geocode_router_audit_json: dict[str, Any] | list[Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
