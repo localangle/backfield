@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "Advanced Geocode Agent",
   "icon": "MapPin",
   "color": "bg-teal-600",
-  "description": "Hybrid LangGraph geocoding with per-node OpenAI model selection (evaluation path wired; router reserved).",
+  "description": "LangGraph geocoding with per-node OpenAI models: area evaluation plus post-cache route_strategy (after Stylebook/cache lookup).",
   "category": "enrichment",
   "requiredUpstreamNodes": [
     "PlaceExtract"

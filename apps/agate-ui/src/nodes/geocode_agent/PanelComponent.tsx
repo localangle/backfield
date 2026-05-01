@@ -193,6 +193,10 @@ export default function GeocodeAgentPanel({
             This node uses LLM reasoning to intelligently geocode locations from Place Extract. It
             enhances geocoding accuracy by understanding context and resolving ambiguities.
           </p>
+          <p className="text-sm text-muted-foreground mt-2 border-l-2 border-muted pl-2">
+            For configurable evaluation models and post-cache routing (Advanced graph), use the{' '}
+            <strong className="text-foreground">Advanced Geocode Agent</strong> node from the palette.
+          </p>
         </div>
       </div>
 

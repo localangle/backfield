@@ -208,7 +208,7 @@ export default function AdvancedGeocodeAgentPanel({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs">Router model (reserved)</Label>
+            <Label className="text-xs">Router model</Label>
             <Select
               value={String(params.routerModel)}
               onValueChange={handleRouterModel}
@@ -226,8 +226,7 @@ export default function AdvancedGeocodeAgentPanel({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Reserved for future hybrid-graph routing; stored on the node for upcoming decision
-              steps.
+              OpenAI model for the <strong className="text-foreground">route_strategy</strong> step after a cache miss (closed strategy enum; audited).
             </p>
           </div>
 

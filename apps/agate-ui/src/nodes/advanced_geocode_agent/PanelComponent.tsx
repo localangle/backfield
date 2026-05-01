@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "Advanced Geocode Agent",
   "icon": "MapPin",
   "color": "bg-teal-600",
-  "description": "Hybrid LangGraph geocoding with per-node OpenAI model selection (evaluation path wired; router reserved).",
+  "description": "LangGraph geocoding with per-node OpenAI models: area evaluation plus post-cache route_strategy (after Stylebook/cache lookup).",
   "category": "enrichment",
   "requiredUpstreamNodes": [
     "PlaceExtract"
@@ -274,7 +274,7 @@ export default function AdvancedGeocodeAgentPanel({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs">Router model (reserved)</Label>
+            <Label className="text-xs">Router model</Label>
             <Select
               value={String(params.routerModel)}
               onValueChange={handleRouterModel}
@@ -292,8 +292,7 @@ export default function AdvancedGeocodeAgentPanel({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Reserved for future hybrid-graph routing; stored on the node for upcoming decision
-              steps.
+              OpenAI model for the <strong className="text-foreground">route_strategy</strong> step after a cache miss (closed strategy enum; audited).
             </p>
           </div>
 
