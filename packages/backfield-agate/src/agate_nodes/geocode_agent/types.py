@@ -9,6 +9,17 @@ from agate_utils.geocoding.geocoding_types import GeocodingResult
 CacheResolveFn = Callable[[str, str, dict[str, Any]], dict[str, Any] | None]
 
 
+def normalized_geocode_hints(extra_fields: Optional[dict]) -> Optional[str]:
+    """Return stripped PlaceExtract ``geocode_hints`` when non-empty."""
+    if not isinstance(extra_fields, dict):
+        return None
+    raw = extra_fields.get("geocode_hints")
+    if isinstance(raw, str):
+        cleaned = raw.strip()
+        return cleaned or None
+    return None
+
+
 class AgentState(TypedDict, total=False):
     """State for the geocoding agent."""
     location_text: str
@@ -16,6 +27,7 @@ class AgentState(TypedDict, total=False):
     location_components: dict
     original_text: str
     extra_fields: dict  # Additional fields from PlaceExtract (like 'mural', 'description', etc.)
+    geocode_hints: Optional[str]  # Extractor-authored hints from PlaceExtract ``geocode_hints``
     geocoding_result: Optional[GeocodingResult]
     geocoding_model: Optional[Any]  # The model instance used for geocoding
     geocoding_failure_reason: Optional[str]  # Reason for geocoding failure (e.g., "not addressable", "non-point geometry")

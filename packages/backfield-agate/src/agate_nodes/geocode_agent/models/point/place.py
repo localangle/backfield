@@ -22,7 +22,12 @@ class Place(Address):
         super().__init__(**kwargs)
         self._input_addressability: Optional[bool] = None
         self._original_text: Optional[str] = None
+        self._geocode_hints: Optional[str] = None
         self._failure_reason: Optional[str] = None
+
+    def _geocode_hints_prompt_value(self) -> str:
+        raw = (self._geocode_hints or "").strip()
+        return raw if raw else "(none)"
 
     ########## PRIVATE/HELPER METHODS ##########
 
@@ -96,6 +101,7 @@ class Place(Address):
                 place_name=self.name,
                 location_context=location_context,
                 original_text=original_text,
+                geocode_hints=self._geocode_hints_prompt_value(),
             )
             result = call_llm(
                 prompt=prompt,
@@ -171,6 +177,7 @@ class Place(Address):
             ]
             prompt = template.format(
                 original_text=self._original_text or "",
+                geocode_hints=self._geocode_hints_prompt_value(),
                 query=search_query,
                 search_results=json.dumps(formatted_results, indent=2),
             )

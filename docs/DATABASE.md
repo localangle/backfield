@@ -77,6 +77,8 @@ Revision **`020_sub_geocode_router_audit`** adds nullable **`substrate_location.
 
 Revision **`019_stylebook_loc_canon_uuid`** is a **destructive** upgrade: it replaces integer **`stylebook_location_canonical.id`** with **UUID strings**, adds **`slug`**, retargets **`stylebook_location_alias`**, **`stylebook_location_meta`**, and **`substrate_location.stylebook_location_canonical_id`** to the new key type, and migrates **`stylebook_connections.from_entity_id` / `to_entity_id`** to **TEXT** (UUID strings for **`location`** endpoints; decimal strings for stub person/org/work ids). It does **not** preserve existing canonical rows—local and dev databases should **`make reset-db`** (or otherwise wipe the Postgres volume) once before running **`make migrate`** after pulling this revision.
 
+Revision **`020_sub_geocode_router_audit`** adds nullable **`substrate_location.geocode_router_audit_json`** (JSON/JSONB on Postgres) for optional AdvancedGeocodeAgent router audit payloads persisted by the worker.
+
 Revision **`016_agate_processed_item`** creates **`agate_processed_item`** with FK to **`agate_run.id`** (`ON DELETE CASCADE`) and index **`ix_agate_processed_item_run_id`**.
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.

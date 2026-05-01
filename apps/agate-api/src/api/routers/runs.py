@@ -202,23 +202,7 @@ def list_runs(
     return out
 
 
-@router.get("/{run_id}/items/{item_id}", response_model=ProcessedItemDetailOut)
-def get_run_processed_item(
-    run_id: str,
-    item_id: int,
-    session: Session = Depends(get_session),
-    auth: dict[str, Any] = Depends(get_auth),
-):
-    r = session.get(AgateRun, run_id)
-    if not r:
-        raise HTTPException(404, "Run not found")
-    pid = _graph_project_id(session, r.graph_id)
-    if pid:
-        require_project_access(session, auth, pid)
-    row = session.get(AgateProcessedItem, item_id)
-    if row is None or row.run_id != run_id:
-        raise HTTPException(404, "Processed item not found")
-
+def _detail_from_agate_processed_row(row: AgateProcessedItem) -> ProcessedItemDetailOut:
     input_obj: dict[str, Any] = {}
     if row.input_json:
         try:
@@ -253,6 +237,72 @@ def get_run_processed_item(
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+def _maybe_detail_whole_graph_run(
+    session: Session, run: AgateRun, item_id: int
+) -> ProcessedItemDetailOut | None:
+    """Item ``1`` is the whole run when there are no S3 processed-item rows.
+
+    Matches UI ``normalizeRun``: worker stores JSON on ``agate_run.result_json`` only.
+    """
+    if item_id != 1:
+        return None
+    if _processed_items_for_run(session, run.id):
+        return None
+
+    output_obj: dict[str, Any] | None = None
+    if run.result_json:
+        try:
+            parsed = json.loads(run.result_json)
+            if isinstance(parsed, dict):
+                output_obj = parsed
+        except json.JSONDecodeError:
+            output_obj = None
+
+    st = run.status
+    if st not in ("pending", "running", "succeeded", "failed", "skipped"):
+        st = "failed"
+
+    err: str | None = run.error_message if st == "failed" else None
+
+    return ProcessedItemDetailOut(
+        id=1,
+        run_id=run.id,
+        source_file=None,
+        input={},
+        output=output_obj,
+        node_outputs=output_obj,
+        node_logs=None,
+        status=st,
+        error=err,
+        created_at=run.created_at,
+        updated_at=run.updated_at,
+    )
+
+
+@router.get("/{run_id}/items/{item_id}", response_model=ProcessedItemDetailOut)
+def get_run_processed_item(
+    run_id: str,
+    item_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+    row = session.get(AgateProcessedItem, item_id)
+    if row is not None and row.run_id == run_id:
+        return _detail_from_agate_processed_row(row)
+
+    synthetic = _maybe_detail_whole_graph_run(session, r, item_id)
+    if synthetic is not None:
+        return synthetic
+
+    raise HTTPException(404, "Processed item not found")
 
 
 @router.get("/{run_id}", response_model=RunOut)

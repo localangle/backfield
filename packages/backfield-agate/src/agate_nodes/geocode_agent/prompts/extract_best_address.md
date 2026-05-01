@@ -6,11 +6,13 @@ Given the following search query and search results, identify and return the sin
 
 - If no address is available, or you are not fully confident in the address, return `{{"address_found": false}}`
 - Otherwise, parse the address into components and return as JSON
-- Use the original text context to help identify the correct location when multiple results are present
+- Use the original text context **and** the geocode hints (when not `(none)`) to identify the correct location when multiple results are present or addresses conflict
 
 ## Input
 
 **Original Text:** {original_text}
+
+**Geocode hints:** {geocode_hints}
 
 **Query:** {query}
 

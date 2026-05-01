@@ -8,6 +8,7 @@
       "description": "A car crash happened at the 100 block of Fake St.",
       "nature": "primary",
       "nature_secondary_tags": [],
+      "geocode_hints": "",
       "components": {
         "place": {},
         "street_road": {},
@@ -33,6 +34,7 @@
       "description": "Bob Smith, a farmer who supports better agriculture policy, was visiting at Joe's Department Store in Chicago.",
       "nature": "person",
       "nature_secondary_tags": [],
+      "geocode_hints": "Named Chicago retail store visited during agriculture-policy discussion; no street given—likely need directory or chain locator context.",
       "components": {
         "place": {
           "name": "Joe's Department Store",
@@ -63,6 +65,7 @@
       "description": "8th Ave S. was the location of several robberies",
       "nature": "primary",
       "nature_secondary_tags": [],
+      "geocode_hints": "South Side corridor referenced as a pattern of robberies along the avenue in Chicago.",
       "components": {
         "place": {},
         "street_road": {
@@ -91,6 +94,7 @@
       "description": "Phoenix was warmer than Minneapolis during the week of July 5.",
       "nature": "context",
       "nature_secondary_tags": [],
+      "geocode_hints": "",
       "components": {
         "place": {},
         "street_road": {},
@@ -115,6 +119,7 @@
       "description": "A parade is happening along this stretch of Hennepin Ave.",
       "nature": "primary",
       "nature_secondary_tags": ["context"],
+      "geocode_hints": "Parade segment between W. 26th and W. 28th on Hennepin in Minneapolis despite mismatched city/state in components.",
       "components": {
         "place": {},
         "street_road": {},

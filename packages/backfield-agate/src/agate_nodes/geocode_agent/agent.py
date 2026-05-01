@@ -1,6 +1,6 @@
 """LangGraph agent for intelligent geocoding with fallback strategies."""
 
-from typing import Any, Optional
+from typing import Optional
 from langgraph.graph import END, StateGraph  # type: ignore
 
 from .nodes import (
@@ -11,7 +11,7 @@ from .nodes import (
     resolve_cache_or_miss,
     route_strategy_node,
 )
-from .types import AgentState, CacheResolveFn
+from .types import AgentState, CacheResolveFn, normalized_geocode_hints
 
 
 def create_geocoding_agent():
@@ -100,12 +100,14 @@ async def run_geocoding_agent(
     agent = create_geocoding_agent()
     
     # Initialize state
+    ef = extra_fields or {}
     initial_state: AgentState = {
         "location_text": location_text,
         "location_type": location_type,
         "location_components": location_components,
         "original_text": original_text,
-        "extra_fields": extra_fields or {},
+        "extra_fields": ef,
+        "geocode_hints": normalized_geocode_hints(ef),
         "geocoding_result": None,
         "geocoding_model": None,
         "pelias_api_key": pelias_api_key,
@@ -148,12 +150,14 @@ async def run_advanced_geocoding_agent(
 ) -> Optional[dict]:
     """Same IO as ``run_geocoding_agent`` but uses the Advanced graph (router + quieter INFO)."""
     agent = create_advanced_geocoding_agent()
+    ef = extra_fields or {}
     initial_state: AgentState = {
         "location_text": location_text,
         "location_type": location_type,
         "location_components": location_components,
         "original_text": original_text,
-        "extra_fields": extra_fields or {},
+        "extra_fields": ef,
+        "geocode_hints": normalized_geocode_hints(ef),
         "geocoding_result": None,
         "geocoding_model": None,
         "pelias_api_key": pelias_api_key,
