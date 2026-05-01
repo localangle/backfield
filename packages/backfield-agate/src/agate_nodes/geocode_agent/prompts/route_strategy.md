@@ -12,9 +12,12 @@ Meanings:
 
 Use **no_web_search** when web search is unlikely to help or could add noise. Otherwise use **legacy_default**.
 
+Use **geocode_hints** as additional disambiguation context (story-extracted prose explaining the location). They do not by themselves dictate strategy.
+
 ## Fields
 
 - location_type: {location_type}
 - location_text: {location_text}
 - original_text: {original_text}
+- geocode_hints: {geocode_hints}
 - components_json: {components_json}

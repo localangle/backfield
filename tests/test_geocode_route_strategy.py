@@ -38,20 +38,27 @@ def test_route_strategy_fallback_without_openai_key() -> None:
         audit = state.get("router_audit")
         assert isinstance(audit, dict)
         assert audit.get("outcome") == "fallback_no_openai_key"
+        assert "geocode_hints_snippet" in audit
+        assert audit.get("geocode_hints_snippet") == ""
 
     asyncio.run(_run())
 
 
 def test_route_strategy_llm_selects_no_web_search() -> None:
     async def _run() -> None:
-        def _fake_llm(*_a: object, **_k: object) -> str:
+        captured: dict[str, str] = {}
+
+        def _fake_llm(prompt: str, *_a: object, **_k: object) -> str:
+            captured["prompt"] = prompt
             return json.dumps({"strategy": "no_web_search", "rationale": "unit"})
 
+        long_hint = "x" * 250
         state: dict = {
             "location_type": "place",
             "location_text": "Example",
             "location_components": {},
             "original_text": "",
+            "geocode_hints": long_hint,
             "openai_api_key": "sk-test",
             "router_llm_model": "gpt-4o-mini",
         }
@@ -62,6 +69,9 @@ def test_route_strategy_llm_selects_no_web_search() -> None:
         assert isinstance(audit, dict)
         assert audit.get("outcome") == "llm_ok"
         assert audit.get("strategy_selected") == "no_web_search"
+        assert "geocode_hints:" in captured["prompt"]
+        assert long_hint[:200] in captured["prompt"]
+        assert audit.get("geocode_hints_snippet") == long_hint[:200]
 
     asyncio.run(_run())
 

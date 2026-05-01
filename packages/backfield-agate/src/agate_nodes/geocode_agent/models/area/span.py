@@ -31,6 +31,7 @@ class Span(Area):
         self._end_model: Optional[Area] = None
         self._start_point: Optional[GeometryPoint] = None
         self._end_point: Optional[GeometryPoint] = None
+        self._geocode_hints: Optional[str] = None
 
     ########## PRIVATE/HELPER METHODS ##########
 
@@ -69,6 +70,8 @@ class Span(Area):
     ) -> Tuple[Optional[City], Optional[GeometryPoint]]:
         city_name, state_name, country = self._parse_city(location_text)
         city_model = City(name=city_name, state=state_name, county="", country=country)
+        if self._geocode_hints:
+            city_model._geocode_hints = self._geocode_hints  # type: ignore[attr-defined]
 
         result = await city_model.geocode(
             pelias_api_key=pelias_api_key,
@@ -94,6 +97,7 @@ class Span(Area):
     ) -> Tuple[Optional[Intersection], Optional[GeometryPoint]]:
         intersection_model = Intersection(name=location_text, country=self.country)
         intersection_model._original_text = location_text
+        intersection_model._geocode_hints = self._geocode_hints
 
         result = await intersection_model.geocode(
             pelias_api_key=None,

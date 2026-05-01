@@ -63,10 +63,13 @@ async def route_strategy_node(state: AgentState) -> AgentState:
 
     attempts: list[dict] = []
 
+    hints_raw = (state.get("geocode_hints") or "").strip()
+    geocode_hints_prompt = hints_raw if hints_raw else "(none)"
     audit_core: dict = {
         "node": "route_strategy",
         "location_type": location_type,
         "location_text_snippet": location_text[:200],
+        "geocode_hints_snippet": hints_raw[:200] if hints_raw else "",
     }
 
     openai_key = state.get("openai_api_key")
@@ -105,6 +108,7 @@ async def route_strategy_node(state: AgentState) -> AgentState:
         location_type=location_type,
         location_text=location_text,
         original_text=state.get("original_text") or "",
+        geocode_hints=geocode_hints_prompt,
         components_json=json.dumps(components, default=str)[:8000],
     )
 

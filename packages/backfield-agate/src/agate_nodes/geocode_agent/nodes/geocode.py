@@ -37,6 +37,15 @@ def _adv_info(state: AgentState, msg: str, *args: object) -> None:
 
 ########## HELPER FUNCTIONS ##########
 
+
+def _geocode_hints_for_context(state: AgentState) -> str | None:
+    """Stripped PlaceExtract hints for LLM context strings (Region, NaturalPlace, etc.)."""
+    raw = state.get("geocode_hints") or normalized_geocode_hints(state.get("extra_fields"))
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
 def _create_model(location_type: str, location_text: str, components: dict, state: AgentState):
     if location_type == "state":
         state_info = components.get("state", {})
@@ -75,7 +84,10 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         city_name = components.get("city", "")
         state_info = components.get("state", {})
         state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else None
-        return Address(name=address, city=city_name, state_abbr=state_abbr, country="US")
+        addr = Address(name=address, city=city_name, state_abbr=state_abbr, country="US")
+        addr._original_text = state.get("original_text", "")
+        addr._geocode_hints = _geocode_hints_for_context(state)
+        return addr
 
     if location_type == "place":
         place_info = components.get("place", {})
@@ -99,6 +111,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
     if location_type in {"intersection_road", "intersection_highway"}:
         model = Intersection(name=location_text, country="US")
         model._original_text = state.get("original_text", "")
+        model._geocode_hints = _geocode_hints_for_context(state)
         return model
 
     if location_type == "street_road":
@@ -111,7 +124,9 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         city_name = components.get("city", "")
         state_info = components.get("state", {})
         state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else ""
-        return StreetRoad(name=street_name, city=city_name, state=state_abbr, country="US")
+        sr = StreetRoad(name=street_name, city=city_name, state=state_abbr, country="US")
+        sr._geocode_hints = _geocode_hints_for_context(state)
+        return sr
 
     if location_type.startswith("region"):
         extra_context_parts = []
@@ -121,6 +136,9 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         description = extra_fields.get("description")
         if description:
             extra_context_parts.append(f"Description: {description}")
+        hints_line = _geocode_hints_for_context(state)
+        if hints_line:
+            extra_context_parts.append(f"Geocode hints: {hints_line}")
         additional_context = "\n".join(extra_context_parts) if extra_context_parts else None
         return Region(name=location_text, country="US", additional_context=additional_context)
 
@@ -149,6 +167,9 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         description = extra_fields.get("description")
         if description:
             extra_context_parts.append(f"Description: {description}")
+        hints_line = _geocode_hints_for_context(state)
+        if hints_line:
+            extra_context_parts.append(f"Geocode hints: {hints_line}")
         additional_context = "\n".join(extra_context_parts) if extra_context_parts else None
 
         return NaturalPlace(
@@ -164,7 +185,9 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
 
     if location_type == "span":
         span_info = components.get("span", {}) if isinstance(components, dict) else {}
-        return Span(name=location_text, span=span_info, country="US")
+        sp = Span(name=location_text, span=span_info, country="US")
+        sp._geocode_hints = _geocode_hints_for_context(state)
+        return sp
 
     return None
 

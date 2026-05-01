@@ -1,20 +1,111 @@
+import json
 import logging
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 from agate_utils.geocoding.geocoding_types import GeocodingResult
-from agate_utils.geocoding.pelias import geocode_search as pelias_search, geocode_structured as pelias_structured
+from agate_utils.geocoding.pelias import (
+    geocode_search as pelias_search,
+    geocode_search_candidates,
+    geocode_structured as pelias_structured,
+)
 from agate_utils.geocoding.geocodio import geocode_search as geocodio_search
 from agate_utils.geocoding.nominatim import geocode_address
+from agate_utils.llm import call_llm
 
 from .point import Point
 
 logger = logging.getLogger(__name__)
+
+ADDRESS_CANDIDATE_LLM_MODEL = "gpt-5-mini"
+_ADDRESS_PICKER_PROMPT = Path(__file__).parent.parent.parent / "prompts" / "address_candidate_picker.md"
 
 ########## ADDRESS MODEL ##########
 
 class Address(Point):
     """Model for address-level locations."""
 
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        self._geocode_hints: Optional[str] = None
+        self._original_text: Optional[str] = None
+
     ########## PRIVATE/HELPER METHODS ##########
+
+    def _geocode_hints_prompt_value(self) -> str:
+        raw = (self._geocode_hints or "").strip()
+        return raw if raw else "(none)"
+
+    def _address_candidate_rows(self, candidates: List[GeocodingResult]) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for idx, cand in enumerate(candidates, start=1):
+            label = ""
+            coords: Optional[List[float]] = None
+            if cand.result:
+                label = cand.result.processed_str or ""
+                geom = cand.result.geometry
+                if getattr(geom, "type", None) == "Point":
+                    coords = list(geom.coordinates)
+            rows.append(
+                {
+                    "index": idx,
+                    "label": label,
+                    "coordinates": coords,
+                    "confidence": None,
+                }
+            )
+        return rows
+
+    def _pick_pelias_candidate_with_llm(
+        self,
+        candidates: List[GeocodingResult],
+        query: str,
+        openai_api_key: str,
+    ) -> Optional[GeocodingResult]:
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+
+        try:
+            template = _ADDRESS_PICKER_PROMPT.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.error("Address candidate picker prompt missing: %s", exc)
+            return candidates[0]
+
+        rows = self._address_candidate_rows(candidates)
+        prompt = template.format(
+            original_text=self._original_text or "",
+            geocode_hints=self._geocode_hints_prompt_value(),
+            query=query,
+            candidates_json=json.dumps(rows, indent=2, ensure_ascii=False),
+        )
+        try:
+            response_text = call_llm(
+                prompt=prompt,
+                model=ADDRESS_CANDIDATE_LLM_MODEL,
+                openai_api_key=openai_api_key,
+                force_json=True,
+            )
+            payload = json.loads(response_text)
+        except Exception as exc:
+            logger.warning("Address candidate selection LLM failed: %s", exc)
+            return candidates[0]
+
+        selected_index = payload.get("selected_index")
+        confidence = payload.get("confidence", 0)
+        if not isinstance(selected_index, int) or not (1 <= selected_index <= len(candidates)):
+            logger.warning("Address candidate selection returned invalid index: %s", selected_index)
+            return candidates[0]
+
+        if isinstance(confidence, (int, float)) and confidence < 40:
+            logger.info(
+                "Address candidate selection confidence too low (%s); using first candidate.",
+                confidence,
+            )
+            return candidates[0]
+
+        return candidates[selected_index - 1]
 
     def _prep(self) -> Dict[str, Any]:
         """Prepare address data for geocoding."""
@@ -68,7 +159,31 @@ class Address(Point):
             except Exception as exc:
                 logger.warning("Pelias structured failed for %s: %s", self.name, exc)
 
-        # Pelias search fallback
+        # Pelias search: multi-candidate + LLM picker when OpenAI is available; else single search
+        if pelias_api_key and openai_api_key:
+            try:
+                candidates = await geocode_search_candidates(
+                    text=full_address,
+                    api_key=pelias_api_key,
+                    size=5,
+                )
+                if len(candidates) > 1:
+                    picked = self._pick_pelias_candidate_with_llm(
+                        candidates,
+                        full_address,
+                        openai_api_key,
+                    )
+                    if picked and self._is_good_point_result(picked):
+                        logger.info("Pelias search + LLM picker success for %s", self.name)
+                        self.geocoding_result = picked
+                        return picked
+                elif len(candidates) == 1 and self._is_good_point_result(candidates[0]):
+                    logger.info("Pelias search (single candidate) success for %s", self.name)
+                    self.geocoding_result = candidates[0]
+                    return candidates[0]
+            except Exception as exc:
+                logger.warning("Pelias search candidates failed for %s: %s", self.name, exc)
+
         if pelias_api_key:
             try:
                 result = await pelias_search(text=full_address, api_key=pelias_api_key)
