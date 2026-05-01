@@ -2,17 +2,25 @@ Choose how to run **external** geocoding for one location (cache was already che
 
 Respond with **only** a JSON object (no markdown fences) with keys:
 
-- **strategy**: exactly `"legacy_default"` or `"no_web_search"`
+- **strategy**: exactly `"web_search"` or `"no_web_search"`
 - **rationale**: optional short string
 
 Meanings:
 
-- **legacy_default**: Normal pipeline, including Brave web search when configured for place-like flows.
-- **no_web_search**: Same pipeline but **without** Brave web search for place resolution.
+- **web_search**: For **place** resolution that may need a street address, allow **Brave Search** (when configured) and **DuckDuckGo** as fallback to find snippets, then parse an address and geocode it. Use this whenever a place might need the web to supply a missing street line.
+- **no_web_search**: **Neither Brave nor DuckDuckGo** runs. Use only structured geocoders (Pelias, etc.) and existing components.
 
-Use **no_web_search** when web search is unlikely to help or could add noise. Otherwise use **legacy_default**.
+## When to prefer **web_search**
 
-Use **geocode_hints** as additional disambiguation context (story-extracted prose explaining the location). They do not by themselves dictate strategy.
+- If **location_type** is **place** and **components.place.addressable** is **true**, and **components.address** is empty or whitespace-only, and there is **no** house number in the structured data (treat **components.street_road** as a corridor name only, not a full mailing address), **prefer `web_search`**. Rich **geocode_hints** help shape the **search query**; they are **not** a reason to skip web search in this case.
+
+## When to use **no_web_search**
+
+- Clearly structural types that do not benefit from web search: **state**, **county**, **city**, **neighborhood**, **address** (already has a street line), **street_road**, **intersection***, **span**, **region***, **natural**.
+- **place** with a full numeric street address already present in **components.address** (or equivalent) so web search adds little.
+- Non-addressable natural POIs where search would not resolve a street address.
+
+Use **geocode_hints** as disambiguation for the story; they complement **components_json** but do not override the rules above.
 
 ## Fields
 

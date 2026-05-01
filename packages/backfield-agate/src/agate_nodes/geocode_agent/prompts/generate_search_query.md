@@ -11,6 +11,7 @@ Create a search query that will help find the specific address of the place ment
 - Keep the query concise (under 10 words when possible)
 - Include the place name and location context
 - If the location context includes information that might differentiate one location of a business or place from another — describing it as "near" or "by" something or "on" street, for example — include that context in the search query
+- When the **original text** names a specific street or corridor for this place (e.g. "on Snelling"), include that street phrase verbatim in the query to narrow results
 - When **Geocode hints** below are not `(none)`, fold their disambiguating phrases into the query (streets, districts, nearby anchors, or story-specific qualifiers)
 - Focus on finding the physical address, not general information
 - Use terms that are likely to appear on business websites, directories, or news articles

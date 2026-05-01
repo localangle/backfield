@@ -18,10 +18,26 @@ logger = logging.getLogger(__name__)
 
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "route_strategy.md"
 
-STRATEGY_LEGACY_DEFAULT = "legacy_default"
+STRATEGY_WEB_SEARCH = "web_search"
 STRATEGY_NO_WEB_SEARCH = "no_web_search"
 
-GeocodeStrategyLiteral = Literal["legacy_default", "no_web_search"]
+GeocodeStrategyLiteral = Literal["web_search", "no_web_search"]
+
+# Types that never use Brave/DuckDuckGo for resolution (structured geocoding only).
+_STRUCTURAL_LOCATION_TYPES: frozenset[str] = frozenset(
+    {
+        "state",
+        "county",
+        "city",
+        "neighborhood",
+        "address",
+        "natural",
+        "street_road",
+        "span",
+        "intersection_road",
+        "intersection_highway",
+    }
+)
 
 
 class GeocodeRoutePlan(BaseModel):
@@ -32,14 +48,18 @@ class GeocodeRoutePlan(BaseModel):
 
 
 def fallback_strategy_for_location_type(location_type: str) -> GeocodeStrategyLiteral:
-    """Per-type default when the router fails; v1 uses legacy everywhere."""
-    _ = location_type
-    return STRATEGY_LEGACY_DEFAULT
+    """Per-type default when the router fails or is unavailable."""
+    lt = (location_type or "").lower()
+    if lt == "place":
+        return STRATEGY_WEB_SEARCH
+    if lt.startswith("region") or lt in _STRUCTURAL_LOCATION_TYPES:
+        return STRATEGY_NO_WEB_SEARCH
+    return STRATEGY_NO_WEB_SEARCH
 
 
 def _apply_strategy(state: AgentState, strategy: GeocodeStrategyLiteral) -> None:
     state["geocode_strategy"] = strategy
-    state["suppress_brave_search"] = strategy == STRATEGY_NO_WEB_SEARCH
+    state["allow_web_search"] = strategy == STRATEGY_WEB_SEARCH
 
 
 def _load_prompt_template() -> str:
@@ -54,7 +74,7 @@ async def route_strategy_node(state: AgentState) -> AgentState:
     """After ``resolve_cache_or_miss``: LLM-picks strategy, or skip on cache hit."""
     if state.get("geocoding_result") is not None:
         state["router_audit"] = None
-        state.pop("suppress_brave_search", None)
+        state.pop("allow_web_search", None)
         return state
 
     location_type = (state.get("location_type") or "").lower()

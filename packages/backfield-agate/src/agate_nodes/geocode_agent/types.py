@@ -48,5 +48,5 @@ class AgentState(TypedDict, total=False):
     # AdvancedGeocodeAgent graph only (explicit routing + quieter logs).
     advanced_quiet_logs: Optional[bool]
     geocode_strategy: Optional[str]
-    suppress_brave_search: Optional[bool]
+    allow_web_search: Optional[bool]
     router_audit: Optional[dict[str, Any]]

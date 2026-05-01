@@ -49,6 +49,8 @@ class Place(Address):
                 "country": self.country or "USA",
             },
             "full_place": full_place,
+            # Address.geocode reads ``full_address``; keep alias for Place fallthrough.
+            "full_address": full_place,
         }
 
     def _check_if_addressable(self, openai_api_key: str) -> str:
@@ -127,7 +129,13 @@ class Place(Address):
         brave_search_api_key: Optional[str],
         original_text: str,
         openai_api_key: str,
+        *,
+        allow_web_search: bool = True,
     ) -> Optional[SearchResponse]:
+        if not allow_web_search:
+            logger.info("Web search disabled for place '%s'; skipping Brave and DuckDuckGo", self.name)
+            return None
+
         query = self._generate_search_query(original_text, openai_api_key)
         location_hint = None
         if self.city or self.state_abbr or self.country:
@@ -221,6 +229,8 @@ class Place(Address):
         geocodio_api_key: Optional[str] = None,
         openai_api_key: Optional[str] = None,
         brave_search_api_key: Optional[str] = None,
+        *,
+        allow_web_search: bool = True,
     ) -> Optional[GeocodingResult]:
         logger.info("Starting place geocoding: %s", self.name)
 
@@ -244,7 +254,12 @@ class Place(Address):
                 self._prep = lambda: self._update_prep_with_address(address_data)
 
         elif addressability == "addressable":
-            search_response = self._search_for_address(brave_search_api_key, self._original_text or "", openai_api_key)
+            search_response = self._search_for_address(
+                brave_search_api_key,
+                self._original_text or "",
+                openai_api_key,
+                allow_web_search=allow_web_search,
+            )
             if search_response:
                 address_data = self._extract_and_parse_address(
                     search_response.query,

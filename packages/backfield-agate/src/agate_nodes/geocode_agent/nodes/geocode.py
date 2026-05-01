@@ -385,10 +385,13 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
             geocode_kwargs = {"openai_api_key": openai_api_key}
         else:
             if isinstance(model, Place):
-                brave = brave_search_api_key
-                if state.get("suppress_brave_search"):
-                    brave = None
-                geocode_kwargs["brave_search_api_key"] = brave
+                # Advanced graph sets ``allow_web_search`` from route_strategy; baseline graph omits it (default True).
+                raw_allow = state.get("allow_web_search")
+                allow_web = True if raw_allow is None else bool(raw_allow)
+                geocode_kwargs["brave_search_api_key"] = (
+                    brave_search_api_key if allow_web else None
+                )
+                geocode_kwargs["allow_web_search"] = allow_web
             if isinstance(model, StreetRoad):
                 geocode_kwargs["original_text"] = state.get("original_text", "")
 
