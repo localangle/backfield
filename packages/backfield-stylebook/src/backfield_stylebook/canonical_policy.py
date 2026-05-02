@@ -110,6 +110,9 @@ def _should_defer(
         return True
     if lt == "address" and kind != ADDRESS_PLACE_KIND_PUBLIC_NAMED:
         return True
+    # Roadway spans are not auto-canonicalized; editors can link or create later from the queue.
+    if lt == "span":
+        return True
     return False
 
 
@@ -295,7 +298,11 @@ def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> 
     as long as the row is not a hard geocode failure and has a normalized name.
 
     Address, intersections, and span / street-road types keep the strict geometry rule.
+    Spans never materialize automatically (always defer).
     """
+    lt = (location.location_type or "").strip().lower()
+    if lt == "span":
+        return False
     if _location_type_allows_autocreate_without_strict_geometry(location.location_type):
         st = str(location.status or "")
         if st == "failed":
@@ -363,6 +370,22 @@ def decide_canonical_persist_plan(
                     {
                         "code": "private_place_or_residence",
                         "message": "Private place or residence",
+                        "location_type": location.location_type,
+                        "places_bucket": places_bucket,
+                        "substrate_status": str(location.status or ""),
+                    },
+                ),
+            )
+        if lt == "span":
+            return CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.DEFER,
+                resolution_reasons=(
+                    {
+                        "code": "road_span_not_canonicalized",
+                        "message": (
+                            "Road spans are not auto-canonicalized; "
+                            "defer for manual review or linking."
+                        ),
                         "location_type": location.location_type,
                         "places_bucket": places_bucket,
                         "substrate_status": str(location.status or ""),
