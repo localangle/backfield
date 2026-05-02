@@ -8,7 +8,8 @@ Polish this **candidate** display line (US/Canada geography labels). Apply **gen
 - **Subdivision codes**: Any comma segment that is exactly **two letters** and is a US state, DC, or Canadian province/territory code must be **uppercase**.
 - **Small words**: Lowercase joiners (**of, and, or, nor, for, so, yet, the, a, an, at, by, in, on, to, via, as**) inside a segment except the **first word** of that segment; keep a leading **The** when it is part of the official placename, not an article in the middle of a title.
 - **Patronymic apostrophe**: After `'` in a personal-style placename token, capitalize the next letter; do not alter English contractions (**n't**, **'s**, **'re**, **'ve**, **'ll**, **'m**).
-- **Acronyms**: Preserve **dotted initialisms** with **all letters uppercase** (**U.S.**, **D.C.**, **N.Y.**). Use **Ph.D.** (not **Ph.d.**). For **&** in short brand-style tokens (**AT&T**), capitalize **both** sides of **&**.
+- **Acronyms**: Preserve **dotted initialisms** with **all letters uppercase** (**U.S.**, **D.C.**, **N.Y.**) **inside** a segment (e.g. **U.S. Senate**). Use **Ph.D.** (not **Ph.d.**). For **&** in short brand-style tokens (**AT&T**), capitalize **both** sides of **&**.
+- **Trailing United States (country)**: When the **final** comma segment is the country, use **`US`** only—**no** periods (**not** **`U.S.`**), and **not** **`USA`**. **World macro-regions** (Middle East, Western Europe, etc.) must **not** be suffixed with **`, US`**—leave **`Middle East`** alone.
 
 Story excerpt (may be truncated):
 {story_context}

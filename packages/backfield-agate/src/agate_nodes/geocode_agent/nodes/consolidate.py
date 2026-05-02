@@ -6,7 +6,7 @@ import logging
 from agate_utils.geocoding.h3 import h3_cell
 
 from ..types import AgentState
-from .emit_location_line import compute_emit_location_line
+from .emit_location_line import compute_emit_location_line, maybe_upgrade_address_to_named_place
 from .geocode import _adv_info
 
 logger = logging.getLogger(__name__)
@@ -132,6 +132,15 @@ async def consolidate_node(state: AgentState) -> AgentState:
         state,
         formatted_address=formatted_line,
     )
+    effective_type = location_type
+    if location_type == "address":
+        emit_location, upgraded_to_place = await maybe_upgrade_address_to_named_place(
+            state,
+            formatted_address=formatted_line,
+            baseline_location_line=emit_location,
+        )
+        if upgraded_to_place:
+            effective_type = "place"
 
     result_base = {
         "id": geocoding_result.result.id,
@@ -148,8 +157,8 @@ async def consolidate_node(state: AgentState) -> AgentState:
         "id": entry_id,
         "original_text": original_text,  # Original text from the article
         "location": emit_location,
-        "type": location_type,
-        "description": extra_fields.get("description", f"Geocoded {location_type} location"),
+        "type": effective_type,
+        "description": extra_fields.get("description", f"Geocoded {effective_type} location"),
         "geocode": {
             "geocode_type": geocoding_result.geocoder,
             "result": dict(result_base),
@@ -190,8 +199,8 @@ async def consolidate_node(state: AgentState) -> AgentState:
             "id": h3_id,
             "original_text": original_text,
             "location": emit_location,
-            "type": location_type,
-            "description": extra_fields.get("description", f"Geocoded {location_type} location"),
+            "type": effective_type,
+            "description": extra_fields.get("description", f"Geocoded {effective_type} location"),
             "geocode": {
                 "geocode_type": geocoding_result.geocoder,
                 "result": dict(result_base),

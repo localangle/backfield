@@ -120,10 +120,26 @@ def test_heuristic_strips_trailing_us_for_domestic() -> None:
     )
 
 
-def test_heuristic_keeps_country_suffix_for_region_country() -> None:
+def test_heuristic_region_country_world_macro_drops_trailing_us() -> None:
     out = _heuristic_emit_location("region_country", "Western Europe, USA", "")
-    assert "US" in out
-    assert "USA" not in out
+    assert out == "Western Europe"
+
+
+def test_refine_middle_east_no_trailing_us() -> None:
+    assert refine_location_display_line("Middle East, US") == "Middle East"
+    assert refine_location_display_line("middle east, u.s.") == "Middle East"
+
+
+def test_refine_trailing_country_us_without_periods() -> None:
+    assert refine_location_display_line("Chicago, IL, U.S.") == "Chicago, IL, US"
+    assert refine_location_display_line("Some Park, CO, USA") == "Some Park, CO, US"
+
+
+def test_refine_keeps_us_in_name_not_final_segment() -> None:
+    assert (
+        refine_location_display_line("U.s. Senate Office Building, Washington, DC")
+        == "U.S. Senate Office Building, Washington, DC"
+    )
 
 
 def test_heuristic_title_cases_words_and_state_abbr() -> None:
