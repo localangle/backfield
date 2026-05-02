@@ -30,6 +30,32 @@ def test_refine_collapses_repeated_city_before_state() -> None:
     assert refine_location_display_line("manteno, manteno, il") == "Manteno, IL"
 
 
+def test_refine_drops_standalone_neighborhood_type_segment() -> None:
+    assert (
+        refine_location_display_line("Lake View, Neighborhood, Chicago, IL")
+        == "Lake View, Chicago, IL"
+    )
+    assert (
+        refine_location_display_line("Norwood Park, neighborhood, chicago, il")
+        == "Norwood Park, Chicago, IL"
+    )
+
+
+def test_refine_drops_standalone_district_type_segment() -> None:
+    assert (
+        refine_location_display_line("Logan Square, District, Chicago, IL")
+        == "Logan Square, Chicago, IL"
+    )
+
+
+def test_refine_keeps_neighborhood_word_inside_segment() -> None:
+    """Only the standalone segment ``Neighborhood`` is removed, not part of a longer name."""
+    assert (
+        refine_location_display_line("University Neighborhood, Chicago, IL")
+        == "University Neighborhood, Chicago, IL"
+    )
+
+
 def test_refine_does_not_collapse_distinct_segments() -> None:
     assert (
         refine_location_display_line("Los Angeles, Los Angeles County, CA")
@@ -61,6 +87,30 @@ def test_refine_ohare_apostrophe() -> None:
         refine_location_display_line("o'hare international airport, chicago, il")
         == "O'Hare International Airport, Chicago, IL"
     )
+
+
+def test_refine_dotted_initialisms_us_dc() -> None:
+    assert (
+        refine_location_display_line(
+            "U.s. Senate Judiciary Committee Hearing, Washington, DC"
+        )
+        == "U.S. Senate Judiciary Committee Hearing, Washington, DC"
+    )
+
+
+def test_refine_dotted_initialism_bb() -> None:
+    out = refine_location_display_line("B.b. King Hall, Memphis, TN")
+    assert out == "B.B. King Hall, Memphis, TN"
+
+
+def test_refine_phd_style_abbrev() -> None:
+    out = refine_location_display_line("ph.d. reception hall, boston, ma")
+    assert out == "Ph.D. Reception Hall, Boston, MA"
+
+
+def test_refine_ampersand_acronym() -> None:
+    out = refine_location_display_line("At&t plaza, dallas, tx")
+    assert out == "AT&T Plaza, Dallas, TX"
 
 
 def test_heuristic_strips_trailing_us_for_domestic() -> None:

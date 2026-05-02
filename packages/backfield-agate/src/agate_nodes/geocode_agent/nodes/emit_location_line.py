@@ -125,6 +125,46 @@ _SMALL_WORDS: frozenset[str] = frozenset(
 # Skip Irish/French-style apostrophe “fix” when this looks like an English contraction.
 _CONTRACTION_SUFFIX = re.compile(r"(n't|'t|'s|'re|'ve|'ll|'m)$", re.IGNORECASE)
 
+# Dotted initialisms: ``U.S.``, ``D.C.``, ``N.Y.``, ``U.S.A.`` (``string.capwords`` yields ``U.s.``).
+_DOTTED_INITIALISM = re.compile(r"^(?:[A-Za-z]\.)+[A-Za-z]?\.?$")
+# ``Ph.d.`` / ``Sc.d.``-style: multi-letter stem + dot + single letter (+ optional dot).
+_LETTER_DOT_SINGLE_LETTER = re.compile(r"^([A-Za-z]{2,})\.([A-Za-z])(\.?)$")
+# Short ``AT&T`` / ``H&R``-style tokens (``capwords`` can yield ``At&t``).
+_AMPERSAND_ACRONYM = re.compile(r"^([A-Za-z]{1,4})&([A-Za-z]{1,4})$", re.IGNORECASE)
+
+# Keep common Latin abbreviations out of the all-caps dotted rule.
+_LATIN_ABBREV_CF = frozenset({"e.g.", "i.e.", "a.m.", "p.m."})
+
+
+def _letters_to_upper_for_acronym(token: str) -> str:
+    return "".join(ch.upper() if ch.isalpha() else ch for ch in token)
+
+
+def _promote_token_acronym_casing(token: str) -> str:
+    """
+    Restore acronym casing after ``string.capwords`` (e.g. ``U.s.`` → ``U.S.``, ``Ph.d.`` → ``Ph.D.``).
+    """
+    if not token:
+        return token
+    if token.casefold() in _LATIN_ABBREV_CF:
+        return token
+    if _DOTTED_INITIALISM.fullmatch(token):
+        return _letters_to_upper_for_acronym(token)
+    m = _LETTER_DOT_SINGLE_LETTER.fullmatch(token)
+    if m:
+        left, letter, tail = m.group(1), m.group(2), m.group(3)
+        return f"{left[0].upper()}{left[1:].lower()}.{letter.upper()}{tail}"
+    m2 = _AMPERSAND_ACRONYM.fullmatch(token)
+    if m2:
+        return f"{m2.group(1).upper()}&{m2.group(2).upper()}"
+    return token
+
+
+def _promote_acronyms_in_segment(seg: str) -> str:
+    if not (seg or "").strip():
+        return seg
+    return " ".join(_promote_token_acronym_casing(part) for part in seg.split())
+
 
 def _title_segment_words(seg: str) -> str:
     """Title-case words in one segment; preserve hyphenated names."""
@@ -133,7 +173,8 @@ def _title_segment_words(seg: str) -> str:
         return seg
     if "-" in seg:
         return "-".join(_title_segment_words(part) for part in seg.split("-"))
-    return string.capwords(seg)
+    capped = string.capwords(seg)
+    return _promote_acronyms_in_segment(capped)
 
 
 def apply_title_case_location_line(line: str) -> str:
@@ -159,6 +200,21 @@ def apply_title_case_location_line(line: str) -> str:
         else:
             out.append(_title_segment_words(part))
     return ", ".join(out)
+
+
+# Standalone comma segments that are geographic *types*, not toponyms (geocoder/LLM noise).
+_STANDALONE_TYPE_SEGMENTS: frozenset[str] = frozenset({"neighborhood", "district"})
+
+
+def _strip_standalone_placetype_label_segments(line: str) -> str:
+    """Remove comma segments that are only a generic placetype word (e.g. ``Neighborhood``)."""
+    parts = [p.strip() for p in line.split(",") if p.strip()]
+    if not parts:
+        return (line or "").strip()
+    kept = [p for p in parts if p.casefold() not in _STANDALONE_TYPE_SEGMENTS]
+    if not kept:
+        return ", ".join(parts)
+    return ", ".join(kept)
 
 
 def _collapse_duplicate_consecutive_segments(line: str) -> str:
@@ -233,6 +289,7 @@ def refine_location_display_line(line: str) -> str:
         return s
     s = apply_title_case_location_line(s)
     s = _collapse_duplicate_consecutive_segments(s)
+    s = _strip_standalone_placetype_label_segments(s)
     s = _lowercase_small_words(s)
     s = _fix_apostrophe_names_line(s)
     return s
