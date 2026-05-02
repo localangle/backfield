@@ -29,7 +29,7 @@
     },
     {
       "location": "Joe's Department Store, Chicago, IL",
-      "type": "city",
+      "type": "place",
       "original_text": "Bob Smith, who visiting at Joe's Department Store in Chicago, said he supported better agriculture policy.",
       "description": "Bob Smith, a farmer who supports better agriculture policy, was visiting at Joe's Department Store in Chicago.",
       "nature": "person",
@@ -98,6 +98,7 @@
       "components": {
         "place": {},
         "street_road": {},
+        "span": {},
         "address": "",
         "neighborhood": "",
         "city": "Phoenix",
@@ -113,13 +114,14 @@
       }
     },
     {
-      "location": "Hennepin Ave. between W. 26th St. and W. 28th St.",
-      "type": "city",
+      "location": "Hennepin Ave. between W. 26th St. and W. 28th St., Minneapolis, MN",
+      "type": "span",
+      "address_place_kind": "public_named",
       "original_text": "The parade will happen on Hennepin Ave. between W. 26th St. and W. 28th St.",
-      "description": "A parade is happening along this stretch of Hennepin Ave.",
+      "description": "A parade is happening along this stretch of Hennepin Ave. in Minneapolis.",
       "nature": "primary",
       "nature_secondary_tags": ["context"],
-      "geocode_hints": "Parade segment between W. 26th and W. 28th on Hennepin in Minneapolis despite mismatched city/state in components.",
+      "geocode_hints": "Parade route segment on Hennepin between W. 26th and W. 28th St. in Minneapolis.",
       "components": {
         "place": {},
         "street_road": {},
@@ -135,11 +137,41 @@
         },
         "address": "",
         "neighborhood": "",
-        "city": "Phoenix",
+        "city": "Minneapolis",
         "county": "",
         "state": {
-          "name": "Arizona",
-          "abbr": "AZ"
+          "name": "Minnesota",
+          "abbr": "MN"
+        },
+        "country": {
+          "name": "United States",
+          "abbr": "US"
+        }
+      }
+    },
+    {
+      "location": "Hopkins High School, Minnetonka, MN",
+      "type": "place",
+      "original_text": "St. Louis Park 57 Hopkins 54",
+      "description": "Hopkins boys basketball score line; Hopkins here is the high school program, not the city of Hopkins, Minn.",
+      "nature": "primary",
+      "nature_secondary_tags": [],
+      "geocode_hints": "Prep scoreboard line; token expands to Hopkins High School (district serves Minnetonka area). Other team on the line is St. Louis Park High School.",
+      "components": {
+        "place": {
+          "name": "Hopkins High School",
+          "natural": false,
+          "addressable": true
+        },
+        "street_road": {},
+        "span": {},
+        "address": "",
+        "neighborhood": "",
+        "city": "Minnetonka",
+        "county": "",
+        "state": {
+          "name": "Minnesota",
+          "abbr": "MN"
         },
         "country": {
           "name": "United States",

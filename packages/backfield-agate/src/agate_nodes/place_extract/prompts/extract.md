@@ -15,7 +15,7 @@ Extract **editorially relevant, literal, physical locations** from the following
 - **Lawmaker districts**: e.g. for "Joe Smith, R-Maple Grove," include **Maple Grove, MN** as a relevant place.
 
 **Exclude** (do not output) mentions that are not literal geography for this story, including:
-- **Metonyms** (e.g. "Washington" for the federal government; "City Hall" for city government; a city name for a sports team).
+- **Metonyms** (e.g. "Washington" for the federal government; "City Hall" for city government; a city name for a sports team). **Exception:** in **high school / prep scorelines**, tokens that name **schools** follow the **scoreboard / school** rules under **Institutions**—do not drop them as “city for team” metonyms when they are functioning as **school** names.
 - **Synecdoche, metaphor, idiom, cliché, hyperbole, allegory**, or **historical/cultural** uses where the place is not the physical setting.
 - **Generic or ambiguous** sites when a specific location cannot be identified (e.g. "Target, Minneapolis, MN" without a specific store; unnamed "bank" or "gas station" unless the story pins down a distinct site).
 - **Countries and continents** as standalone items when they are too broad to geocode usefully (e.g. "United States," "North America") unless the story truly hinges on that geography at country scale.
@@ -27,6 +27,7 @@ Extract **editorially relevant, literal, physical locations** from the following
 - **Agencies** (city/county/state departments, unions, associations): omit unless the story places an event at their **building or property**.
 - **Small businesses** named in a real-world context are often relevant; **large corporate HQs** are usually irrelevant unless an event occurred there (contrast "Target Corp. objected" vs "employees gathered at Target headquarters").
 - **High school sports and contests**: schools and contest-related locations mentioned in that context should be **included**.
+- **Scoreboards and game summaries** (e.g. "St. Louis Park 57 Hopkins 54", "Brother Rice 48 Marist 41"): short tokens refer to **school teams / campuses**, not the homonymous **cities** unless the article clearly means the municipality. For each side, use **`type`: `place`**, set **`components.place.name`** to the **full conventional school name** from your general knowledge when it is a well-known pairing (e.g. **Brother Rice High School**, **St. Louis Park High School**, **Hopkins High School**), and set **`location`** to a **geocodable string** (typically expanded school name plus **city and state** inferable from the story or from standard associations—e.g. Hopkins High School with **Minnetonka, MN** when that is the usual campus locale). **Do not** emit standalone **`city`** objects for those tokens when they are **only** school names in a scoreline.
 
 **Regions and ambiguity**:
 - Prefer **specific** geographies. Omit vague "store, Minneapolis, MN" or "rooftop, St. Cloud, MN" when the same area is already covered by clearer objects.
@@ -44,12 +45,12 @@ Classify and format every **included** location according to the following rules
 
 Classify each location by the type of geography it represents. Valid types are:
 
-- **place**: A named place. For example: "Target Headquarters," "Roseville Mall" or "White House". Might contain a city or other geographic boundary information but does not contain an address. Natural places, such as lakes, rivers and mountains should be considered "natural" types, not places.
+- **place**: A named place. For example: "Target Headquarters," "Roseville Mall," "White House," or **named bridges and crossings as landmarks** (e.g. "Stone Arch Bridge," "Mackinac Bridge"). Might contain a city or other geographic boundary information but does not contain an address. Natural places, such as lakes, rivers and mountains should be considered **natural** types, not **place**. **Bridges:** treat a **named bridge** as **place** when it is a venue or landmark; use **span** only when the article describes a **segment of roadway** between two explicit endpoints (see **span**).
 - **address**: A street address, which must include a house number. This might include block numbers, such as "500 block of Portland Ave." If a place also includes an address, extract only the address and classify it as an "address." Streets or roads without some kind of house number are not addresses.
 - **intersection_road**: An intersection of two non-highway roads, such as Main St. and 2nd St. Even if the story does not describe an intersection in a single string, you may infer it using other information in the article.
 - **intersection_highway**: An intersection where one or both components is an interstate or highway, such as "I-94 and Selby Ave." or "Hwy. 20 and Hwy. 36"
 - **street_road**: A single street, road or highway without other geographic information or context, such as an address. For example: "41st St. N.," "Hennepin Ave." or "I-35".
-- **span**: A span of road between two points. For example: "I-35 between Pine City and Hinckley" or "Lake Street from Nicollet Avenue S. to 28th Avenue S.". Note that a span requires both a road and two reference points marking the beginning and end of a span. Just a road, or a road with only one reference point, should use other types as appropriate. 
+- **span**: A span of road between two points. For example: "I-35 between Pine City and Hinckley" or "Lake Street from Nicollet Avenue S. to 28th Avenue S.". A span requires both a road and two reference points marking the beginning and end. Just a road, or a road with only one reference point, should use other types as appropriate. **Do not** use **span** for a **named bridge** as a landmark unless the text explicitly frames a **stretch of road on the bridge** between two endpoints; otherwise use **place**.
 - **neighborhood**: Explicit mentions of neighborhood names. Do not include the word "neighborhood" or any other descriptor in the output. Only the name. So "North Loop" not "North Loop neighborhood".
 - **region_city**: A description of an area within a city that is not a named place or neighborhood, such as "South Minneapolis," or the "Chicago lakefront". It may also refer to named mass-transit lines, such as "The Green Line" light rail in Minneapolis. In all of these cases, also extract the city as a separate object. This can also apply to counties, such as "western Hennepin County, MN"
 - **city**: The name of a city
@@ -93,8 +94,8 @@ You should also separate each location into components where possible. The types
 
 - **full**: The full geocodable string representing the location that you extract. For example, "Minneapolis, MN" or "Longfellow, Minneapolis, MN"
 - **type**: The type of the location, from the list above.
-- **place**: Only fill this out for named places, such as businesses and landmarks
-  - **name**: The name of the place, for instance "Dogwood Coffee" or "Mississippi River"
+- **place**: Only fill this out for named places—businesses, landmarks, **schools**, **bridges** (as landmarks or venues), and similar
+  - **name**: The name of the place, for instance "Dogwood Coffee," "Hopkins High School," or "Stone Arch Bridge"
   - **natural**: Return True if the place represents a natural location that is unlikely to have a street address, such as North Cascades National Park, Island Lake, or the Mississippi River.
   - **addressable**: Return True if the place is likely to have a findable street address, such as a business, building, school or landmark. Pay special attention to proper nouns, which often indicate addressable locations. Return False in all other cases.
 - **street_road**: Only fill this out for street_road types, where a street or highway is named without a specific address.
