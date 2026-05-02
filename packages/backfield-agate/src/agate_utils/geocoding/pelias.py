@@ -1,6 +1,8 @@
 """Pelias geocoding service wrapper."""
 
+import asyncio
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -15,6 +17,35 @@ from agate_utils.geocoding.geocoding_types import (
 
 logger = logging.getLogger(__name__)
 
+# Geocode.Earth can be slow; connect timeouts often mean edge/network congestion, not bad params.
+_PELIAS_HTTP_TIMEOUT = httpx.Timeout(60.0, connect=20.0)
+_PELIAS_API_KEY_IN_URL = re.compile(r"([?&])api_key=[^&]*", re.IGNORECASE)
+
+
+def _redact_pelias_url(url_str: str) -> str:
+    return _PELIAS_API_KEY_IN_URL.sub(r"\1api_key=<redacted>", url_str)
+
+
+def _params_for_log(params: dict[str, Any]) -> dict[str, Any]:
+    """Copy params for logging without leaking ``api_key``."""
+    out = dict(params)
+    if "api_key" in out:
+        out["api_key"] = "<redacted>"
+    return out
+
+
+async def _pelias_get(
+    client: httpx.AsyncClient, url: str, params: dict[str, Any]
+) -> httpx.Response:
+    """GET with one retry on transient connect/read/pool timeouts."""
+    transient = (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.PoolTimeout)
+    try:
+        return await client.get(url, params=params)
+    except transient as first:
+        logger.warning("Pelias %s, retrying once", type(first).__name__)
+        await asyncio.sleep(0.75)
+        return await client.get(url, params=params)
+
 
 def _pelias_http_error_suffix(exc: Exception) -> str:
     """Best-effort URL / status from httpx errors (``str(exc)`` is often empty for timeouts)."""
@@ -22,7 +53,8 @@ def _pelias_http_error_suffix(exc: Exception) -> str:
     request = getattr(exc, "request", None)
     if request is not None:
         try:
-            chunks.append(f"method={request.method} url={request.url!s}")
+            url_s = _redact_pelias_url(str(request.url))
+            chunks.append(f"method={request.method} url={url_s}")
         except Exception:
             chunks.append("request=<unavailable>")
     response = getattr(exc, "response", None)
@@ -144,8 +176,8 @@ async def geocode_search(
         
         logger.info(f"Pelias search geocoding: {text}")
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
+        async with httpx.AsyncClient(timeout=_PELIAS_HTTP_TIMEOUT) as client:
+            response = await _pelias_get(client, url, params)
             response.raise_for_status()
             data = response.json()
         
@@ -186,8 +218,8 @@ async def geocode_search_candidates(
 
         logger.info("Pelias search candidates: %s", text)
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
+        async with httpx.AsyncClient(timeout=_PELIAS_HTTP_TIMEOUT) as client:
+            response = await _pelias_get(client, url, params)
             response.raise_for_status()
             data = response.json()
 
@@ -258,10 +290,10 @@ async def geocode_structured(
         if api_key:
             params["api_key"] = api_key
         
-        logger.info(f"Pelias structured geocoding: {params}")
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
+        logger.info("Pelias structured geocoding: %s", _params_for_log(params))
+
+        async with httpx.AsyncClient(timeout=_PELIAS_HTTP_TIMEOUT) as client:
+            response = await _pelias_get(client, url, params)
             response.raise_for_status()
             data = response.json()
         
@@ -379,8 +411,8 @@ async def reverse_geocode(
         
         logger.info(f"Pelias reverse geocoding: ({lat}, {lon})")
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
+        async with httpx.AsyncClient(timeout=_PELIAS_HTTP_TIMEOUT) as client:
+            response = await _pelias_get(client, url, params)
             response.raise_for_status()
             data = response.json()
         

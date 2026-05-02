@@ -1,18 +1,29 @@
 """Overpass API utilities for intersection geocoding."""
 
-import time
 import json
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+import os
+import time
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
 import overpy
 from shapely.geometry import LineString, Point
 from agate_utils.llm import call_llm
 
 logger = logging.getLogger(__name__)
 
-# Initialize Overpass API
+# Initialize Overpass API (URL + parse_json only; HTTP uses httpx with a real User-Agent).
 api = overpy.Overpass()
+
+# Public Overpass endpoints reject anonymous urllib defaults with 406; identify the client.
+_DEFAULT_OVERPASS_USER_AGENT = "Backfield/1.0 (intersection geocode; Overpass API)"
+
+
+def _overpass_user_agent() -> str:
+    ua = os.environ.get("OVERPASS_USER_AGENT", _DEFAULT_OVERPASS_USER_AGENT).strip()
+    return ua or _DEFAULT_OVERPASS_USER_AGENT
 
 
 ########## INTERSECTION PARSING ##########
@@ -40,8 +51,6 @@ def parse_intersection_description(text: str, openai_api_key: str) -> Optional[D
     try:
         # Correct path from overpass.py location to prompts
         prompt_path = Path(__file__).parent / "prompts" / "parse_intersection_description.md"
-        print("prompt_path")
-        print(prompt_path)
         with open(prompt_path, 'r') as f:
             prompt_template = f.read()
     except FileNotFoundError:
@@ -143,41 +152,69 @@ def clean_overpass_query(raw_response: str) -> str:
 def run_query_with_overpy(query: str, max_retries: int = 4) -> Optional[overpy.Result]:
     """
     Execute an OverpassQL query with retry logic.
-    
+
+    Uses httpx with a descriptive User-Agent (override with OVERPASS_USER_AGENT); overpy's
+    default urllib client sends no User-Agent and is often rejected with HTTP 406.
+
     Args:
         query: OverpassQL query to execute
         max_retries: Maximum number of retry attempts
-        
+
     Returns:
         Optional[overpy.Result]: Query result or None if failed
     """
     retry_delay = 2  # Start with 2 seconds for gateway timeouts
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Executing Overpass query (attempt {attempt + 1})")
-            return api.query(query)
-        except Exception as e:
-            # Check if it's a specific overpy error type
-            error_str = str(e).lower()
-            if "bad request" in error_str or "syntax" in error_str:
-                logger.error(f"Overpass bad request - query syntax error: {e}")
-                logger.error("This is a query problem, retrying won't help. Bailing out.")
-                return None
-            elif "gateway timeout" in error_str or "server load" in error_str or "timeout" in error_str:
-                logger.warning(f"Overpass server error on attempt {attempt + 1}: {e}")
+    qbytes = query.encode("utf-8") if isinstance(query, str) else query
+    timeout = httpx.Timeout(180.0)
+    headers = {
+        "User-Agent": _overpass_user_agent(),
+        "Accept": "application/json",
+    }
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        for attempt in range(max_retries):
+            try:
+                logger.info("Executing Overpass query (attempt %s)", attempt + 1)
+                response = client.post(api.url, content=qbytes, headers=headers)
+                if response.status_code == 200:
+                    return api.parse_json(response.content)
+                if response.status_code == 400:
+                    logger.error(
+                        "Overpass bad request (HTTP 400): %s",
+                        response.text[:800] if response.text else "(empty body)",
+                    )
+                    logger.error("This is a query problem, retrying won't help. Bailing out.")
+                    return None
+                err_summary = f"HTTP {response.status_code}: {response.text[:300]!r}"
+                if response.status_code in (429, 503, 504):
+                    logger.warning(
+                        "Overpass server error on attempt %s: %s", attempt + 1, err_summary
+                    )
+                else:
+                    logger.warning("Overpass error on attempt %s: %s", attempt + 1, err_summary)
                 if attempt < max_retries - 1:
-                    retry_delay = min(retry_delay * 2, 15)  # Cap at 15 seconds
-                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    retry_delay = min(retry_delay * 2, 15)
+                    logger.info("Retrying in %s seconds...", retry_delay)
                     time.sleep(retry_delay)
                 else:
                     logger.error("Max retries exceeded for Overpass query")
                     return None
-            else:
-                # For any other error, log and retry
-                logger.warning(f"Overpass error on attempt {attempt + 1}: {e}")
+            except Exception as e:
+                error_str = str(e).lower()
+                if "bad request" in error_str or "syntax" in error_str:
+                    logger.error("Overpass bad request - query syntax error: %s", e)
+                    logger.error("This is a query problem, retrying won't help. Bailing out.")
+                    return None
+                if (
+                    "gateway timeout" in error_str
+                    or "server load" in error_str
+                    or "timeout" in error_str
+                ):
+                    logger.warning("Overpass server error on attempt %s: %s", attempt + 1, e)
+                else:
+                    logger.warning("Overpass error on attempt %s: %s", attempt + 1, e)
                 if attempt < max_retries - 1:
-                    retry_delay = min(retry_delay * 2, 15)  # Cap at 15 seconds
-                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    retry_delay = min(retry_delay * 2, 15)
+                    logger.info("Retrying in %s seconds...", retry_delay)
                     time.sleep(retry_delay)
                 else:
                     logger.error("Max retries exceeded for Overpass query")
