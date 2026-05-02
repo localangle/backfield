@@ -1,8 +1,9 @@
 """Pelias geocoding service wrapper."""
 
 import logging
+from typing import Any, Dict, List, Optional
+
 import httpx
-from typing import Dict, Any, Optional, List
 from agate_utils.geocoding.geocoding_types import (
     Confidence,
     GeocodingResult,
@@ -13,6 +14,38 @@ from agate_utils.geocoding.geocoding_types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _pelias_http_error_suffix(exc: Exception) -> str:
+    """Best-effort URL / status from httpx errors (``str(exc)`` is often empty for timeouts)."""
+    chunks: list[str] = []
+    request = getattr(exc, "request", None)
+    if request is not None:
+        try:
+            chunks.append(f"method={request.method} url={request.url!s}")
+        except Exception:
+            chunks.append("request=<unavailable>")
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            chunks.append(f"http_status={response.status_code}")
+        except Exception:
+            pass
+    return f" [{'; '.join(chunks)}]" if chunks else ""
+
+
+def _log_pelias_exception(operation: str, exc: Exception, *, detail: str = "") -> None:
+    """Log type + repr + httpx context so empty-message exceptions remain diagnosable."""
+    detail_part = f" {detail}" if detail else ""
+    logger.error(
+        "Pelias %s failed:%s %s: %r%s",
+        operation,
+        detail_part,
+        type(exc).__name__,
+        exc,
+        _pelias_http_error_suffix(exc),
+        exc_info=True,
+    )
 
 
 def _pelias_search_feature_to_result(text: str, feature: dict[str, Any]) -> Optional[GeocodingResult]:
@@ -124,7 +157,7 @@ async def geocode_search(
         return _pelias_search_feature_to_result(text, features[0])
 
     except Exception as e:
-        logger.error(f"Error in Pelias search geocoding: {str(e)}")
+        _log_pelias_exception("search geocoding", e, detail=f"text={text!r}")
         return None
 
 
@@ -168,7 +201,7 @@ async def geocode_search_candidates(
             logger.warning("No mappable Pelias search candidates for: %s", text)
         return out
     except Exception as e:
-        logger.error("Error in Pelias search candidates: %s", str(e))
+        _log_pelias_exception("search candidates", e, detail=f"text={text!r}")
         return []
 
 
@@ -302,9 +335,15 @@ async def geocode_structured(
             input_str=input_str,
             result=result_data
         )
-        
+
     except Exception as e:
-        logger.error(f"Error in Pelias structured geocoding: {str(e)}")
+        raw_params = locals().get("params")
+        if isinstance(raw_params, dict):
+            safe = {k: v for k, v in raw_params.items() if k != "api_key"}
+            detail = f"params={safe!r}"
+        else:
+            detail = "params=<unavailable>"
+        _log_pelias_exception("structured geocoding", e, detail=detail)
         return None
 
 
@@ -378,7 +417,7 @@ async def reverse_geocode(
             input_str=input_str,
             result=result_data
         )
-        
+
     except Exception as e:
-        logger.error(f"Error in Pelias reverse geocoding: {str(e)}")
+        _log_pelias_exception("reverse geocoding", e, detail=f"lat={lat!r} lon={lon!r}")
         return None
