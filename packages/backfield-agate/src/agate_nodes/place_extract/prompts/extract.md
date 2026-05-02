@@ -97,7 +97,7 @@ You should also separate each location into components where possible. The types
 - **place**: Only fill this out for named places—businesses, landmarks, **schools**, **bridges** (as landmarks or venues), and similar
   - **name**: The name of the place, for instance "Dogwood Coffee," "Hopkins High School," or "Stone Arch Bridge"
   - **natural**: Return True if the place represents a natural location that is unlikely to have a street address, such as North Cascades National Park, Island Lake, or the Mississippi River.
-  - **addressable**: Return True if the place is likely to have a findable street address, such as a business, building, school or landmark. Pay special attention to proper nouns, which often indicate addressable locations. Return False in all other cases.
+  - **addressable**: Return True if the place is likely to have a findable street address, such as a business, building, school or landmark. **Named bridges and similar named crossings / transport landmarks** (e.g. Marshall Avenue Bridge, Stone Arch Bridge) should be **`addressable: true`**: they geocode as distinct POIs even when the story gives no house-number line—do **not** set False only because there is no mailing-style address. Pay special attention to proper nouns, which often indicate addressable locations. Return False in all other cases.
 - **street_road**: Only fill this out for street_road types, where a street or highway is named without a specific address.
   - **name**: The name of the street
   - **boundary**: A geocodable string representing the most specific neighborhood, city, county or state boundary that contains the segment of street or road in question, inferred by the context of the article.
