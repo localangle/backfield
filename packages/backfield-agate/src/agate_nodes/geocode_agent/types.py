@@ -42,10 +42,10 @@ class AgentState(TypedDict, total=False):
     # When set with ``use_cache``, DB-backed canonical + substrate_location_cache (Backfield worker).
     cache_resolve: Optional[CacheResolveFn]
     final_output: Optional[dict]
-    # Optional per-run OpenAI model overrides (AdvancedGeocodeAgent / future hybrid graphs).
+    # Optional per-run OpenAI model overrides (GeocodeAgent LangGraph).
     evaluation_llm_model: Optional[str]
     router_llm_model: Optional[str]
-    # AdvancedGeocodeAgent graph only (explicit routing + quieter logs).
+    # LangGraph pipeline: explicit routing + quieter per-location logs when True.
     advanced_quiet_logs: Optional[bool]
     geocode_strategy: Optional[str]
     allow_web_search: Optional[bool]

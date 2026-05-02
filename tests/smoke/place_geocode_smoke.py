@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""PlaceExtract + AdvancedGeocodeAgent smoke (manual / local; not part of ``make test``).
+"""PlaceExtract + GeocodeAgent smoke (manual / local; not part of ``make test``).
 
 **Default (in-process):** loads ``fixtures/place_geocode_corpus.json``, runs PlaceExtract then
-one AdvancedGeocodeAgent pass per scenario (same keys as worker), prints a scoreboard and
+one GeocodeAgent pass per scenario (same keys as worker), prints a scoreboard and
 appends one JSON line per scenario to ``artifacts/place_geocode_smoke_history.jsonl``.
 
 **``--via-agate-api``:** health-check Agate + Stylebook, then ``POST /runs`` for the graph id
 from ``SMOKE_PLACE_GEOCODE_STACK_GRAPH_ID``, or the General project's **Starter flow** graph when
-that env var is unset (same graph as ``make smoke`` — GeocodeAgent, not Advanced).
+that env var is unset (same graph as ``make smoke`` — Starter flow uses GeocodeAgent).
 
 Environment (in-process uses repo-root ``.env`` like ``golden_path_stack.py``):
 
-- ``OPENAI_API_KEY`` (required for PlaceExtract + AdvancedGeocode)
+- ``OPENAI_API_KEY`` (required for PlaceExtract + GeocodeAgent)
 - ``PELIAS_API_KEY``, optional ``BRAVE_SEARCH_API_KEY``, ``GEOCODIO_API_KEY``
 - ``SMOKE_PLACE_GEOCODE_CORPUS`` — path to JSON corpus (default: beside this script)
 - ``SMOKE_PLACE_GEOCODE_HISTORY`` — JSONL path (default under ``tests/smoke/artifacts/``)
@@ -110,7 +110,7 @@ def _run_in_process_scenario(
     geocode_params: dict[str, Any],
 ) -> dict[str, Any]:
     from backfield_agate.runners import (
-        run_advanced_geocode_agent_runtime,
+        run_geocode_agent_runtime,
         run_place_extract_runtime,
     )
 
@@ -139,7 +139,7 @@ def _run_in_process_scenario(
     geocode_out: dict[str, Any] = {}
     try:
         merged_in = {**extract_out, "text": text}
-        geocode_out = run_advanced_geocode_agent_runtime(
+        geocode_out = run_geocode_agent_runtime(
             params=geocode_params,
             input_state=merged_in,
             ctx=ctx,
@@ -233,7 +233,7 @@ def run_in_process(corpus_path: Path, history_path: Path) -> int:
     }
 
     if not ctx.get_api_key("OPENAI_API_KEY"):
-        _log("ERROR: OPENAI_API_KEY is not set (required for PlaceExtract + AdvancedGeocode).")
+        _log("ERROR: OPENAI_API_KEY is not set (required for PlaceExtract + GeocodeAgent).")
         return 2
 
     results: list[dict[str, Any]] = []
@@ -360,14 +360,13 @@ def run_via_agate_api() -> int:
         else:
             _log(
                 "Used Starter flow graph (GeocodeAgent). "
-                "For AdvancedGeocodeAgent, create a graph in Agate UI and set "
-                "SMOKE_PLACE_GEOCODE_STACK_GRAPH_ID."
+                "To use a different graph, set SMOKE_PLACE_GEOCODE_STACK_GRAPH_ID."
             )
         return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="PlaceExtract + AdvancedGeocode smoke harness.")
+    parser = argparse.ArgumentParser(description="PlaceExtract + GeocodeAgent smoke harness.")
     parser.add_argument(
         "--via-agate-api",
         action="store_true",

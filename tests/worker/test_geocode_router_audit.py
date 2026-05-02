@@ -1,4 +1,4 @@
-"""Tests for AdvancedGeocodeAgent router audit extraction and substrate merge."""
+"""Tests for GeocodeAgent router audit extraction and substrate merge."""
 
 from __future__ import annotations
 

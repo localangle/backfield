@@ -24,7 +24,7 @@ help:
 	@echo "  make format      - Ruff format"
 	@echo "  make bootstrap   - uv sync (root) for local tooling"
 	@echo "  make smoke       - Golden-path smoke against a live stack"
-	@echo "  make smoke-place-geocode - In-process PlaceExtract + AdvancedGeocode corpus (not CI)"
+	@echo "  make smoke-place-geocode - In-process PlaceExtract + GeocodeAgent corpus (not CI)"
 	@echo "  make smoke-place-geocode-stack - Same script --via-agate-api (enqueue one graph run)"
 	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
 

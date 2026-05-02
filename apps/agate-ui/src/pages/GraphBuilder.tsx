@@ -360,10 +360,6 @@ export default function GraphBuilder() {
         const meta = nodeMetadata.find((m) => m.type === 'GeocodeAgent')
         return meta?.defaultParams ?? {}
       }
-      case 'AdvancedGeocodeAgent': {
-        const meta = nodeMetadata.find((m) => m.type === 'AdvancedGeocodeAgent')
-        return meta?.defaultParams ?? {}
-      }
       case 'GeocodeSimple':
         return {
           user_agent: 'agate-ai-platform/1.0',

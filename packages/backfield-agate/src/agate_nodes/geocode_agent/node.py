@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from backfield_agate.context import AgateEnvContext
 
-from .agent import run_advanced_geocoding_agent, run_geocoding_agent
+from .agent import run_advanced_geocoding_agent
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,15 @@ class GeocodeAgentParams(BaseModel):
         default=None,
         description="Stylebook id for DB-backed cache (worker: BACKFIELD_PROJECT_ID + useCache)",
     )
+    evaluationModel: str = Field(
+        default="gpt-5-nano",
+        description="OpenAI model for geocoder result evaluation (area flow)",
+    )
+    routerModel: str = Field(
+        default="gpt-5-nano",
+        description="OpenAI model for post-cache route_strategy JSON",
+    )
+
 
 # Define Place model locally to avoid cross-node dependencies
 # This is a simplified Place model that only includes the fields actually used by the geocode_agent
@@ -95,26 +104,12 @@ async def run_geocode_agent_pipeline(
     params: GeocodeAgentParams,
     ctx: AgateEnvContext,
     *,
-    evaluation_llm_model: Optional[str] = None,
-    router_llm_model: Optional[str] = None,
     log_label: str = "GeocodeAgent",
-    use_advanced_geocode_graph: bool = False,
 ) -> GeocodeAgentOutput:
-    """Geocode locations using LLM-enhanced geocoding (shared by GeocodeAgent and AdvancedGeocodeAgent).
-
-    When ``evaluation_llm_model`` / ``router_llm_model`` are set, they are passed into
-    the per-location LangGraph state (see ``run_geocoding_agent`` /
-    ``run_advanced_geocoding_agent``).
-
-    When ``use_advanced_geocode_graph`` is True (AdvancedGeocodeAgent), the Advanced
-    LangGraph runs (post-cache ``route_strategy`` + quieter INFO logs).
-    """
+    """Geocode locations using the LangGraph pipeline (cache → route_strategy → external geocode → consolidate)."""
 
     def _pipe_log(msg: str, *args: object) -> None:
-        if use_advanced_geocode_graph:
-            logger.debug(msg, *args)
-        else:
-            logger.info(msg, *args)
+        logger.debug(msg, *args)
 
     # Get all state (namespaced by upstream node id from the Backfield executor)
     state_dict = inp.model_dump()
@@ -297,14 +292,8 @@ async def run_geocode_agent_pipeline(
                 if isinstance(comps, dict):
                     extra_fields = {**extra_fields, "components": comps}
                 
-            run_one = (
-                run_advanced_geocoding_agent
-                if use_advanced_geocode_graph
-                else run_geocoding_agent
-            )
-            # Run the agent for this location with per-location timeout
             consolidated_result = await asyncio.wait_for(
-                run_one(
+                run_advanced_geocoding_agent(
                     location_text=location_name,
                     location_type=location_info.get('type', ''),
                     location_components=location_info.get('components', {}),
@@ -319,8 +308,8 @@ async def run_geocode_agent_pipeline(
                     project_slug=project_slug,
                     service_api_token=service_api_token,
                     cache_resolve=cache_resolve,
-                    evaluation_llm_model=evaluation_llm_model,
-                    router_llm_model=router_llm_model,
+                    evaluation_llm_model=params.evaluationModel,
+                    router_llm_model=params.routerModel,
                 ),
                 timeout=PER_LOCATION_TIMEOUT,
             )
@@ -461,4 +450,4 @@ class GeocodeAgent:
         params: GeocodeAgentParams,
         ctx: AgateEnvContext,
     ) -> GeocodeAgentOutput:
-        return await run_geocode_agent_pipeline(inp, params, ctx, log_label="GeocodeAgent")
+        return await run_geocode_agent_pipeline(inp, params, ctx)

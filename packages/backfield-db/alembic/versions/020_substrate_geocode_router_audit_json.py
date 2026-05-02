@@ -1,4 +1,4 @@
-"""Add ``substrate_location.geocode_router_audit_json`` for AdvancedGeocodeAgent router audit.
+"""Add ``substrate_location.geocode_router_audit_json`` for GeocodeAgent router audit.
 
 Revision id must fit ``alembic_version.version_num`` (varchar(32)).
 """

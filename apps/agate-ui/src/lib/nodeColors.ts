@@ -36,7 +36,6 @@ export const categoryBgColors = {
 export const geographyTypes = new Set([
   'GeocodeSimple',
   'GeocodeAgent',
-  'AdvancedGeocodeAgent',
   'CustomGeographies',
   'PlaceExtract',
   'PlaceReview',

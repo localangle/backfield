@@ -3,8 +3,8 @@ const nodeMetadata = {
   "type": "GeocodeAgent",
   "label": "Geocode Agent",
   "icon": "MapPin",
-  "color": "bg-emerald-500",
-  "description": "Intelligent geocoding using LLM reasoning (ported from agate-ai-platform).",
+  "color": "bg-teal-600",
+  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.",
   "category": "enrichment",
   "requiredUpstreamNodes": [
     "PlaceExtract"
@@ -36,8 +36,32 @@ const nodeMetadata = {
     "useCache": false,
     "stylebookId": null,
     "stylebookApiUrl": "",
-    "projectSlug": ""
-  }
+    "projectSlug": "",
+    "evaluationModel": "gpt-5-nano",
+    "routerModel": "gpt-5-nano"
+  },
+  "availableModels": [
+    {
+      "value": "gpt-5.4",
+      "label": "GPT 5.4"
+    },
+    {
+      "value": "gpt-5.2",
+      "label": "GPT 5.2"
+    },
+    {
+      "value": "gpt-5-mini",
+      "label": "GPT-5 Mini"
+    },
+    {
+      "value": "gpt-5-nano",
+      "label": "GPT-5 Nano"
+    },
+    {
+      "value": "gpt-4o-mini",
+      "label": "GPT-4o Mini"
+    }
+  ]
 };
 
 import { memo } from 'react'

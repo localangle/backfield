@@ -1,4 +1,4 @@
-"""Unit tests for AdvancedGeocodeAgent route_strategy node."""
+"""Unit tests for GeocodeAgent route_strategy node."""
 
 from __future__ import annotations
 

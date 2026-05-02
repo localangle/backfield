@@ -41,7 +41,9 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 
 ## User-facing copy
 
-- Write UI strings for a **general audience**, including people who are **not** developers.
+- Write **every** user-visible string (labels, buttons, tooltips, placeholders, empty states, errors shown in the shell, onboarding, dialogs) for a **non-technical end user**: someone who uses the product to do editorial or operational work, not someone reading source code or RFCs.
+- **Avoid technical or code-related language at all costs** in the UI: no stack traces, type names, JSON field paths, HTTP verbs or status codes, database or queue names, environment variable names, file paths, or “developer shorthand” unless you are deliberately building a **developer-only** screen (rare). Prefer plain English; if precision matters, describe the outcome (“We couldn’t save your changes”) not the mechanism.
+- Write for a **general audience**, including people who are **not** developers.
 - Avoid internal product names for infrastructure (services, ports, proxies, cookies, paths) unless the user must act on them—and even then, prefer plain language or hide details behind help links.
 - Technical detail belongs in developer docs (this file’s other sections, `docs/API.md`, `docs/OPERATIONS.md`), not in labels, descriptions, or empty states shown to typical users.
 
