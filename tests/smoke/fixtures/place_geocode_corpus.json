@@ -1,0 +1,86 @@
+{
+  "defaults": {
+    "per_location_timeout": 180,
+    "max_locations": 25
+  },
+  "scenarios": [
+    {
+      "id": "city_minneapolis",
+      "text": "City leaders met in Minneapolis, Minnesota, to discuss the budget.",
+      "expect_types": ["city"]
+    },
+    {
+      "id": "state_minnesota",
+      "text": "Across Minnesota, schools prepared for winter weather.",
+      "expect_types": ["state"]
+    },
+    {
+      "id": "county_hennepin",
+      "text": "The program expanded throughout Hennepin County, Minnesota.",
+      "expect_types": ["county"]
+    },
+    {
+      "id": "neighborhood_north_loop",
+      "text": "The restaurant is in the North Loop neighborhood of Minneapolis, Minnesota.",
+      "expect_types": ["neighborhood"]
+    },
+    {
+      "id": "address_numbered",
+      "text": "Police were called to 2452 University Avenue SE, Minneapolis, MN 55414.",
+      "expect_types": ["address"]
+    },
+    {
+      "id": "place_spyhouse_snelling",
+      "text": "We visited Spyhouse Coffee on Snelling Avenue in St. Paul, Minnesota.",
+      "expect_types": ["place"]
+    },
+    {
+      "id": "street_road_lake",
+      "text": "Marchers walked along Lake Street in Minneapolis, Minnesota.",
+      "expect_types": ["street_road"]
+    },
+    {
+      "id": "intersection_road",
+      "text": "The collision was at Lake Street and Hiawatha Avenue in Minneapolis, Minnesota.",
+      "expect_types": ["intersection_road"]
+    },
+    {
+      "id": "intersection_highway",
+      "text": "Traffic backed up at the I-35W and I-94 interchange in Minneapolis, Minnesota.",
+      "expect_types": ["intersection_highway"]
+    },
+    {
+      "id": "span_lake_segment",
+      "text": "Construction closed Lake Street between Chicago Avenue and Nicollet Avenue in Minneapolis, Minnesota.",
+      "expect_types": ["span"]
+    },
+    {
+      "id": "region_state_upper_midwest",
+      "text": "Blizzard warnings covered the Upper Midwest, including Minnesota and Wisconsin."
+    },
+    {
+      "id": "region_city_metro",
+      "text": "The economic impact was felt across the Minneapolis–Saint Paul metropolitan area."
+    },
+    {
+      "id": "region_national",
+      "text": "The policy debate played out at the national level across the United States."
+    },
+    {
+      "id": "natural_boundary_waters",
+      "text": "Campers headed to the Boundary Waters Canoe Area Wilderness in northern Minnesota."
+    }
+  ],
+  "integration": [
+    {
+      "id": "multi_city_and_span",
+      "text": "Officials compared road conditions on Lake Street between 38th Street and 42nd Street in Minneapolis, Minnesota, with quieter streets in St. Paul, Minnesota, the same evening.",
+      "expect_types": ["span", "city"]
+    },
+    {
+      "id": "place_and_city",
+      "text": "After the meeting at Minneapolis City Hall in Minneapolis, Minnesota, attendees walked to a cafe on Nicollet Avenue.",
+      "expect_types": ["place", "city"]
+    }
+  ]
+}
