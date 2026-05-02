@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import string
 from pathlib import Path
 
 from agate_utils.llm import call_llm
@@ -21,15 +22,97 @@ _TRAIL_US = re.compile(
     re.IGNORECASE,
 )
 
+# US states + DC (two-letter postal abbreviations).
+_US_STATE_ABBR: frozenset[str] = frozenset(
+    {
+        "AL",
+        "AK",
+        "AZ",
+        "AR",
+        "CA",
+        "CO",
+        "CT",
+        "DE",
+        "DC",
+        "FL",
+        "GA",
+        "HI",
+        "ID",
+        "IL",
+        "IN",
+        "IA",
+        "KS",
+        "KY",
+        "LA",
+        "ME",
+        "MD",
+        "MA",
+        "MI",
+        "MN",
+        "MS",
+        "MO",
+        "MT",
+        "NE",
+        "NV",
+        "NH",
+        "NJ",
+        "NM",
+        "NY",
+        "NC",
+        "ND",
+        "OH",
+        "OK",
+        "OR",
+        "PA",
+        "RI",
+        "SC",
+        "SD",
+        "TN",
+        "TX",
+        "UT",
+        "VT",
+        "VA",
+        "WA",
+        "WV",
+        "WI",
+        "WY",
+    }
+)
 
-def _capitalize_first_only(s: str) -> str:
-    s = (s or "").strip()
+
+def _title_segment_words(seg: str) -> str:
+    """Title-case words in one segment; preserve hyphenated names."""
+    seg = seg.strip()
+    if not seg:
+        return seg
+    if "-" in seg:
+        return "-".join(_title_segment_words(part) for part in seg.split("-"))
+    return string.capwords(seg)
+
+
+def apply_title_case_location_line(line: str) -> str:
+    """
+    Title-case place names by comma segment; uppercase US state 2-letter codes.
+
+    Trailing ``US`` (country) after a comma is kept as uppercase ``US``.
+    """
+    s = (line or "").strip()
     if not s:
         return s
-    for i, ch in enumerate(s):
-        if ch.isalpha():
-            return s[:i] + ch.upper() + s[i + 1 :]
-    return s
+    raw_parts = [p.strip() for p in s.split(",")]
+    parts: list[str] = [p for p in raw_parts if p]
+    if not parts:
+        return s
+    out: list[str] = []
+    for i, part in enumerate(parts):
+        is_last = i == len(parts) - 1
+        if re.fullmatch(r"[A-Za-z]{2}", part) and part.upper() in _US_STATE_ABBR:
+            out.append(part.upper())
+        elif is_last and part.upper() == "US":
+            out.append("US")
+        else:
+            out.append(_title_segment_words(part))
+    return ", ".join(out)
 
 
 def _heuristic_emit_location(
@@ -45,7 +128,7 @@ def _heuristic_emit_location(
         out = _TRAIL_US.sub("", out).rstrip().rstrip(",").strip()
     if lt == "region_country" and out:
         out = re.sub(r"\bUSA\b", "US", out)
-    return _capitalize_first_only(out)
+    return apply_title_case_location_line(out)
 
 
 async def compute_emit_location_line(
@@ -117,4 +200,4 @@ async def compute_emit_location_line(
     loc = loc.strip()
     if not loc:
         return _heuristic_emit_location(location_type, location_text, formatted_address)
-    return loc
+    return apply_title_case_location_line(loc)

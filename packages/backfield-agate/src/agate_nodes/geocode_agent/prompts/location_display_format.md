@@ -3,7 +3,7 @@ Return only `{"location":"<one line>"}` — public **Location** (not the full ma
 US-centric (use `type`, `q`, `formatted_address`, `components_json`):
 
 1. Strip trailing `US`/`USA`/`United States` for US domestic. Keep country only if clearly non-US, or `type` is `region_country`, or feature is national/multi-state (then end `, US`, never `USA`).
-2. Uppercase only the **first alphabetic character** of the whole string.
+2. **Casing**: **Title-case** every place-name word (each comma-separated segment: capitalize each word; hyphenated names capitalize each side of `-`). US **state postal codes** must be **two uppercase letters** (e.g. `IL` not `il`). A trailing national `US` stays uppercase.
 3. In-city: `place`,`address`,`neighborhood`,`district`,`intersection_*`,`street_road`,`region_city`,`point`,… → `{Feature}, {City}, {ST}` (US → 2-letter ST).
 4. State-level: `city`,`town`,`county`,`region`,`area`,`region_*` except `region_city` → `{Feature}, {State}`; if `type` is `state` → **full state name** only (e.g. Arizona).
 5. `natural`: multi-state / park-scale → `{Name}, US`; single-city → `{Name}, {City}, {ST}`.
