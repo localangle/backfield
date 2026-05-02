@@ -158,6 +158,19 @@ def apply_title_case_location_line(line: str) -> str:
     return ", ".join(out)
 
 
+def _collapse_duplicate_consecutive_segments(line: str) -> str:
+    """Drop consecutive comma segments that are the same toponym (case-insensitive)."""
+    parts = [p.strip() for p in line.split(",") if p.strip()]
+    if len(parts) < 2:
+        return (line or "").strip()
+    out: list[str] = [parts[0]]
+    for p in parts[1:]:
+        if p.casefold() == out[-1].casefold():
+            continue
+        out.append(p)
+    return ", ".join(out)
+
+
 def _lowercase_small_word_token(word: str, word_index: int) -> str:
     """Lowercase a joiner word when not the first token in a comma segment."""
     m = re.match(r"^(\W*)(\w+)(\W*)$", word)
@@ -209,12 +222,14 @@ def _fix_apostrophe_names_line(line: str) -> str:
 
 def refine_location_display_line(line: str) -> str:
     """
-    Deterministic refinements: title case + NA subdivision codes, small words, apostrophe names.
+    Deterministic refinements: title case + NA subdivision codes, dedupe segments, small words,
+    apostrophe names.
     """
     s = (line or "").strip()
     if not s:
         return s
     s = apply_title_case_location_line(s)
+    s = _collapse_duplicate_consecutive_segments(s)
     s = _lowercase_small_words(s)
     s = _fix_apostrophe_names_line(s)
     return s

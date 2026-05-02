@@ -22,6 +22,18 @@ def test_refine_canadian_province_abbr() -> None:
     assert refine_location_display_line("winnipeg, mb, canada") == "Winnipeg, MB, Canada"
 
 
+def test_refine_collapses_repeated_city_before_state() -> None:
+    assert refine_location_display_line("Chicago, Chicago, IL") == "Chicago, IL"
+    assert refine_location_display_line("manteno, manteno, il") == "Manteno, IL"
+
+
+def test_refine_does_not_collapse_distinct_segments() -> None:
+    assert (
+        refine_location_display_line("Los Angeles, Los Angeles County, CA")
+        == "Los Angeles, Los Angeles County, CA"
+    )
+
+
 def test_refine_lowercase_of_in_title() -> None:
     assert (
         refine_location_display_line("University Of Oklahoma, Norman, OK")
