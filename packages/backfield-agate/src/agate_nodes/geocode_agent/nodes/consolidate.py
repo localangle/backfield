@@ -6,6 +6,7 @@ import logging
 from agate_utils.geocoding.h3 import h3_cell
 
 from ..types import AgentState
+from .emit_location_line import compute_emit_location_line
 from .geocode import _adv_info
 
 logger = logging.getLogger(__name__)
@@ -125,9 +126,16 @@ async def consolidate_node(state: AgentState) -> AgentState:
     ).startswith("stylebook:"):
         tail = str(geocoding_result.result.id).removeprefix("stylebook:").strip()
         canonical_id = tail or None
+
+    formatted_line = geocoding_result.result.processed_str
+    emit_location = await compute_emit_location_line(
+        state,
+        formatted_address=formatted_line,
+    )
+
     result_base = {
         "id": geocoding_result.result.id,
-        "formatted_address": geocoding_result.result.processed_str,
+        "formatted_address": formatted_line,
         "geometry": {
             "type": geometry_type,
             "coordinates": geometry_coords
@@ -139,7 +147,7 @@ async def consolidate_node(state: AgentState) -> AgentState:
     location_entry = {
         "id": entry_id,
         "original_text": original_text,  # Original text from the article
-        "location": location_text,  # Parsed location name
+        "location": emit_location,
         "type": location_type,
         "description": extra_fields.get("description", f"Geocoded {location_type} location"),
         "geocode": {
@@ -181,7 +189,7 @@ async def consolidate_node(state: AgentState) -> AgentState:
         point_entry = {
             "id": h3_id,
             "original_text": original_text,
-            "location": location_text,
+            "location": emit_location,
             "type": location_type,
             "description": extra_fields.get("description", f"Geocoded {location_type} location"),
             "geocode": {
