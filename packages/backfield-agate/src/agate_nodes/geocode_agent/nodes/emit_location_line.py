@@ -15,6 +15,9 @@ from ..types import AgentState
 
 logger = logging.getLogger(__name__)
 
+_CONTEXT_SNIPPET_MAX = 1200
+_HINTS_SNIPPET_MAX = 800
+
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "location_display_format.md"
 _POLISH_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "polish_location_display.md"
 
@@ -235,6 +238,25 @@ def refine_location_display_line(line: str) -> str:
     return s
 
 
+def _story_context_snippets(state: AgentState) -> tuple[str, str]:
+    """Truncate article text and geocode hints for LLM prompts (token control)."""
+    orig = (state.get("original_text") or "").strip()
+    if not orig:
+        orig_snip = "(none)"
+    elif len(orig) > _CONTEXT_SNIPPET_MAX:
+        orig_snip = orig[:_CONTEXT_SNIPPET_MAX] + "…"
+    else:
+        orig_snip = orig
+    hints_raw = (state.get("geocode_hints") or "").strip()
+    if not hints_raw:
+        hints_snip = "(none)"
+    elif len(hints_raw) > _HINTS_SNIPPET_MAX:
+        hints_snip = hints_raw[:_HINTS_SNIPPET_MAX] + "…"
+    else:
+        hints_snip = hints_raw
+    return orig_snip, hints_snip
+
+
 def _heuristic_emit_location(
     location_type: str,
     location_text: str,
@@ -251,7 +273,14 @@ def _heuristic_emit_location(
     return refine_location_display_line(out)
 
 
-async def _maybe_polish_with_llm(candidate: str, model: str, openai_key: str) -> str:
+async def _maybe_polish_with_llm(
+    candidate: str,
+    model: str,
+    openai_key: str,
+    *,
+    story_context: str = "(none)",
+    geocode_hints: str = "(none)",
+) -> str:
     """Optional final LLM pass for edge cases; deterministic pass reapplied after."""
     cand = (candidate or "").strip()
     if not cand:
@@ -261,7 +290,13 @@ async def _maybe_polish_with_llm(candidate: str, model: str, openai_key: str) ->
     except OSError as exc:
         logger.debug("polish_location_display prompt missing: %s", exc)
         return candidate
-    prompt = template.replace("{candidate}", cand)
+    sc = (story_context or "").strip() or "(none)"
+    gh = (geocode_hints or "").strip() or "(none)"
+    prompt = (
+        template.replace("{candidate}", cand)
+        .replace("{story_context}", sc)
+        .replace("{geocode_hints}", gh)
+    )
 
     def _sync() -> str:
         return call_llm(
@@ -271,7 +306,7 @@ async def _maybe_polish_with_llm(candidate: str, model: str, openai_key: str) ->
             True,
             1,
             0.0,
-            384,
+            512,
             openai_key,
             None,
             None,
@@ -318,6 +353,7 @@ async def compute_emit_location_line(
     if not isinstance(components, dict):
         components = {}
     components_json = json.dumps(components, default=str, ensure_ascii=False)[:2000]
+    orig_snip, hints_snip = _story_context_snippets(state)
 
     if not openai_key:
         return _heuristic_emit_location(location_type, location_text, formatted_address)
@@ -333,6 +369,8 @@ async def compute_emit_location_line(
         f"q: {location_text}\n"
         f"formatted_address: {formatted_address}\n"
         f"components_json: {components_json}\n"
+        f"original_text: {orig_snip}\n"
+        f"geocode_hints: {hints_snip}\n"
     )
     prompt = f"{rules}\n---\n{user_block}"
 
@@ -366,4 +404,10 @@ async def compute_emit_location_line(
         return _heuristic_emit_location(location_type, location_text, formatted_address)
 
     refined = refine_location_display_line(loc)
-    return await _maybe_polish_with_llm(refined, polish_model, openai_key)
+    return await _maybe_polish_with_llm(
+        refined,
+        polish_model,
+        openai_key,
+        story_context=orig_snip,
+        geocode_hints=hints_snip,
+    )

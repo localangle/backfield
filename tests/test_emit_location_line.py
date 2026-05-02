@@ -1,7 +1,10 @@
 """Tests for geocode ``location`` display refinements and heuristic fallback."""
 
 from agate_nodes.geocode_agent.nodes.emit_location_line import (
+    _CONTEXT_SNIPPET_MAX,
+    _HINTS_SNIPPET_MAX,
     _heuristic_emit_location,
+    _story_context_snippets,
     apply_title_case_location_line,
     refine_location_display_line,
 )
@@ -75,3 +78,21 @@ def test_heuristic_keeps_country_suffix_for_region_country() -> None:
 
 def test_heuristic_title_cases_words_and_state_abbr() -> None:
     assert _heuristic_emit_location("city", "the South, TX", "") == "The South, TX"
+
+
+def test_story_context_snippets_empty() -> None:
+    assert _story_context_snippets({}) == ("(none)", "(none)")
+
+
+def test_story_context_snippets_truncates_original_text() -> None:
+    long = "x" * (_CONTEXT_SNIPPET_MAX + 50)
+    orig, hints = _story_context_snippets({"original_text": long})
+    assert orig == "x" * _CONTEXT_SNIPPET_MAX + "…"
+    assert hints == "(none)"
+
+
+def test_story_context_snippets_truncates_geocode_hints() -> None:
+    long = "y" * (_HINTS_SNIPPET_MAX + 10)
+    orig, hints = _story_context_snippets({"geocode_hints": long})
+    assert orig == "(none)"
+    assert hints == "y" * _HINTS_SNIPPET_MAX + "…"

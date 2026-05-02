@@ -712,7 +712,14 @@ def accept_candidate(
         label = (body.name or loc.name or "").strip()
         if not label:
             raise HTTPException(status_code=400, detail="name is required when create_new is true")
-        gj = body.geometry_json
+        # Review UI often omits geometry; inherit from substrate (parity with ingest materialize).
+        if isinstance(body.geometry_json, dict):
+            gj: dict[str, Any] | None = dict(body.geometry_json)
+            canon_geometry: object | None = None
+        else:
+            raw_gj = loc.geometry_json
+            gj = dict(raw_gj) if isinstance(raw_gj, dict) else None
+            canon_geometry = loc.geometry
         if body.location_type is not None:
             lt_candidate = (body.location_type or "").strip().lower() or None
             if lt_candidate is not None and lt_candidate not in PLACE_EXTRACT_LOCATION_TYPES:
@@ -725,6 +732,13 @@ def accept_candidate(
             lt = (loc.location_type or "").strip().lower() or None
         fa = (loc.formatted_address or "").strip() or None
         slug = allocate_unique_canonical_slug(session, stylebook_id=stylebook_id, label=label)
+        geometry_type: str | None = None
+        if isinstance(gj, dict):
+            gt_raw = gj.get("type")
+            if isinstance(gt_raw, str) and gt_raw.strip():
+                geometry_type = gt_raw.strip()
+        if geometry_type is None:
+            geometry_type = (loc.geometry_type or "").strip() or None
         canon = StylebookLocationCanonical(
             stylebook_id=stylebook_id,
             label=label,
@@ -734,7 +748,8 @@ def accept_candidate(
             primary_substrate_location_id=None,
             status="active",
             geometry_json=dict(gj) if isinstance(gj, dict) else gj,
-            geometry_type=(gj or {}).get("type") if isinstance(gj, dict) else None,
+            geometry_type=geometry_type,
+            geometry=canon_geometry,
         )
         session.add(canon)
         session.flush()
