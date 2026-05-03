@@ -42,8 +42,15 @@ from sqlmodel import Session, SQLModel, create_engine
         ("street_road", "neighborhood", False),
         ("neighborhood", "intersection_road", False),
         ("span", "neighborhood", False),
+        ("city", "region_city", False),
+        ("region_city", "town", False),
+        ("region_city", "street_road", False),
+        ("span", "region_city", False),
+        ("place", "street_road", False),
+        ("street_road", "point", False),
         ("city", "city", True),
         ("place", "place", True),
+        ("region_city", "region_city", True),
     ],
 )
 def test_link_pair_allowed_deny_list(s: str, c: str, expect: bool) -> None:
