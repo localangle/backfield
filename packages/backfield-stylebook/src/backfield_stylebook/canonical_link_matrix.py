@@ -41,11 +41,19 @@ def strict_type_group(location_type: str | None) -> frozenset[str] | None:
 
 # Symmetric substrate ↔ canonical pairs denied for autolink / adjudication (manual link may bypass).
 # Includes macro-region vs municipality (city/town↔region_city), region vs linear corridors,
+# linear vs municipality, POI vs neighborhood/macro-region, neighborhood vs macro-region,
 # and POI/point vs street_road (see docs/ARCHITECTURE.md ingest policy).
 _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
     {
         frozenset({"city", "county"}),
         frozenset({"town", "county"}),
+        # Municipality must not merge with parent state (e.g. Springfield, IL ↔ Illinois).
+        frozenset({"city", "state"}),
+        frozenset({"town", "state"}),
+        frozenset({"village", "state"}),
+        frozenset({"city", "region_state"}),
+        frozenset({"town", "region_state"}),
+        frozenset({"village", "region_state"}),
         frozenset({"city", "neighborhood"}),
         frozenset({"town", "neighborhood"}),
         frozenset({"village", "neighborhood"}),
@@ -60,6 +68,19 @@ _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
         frozenset({"region_city", "intersection_road"}),
         frozenset({"region_city", "intersection_highway"}),
         frozenset({"region_city", "span"}),
+        # Linear features are not their containing city or town.
+        frozenset({"city", "street_road"}),
+        frozenset({"street_road", "town"}),
+        frozenset({"city", "intersection_road"}),
+        frozenset({"intersection_road", "town"}),
+        frozenset({"city", "intersection_highway"}),
+        frozenset({"intersection_highway", "town"}),
+        frozenset({"city", "span"}),
+        frozenset({"span", "town"}),
+        # POI / macro-region / neighborhood identity must not collapse across these pairs.
+        frozenset({"neighborhood", "place"}),
+        frozenset({"place", "region_city"}),
+        frozenset({"neighborhood", "region_city"}),
         # POI / point identity must not collapse onto a street corridor canonical.
         frozenset({"place", "street_road"}),
         frozenset({"point", "street_road"}),

@@ -32,7 +32,6 @@ from sqlmodel import Session, SQLModel, create_engine
         ("town", "city"),
         ("city", "town"),
         ("address", "city"),
-        ("intersection_road", "city"),
         ("place", "city"),
         ("city", "place"),
         ("region_city", "ward"),
@@ -366,8 +365,8 @@ def test_rank_does_not_drop_strict_to_flexible_candidates() -> None:
     assert len(ranked) == 1
 
 
-def test_decide_canonical_persist_plan_alias_links_intersection_to_city() -> None:
-    """Exact normalized alias hits city canonical; permissive type policy allows the link."""
+def test_decide_canonical_persist_plan_intersection_exact_alias_does_not_link_city() -> None:
+    """Exact alias on a city canonical does not link an intersection (type deny-list)."""
     from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
 
     engine = _make_engine()
@@ -417,10 +416,11 @@ def test_decide_canonical_persist_plan_alias_links_intersection_to_city() -> Non
             entry={"address_place_kind": "public_named"},
         )
 
-    assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
-    assert plan.existing_canonical_id == cid
+    assert plan.decision == CanonicalPersistDecision.DEFER
+    assert plan.existing_canonical_id is None
     reasons = plan.resolution_reasons[0]
-    assert reasons.get("code") == "linked_exact_normalized_alias"
+    assert reasons.get("code") == "ambiguous_canonical_match"
+    assert reasons.get("best_canonical_id") == cid
 
 
 def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None:

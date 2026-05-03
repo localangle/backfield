@@ -23,6 +23,9 @@ _POLISH_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "poli
 _ADDRESS_VENUE_UPGRADE_PATH = (
     Path(__file__).resolve().parent.parent / "prompts" / "address_venue_upgrade.md"
 )
+_INTERSECTION_VENUE_UPGRADE_PATH = (
+    Path(__file__).resolve().parent.parent / "prompts" / "intersection_venue_upgrade.md"
+)
 
 _VENUE_UPGRADE_LOCATION_MAX_LEN = 220
 
@@ -384,7 +387,7 @@ def _first_comma_segment(line: str) -> str:
     return parts[0] if parts else (line or "").strip()
 
 
-def accept_address_venue_upgrade(
+def accept_named_venue_upgrade(
     upgraded: str,
     baseline: str,
     original_text: str,
@@ -393,7 +396,8 @@ def accept_address_venue_upgrade(
     """
     Deterministic guard after the venue-upgrade LLM: drop hallucinations and street-first lines.
 
-    Requires the proposed venue head to appear in story or (non-empty) geocode hints.
+    Used for optional **address** and **intersection** → named **place** upgrades. Requires the
+    proposed venue head to appear in story or (non-empty) geocode hints.
     """
     u = (upgraded or "").strip()
     b = (baseline or "").strip()
@@ -415,6 +419,10 @@ def accept_address_venue_upgrade(
     if hints and head_cf in hints.casefold():
         return True
     return False
+
+
+# Backwards-compatible name for tests and external callers.
+accept_address_venue_upgrade = accept_named_venue_upgrade
 
 
 def _story_context_snippets(state: AgentState) -> tuple[str, str]:
@@ -592,18 +600,15 @@ async def compute_emit_location_line(
     )
 
 
-async def maybe_upgrade_address_to_named_place(
+async def _maybe_upgrade_to_named_place(
     state: AgentState,
     *,
     formatted_address: str,
     baseline_location_line: str,
+    rules_path: Path,
+    log_label: str,
 ) -> tuple[str, bool]:
-    """
-    Optional second LLM pass for ``address`` items: promote to ``place`` when the story
-    names a venue at that address with very high confidence. Returns ``(location, upgraded)``.
-    """
-    if (state.get("location_type") or "").strip().lower() != "address":
-        return baseline_location_line, False
+    """Shared LLM + guard path for address or intersection → named ``place`` display upgrade."""
     openai_key = state.get("openai_api_key")
     if not openai_key:
         return baseline_location_line, False
@@ -613,9 +618,9 @@ async def maybe_upgrade_address_to_named_place(
         return baseline_location_line, False
 
     try:
-        rules = _ADDRESS_VENUE_UPGRADE_PATH.read_text(encoding="utf-8")
+        rules = rules_path.read_text(encoding="utf-8")
     except OSError as exc:
-        logger.debug("address_venue_upgrade prompt missing: %s", exc)
+        logger.debug("venue_upgrade prompt missing (%s): %s", rules_path.name, exc)
         return baseline_location_line, False
 
     location_text = (state.get("location_text") or "").strip()
@@ -660,7 +665,7 @@ async def maybe_upgrade_address_to_named_place(
         raw = await asyncio.to_thread(_sync)
         payload = json.loads(raw)
     except Exception as exc:
-        logger.debug("address_venue_upgrade LLM failed: %s", exc)
+        logger.debug("venue_upgrade LLM failed (%s): %s", rules_path.name, exc)
         return baseline_location_line, False
 
     if not isinstance(payload, dict) or payload.get("upgrade") is not True:
@@ -672,7 +677,7 @@ async def maybe_upgrade_address_to_named_place(
     if not loc:
         return baseline_location_line, False
 
-    if not accept_address_venue_upgrade(
+    if not accept_named_venue_upgrade(
         loc,
         baseline_location_line,
         orig_full,
@@ -681,7 +686,52 @@ async def maybe_upgrade_address_to_named_place(
         return baseline_location_line, False
 
     logger.info(
-        "Address display upgraded to named place (venue head in story): %s",
+        "%s display upgraded to named place (venue head in story): %s",
+        log_label,
         loc[:120],
     )
     return loc, True
+
+
+async def maybe_upgrade_address_to_named_place(
+    state: AgentState,
+    *,
+    formatted_address: str,
+    baseline_location_line: str,
+) -> tuple[str, bool]:
+    """
+    Optional second LLM pass for ``address`` items: promote to ``place`` when the story
+    names a venue at that address with very high confidence. Returns ``(location, upgraded)``.
+    """
+    if (state.get("location_type") or "").strip().lower() != "address":
+        return baseline_location_line, False
+    return await _maybe_upgrade_to_named_place(
+        state,
+        formatted_address=formatted_address,
+        baseline_location_line=baseline_location_line,
+        rules_path=_ADDRESS_VENUE_UPGRADE_PATH,
+        log_label="Address",
+    )
+
+
+async def maybe_upgrade_intersection_to_named_place(
+    state: AgentState,
+    *,
+    formatted_address: str,
+    baseline_location_line: str,
+) -> tuple[str, bool]:
+    """
+    Optional second LLM pass for ``intersection_road`` / ``intersection_highway``: promote to
+    ``place`` when the story names a venue at or beside that intersection with very high
+    confidence. Returns ``(location, upgraded)``.
+    """
+    lt = (state.get("location_type") or "").strip().lower()
+    if lt not in ("intersection_road", "intersection_highway"):
+        return baseline_location_line, False
+    return await _maybe_upgrade_to_named_place(
+        state,
+        formatted_address=formatted_address,
+        baseline_location_line=baseline_location_line,
+        rules_path=_INTERSECTION_VENUE_UPGRADE_PATH,
+        log_label="Intersection",
+    )

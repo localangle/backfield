@@ -1,6 +1,9 @@
-"""Guards for optional address → named-place display upgrade (geocode consolidate)."""
+"""Guards for optional address / intersection → named-place display upgrade (consolidate)."""
 
-from agate_nodes.geocode_agent.nodes.emit_location_line import accept_address_venue_upgrade
+from agate_nodes.geocode_agent.nodes.emit_location_line import (
+    accept_address_venue_upgrade,
+    accept_named_venue_upgrade,
+)
 
 
 def test_accept_venue_upgrade_when_venue_in_story() -> None:
@@ -41,3 +44,17 @@ def test_accept_venue_upgrade_rejects_number_leading_head() -> None:
     upgraded = "9501 Skokie Events Hall, Skokie, IL"
     baseline = "9501 Skokie Blvd, Skokie, IL"
     assert accept_address_venue_upgrade(upgraded, baseline, story, "") is False
+
+
+def test_accept_named_venue_upgrade_alias_matches_primary() -> None:
+    """``accept_address_venue_upgrade`` remains an alias of ``accept_named_venue_upgrade``."""
+    assert accept_address_venue_upgrade is accept_named_venue_upgrade
+
+
+def test_accept_venue_upgrade_intersection_baseline_venue_in_story() -> None:
+    story = (
+        "Police gathered outside Wrigley Field at the corner of Clark and Addison in Chicago."
+    )
+    upgraded = "Wrigley Field, Chicago, IL"
+    baseline = "W Addison St & N Clark St, Chicago, IL"
+    assert accept_named_venue_upgrade(upgraded, baseline, story, "") is True

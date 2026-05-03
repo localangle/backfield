@@ -7,7 +7,11 @@ from typing import Any
 from agate_utils.geocoding.h3 import h3_cell
 
 from ..types import AgentState
-from .emit_location_line import compute_emit_location_line, maybe_upgrade_address_to_named_place
+from .emit_location_line import (
+    compute_emit_location_line,
+    maybe_upgrade_address_to_named_place,
+    maybe_upgrade_intersection_to_named_place,
+)
 from .geocode import _adv_info
 
 logger = logging.getLogger(__name__)
@@ -167,6 +171,14 @@ async def consolidate_node(state: AgentState) -> AgentState:
     effective_type = location_type
     if location_type == "address":
         emit_location, upgraded_to_place = await maybe_upgrade_address_to_named_place(
+            state,
+            formatted_address=formatted_line,
+            baseline_location_line=emit_location,
+        )
+        if upgraded_to_place:
+            effective_type = "place"
+    elif location_type in ("intersection_road", "intersection_highway"):
+        emit_location, upgraded_to_place = await maybe_upgrade_intersection_to_named_place(
             state,
             formatted_address=formatted_line,
             baseline_location_line=emit_location,
