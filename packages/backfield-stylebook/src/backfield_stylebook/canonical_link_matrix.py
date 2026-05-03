@@ -38,22 +38,43 @@ def strict_type_group(location_type: str | None) -> frozenset[str] | None:
     return None
 
 
-def link_pair_allowed(_substrate_lt: str | None, _canonical_lt: str | None) -> bool:
+def link_pair_allowed(substrate_lt: str | None, canonical_lt: str | None) -> bool:
     """Return ``True`` when substrate ↔ canonical types may be linked (symmetric).
 
-    Policy is **permissive**: any ``location_type`` pair is allowed for auto-link,
-    alias link, and adjudication. Wrong merges are meant to be prevented by scoring,
-    recall, head-anchor gates, and human review—not by a fixed type matrix.
-
-    Add explicit ``False`` cases here later if product rules require a deny-list.
+    Deny-list (autolink / adjudication / manual type gate): blocks gross type mismatches
+    such as linking a **state** substrate row to a **place** canonical.
     """
+    s = (substrate_lt or "").strip().lower()
+    c = (canonical_lt or "").strip().lower()
+    if not s or not c:
+        return True
+    if s == "state" and c in ("place", "neighborhood", "address"):
+        return False
+    if s in ("country", "region_national") and c in ("place", "neighborhood", "address"):
+        return False
+    if s == "county" and c in ("place", "address"):
+        return False
     return True
+
+
+_CONTAINER_SUBSTRATE_TYPES: frozenset[str] = frozenset(
+    {"city", "town", "village", "county", "region_city"}
+)
+_FINE_CANONICAL_TYPES: frozenset[str] = frozenset({"place", "neighborhood", "address"})
+
+
+def autolink_container_to_fine_denied(substrate_lt: str | None, canonical_lt: str | None) -> bool:
+    """True when a coarse substrate geography must not autolink to a fine-grained canonical."""
+    s = (substrate_lt or "").strip().lower()
+    c = (canonical_lt or "").strip().lower()
+    return s in _CONTAINER_SUBSTRATE_TYPES and c in _FINE_CANONICAL_TYPES
 
 
 def types_are_comparable(_substrate_lt: str | None, _canonical_lt: str | None) -> bool:
     """Return True when a substrate/canonical pair should be *compared* for matching.
 
-    Recall scoring compares candidates broadly. :func:`link_pair_allowed` is equally
-    permissive for automatic linking; both default to allowing the pair.
+    Recall scoring compares candidates broadly (cross-type recall is still allowed so
+    scoring can down-rank mismatches). Autolink and exact-alias paths additionally apply
+    :func:`link_pair_allowed` and :func:`autolink_container_to_fine_denied`.
     """
     return True

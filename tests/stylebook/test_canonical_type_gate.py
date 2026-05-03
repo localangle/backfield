@@ -1,4 +1,4 @@
-"""Tests for :func:`link_pair_allowed` (permissive substrate ↔ canonical type policy)."""
+"""Tests for canonical type matrix, recall scoring, and substrate gates."""
 
 from __future__ import annotations
 

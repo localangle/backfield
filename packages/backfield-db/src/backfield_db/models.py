@@ -213,6 +213,9 @@ class StylebookLocationCanonical(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    country_code: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    subdivision_code: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    city_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

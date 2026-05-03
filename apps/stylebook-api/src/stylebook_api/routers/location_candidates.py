@@ -15,6 +15,10 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_stylebook.canonical_jurisdiction import (
+    place_extract_components_from_entry,
+    stylebook_jurisdiction_fields_from_components,
+)
 from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
@@ -739,6 +743,9 @@ def accept_candidate(
                 geometry_type = gt_raw.strip()
         if geometry_type is None:
             geometry_type = (loc.geometry_type or "").strip() or None
+        jur = stylebook_jurisdiction_fields_from_components(
+            place_extract_components_from_entry(loc, None)
+        )
         canon = StylebookLocationCanonical(
             stylebook_id=stylebook_id,
             label=label,
@@ -750,6 +757,9 @@ def accept_candidate(
             geometry_json=dict(gj) if isinstance(gj, dict) else gj,
             geometry_type=geometry_type,
             geometry=canon_geometry,
+            country_code=jur["country_code"],
+            subdivision_code=jur["subdivision_code"],
+            city_name=jur["city_name"],
         )
         session.add(canon)
         session.flush()

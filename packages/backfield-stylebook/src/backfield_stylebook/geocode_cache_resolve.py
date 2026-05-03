@@ -156,3 +156,34 @@ def try_resolve_geocode_cache(
     if not gj:
         return None
     return _substrate_cache_row_to_cache_match_dict(row)
+
+
+def try_resolve_substrate_location_cache_geometry(
+    session: Session,
+    *,
+    project_id: int,
+    location_text: str,
+) -> dict[str, Any] | None:
+    """Return GeoJSON geometry from tier-2 cache only (no canonical tier).
+
+    Uses ``location_type="city"`` in the fingerprint so container admin strings share a stable
+    bucket distinct from POI queries with the same free text.
+    """
+    normalized = normalize_substrate_cache_query(location_text)
+    if not normalized:
+        return None
+    fingerprint = substrate_location_cache_query_fingerprint(
+        project_id=project_id,
+        normalized_query=normalized,
+        location_type="city",
+    )
+    row = session.exec(
+        select(SubstrateLocationCache).where(
+            col(SubstrateLocationCache.project_id) == project_id,
+            col(SubstrateLocationCache.query_fingerprint) == fingerprint,
+        )
+    ).first()
+    if row is None:
+        return None
+    gj = row.geometry_json if isinstance(row.geometry_json, dict) else None
+    return dict(gj) if gj else None

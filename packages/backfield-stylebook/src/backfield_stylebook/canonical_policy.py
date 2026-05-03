@@ -9,7 +9,18 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, col, select
 
+from backfield_stylebook.canonical_jurisdiction import (
+    container_admin_query_from_components,
+    geocode_components_vs_formatted_address_mismatch,
+    geojson_bbox_centroid,
+    geojson_bbox_diagonal_km,
+    haversine_km,
+    jurisdiction_from_components,
+    place_extract_components_from_entry,
+    strict_canonical_gates_enabled,
+)
 from backfield_stylebook.canonical_link_matrix import (
+    autolink_container_to_fine_denied,
     link_pair_allowed,
     strict_type_group,
     types_are_comparable,
@@ -27,6 +38,7 @@ from backfield_stylebook.canonical_retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
+from backfield_stylebook.geocode_cache_resolve import try_resolve_substrate_location_cache_geometry
 from backfield_stylebook.place_extract_location_types import (
     ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE,
     ADDRESS_PLACE_KIND_PUBLIC_NAMED,
@@ -125,7 +137,7 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
     }
 )
 
-# Backwards-compatible name for :func:`link_pair_allowed` (permissive type policy).
+# Backwards-compatible name for :func:`link_pair_allowed` (type deny-list + product gates).
 types_are_autolink_compatible = link_pair_allowed
 
 
@@ -205,11 +217,166 @@ def _should_materialize_new_strict(location: SubstrateLocation) -> bool:
     return True
 
 
+_JURISDICTION_SCORE_GATE_SUBSTRATE_TYPES: frozenset[str] = frozenset(
+    {
+        "county",
+        "city",
+        "town",
+        "village",
+        "neighborhood",
+        "community_area",
+        "district",
+        "borough",
+        "suburb",
+        "place",
+        "point",
+        "region_city",
+        "address",
+    }
+)
+
+_POI_LIKE_CANON_TYPES: frozenset[str] = frozenset({"place", "point", "address", "natural"})
+
+
+def _jurisdiction_pair_demotes_recall_score(
+    location: SubstrateLocation,
+    canon: StylebookLocationCanonical,
+    comps: dict[str, Any],
+) -> bool:
+    """True when structured jurisdictions disagree (per-candidate autolink gate)."""
+    s_lt = (location.location_type or "").strip().lower()
+    if s_lt not in _JURISDICTION_SCORE_GATE_SUBSTRATE_TYPES:
+        return False
+    s_country, s_sub, _city = jurisdiction_from_components(comps)
+    if not s_sub:
+        return False
+    c_country = (canon.country_code or "").strip().upper()[:2] or None
+    c_sub = (canon.subdivision_code or "").strip().upper()[:2] or None
+    c_lt = (canon.location_type or "").strip().lower()
+    if c_lt in _POI_LIKE_CANON_TYPES and not (c_country and c_sub):
+        return False
+    if c_sub and s_sub != c_sub:
+        return True
+    if c_country and s_country and s_country != c_country:
+        return True
+    return False
+
+
+def _substrate_preflight_strict_gates(
+    session: Session,
+    *,
+    location: SubstrateLocation,
+    entry: dict[str, Any],
+) -> CanonicalPersistPlan | None:
+    """Gate D/E/F on the substrate row before alias / recall (returns DEFER plan or ``None``)."""
+    if not strict_canonical_gates_enabled():
+        return None
+    comps = place_extract_components_from_entry(location, entry)
+    mm = geocode_components_vs_formatted_address_mismatch(
+        formatted_address=location.formatted_address,
+        comps=comps,
+    )
+    if mm:
+        msg = {
+            "geocode_country_mismatch": "PlaceExtract country disagrees with geocoder address",
+            "geocode_state_mismatch": "PlaceExtract state disagrees with geocoder address",
+        }.get(mm, "Geocode vs components mismatch")
+        return CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": mm,
+                    "message": msg,
+                    "location_type": location.location_type,
+                },
+            ),
+        )
+    gj = location.geometry_json
+    sub_centroid = geojson_bbox_centroid(gj) if isinstance(gj, dict) else None
+    lt = (location.location_type or "").strip().lower()
+    max_km: float | None = None
+    if lt in ("place", "address"):
+        max_km = 150.0
+    elif lt == "neighborhood":
+        max_km = 50.0
+    elif lt == "region_city":
+        max_km = 100.0
+    if (
+        max_km is not None
+        and sub_centroid is not None
+        and location.project_id is not None
+    ):
+        cq = container_admin_query_from_components(comps)
+        if cq:
+            ref_json = try_resolve_substrate_location_cache_geometry(
+                session,
+                project_id=int(location.project_id),
+                location_text=cq,
+            )
+            ref_centroid = geojson_bbox_centroid(ref_json) if ref_json else None
+            if ref_centroid is not None:
+                dist = haversine_km(
+                    sub_centroid[0],
+                    sub_centroid[1],
+                    ref_centroid[0],
+                    ref_centroid[1],
+                )
+                if dist > max_km:
+                    return CanonicalPersistPlan(
+                        decision=CanonicalPersistDecision.DEFER,
+                        resolution_reasons=(
+                            {
+                                "code": "geocode_distance_anomaly",
+                                "message": (
+                                    "Geocode centroid is unusually far from "
+                                    "cached container city geocode"
+                                ),
+                                "location_type": location.location_type,
+                                "details": {
+                                    "container_query": cq,
+                                    "distance_km": round(dist, 3),
+                                    "max_km": max_km,
+                                },
+                            },
+                        ),
+                    )
+    if isinstance(gj, dict):
+        gtype = str(gj.get("type") or "").lower()
+        if gtype in ("polygon", "multipolygon"):
+            diag = geojson_bbox_diagonal_km(gj)
+            max_diag: float | None = None
+            if lt in ("place", "address"):
+                max_diag = 5.0
+            elif lt == "neighborhood":
+                max_diag = 50.0
+            else:
+                max_diag = None
+            if max_diag is not None and diag is not None and diag > max_diag:
+                return CanonicalPersistPlan(
+                    decision=CanonicalPersistDecision.DEFER,
+                    resolution_reasons=(
+                        {
+                            "code": "geocode_bbox_scale_mismatch",
+                            "message": (
+                                "Geocode polygon span is implausibly large for this location type"
+                            ),
+                            "location_type": location.location_type,
+                            "details": {
+                                "diagonal_km": round(diag, 3),
+                                "max_diagonal_km": max_diag,
+                            },
+                        },
+                    ),
+                )
+    return None
+
+
 def rank_scored_canonical_recall_matches(
     session: Session,
     *,
     location: SubstrateLocation,
     recall: list[tuple[str, float | None]],
+    entry: dict[str, Any] | None = None,
 ) -> list[tuple[str, str, float, int]]:
     """Score each recalled canonical; return best-first rows.
 
@@ -221,6 +388,7 @@ def rank_scored_canonical_recall_matches(
         return []
     cids = [cid for cid, _ in recall]
     bundles = load_canonical_match_features(session, canonical_ids=cids)
+    comps = place_extract_components_from_entry(location, entry)
     substrate = SubstrateMatchInput(
         name=str(location.name),
         normalized_name=str(location.normalized_name),
@@ -251,6 +419,10 @@ def rank_scored_canonical_recall_matches(
         if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
         if not types_are_comparable(location.location_type, canon.location_type):
+            sc = min(sc, RECALL_MIN_SCORE - 0.001)
+        if strict_canonical_gates_enabled() and _jurisdiction_pair_demotes_recall_score(
+            location, canon, comps
+        ):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
         rows.append((recall_index, str(canon_id), str(canon.label), sc))
     rows.sort(key=lambda r: (-r[3], -r[0]))
@@ -286,7 +458,7 @@ def _best_allowed_recall_score(
     best: float | None = None
     for cid, _lab, sc, _idx in ranked:
         c_lt = lt_by_id.get(str(cid))
-        if link_pair_allowed(s_lt, c_lt):
+        if link_pair_allowed(s_lt, c_lt) and not autolink_container_to_fine_denied(s_lt, c_lt):
             best = sc if best is None else max(best, sc)
     return best
 
@@ -330,6 +502,8 @@ def _intra_strict_group_ambiguous(
         if canon is None:
             continue
         if not link_pair_allowed(location.location_type, canon.location_type):
+            continue
+        if autolink_container_to_fine_denied(location.location_type, canon.location_type):
             continue
         if strict_type_group(canon.location_type) != sg:
             continue
@@ -397,13 +571,20 @@ def decide_canonical_persist_plan(
             resolution_reasons=defer_reason_payload(places_bucket=places_bucket, location=location),
         )
 
+    preflight = _substrate_preflight_strict_gates(session, location=location, entry=entry)
+    if preflight is not None:
+        return preflight
+
     cid = find_existing_canonical_id_by_alias(
         session, stylebook_id=stylebook_id, normalized_name=str(location.normalized_name)
     )
     if cid is not None:
         alias_canon = session.get(StylebookLocationCanonical, cid)
         alias_canon_lt = alias_canon.location_type if alias_canon is not None else None
-        if link_pair_allowed(location.location_type, alias_canon_lt):
+        alias_pair_ok = link_pair_allowed(location.location_type, alias_canon_lt) and not (
+            autolink_container_to_fine_denied(location.location_type, alias_canon_lt)
+        )
+        if alias_pair_ok:
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,
                 existing_canonical_id=cid,
@@ -435,7 +616,7 @@ def decide_canonical_persist_plan(
     if recall:
         recall_canonical_ids = tuple(str(cid) for cid, _ in recall)
         ranked = rank_scored_canonical_recall_matches(
-            session, location=location, recall=list(recall)
+            session, location=location, recall=list(recall), entry=entry
         )
         if ranked:
             best_id, best_score = ranked[0][0], ranked[0][2]
@@ -450,7 +631,10 @@ def decide_canonical_persist_plan(
         if tier == "autolink" and best_id is not None:
             best_canon = session.get(StylebookLocationCanonical, str(best_id))
             best_lt = best_canon.location_type if best_canon is not None else None
-            if not link_pair_allowed(location.location_type, best_lt):
+            best_pair_bad = not link_pair_allowed(
+                location.location_type, best_lt
+            ) or autolink_container_to_fine_denied(location.location_type, best_lt)
+            if best_pair_bad:
                 tier = "ambiguous"
                 intra_ambiguous = True
         if tier == "autolink" and best_id is not None:

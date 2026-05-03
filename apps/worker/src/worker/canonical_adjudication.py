@@ -8,7 +8,10 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 from backfield_db import StylebookLocationCanonical, SubstrateLocation
-from backfield_stylebook.canonical_link_matrix import link_pair_allowed
+from backfield_stylebook.canonical_link_matrix import (
+    autolink_container_to_fine_denied,
+    link_pair_allowed,
+)
 from backfield_stylebook.canonical_policy import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
@@ -141,6 +144,7 @@ def adjudicate_ambiguous_plan_with_llm(
         or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE
         or canon is None
         or not link_pair_allowed(location.location_type, canon.location_type)
+        or autolink_container_to_fine_denied(location.location_type, canon.location_type)
     ):
         extra = {
             "code": "canonical_adjudication",
