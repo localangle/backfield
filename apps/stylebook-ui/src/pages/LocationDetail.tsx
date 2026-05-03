@@ -1057,7 +1057,7 @@ export default function LocationDetail() {
       <Dialog open={substrateGeometryOpen} onOpenChange={setSubstrateGeometryOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Substrate geometry</DialogTitle>
+            <DialogTitle>Instance Geometry</DialogTitle>
             <DialogDescription>
               {substrateGeometrySubstrate ? substrateGeometrySubstrate.name : "—"}
             </DialogDescription>
@@ -1077,14 +1077,14 @@ export default function LocationDetail() {
                   points={
                     geometryToFeatureCollections(substrateGeometryJson, {
                       featureId: "substrate",
-                      label: "Substrate",
+                      label: "Instance",
                       group: "substrate",
                     }).points as any
                   }
                   polygons={
                     geometryToFeatureCollections(substrateGeometryJson, {
                       featureId: "substrate",
-                      label: "Substrate",
+                      label: "Instance",
                       group: "substrate",
                     }).polygons as any
                   }
@@ -1094,11 +1094,18 @@ export default function LocationDetail() {
                   initialZoom={ADD_GEOMETRY_MAP_ZOOM}
                 />
               </div>
-              <div className="rounded-md border bg-muted/30 p-3">
-                <pre className="text-xs whitespace-pre-wrap break-words">
-                  {JSON.stringify(substrateGeometryJson, null, 2)}
-                </pre>
-              </div>
+              <details className="rounded-md border bg-muted/30 group">
+                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-foreground list-none [&::-webkit-details-marker]:hidden flex items-center gap-2">
+                  <span className="text-muted-foreground group-open:hidden">▸</span>
+                  <span className="text-muted-foreground hidden group-open:inline">▾</span>
+                  GeoJSON
+                </summary>
+                <div className="border-t px-3 pb-3 pt-1">
+                  <pre className="text-xs whitespace-pre-wrap break-words max-h-[12rem] overflow-y-auto">
+                    {JSON.stringify(substrateGeometryJson, null, 2)}
+                  </pre>
+                </div>
+              </details>
             </div>
           )}
 
@@ -1107,7 +1114,7 @@ export default function LocationDetail() {
               Close
             </Button>
             <Button
-              variant="secondary"
+              className="bg-black text-white hover:bg-black/90 focus-visible:ring-black/40"
               disabled={
                 substrateGeometryLoading ||
                 adoptingSubstrateGeometry ||

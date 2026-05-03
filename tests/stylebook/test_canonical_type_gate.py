@@ -32,8 +32,6 @@ from sqlmodel import Session, SQLModel, create_engine
         ("town", "city"),
         ("city", "town"),
         ("address", "city"),
-        ("place", "city"),
-        ("city", "place"),
         ("region_city", "ward"),
         ("ward", "region_city"),
         ("neighborhood", "county"),

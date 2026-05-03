@@ -18,6 +18,196 @@ logger = logging.getLogger(__name__)
 
 AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
 
+# Pelias layers at city scale or coarser (not street / venue / neighbourhood).
+_PELIAS_CITY_OR_COARSER_LAYERS: frozenset[str] = frozenset(
+    {
+        "coarse",
+        "continent",
+        "country",
+        "county",
+        "dependency",
+        "disputed",
+        "localadmin",
+        "locality",
+        "macrocounty",
+        "macroregion",
+        "ocean",
+        "region",
+    }
+)
+# Pelias layers that are plausibly finer than a city centroid for our QA purposes.
+_PELIAS_FINER_THAN_LOCALITY: frozenset[str] = frozenset(
+    {
+        "address",
+        "borough",
+        "intersection",
+        "macrohood",
+        "neighbourhood",
+        "neighborhood",
+        "postalcode",
+        "street",
+        "venue",
+    }
+)
+
+
+def _geocoding_confidence_dict(geocoding_result: Any) -> dict[str, Any]:
+    result = getattr(geocoding_result, "result", None)
+    conf = getattr(result, "confidence", None) if result is not None else None
+    return conf if isinstance(conf, dict) else {}
+
+
+def _stylebook_or_canonical_hit(geocoding_result: Any) -> bool:
+    rid = str(getattr(getattr(geocoding_result, "result", None), "id", "") or "")
+    if rid.lower().startswith("stylebook:"):
+        return True
+    geo = str(getattr(geocoding_result, "geocoder", "") or "").lower()
+    if geo.startswith("stylebook"):
+        return True
+    conf = _geocoding_confidence_dict(geocoding_result)
+    if str(conf.get("source") or "").lower() == "canonical":
+        return True
+    if conf.get("canonical_id"):
+        return True
+    return False
+
+
+def _neighborhood_or_district_token(components: dict[str, Any], *, location_type: str) -> str:
+    c = components or {}
+    lt = (location_type or "").strip().lower()
+    if lt == "district":
+        d = c.get("district")
+        if isinstance(d, dict):
+            return str(d.get("name") or d.get("label") or "").strip().lower()
+        return str(d or "").strip().lower()
+    return str(c.get("neighborhood") or "").strip().lower()
+
+
+def _place_name_token(components: dict[str, Any]) -> str:
+    c = components or {}
+    p = c.get("place")
+    if isinstance(p, dict):
+        return str(p.get("name") or "").strip().lower()
+    return str(p or "").strip().lower()
+
+
+def _address_line_for_qa(components: dict[str, Any], location_text: str) -> str:
+    c = components or {}
+    a = str(c.get("address") or "").strip()
+    if a:
+        return a
+    return str(location_text or "").strip()
+
+
+def _address_requests_street_resolution(addr_line: str) -> bool:
+    """True when the extract looks like a street / mailing line (not city-only)."""
+    s = (addr_line or "").strip()
+    if not s:
+        return False
+    if any(ch.isdigit() for ch in s):
+        return True
+    # Street-style line without a house number (e.g. "Main St, Chicago, IL").
+    return len(s) >= 10
+
+
+def _label_contains_token(label: str, token: str) -> bool:
+    t = (token or "").strip().lower()
+    if len(t) < 2:
+        return False
+    return t in (label or "").strip().lower()
+
+
+def _geocode_city_level_fallback_qa(
+    location_type: str,
+    formatted_line: str,
+    components: dict[str, Any],
+    geocoding_result: Any,
+    *,
+    location_text: str = "",
+) -> bool:
+    """True when a fine-grained extract likely resolved to a city-or-coarser hit only.
+
+    Flags neighborhood / district / address / place / point rows for ``needs_review`` so
+    city-centroid or locality-only fallbacks do not ship as silently verified geocodes.
+    """
+    lt = (location_type or "").strip().lower()
+    if lt not in ("neighborhood", "district", "address", "place", "point"):
+        return False
+    if _stylebook_or_canonical_hit(geocoding_result):
+        return False
+
+    label = str(formatted_line or "")
+    label_cf = label.strip().lower()
+    conf = _geocoding_confidence_dict(geocoding_result)
+    geo = str(getattr(geocoding_result, "geocoder", "") or "").lower()
+    layer = str(conf.get("pelias_layer") or "").strip().lower()
+
+    if lt in ("neighborhood", "district"):
+        token = _neighborhood_or_district_token(components, location_type=lt)
+        if len(token) < 2:
+            return False
+        if _label_contains_token(label_cf, token):
+            return False
+        if layer in _PELIAS_FINER_THAN_LOCALITY:
+            return False
+        if layer in _PELIAS_CITY_OR_COARSER_LAYERS:
+            return True
+        if geo == "nominatim":
+            nt = str(conf.get("nominatim_type") or "").strip().lower()
+            if nt in ("city", "town", "administrative") and not _label_contains_token(label_cf, token):
+                return True
+        if geo.startswith("geocodio"):
+            acc = str(conf.get("accuracy_type") or "").strip().lower()
+            if acc in ("city", "county", "state") and not _label_contains_token(label_cf, token):
+                return True
+        return False
+
+    if lt == "address":
+        addr_line = _address_line_for_qa(components, location_text)
+        if not _address_requests_street_resolution(addr_line):
+            return False
+        addr_cf = addr_line.strip().lower()
+        # Strong match: house number or leading street fragment appears in geocoder label.
+        if addr_cf and addr_cf[: min(24, len(addr_cf))] in label_cf:
+            return False
+        if layer in _PELIAS_FINER_THAN_LOCALITY:
+            return False
+        if layer in _PELIAS_CITY_OR_COARSER_LAYERS:
+            return True
+        if geo == "nominatim":
+            # Building / house results often carry ``administrative`` in OSM; digits in the label
+            # usually mean we resolved finer than city-only.
+            if any(ch.isdigit() for ch in label_cf):
+                return False
+            nt = str(conf.get("nominatim_type") or "").strip().lower()
+            if nt in ("city", "town", "state", "administrative"):
+                return True
+        if geo.startswith("geocodio"):
+            acc = str(conf.get("accuracy_type") or "").strip().lower()
+            if acc in ("city", "county", "state"):
+                return True
+        return False
+
+    # place / point
+    token = _place_name_token(components)
+    if len(token) < 2:
+        return False
+    if _label_contains_token(label_cf, token):
+        return False
+    if layer in _PELIAS_FINER_THAN_LOCALITY:
+        return False
+    if layer in _PELIAS_CITY_OR_COARSER_LAYERS:
+        return True
+    if geo == "nominatim":
+        nt = str(conf.get("nominatim_type") or "").strip().lower()
+        if nt in ("city", "town", "administrative") and not _label_contains_token(label_cf, token):
+            return True
+    if geo.startswith("geocodio"):
+        acc = str(conf.get("accuracy_type") or "").strip().lower()
+        if acc in ("city", "county", "state") and not _label_contains_token(label_cf, token):
+            return True
+    return False
+
 
 def _city_geocode_admin_level_mismatch(
     location_type: str,
@@ -238,7 +428,23 @@ async def consolidate_node(state: AgentState) -> AgentState:
     elif location_type == "political_district":
         consolidated["places"]["areas"]["other"].append(location_entry)
     elif location_type in ["neighborhood", "district"]:
-        consolidated["places"]["areas"]["neighborhoods"].append(location_entry)
+        components_qa = state.get("location_components") or {}
+        if _geocode_city_level_fallback_qa(
+            location_type,
+            formatted_line,
+            components_qa if isinstance(components_qa, dict) else {},
+            geocoding_result,
+            location_text=location_text,
+        ):
+            qa_entry = {
+                **location_entry,
+                "geocode_city_level_fallback": True,
+                "geocode_qa_code": "geocode_city_level_fallback",
+            }
+            _attach_router_audit(qa_entry, state)
+            consolidated["places"]["needs_review"].append(qa_entry)
+        else:
+            consolidated["places"]["areas"]["neighborhoods"].append(location_entry)
     elif location_type in ["region", "area"] or location_type.startswith("region_"):
         consolidated["places"]["areas"]["regions"].append(location_entry)
     elif location_type in ["natural", "street_road"]:
@@ -272,7 +478,24 @@ async def consolidate_node(state: AgentState) -> AgentState:
 
         _attach_router_audit(point_entry, state)
 
-        consolidated["places"]["points"].append(point_entry)
+        components_qa = state.get("location_components") or {}
+        comps_dict = components_qa if isinstance(components_qa, dict) else {}
+        if location_type in ("address", "place", "point") and _geocode_city_level_fallback_qa(
+            location_type,
+            formatted_line,
+            comps_dict,
+            geocoding_result,
+            location_text=location_text,
+        ):
+            qa_point = {
+                **point_entry,
+                "geocode_city_level_fallback": True,
+                "geocode_qa_code": "geocode_city_level_fallback",
+            }
+            _attach_router_audit(qa_point, state)
+            consolidated["places"]["needs_review"].append(qa_point)
+        else:
+            consolidated["places"]["points"].append(point_entry)
     else:
         consolidated["places"]["areas"]["other"].append(location_entry)
     

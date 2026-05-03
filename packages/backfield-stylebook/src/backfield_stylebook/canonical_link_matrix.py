@@ -42,7 +42,8 @@ def strict_type_group(location_type: str | None) -> frozenset[str] | None:
 # Symmetric substrate ↔ canonical pairs denied for autolink / adjudication (manual link may bypass).
 # Includes macro-region vs municipality (city/town↔region_city), region vs linear corridors,
 # linear vs municipality, POI vs neighborhood/macro-region, neighborhood vs macro-region,
-# and POI/point vs street_road (see docs/ARCHITECTURE.md ingest policy).
+# POI/point vs municipality (city/town/village), and POI/point vs street_road
+# (see docs/ARCHITECTURE.md ingest policy).
 _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
     {
         frozenset({"city", "county"}),
@@ -81,6 +82,13 @@ _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
         frozenset({"neighborhood", "place"}),
         frozenset({"place", "region_city"}),
         frozenset({"neighborhood", "region_city"}),
+        # POI / point must not collapse onto a parent municipality canonical.
+        frozenset({"city", "place"}),
+        frozenset({"place", "town"}),
+        frozenset({"place", "village"}),
+        frozenset({"city", "point"}),
+        frozenset({"point", "town"}),
+        frozenset({"point", "village"}),
         # POI / point identity must not collapse onto a street corridor canonical.
         frozenset({"place", "street_road"}),
         frozenset({"point", "street_road"}),
