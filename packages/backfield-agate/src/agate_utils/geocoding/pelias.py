@@ -135,7 +135,7 @@ def _pelias_search_feature_to_result(text: str, feature: dict[str, Any]) -> Opti
         id=result_id,
         processed_str=properties.get("label", text),
         geometry=result_geometry,
-        confidence={},
+        confidence={"pelias_layer": layer},
     )
 
     return GeocodingResult(
@@ -359,7 +359,7 @@ async def geocode_structured(
             id=result_id,
             processed_str=properties.get("label", input_str),
             geometry=result_geometry,
-            confidence={},  # Pelias doesn't provide structured confidence
+            confidence={"pelias_layer": layer},
         )
         
         return GeocodingResult(
@@ -424,6 +424,7 @@ async def reverse_geocode(
         feature = features[0]
         properties = feature.get("properties", {})
         geometry = feature.get("geometry", {})
+        rev_layer = str(properties.get("layer", "") or "")
         
         coords = geometry.get("coordinates", [])
         if len(coords) < 2:
@@ -441,7 +442,7 @@ async def reverse_geocode(
                 type="Point",
                 coordinates=[result_lon, result_lat]
             ),
-            confidence={},
+            confidence={"pelias_layer": rev_layer},
         )
         
         return GeocodingResult(

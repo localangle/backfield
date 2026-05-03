@@ -60,6 +60,7 @@ Classify each location by the type of geography it represents. Valid types are:
 - **state**: A state
 - **region_national**: The name of a region or a general area being described within the United States, such as the South.
 - **country**: A country
+- **political_district**: A **numbered or ordinally identified** political or administrative boundary used as geography in the story—**U.S. congressional districts**, state house or senate districts, **city wards** or council districts, voting **precincts** when identified by number, and similar. Use this type when the story is about **that district as a jurisdiction** (elections, representation, redistricting, who represents whom), not when a district name is only incidental color. **Do not** use it for broad colloquial regions ("the South"), entire **counties** (use **county**), generic **neighborhoods** (use **neighborhood**), or **region_city** blobs ("south side of Chicago" without a formal district number). When in doubt between **political_district** and **region_city**, prefer **political_district** only if the text clearly references a **formal district** with a **stable number or ordinal** (e.g. "8th Congressional District," "Ward 15," "Senate District 42").
 - **natural**: A specific natural feature, such as a river, lake or mountain range. These are generally specific and named features. General descriptions of natural regions, like "the California coast" should be considered regions.
 - **other**: Anything that doesn't fit into the categories above
 
@@ -119,6 +120,11 @@ You should also separate each location into components where possible. The types
 - **country**: The name of the country, if applicable
   - **name**: The full name of the country. For example "United States"
   - **abbr**: The ISO 3166-1 country code for the country. For example "US"
+- **district**: Only for **political_district** locations. Capture the **formal** identity so downstream systems can tell **District 7** from **District 8**.
+  - **kind**: One of: `ward`, `us_house`, `state_senate`, `state_house`, `city_council`, `precinct`, `other`.
+  - **number**: The district or ward **number** as in the story (digits preferred), e.g. `"8"`, `"15"`, `"4-2"` for split wards. If the story only uses ordinals ("Eighth Congressional District"), put digits in **number** when you can infer them; otherwise set **ordinal** to the spoken form and still set **number** if inferable.
+  - **ordinal**: Optional spoken ordinal if useful (e.g. `"Eighth"`).
+  - **scope**: One of: `federal`, `state`, `county`, `city`—whichever best matches the district's jurisdiction.
 
 Do not infer additional information about the locations beyond what is instructed in your formatting rules. The exception of this is country, which you should always include if you can reasonably guess it (most of the time this will be US).
 

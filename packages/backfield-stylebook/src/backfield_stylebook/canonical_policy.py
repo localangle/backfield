@@ -11,12 +11,16 @@ from sqlmodel import Session, col, select
 
 from backfield_stylebook.canonical_jurisdiction import (
     container_admin_query_from_components,
+    district_identity_from_components,
+    district_identity_key,
     geocode_components_vs_formatted_address_mismatch,
     geojson_bbox_centroid,
     geojson_bbox_diagonal_km,
+    geojson_point_lon_lat,
     haversine_km,
     jurisdiction_from_components,
     place_extract_components_from_entry,
+    point_in_geojson_bbox,
     strict_canonical_gates_enabled,
 )
 from backfield_stylebook.canonical_link_matrix import (
@@ -140,6 +144,9 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
 # Backwards-compatible name for :func:`link_pair_allowed` (type deny-list + product gates).
 types_are_autolink_compatible = link_pair_allowed
 
+# Gate E neighborhood container distance uses 50 km; align address→neighborhood autolink geometry.
+ADDRESS_NEIGHBORHOOD_AUTOLINK_MAX_KM = 50.0
+
 
 # When the display name has a multi-token head (e.g. ``West Ridge, Chicago, IL``), require every
 # such token to appear on the candidate label/aliases before allowing autolink-tier scores. This
@@ -260,6 +267,92 @@ def _jurisdiction_pair_demotes_recall_score(
     if c_country and s_country and s_country != c_country:
         return True
     return False
+
+
+def _district_identity_pair_mismatch(
+    substrate_comps: dict[str, Any],
+    canon: StylebookLocationCanonical,
+) -> bool:
+    """True when both sides carry a full district key and they disagree."""
+    sub_key = district_identity_key(district_identity_from_components(substrate_comps))
+    if not sub_key:
+        return False
+    ck = (canon.district_key or "").strip()
+    if not ck:
+        return False
+    return sub_key != ck
+
+
+def _address_neighborhood_geometry_demotes_recall(
+    location: SubstrateLocation,
+    canon: StylebookLocationCanonical,
+    feat: CanonicalMatchFeatures,
+) -> bool:
+    """Demote when address point is outside neighborhood bbox or too far from centroid."""
+    lt = (location.location_type or "").strip().lower()
+    c_lt = (canon.location_type or "").strip().lower()
+    if lt != "address" or c_lt != "neighborhood":
+        return False
+    pt = geojson_point_lon_lat(
+        location.geometry_json if isinstance(location.geometry_json, dict) else None
+    )
+    gj = feat.geometry_json if isinstance(feat.geometry_json, dict) else None
+    if pt is None or gj is None:
+        return False
+    lon, lat = pt
+    if not point_in_geojson_bbox(lon, lat, gj):
+        return True
+    cc = geojson_bbox_centroid(gj)
+    if cc is None:
+        return False
+    dist_km = haversine_km(lon, lat, cc[0], cc[1])
+    return dist_km > ADDRESS_NEIGHBORHOOD_AUTOLINK_MAX_KM
+
+
+def _political_district_recall_identity_preflight(
+    session: Session,
+    *,
+    location: SubstrateLocation,
+    entry: dict[str, Any],
+    recall: list[tuple[str, Any]],
+) -> CanonicalPersistPlan | None:
+    """Defer when PlaceExtract district identity does not match any recalled canonical."""
+    if not strict_canonical_gates_enabled():
+        return None
+    lt = (location.location_type or "").strip().lower()
+    if lt != "political_district":
+        return None
+    comps = place_extract_components_from_entry(location, entry)
+    want = district_identity_key(district_identity_from_components(comps))
+    if not want:
+        return None
+    ids = [str(cid) for cid, _ in recall[:48] if cid is not None and str(cid).strip()]
+    if not ids:
+        return None
+    rows = session.exec(
+        select(StylebookLocationCanonical).where(col(StylebookLocationCanonical.id).in_(ids))
+    ).all()
+    for c in rows:
+        ck = (c.district_key or "").strip()
+        if ck == want:
+            return None
+    return CanonicalPersistPlan(
+        decision=CanonicalPersistDecision.DEFER,
+        resolution_reasons=(
+            {
+                "code": "district_identity_mismatch",
+                "message": (
+                    "Political district identity from PlaceExtract does not match any "
+                    "recalled canonical district key"
+                ),
+                "location_type": location.location_type,
+                "details": {
+                    "district_key": want,
+                    "recall_canonical_ids": ids[:24],
+                },
+            },
+        ),
+    )
 
 
 def _substrate_preflight_strict_gates(
@@ -422,6 +515,12 @@ def rank_scored_canonical_recall_matches(
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
         if strict_canonical_gates_enabled() and _jurisdiction_pair_demotes_recall_score(
             location, canon, comps
+        ):
+            sc = min(sc, RECALL_MIN_SCORE - 0.001)
+        if strict_canonical_gates_enabled() and _district_identity_pair_mismatch(comps, canon):
+            sc = min(sc, RECALL_MIN_SCORE - 0.001)
+        if strict_canonical_gates_enabled() and _address_neighborhood_geometry_demotes_recall(
+            location, canon, feat
         ):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
         rows.append((recall_index, str(canon_id), str(canon.label), sc))
@@ -615,6 +714,11 @@ def decide_canonical_persist_plan(
     intra_ambiguous = False
     if recall:
         recall_canonical_ids = tuple(str(cid) for cid, _ in recall)
+        pd_pf = _political_district_recall_identity_preflight(
+            session, location=location, entry=entry, recall=list(recall)
+        )
+        if pd_pf is not None:
+            return pd_pf
         ranked = rank_scored_canonical_recall_matches(
             session, location=location, recall=list(recall), entry=entry
         )
@@ -744,6 +848,24 @@ def plan_has_ambiguous_canonical_match(plan: CanonicalPersistPlan) -> bool:
     """True when rules deferred with an ambiguous fuzzy recall (LLM adjudication hook)."""
     for r in plan.resolution_reasons:
         if isinstance(r, dict) and str(r.get("code") or "") == "ambiguous_canonical_match":
+            return True
+    return False
+
+
+def plan_requires_llm_canonical_adjudication(
+    plan: CanonicalPersistPlan,
+    location: SubstrateLocation,
+) -> bool:
+    """True when AI-assisted mode should run LLM adjudication."""
+    if plan_has_ambiguous_canonical_match(plan):
+        return True
+    lt = (location.location_type or "").strip().lower()
+    if lt != "political_district":
+        return False
+    if plan.decision != CanonicalPersistDecision.LINK_EXISTING:
+        return False
+    for r in plan.resolution_reasons:
+        if isinstance(r, dict) and str(r.get("code") or "") == "linked_fuzzy_autolink":
             return True
     return False
 

@@ -128,6 +128,42 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         sr._geocode_hints = _geocode_hints_for_context(state)
         return sr
 
+    if location_type == "political_district":
+        dist = components.get("district") if isinstance(components.get("district"), dict) else {}
+        kind = str(dist.get("kind") or "").strip().lower() or "other"
+        num = str(dist.get("number") or "").strip()
+        ord_ = str(dist.get("ordinal") or "").strip()
+        scope = str(dist.get("scope") or "").strip().lower()
+        city_name = str(components.get("city") or "").strip()
+        state_info = components.get("state", {}) if isinstance(components, dict) else {}
+        state_name = state_info.get("name") if isinstance(state_info, dict) else None
+        state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else None
+        extra_context_parts: list[str] = []
+        if state.get("original_text"):
+            extra_context_parts.append(f"Original text: {state['original_text']}")
+        extra_fields = state.get("extra_fields") or {}
+        description = extra_fields.get("description")
+        if description:
+            extra_context_parts.append(f"Description: {description}")
+        hints_line = _geocode_hints_for_context(state)
+        if hints_line:
+            extra_context_parts.append(f"Geocode hints: {hints_line}")
+        extra_context_parts.append(
+            "This is a formal political district (ward, legislative district, or precinct). "
+            "Prefer a bbox covering the district if identifiable; otherwise estimate conservatively "
+            "within the stated city/state and do not swap the city for a same-named place elsewhere."
+        )
+        extra_context_parts.append(
+            f"District components: kind={kind!r}, number={num!r}, ordinal={ord_!r}, scope={scope!r}"
+        )
+        extra_context_parts.append(
+            f"Jurisdiction hints: city={city_name!r}, state_name={state_name!r}, state_abbr={state_abbr!r}"
+        )
+        label_bits = [f"{kind} {num}".strip(), city_name, state_abbr or state_name or ""]
+        name = location_text.strip() or ", ".join(b for b in label_bits if b)
+        additional_context = "\n".join(extra_context_parts) if extra_context_parts else None
+        return Region(name=name or location_text, country="US", additional_context=additional_context)
+
     if location_type.startswith("region"):
         extra_context_parts = []
         if state.get("original_text"):

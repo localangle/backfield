@@ -776,7 +776,7 @@ def test_candidates_types_returns_place_extract_taxonomy(client: TestClient) -> 
     assert "city" in types
     assert "intersection_road" in types
     assert types[-1] == "other"
-    assert len(types) == 16
+    assert len(types) == 17
 
 
 def test_candidates_400_when_project_has_no_workspace(client: TestClient) -> None:

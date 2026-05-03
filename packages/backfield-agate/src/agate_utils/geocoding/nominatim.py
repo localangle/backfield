@@ -150,7 +150,10 @@ class NominatimGeocoder:
             id=result_id,
             processed_str=location.raw.get("formatted_address", location.address),
             geometry=geometry,
-            confidence={},  # Empty dict since Nominatim doesn't provide confidence scores
+            confidence={
+                "nominatim_class": raw_data.get("class"),
+                "nominatim_type": raw_data.get("type"),
+            },
         )
         
         return GeocodingResult(

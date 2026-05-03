@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from backfield_stylebook.canonical_jurisdiction import (
     place_extract_components_from_entry,
+    stylebook_district_fields_from_components,
     stylebook_jurisdiction_fields_from_components,
 )
 from backfield_stylebook.canonical_link import (
@@ -224,6 +225,7 @@ def materialize_new_canonical_and_link(
     )
     comps = place_extract_components_from_entry(location, None)
     jur = stylebook_jurisdiction_fields_from_components(comps)
+    dfields = stylebook_district_fields_from_components(comps)
     canon = StylebookLocationCanonical(
         stylebook_id=stylebook_id,
         label=str(location.name),
@@ -238,6 +240,9 @@ def materialize_new_canonical_and_link(
         country_code=jur["country_code"],
         subdivision_code=jur["subdivision_code"],
         city_name=jur["city_name"],
+        district_kind=dfields["district_kind"],
+        district_number=dfields["district_number"],
+        district_key=dfields["district_key"],
     )
     session.add(canon)
     session.flush()

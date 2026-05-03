@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+from typing import Any
 
 from agate_utils.geocoding.h3 import h3_cell
 
@@ -12,6 +13,37 @@ from .geocode import _adv_info
 logger = logging.getLogger(__name__)
 
 AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
+
+
+def _city_geocode_admin_level_mismatch(
+    location_type: str,
+    formatted_line: str,
+    components: dict[str, Any],
+    geocoding_result: Any,
+) -> bool:
+    """True when we asked for a city (components.city set) but the resolver looks state/national-scale."""
+    if location_type not in ("city", "town"):
+        return False
+    city = str((components or {}).get("city") or "").strip()
+    if not city:
+        return False
+    label = (formatted_line or "").lower()
+    if city.lower() in label:
+        return False
+    result = getattr(geocoding_result, "result", None)
+    conf = getattr(result, "confidence", None) if result is not None else None
+    conf_dict: dict[str, Any] = conf if isinstance(conf, dict) else {}
+    geo = str(getattr(geocoding_result, "geocoder", "") or "")
+    layer = str(conf_dict.get("pelias_layer") or "").lower()
+    if layer in ("region", "country"):
+        return True
+    if geo == "nominatim" and str(conf_dict.get("nominatim_type") or "").lower() == "state":
+        return True
+    if geo.startswith("geocodio"):
+        acc_t = str(conf_dict.get("accuracy_type") or "").lower()
+        if acc_t == "state":
+            return True
+    return False
 
 
 def _attach_router_audit(entry: dict, state: AgentState) -> None:
@@ -178,7 +210,21 @@ async def consolidate_node(state: AgentState) -> AgentState:
     elif location_type in ["county"]:
         consolidated["places"]["areas"]["counties"].append(location_entry)
     elif location_type in ["city", "town"]:
-        consolidated["places"]["areas"]["cities"].append(location_entry)
+        components_for_qa = state.get("location_components") or {}
+        if _city_geocode_admin_level_mismatch(
+            location_type, formatted_line, components_for_qa, geocoding_result
+        ):
+            qa_entry = {
+                **location_entry,
+                "geocode_admin_level_mismatch": True,
+                "geocode_qa_code": "geocode_admin_level_mismatch",
+            }
+            _attach_router_audit(qa_entry, state)
+            consolidated["places"]["needs_review"].append(qa_entry)
+        else:
+            consolidated["places"]["areas"]["cities"].append(location_entry)
+    elif location_type == "political_district":
+        consolidated["places"]["areas"]["other"].append(location_entry)
     elif location_type in ["neighborhood", "district"]:
         consolidated["places"]["areas"]["neighborhoods"].append(location_entry)
     elif location_type in ["region", "area"] or location_type.startswith("region_"):

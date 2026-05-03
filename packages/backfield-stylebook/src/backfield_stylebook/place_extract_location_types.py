@@ -36,6 +36,7 @@ PLACE_EXTRACT_LOCATION_TYPES: tuple[str, ...] = (
     "intersection_highway",
     "street_road",
     "span",
+    "political_district",
     "neighborhood",
     "region_city",
     "city",

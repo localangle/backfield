@@ -7,7 +7,7 @@ from typing import Any
 from backfield_stylebook.canonical_link import CANONICAL_LINK_UNLINKED
 from backfield_stylebook.canonical_policy import (
     decide_canonical_persist_plan,
-    plan_has_ambiguous_canonical_match,
+    plan_requires_llm_canonical_adjudication,
 )
 from backfield_stylebook.db_output_settings import (
     DbOutputCanonicalSettings,
@@ -94,7 +94,7 @@ def persist_from_consolidated(
             )
             if (
                 settings.canonicalization_mode == "ai_assisted"
-                and plan_has_ambiguous_canonical_match(plan)
+                and plan_requires_llm_canonical_adjudication(plan, loc)
             ):
                 plan = adjudicate_ambiguous_plan_with_llm(
                     session,

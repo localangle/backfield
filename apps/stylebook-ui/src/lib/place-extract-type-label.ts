@@ -9,6 +9,7 @@ export const PLACE_EXTRACT_LOCATION_TYPES = [
   "intersection_highway",
   "street_road",
   "span",
+  "political_district",
   "neighborhood",
   "region_city",
   "city",
@@ -29,6 +30,7 @@ const TYPE_LABEL_OVERRIDES: Record<string, string> = {
   intersection_road: "Intersection (Road)",
   intersection_highway: "Intersection (Highway)",
   street_road: "Street/Road",
+  political_district: "Political district",
 }
 
 /** Human label for a PlaceExtract `location.type` value (snake_case → Title Case words, with overrides). */

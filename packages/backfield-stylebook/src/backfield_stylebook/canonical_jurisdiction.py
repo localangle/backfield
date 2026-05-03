@@ -240,3 +240,127 @@ def container_admin_query_from_components(comps: dict[str, Any]) -> str | None:
     if isinstance(cc, str) and len(cc) == 2:
         return f"{city}, {subdivision}, {cc}"
     return None
+
+
+_ALLOWED_DISTRICT_KINDS: frozenset[str] = frozenset(
+    {
+        "ward",
+        "us_house",
+        "state_senate",
+        "state_house",
+        "city_council",
+        "precinct",
+        "other",
+    }
+)
+
+
+def normalize_district_number_token(raw: str) -> str:
+    """Normalize district number for identity keys (alphanumeric + hyphens, lenient)."""
+    s = str(raw or "").strip().upper()
+    out: list[str] = []
+    for ch in s:
+        if ch.isalnum():
+            out.append(ch)
+        elif ch in ("-", "/", " "):
+            if out and out[-1] != "-":
+                out.append("-")
+    while out and out[-1] == "-":
+        out.pop()
+    return "".join(out)
+
+
+def district_identity_from_components(
+    comps: dict[str, Any],
+) -> tuple[str, str, str, str] | None:
+    """Return ``(kind, number_normalized, subdivision_code, country_code)`` or ``None``.
+
+    Requires a non-empty normalized district number and a 2-letter subdivision (state) code.
+    """
+    if not isinstance(comps, dict):
+        return None
+    raw = comps.get("district")
+    dist = raw if isinstance(raw, dict) else {}
+    kind = str(dist.get("kind") or "").strip().lower()
+    if kind and kind not in _ALLOWED_DISTRICT_KINDS:
+        kind = "other"
+    if not kind:
+        kind = "other"
+    num_raw = str(dist.get("number") or "").strip()
+    if not num_raw:
+        return None
+    num_norm = normalize_district_number_token(num_raw)
+    if not num_norm:
+        return None
+    country, subdivision, _city = jurisdiction_from_components(comps)
+    if not subdivision or len(subdivision) != 2:
+        return None
+    cc = (country or "US").strip().upper()[:2]
+    if len(cc) != 2:
+        cc = "US"
+    return (kind, num_norm, subdivision, cc)
+
+
+def district_identity_key(identity: tuple[str, str, str, str] | None) -> str | None:
+    """Stable key: ``{country}-{KIND}-{state}-{number}`` (e.g. ``US-US-HOUSE-MN-08``)."""
+    if identity is None:
+        return None
+    kind, num, state, country = identity
+    kind_part = kind.upper().replace("_", "-")
+    return f"{country}-{kind_part}-{state}-{num}"
+
+
+def stylebook_district_fields_from_components(comps: dict[str, Any]) -> dict[str, str | None]:
+    """Keyword args for :class:`StylebookLocationCanonical` district columns from PlaceExtract."""
+    raw = comps.get("district") if isinstance(comps.get("district"), dict) else {}
+    kind = str(raw.get("kind") or "").strip() or None
+    num = str(raw.get("number") or "").strip() or None
+    return {
+        "district_kind": kind,
+        "district_number": num,
+        "district_key": district_identity_key(district_identity_from_components(comps)),
+    }
+
+
+def geojson_point_lon_lat(geometry_json: dict[str, Any] | None) -> tuple[float, float] | None:
+    """Lon/lat for a GeoJSON Point, or ``None``."""
+    if not isinstance(geometry_json, dict):
+        return None
+    if str(geometry_json.get("type") or "").lower() != "point":
+        return None
+    coords = geometry_json.get("coordinates")
+    if not isinstance(coords, (list, tuple)) or len(coords) < 2:
+        return None
+    try:
+        lon = float(coords[0])
+        lat = float(coords[1])
+    except (TypeError, ValueError):
+        return None
+    return lon, lat
+
+
+def geojson_lon_lat_bbox(
+    geometry_json: dict[str, Any] | None,
+) -> tuple[float, float, float, float] | None:
+    """Axis-aligned bbox ``(min_lon, min_lat, max_lon, max_lat)`` from GeoJSON coordinates."""
+    if not isinstance(geometry_json, dict):
+        return None
+    pairs = list(_iter_lon_lat_pairs(geometry_json.get("coordinates")))
+    if not pairs:
+        return None
+    lons = [p[0] for p in pairs]
+    lats = [p[1] for p in pairs]
+    return (min(lons), min(lats), max(lons), max(lats))
+
+
+def point_in_geojson_bbox(
+    lon: float,
+    lat: float,
+    geometry_json: dict[str, Any] | None,
+) -> bool:
+    """True when ``(lon, lat)`` lies inside the lon/lat axis-aligned bbox of ``geometry_json``."""
+    bbox = geojson_lon_lat_bbox(geometry_json)
+    if bbox is None:
+        return False
+    min_lon, min_lat, max_lon, max_lat = bbox
+    return min_lon <= lon <= max_lon and min_lat <= lat <= max_lat

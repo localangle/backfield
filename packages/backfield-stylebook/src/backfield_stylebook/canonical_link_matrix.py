@@ -26,6 +26,7 @@ _STRICT_TYPE_GROUPS: tuple[frozenset[str], ...] = (
         }
     ),
     frozenset({"region_city"}),
+    frozenset({"political_district"}),
 )
 
 
@@ -38,6 +39,22 @@ def strict_type_group(location_type: str | None) -> frozenset[str] | None:
     return None
 
 
+# Symmetric substrate ↔ canonical pairs denied for autolink / adjudication (manual link may bypass).
+_DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
+    {
+        frozenset({"city", "county"}),
+        frozenset({"town", "county"}),
+        frozenset({"city", "neighborhood"}),
+        frozenset({"town", "neighborhood"}),
+        frozenset({"village", "neighborhood"}),
+        frozenset({"street_road", "neighborhood"}),
+        frozenset({"intersection_road", "neighborhood"}),
+        frozenset({"intersection_highway", "neighborhood"}),
+        frozenset({"span", "neighborhood"}),
+    }
+)
+
+
 def link_pair_allowed(substrate_lt: str | None, canonical_lt: str | None) -> bool:
     """Return ``True`` when substrate ↔ canonical types may be linked (symmetric).
 
@@ -48,6 +65,8 @@ def link_pair_allowed(substrate_lt: str | None, canonical_lt: str | None) -> boo
     c = (canonical_lt or "").strip().lower()
     if not s or not c:
         return True
+    if frozenset({s, c}) in _DENY_AUTOLINK_TYPE_PAIRS:
+        return False
     if s == "state" and c in ("place", "neighborhood", "address"):
         return False
     if s in ("country", "region_national") and c in ("place", "neighborhood", "address"):
