@@ -1,6 +1,12 @@
 import { ReactNode, useEffect, useState } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
-import { ShellProductBrand, UserAccountMenu } from "@backfield/ui"
+import { NavLink, useNavigate, useSearchParams } from "react-router-dom"
+import { BookOpen } from "lucide-react"
+import {
+  ShellProductBrand,
+  ShellSidebar,
+  UserAccountMenu,
+  cn,
+} from "@backfield/ui"
 import { useAuth } from "@/lib/auth"
 import { fetchProjects, type Project } from "@/lib/api"
 
@@ -40,9 +46,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b shrink-0 bg-background sticky top-0 z-[5000] overflow-visible">
-        <div className="px-4 py-4 flex justify-between items-center overflow-visible">
+    <div className="h-dvh min-h-0 bg-background flex flex-col overflow-hidden">
+      <header className="border-b shrink-0">
+        <div className="px-4 py-4 flex justify-between items-center">
           <ShellProductBrand
             to={indexPath}
             productTitle="Stylebook"
@@ -60,7 +66,41 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           </div>
         </div>
       </header>
-      <main className="container relative z-0 mx-auto px-4 py-8 overflow-visible">{children}</main>
+      <div className="flex flex-1 min-h-0">
+        <ShellSidebar
+          storageKey="stylebook-sidebar-expanded"
+          headerLeading={
+            <NavLink
+              to={indexPath}
+              end
+              title="Stylebook"
+              aria-label="Stylebook — home"
+              className={cn(
+                "flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1",
+                "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              <BookOpen
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+                Stylebook
+              </span>
+            </NavLink>
+          }
+        >
+          <nav
+            className="flex flex-col gap-1 p-2 flex-1 min-h-0"
+            aria-label="Stylebook"
+          />
+        </ShellSidebar>
+        <main className="flex-1 min-w-0 overflow-auto">
+          <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   )
 }

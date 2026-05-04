@@ -3,5 +3,7 @@ declare module "@backfield/ui" {
 
   export const ShellProductBrand: ComponentType<any>
   export const UserAccountMenu: ComponentType<any>
+  export const ShellSidebar: ComponentType<any>
+  export function cn(...inputs: unknown[]): string
 }
 

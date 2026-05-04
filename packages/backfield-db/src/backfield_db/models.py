@@ -147,6 +147,7 @@ class Stylebook(SQLModel, table=True):
     __tablename__ = "stylebook"
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_stylebook_organization_slug"),
+        UniqueConstraint("organization_id", "name", name="uq_stylebook_organization_name"),
         Index(
             "uq_stylebook_org_one_default",
             "organization_id",
@@ -168,6 +169,27 @@ class Stylebook(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
     updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookSlugRedirect(SQLModel, table=True):
+    """Prior slug for a stylebook row (used to redirect URLs after rename)."""
+
+    __tablename__ = "stylebook_slug_redirect"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "old_slug",
+            name="uq_stylebook_slug_redirect_org_old_slug",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    old_slug: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 

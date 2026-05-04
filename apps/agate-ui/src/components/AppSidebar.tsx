@@ -3,14 +3,13 @@ import { matchPath, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   Building2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   HelpCircle,
   LayoutTemplate,
   Newspaper,
   Plus,
   SquarePen,
 } from 'lucide-react'
+import { ShellSidebar } from '@backfield/ui'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { createProject, listProjects, type ProjectCreate } from '@/lib/api'
@@ -31,7 +30,6 @@ export default function AppSidebar() {
   const navigate = useNavigate()
   const { organizationName, isOrgAdmin } = useAuth()
   const publicationLabel = organizationName ?? 'Workspaces'
-  const [expanded, setExpanded] = useState(() => readBool(STORAGE_EXPANDED, true))
   const [workspacesOpen, setWorkspacesOpen] = useState(() =>
     readBool(STORAGE_WORKSPACES_OPEN, true),
   )
@@ -85,21 +83,12 @@ export default function AppSidebar() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_EXPANDED, String(expanded))
-    } catch {
-      /* ignore */
-    }
-  }, [expanded])
-
-  useEffect(() => {
-    try {
       localStorage.setItem(STORAGE_WORKSPACES_OPEN, String(workspacesOpen))
     } catch {
       /* ignore */
     }
   }, [workspacesOpen])
 
-  const toggleSidebar = useCallback(() => setExpanded((e) => !e), [])
   const toggleWorkspaces = useCallback(() => setWorkspacesOpen((o) => !o), [])
 
   const openNewProject = () => {
@@ -133,52 +122,30 @@ export default function AppSidebar() {
 
   return (
     <>
-      <aside
-        className={cn(
-          'flex flex-col border-r bg-muted/30 shrink-0 min-h-0 self-stretch transition-[width] duration-200 ease-out',
-          expanded ? 'w-56' : 'w-14',
-        )}
-        aria-label="Main navigation"
-      >
-        <div
-          className={cn(
-            'flex items-center min-w-0 p-2 border-b border-border/50',
-            expanded ? 'gap-1 justify-between' : 'justify-center',
-          )}
-        >
-          {expanded && (
-            <NavLink
-              to="/"
-              end
-              title={publicationLabel}
-              aria-label={`${publicationLabel} — all workspaces`}
-              className={cn(
-                'flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1',
-                'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              )}
-            >
-              <Newspaper
-                className="h-4 w-4 shrink-0 text-muted-foreground"
-                aria-hidden
-              />
-              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-                {publicationLabel}
-              </span>
-            </NavLink>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={toggleSidebar}
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+      <ShellSidebar
+        storageKey={STORAGE_EXPANDED}
+        headerLeading={
+          <NavLink
+            to="/"
+            end
+            title={publicationLabel}
+            aria-label={`${publicationLabel} — all workspaces`}
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1',
+              'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            )}
           >
-            {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </Button>
-        </div>
-
+            <Newspaper
+              className="h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+            <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+              {publicationLabel}
+            </span>
+          </NavLink>
+        }
+      >
+        {(expanded, { expand }) => (
         <nav className="flex flex-col gap-1 p-2 flex-1 min-h-0">
           <div>
             {expanded ? (
@@ -206,7 +173,7 @@ export default function AppSidebar() {
                 size="icon"
                 className="w-full h-9"
                 onClick={() => {
-                  setExpanded(true)
+                  expand()
                   setWorkspacesOpen(true)
                 }}
                 title="Workspaces"
@@ -310,7 +277,8 @@ export default function AppSidebar() {
             </NavLink>
           </div>
         </nav>
-      </aside>
+        )}
+      </ShellSidebar>
 
       <ProjectDialog
         open={projectDialogOpen}
