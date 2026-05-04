@@ -11,6 +11,8 @@ from sqlmodel import Session, select
 
 # Canonical param key on ``NodeConfig.params`` for catalog stylebook identity (integer DB id).
 STYLEBOOK_NODE_PARAM_KEY = "stylebook_id"
+# Legacy camelCase used by older GeocodeAgent panels — still counted for validation / impact.
+_LEGACY_STYLEBOOK_PARAM_KEY = "stylebookId"
 
 
 class StylebookGraphRefsError(ValueError):
@@ -36,6 +38,16 @@ def _coerce_stylebook_param(raw: Any) -> int | None:
     return None
 
 
+def stylebook_id_from_node_params(params: Mapping[str, Any]) -> int | None:
+    """Resolve stylebook id from node params (canonical key first, then legacy camelCase)."""
+    if not isinstance(params, dict):
+        return None
+    sid = _coerce_stylebook_param(params.get(STYLEBOOK_NODE_PARAM_KEY))
+    if sid is not None:
+        return sid
+    return _coerce_stylebook_param(params.get(_LEGACY_STYLEBOOK_PARAM_KEY))
+
+
 def iter_stylebook_refs_from_spec_dict(spec: Mapping[str, Any]) -> list[tuple[str, int]]:
     """Return ``(node_id, stylebook_id)`` for each node whose params set ``stylebook_id``."""
     out: list[tuple[str, int]] = []
@@ -49,7 +61,7 @@ def iter_stylebook_refs_from_spec_dict(spec: Mapping[str, Any]) -> list[tuple[st
         params = node.get("params")
         if not isinstance(nid, str) or not isinstance(params, dict):
             continue
-        sid = _coerce_stylebook_param(params.get(STYLEBOOK_NODE_PARAM_KEY))
+        sid = stylebook_id_from_node_params(params)
         if sid is not None:
             out.append((nid, sid))
     return out

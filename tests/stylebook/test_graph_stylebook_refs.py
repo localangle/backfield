@@ -41,6 +41,19 @@ def _minimal_spec_with_stylebook(node_id: str, stylebook_id: int) -> dict:
     }
 
 
+def test_iter_legacy_stylebookId_param() -> None:
+    """Older Geocode panels persisted camelCase ``stylebookId`` — still validated."""
+    spec = {
+        "name": "x",
+        "nodes": [
+            {"id": "a", "type": "GeocodeAgent", "params": {"stylebookId": 7}},
+        ],
+        "edges": [],
+    }
+    assert iter_stylebook_refs_from_spec_dict(spec) == [("a", 7)]
+    assert unique_stylebook_ids_from_spec_dict(spec) == [7]
+
+
 def test_iter_and_unique_ids() -> None:
     spec = {
         "name": "x",

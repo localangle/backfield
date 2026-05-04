@@ -34,7 +34,7 @@ const nodeMetadata = {
     "maxLocations": 100,
     "perLocationTimeout": 300,
     "useCache": false,
-    "stylebookId": null,
+    "stylebook_id": null,
     "stylebookApiUrl": "",
     "projectSlug": "",
     "evaluationModel": "gpt-5-nano",
@@ -78,13 +78,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-const NONE_STYLEBOOK = '__none__'
-
 const DEFAULTS = {
   maxLocations: 100,
   perLocationTimeout: 300,
   useCache: false,
-  stylebookId: null as number | null,
+  stylebook_id: null as number | null,
   stylebookApiUrl: '',
   projectSlug: '',
   evaluationModel: 'gpt-5-nano',
@@ -92,7 +90,7 @@ const DEFAULTS = {
 }
 
 const PANEL_DESCRIPTION =
-  'Turns extracted places into map-ready results: optional Stylebook cache, smart routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.'
+  'Turns extracted places into map-ready results: optional location cache, smart routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.'
 
 /** Same options as ``metadata.json`` ``availableModels`` (sync-nodes also injects ``nodeMetadata`` for the app). */
 const AVAILABLE_MODELS = [
@@ -115,6 +113,17 @@ interface GeocodeAgentPanelProps {
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
+/** Prefer canonical ``stylebook_id``; legacy persisted ``stylebookId`` is still read once. */
+function resolvedStylebookId(data: Record<string, unknown> | undefined): number | null {
+  const d = data || {}
+  const snake = d.stylebook_id
+  const camel = d.stylebookId
+  const raw = snake !== undefined && snake !== null ? snake : camel
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
 export default function GeocodeAgentPanel({
   node,
   editMode,
@@ -123,7 +132,12 @@ export default function GeocodeAgentPanel({
   graphContext,
   nodeOutputLookupSpec,
 }: GeocodeAgentPanelProps) {
-  const params = { ...DEFAULTS, ...(node.data || {}) }
+  const merged = { ...DEFAULTS, ...(node.data || {}) }
+  const legacyCamel = (node.data as Record<string, unknown> | undefined)?.stylebookId
+  if (merged.stylebook_id == null && legacyCamel != null && legacyCamel !== '') {
+    ;(merged as Record<string, unknown>).stylebook_id = legacyCamel
+  }
+  const params = merged
 
   const modelOptions = AVAILABLE_MODELS
 
@@ -147,7 +161,7 @@ export default function GeocodeAgentPanel({
       .catch((e: unknown) => {
         if (!cancelled) {
           setStylebooks([])
-          setStylebooksError(e instanceof Error ? e.message : 'Failed to load stylebooks')
+          setStylebooksError(e instanceof Error ? e.message : 'Could not load catalogs.')
         }
       })
     return () => {
@@ -155,10 +169,36 @@ export default function GeocodeAgentPanel({
     }
   }, [orgId, params.useCache])
 
-  const mergeData = (base: Record<string, unknown>) => ({
-    ...DEFAULTS,
-    ...base,
-  })
+  const mergeData = (base: Record<string, unknown>) => {
+    const out = {
+      ...DEFAULTS,
+      ...base,
+    }
+    delete (out as { stylebookId?: unknown }).stylebookId
+    return out
+  }
+
+  /** When cache is on, ensure a concrete catalog id (no empty selection). */
+  useEffect(() => {
+    if (!editMode || !setNodes || !params.useCache) return
+    const cur = resolvedStylebookId(node.data as Record<string, unknown>)
+    if (cur != null) return
+    const fallback =
+      graphContext?.workspaceDefaultStylebookId ??
+      stylebooks.find((s) => s.is_default)?.id ??
+      stylebooks[0]?.id
+    if (fallback == null) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({ ...(n.data || {}), stylebook_id: fallback }),
+            }
+          : n,
+      ),
+    )
+  }, [editMode, setNodes, params.useCache, node.id, node.data, graphContext?.workspaceDefaultStylebookId, stylebooks])
 
   const handleUseCacheChange = (checked: boolean) => {
     if (setNodes) {
@@ -166,10 +206,12 @@ export default function GeocodeAgentPanel({
         nodes.map((n) => {
           if (n.id !== node.id) return n
           const data = mergeData({ ...(n.data || {}), useCache: checked })
-          const rawSb = data.stylebookId as number | string | null | undefined
-          const missingStylebook = rawSb == null || rawSb === ''
-          if (checked && missingStylebook && graphContext?.workspaceDefaultStylebookId != null) {
-            data.stylebookId = graphContext.workspaceDefaultStylebookId
+          const sid = resolvedStylebookId(data as Record<string, unknown>)
+          if (checked && sid == null && graphContext?.workspaceDefaultStylebookId != null) {
+            data.stylebook_id = graphContext.workspaceDefaultStylebookId
+          }
+          if (!checked) {
+            data.stylebook_id = null
           }
           return { ...n, data }
         }),
@@ -177,16 +219,18 @@ export default function GeocodeAgentPanel({
     }
   }
 
-  const paramStylebookId = params.stylebookId as number | string | null | undefined
+  const paramStylebookId = resolvedStylebookId(params as Record<string, unknown>)
   const stylebookSelectValue =
-    paramStylebookId != null && paramStylebookId !== '' ? String(paramStylebookId) : NONE_STYLEBOOK
+    paramStylebookId != null ? String(paramStylebookId) : ''
 
   const handleStylebookSelect = (value: string) => {
     if (!setNodes) return
-    const nextId = value === NONE_STYLEBOOK ? null : Number(value)
+    const nextId = Number(value)
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
-        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), stylebookId: nextId }) } : n,
+        n.id === node.id
+          ? { ...n, data: mergeData({ ...(n.data || {}), stylebook_id: nextId }) }
+          : n,
       ),
     )
   }
@@ -314,37 +358,40 @@ export default function GeocodeAgentPanel({
               </Label>
             </div>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
-              Worker runs: match Stylebook canonicals and location cache before external geocoding when a
-              Stylebook is selected.
+              Worker runs: match catalog locations and location cache before external geocoding when a catalog is
+              selected.
             </p>
           </div>
 
           {params.useCache && (
             <div className="space-y-2">
               <Label htmlFor="geocode-stylebook" className="text-xs">
-                Stylebook
+                Catalog
               </Label>
               <Select
                 value={stylebookSelectValue}
                 onValueChange={handleStylebookSelect}
-                disabled={isDisabled || orgId == null}
+                disabled={isDisabled || orgId == null || stylebooks.length === 0}
               >
                 <SelectTrigger id="geocode-stylebook" className="text-xs">
-                  <SelectValue placeholder="Select a Stylebook" />
+                  <SelectValue placeholder="Choose a catalog" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NONE_STYLEBOOK}>None</SelectItem>
                   {stylebooks.map((sb) => (
                     <SelectItem key={sb.id} value={String(sb.id)}>
-                      {sb.name} ({sb.slug})
+                      {sb.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {orgId == null && (
                 <p className="text-xs text-muted-foreground">
-                  Save the flow to a project (or open an existing project flow) to load organization Stylebooks.
+                  Save the flow to a project (or open an existing project flow) to load catalogs for your
+                  organization.
                 </p>
+              )}
+              {orgId != null && params.useCache && stylebooks.length === 0 && !stylebooksError && (
+                <p className="text-xs text-muted-foreground">Loading catalogs…</p>
               )}
               {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
             </div>

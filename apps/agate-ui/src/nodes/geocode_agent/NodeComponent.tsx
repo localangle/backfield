@@ -34,7 +34,7 @@ const nodeMetadata = {
     "maxLocations": 100,
     "perLocationTimeout": 300,
     "useCache": false,
-    "stylebookId": null,
+    "stylebook_id": null,
     "stylebookApiUrl": "",
     "projectSlug": "",
     "evaluationModel": "gpt-5-nano",
