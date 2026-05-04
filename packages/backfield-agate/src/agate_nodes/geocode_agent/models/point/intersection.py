@@ -19,6 +19,7 @@ class Intersection(Point):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._original_text: Optional[str] = None
+        self._geocode_hints: Optional[str] = None
 
     ########## PRIVATE/HELPER METHODS ##########
 
@@ -44,6 +45,8 @@ class Intersection(Point):
 
         try:
             search_text = self._original_text or self.name
+            if self._geocode_hints and self._geocode_hints.strip():
+                search_text = f"{search_text}\n\nGeocode hints: {self._geocode_hints.strip()}"
             intersections, queries = await find_intersection_coordinates_from_text(search_text, openai_api_key)
             for idx, query in enumerate(queries):
                 logger.info("Overpass query %d for %s: %s", idx + 1, self.name, query[:200])

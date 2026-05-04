@@ -46,16 +46,19 @@ class StreetRoad(Area):
 
     def __init__(self, name: str, city: str = "", state: str = "", country: str = "US", **kwargs):
         super().__init__(name=name, city=city, state_abbr=state, country=country, **kwargs)
+        self._geocode_hints: Optional[str] = None
 
     ########## PRIVATE/HELPER METHODS ##########
 
     async def _create_llm_bounding_box(self, raw_json: str, original_text: str, openai_api_key: str) -> Optional[GeocodingResult]:
         try:
+            geocode_hints = (self._geocode_hints or "").strip() or "(none)"
             prompt = _load_prompt().format(
                 street_name=self.name,
                 city=self.city,
                 state_abbr=self.state_abbr,
                 original_text=original_text,
+                geocode_hints=geocode_hints,
                 raw_nominatim_data=raw_json,
             )
 

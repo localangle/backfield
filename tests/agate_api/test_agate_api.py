@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 
 import pytest
@@ -10,6 +11,7 @@ from api.main import app
 from api.routers import runs
 from backfield_auth import create_session_token
 from backfield_db import (
+    AgateRun,
     BackfieldOrganization,
     BackfieldOrganizationMembership,
     BackfieldProject,
@@ -269,6 +271,107 @@ def test_get_run_processed_item_not_found(monkeypatch, client: TestClient):
     ).json()
     run = client.post("/runs", json={"graph_id": graph["id"]}).json()
     assert client.get(f"/runs/{run['id']}/items/99999").status_code == 404
+
+
+def test_get_run_processed_item_synthetic_whole_run_pending(monkeypatch, client: TestClient):
+    """No DB processed-item rows for non-S3 runs; UI still uses route ``/items/1``."""
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    project = client.post("/projects", json={"name": "Synth Item", "slug": "synth-item"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Text flow",
+            "project_id": project["id"],
+            "spec": {
+                "name": "t",
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "type": "TextInput",
+                        "params": {"text": "Hi"},
+                        "position": {"x": 0, "y": 0},
+                    },
+                ],
+                "edges": [],
+            },
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    resp = client.get(f"/runs/{run['id']}/items/1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == 1
+    assert body["run_id"] == run["id"]
+    assert body["status"] == "pending"
+    assert body["input"] == {}
+    assert body.get("output") is None
+
+
+def test_get_run_processed_item_synthetic_second_item_404(monkeypatch, client: TestClient):
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    project = client.post("/projects", json={"name": "Synth 404", "slug": "synth-404"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Text flow",
+            "project_id": project["id"],
+            "spec": {"name": "t", "nodes": [], "edges": []},
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert client.get(f"/runs/{run['id']}/items/2").status_code == 404
+
+
+def test_get_run_processed_item_synthetic_with_run_result_json(tmp_path, monkeypatch):
+    database_path = tmp_path / "agate-synthetic-result.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        client = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project = client.post("/projects", json={"name": "Synth OK", "slug": "synth-ok"}).json()
+        graph = client.post(
+            "/graphs",
+            json={
+                "name": "JSON flow",
+                "project_id": project["id"],
+                "spec": {"name": "j", "nodes": [], "edges": []},
+            },
+        ).json()
+        run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+        rid = run["id"]
+        with Session(engine) as s:
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "succeeded"
+            row.result_json = json.dumps({"node_a": {"x": 1}})
+            s.add(row)
+            s.commit()
+
+        resp = client.get(f"/runs/{rid}/items/1")
+        assert resp.status_code == 200
+        assert resp.json()["node_outputs"]["node_a"]["x"] == 1
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_run_includes_mapbox_api_token_from_project_secrets(monkeypatch, client: TestClient):

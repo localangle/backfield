@@ -61,6 +61,8 @@ export interface AgateTemplate {
 export interface ProcessedItemSummary {
   id: number
   run_id: string
+  /** True when this row is UI-only (no ``agate_processed_item`` row); run output lives on the run. */
+  synthetic?: boolean
   source_file: string | null
   status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'
   error: string | null
@@ -77,6 +79,7 @@ export interface ProcessedItemSummary {
 export interface ProcessedItem {
   id: number
   run_id: string
+  synthetic?: boolean
   source_file: string | null
   input: Record<string, unknown>
   output: Record<string, unknown> | null
@@ -247,6 +250,7 @@ function normalizeRun(raw: RawRun): Run {
       {
         id: 1,
         run_id: raw.id,
+        synthetic: true,
         source_file: null,
         status: 'succeeded',
         error: null,
@@ -265,6 +269,7 @@ function normalizeRun(raw: RawRun): Run {
       {
         id: 1,
         run_id: raw.id,
+        synthetic: true,
         source_file: null,
         status: 'failed',
         error: raw.error_message || 'failed',

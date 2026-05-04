@@ -776,7 +776,7 @@ def test_candidates_types_returns_place_extract_taxonomy(client: TestClient) -> 
     assert "city" in types
     assert "intersection_road" in types
     assert types[-1] == "other"
-    assert len(types) == 16
+    assert len(types) == 17
 
 
 def test_candidates_400_when_project_has_no_workspace(client: TestClient) -> None:
@@ -1236,6 +1236,48 @@ def test_accept_candidate_create_new(
         ).all()
         assert len(aliases) == 1
         assert aliases[0].normalized_alias == "newplace"
+
+
+def test_accept_candidate_create_new_inherits_substrate_geometry(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    """Accept create_new copies substrate geometry when the client omits geometry_json."""
+    engine = stylebook_test_engine
+    gj: dict = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="GeomPlace",
+            normalized_name="geomplace",
+            location_type="address",
+            formatted_address="GeomPlace, Chicago, IL",
+            identity_fingerprint="fp-geom-inherit-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.post(
+        f"/v1/candidates/{sid}/accept?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"create_new": True, "name": "Geom Canon"},
+    )
+    assert r.status_code == 200
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        canon = s.get(StylebookLocationCanonical, str(row.stylebook_location_canonical_id))
+        assert canon is not None
+        assert canon.geometry_json == gj
+        assert canon.geometry_type == "Point"
 
 
 def test_accept_candidate_create_new_location_type_override(

@@ -114,6 +114,10 @@ class Place(BaseModel):
     """A place extracted from text."""
     original_text: str = Field(description="The original text from which this location was extracted")
     description: str = Field(description="Brief description of the location and its relevance")
+    geocode_hints: str = Field(
+        default="",
+        description="Concise story context for downstream geocoding (disambiguation, vague areas, ties to other mentions)",
+    )
     location: LocationInfo = Field(description="Location information with components")
     model_config = ConfigDict(extra='allow')  # Allow additional fields like 'mural'
 
@@ -249,10 +253,6 @@ class PlaceExtractNode:
         
         return prompt
     
-    def _escape_braces(self, s: str) -> str:
-        """Escape braces so they are not treated as placeholders."""
-        return s.replace("{", "{{").replace("}", "}}")
-    
     async def run(
         self,
         inp: PlaceExtractInput,
@@ -322,13 +322,14 @@ class PlaceExtractNode:
         # Build prompt using JSON path placeholders
         prompt = self._build_prompt(flattened_input, prompt_template)
         
-        # Concrete JSON example (prompts/_output_format.json), after framing not kept in extract.md
+        # Concrete JSON example (prompts/_output_format.json), appended after placeholders are filled.
+        # No brace escaping: ``_build_prompt`` already ran on ``prompt_template`` only; this JSON is
+        # concatenated as literal text (unlike ``str.format`` on a single string containing both).
         output_format = self._load_output_format_template()
-        escaped_format = self._escape_braces(output_format)
         prompt = (
             f"{prompt}\n\n"
             "The results should be returned in a JSON that looks like the following.\n\n"
-            f"{escaped_format}"
+            f"{output_format}"
         )
         
         # Log the prompt for debugging

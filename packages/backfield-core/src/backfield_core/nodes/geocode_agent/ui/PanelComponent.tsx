@@ -21,7 +21,21 @@ const DEFAULTS = {
   stylebookId: null as number | null,
   stylebookApiUrl: '',
   projectSlug: '',
+  evaluationModel: 'gpt-5-nano',
+  routerModel: 'gpt-5-nano',
 }
+
+const PANEL_DESCRIPTION =
+  'Turns extracted places into map-ready results: optional Stylebook cache, smart routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.'
+
+/** Same options as ``metadata.json`` ``availableModels`` (sync-nodes also injects ``nodeMetadata`` for the app). */
+const AVAILABLE_MODELS = [
+  { value: 'gpt-5.4', label: 'GPT 5.4' },
+  { value: 'gpt-5.2', label: 'GPT 5.2' },
+  { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
+  { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+]
 
 interface GeocodeAgentPanelProps {
   node: any
@@ -32,7 +46,6 @@ interface GeocodeAgentPanelProps {
   editMode?: boolean
   setNodes?: (nodes: any) => void
   graphContext?: GraphPanelContext
-  /** When set, resolves `execute_graph` snake_case output keys for this graph. */
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
@@ -45,6 +58,8 @@ export default function GeocodeAgentPanel({
   nodeOutputLookupSpec,
 }: GeocodeAgentPanelProps) {
   const params = { ...DEFAULTS, ...(node.data || {}) }
+
+  const modelOptions = AVAILABLE_MODELS
 
   const isDisabled = !(editMode && setNodes)
   const orgId = graphContext?.organizationId ?? null
@@ -74,21 +89,20 @@ export default function GeocodeAgentPanel({
     }
   }, [orgId, params.useCache])
 
+  const mergeData = (base: Record<string, unknown>) => ({
+    ...DEFAULTS,
+    ...base,
+  })
+
   const handleUseCacheChange = (checked: boolean) => {
     if (setNodes) {
       setNodes((nodes: any[]) =>
         nodes.map((n) => {
           if (n.id !== node.id) return n
-          const data: Record<string, unknown> = {
-            ...DEFAULTS,
-            ...(n.data || {}),
-            useCache: checked,
-          }
-          if (
-            checked &&
-            (data.stylebookId === null || data.stylebookId === undefined || data.stylebookId === '') &&
-            graphContext?.workspaceDefaultStylebookId != null
-          ) {
+          const data = mergeData({ ...(n.data || {}), useCache: checked })
+          const rawSb = data.stylebookId as number | string | null | undefined
+          const missingStylebook = rawSb == null || rawSb === ''
+          if (checked && missingStylebook && graphContext?.workspaceDefaultStylebookId != null) {
             data.stylebookId = graphContext.workspaceDefaultStylebookId
           }
           return { ...n, data }
@@ -97,19 +111,34 @@ export default function GeocodeAgentPanel({
     }
   }
 
+  const paramStylebookId = params.stylebookId as number | string | null | undefined
   const stylebookSelectValue =
-    params.stylebookId !== null && params.stylebookId !== undefined && params.stylebookId !== ''
-      ? String(params.stylebookId)
-      : NONE_STYLEBOOK
+    paramStylebookId != null && paramStylebookId !== '' ? String(paramStylebookId) : NONE_STYLEBOOK
 
   const handleStylebookSelect = (value: string) => {
     if (!setNodes) return
     const nextId = value === NONE_STYLEBOOK ? null : Number(value)
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
-        n.id === node.id
-          ? { ...n, data: { ...DEFAULTS, ...(n.data || {}), stylebookId: nextId } }
-          : n,
+        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), stylebookId: nextId }) } : n,
+      ),
+    )
+  }
+
+  const handleEvaluationModel = (value: string) => {
+    if (!setNodes) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), evaluationModel: value }) } : n,
+      ),
+    )
+  }
+
+  const handleRouterModel = (value: string) => {
+    if (!setNodes) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), routerModel: value }) } : n,
       ),
     )
   }
@@ -119,7 +148,8 @@ export default function GeocodeAgentPanel({
     node.id,
     nodeOutputLookupSpec ?? undefined,
   )
-  const latestData = nodeOutput || null
+  const latestData: Record<string, unknown> | null =
+    nodeOutput != null && typeof nodeOutput === 'object' ? (nodeOutput as Record<string, unknown>) : null
   const places = latestData?.places as
     | {
         areas?: Record<string, unknown[]>
@@ -133,13 +163,14 @@ export default function GeocodeAgentPanel({
       : 0
   const pointCount = Array.isArray(places?.points) ? places.points.length : 0
   const reviewCount = Array.isArray(places?.needs_review) ? places.needs_review.length : 0
-  const locationCount =
-    areaTotal + pointCount + reviewCount || (Array.isArray(latestData?.locations) ? latestData.locations.length : 0)
+  const locationsRaw = latestData?.locations
+  const locationsList: unknown[] = Array.isArray(locationsRaw) ? locationsRaw : []
+  const locationCount = areaTotal + pointCount + reviewCount || locationsList.length
   const sampleSnippet =
     places != null
       ? JSON.stringify(places, null, 2)
-      : latestData?.locations?.[0] != null
-        ? JSON.stringify(latestData.locations[0], null, 2)
+      : locationsList[0] != null
+        ? JSON.stringify(locationsList[0], null, 2)
         : ''
 
   return (
@@ -147,10 +178,7 @@ export default function GeocodeAgentPanel({
       <div className="space-y-3">
         <div>
           <Label className="text-sm font-medium">Description</Label>
-          <p className="text-sm text-muted-foreground mt-1">
-            This node uses LLM reasoning to intelligently geocode locations from Place Extract. It
-            enhances geocoding accuracy by understanding context and resolving ambiguities.
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">{PANEL_DESCRIPTION}</p>
         </div>
       </div>
 
@@ -160,22 +188,68 @@ export default function GeocodeAgentPanel({
         </div>
 
         <div className="space-y-3 mt-2">
+          <div className="space-y-2">
+            <Label className="text-xs">Evaluation model</Label>
+            <Select
+              value={String(params.evaluationModel)}
+              onValueChange={handleEvaluationModel}
+              disabled={isDisabled}
+            >
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent>
+                {modelOptions.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Used when the area geocoder asks the model to judge ambiguous map results.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Routing model</Label>
+            <Select
+              value={String(params.routerModel)}
+              onValueChange={handleRouterModel}
+              disabled={isDisabled}
+            >
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent>
+                {modelOptions.map((m) => (
+                  <SelectItem key={`r-${m.value}`} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Model used after cache check to choose how each place is looked up (web vs structured only). Run
+              records can include a short audit for support.
+            </p>
+          </div>
+
           <div className="pt-2 border-t">
             <div className="flex items-center space-x-2">
               <Checkbox
-                id="useCache"
+                id="geocode-useCache"
                 checked={params.useCache || false}
                 onCheckedChange={(c) => handleUseCacheChange(c === true)}
                 disabled={isDisabled}
               />
-              <Label htmlFor="useCache" className="text-xs font-medium cursor-pointer">
-                Use Cache
+              <Label htmlFor="geocode-useCache" className="text-xs font-medium cursor-pointer">
+                Use cache
               </Label>
             </div>
             <p className="text-xs text-muted-foreground mt-1 ml-6">
-              Worker runs: match Stylebook canonicals and location cache in Postgres before external
-              geocoding when a Stylebook is selected. Legacy HTTP Stylebook URL/slug in saved graphs
-              still applies only when no DB resolver is active.
+              Worker runs: match Stylebook canonicals and location cache before external geocoding when a
+              Stylebook is selected.
             </p>
           </div>
 
@@ -203,8 +277,7 @@ export default function GeocodeAgentPanel({
               </Select>
               {orgId == null && (
                 <p className="text-xs text-muted-foreground">
-                  Save the flow to a project (or open an existing project flow) to load organization
-                  Stylebooks.
+                  Save the flow to a project (or open an existing project flow) to load organization Stylebooks.
                 </p>
               )}
               {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
@@ -215,7 +288,7 @@ export default function GeocodeAgentPanel({
 
       {latestData && (
         <div className="pt-4 border-t">
-          <Label className="text-sm font-medium">Latest Run</Label>
+          <Label className="text-sm font-medium">Latest run</Label>
           <div className="mt-2 space-y-2">
             <div className="text-xs text-muted-foreground">
               <div>
@@ -225,7 +298,7 @@ export default function GeocodeAgentPanel({
 
             {locationCount > 0 && sampleSnippet && (
               <div>
-                <Label className="text-xs font-medium">Sample Output:</Label>
+                <Label className="text-xs font-medium">Sample output</Label>
                 <div className="text-xs font-mono p-2 bg-muted rounded mt-1 max-h-32 overflow-y-auto">
                   {sampleSnippet.substring(0, 200)}
                   {sampleSnippet.length > 200 ? '...' : ''}

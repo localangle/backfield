@@ -1,4 +1,4 @@
-"""Tests for :func:`link_pair_allowed` (permissive substrate ↔ canonical type policy)."""
+"""Tests for canonical type matrix, recall scoring, and substrate gates."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from backfield_stylebook.canonical_link_matrix import link_pair_allowed
 from backfield_stylebook.canonical_policy import (
     CanonicalPersistDecision,
     rank_scored_canonical_recall_matches,
+    substrate_may_materialize_canonical_after_recall,
 )
 from backfield_stylebook.substrate_canonical_link_actions import link_substrate_to_canonical_atomic
 from sqlmodel import Session, SQLModel, create_engine
@@ -31,10 +32,6 @@ from sqlmodel import Session, SQLModel, create_engine
         ("town", "city"),
         ("city", "town"),
         ("address", "city"),
-        ("intersection_road", "city"),
-        ("place", "city"),
-        ("city", "place"),
-        ("region_city", "city"),
         ("region_city", "ward"),
         ("ward", "region_city"),
         ("neighborhood", "county"),
@@ -366,8 +363,8 @@ def test_rank_does_not_drop_strict_to_flexible_candidates() -> None:
     assert len(ranked) == 1
 
 
-def test_decide_canonical_persist_plan_alias_links_intersection_to_city() -> None:
-    """Exact normalized alias hits city canonical; permissive type policy allows the link."""
+def test_decide_canonical_persist_plan_intersection_exact_alias_does_not_link_city() -> None:
+    """Exact alias on a city canonical does not link an intersection (type deny-list)."""
     from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
 
     engine = _make_engine()
@@ -417,10 +414,11 @@ def test_decide_canonical_persist_plan_alias_links_intersection_to_city() -> Non
             entry={"address_place_kind": "public_named"},
         )
 
-    assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
-    assert plan.existing_canonical_id == cid
+    assert plan.decision == CanonicalPersistDecision.DEFER
+    assert plan.existing_canonical_id is None
     reasons = plan.resolution_reasons[0]
-    assert reasons.get("code") == "linked_exact_normalized_alias"
+    assert reasons.get("code") == "ambiguous_canonical_match"
+    assert reasons.get("best_canonical_id") == cid
 
 
 def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None:
@@ -474,3 +472,75 @@ def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None
     assert plan.decision == CanonicalPersistDecision.DEFER
     assert plan.resolution_reasons
     assert plan.resolution_reasons[0].get("code") == "ambiguous_canonical_match"
+
+
+def test_decide_canonical_persist_plan_span_always_defers_even_with_exact_alias() -> None:
+    """Spans never auto-link or materialize; exact alias matches are ignored for ingest policy."""
+    from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-span-defer")
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="I-35 Pine to Hinckley",
+            slug="i35-span",
+            location_type="span",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="I-35 between Pine City and Hinckley, MN",
+                normalized_alias="i-35 between pine city and hinckley, mn",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="I-35 between Pine City and Hinckley, MN",
+            normalized_name="i-35 between pine city and hinckley, mn",
+            location_type="span",
+            status="resolved",
+            geometry_json={
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+            },
+            identity_fingerprint="fp-span-defer-1",
+        )
+
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry=None,
+        )
+
+    assert plan.decision == CanonicalPersistDecision.DEFER
+    assert plan.resolution_reasons
+    assert plan.resolution_reasons[0].get("code") == "road_span_not_canonicalized"
+
+
+def test_substrate_may_materialize_canonical_after_recall_false_for_span() -> None:
+    loc = SubstrateLocation(
+        project_id=1,
+        name="Lake St from A to B, Minneapolis, MN",
+        normalized_name="lake st from a to b, minneapolis, mn",
+        location_type="span",
+        status="resolved",
+        geometry_json={
+            "type": "Polygon",
+            "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+        },
+        identity_fingerprint="fp-span-mat-1",
+    )
+    assert substrate_may_materialize_canonical_after_recall(loc) is False

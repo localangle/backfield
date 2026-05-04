@@ -37,7 +37,7 @@ Backfield is a refactor of **agate-ai-platform** (`/Users/cjdd3b/apps/agate-ai-p
 
 ## Frontend changes
 
-- Read `docs/FRONTEND.md`.
+- Read `docs/FRONTEND.md` (including **User-facing copy**: all UI strings for **non-technical** users—**no** code-y jargon, API/DB internals, or developer shorthand in labels, errors, or empty states).
 - Update `src/lib/api.ts` when API contracts move.
 - Reuse existing UI patterns before creating new ones.
 - Run the relevant lint/build flow and smoke checks for user-visible behavior changes.

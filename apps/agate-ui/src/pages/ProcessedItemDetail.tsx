@@ -37,7 +37,7 @@ export default function ProcessedItemDetail() {
 
   // Auto-refresh for pending or running items (but only update if data changed)
   useEffect(() => {
-    if (item && (item.status === 'pending' || item.status === 'running')) {
+    if (item && !item.synthetic && (item.status === 'pending' || item.status === 'running')) {
       // Add random jitter to prevent thundering herd
       const baseInterval = 5000 // 5 seconds base interval
       const jitter = Math.random() * 1000 // Random 0-1 second jitter
@@ -49,7 +49,7 @@ export default function ProcessedItemDetail() {
         try {
           const [runData, itemData] = await Promise.all([
             getRun(runId),
-            getProcessedItem(runId, parseInt(itemId))
+            getProcessedItem(runId, parseInt(itemId, 10)),
           ])
           
           // Only update state if data has actually changed
@@ -71,19 +71,55 @@ export default function ProcessedItemDetail() {
   async function loadItemData() {
     if (!runId || !itemId) return
 
+    const parsedItemId = parseInt(itemId, 10)
+    if (Number.isNaN(parsedItemId)) {
+      setItem(null)
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
-      // Load run summary and full item details in parallel
-      const [runData, itemData, graphData] = await Promise.all([
-        getRun(runId),
-        getProcessedItem(runId, parseInt(itemId)),
-        getRun(runId).then(r => getGraph(r.graph_id))
-      ])
+      const runData = await getRun(runId)
+      const graphData = await getGraph(runData.graph_id)
       setRun(runData)
-      setItem(itemData)
       setGraph(graphData)
+
+      try {
+        const itemData = await getProcessedItem(runId, parsedItemId)
+        setItem({ ...itemData, synthetic: false })
+      } catch {
+        const syn = runData.items?.find((i) => i.id === parsedItemId && i.synthetic)
+        if (syn) {
+          const outs = runData.node_outputs ?? {}
+          setItem({
+            id: syn.id,
+            run_id: runId,
+            synthetic: true,
+            source_file: null,
+            input: {},
+            output: Object.keys(outs).length ? outs : null,
+            node_outputs: outs,
+            node_logs: null,
+            status:
+              syn.status === 'succeeded'
+                ? 'succeeded'
+                : syn.status === 'failed'
+                  ? 'failed'
+                  : syn.status === 'timed_out'
+                    ? 'timed_out'
+                    : 'failed',
+            error: syn.error,
+            created_at: syn.created_at,
+            updated_at: syn.updated_at,
+          })
+        } else {
+          setItem(null)
+        }
+      }
     } catch (error) {
       console.error('Failed to load item data:', error)
+      setItem(null)
     } finally {
       setLoading(false)
     }
@@ -341,6 +377,14 @@ export default function ProcessedItemDetail() {
 
   return (
     <div className="space-y-6">
+      {item.synthetic && (
+        <Alert>
+          <AlertDescription>
+            This run completed as a single graph execution (for example Text Input or JSON Input). There is
+            no separate batch item in the database; the node outputs below are the full run result.
+          </AlertDescription>
+        </Alert>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -371,31 +415,32 @@ export default function ProcessedItemDetail() {
               Download Output
             </Button>
           )}
-          <Button
-            variant="default"
-            disabled={rerunning || item.status === 'pending' || item.status === 'running'}
-            onClick={async () => {
-              if (!runId || !itemId) return
-              try {
-                setRerunning(true)
-                await rerunProcessedItem(runId, parseInt(itemId))
-                // Reload the item data to show updated status
-                await loadItemData()
-              } catch (e) {
-                console.error('Failed to rerun item:', e)
-                showError('Failed to rerun item. Please try again.')
-              } finally {
-                setRerunning(false)
-              }
-            }}
-          >
-            {rerunning ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <FileText className="mr-2 h-4 w-4" />
-            )}
-            Rerun Item
-          </Button>
+          {!item.synthetic && (
+            <Button
+              variant="default"
+              disabled={rerunning || item.status === 'pending' || item.status === 'running'}
+              onClick={async () => {
+                if (!runId || !itemId) return
+                try {
+                  setRerunning(true)
+                  await rerunProcessedItem(runId, parseInt(itemId, 10))
+                  await loadItemData()
+                } catch (e) {
+                  console.error('Failed to rerun item:', e)
+                  showError('Failed to rerun item. Please try again.')
+                } finally {
+                  setRerunning(false)
+                }
+              }}
+            >
+              {rerunning ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="mr-2 h-4 w-4" />
+              )}
+              Rerun Item
+            </Button>
+          )}
         </div>
       </div>
 

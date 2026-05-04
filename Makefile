@@ -2,7 +2,7 @@
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE)
 
-.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke stylebook-ui-build
+.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-place-geocode smoke-place-geocode-stack stylebook-ui-build
 
 help:
 	@echo "Backfield"
@@ -24,6 +24,8 @@ help:
 	@echo "  make format      - Ruff format"
 	@echo "  make bootstrap   - uv sync (root) for local tooling"
 	@echo "  make smoke       - Golden-path smoke against a live stack"
+	@echo "  make smoke-place-geocode - In-process PlaceExtract + GeocodeAgent corpus (not CI)"
+	@echo "  make smoke-place-geocode-stack - Same script --via-agate-api (enqueue one graph run)"
 	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
 
 bootstrap:
@@ -88,6 +90,12 @@ format:
 
 smoke:
 	uv run python -u tests/smoke/golden_path_stack.py
+
+smoke-place-geocode:
+	uv run python -u tests/smoke/place_geocode_smoke.py
+
+smoke-place-geocode-stack:
+	uv run python -u tests/smoke/place_geocode_smoke.py --via-agate-api
 
 stylebook-ui-build:
 	cd packages/backfield-ui && npm ci

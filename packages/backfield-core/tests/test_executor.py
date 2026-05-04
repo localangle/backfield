@@ -16,6 +16,7 @@ def _mock_place_extract_json(city: str, state_name: str, state_abbr: str) -> str
                 {
                     "original_text": f"{city}, {state_abbr}",
                     "description": f"Mention of {city}",
+                    "geocode_hints": "",
                     "location": f"{city}, {state_abbr}",
                     "type": "city",
                     "components": {
@@ -275,7 +276,7 @@ def test_four_node_pipeline_mock_geocode():
             return_value=_mock_place_extract_json("Austin", "Texas", "TX"),
         ),
         patch(
-            "agate_nodes.geocode_agent.node.run_geocoding_agent",
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
             side_effect=_fake_run_geocoding_agent,
         ),
     ):
@@ -316,12 +317,54 @@ def test_dboutput_direct_upstream_without_json_output():
             return_value=_mock_place_extract_json("Austin", "Texas", "TX"),
         ),
         patch(
-            "agate_nodes.geocode_agent.node.run_geocoding_agent",
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
             side_effect=_fake_run_geocoding_agent,
         ),
     ):
         out = execute_graph(spec)
 
+    assert "__outputKeysByNodeId" not in out
+    db_out = out["stylebook_output"]
+    assert db_out.get("success") is True
+    assert "places" in db_out
+    cities = db_out["places"]["areas"]["cities"]
+    assert cities and cities[0]["name"] == "Austin"
+
+
+def test_geocode_agent_model_params_dboutput_direct_upstream():
+    """GeocodeAgent with evaluation/router model params uses the same DBOutput merge path."""
+    spec = GraphSpec(
+        name="pipeline-geocode-models",
+        nodes=[
+            NodeConfig(id="n1", type="TextInput", params={"text": "Meetings in Austin, TX."}),
+            NodeConfig(id="n2", type="PlaceExtract", params={}),
+            NodeConfig(
+                id="n3",
+                type="GeocodeAgent",
+                params={"evaluationModel": "gpt-5-mini", "routerModel": "gpt-5-nano"},
+            ),
+            NodeConfig(id="n5", type="DBOutput", params={}),
+        ],
+        edges=[
+            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(source="n2", target="n3", sourceHandle="locations", targetHandle="locations"),
+            Edge(source="n3", target="n5", sourceHandle="locations", targetHandle="data"),
+        ],
+    )
+
+    with (
+        patch(
+            "agate_nodes.place_extract.node_port.call_llm",
+            return_value=_mock_place_extract_json("Austin", "Texas", "TX"),
+        ),
+        patch(
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
+            side_effect=_fake_run_geocoding_agent,
+        ),
+    ):
+        out = execute_graph(spec)
+
+    assert "geocode_agent" in out
     assert "__outputKeysByNodeId" not in out
     db_out = out["stylebook_output"]
     assert db_out.get("success") is True
@@ -363,7 +406,7 @@ def test_json_input_article_fields_reach_dboutput_after_geocode():
             return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
         ),
         patch(
-            "agate_nodes.geocode_agent.node.run_geocoding_agent",
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
             side_effect=_fake_run_geocoding_agent,
         ),
     ):

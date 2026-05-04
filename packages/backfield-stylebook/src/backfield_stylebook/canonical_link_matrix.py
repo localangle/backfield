@@ -26,6 +26,7 @@ _STRICT_TYPE_GROUPS: tuple[frozenset[str], ...] = (
         }
     ),
     frozenset({"region_city"}),
+    frozenset({"political_district"}),
 )
 
 
@@ -38,22 +39,102 @@ def strict_type_group(location_type: str | None) -> frozenset[str] | None:
     return None
 
 
-def link_pair_allowed(_substrate_lt: str | None, _canonical_lt: str | None) -> bool:
+# Symmetric substrate ↔ canonical pairs denied for autolink / adjudication (manual link may bypass).
+# Includes macro-region vs municipality (city/town↔region_city), region vs linear corridors,
+# linear vs municipality, POI vs neighborhood/macro-region, neighborhood vs macro-region,
+# POI/point vs municipality (city/town/village), and POI/point vs street_road
+# (see docs/ARCHITECTURE.md ingest policy).
+_DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
+    {
+        frozenset({"city", "county"}),
+        frozenset({"town", "county"}),
+        # Municipality must not merge with parent state (e.g. Springfield, IL ↔ Illinois).
+        frozenset({"city", "state"}),
+        frozenset({"town", "state"}),
+        frozenset({"village", "state"}),
+        frozenset({"city", "region_state"}),
+        frozenset({"town", "region_state"}),
+        frozenset({"village", "region_state"}),
+        frozenset({"city", "neighborhood"}),
+        frozenset({"town", "neighborhood"}),
+        frozenset({"village", "neighborhood"}),
+        frozenset({"street_road", "neighborhood"}),
+        frozenset({"intersection_road", "neighborhood"}),
+        frozenset({"intersection_highway", "neighborhood"}),
+        frozenset({"span", "neighborhood"}),
+        # Colloquial macro-regions must not merge with municipalities or linear features.
+        frozenset({"city", "region_city"}),
+        frozenset({"town", "region_city"}),
+        frozenset({"region_city", "street_road"}),
+        frozenset({"region_city", "intersection_road"}),
+        frozenset({"region_city", "intersection_highway"}),
+        frozenset({"region_city", "span"}),
+        # Linear features are not their containing city or town.
+        frozenset({"city", "street_road"}),
+        frozenset({"street_road", "town"}),
+        frozenset({"city", "intersection_road"}),
+        frozenset({"intersection_road", "town"}),
+        frozenset({"city", "intersection_highway"}),
+        frozenset({"intersection_highway", "town"}),
+        frozenset({"city", "span"}),
+        frozenset({"span", "town"}),
+        # POI / macro-region / neighborhood identity must not collapse across these pairs.
+        frozenset({"neighborhood", "place"}),
+        frozenset({"place", "region_city"}),
+        frozenset({"neighborhood", "region_city"}),
+        # POI / point must not collapse onto a parent municipality canonical.
+        frozenset({"city", "place"}),
+        frozenset({"place", "town"}),
+        frozenset({"place", "village"}),
+        frozenset({"city", "point"}),
+        frozenset({"point", "town"}),
+        frozenset({"point", "village"}),
+        # POI / point identity must not collapse onto a street corridor canonical.
+        frozenset({"place", "street_road"}),
+        frozenset({"point", "street_road"}),
+    }
+)
+
+
+def link_pair_allowed(substrate_lt: str | None, canonical_lt: str | None) -> bool:
     """Return ``True`` when substrate ↔ canonical types may be linked (symmetric).
 
-    Policy is **permissive**: any ``location_type`` pair is allowed for auto-link,
-    alias link, and adjudication. Wrong merges are meant to be prevented by scoring,
-    recall, head-anchor gates, and human review—not by a fixed type matrix.
-
-    Add explicit ``False`` cases here later if product rules require a deny-list.
+    Deny-list (autolink / adjudication / manual type gate): blocks gross type mismatches
+    such as linking a **state** substrate row to a **place** canonical.
     """
+    s = (substrate_lt or "").strip().lower()
+    c = (canonical_lt or "").strip().lower()
+    if not s or not c:
+        return True
+    if frozenset({s, c}) in _DENY_AUTOLINK_TYPE_PAIRS:
+        return False
+    if s == "state" and c in ("place", "neighborhood", "address"):
+        return False
+    if s in ("country", "region_national") and c in ("place", "neighborhood", "address"):
+        return False
+    if s == "county" and c in ("place", "address"):
+        return False
     return True
+
+
+_CONTAINER_SUBSTRATE_TYPES: frozenset[str] = frozenset(
+    {"city", "town", "village", "county", "region_city"}
+)
+_FINE_CANONICAL_TYPES: frozenset[str] = frozenset({"place", "neighborhood", "address"})
+
+
+def autolink_container_to_fine_denied(substrate_lt: str | None, canonical_lt: str | None) -> bool:
+    """True when a coarse substrate geography must not autolink to a fine-grained canonical."""
+    s = (substrate_lt or "").strip().lower()
+    c = (canonical_lt or "").strip().lower()
+    return s in _CONTAINER_SUBSTRATE_TYPES and c in _FINE_CANONICAL_TYPES
 
 
 def types_are_comparable(_substrate_lt: str | None, _canonical_lt: str | None) -> bool:
     """Return True when a substrate/canonical pair should be *compared* for matching.
 
-    Recall scoring compares candidates broadly. :func:`link_pair_allowed` is equally
-    permissive for automatic linking; both default to allowing the pair.
+    Recall scoring compares candidates broadly (cross-type recall is still allowed so
+    scoring can down-rank mismatches). Autolink and exact-alias paths additionally apply
+    :func:`link_pair_allowed` and :func:`autolink_container_to_fine_denied`.
     """
     return True

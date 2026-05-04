@@ -385,3 +385,153 @@ def test_adjudicate_rejects_llm_choice_when_link_pair_denied(monkeypatch) -> Non
         assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
         adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
         assert adj.get("outcome") == "no_high_confidence_link"
+
+
+def test_adjudicate_political_district_fuzzy_plan_runs_llm(monkeypatch) -> None:
+    """``linked_fuzzy_autolink`` + political_district is adjudicated like ambiguity."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        c1 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 8, Chicago, IL",
+            slug="ward-8-chi",
+            location_type="political_district",
+            district_key="US-WARD-IL-8",
+            district_kind="ward",
+            district_number="8",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(c1)
+        session.commit()
+        session.refresh(c1)
+        id1 = str(c1.id)
+
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Eighth Ward, Chicago, IL",
+            normalized_name="eighth ward, chicago, il",
+            location_type="political_district",
+            identity_fingerprint="fp-adj-pd",
+            source_details_json={
+                "place_extract_components": {
+                    "district": {"kind": "ward", "number": "8"},
+                    "city": "Chicago",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.LINK_EXISTING,
+            existing_canonical_id=id1,
+            resolution_reasons=(
+                {
+                    "code": "linked_fuzzy_autolink",
+                    "canonical_id": id1,
+                    "recall_canonical_ids": [id1],
+                },
+            ),
+        )
+
+        def _fake_llm(prompt: str, *_a, **_k) -> str:
+            assert "District identity key" in prompt
+            assert "US-WARD-IL-8" in prompt
+            return (
+                f'{{"canonical_id": "{id1}", "confidence": 0.95, '
+                f'"rationale": "Same ward number and city."}}'
+            )
+
+        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert out.existing_canonical_id == id1
+
+
+def test_adjudicate_political_district_coerces_when_district_key_mismatch(monkeypatch) -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        c1 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 7, Chicago, IL",
+            slug="ward-7-chi",
+            location_type="political_district",
+            district_key="US-WARD-IL-7",
+            district_kind="ward",
+            district_number="7",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(c1)
+        session.commit()
+        session.refresh(c1)
+        id1 = str(c1.id)
+
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Ward 8, Chicago, IL",
+            normalized_name="ward 8, chicago, il",
+            location_type="political_district",
+            identity_fingerprint="fp-adj-pd2",
+            source_details_json={
+                "place_extract_components": {
+                    "district": {"kind": "ward", "number": "8"},
+                    "city": "Chicago",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.LINK_EXISTING,
+            existing_canonical_id=id1,
+            resolution_reasons=(
+                {
+                    "code": "linked_fuzzy_autolink",
+                    "canonical_id": id1,
+                    "recall_canonical_ids": [id1],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                f'{{"canonical_id": "{id1}", "confidence": 0.95, '
+                f'"rationale": "LLM wrongly picks nearby ward."}}'
+            )
+
+        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "district_key_mismatch_coerced"

@@ -213,6 +213,12 @@ class StylebookLocationCanonical(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    country_code: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    subdivision_code: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    city_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    district_kind: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    district_number: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    district_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
@@ -519,6 +525,11 @@ class SubstrateLocation(SQLModel, table=True):
         sa_column=Column(Text, nullable=True, index=True),
     )
     geometry_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    # GeocodeAgent structured router audit (from ``agate_geocode_router_audit``).
+    geocode_router_audit_json: dict[str, Any] | list[Any] | None = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
     )

@@ -44,6 +44,7 @@ make lint
 make test
 make stylebook-ui-build   # when apps/stylebook-ui changes
 make smoke   # live stack; see docs/TESTING.md (session vs service-token modes)
+make smoke-place-geocode   # optional: PlaceExtract + GeocodeAgent corpus (docs/TESTING.md)
 ```
 
 ### Environment

@@ -4,6 +4,9 @@ Street/Road: {street_name}
 City: {city}
 State: {state_abbr}
 Original Text Context: "{original_text}"
+Geocode hints: {geocode_hints}
+
+Use **geocode_hints** as extra story context when they are not `(none)` (disambiguation, vague stretches, nearby anchors).
 
 Raw Nominatim Data:
 {raw_nominatim_data}
