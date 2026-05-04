@@ -11,7 +11,6 @@ import {
   HelpCircle,
   Newspaper,
   Plus,
-  SquarePen,
 } from 'lucide-react'
 import { ShellSidebar } from '@backfield/ui'
 import { Button } from '@/components/ui/button'
@@ -28,10 +27,6 @@ import {
 } from '@/lib/stylebook-org-api'
 
 const STORAGE_EXPANDED = 'agate-sidebar-expanded'
-
-function isSidebarWorkspacePage(ws: WorkspaceWithProjects): boolean {
-  return ws.id > 0 && ws.slug !== '_ungrouped'
-}
 
 function pickProjectSlugForStylebookLinks(
   activeSlug: string | null,
@@ -250,36 +245,16 @@ export default function AppSidebar() {
               {(expanded ? workspaceRows : []).map((ws) => {
                 const wsActive = activeWorkspaceSlug === ws.slug
                 return (
-                  <div
+                  <NavLink
                     key={`${ws.slug}-${ws.id}`}
-                    className="flex items-center gap-0.5 min-w-0"
+                    to={`/workspace/${encodeURIComponent(ws.slug)}`}
+                    title={ws.name}
+                    aria-label={`Open workspace ${ws.name}`}
+                    aria-current={wsActive ? 'page' : undefined}
+                    className={() => workspaceRowClass(wsActive)}
                   >
-                    <NavLink
-                      to={`/workspace/${encodeURIComponent(ws.slug)}`}
-                      title={ws.name}
-                      aria-label={`Open workspace ${ws.name}`}
-                      aria-current={wsActive ? 'page' : undefined}
-                      className={() => workspaceRowClass(wsActive)}
-                    >
-                      <span className="min-w-0 truncate">{ws.name}</span>
-                    </NavLink>
-                    {expanded && isSidebarWorkspacePage(ws) ? (
-                      <NavLink
-                        to={`/workspace/${encodeURIComponent(ws.slug)}`}
-                        title={`${ws.name} — workspace settings`}
-                        aria-label={`Workspace settings for ${ws.name}`}
-                        className={({ isActive }) =>
-                          cn(
-                            'shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors',
-                            'hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                            isActive ? 'bg-muted text-foreground' : 'text-muted-foreground/80',
-                          )
-                        }
-                      >
-                        <SquarePen className="h-3.5 w-3.5" aria-hidden />
-                      </NavLink>
-                    ) : null}
-                  </div>
+                    <span className="min-w-0 truncate">{ws.name}</span>
+                  </NavLink>
                 )
               })}
 
