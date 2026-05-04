@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from backfield_db import BackfieldProject, Stylebook
+from backfield_db import BackfieldProject
 from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session
 
-from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
+from backfield_stylebook.resolve import resolve_effective_stylebook_id_for_project
 
 CanonicalizationMode = Literal["rules", "ai_assisted"]
 AdjudicationModel = Literal["gpt-5-nano", "gpt-5-mini"]
@@ -49,19 +49,18 @@ def resolve_effective_stylebook_id(
     project_id: int,
     stylebook_id_override: int | None,
 ) -> int:
-    """Return Stylebook id for persistence, validating org ownership when override is set."""
+    """Return catalog id for DBOutput persistence (node override, else workspace).
+
+    Delegates to :func:`resolve_effective_stylebook_id_for_project` so precedence matches
+    the documented bridge order (explicit id → slug — unused here — → workspace).
+    """
     proj = session.get(BackfieldProject, project_id)
     if proj is None:
         msg = f"project {project_id} not found"
         raise ValueError(msg)
-    oid = int(proj.organization_id)
-    if stylebook_id_override is not None:
-        sb = session.get(Stylebook, int(stylebook_id_override))
-        if sb is None or sb.id is None:
-            msg = f"stylebook {stylebook_id_override} not found"
-            raise ValueError(msg)
-        if int(sb.organization_id) != oid:
-            msg = "stylebook does not belong to the project's organization"
-            raise ValueError(msg)
-        return int(sb.id)
-    return resolve_stylebook_id_for_project_id(session, project_id)
+    return resolve_effective_stylebook_id_for_project(
+        session,
+        proj,
+        stylebook_slug=None,
+        catalog_stylebook_id=stylebook_id_override,
+    )

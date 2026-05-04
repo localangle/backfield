@@ -185,6 +185,8 @@ def _require_stylebook_id(
         return resolve_effective_stylebook_id_for_project(
             session, project, stylebook_slug=stylebook_slug
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except LookupError as e:
         if str(e) == STYLEBOOK_SLUG_NOT_IN_ORG:
             raise HTTPException(

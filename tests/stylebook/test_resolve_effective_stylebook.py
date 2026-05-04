@@ -128,3 +128,138 @@ def test_unknown_slug_raises() -> None:
             assert str(e) == STYLEBOOK_SLUG_NOT_IN_ORG
         else:
             raise AssertionError("expected LookupError")
+
+
+def test_catalog_id_override_wins_workspace_default() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(slug="org-cat", name="Org Cat")
+        session.add(org)
+        session.flush()
+
+        sb_a = Stylebook(organization_id=int(org.id), slug="alpha", name="Alpha", is_default=False)
+        sb_b = Stylebook(organization_id=int(org.id), slug="beta", name="Beta", is_default=True)
+        session.add(sb_a)
+        session.add(sb_b)
+        session.flush()
+
+        ws = BackfieldWorkspace(
+            organization_id=int(org.id),
+            name="WS",
+            slug="ws-cat",
+            stylebook_id=int(sb_b.id),
+        )
+        session.add(ws)
+        session.flush()
+
+        proj = BackfieldProject(
+            organization_id=int(org.id),
+            workspace_id=int(ws.id),
+            name="Proj",
+            slug="proj-cat",
+        )
+        session.add(proj)
+        session.commit()
+
+        got = resolve_effective_stylebook_id_for_project(
+            session,
+            proj,
+            catalog_stylebook_id=int(sb_a.id),
+        )
+        assert got == int(sb_a.id)
+
+
+def test_catalog_id_override_wins_slug() -> None:
+    """Explicit integer catalog wins over ``stylebook_slug`` when both are set."""
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(slug="org-both", name="Org Both")
+        session.add(org)
+        session.flush()
+
+        sb_a = Stylebook(organization_id=int(org.id), slug="alpha", name="Alpha", is_default=False)
+        sb_b = Stylebook(organization_id=int(org.id), slug="beta", name="Beta", is_default=True)
+        session.add(sb_a)
+        session.add(sb_b)
+        session.flush()
+
+        ws = BackfieldWorkspace(
+            organization_id=int(org.id),
+            name="WS",
+            slug="ws-both",
+            stylebook_id=int(sb_b.id),
+        )
+        session.add(ws)
+        session.flush()
+
+        proj = BackfieldProject(
+            organization_id=int(org.id),
+            workspace_id=int(ws.id),
+            name="Proj",
+            slug="proj-both",
+        )
+        session.add(proj)
+        session.commit()
+
+        got = resolve_effective_stylebook_id_for_project(
+            session,
+            proj,
+            stylebook_slug="beta",
+            catalog_stylebook_id=int(sb_a.id),
+        )
+        assert got == int(sb_a.id)
+
+
+def test_catalog_id_wrong_organization_raises() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org1 = BackfieldOrganization(slug="org1-c", name="O1")
+        org2 = BackfieldOrganization(slug="org2-c", name="O2")
+        session.add(org1)
+        session.add(org2)
+        session.flush()
+
+        sb_foreign = Stylebook(
+            organization_id=int(org2.id),
+            slug="foreign",
+            name="Foreign",
+            is_default=True,
+        )
+        sb_home = Stylebook(
+            organization_id=int(org1.id),
+            slug="home",
+            name="Home",
+            is_default=True,
+        )
+        session.add(sb_foreign)
+        session.add(sb_home)
+        session.flush()
+
+        ws = BackfieldWorkspace(
+            organization_id=int(org1.id),
+            name="WS",
+            slug="ws-both-o",
+            stylebook_id=int(sb_home.id),
+        )
+        session.add(ws)
+        session.flush()
+
+        proj = BackfieldProject(
+            organization_id=int(org1.id),
+            workspace_id=int(ws.id),
+            name="Proj",
+            slug="proj-both-o",
+        )
+        session.add(proj)
+        session.commit()
+
+        try:
+            resolve_effective_stylebook_id_for_project(
+                session,
+                proj,
+                catalog_stylebook_id=int(sb_foreign.id),
+            )
+        except ValueError as e:
+            assert "organization" in str(e).lower()
+        else:
+            raise AssertionError("expected ValueError")
