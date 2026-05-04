@@ -18,7 +18,10 @@ from backfield_db import (
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.locations import create_standalone_canonical
 from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
+from backfield_stylebook.resolve import (
+    STYLEBOOK_SLUG_NOT_IN_ORG,
+    resolve_effective_stylebook_id_for_project,
+)
 from backfield_stylebook.substrate_canonical_link_actions import (
     link_substrate_to_canonical_atomic,
     unlink_substrate_from_canonical,
@@ -30,6 +33,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
+from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
@@ -172,10 +176,21 @@ class PatchCanonicalGeometryBody(BaseModel):
     geometry_json: dict[str, Any] | None  # required field; use explicit JSON null to clear
 
 
-def _require_stylebook_id(session: Session, project: BackfieldProject) -> int:
+def _require_stylebook_id(
+    session: Session,
+    project: BackfieldProject,
+    stylebook_slug: str | None = None,
+) -> int:
     try:
-        return resolve_stylebook_id_for_project_id(session, int(project.id))
+        return resolve_effective_stylebook_id_for_project(
+            session, project, stylebook_slug=stylebook_slug
+        )
     except LookupError as e:
+        if str(e) == STYLEBOOK_SLUG_NOT_IN_ORG:
+            raise HTTPException(
+                status_code=404,
+                detail="No catalog matches that name in your organization.",
+            ) from e
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
@@ -187,9 +202,10 @@ def _persist_new_catalog_canonical(
     geometry_json: dict[str, Any] | None,
     location_type: str | None = None,
     formatted_address: str | None = None,
+    stylebook_slug: str | None = None,
 ) -> CanonicalLocationResponse:
     """Insert canonical + primary alias; no substrate row."""
-    stylebook_id = _require_stylebook_id(session, project)
+    stylebook_id = _require_stylebook_id(session, project, stylebook_slug)
     canon = create_standalone_canonical(
         session,
         stylebook_id=stylebook_id,
@@ -410,6 +426,7 @@ class LinkedSubstratesResponse(BaseModel):
 @router.get("/canonical-locations", response_model=PaginatedCanonicalLocationResponse)
 def list_canonical_locations(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     q: str | None = None,
     type_filter: str | None = Query(
         None,
@@ -423,7 +440,7 @@ def list_canonical_locations(
     """List Stylebook canonical locations for the project's Stylebook (deduplicated catalog)."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
 
     filters: list[ColumnElement[bool]] = [StylebookLocationCanonical.stylebook_id == stylebook_id]
     q_text = (q or "").strip()
@@ -492,6 +509,7 @@ def list_canonical_locations(
 @router.get("/canonical-locations/types")
 def list_canonical_location_types(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, Any]:
@@ -501,7 +519,7 @@ def list_canonical_location_types(
     """
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     rows = session.exec(
         select(func.distinct(StylebookLocationCanonical.location_type)).where(
             StylebookLocationCanonical.stylebook_id == stylebook_id,
@@ -517,6 +535,7 @@ def list_canonical_location_types(
 def create_canonical_location(
     body: CreateCanonicalLocationBody,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> CanonicalLocationResponse:
@@ -533,6 +552,7 @@ def create_canonical_location(
         geometry_json=body.geometry_json,
         location_type=body.location_type,
         formatted_address=body.formatted_address,
+        stylebook_slug=stylebook_slug,
     )
 
 
@@ -540,12 +560,13 @@ def create_canonical_location(
 def get_canonical_location(
     canonical_id: UUID,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> CanonicalLocationResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
@@ -566,13 +587,14 @@ def get_canonical_location(
 def list_canonical_linked_substrates(
     canonical_id: UUID,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> LinkedSubstratesResponse:
     """Project substrate rows currently linked to this Stylebook canonical."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
@@ -608,6 +630,7 @@ def list_canonical_linked_substrates(
 def list_canonical_location_mentions(
     canonical_id: UUID,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     sort: str | None = Query(
@@ -621,7 +644,7 @@ def list_canonical_location_mentions(
     """Mentions for all project substrate locations linked to this canonical."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
@@ -709,12 +732,13 @@ def patch_canonical_location(
     canonical_id: UUID,
     body: PatchCanonicalLocationBody,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> CanonicalLocationResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
@@ -752,13 +776,14 @@ def patch_canonical_location(
 def delete_canonical_location(
     canonical_id: UUID,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, Any]:
     """Delete a Stylebook canonical; project substrate rows relink to the candidate queue."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
@@ -915,12 +940,13 @@ class LinkCanonicalResponse(BaseModel):
 def unlink_substrate_from_canonical_route(
     location_id: int,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, str]:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     loc = session.get(SubstrateLocation, location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
@@ -939,12 +965,13 @@ def link_substrate_to_canonical_route(
     location_id: int,
     body: LinkCanonicalBody,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> LinkCanonicalResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     loc = session.get(SubstrateLocation, location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
@@ -969,6 +996,7 @@ def link_substrate_to_canonical_route(
 def create_location(
     body: CreateLocationBody,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> CanonicalLocationResponse:
@@ -985,6 +1013,7 @@ def create_location(
         geometry_json=body.geometry_json,
         location_type=body.location_type,
         formatted_address=body.formatted_address,
+        stylebook_slug=stylebook_slug,
     )
 
 
@@ -1044,13 +1073,14 @@ def patch_canonical_location_geometry(
     canonical_id: UUID,
     body: PatchCanonicalGeometryBody,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, Any]:
     """Optional GeoJSON pin on a Stylebook canonical (proximity scoring)."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")

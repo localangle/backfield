@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import {
   deleteCanonicalLocation,
   listCanonicalLocations,
@@ -33,6 +34,7 @@ import CanonicalSourceIcon from "@/components/CanonicalSourceIcon"
 
 export default function Locations() {
   const { showError } = useAppMessage()
+  const { scopeQueryString, scopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const [searchParams, setSearchParams] = useSearchParams()
   const [canonicals, setCanonicals] = useState<CanonicalLocation[]>([])
   const [loading, setLoading] = useState(true)
@@ -142,20 +144,20 @@ export default function Locations() {
       currentPage,
       typeFilterParam,
     )
-  }, [currentPage, projectSlug, debouncedSearchQuery, typeFilterParam])
+  }, [currentPage, projectSlug, stylebookSlug, debouncedSearchQuery, typeFilterParam])
 
   return (
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Canonical locations</h1>
         <div className="flex gap-2">
-          <Link to={`/locations/candidates?project=${projectSlug}`}>
+          <Link to={`/locations/candidates${scopeSuffix}`}>
             <Button variant="outline">Candidates</Button>
           </Link>
-          <Link to={`/locations/create?project=${projectSlug}`}>
+          <Link to={`/locations/create${scopeSuffix}`}>
             <Button variant="outline">Create</Button>
           </Link>
-          <Link to={`/import/locations?project=${projectSlug}`}>
+          <Link to={`/import/locations${scopeSuffix}`}>
             <Button variant="outline">Import</Button>
           </Link>
         </div>
@@ -240,7 +242,11 @@ export default function Locations() {
                             <CanonicalSourceIcon createdByUserId={undefined} />
                             <CardTitle>
                               <Link
-                                to={`/locations/canonical/${c.id}?project=${projectSlug}&page=${currentPage}`}
+                                to={`/locations/canonical/${c.id}?${(() => {
+                                  const q = new URLSearchParams(scopeQueryString)
+                                  q.set("page", String(currentPage))
+                                  return q.toString()
+                                })()}`}
                                 state={{ fromListPage: currentPage }}
                                 className="hover:underline"
                               >

@@ -1,6 +1,28 @@
 export const stylebookApiBase = (): string =>
   import.meta.env.VITE_STYLEBOOK_API_BASE ?? "/api/stylebook"
 
+/** Browser URL query key for catalog scope (stable slug); mirrored to API as ``stylebook_slug``. */
+export const STYLEBOOK_URL_QUERY_KEY = "stylebook"
+
+/**
+ * Append catalog scope for Stylebook API calls from the current page URL
+ * (``?stylebook=<slug>``). Routes that do not accept the parameter ignore it.
+ */
+export function augmentStylebookApiPath(path: string): string {
+  if (typeof window === "undefined") return path
+  const slug = new URLSearchParams(window.location.search).get(STYLEBOOK_URL_QUERY_KEY)
+  if (!slug) return path
+  const cut = path.indexOf("?")
+  const base = cut >= 0 ? path.slice(0, cut) : path
+  const existing = cut >= 0 ? path.slice(cut + 1) : ""
+  const params = new URLSearchParams(existing)
+  if (!params.has("stylebook_slug")) {
+    params.set("stylebook_slug", slug)
+  }
+  const q = params.toString()
+  return q ? `${base}?${q}` : path
+}
+
 /** FastAPI may return `detail` as a string, object, or list of validation errors. */
 function formatFastApiDetail(detail: unknown): string {
   if (detail == null) return ""
@@ -32,7 +54,8 @@ function formatFastApiDetail(detail: unknown): string {
 }
 
 export async function stylebookJsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${stylebookApiBase()}${path}`, {
+  const resolvedPath = augmentStylebookApiPath(path)
+  const response = await fetch(`${stylebookApiBase()}${resolvedPath}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",

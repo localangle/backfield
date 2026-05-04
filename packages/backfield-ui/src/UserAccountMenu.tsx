@@ -12,6 +12,8 @@ export interface UserAccountMenuProps {
   onLogout: () => void
   /** When set and `isOrgAdmin`, shows “Manage users”. */
   onManageUsers?: () => void
+  /** When set and `isOrgAdmin`, shows “Manage catalogs”. */
+  onManageCatalogs?: () => void
   className?: string
 }
 
@@ -21,6 +23,7 @@ export function UserAccountMenu({
   onChangePassword,
   onLogout,
   onManageUsers,
+  onManageCatalogs,
   className,
 }: UserAccountMenuProps) {
   return (
@@ -74,7 +77,19 @@ export function UserAccountMenu({
               Manage users
             </DropdownMenu.Item>
           ) : null}
-          {onChangePassword || (isOrgAdmin && onManageUsers) ? (
+          {isOrgAdmin && onManageCatalogs ? (
+            <DropdownMenu.Item
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+              onSelect={(e: Event) => {
+                e.preventDefault()
+                onManageCatalogs()
+              }}
+            >
+              Manage catalogs
+            </DropdownMenu.Item>
+          ) : null}
+          {onChangePassword ||
+          (isOrgAdmin && (onManageUsers || onManageCatalogs)) ? (
             <DropdownMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
           ) : null}
           <DropdownMenu.Item

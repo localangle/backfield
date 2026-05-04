@@ -133,11 +133,15 @@ def set_org_default_stylebook(
     if int(target.organization_id) != organization_id:
         raise StylebookLibraryError("stylebook does not belong to this organization")
 
+    # Clear defaults first so SQLite's partial unique index never sees two defaults at once.
     for sb in session.exec(
         select(Stylebook).where(Stylebook.organization_id == organization_id)
     ).all():
-        sb.is_default = sb.id == stylebook_id
+        sb.is_default = False
         session.add(sb)
+    session.flush()
+    target.is_default = True
+    session.add(target)
     session.flush()
     session.refresh(target)
     return target
@@ -184,8 +188,11 @@ def delete_stylebook(
             raise StylebookLibraryError("replacement stylebook not found in this organization")
 
         for sb in session.exec(select(Stylebook).where(Stylebook.organization_id == org_id)).all():
-            sb.is_default = sb.id == replacement_default_id
+            sb.is_default = False
             session.add(sb)
+        session.flush()
+        replacement.is_default = True
+        session.add(replacement)
         session.flush()
 
     session.delete(book)

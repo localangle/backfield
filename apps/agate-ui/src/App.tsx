@@ -15,6 +15,7 @@ import LeafletMapHarness from './pages/LeafletMapHarness'
 import Login from './pages/Login'
 import ChangePasswordPage from './pages/ChangePassword'
 import ManageUsers from './pages/ManageUsers'
+import ManageCatalogs from './pages/ManageCatalogs'
 import HubLayout from './components/HubLayout'
 import { AppMessageProvider } from '@/components/AppMessageProvider'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -168,6 +169,18 @@ function AppRoutes() {
             <OrgAdminRoute>
               <HubLayout>
                 <ManageUsers />
+              </HubLayout>
+            </OrgAdminRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/catalogs"
+        element={
+          <ProtectedRoute>
+            <OrgAdminRoute>
+              <HubLayout>
+                <ManageCatalogs />
               </HubLayout>
             </OrgAdminRoute>
           </ProtectedRoute>

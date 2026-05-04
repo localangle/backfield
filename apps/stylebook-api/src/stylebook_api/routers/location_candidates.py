@@ -8,7 +8,6 @@ from uuid import UUID
 
 from backfield_auth.gate import require_project_access
 from backfield_db import (
-    BackfieldProject,
     StylebookLocationCanonical,
     SubstrateArticle,
     SubstrateLocation,
@@ -28,7 +27,6 @@ from backfield_stylebook.canonical_link import (
 from backfield_stylebook.canonical_slug import allocate_unique_canonical_slug
 from backfield_stylebook.locations import refresh_aliases_for_linked_location
 from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from backfield_stylebook.substrate_canonical_link_actions import (
     rank_canonical_suggestions_for_substrate,
 )
@@ -37,24 +35,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import exists, or_
 from sqlmodel import Session, col, func, select
 
+from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
+from stylebook_api.routers.locations import _project_by_slug, _require_stylebook_id
 
 router = APIRouter(prefix="/v1", tags=["location-candidates"])
-
-
-def _project_by_slug(session: Session, slug: str) -> BackfieldProject:
-    row = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return row
-
-
-def _require_stylebook_id(session: Session, project: BackfieldProject) -> int:
-    try:
-        return resolve_stylebook_id_for_project_id(session, int(project.id))
-    except LookupError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 class PaginatedClustersResponse(BaseModel):
@@ -324,6 +310,7 @@ def _list_deferred_candidates(
 @router.get("/candidates", response_model=PaginatedCandidatesResponse)
 def candidates_list(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     status: str = Query("open"),
     q: str | None = Query(None),
     type_filter: str | None = Query(None),
@@ -340,7 +327,7 @@ def candidates_list(
         )
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _require_stylebook_id(session, proj)
+    _require_stylebook_id(session, proj, stylebook_slug)
     if status == "all":
         raise HTTPException(status_code=400, detail="status=all is not implemented for this queue")
     if status == "deferred":
@@ -366,6 +353,7 @@ def candidates_list(
 @router.get("/candidates/ungrouped", response_model=PaginatedCandidatesResponse)
 def candidates_ungrouped(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     status: str = Query("open"),
     q: str | None = Query(None),
     type_filter: str | None = Query(None),
@@ -382,7 +370,7 @@ def candidates_ungrouped(
         )
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _require_stylebook_id(session, proj)
+    _require_stylebook_id(session, proj, stylebook_slug)
     if status == "all":
         raise HTTPException(status_code=400, detail="status=all is not implemented for this queue")
     if status == "deferred":
@@ -408,6 +396,7 @@ def candidates_ungrouped(
 @router.get("/candidates/clusters", response_model=PaginatedClustersResponse)
 def candidates_clusters(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     status: str = Query("open"),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -417,7 +406,7 @@ def candidates_clusters(
     _ = status
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _require_stylebook_id(session, proj)
+    _require_stylebook_id(session, proj, stylebook_slug)
     return PaginatedClustersResponse(
         clusters=[],
         total=0,
@@ -431,6 +420,7 @@ def candidates_clusters(
 @router.get("/candidates/types", response_model=dict[str, list[str]])
 def candidates_types(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     status: str = Query("open"),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -438,7 +428,7 @@ def candidates_types(
     _ = status
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _require_stylebook_id(session, proj)
+    _require_stylebook_id(session, proj, stylebook_slug)
     # Fixed taxonomy from PlaceExtract (not DISTINCT from queue — empty queue had no types).
     return {"types": list(PLACE_EXTRACT_LOCATION_TYPES)}
 
@@ -479,6 +469,7 @@ def _first_occurrence_text_by_mention_id(
 def candidate_context(
     substrate_location_id: int,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     limit: int = Query(3, ge=1, le=10),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -486,7 +477,7 @@ def candidate_context(
     """Small textual examples showing where this location appears in articles (lean payload)."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj)
+    _ = _require_stylebook_id(session, proj, stylebook_slug)
 
     loc = session.get(SubstrateLocation, substrate_location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
@@ -541,13 +532,14 @@ def candidate_update_note(
     substrate_location_id: int,
     body: UpdateCandidateNoteBody,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, str]:
     """Attach a short editor note to a review queue item (stored on the location row)."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj)
+    _ = _require_stylebook_id(session, proj, stylebook_slug)
 
     loc = session.get(SubstrateLocation, substrate_location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
@@ -593,6 +585,7 @@ class SuggestedCanonicalsResponse(BaseModel):
 def candidates_suggested_canonicals(
     substrate_location_id: int,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     limit: int = Query(24, ge=1, le=48),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -600,7 +593,7 @@ def candidates_suggested_canonicals(
     """Ranked canonical matches (pending candidate or linked row for relink/move)."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     loc = session.get(SubstrateLocation, substrate_location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Substrate location not found")
@@ -662,13 +655,14 @@ class AcceptCandidateResponse(BaseModel):
 def defer_candidate(
     substrate_location_id: int,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, str]:
     """Defer canonical linking for a substrate row (remove from open queue without linking)."""
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _ = _require_stylebook_id(session, proj)
+    _ = _require_stylebook_id(session, proj, stylebook_slug)
 
     loc = session.get(SubstrateLocation, substrate_location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
@@ -694,13 +688,14 @@ def defer_candidate(
 def accept_candidate(
     substrate_location_id: int,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     body: AcceptCandidateBody = Body(default_factory=AcceptCandidateBody),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> AcceptCandidateResponse:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    stylebook_id = _require_stylebook_id(session, proj)
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
 
     loc = session.get(SubstrateLocation, substrate_location_id)
     if loc is None or int(loc.project_id) != int(proj.id):

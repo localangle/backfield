@@ -8,16 +8,17 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backfield_auth.gate import require_project_access
-from backfield_db import BackfieldProject, StylebookLocationMeta
+from backfield_db import StylebookLocationMeta
 from backfield_stylebook.locations import create_standalone_canonical
-from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select
+from sqlmodel import Session
 
+from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.helpers.meta_utils import validate_meta_json
 from stylebook_api.imports.registry import get_importer, register_importer
+from stylebook_api.routers.locations import _project_by_slug, _require_stylebook_id
 
 router = APIRouter(prefix="/v1/import", tags=["import"])
 
@@ -42,12 +43,6 @@ def _enforce_request_size_limit(request: Request, *, approx_payload: object | No
         return
     if n2 > MAX_IMPORT_BYTES:
         raise HTTPException(status_code=413, detail="payload exceeds 25MB")
-
-def _project_by_slug(session: Session, slug: str) -> BackfieldProject:
-    row = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return row
 
 
 class ImportGeoJSONAnalyzeRequest(BaseModel):
@@ -217,6 +212,7 @@ class _GeoJsonLocationsImporter:
         self,
         *,
         project_slug: str,
+        stylebook_slug: str | None,
         payload: ImportGeoJSONRequest,
         request: Request,
         session: Session,
@@ -232,7 +228,7 @@ class _GeoJsonLocationsImporter:
         )
         proj = _project_by_slug(session, project_slug)
         require_project_access(session, auth, int(proj.id))
-        stylebook_id = _require_stylebook_id(session, proj)
+        stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
 
         gj = payload.geojson
         if not isinstance(gj, dict) or gj.get("type") != "FeatureCollection":
@@ -384,13 +380,6 @@ def analyze_geojson(
     )
 
 
-def _require_stylebook_id(session: Session, project: BackfieldProject) -> int:
-    try:
-        return resolve_stylebook_id_for_project_id(session, int(project.id))
-    except LookupError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
 def _read_string_prop(props: dict[str, Any], key: str | None) -> str | None:
     if not key:
         return None
@@ -428,6 +417,7 @@ def _explode_geometry_collections(features: list[Any]) -> list[dict[str, Any]]:
 @router.post("/geojson", response_model=ImportGeoJSONResponse)
 def import_geojson(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     payload: ImportGeoJSONRequest = Body(...),
     request: Request = None,  # type: ignore[assignment]
     session: Session = Depends(get_session),
@@ -438,6 +428,7 @@ def import_geojson(
         raise HTTPException(status_code=500, detail="request missing")
     return imp.run(
         project_slug=project_slug,
+        stylebook_slug=stylebook_slug,
         payload=payload,
         request=request,
         session=session,

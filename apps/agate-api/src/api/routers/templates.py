@@ -11,6 +11,10 @@ from backfield_auth.gate import require_project_access
 from backfield_core import GraphSpec
 from backfield_core.types import Edge, NodeConfig
 from backfield_db import AgateGraph, AgateTemplate, BackfieldProject
+from backfield_stylebook.graph_stylebook_refs import (
+    StylebookGraphRefsError,
+    validate_stylebook_refs_for_organization,
+)
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -93,6 +97,14 @@ def instantiate(
     except Exception as e:
         raise HTTPException(500, f"Invalid template spec: {e}") from e
     remapped = _remap_spec(spec)
+    try:
+        validate_stylebook_refs_for_organization(
+            session,
+            organization_id=int(proj.organization_id),
+            spec=remapped.model_dump(),
+        )
+    except StylebookGraphRefsError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     graph_name = body.name.strip() if body.name else f"{t.name} (copy)"
     g = AgateGraph(
         name=graph_name,

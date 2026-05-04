@@ -36,9 +36,14 @@ def _location_display_name(
     *,
     project_id: int,
     location_canonical_id: str,
+    catalog_stylebook_id: int | None = None,
 ) -> str | None:
     try:
-        stylebook_id = resolve_stylebook_id_for_project_id(session, project_id)
+        stylebook_id = (
+            int(catalog_stylebook_id)
+            if catalog_stylebook_id is not None
+            else resolve_stylebook_id_for_project_id(session, project_id)
+        )
     except LookupError:
         return None
     row = session.exec(
@@ -71,6 +76,7 @@ def get_canonical_display_name(
     project_id: int,
     entity_type: str,
     entity_id: str | int | UUID,
+    catalog_stylebook_id: int | None = None,
 ) -> str | None:
     eid = normalize_connection_entity_id(entity_type, entity_id)
     if entity_type == "location":
@@ -78,6 +84,7 @@ def get_canonical_display_name(
             session,
             project_id=project_id,
             location_canonical_id=eid,
+            catalog_stylebook_id=catalog_stylebook_id,
         )
     return None
 
@@ -87,6 +94,7 @@ def validate_canonical_exists(
     project_id: int,
     entity_type: str,
     entity_id: str | int | UUID,
+    catalog_stylebook_id: int | None = None,
 ) -> None:
     if entity_type not in CONNECTION_ENTITY_TYPES:
         raise HTTPException(
@@ -94,7 +102,9 @@ def validate_canonical_exists(
             detail=f"Invalid entity_type: {entity_type}. Allowed: {list(CONNECTION_ENTITY_TYPES)}",
         )
     eid = normalize_connection_entity_id(entity_type, entity_id)
-    name = get_canonical_display_name(session, project_id, entity_type, eid)
+    name = get_canonical_display_name(
+        session, project_id, entity_type, eid, catalog_stylebook_id
+    )
     if name is None:
         raise HTTPException(
             status_code=404,

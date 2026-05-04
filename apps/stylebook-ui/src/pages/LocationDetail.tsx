@@ -13,6 +13,7 @@ import {
   type LinkedSubstrateItem,
 } from "@/lib/api"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
@@ -191,6 +192,7 @@ function geometryToFeatureCollections(
 
 export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
+  const { scopeSuffix } = useProjectCatalogScope()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -386,7 +388,7 @@ export default function LocationDetail() {
     setDeleting(true)
     try {
       await deleteCanonicalLocation(id, projectSlug)
-      navigate(`/locations/canonical?project=${projectSlug}`)
+      navigate(`/locations/canonical${scopeSuffix}`)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Delete failed")
     } finally {

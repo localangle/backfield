@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { createLocation } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -139,6 +140,7 @@ function geometryToFeatureCollections(
 export default function CreateLocation() {
   const { showMessage, showError, showConfirm } = useAppMessage()
   const navigate = useNavigate()
+  const { scopeSuffix } = useProjectCatalogScope()
   const [projectSlug, setProjectSlug] = useState("")
   const [name, setName] = useState("")
   const [locationType, setLocationType] = useState("")
@@ -225,7 +227,7 @@ export default function CreateLocation() {
         geometry_json: geometryToCreate ?? undefined,
         status: "active",
       })
-      navigate(`/locations/canonical/${location.id}?project=${projectSlug}`)
+      navigate(`/locations/canonical/${location.id}${scopeSuffix}`)
     } catch (error) {
       console.error("Failed to create location:", error)
       showError(
@@ -237,7 +239,7 @@ export default function CreateLocation() {
   }
 
   const handleCancel = () => {
-    navigate(`/locations/canonical?project=${projectSlug}`)
+    navigate(`/locations/canonical${scopeSuffix}`)
   }
 
   const geometrySource = geometryEditing ? geometryDraft : geometry

@@ -9,12 +9,30 @@ from api.deps import get_auth, get_session
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_core import GraphSpec
 from backfield_db import AgateGraph, AgateRun, BackfieldProject
+from backfield_stylebook.graph_stylebook_refs import (
+    StylebookGraphRefsError,
+    validate_stylebook_refs_for_organization,
+)
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/graphs", tags=["graphs"])
+
+
+def _raise_stylebook_graph_refs(session: Session, project_id: int, spec: GraphSpec) -> None:
+    proj = session.get(BackfieldProject, project_id)
+    if not proj:
+        return
+    try:
+        validate_stylebook_refs_for_organization(
+            session,
+            organization_id=int(proj.organization_id),
+            spec=spec.model_dump(),
+        )
+    except StylebookGraphRefsError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 class GraphCreate(BaseModel):
@@ -41,6 +59,7 @@ def create_graph(
     p = session.get(BackfieldProject, body.project_id)
     if not p:
         raise HTTPException(404, "Project not found")
+    _raise_stylebook_graph_refs(session, body.project_id, body.spec)
     g = AgateGraph(
         name=body.name,
         spec_json=body.spec.model_dump_json(),
@@ -114,6 +133,7 @@ def update_graph(
     p = session.get(BackfieldProject, body.project_id)
     if not p:
         raise HTTPException(404, "Project not found")
+    _raise_stylebook_graph_refs(session, body.project_id, body.spec)
     g.name = body.name
     g.spec_json = body.spec.model_dump_json()
     g.project_id = body.project_id

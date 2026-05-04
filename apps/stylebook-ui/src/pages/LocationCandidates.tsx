@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import {
   acceptCandidate,
   deferCandidate,
@@ -154,6 +155,7 @@ function rankSimilarCandidates(rows: Candidate[], needle: string): Candidate[] {
 }
 
 export default function LocationCandidates() {
+  const { scopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const [searchParams] = useSearchParams()
   const projectSlug = searchParams.get("project") || ""
   const [loading, setLoading] = useState(false)
@@ -170,8 +172,8 @@ export default function LocationCandidates() {
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const filterKey = useMemo(
-    () => `${projectSlug}|${status}|${debouncedQuery}|${typeFilter}`,
-    [projectSlug, status, debouncedQuery, typeFilter],
+    () => `${projectSlug}|${stylebookSlug}|${status}|${debouncedQuery}|${typeFilter}`,
+    [projectSlug, stylebookSlug, status, debouncedQuery, typeFilter],
   )
   const [types, setTypes] = useState<string[]>([])
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
@@ -669,7 +671,7 @@ export default function LocationCandidates() {
                 <div className="text-sm text-muted-foreground">
                   Saved as{" "}
                   <Link
-                    to={`/locations/canonical/${createdToast.canonicalId}?project=${encodeURIComponent(projectSlug)}`}
+                    to={`/locations/canonical/${createdToast.canonicalId}${scopeSuffix}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline break-words"
                   >
                     {createdToast.canonicalLabel}
@@ -731,7 +733,7 @@ export default function LocationCandidates() {
                   </span>{" "}
                   →{" "}
                   <Link
-                    to={`/locations/canonical/${linkedToast.canonicalId}?project=${encodeURIComponent(projectSlug)}`}
+                    to={`/locations/canonical/${linkedToast.canonicalId}${scopeSuffix}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline break-words"
                   >
                     {linkedToast.canonicalLabel}
@@ -757,7 +759,7 @@ export default function LocationCandidates() {
       ) : null}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Location candidates</h1>
-        <Link to={`/locations/canonical?project=${projectSlug}`}>
+        <Link to={`/locations/canonical${scopeSuffix}`}>
           <Button variant="outline">Canonical locations</Button>
         </Link>
       </div>

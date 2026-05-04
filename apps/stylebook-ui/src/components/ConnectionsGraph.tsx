@@ -12,6 +12,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import type { Connection } from "@/lib/stylebook-api/connections"
 import type { ConnectionsEntityType } from "@/lib/connectionsEntityTypes"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 
 const CENTER_X = 280
 const CENTER_Y = 200
@@ -24,19 +25,19 @@ function nodeId(entityType: string, entityId: string | number): string {
 function getDetailUrl(
   entityType: ConnectionsEntityType,
   entityId: string | number,
-  projectSlug: string,
+  scopeSuffix: string,
 ): string {
   const base = window.location.origin
-  if (entityType === 'person') {
-    return `${base}/people/canonical/${entityId}?project=${projectSlug}`
+  if (entityType === "person") {
+    return `${base}/people/canonical/${entityId}${scopeSuffix}`
   }
-  if (entityType === 'organization') {
-    return `${base}/organizations/canonical/${entityId}?project=${projectSlug}`
+  if (entityType === "organization") {
+    return `${base}/organizations/canonical/${entityId}${scopeSuffix}`
   }
-  if (entityType === 'work') {
-    return `${base}/works/canonical/${entityId}?project=${projectSlug}`
+  if (entityType === "work") {
+    return `${base}/works/canonical/${entityId}${scopeSuffix}`
   }
-  return `${base}/locations/canonical/${entityId}?project=${projectSlug}`
+  return `${base}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
 interface ConnectionsGraphProps {
@@ -54,6 +55,7 @@ export default function ConnectionsGraph({
   entityDisplayName,
   connections,
 }: ConnectionsGraphProps) {
+  const { scopeSuffix } = useProjectCatalogScope()
   const { initialNodes, initialEdges } = useMemo(() => {
     const centerId = nodeId(entityType, entityId)
     const nodeMap = new Map<string, string>()
@@ -122,10 +124,10 @@ export default function ConnectionsGraph({
       if (match) {
         const type = match[1] as ConnectionsEntityType
         const numId = parseInt(match[2], 10)
-        window.open(getDetailUrl(type, numId, projectSlug), '_blank', 'noopener,noreferrer')
+        window.open(getDetailUrl(type, numId, scopeSuffix), "_blank", "noopener,noreferrer")
       }
     },
-    [projectSlug]
+    [scopeSuffix]
   )
 
   if (connections.length === 0) {

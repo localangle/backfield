@@ -6,6 +6,7 @@ export interface Project {
   id: number
   slug: string
   name: string
+  workspace_stylebook_slug?: string | null
 }
 
 export async function fetchProjects(): Promise<Project[]> {

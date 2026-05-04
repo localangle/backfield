@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { getStats, getAgentTypes, type AgentType, type Stats } from '@/lib/api'
+import { useProjectCatalogScope } from '@/lib/catalogNavigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { MapPin, Users, Building2, BookOpen, Loader2, Link, Merge } from 'lucide-react'
@@ -16,13 +17,11 @@ const AGENT_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>
 
 export default function Index() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const { projectSlug, scopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const [stats, setStats] = useState<Stats | null>(null)
   const [agents, setAgents] = useState<AgentType[]>([])
   const [loading, setLoading] = useState(true)
   const [agentsLoading, setAgentsLoading] = useState(false)
-
-  const projectSlug = searchParams.get('project') || ''
 
   useEffect(() => {
     if (projectSlug) {
@@ -31,7 +30,7 @@ export default function Index() {
       setLoading(false)
       setStats(null)
     }
-  }, [projectSlug])
+  }, [projectSlug, stylebookSlug])
 
   useEffect(() => {
     if (projectSlug) {
@@ -39,7 +38,7 @@ export default function Index() {
     } else {
       setAgents([])
     }
-  }, [projectSlug])
+  }, [projectSlug, stylebookSlug])
 
   const loadAgents = async (slug: string) => {
     try {
@@ -68,13 +67,13 @@ export default function Index() {
 
   const handleEntityTypeClick = (type: string) => {
     if (type === 'locations') {
-      navigate(`/locations/canonical?project=${projectSlug}`)
+      navigate(`/locations/canonical${scopeSuffix}`)
     } else if (type === 'people') {
-      navigate(`/people/candidates?project=${projectSlug}`)
+      navigate(`/people/candidates${scopeSuffix}`)
     } else if (type === 'organizations') {
-      navigate(`/organizations/candidates?project=${projectSlug}`)
+      navigate(`/organizations/candidates${scopeSuffix}`)
     } else if (type === 'works') {
-      navigate(`/works/candidates?project=${projectSlug}`)
+      navigate(`/works/candidates${scopeSuffix}`)
     }
   }
 
@@ -126,7 +125,7 @@ export default function Index() {
   ]
 
   const handleAgentClick = (agentType: string) => {
-    navigate(`/agents/${agentType}?project=${projectSlug}`)
+    navigate(`/agents/${agentType}${scopeSuffix}`)
   }
 
   return (

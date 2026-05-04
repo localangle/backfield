@@ -31,7 +31,9 @@ Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src
 
 ## Stylebook API (`apps/stylebook-api`)
 
-Companion service for geocode, canonical locations, and Stylebook UI (typically port **8003**). Routes are under **`/v1/...`** and use **`project_slug`** (resolved to `backfield_project.id`) plus the same **session cookie** or **`Authorization: Bearer`** (`SERVICE_API_TOKEN` / project access) as other Backfield HTTP apps.
+Companion service for geocode, canonical locations, and Stylebook UI (typically port **8003**). Routes are under **`/v1/...`** and use **`project_slug`** (resolved to `backfield_project.id`) plus the same **session cookie** or **`Authorization: Bearer`** (`SERVICE_API_TOKEN` / project access) as other Backfield HTTP apps. Project-scoped catalog routes accept optional query **`stylebook_slug`**: when set, the catalog is resolved in the **project’s organization** (including rename redirects); when omitted, the **workspace** Stylebook for the project is used.
+
+- **Organization Stylebook library (`project_slug` not required):** routes under **`/v1/organizations/{org_id}/stylebooks…`**. Callers must match **`organization_id`** on session auth (**403** otherwise); **service token** bypasses that check (full library access for automation). **Read:** **`GET …/stylebooks`** lists Stylebooks in the org (by name); **`GET …/stylebooks/by-slug/{slug}`** resolves the catalog row (follows **rename redirects** from **`stylebook_slug_redirect`**). **Org admin** (or service token) for writes: **`POST …/stylebooks`** body **`name`**, optional **`is_default`** — server derives **`slug`**; **`PATCH …/stylebooks/{stylebook_id}`** rename; **`POST …/stylebooks/{stylebook_id}/set-default`**; **`GET …/stylebooks/{stylebook_id}/delete-preview`** returns graph/node **`stylebook_id`** usage counts from Agate graphs; **`POST …/stylebooks/{stylebook_id}/delete`** JSON body **`confirm_name`** (must match display **name**) and optional **`replacement_default_id`** when deleting the **default** Stylebook (**204**).
 
 - **PlaceExtract location types (taxonomy reference):** **`GET /v1/place-extract-location-types`** — returns **`{ "types": [ … ] }`** (ordered PlaceExtract `location.type` strings; same source as canonical list type filters). Authenticated like other Stylebook routes.
 
@@ -42,7 +44,7 @@ Companion service for geocode, canonical locations, and Stylebook UI (typically 
 - **Connection nature typeahead:** **`GET /v1/connections/natures?project_slug=…`** optional **`q`** — distinct **`nature`** values for the project (substring filter).
 - **Empty canonical lists (UI stubs):** **`GET /v1/people`**, **`GET /v1/organizations`**, **`GET /v1/works`** return paginated **empty** lists (same general shape as agate-ai-platform list endpoints) so connection pickers load; **`POST`** connections to targets that are not yet backed still return **404** from validation.
 
-Routers live under [`apps/stylebook-api/src/stylebook_api/routers/`](../apps/stylebook-api/src/stylebook_api/routers/) (`location_meta.py`, `connections.py`, `locations.py`, `ui_stubs.py`, …).
+Routers live under [`apps/stylebook-api/src/stylebook_api/routers/`](../apps/stylebook-api/src/stylebook_api/routers/) (`stylebooks.py`, `location_meta.py`, `connections.py`, `locations.py`, `ui_stubs.py`, …).
 
 ## Authentication
 
@@ -66,9 +68,9 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 - `routers/health.py`
   - Lightweight service health only.
 - `routers/projects.py`
-  - Project CRUD, stats, and encrypted project secrets. **`POST /projects`** accepts optional `workspace_id` (default org only). **Session callers:** `org_admin` may set `workspace_id` to any workspace in that org; **members** may only set it to a workspace where they have a `backfield_workspace_membership` row (otherwise **403**). Omitting `workspace_id` leaves the project unassigned. **Service token** calls are not restricted by workspace membership (automation). **`GET /projects`**, **`GET /projects/{id}`**, and **`GET /projects/by-slug/...`** include `workspace_id`, `workspace_stylebook_id`, and `workspace_stylebook_name` when the project’s workspace resolves a Stylebook.
+  - Project CRUD, stats, and encrypted project secrets. **`POST /projects`** accepts optional `workspace_id` (default org only). **Session callers:** `org_admin` may set `workspace_id` to any workspace in that org; **members** may only set it to a workspace where they have a `backfield_workspace_membership` row (otherwise **403**). Omitting `workspace_id` leaves the project unassigned. **Service token** calls are not restricted by workspace membership (automation). **`GET /projects`**, **`GET /projects/{id}`**, and **`GET /projects/by-slug/...`** include `workspace_id`, `workspace_stylebook_id`, `workspace_stylebook_name`, and **`workspace_stylebook_slug`** when the project’s workspace resolves a Stylebook.
 - `routers/graphs.py`
-  - Graph CRUD and `GraphSpec` validation.
+  - Graph CRUD and `GraphSpec` validation. Node params may include integer **`stylebook_id`** (catalog row id) on supported node types; Agate API rejects create/update when any referenced id is missing or belongs to another organization (**400**), using `backfield_stylebook.graph_stylebook_refs` for checks. Impact counts for a future admin delete flow use the same key via `count_stylebook_usage_in_graphs`.
 - `routers/templates.py`
   - List templates and instantiate them into project graphs.
 - `routers/runs.py`

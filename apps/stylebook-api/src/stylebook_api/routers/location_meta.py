@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.helpers.meta_utils import parse_meta_json, validate_meta_json
 from stylebook_api.routers.locations import _project_by_slug, _require_stylebook_id
@@ -36,8 +37,9 @@ def _canonical_for_project_or_404(
     session: Session,
     project: BackfieldProject,
     canonical_id: UUID,
+    stylebook_slug: str | None = None,
 ) -> StylebookLocationCanonical:
-    stylebook_id = _require_stylebook_id(session, project)
+    stylebook_id = _require_stylebook_id(session, project, stylebook_slug)
     canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
@@ -48,12 +50,13 @@ def _canonical_for_project_or_404(
 def get_location_meta(
     canonical_id: UUID,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, Any]:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _canonical_for_project_or_404(session, proj, canonical_id)
+    _canonical_for_project_or_404(session, proj, canonical_id, stylebook_slug)
     cid = str(canonical_id)
     rows = session.exec(
         select(StylebookLocationMeta)
@@ -82,12 +85,13 @@ def create_location_meta(
     canonical_id: UUID,
     payload: CreateMetaRequest,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, Any]:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _canonical_for_project_or_404(session, proj, canonical_id)
+    _canonical_for_project_or_404(session, proj, canonical_id, stylebook_slug)
     cid = str(canonical_id)
     validate_meta_json(payload.data)
     row = StylebookLocationMeta(
@@ -115,12 +119,13 @@ def update_location_meta(
     meta_id: int,
     request: UpdateMetaRequest,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, Any]:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _canonical_for_project_or_404(session, proj, canonical_id)
+    _canonical_for_project_or_404(session, proj, canonical_id, stylebook_slug)
     cid = str(canonical_id)
     meta_row = session.exec(
         select(StylebookLocationMeta).where(
@@ -155,12 +160,13 @@ def delete_location_meta(
     canonical_id: UUID,
     meta_id: int,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, str]:
     proj = _project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
-    _canonical_for_project_or_404(session, proj, canonical_id)
+    _canonical_for_project_or_404(session, proj, canonical_id, stylebook_slug)
     cid = str(canonical_id)
     meta_row = session.exec(
         select(StylebookLocationMeta).where(

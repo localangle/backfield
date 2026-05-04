@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -119,6 +120,7 @@ function formatPropertyExample(v: unknown): string | null {
 
 export default function ImportLocations() {
   const [searchParams] = useSearchParams()
+  const { scopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const projectSlug = useMemo(() => searchParams.get("project") || "", [searchParams])
   const [step, setStep] = useState<WizardStep>("upload")
@@ -213,12 +215,9 @@ export default function ImportLocations() {
     setManualLocationTypeLabel("")
     setPlaceExtractTypesList([...PLACE_EXTRACT_LOCATION_TYPES])
     setManualLocationSelect(MANUAL_LOCATION_TYPE_NONE)
-  }, [projectSlug])
+  }, [projectSlug, stylebookSlug])
 
-  const backHref = useMemo(() => {
-    const q = projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""
-    return `/locations/canonical${q}`
-  }, [projectSlug])
+  const backHref = useMemo(() => `/locations/canonical${scopeSuffix}`, [scopeSuffix])
 
   const validateAndSetGeojson = (text: string): boolean => {
     const trimmed = text.trim()
@@ -1119,7 +1118,7 @@ export default function ImportLocations() {
                               className="break-words font-medium text-primary underline-offset-4 hover:underline"
                               target="_blank"
                               rel="noopener noreferrer"
-                              to={`/locations/canonical/${encodeURIComponent(row.canonical_id)}?project=${encodeURIComponent(projectSlug)}`}
+                              to={`/locations/canonical/${encodeURIComponent(row.canonical_id)}${scopeSuffix}`}
                             >
                               {(row.label ?? "").trim() || row.canonical_id}
                             </Link>
