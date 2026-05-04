@@ -14,6 +14,8 @@ const authBase = () => import.meta.env.VITE_AUTH_API_BASE ?? ""
 interface AuthContextType {
   isAuthenticated: boolean
   username: string
+  /** `org_admin` in the current organization (same rule as Agate UI). */
+  isOrgAdmin: boolean
   loading: boolean
   logout: () => Promise<void>
   checkAuth: () => Promise<void>
@@ -26,25 +28,30 @@ function applyMe(
   setters: {
     setIsAuthenticated: (v: boolean) => void
     setUsername: (v: string) => void
+    setIsOrgAdmin: (v: boolean) => void
   },
 ) {
   const ok = Boolean(data.authenticated && data.email)
   setters.setIsAuthenticated(ok)
   setters.setUsername(ok ? String(data.email) : "")
+  const role = ok ? (data.org_role ?? null) : null
+  setters.setIsOrgAdmin(ok && role === "org_admin")
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [username, setUsername] = useState("")
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const checkAuth = useCallback(async () => {
     try {
       const data = await fetchMe()
-      applyMe(data, { setIsAuthenticated, setUsername })
+      applyMe(data, { setIsAuthenticated, setUsername, setIsOrgAdmin })
     } catch {
       setIsAuthenticated(false)
       setUsername("")
+      setIsOrgAdmin(false)
     } finally {
       setLoading(false)
     }
@@ -65,11 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIsAuthenticated(false)
     setUsername("")
+    setIsOrgAdmin(false)
   }, [])
 
   const value: AuthContextType = {
     isAuthenticated,
     username,
+    isOrgAdmin,
     loading,
     logout,
     checkAuth,

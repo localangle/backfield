@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getStats, getAgentTypes, type AgentType, type Stats } from '@/lib/api'
 import { useProjectCatalogScope } from '@/lib/catalogNavigation'
+import { useSelectedStylebookLabel } from '@/lib/stylebookScopeContext'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { MapPin, Users, Building2, BookOpen, Loader2, Link, Merge } from 'lucide-react'
@@ -18,6 +19,7 @@ const AGENT_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>
 export default function Index() {
   const navigate = useNavigate()
   const { projectSlug, scopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const selectedStylebookLabel = useSelectedStylebookLabel()
   const [stats, setStats] = useState<Stats | null>(null)
   const [agents, setAgents] = useState<AgentType[]>([])
   const [loading, setLoading] = useState(true)
@@ -131,7 +133,7 @@ export default function Index() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Stylebook</h1>
+        <h1 className="text-3xl font-bold">{selectedStylebookLabel}</h1>
         <p className="text-muted-foreground mt-2">
           Manage canonical entities and review candidates
         </p>

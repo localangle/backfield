@@ -24,4 +24,4 @@ Hub-style product title + platform subtitle (`text-3xl` / muted `text-sm`), wrap
 
 ## `UserAccountMenu`
 
-Icon trigger with dropdown: shows `userLabel` (typically email) at the top when set, then optional **Change password** (only if `onChangePassword` is passed), optional **Manage users** (org admin + `onManageUsers`), optional **Manage catalogs** (org admin + `onManageCatalogs`), and **Log out**. Navigation is via callbacks so hosts keep their own router.
+Icon trigger with dropdown: shows `userLabel` (typically email) at the top when set, then optional **Change password** (only if `onChangePassword` is passed), optional **Manage users** (org admin + `onManageUsers`), optional **Manage stylebooks** (org admin + `onManageCatalogs`), and **Log out**. Navigation is via callbacks so hosts keep their own router.

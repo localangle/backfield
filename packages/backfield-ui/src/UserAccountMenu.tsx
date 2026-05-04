@@ -12,7 +12,7 @@ export interface UserAccountMenuProps {
   onLogout: () => void
   /** When set and `isOrgAdmin`, shows “Manage users”. */
   onManageUsers?: () => void
-  /** When set and `isOrgAdmin`, shows “Manage catalogs”. */
+  /** When set and `isOrgAdmin`, shows “Manage stylebooks”. */
   onManageCatalogs?: () => void
   className?: string
 }
@@ -85,7 +85,7 @@ export function UserAccountMenu({
                 onManageCatalogs()
               }}
             >
-              Manage catalogs
+              Manage stylebooks
             </DropdownMenu.Item>
           ) : null}
           {onChangePassword ||

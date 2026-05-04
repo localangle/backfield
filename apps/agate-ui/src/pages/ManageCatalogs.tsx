@@ -96,7 +96,7 @@ export default function ManageCatalogsPage() {
       } catch (e) {
         if (!cancelled) {
           setLoadError(
-            e instanceof Error ? e.message : "Could not load catalogs.",
+            e instanceof Error ? e.message : "Could not load stylebooks.",
           )
         }
       } finally {
@@ -116,7 +116,7 @@ export default function ManageCatalogsPage() {
     if (!organizationId) return
     const name = createName.trim()
     if (!name) {
-      showError("Please enter a name for the catalog.")
+      showError("Please enter a name for the stylebook.")
       return
     }
     try {
@@ -130,9 +130,9 @@ export default function ManageCatalogsPage() {
       setCreateDefault(false)
       await reload()
       notifyWorkspaceRefresh()
-      showMessage("Catalog created.", { title: "Done" })
+      showMessage("Stylebook created.", { title: "Done" })
     } catch (e) {
-      showError(e instanceof Error ? e.message : "Could not create catalog.")
+      showError(e instanceof Error ? e.message : "Could not create stylebook.")
     } finally {
       setCreating(false)
     }
@@ -151,7 +151,7 @@ export default function ManageCatalogsPage() {
       setRenameRow(null)
       await reload()
       notifyWorkspaceRefresh()
-      showMessage("Catalog updated.", { title: "Done" })
+      showMessage("Stylebook updated.", { title: "Done" })
     } catch (e) {
       showError(e instanceof Error ? e.message : "Could not update name.")
     } finally {
@@ -165,7 +165,7 @@ export default function ManageCatalogsPage() {
       await setDefaultStylebookCatalog(organizationId, row.id)
       await reload()
       notifyWorkspaceRefresh()
-      showMessage("Default catalog updated.", { title: "Done" })
+      showMessage("Default stylebook updated.", { title: "Done" })
     } catch (e) {
       showError(e instanceof Error ? e.message : "Could not update default.")
     }
@@ -185,7 +185,7 @@ export default function ManageCatalogsPage() {
         setDeleteRow(null)
         setDeletePreview(null)
         showError(
-          "Your organization must keep at least one catalog. Create another catalog before removing this one.",
+          "Your organization must keep at least one stylebook. Create another stylebook before removing this one.",
         )
         return
       }
@@ -200,13 +200,13 @@ export default function ManageCatalogsPage() {
   const onDelete = async () => {
     if (!organizationId || !deleteRow || !deletePreview) return
     if (deleteConfirmName.trim() !== deleteRow.name.trim()) {
-      showError("The name you typed does not match this catalog.")
+      showError("The name you typed does not match this stylebook.")
       return
     }
     if (deleteRow.is_default) {
       const rep = parseInt(deleteReplacementId, 10)
       if (!Number.isFinite(rep) || rep === deleteRow.id) {
-        showError("Choose which catalog should become the default.")
+        showError("Choose which stylebook should become the default.")
         return
       }
     }
@@ -222,9 +222,9 @@ export default function ManageCatalogsPage() {
       setDeletePreview(null)
       await reload()
       notifyWorkspaceRefresh()
-      showMessage("Catalog removed.", { title: "Done" })
+      showMessage("Stylebook removed.", { title: "Done" })
     } catch (e) {
-      showError(e instanceof Error ? e.message : "Could not remove catalog.")
+      showError(e instanceof Error ? e.message : "Could not remove stylebook.")
     } finally {
       setDeleting(false)
     }
@@ -238,7 +238,7 @@ export default function ManageCatalogsPage() {
   if (!organizationId) {
     return (
       <div className="text-center text-muted-foreground py-12">
-        You need to be signed in to an organization to manage catalogs.
+        You need to be signed in to an organization to manage stylebooks.
       </div>
     )
   }
@@ -256,19 +256,19 @@ export default function ManageCatalogsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Catalogs</h1>
-        <p className="text-muted-foreground mt-2">
-          Catalogs hold your canonical locations and related editorial data. Each
-          workspace uses one catalog; flows can reference a catalog where
+        <h1 className="text-2xl font-semibold tracking-tight">Stylebooks</h1>
+        <p className="text-sm text-muted-foreground mt-2">
+          Stylebooks hold your canonical locations and related editorial data. Each
+          workspace uses one stylebook; flows can reference a stylebook where
           supported.
         </p>
       </div>
 
       <div className="flex justify-end">
         <Button type="button" onClick={() => setCreateOpen(true)}>
-          New catalog
+          New stylebook
         </Button>
       </div>
 
@@ -278,7 +278,7 @@ export default function ManageCatalogsPage() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead className="w-40">Default</TableHead>
-              <TableHead className="text-right w-64">Actions</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -292,36 +292,41 @@ export default function ManageCatalogsPage() {
                     <span className="text-muted-foreground">—</span>
                   )}
                 </TableCell>
-                <TableCell className="text-right space-x-2">
-                  {!r.is_default ? (
+                <TableCell className="text-right align-middle">
+                  <div className="flex flex-nowrap items-center justify-end gap-2">
+                    {!r.is_default ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => void onSetDefault(r)}
+                      >
+                        Make default
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => void onSetDefault(r)}
+                      className="shrink-0"
+                      onClick={() => {
+                        setRenameRow(r)
+                        setRenameValue(r.name)
+                      }}
                     >
-                      Make default
+                      Rename
                     </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setRenameRow(r)
-                      setRenameValue(r.name)
-                    }}
-                  >
-                    Rename
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => void openDelete(r)}
-                  >
-                    Remove
-                  </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => void openDelete(r)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -332,9 +337,9 @@ export default function ManageCatalogsPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>New catalog</DialogTitle>
+            <DialogTitle>New stylebook</DialogTitle>
             <DialogDescription>
-              Add a catalog for your organization. You can switch workspaces to
+              Add a stylebook for your organization. You can point workspaces to
               it later.
             </DialogDescription>
           </DialogHeader>
@@ -353,7 +358,7 @@ export default function ManageCatalogsPage() {
                 checked={createDefault}
                 onCheckedChange={(v) => setCreateDefault(v === true)}
               />
-              Make this the default catalog for the organization
+              Make this the default stylebook for the organization
             </label>
           </div>
           <DialogFooter>
@@ -381,7 +386,7 @@ export default function ManageCatalogsPage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rename catalog</DialogTitle>
+            <DialogTitle>Rename stylebook</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
             <Label htmlFor="rename-cat">Display name</Label>
@@ -421,9 +426,9 @@ export default function ManageCatalogsPage() {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Remove catalog</DialogTitle>
+            <DialogTitle>Remove stylebook</DialogTitle>
             <DialogDescription>
-              This cannot be undone. Type the catalog name exactly to confirm.
+              This cannot be undone. Type the stylebook name exactly to confirm.
             </DialogDescription>
           </DialogHeader>
           {deleteLoading ? (
@@ -455,13 +460,13 @@ export default function ManageCatalogsPage() {
               </p>
               {deleteRow?.is_default && replacementChoices.length > 0 ? (
                 <div className="space-y-2">
-                  <Label>Default catalog after removal</Label>
+                  <Label>Default stylebook after removal</Label>
                   <Select
                     value={deleteReplacementId}
                     onValueChange={setDeleteReplacementId}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Choose a catalog" />
+                      <SelectValue placeholder="Choose a stylebook" />
                     </SelectTrigger>
                     <SelectContent>
                       {replacementChoices.map((c) => (
@@ -474,7 +479,7 @@ export default function ManageCatalogsPage() {
                 </div>
               ) : null}
               <div className="space-y-2">
-                <Label htmlFor="del-confirm">Type the catalog name to confirm</Label>
+                <Label htmlFor="del-confirm">Type the stylebook name to confirm</Label>
                 <Input
                   id="del-confirm"
                   value={deleteConfirmName}
@@ -501,7 +506,7 @@ export default function ManageCatalogsPage() {
               onClick={() => void onDelete()}
               disabled={deleting || deleteLoading || !deletePreview}
             >
-              {deleting ? "Removing…" : "Remove catalog"}
+              {deleting ? "Removing…" : "Remove stylebook"}
             </Button>
           </DialogFooter>
         </DialogContent>

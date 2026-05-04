@@ -41,3 +41,23 @@ export interface MeResponse {
 export async function fetchMe(): Promise<MeResponse> {
   return jsonFetch<MeResponse>("/v1/auth/me")
 }
+
+export interface ProjectSummary {
+  id: number
+  name: string
+  slug: string
+}
+
+/** Workspaces and visible projects for the signed-in user (session only). */
+export async function listMyWorkspaces(): Promise<WorkspaceWithProjects[]> {
+  return jsonFetch<WorkspaceWithProjects[]>("/v1/me/workspaces")
+}
+
+export interface WorkspaceWithProjects {
+  id: number
+  name: string
+  slug: string
+  projects: ProjectSummary[]
+  stylebook_id?: number | null
+  stylebook_name?: string | null
+}
