@@ -12,6 +12,7 @@ from backfield_db import (
     BackfieldAiDefaultModelRole,
     BackfieldAiModelConfig,
     BackfieldAiProjectModelOverride,
+    BackfieldOrganizationIntegrationSecret,
 )
 from sqlalchemy import CheckConstraint, Numeric, UniqueConstraint
 
@@ -41,6 +42,20 @@ def test_ai_table_names_use_shared_backfield_prefix() -> None:
     assert BackfieldAiProjectModelOverride.__tablename__ == "backfield_ai_project_model_override"
     assert BackfieldAiDefaultModelRole.__tablename__ == "backfield_ai_default_model_role"
     assert BackfieldAiCallRecord.__tablename__ == "backfield_ai_call_record"
+
+
+def test_organization_integration_secret_org_scoped_keys() -> None:
+    assert BackfieldOrganizationIntegrationSecret.__tablename__ == (
+        "backfield_organization_integration_secret"
+    )
+    assert _unique_constraint_columns(
+        BackfieldOrganizationIntegrationSecret,
+        "uq_backfield_org_integration_secret_org_key",
+    ) == ("organization_id", "integration_key")
+    assert (
+        "ix_backfield_organization_integration_secret_organization_id"
+        in _index_names(BackfieldOrganizationIntegrationSecret)
+    )
 
 
 def test_model_config_defaults_and_decimal_pricing_fields() -> None:

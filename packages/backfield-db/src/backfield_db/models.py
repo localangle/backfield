@@ -442,6 +442,30 @@ class BackfieldProjectSecret(SQLModel, table=True):
     )
 
 
+class BackfieldOrganizationIntegrationSecret(SQLModel, table=True):
+    """Organization-scoped encrypted integration secret (AI provider keys first)."""
+
+    __tablename__ = "backfield_organization_integration_secret"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "integration_key",
+            name="uq_backfield_org_integration_secret_org_key",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    integration_key: str = Field(sa_column=Column(Text, nullable=False))
+    value_encrypted: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 # ----- Shared AI model configuration and usage tracking (backfield_ai_*) -----
 
 

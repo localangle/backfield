@@ -64,6 +64,7 @@ Schema revisions start at `001_agate_baseline` (initial `agate_*` tables and see
 ### Secrets
 
 - `backfield_project_secret` — per-project encrypted env-style secrets (`key` + `value_encrypted`); decrypted by the worker at run time when `MASTER_ENCRYPTION_KEY` is set.
+- `backfield_organization_integration_secret` — per-organization encrypted integration secrets (`integration_key` + `value_encrypted`), unique `(organization_id, integration_key)`. v1 write paths accept AI provider keys under stable keys such as `ai.provider.openai` and `ai.provider.anthropic` (Core API org-admin routes); intended for broader vendor integrations later.
 
 Revision **`003_def_ws_general`** inserts the **Default Workspace** (`slug` `default`) and links General to it (org display name is seeded as **Backfield** in `002_backfield_identity`). Revision **`004_ws_membership`** adds `backfield_workspace_membership`. Revision **`005_location_schema_foundation`** introduces the shared content/location substrate under historical `backfield_*` table names (since renamed—see **`009_rename_substrate_tables`**) and enables PostGIS for location geometry. Revision **`006_article_source_run_id_text`** aligns article `source_run_id` with string `agate_run.id` values (and adds the ORM-level foreign key).
 
@@ -96,6 +97,8 @@ Revision **`016_agate_processed_item`** creates **`agate_processed_item`** with 
 
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 
+Revision **`026_organization_integration_secret`** adds **`backfield_organization_integration_secret`** for encrypted organization-level integration credentials (AI provider keys first).
+
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 
 **Existing databases** that already applied older revisions: follow migration notes in your upgrade path or reset (`make reset-db` + `make up`) for dev.
@@ -110,6 +113,7 @@ The **Starter flow** graph row for the General project is created at runtime whe
   - `agate_processed_item.run_id`
   - `backfield_project_secret.project_id`
   - unique key on `backfield_project_secret (project_id, key)`
+  - organization integration lookups on `backfield_organization_integration_secret (organization_id)` plus unique `(organization_id, integration_key)`
   - AI model catalog lookup indexes on `backfield_ai_model_config (organization_id, status, model_kind)` and `(organization_id, provider, provider_model_id)`
   - AI call aggregation indexes on `backfield_ai_call_record (project_id, created_at)`, `(run_id, node_id)`, and `(run_id, status)`
   - GIST indexes on shared location geometry columns

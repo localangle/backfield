@@ -24,6 +24,11 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
     - `GET /v1/organizations/{org_id}/ai-models` — rows enabled for the org (`id`, `name`, `provider`, `provider_model_id`, `model_kind`, `capabilities`, pricing, `status`, optional `curated_id`, timestamps).
     - `POST /v1/organizations/{org_id}/ai-models` — create from **`curated_id`** (optional overrides for `name`, prices, `config_json`) or a **custom** row (`name`, `provider`, `provider_model_id`, `capabilities`, prices; generative kind only in this slice — **`embedding`** rejected). Duplicate **`name`** per org returns **409**.
     - `PATCH /v1/organizations/{org_id}/ai-models/{config_id}` — partial update (`name`, prices, `capabilities`, `config_json`, **`status`** `active` | `disabled`). Row must belong to `org_id`.
+  - **Organization integration secrets** (`backfield_organization_integration_secret`): org admins manage encrypted vendor credentials. Responses never include plaintext or ciphertext — only metadata (`integration_key`, timestamps). Writes require **`MASTER_ENCRYPTION_KEY`** (same Fernet path as project secrets).
+    - `GET /v1/organizations/{org_id}/integration-secrets/ai-provider-catalog` — OpenAI and Anthropic slots with `configured` plus timestamps when present.
+    - `GET /v1/organizations/{org_id}/integration-secrets` — stored rows for the org (metadata only).
+    - `PUT /v1/organizations/{org_id}/integration-secrets/{integration_key}` — JSON body `{ "value": "<secret>" }`; replaces or creates. Allowed keys in v1 include **`ai.provider.openai`** and **`ai.provider.anthropic`**.
+    - `DELETE /v1/organizations/{org_id}/integration-secrets/{integration_key}` — removes the stored secret (**404** if missing).
 
 **Member project access (sessions / API keys):** `org_admin` sees all org projects. Other members see projects in their assigned workspaces plus any legacy explicit `backfield_project_membership` rows for that org (see `session_project_ids_for_user` in `packages/backfield-auth`).
 
@@ -32,7 +37,7 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
   - `POST /v1/projects/{project_id}/api-keys` — body `{ "credential_type": "user" | "service", "label"?: string }`. Returns `raw_key` **once** on create. `user` keys require a browser session; `service` keys require org admin. Response includes `user_id` for `user` keys.
   - `DELETE /v1/projects/{project_id}/api-keys/{credential_id}` — revoke (session rules: org admin for `service` or another user’s `user` key; owner for own `user` key).
 
-Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `me.py`, `admin_org.py`, `credentials.py`, `org_ai_models.py`). Shared catalog logic lives in [`apps/core-api/src/core_api/ai_model_catalog.py`](../apps/core-api/src/core_api/ai_model_catalog.py).
+Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `me.py`, `admin_org.py`, `credentials.py`, `org_ai_models.py`, `org_integration_secrets.py`). Shared helpers live in [`apps/core-api/src/core_api/ai_model_catalog.py`](../apps/core-api/src/core_api/ai_model_catalog.py) and [`apps/core-api/src/core_api/org_integration_secrets.py`](../apps/core-api/src/core_api/org_integration_secrets.py).
 
 ## Stylebook API (`apps/stylebook-api`)
 

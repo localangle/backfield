@@ -19,6 +19,7 @@ from backfield_db.models import (  # noqa: F401
     BackfieldAiProjectModelOverride,
     BackfieldApiCredential,
     BackfieldOrganization,
+    BackfieldOrganizationIntegrationSecret,
     BackfieldOrganizationMembership,
     BackfieldProject,
     BackfieldProjectMembership,

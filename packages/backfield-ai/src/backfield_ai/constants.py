@@ -8,3 +8,19 @@ AI_CAPABILITY_JSON = "json"
 AI_CAPABILITY_VISION = "vision"
 
 DEFAULT_AI_CURRENCY = "USD"
+
+# Organization integration secret keys (encrypted at rest; generic pattern for future vendors).
+INTEGRATION_KEY_AI_PROVIDER_OPENAI = "ai.provider.openai"
+INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC = "ai.provider.anthropic"
+
+ORG_AI_PROVIDER_INTEGRATION_KEYS: frozenset[str] = frozenset(
+    {
+        INTEGRATION_KEY_AI_PROVIDER_OPENAI,
+        INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC,
+    }
+)
+
+AI_PROVIDER_SLUG_BY_INTEGRATION_KEY: dict[str, str] = {
+    INTEGRATION_KEY_AI_PROVIDER_OPENAI: "openai",
+    INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC: "anthropic",
+}

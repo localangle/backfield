@@ -15,6 +15,7 @@ from backfield_db import (
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from core_api.deps import get_session
 from core_api.main import app
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -1038,3 +1039,141 @@ def test_ai_models_embedding_kind_rejected_for_now(client: TestClient) -> None:
         },
     )
     assert r.status_code == 400
+
+
+def test_integration_secrets_catalog_requires_auth(client: TestClient) -> None:
+    r = client.get("/v1/organizations/1/integration-secrets/ai-provider-catalog")
+    assert r.status_code == 401
+
+
+def test_integration_secrets_org_admin_encrypt_and_metadata_only(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "secadm@example.com", "password": "secadm-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "secadm@example.com", "password": "secadm-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    key_openai = "ai.provider.openai"
+
+    cat0 = client.get(f"/v1/organizations/{org_id}/integration-secrets/ai-provider-catalog")
+    assert cat0.status_code == 200
+    assert all(not x["configured"] for x in cat0.json())
+
+    secret_plain = "sk-test-openai-not-leaked-xyz"
+    put = client.put(
+        f"/v1/organizations/{org_id}/integration-secrets/{key_openai}",
+        json={"value": secret_plain},
+    )
+    assert put.status_code == 200
+    body_put = put.json()
+    assert set(body_put.keys()) == {"integration_key", "created_at", "updated_at"}
+    assert secret_plain not in put.text
+
+    listed = client.get(f"/v1/organizations/{org_id}/integration-secrets")
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert len(rows) == 1
+    assert rows[0]["integration_key"] == key_openai
+    assert secret_plain not in listed.text
+
+    cat1 = client.get(f"/v1/organizations/{org_id}/integration-secrets/ai-provider-catalog")
+    assert cat1.status_code == 200
+    openai_row = next(x for x in cat1.json() if x["provider"] == "openai")
+    assert openai_row["configured"] is True
+    anthropic_row = next(x for x in cat1.json() if x["provider"] == "anthropic")
+    assert anthropic_row["configured"] is False
+
+    assert (
+        client.put(
+            f"/v1/organizations/{org_id}/integration-secrets/{key_openai}",
+            json={"value": "sk-replaced-key"},
+        ).status_code
+        == 200
+    )
+
+    bad_key = client.put(
+        f"/v1/organizations/{org_id}/integration-secrets/vendor.custom.api_key",
+        json={"value": "x"},
+    )
+    assert bad_key.status_code == 400
+
+    assert (
+        client.delete(
+            f"/v1/organizations/{org_id}/integration-secrets/{key_openai}",
+        ).status_code
+        == 204
+    )
+
+    assert (
+        client.delete(
+            f"/v1/organizations/{org_id}/integration-secrets/{key_openai}",
+        ).status_code
+        == 404
+    )
+
+
+def test_integration_secrets_member_cannot_mutate(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "secorga@example.com", "password": "secorga-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "secorga@example.com", "password": "secorga-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={
+            "email": "secmem@example.com",
+            "password": "secmem-secret-9",
+            "role": "member",
+        },
+    )
+    ws_id = client.get(f"/v1/organizations/{org_id}/workspaces").json()[0]["id"]
+    users = client.get(f"/v1/organizations/{org_id}/users?detail=true").json()
+    member_id = next(u["id"] for u in users if u["email"] == "secmem@example.com")
+    client.put(
+        f"/v1/organizations/{org_id}/users/{member_id}/workspace-memberships",
+        json={"workspace_ids": [ws_id]},
+    )
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "secmem@example.com", "password": "secmem-secret-9"},
+    )
+
+    r = client.put(
+        f"/v1/organizations/{org_id}/integration-secrets/ai.provider.openai",
+        json={"value": "sk-no"},
+    )
+    assert r.status_code == 403
+
+
+def test_integration_secrets_put_requires_master_key(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MASTER_ENCRYPTION_KEY", raising=False)
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "nenc@example.com", "password": "nenc-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "nenc@example.com", "password": "nenc-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    put = client.put(
+        f"/v1/organizations/{org_id}/integration-secrets/ai.provider.openai",
+        json={"value": "sk-any"},
+    )
+    assert put.status_code == 503
