@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import {
   deleteCanonicalLocation,
   listCanonicalLocations,
@@ -31,10 +32,12 @@ import {
 import { Loader2, Trash2 } from "lucide-react"
 import Pagination from "@/components/Pagination"
 import CanonicalSourceIcon from "@/components/CanonicalSourceIcon"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
 
 export default function Locations() {
   const { showError } = useAppMessage()
   const { scopeQueryString, scopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const crumbRoot = useScopeBreadcrumbRoot()
   const [searchParams, setSearchParams] = useSearchParams()
   const [canonicals, setCanonicals] = useState<CanonicalLocation[]>([])
   const [loading, setLoading] = useState(true)
@@ -149,7 +152,16 @@ export default function Locations() {
   return (
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Canonical locations</h1>
+        <div className="min-w-0">
+          <Breadcrumbs
+            className="mb-3"
+            items={[
+              { label: crumbRoot.label, to: crumbRoot.to },
+              { label: "Locations" },
+            ]}
+          />
+          <h1 className="text-3xl font-bold">Canonical locations</h1>
+        </div>
         <div className="flex gap-2">
           <Link to={`/locations/candidates${scopeSuffix}`}>
             <Button variant="outline">Candidates</Button>

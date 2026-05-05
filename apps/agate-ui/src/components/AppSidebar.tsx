@@ -1,22 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  matchPath,
-  NavLink,
-  useLocation,
-  useNavigate,
-} from 'react-router-dom'
+import { matchPath, NavLink, useLocation } from 'react-router-dom'
 import {
   BookOpen,
   FolderKanban,
   HelpCircle,
   Newspaper,
-  Plus,
 } from 'lucide-react'
 import { ShellSidebar } from '@backfield/ui'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { createProject, listProjects, type Project, type ProjectCreate } from '@/lib/api'
-import ProjectDialog from '@/components/ProjectDialog'
+import { listProjects, type Project } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { hasWorkspaceAccess } from '@/lib/workspace-access'
@@ -42,12 +35,10 @@ function pickProjectSlugForStylebookLinks(
 
 export default function AppSidebar() {
   const location = useLocation()
-  const navigate = useNavigate()
   const { organizationId, isOrgAdmin } = useAuth()
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>([])
   const [apiProjects, setApiProjects] = useState<Project[]>([])
   const [stylebooks, setStylebooks] = useState<StylebookCatalogRow[]>([])
-  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
 
   const loadWorkspaces = useCallback(async (): Promise<WorkspaceWithProjects[]> => {
     try {
@@ -118,16 +109,6 @@ export default function AppSidebar() {
       .catch((err) => console.error('Failed to fetch stylebooks:', err))
   }, [organizationId])
 
-  const openNewProject = () => setProjectDialogOpen(true)
-
-  const handleSaveProject = async (data: ProjectCreate) => {
-    const p = await createProject(data)
-    await loadWorkspaces()
-    await loadProjects()
-    window.dispatchEvent(new CustomEvent('agate:projects-changed'))
-    navigate(`/project/${encodeURIComponent(p.slug)}`)
-  }
-
   const hubLinkClass =
     'flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-muted-foreground hover:text-foreground'
 
@@ -186,10 +167,19 @@ export default function AppSidebar() {
   const workspaceRowClass = (active: boolean) =>
     cn(
       'rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-      'flex min-w-0 flex-1 items-center px-2 py-2 text-left',
+      'flex w-full min-w-0 items-center px-2 py-2 text-left',
       active
         ? 'bg-accent text-accent-foreground'
         : 'text-foreground hover:bg-muted/60',
+    )
+
+  const projectUnderWorkspaceClass = (active: boolean) =>
+    cn(
+      'rounded-md text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      'flex w-full min-w-0 items-center py-1.5 pr-2 pl-7 text-left',
+      active
+        ? 'bg-accent font-medium text-accent-foreground'
+        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
     )
 
   return (
@@ -244,32 +234,41 @@ export default function AppSidebar() {
 
               {(expanded ? workspaceRows : []).map((ws) => {
                 const wsActive = activeWorkspaceSlug === ws.slug
+                const projectsSorted = [...ws.projects].sort((a, b) =>
+                  a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+                )
                 return (
-                  <NavLink
+                  <div
                     key={`${ws.slug}-${ws.id}`}
-                    to={`/workspace/${encodeURIComponent(ws.slug)}`}
-                    title={ws.name}
-                    aria-label={`Open workspace ${ws.name}`}
-                    aria-current={wsActive ? 'page' : undefined}
-                    className={() => workspaceRowClass(wsActive)}
+                    className="flex flex-col gap-0.5"
                   >
-                    <span className="min-w-0 truncate">{ws.name}</span>
-                  </NavLink>
+                    <NavLink
+                      to={`/workspace/${encodeURIComponent(ws.slug)}`}
+                      title={ws.name}
+                      aria-label={`Open workspace ${ws.name}`}
+                      aria-current={wsActive ? 'page' : undefined}
+                      className={() => workspaceRowClass(wsActive)}
+                    >
+                      <span className="min-w-0 truncate">{ws.name}</span>
+                    </NavLink>
+                    {projectsSorted.map((p) => {
+                      const pActive = activeProjectSlug === p.slug
+                      return (
+                        <NavLink
+                          key={`${ws.slug}-p-${p.id}`}
+                          to={`/project/${encodeURIComponent(p.slug)}`}
+                          title={p.name}
+                          aria-label={`Open project ${p.name}`}
+                          aria-current={pActive ? 'page' : undefined}
+                          className={() => projectUnderWorkspaceClass(pActive)}
+                        >
+                          <span className="min-w-0 truncate">{p.name}</span>
+                        </NavLink>
+                      )
+                    })}
+                  </div>
                 )
               })}
-
-              {expanded && workspaceAccess ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start gap-2 h-8 text-muted-foreground"
-                  onClick={openNewProject}
-                >
-                  <Plus className="h-4 w-4" />
-                  New project
-                </Button>
-              ) : null}
 
               {!workspaceAccess && expanded ? (
                 <div className="px-2 py-1.5 text-sm text-muted-foreground select-none">
@@ -283,7 +282,7 @@ export default function AppSidebar() {
                   {expanded ? (
                     <div className={sectionTitleClass}>
                       <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
-                      <span>Stylebooks</span>
+                      <span>Stylebook</span>
                     </div>
                   ) : (
                     <Button
@@ -292,7 +291,7 @@ export default function AppSidebar() {
                       size="icon"
                       className="w-full h-9 shrink-0"
                       onClick={() => expand()}
-                      title="Stylebooks"
+                      title="Stylebook"
                     >
                       <BookOpen className="h-5 w-5" aria-hidden />
                     </Button>
@@ -351,13 +350,6 @@ export default function AppSidebar() {
           </nav>
         )}
       </ShellSidebar>
-
-      <ProjectDialog
-        open={projectDialogOpen}
-        onOpenChange={setProjectDialogOpen}
-        project={null}
-        onSave={handleSaveProject}
-      />
     </>
   )
 }

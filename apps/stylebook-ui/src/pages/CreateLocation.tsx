@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { createLocation } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,6 +23,7 @@ import {
   polygonFromAxisAlignedBounds,
 } from "@backfield/ui/axisAlignedRectangle"
 import { cn } from "@/lib/utils"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -141,6 +143,7 @@ export default function CreateLocation() {
   const { showMessage, showError, showConfirm } = useAppMessage()
   const navigate = useNavigate()
   const { scopeSuffix } = useProjectCatalogScope()
+  const crumbRoot = useScopeBreadcrumbRoot()
   const [projectSlug, setProjectSlug] = useState("")
   const [name, setName] = useState("")
   const [locationType, setLocationType] = useState("")
@@ -302,6 +305,14 @@ export default function CreateLocation() {
   return (
     <div className="container mx-auto p-6">
       <div className="mb-6">
+        <Breadcrumbs
+          className="mb-3"
+          items={[
+            { label: crumbRoot.label, to: crumbRoot.to },
+            { label: "Locations", to: `/locations/canonical${scopeSuffix}` },
+            { label: "Create" },
+          ]}
+        />
         <h1 className="text-3xl font-bold">Create Location</h1>
       </div>
 

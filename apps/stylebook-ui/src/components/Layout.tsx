@@ -332,12 +332,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     {expanded ? (
                       <div className={sectionTitleClass}>
                         <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
-                        <span>Stylebooks</span>
+                        <span>Stylebook</span>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        title="Stylebooks"
+                        title="Stylebook"
                         className={cn(
                           "inline-flex h-9 w-full items-center justify-center rounded-md",
                           "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

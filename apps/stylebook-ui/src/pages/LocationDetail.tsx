@@ -14,10 +14,12 @@ import {
 } from "@/lib/api"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
 import { cn } from "@/lib/utils"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -193,6 +195,7 @@ function geometryToFeatureCollections(
 export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
   const { scopeSuffix } = useProjectCatalogScope()
+  const crumbRoot = useScopeBreadcrumbRoot()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -559,7 +562,17 @@ export default function LocationDetail() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">{canonical.label}</h1>
+        <div className="min-w-0">
+          <Breadcrumbs
+            className="mb-3"
+            items={[
+              { label: crumbRoot.label, to: crumbRoot.to },
+              { label: "Locations", to: `/locations/canonical${scopeSuffix}` },
+              { label: canonical.label },
+            ]}
+          />
+          <h1 className="text-3xl font-bold">{canonical.label}</h1>
+        </div>
         <div className="flex gap-2">
           {editing ? (
             <>

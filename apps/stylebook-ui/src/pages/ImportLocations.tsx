@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -31,6 +32,7 @@ import {
   type ImportGeoJsonResponse,
 } from "@/lib/api"
 import { fetchPlaceExtractLocationTypes } from "@/lib/stylebook-api/taxonomy"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
 import {
   PLACE_EXTRACT_LOCATION_TYPES,
   placeExtractTypeLabel,
@@ -122,6 +124,7 @@ export default function ImportLocations() {
   const [searchParams] = useSearchParams()
   const { scopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
+  const crumbRoot = useScopeBreadcrumbRoot()
   const projectSlug = useMemo(() => searchParams.get("project") || "", [searchParams])
   const [step, setStep] = useState<WizardStep>("upload")
   const [geojsonText, setGeojsonText] = useState<string>("")
@@ -326,6 +329,13 @@ export default function ImportLocations() {
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
+          <Breadcrumbs
+            className="mb-3"
+            items={[
+              { label: crumbRoot.label, to: crumbRoot.to },
+              { label: "Import" },
+            ]}
+          />
           <h1 className="text-3xl font-bold">Import locations (GeoJSON)</h1>
         </div>
         <Link to={backHref}>

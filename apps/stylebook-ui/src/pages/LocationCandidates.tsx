@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import {
   acceptCandidate,
   deferCandidate,
@@ -53,6 +54,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
 import {
   CheckCircle2,
   ChevronRight,
@@ -156,6 +158,7 @@ function rankSimilarCandidates(rows: Candidate[], needle: string): Candidate[] {
 
 export default function LocationCandidates() {
   const { scopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const crumbRoot = useScopeBreadcrumbRoot()
   const [searchParams] = useSearchParams()
   const projectSlug = searchParams.get("project") || ""
   const [loading, setLoading] = useState(false)
@@ -758,7 +761,17 @@ export default function LocationCandidates() {
         </div>
       ) : null}
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Location candidates</h1>
+        <div className="min-w-0">
+          <Breadcrumbs
+            className="mb-3"
+            items={[
+              { label: crumbRoot.label, to: crumbRoot.to },
+              { label: "Locations", to: `/locations/canonical${scopeSuffix}` },
+              { label: "Candidates" },
+            ]}
+          />
+          <h1 className="text-3xl font-bold">Location candidates</h1>
+        </div>
         <Link to={`/locations/canonical${scopeSuffix}`}>
           <Button variant="outline">Canonical locations</Button>
         </Link>
