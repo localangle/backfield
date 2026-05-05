@@ -174,8 +174,9 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route path="/admin/catalogs" element={<Navigate to="/admin/stylebooks" replace />} />
       <Route
-        path="/admin/catalogs"
+        path="/admin/stylebooks"
         element={
           <ProtectedRoute>
             <OrgAdminRoute>

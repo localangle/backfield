@@ -43,19 +43,21 @@ interface ConnectionsSectionProps {
 function getDetailUrl(
   entityType: EntityType,
   entityId: string | number,
+  catalogBasePath: string,
   scopeSuffix: string,
 ): string {
   const base = window.location.origin
+  const prefix = `${base}${catalogBasePath}`
   if (entityType === "person") {
-    return `${base}/people/canonical/${entityId}${scopeSuffix}`
+    return `${prefix}/people/canonical/${entityId}${scopeSuffix}`
   }
   if (entityType === "organization") {
-    return `${base}/organizations/canonical/${entityId}${scopeSuffix}`
+    return `${prefix}/organizations/canonical/${entityId}${scopeSuffix}`
   }
   if (entityType === "work") {
-    return `${base}/works/canonical/${entityId}${scopeSuffix}`
+    return `${prefix}/works/canonical/${entityId}${scopeSuffix}`
   }
-  return `${base}/locations/canonical/${entityId}${scopeSuffix}`
+  return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
 export default function ConnectionsSection({
@@ -64,7 +66,7 @@ export default function ConnectionsSection({
   projectSlug,
   entityDisplayName,
 }: ConnectionsSectionProps) {
-  const { filterScopeSuffix } = useProjectCatalogScope()
+  const { filterScopeSuffix, catalogBasePath } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
@@ -283,7 +285,7 @@ export default function ConnectionsSection({
                     <TableCell>{conn.nature}</TableCell>
                     <TableCell>
                       <a
-                        href={getDetailUrl(otherType(conn), otherId(conn), filterScopeSuffix)}
+                        href={getDetailUrl(otherType(conn), otherId(conn), catalogBasePath, filterScopeSuffix)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline inline-flex items-center gap-1"

@@ -142,3 +142,42 @@ export async function deleteStylebookCatalog(
     { method: "POST", body: JSON.stringify(body) },
   )
 }
+
+/** Org-admin only: explicit editors who may mutate canonicals / imports in this stylebook. */
+export interface StylebookEditorMember {
+  user_id: number
+  email: string
+  role: string
+  created_at: string
+}
+
+export async function listStylebookEditors(
+  orgId: number,
+  stylebookId: number,
+): Promise<StylebookEditorMember[]> {
+  return stylebookJsonFetch<StylebookEditorMember[]>(
+    `/v1/organizations/${orgId}/stylebooks/${stylebookId}/members`,
+  )
+}
+
+export async function addStylebookEditor(
+  orgId: number,
+  stylebookId: number,
+  body: { email: string },
+): Promise<StylebookEditorMember[]> {
+  return stylebookJsonFetch<StylebookEditorMember[]>(
+    `/v1/organizations/${orgId}/stylebooks/${stylebookId}/members`,
+    { method: "POST", body: JSON.stringify({ email: body.email.trim(), role: "editor" }) },
+  )
+}
+
+export async function removeStylebookEditor(
+  orgId: number,
+  stylebookId: number,
+  userId: number,
+): Promise<void> {
+  await stylebookJsonFetch<void>(
+    `/v1/organizations/${orgId}/stylebooks/${stylebookId}/members/${userId}`,
+    { method: "DELETE" },
+  )
+}

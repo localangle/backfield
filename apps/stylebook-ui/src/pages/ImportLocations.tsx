@@ -123,7 +123,7 @@ function formatPropertyExample(v: unknown): string | null {
 
 export default function ImportLocations() {
   const [searchParams] = useSearchParams()
-  const { filterScopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const { filterScopeSuffix, stylebookSlug, catalogBasePath } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const crumbRoot = useScopeBreadcrumbRoot()
   const canEdit = useCanEditStylebook()
@@ -222,8 +222,8 @@ export default function ImportLocations() {
   }, [stylebookSlug])
 
   const backHref = useMemo(
-    () => `/locations/canonical${filterScopeSuffix}`,
-    [filterScopeSuffix],
+    () => `${catalogBasePath}/locations/canonical${filterScopeSuffix}`,
+    [catalogBasePath, filterScopeSuffix],
   )
 
   const validateAndSetGeojson = (text: string): boolean => {
@@ -1140,7 +1140,7 @@ export default function ImportLocations() {
                               className="break-words font-medium text-primary underline-offset-4 hover:underline"
                               target="_blank"
                               rel="noopener noreferrer"
-                              to={`/locations/canonical/${encodeURIComponent(row.canonical_id)}${filterScopeSuffix}`}
+                              to={`${catalogBasePath}/locations/canonical/${encodeURIComponent(row.canonical_id)}${filterScopeSuffix}`}
                             >
                               {(row.label ?? "").trim() || row.canonical_id}
                             </Link>

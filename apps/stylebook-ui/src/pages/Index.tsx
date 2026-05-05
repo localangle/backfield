@@ -21,6 +21,7 @@ export default function Index() {
     workflowScopeSuffix,
     filterScopeSuffix,
     stylebookSlug,
+    catalogBasePath,
   } = useProjectCatalogScope()
   const selectedStylebookLabel = useSelectedStylebookLabel()
   const crumbRoot = useScopeBreadcrumbRoot()
@@ -50,13 +51,13 @@ export default function Index() {
 
   const handleEntityTypeClick = (type: string) => {
     if (type === "locations") {
-      navigate(`/locations/canonical${filterScopeSuffix}`)
+      navigate(`${catalogBasePath}/locations/canonical${filterScopeSuffix}`)
     } else if (type === "people") {
-      navigate(`/people/candidates${workflowScopeSuffix}`)
+      navigate(`${catalogBasePath}/people/candidates${workflowScopeSuffix}`)
     } else if (type === "organizations") {
-      navigate(`/organizations/candidates${workflowScopeSuffix}`)
+      navigate(`${catalogBasePath}/organizations/candidates${workflowScopeSuffix}`)
     } else if (type === "works") {
-      navigate(`/works/candidates${workflowScopeSuffix}`)
+      navigate(`${catalogBasePath}/works/candidates${workflowScopeSuffix}`)
     }
   }
 

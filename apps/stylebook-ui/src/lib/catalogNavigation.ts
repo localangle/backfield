@@ -1,33 +1,44 @@
 import { useMemo } from "react"
-import { useSearchParams } from "react-router-dom"
-import { STYLEBOOK_URL_QUERY_KEY } from "@/lib/stylebook-api/client"
+import { useParams, useSearchParams } from "react-router-dom"
+import {
+  parseLegacyStylebookQuery,
+  stylebookCatalogBasePath,
+} from "@/lib/stylebookPaths"
 
 /**
- * Reads/writes URL scope for Stylebook UI.
+ * Reads URL scope for Stylebook UI.
  *
- * - `project_scope`: required for project-scoped workflows (review queue, etc.)
- * - `project`: optional evidence filter on stylebook-scoped canonical pages
- * - `stylebook`: selected org stylebook (stable slug)
+ * - Path `/stylebook/<slug>/…` selects the catalog (preferred).
+ * - `project_scope`: workflows such as the review queue
+ * - `project`: optional evidence filter on canonical pages
  */
 export function useProjectCatalogScope() {
+  const params = useParams<{ stylebookSlug?: string }>()
   const [searchParams] = useSearchParams()
+  const fromRoute = (params.stylebookSlug ?? "").trim()
+  const fromLegacyQuery =
+    parseLegacyStylebookQuery(`?${searchParams.toString()}`) ?? ""
+  const stylebookSlug = fromRoute || fromLegacyQuery
+
   const projectScopeSlug = searchParams.get("project_scope") ?? ""
   const projectFilterSlug = searchParams.get("project") ?? ""
-  const stylebookSlug = searchParams.get(STYLEBOOK_URL_QUERY_KEY) ?? ""
+
+  const catalogBasePath = useMemo(
+    () => stylebookCatalogBasePath(stylebookSlug),
+    [stylebookSlug],
+  )
 
   const workflowScopeQueryString = useMemo(() => {
     const p = new URLSearchParams()
     if (projectScopeSlug) p.set("project_scope", projectScopeSlug)
-    if (stylebookSlug) p.set(STYLEBOOK_URL_QUERY_KEY, stylebookSlug)
     return p.toString()
-  }, [projectScopeSlug, stylebookSlug])
+  }, [projectScopeSlug])
 
   const filterScopeQueryString = useMemo(() => {
     const p = new URLSearchParams()
     if (projectFilterSlug) p.set("project", projectFilterSlug)
-    if (stylebookSlug) p.set(STYLEBOOK_URL_QUERY_KEY, stylebookSlug)
     return p.toString()
-  }, [projectFilterSlug, stylebookSlug])
+  }, [projectFilterSlug])
 
   const workflowScopeSuffix = workflowScopeQueryString
     ? `?${workflowScopeQueryString}`
@@ -38,6 +49,7 @@ export function useProjectCatalogScope() {
     projectScopeSlug,
     projectFilterSlug,
     stylebookSlug,
+    catalogBasePath,
     workflowScopeQueryString,
     workflowScopeSuffix,
     filterScopeQueryString,

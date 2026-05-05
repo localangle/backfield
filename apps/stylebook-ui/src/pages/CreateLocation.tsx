@@ -143,7 +143,7 @@ function geometryToFeatureCollections(
 export default function CreateLocation() {
   const { showMessage, showError, showConfirm } = useAppMessage()
   const navigate = useNavigate()
-  const { filterScopeSuffix } = useProjectCatalogScope()
+  const { filterScopeSuffix, catalogBasePath } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const canEdit = useCanEditStylebook()
   const [projectSlug, setProjectSlug] = useState("")
@@ -232,7 +232,7 @@ export default function CreateLocation() {
         geometry_json: geometryToCreate ?? undefined,
         status: "active",
       })
-      navigate(`/locations/canonical/${location.id}${filterScopeSuffix}`)
+      navigate(`${catalogBasePath}/locations/canonical/${location.id}${filterScopeSuffix}`)
     } catch (error) {
       console.error("Failed to create location:", error)
       showError(
@@ -244,7 +244,7 @@ export default function CreateLocation() {
   }
 
   const handleCancel = () => {
-    navigate(`/locations/canonical${filterScopeSuffix}`)
+    navigate(`${catalogBasePath}/locations/canonical${filterScopeSuffix}`)
   }
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
@@ -311,7 +311,7 @@ export default function CreateLocation() {
           className="mb-3"
           items={[
             { label: crumbRoot.label, to: crumbRoot.to },
-            { label: "Locations", to: `/locations/canonical${filterScopeSuffix}` },
+            { label: "Locations", to: `${catalogBasePath}/locations/canonical${filterScopeSuffix}` },
             { label: "Create" },
           ]}
         />

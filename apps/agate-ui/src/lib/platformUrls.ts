@@ -25,11 +25,21 @@ export function helpHref(): string {
   return `${agateUiOrigin()}/help`
 }
 
-/** Stylebook UI URL with project + stylebook slug query. */
-export function stylebookShellHref(projectSlug: string, stylebookSlug: string): string {
-  const base = stylebookUiOrigin()
+/**
+ * Stylebook UI URL: catalog lives at `/stylebook/<slug>/`. Optionally adds `project`
+ * for evidence filters. Omitting `project` is valid (same as opening Stylebook
+ * without coming from a flow). Legacy `/?stylebook=` still redirects on load.
+ */
+export function stylebookShellHref(
+  stylebookSlug: string,
+  projectSlug?: string | null,
+): string {
+  const base = stylebookUiOrigin().replace(/\/$/, '')
+  const path = `/stylebook/${encodeURIComponent(stylebookSlug)}`
   const q = new URLSearchParams()
-  q.set('project', projectSlug)
-  q.set('stylebook', stylebookSlug)
-  return `${base}/?${q.toString()}`
+  if (projectSlug) {
+    q.set('project', projectSlug)
+  }
+  const qs = q.toString()
+  return `${base}${path}${qs ? `?${qs}` : ''}`
 }

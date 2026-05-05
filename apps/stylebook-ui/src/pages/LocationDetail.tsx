@@ -195,7 +195,12 @@ function geometryToFeatureCollections(
 
 export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
-  const { projectFilterSlug, filterScopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const {
+    projectFilterSlug,
+    filterScopeSuffix,
+    stylebookSlug,
+    catalogBasePath,
+  } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const canEdit = useCanEditStylebook()
   const { id } = useParams<{ id: string }>()
@@ -407,14 +412,14 @@ export default function LocationDetail() {
     setDeleting(true)
     try {
       await deleteCanonicalLocation(id, stylebookSlug)
-      navigate(`/locations/canonical${filterScopeSuffix}`)
+      navigate(`${catalogBasePath}/locations/canonical${filterScopeSuffix}`)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Delete failed")
     } finally {
       setDeleting(false)
       setDeleteOpen(false)
     }
-  }, [canonical, id, navigate, stylebookSlug, showError, filterScopeSuffix])
+  }, [canonical, id, navigate, stylebookSlug, showError, filterScopeSuffix, catalogBasePath])
 
   useEffect(() => {
     if (!id) return
@@ -584,7 +589,7 @@ export default function LocationDetail() {
             className="mb-3"
             items={[
               { label: crumbRoot.label, to: crumbRoot.to },
-              { label: "Locations", to: `/locations/canonical${filterScopeSuffix}` },
+              { label: "Locations", to: `${catalogBasePath}/locations/canonical${filterScopeSuffix}` },
               { label: canonical.label },
             ]}
           />

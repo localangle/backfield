@@ -25,19 +25,21 @@ function nodeId(entityType: string, entityId: string | number): string {
 function getDetailUrl(
   entityType: ConnectionsEntityType,
   entityId: string | number,
+  catalogBasePath: string,
   scopeSuffix: string,
 ): string {
   const base = window.location.origin
+  const prefix = `${base}${catalogBasePath}`
   if (entityType === "person") {
-    return `${base}/people/canonical/${entityId}${scopeSuffix}`
+    return `${prefix}/people/canonical/${entityId}${scopeSuffix}`
   }
   if (entityType === "organization") {
-    return `${base}/organizations/canonical/${entityId}${scopeSuffix}`
+    return `${prefix}/organizations/canonical/${entityId}${scopeSuffix}`
   }
   if (entityType === "work") {
-    return `${base}/works/canonical/${entityId}${scopeSuffix}`
+    return `${prefix}/works/canonical/${entityId}${scopeSuffix}`
   }
-  return `${base}/locations/canonical/${entityId}${scopeSuffix}`
+  return `${prefix}/locations/canonical/${entityId}${scopeSuffix}`
 }
 
 interface ConnectionsGraphProps {
@@ -55,7 +57,7 @@ export default function ConnectionsGraph({
   entityDisplayName,
   connections,
 }: ConnectionsGraphProps) {
-  const { filterScopeSuffix } = useProjectCatalogScope()
+  const { filterScopeSuffix, catalogBasePath } = useProjectCatalogScope()
   const { initialNodes, initialEdges } = useMemo(() => {
     const centerId = nodeId(entityType, entityId)
     const nodeMap = new Map<string, string>()
@@ -125,13 +127,13 @@ export default function ConnectionsGraph({
         const type = match[1] as ConnectionsEntityType
         const numId = parseInt(match[2], 10)
         window.open(
-          getDetailUrl(type, numId, filterScopeSuffix),
+          getDetailUrl(type, numId, catalogBasePath, filterScopeSuffix),
           "_blank",
           "noopener,noreferrer",
         )
       }
     },
-    [filterScopeSuffix]
+    [filterScopeSuffix, catalogBasePath]
   )
 
   if (connections.length === 0) {

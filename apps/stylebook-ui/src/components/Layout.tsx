@@ -1,5 +1,11 @@
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react"
-import { NavLink, useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import {
+  NavLink,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom"
 import {
   BookOpen,
   FolderKanban,
@@ -15,7 +21,6 @@ import {
 import { useAuth } from "@/lib/auth"
 import { fetchMe, listMyWorkspaces, type WorkspaceWithProjects } from "@/lib/core-api"
 import { fetchProjects, type Project } from "@/lib/api"
-import { STYLEBOOK_URL_QUERY_KEY } from "@/lib/stylebook-api/client"
 import {
   fetchOrganizationStylebooks,
   type OrgStylebookRow,
@@ -24,6 +29,21 @@ import { fetchStylebookPermissions } from "@/lib/stylebook-api/permissions"
 import { agateUiOrigin, helpHref } from "@/lib/platformUrls"
 import { StylebookEditProvider } from "@/lib/stylebookEditContext"
 import { StylebookScopeProvider } from "@/lib/stylebookScopeContext"
+import {
+  parseLegacyStylebookQuery,
+  stripLegacyStylebookFromSearch,
+  stylebookCatalogBasePath,
+} from "@/lib/stylebookPaths"
+
+function projectSearchSuffix(searchParams: URLSearchParams): string {
+  const p = new URLSearchParams()
+  const scope = searchParams.get("project_scope")
+  const filt = searchParams.get("project")
+  if (scope) p.set("project_scope", scope)
+  if (filt) p.set("project", filt)
+  const s = p.toString()
+  return s ? `?${s}` : ""
+}
 
 interface LayoutProps {
   children: ReactNode
@@ -34,6 +54,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const { username, logout, isOrgAdmin } = useAuth()
   const agateBase = agateUiOrigin()
   const location = useLocation()
+  const params = useParams<{ stylebookSlug?: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>(
@@ -46,17 +67,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
 
   const projectScopeSlug = searchParams.get("project_scope") || ""
   const projectFilterSlug = searchParams.get("project") || ""
-  const stylebookSlug = searchParams.get(STYLEBOOK_URL_QUERY_KEY) || ""
+  const routeSlug = (params.stylebookSlug ?? "").trim()
 
-  const indexQuery = useMemo(() => {
-    const p = new URLSearchParams()
-    if (projectScopeSlug) p.set("project_scope", projectScopeSlug)
-    if (projectFilterSlug) p.set("project", projectFilterSlug)
-    if (stylebookSlug) p.set(STYLEBOOK_URL_QUERY_KEY, stylebookSlug)
-    const s = p.toString()
-    return s ? `?${s}` : ""
-  }, [projectScopeSlug, projectFilterSlug, stylebookSlug])
-  const indexPath = indexQuery ? `/${indexQuery}` : "/"
+  const projectQs = useMemo(
+    () => projectSearchSuffix(searchParams),
+    [searchParams],
+  )
 
   const sortedStylebooks = useMemo(() => {
     return [...stylebooks].sort(
@@ -68,12 +84,18 @@ export default function Layout({ children, headerContent }: LayoutProps) {
 
   const effectiveStylebookSlug = useMemo(() => {
     if (stylebooks.length === 0) return ""
-    if (stylebookSlug && stylebooks.some((b) => b.slug === stylebookSlug)) {
-      return stylebookSlug
+    if (routeSlug && stylebooks.some((b) => b.slug === routeSlug)) {
+      return routeSlug
     }
     const preferred = stylebooks.find((b) => b.is_default)
     return preferred?.slug ?? stylebooks[0].slug
-  }, [stylebookSlug, stylebooks])
+  }, [routeSlug, stylebooks])
+
+  const indexPath = useMemo(() => {
+    const slugForHome = routeSlug || effectiveStylebookSlug
+    if (!slugForHome) return `/stylebook/default${projectQs}`
+    return `${stylebookCatalogBasePath(slugForHome)}${projectQs}`
+  }, [routeSlug, effectiveStylebookSlug, projectQs])
 
   const activeProjectName = useMemo(() => {
     if (!projectScopeSlug) return null
@@ -146,11 +168,11 @@ export default function Layout({ children, headerContent }: LayoutProps) {
 
   useEffect(() => {
     const needsProjectScope =
-      location.pathname.startsWith("/locations/candidates") ||
-      location.pathname.startsWith("/people/") ||
-      location.pathname.startsWith("/organizations/") ||
-      location.pathname.startsWith("/works/") ||
-      location.pathname.startsWith("/agents/")
+      location.pathname.includes("/locations/candidates") ||
+      location.pathname.includes("/people/") ||
+      location.pathname.includes("/organizations/") ||
+      location.pathname.includes("/works/") ||
+      location.pathname.includes("/agents/")
 
     if (!needsProjectScope) return
     if (projects.length > 0 && !projectScopeSlug) {
@@ -162,51 +184,35 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     }
   }, [projects, projectScopeSlug, setSearchParams, location.pathname])
 
+  /** Drop legacy ``?stylebook=`` when the slug already lives in the path. */
   useEffect(() => {
-    if (stylebooks.length === 0) return
+    if (!parseLegacyStylebookQuery(location.search)) return
+    navigate(`${location.pathname}${stripLegacyStylebookFromSearch(location.search)}`, {
+      replace: true,
+    })
+  }, [location.pathname, location.search, navigate])
 
-    if (stylebooks.length <= 1) {
-      if (stylebookSlug) {
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev)
-            next.delete(STYLEBOOK_URL_QUERY_KEY)
-            return next
-          },
-          { replace: true },
-        )
-      }
-      return
-    }
-
-    const known = stylebooks.some((b) => b.slug === stylebookSlug)
-    if (known && stylebookSlug) return
-
-    const nextSlug = stylebooks.find((b) => b.is_default)?.slug ?? stylebooks[0].slug
-    if (!nextSlug || nextSlug === stylebookSlug) return
-
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.set(STYLEBOOK_URL_QUERY_KEY, nextSlug)
-        return next
-      },
+  /** Unknown catalog slug → organization default (or first stylebook). */
+  useEffect(() => {
+    if (stylebooks.length === 0 || !routeSlug) return
+    const known = stylebooks.some((b) => b.slug === routeSlug)
+    if (known) return
+    const nextSlug =
+      stylebooks.find((b) => b.is_default)?.slug ?? stylebooks[0]?.slug ?? ""
+    if (!nextSlug) return
+    navigate(
+      `/stylebook/${encodeURIComponent(nextSlug)}${projectSearchSuffix(searchParams)}`,
       { replace: true },
     )
-  }, [projectScopeSlug, stylebookSlug, stylebooks, projects, setSearchParams])
+  }, [routeSlug, stylebooks, navigate, searchParams])
 
   const onStylebookChange = useCallback(
     (slug: string) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev)
-          next.set(STYLEBOOK_URL_QUERY_KEY, slug)
-          return next
-        },
-        { replace: false },
+      navigate(
+        `/stylebook/${encodeURIComponent(slug)}${projectSearchSuffix(searchParams)}`,
       )
     },
-    [setSearchParams],
+    [navigate, searchParams],
   )
 
   const handleLogout = async () => {
@@ -265,7 +271,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                 onManageCatalogs={
                   isOrgAdmin
                     ? () => {
-                        window.location.assign(`${agateBase}/admin/catalogs`)
+                        window.location.assign(`${agateBase}/admin/stylebooks`)
                       }
                     : undefined
                 }
@@ -365,7 +371,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                       </button>
                     )}
                     {(expanded ? sortedStylebooks : []).map((sb) => {
-                      const isActive = effectiveStylebookSlug === sb.slug
+                      const isActive = routeSlug === sb.slug
                       return (
                         <button
                           key={sb.id}

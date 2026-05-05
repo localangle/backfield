@@ -300,29 +300,19 @@ export default function AppSidebar() {
                     const projSlug =
                       stylebookProjectSlug ??
                       pickProjectSlugForStylebookLinks(null, workspaceRows)
-                    const disabled = projSlug == null
-                    const openHref =
-                      projSlug != null
-                        ? stylebookShellHref(projSlug, sb.slug)
-                        : '#'
+                    const openHref = stylebookShellHref(sb.slug, projSlug ?? undefined)
 
                     return (
                       <a
                         key={sb.id}
-                        href={disabled ? undefined : openHref}
+                        href={openHref}
                         className={cn(
                           'rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           'flex w-full min-w-0 items-center justify-between gap-2 px-2 py-2 text-left',
-                          disabled
-                            ? 'pointer-events-none opacity-45 text-muted-foreground'
-                            : 'text-foreground hover:bg-muted/60',
+                          'text-foreground hover:bg-muted/60',
                         )}
-                        title={
-                          disabled
-                            ? 'Open a workspace and pick a project first'
-                            : sb.name
-                        }
-                        aria-label={sb.name}
+                        title={sb.name}
+                        aria-label={`Open ${sb.name} in Stylebook`}
                       >
                         <span className="min-w-0 truncate">{sb.name}</span>
                         {sb.is_default ? (

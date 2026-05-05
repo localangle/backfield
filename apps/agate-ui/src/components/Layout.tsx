@@ -30,7 +30,7 @@ export default function Layout({ children }: LayoutProps) {
                   isOrgAdmin ? () => navigate("/admin/users") : undefined
                 }
                 onManageCatalogs={
-                  isOrgAdmin ? () => navigate("/admin/catalogs") : undefined
+                  isOrgAdmin ? () => navigate("/admin/stylebooks") : undefined
                 }
                 onLogout={() => void logout()}
               />

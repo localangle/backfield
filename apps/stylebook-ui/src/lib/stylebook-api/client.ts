@@ -1,16 +1,30 @@
+import {
+  parseLegacyStylebookQuery,
+  parseStylebookSlugFromPath,
+} from "@/lib/stylebookPaths"
+
 export const stylebookApiBase = (): string =>
   import.meta.env.VITE_STYLEBOOK_API_BASE ?? "/api/stylebook"
 
-/** Browser URL query key for catalog scope (stable slug); mirrored to API as ``stylebook_slug``. */
+/**
+ * Legacy query key (`/?stylebook=`) kept only for redirects; canonical URLs use
+ * ``/stylebook/<slug>/…``.
+ */
 export const STYLEBOOK_URL_QUERY_KEY = "stylebook"
+
+function activeStylebookSlugFromBrowserUrl(): string | null {
+  if (typeof window === "undefined") return null
+  const fromPath = parseStylebookSlugFromPath(window.location.pathname)
+  if (fromPath) return fromPath
+  return parseLegacyStylebookQuery(window.location.search)
+}
 
 /**
  * Append catalog scope for Stylebook API calls from the current page URL
- * (``?stylebook=<slug>``). Routes that do not accept the parameter ignore it.
+ * (`/stylebook/<slug>/…` or legacy ``?stylebook=<slug>``).
  */
 export function augmentStylebookApiPath(path: string): string {
-  if (typeof window === "undefined") return path
-  const slug = new URLSearchParams(window.location.search).get(STYLEBOOK_URL_QUERY_KEY)
+  const slug = activeStylebookSlugFromBrowserUrl()
   if (!slug) return path
   const cut = path.indexOf("?")
   const base = cut >= 0 ? path.slice(0, cut) : path

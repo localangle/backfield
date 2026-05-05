@@ -158,7 +158,13 @@ function rankSimilarCandidates(rows: Candidate[], needle: string): Candidate[] {
 }
 
 export default function LocationCandidates() {
-  const { projectScopeSlug, workflowScopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const {
+    projectScopeSlug,
+    workflowScopeSuffix,
+    stylebookSlug,
+    catalogBasePath,
+    filterScopeSuffix,
+  } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const [searchParams, setSearchParams] = useSearchParams()
   const projectSlug = projectScopeSlug
@@ -224,14 +230,6 @@ export default function LocationCandidates() {
   /** Opacity transition before clearing ``linkedToast`` after auto-dismiss timer. */
   const [linkedToastLeaving, setLinkedToastLeaving] = useState(false)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
-
-  const canonicalScopeSuffix = useMemo(() => {
-    const p = new URLSearchParams()
-    if (projectSlug) p.set("project", projectSlug)
-    if (stylebookSlug) p.set("stylebook", stylebookSlug)
-    const s = p.toString()
-    return s ? `?${s}` : ""
-  }, [projectSlug, stylebookSlug])
 
   useEffect(() => {
     let cancelled = false
@@ -705,7 +703,7 @@ export default function LocationCandidates() {
                 <div className="text-sm text-muted-foreground">
                   Saved as{" "}
                   <Link
-                    to={`/locations/canonical/${createdToast.canonicalId}${canonicalScopeSuffix}`}
+                    to={`${catalogBasePath}/locations/canonical/${createdToast.canonicalId}${filterScopeSuffix}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline break-words"
                   >
                     {createdToast.canonicalLabel}
@@ -767,7 +765,7 @@ export default function LocationCandidates() {
                   </span>{" "}
                   →{" "}
                   <Link
-                    to={`/locations/canonical/${linkedToast.canonicalId}${canonicalScopeSuffix}`}
+                    to={`${catalogBasePath}/locations/canonical/${linkedToast.canonicalId}${filterScopeSuffix}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline break-words"
                   >
                     {linkedToast.canonicalLabel}
@@ -797,7 +795,7 @@ export default function LocationCandidates() {
             className="mb-3"
             items={[
               { label: crumbRoot.label, to: crumbRoot.to },
-              { label: "Locations", to: `/locations/canonical${canonicalScopeSuffix}` },
+              { label: "Locations", to: `${catalogBasePath}/locations/canonical${filterScopeSuffix}` },
               { label: "Candidates" },
             ]}
           />
@@ -829,7 +827,7 @@ export default function LocationCandidates() {
               </SelectContent>
             </Select>
           </div>
-          <Link to={`/locations/canonical${canonicalScopeSuffix}`}>
+          <Link to={`${catalogBasePath}/locations/canonical${filterScopeSuffix}`}>
             <Button variant="outline">Canonical locations</Button>
           </Link>
         </div>

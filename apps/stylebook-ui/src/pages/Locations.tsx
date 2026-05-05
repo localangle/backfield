@@ -42,6 +42,7 @@ export default function Locations() {
     filterScopeSuffix,
     filterScopeQueryString,
     stylebookSlug,
+    catalogBasePath,
   } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -174,13 +175,13 @@ export default function Locations() {
           <h1 className="text-3xl font-bold">Canonical locations</h1>
         </div>
         <div className="flex gap-2">
-          <Link to={`/locations/candidates${filterScopeSuffix}`}>
+          <Link to={`${catalogBasePath}/locations/candidates${filterScopeSuffix}`}>
             <Button variant="outline">Candidates</Button>
           </Link>
-          <Link to={`/locations/create${filterScopeSuffix}`}>
+          <Link to={`${catalogBasePath}/locations/create${filterScopeSuffix}`}>
             <Button variant="outline">Create</Button>
           </Link>
-          <Link to={`/import/locations${filterScopeSuffix}`}>
+          <Link to={`${catalogBasePath}/import/locations${filterScopeSuffix}`}>
             <Button variant="outline">Import</Button>
           </Link>
         </div>
@@ -265,7 +266,7 @@ export default function Locations() {
                             <CanonicalSourceIcon createdByUserId={undefined} />
                             <CardTitle>
                               <Link
-                                to={`/locations/canonical/${c.id}?${(() => {
+                                to={`${catalogBasePath}/locations/canonical/${c.id}?${(() => {
                                   const q = new URLSearchParams(filterScopeQueryString)
                                   q.set("page", String(currentPage))
                                   return q.toString()

@@ -260,9 +260,11 @@ export default function ManageCatalogsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Stylebooks</h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Stylebooks hold your canonical locations and related editorial data. Each
-          workspace uses one stylebook; flows can reference a stylebook where
-          supported.
+          Stylebooks hold your organization&apos;s canonical locations and related
+          editorial data. Use{" "}
+          <span className="text-foreground font-medium">Users</span> to choose who may
+          edit each stylebook; this page is for creating stylebooks and setting the
+          organization default.
         </p>
       </div>
 
@@ -339,8 +341,7 @@ export default function ManageCatalogsPage() {
           <DialogHeader>
             <DialogTitle>New stylebook</DialogTitle>
             <DialogDescription>
-              Add a stylebook for your organization. You can point workspaces to
-              it later.
+              Add a stylebook for your organization.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

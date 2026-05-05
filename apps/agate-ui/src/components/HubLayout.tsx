@@ -31,7 +31,7 @@ export default function HubLayout({ children }: HubLayoutProps) {
                   isOrgAdmin ? () => navigate("/admin/users") : undefined
                 }
                 onManageCatalogs={
-                  isOrgAdmin ? () => navigate("/admin/catalogs") : undefined
+                  isOrgAdmin ? () => navigate("/admin/stylebooks") : undefined
                 }
                 onLogout={() => void logout()}
               />
