@@ -35,7 +35,7 @@ When a migration is **destructive** toward existing Stylebook catalog data (for 
 
 Docker builds use the repo root as context; [.dockerignore](../.dockerignore) excludes large local files such as Who's On First `*.db` under `packages/backfield-agate/.../geocoding/data/` so images do not try to copy multi-gigabyte databases.
 
-**`agate-api` and `worker` images** copy `packages/backfield-ai` and install editable wheels in dependency order (`backfield-db` → `backfield-ai` → `backfield-agate` → …) because those package names are not published on PyPI.
+**`agate-api`**, **`worker`**, and **`core-api` images** copy `packages/backfield-ai` and install editable wheels in dependency order (`backfield-db` → `backfield-ai` → …) because that package name is not published on PyPI (`agate-api` / `worker` continue with `backfield-agate` → `backfield-stylebook` → … as before).
 
 ## Runtime contracts
 
