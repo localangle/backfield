@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import litellm
 import pytest
 from backfield_ai.completion import (
+    LiteLLMCompletionRejectedError,
     _extract_message_content_text,
     _litellm_json_object_response_format_supported,
+    completion_text_sync,
 )
 
 
@@ -61,3 +64,45 @@ def test_extract_skips_reasoning_then_keeps_json_block() -> None:
         ],
     )
     assert _extract_message_content_text(msg) == '{"locations":[]}'
+
+
+def test_empty_json_rejected_error_carries_tokens_and_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failed JSON completions still get usage from LiteLLM so call rows can record tokens."""
+
+    class Msg:
+        content = ""
+        refusal = None
+
+    class Choice:
+        finish_reason = "length"
+        message = Msg()
+
+    class Resp:
+        choices = [Choice()]
+        usage = {"prompt_tokens": 621, "completion_tokens": 633, "total_tokens": 1254}
+
+    def fake_completion(**kwargs: object) -> Resp:
+        return Resp()
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.00028425)
+
+    with pytest.raises(LiteLLMCompletionRejectedError) as ctx:
+        completion_text_sync(
+            litellm_model="gpt-5-nano",
+            messages=[{"role": "system", "content": "s"}, {"role": "user", "content": "u"}],
+            api_key="sk-test",
+            max_tokens=None,
+            temperature=None,
+            timeout=60.0,
+            force_json_response=True,
+        )
+    r = ctx.value.result
+    assert r.prompt_tokens == 621
+    assert r.completion_tokens == 633
+    assert r.total_tokens == 1254
+    assert r.provider == "openai"
+    assert r.provider_model_id == "gpt-5-nano"
+    assert r.latency_ms >= 0

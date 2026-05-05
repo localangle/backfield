@@ -7,10 +7,9 @@ import base64
 from openai import OpenAI
 from typing import Optional, Union
 
-# Default completion budget for ``call_llm`` / worker-tracked LiteLLM calls. Deliberately high so
-# pipeline items are not truncated by an artificial Backfield cap; each provider/model still enforces
-# its own output limit.
-DEFAULT_MAX_COMPLETION_TOKENS = 262_144
+# Anthropic Messages API requires ``max_tokens``. Used only for the non-LiteLLM ``call_llm`` path
+# when the caller does not pass ``max_tokens`` (worker runs omit it and use LiteLLM defaults).
+ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK = 128_000
 
 def _get_anthropic_client(api_key: Optional[str] = None, timeout: float = 300.0) -> anthropic.Anthropic:
     """Get or create Anthropic client with provided API key and timeout.
@@ -68,7 +67,7 @@ def call_llm(
     force_json: bool = True,
     max_retries: int = 3,
     temperature: float = 0.0,
-    max_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS,
+    max_tokens: Optional[int] = None,
     openai_api_key: Optional[str] = None,
     anthropic_api_key: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
@@ -88,7 +87,9 @@ def call_llm(
         force_json: Whether to force JSON output (default: True)
         max_retries: Maximum number of retry attempts (default: 3)
         temperature: Temperature for generation (default: 0.0)
-        max_tokens: Maximum tokens to generate (default: 262144)
+        max_tokens: Optional max completion tokens. Default None omits the parameter so OpenAI /
+            LiteLLM use the model/provider default (recommended). Required only when you need an
+            explicit cap; legacy Anthropic direct calls use ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK.
         openai_api_key: OpenAI API key (required for OpenAI models)
         anthropic_api_key: Anthropic API key (required for Anthropic models)
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
@@ -177,12 +178,15 @@ def call_llm(
     elif model.startswith(('claude-', 'claude')):
         # Anthropic model
         client = _get_anthropic_client(anthropic_api_key, timeout=timeout)
-        
+        anthropic_max = (
+            max_tokens if max_tokens is not None else ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK
+        )
+
         for attempt in range(max_retries):
             try:
                 response = client.messages.create(
                     model=model,
-                    max_tokens=max_tokens,
+                    max_tokens=anthropic_max,
                     temperature=temperature,
                     system=system_message,
                     messages=[
@@ -248,7 +252,6 @@ def call_llm_with_image(
     system_message: Optional[str] = None,
     force_json: bool = True,
     max_retries: int = 3,
-    max_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS,
     openai_api_key: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
 ) -> str:
@@ -272,7 +275,6 @@ def call_llm_with_image(
                        uses a default JSON system message.
         force_json: Whether to force JSON output (default: True)
         max_retries: Maximum number of retry attempts (default: 3)
-        max_tokens: Maximum tokens to generate (default: 262144)
         openai_api_key: OpenAI API key (required)
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
         

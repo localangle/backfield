@@ -12,8 +12,7 @@ import litellm
 
 logger = logging.getLogger(__name__)
 
-# Upper bound for automatic bump when JSON mode hits max_tokens before emitting assistant text.
-# Must stay above ``agate_utils.llm.DEFAULT_MAX_COMPLETION_TOKENS`` so retries can raise the budget.
+# Upper bound when bumping an explicit ``max_tokens`` after empty JSON + finish_reason=length.
 _MAX_OUTPUT_RETRY_CEILING = 1_048_576
 
 
@@ -30,6 +29,17 @@ class LiteLLMCompletionResult:
     cost_estimate_incomplete: bool
     latency_ms: int
     raw_response: Any
+
+
+class LiteLLMCompletionRejectedError(RuntimeError):
+    """LiteLLM returned HTTP-successfully but output was unusable (empty JSON, refusal, etc.).
+
+    Includes usage and normalized provider ids so failed attempts persist tokens accurately.
+    """
+
+    def __init__(self, message: str, *, result: LiteLLMCompletionResult) -> None:
+        super().__init__(message)
+        self.result = result
 
 
 def _litellm_json_object_response_format_supported(litellm_model: str) -> bool:
@@ -86,83 +96,30 @@ def _usage_from_response(resp: Any) -> tuple[int | None, int | None, int | None]
     usage = getattr(resp, "usage", None)
     if usage is None:
         return None, None, None
-    pt = getattr(usage, "prompt_tokens", None)
-    ct = getattr(usage, "completion_tokens", None)
-    tt = getattr(usage, "total_tokens", None)
+    if isinstance(usage, dict):
+        pt_raw = usage.get("prompt_tokens")
+        ct_raw = usage.get("completion_tokens")
+        tt_raw = usage.get("total_tokens")
+    else:
+        pt_raw = getattr(usage, "prompt_tokens", None)
+        ct_raw = getattr(usage, "completion_tokens", None)
+        tt_raw = getattr(usage, "total_tokens", None)
     return (
-        int(pt) if pt is not None else None,
-        int(ct) if ct is not None else None,
-        int(tt) if tt is not None else None,
+        int(pt_raw) if pt_raw is not None else None,
+        int(ct_raw) if ct_raw is not None else None,
+        int(tt_raw) if tt_raw is not None else None,
     )
 
 
-def completion_text_sync(
+def _build_completion_result(
     *,
+    resp: Any,
     litellm_model: str,
-    messages: list[dict[str, str]],
-    api_key: str | None,
-    max_tokens: int,
-    temperature: float | None,
-    timeout: float,
-    force_json_response: bool,
+    text: str,
+    latency_ms: int,
 ) -> LiteLLMCompletionResult:
-    """Single LiteLLM completion (no Backfield-level retries here)."""
-    kwargs: dict[str, Any] = {
-        "model": litellm_model,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "timeout": timeout,
-        "num_retries": 0,
-    }
-    if api_key:
-        kwargs["api_key"] = api_key
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-    if force_json_response and _litellm_json_object_response_format_supported(litellm_model):
-        kwargs["response_format"] = {"type": "json_object"}
-
-    t0 = time.perf_counter()
-    resp = litellm.completion(**kwargs)
-
-    choice = resp.choices[0]
-    msg = choice.message
-    text = _extract_message_content_text(msg)
-    finish = getattr(choice, "finish_reason", None)
-
-    refusal = getattr(msg, "refusal", None)
-    if refusal is not None and str(refusal).strip():
-        raise RuntimeError(f"Model refused to produce output: {refusal!r}")
-
-    # Large prompts + JSON mode can burn the whole completion budget with no visible text yet.
-    if force_json_response and text == "" and finish == "length":
-        current_cap = int(kwargs["max_tokens"])
-        bumped = min(max(current_cap * 2, 8192), _MAX_OUTPUT_RETRY_CEILING)
-        if bumped > current_cap:
-            logger.info(
-                "LiteLLM empty JSON + finish_reason=length; retry max_tokens=%s (was %s)",
-                bumped,
-                kwargs["max_tokens"],
-            )
-            kwargs["max_tokens"] = bumped
-            resp = litellm.completion(**kwargs)
-            choice = resp.choices[0]
-            msg = choice.message
-            text = _extract_message_content_text(msg)
-            finish = getattr(choice, "finish_reason", None)
-
-    latency_ms = int((time.perf_counter() - t0) * 1000)
-
-    if force_json_response and text == "":
-        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
-        raise RuntimeError(
-            "LiteLLM returned empty assistant content while JSON output was required "
-            f"(model={litellm_model!r}, finish_reason={finish!r}, "
-            f"max_tokens={kwargs['max_tokens']}, approx_prompt_chars={prompt_chars}). "
-            "If finish_reason is 'length', the completion token limit was hit before any JSON was "
-            "emitted—increase max_tokens or shorten the input."
-        )
+    """Normalize LiteLLM ``completion`` response into our result shape (success or rejected)."""
     pt, ct, tt = _usage_from_response(resp)
-
     incomplete = pt is None and ct is None and tt is None
     est_cost: Decimal | None = None
     currency = "USD"
@@ -195,4 +152,107 @@ def completion_text_sync(
         cost_estimate_incomplete=incomplete,
         latency_ms=latency_ms,
         raw_response=resp,
+    )
+
+
+def completion_text_sync(
+    *,
+    litellm_model: str,
+    messages: list[dict[str, str]],
+    api_key: str | None,
+    max_tokens: int | None = None,
+    temperature: float | None,
+    timeout: float,
+    force_json_response: bool,
+) -> LiteLLMCompletionResult:
+    """Single LiteLLM completion (no Backfield-level retries here).
+
+    When ``max_tokens`` is None, it is omitted so the provider applies model defaults (recommended
+    for OpenAI to avoid caps below the model maximum).
+    """
+    kwargs: dict[str, Any] = {
+        "model": litellm_model,
+        "messages": messages,
+        "timeout": timeout,
+        "num_retries": 0,
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    if api_key:
+        kwargs["api_key"] = api_key
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    if force_json_response and _litellm_json_object_response_format_supported(litellm_model):
+        kwargs["response_format"] = {"type": "json_object"}
+
+    t0 = time.perf_counter()
+    resp = litellm.completion(**kwargs)
+
+    choice = resp.choices[0]
+    msg = choice.message
+    text = _extract_message_content_text(msg)
+    finish = getattr(choice, "finish_reason", None)
+
+    refusal = getattr(msg, "refusal", None)
+    if refusal is not None and str(refusal).strip():
+        latency_ms_ref = int((time.perf_counter() - t0) * 1000)
+        partial = _build_completion_result(
+            resp=resp,
+            litellm_model=litellm_model,
+            text="",
+            latency_ms=latency_ms_ref,
+        )
+        raise LiteLLMCompletionRejectedError(
+            f"Model refused to produce output: {refusal!r}",
+            result=partial,
+        )
+
+    # Large prompts + JSON mode can burn the whole completion budget with no visible text yet.
+    # Only bump when we sent explicit max_tokens; else the provider already used its default.
+    if force_json_response and text == "" and finish == "length":
+        current = kwargs.get("max_tokens")
+        if current is not None:
+            current_cap = int(current)
+            bumped = min(max(current_cap * 2, 8192), _MAX_OUTPUT_RETRY_CEILING)
+            if bumped > current_cap:
+                logger.info(
+                    "LiteLLM empty JSON + finish_reason=length; retry max_tokens=%s (was %s)",
+                    bumped,
+                    current_cap,
+                )
+                kwargs["max_tokens"] = bumped
+                resp = litellm.completion(**kwargs)
+                choice = resp.choices[0]
+                msg = choice.message
+                text = _extract_message_content_text(msg)
+                finish = getattr(choice, "finish_reason", None)
+
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+
+    if force_json_response and text == "":
+        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+        mt_display = kwargs.get("max_tokens")
+        if mt_display is None:
+            mt_display = "omitted (provider default)"
+        partial = _build_completion_result(
+            resp=resp,
+            litellm_model=litellm_model,
+            text="",
+            latency_ms=latency_ms,
+        )
+        raise LiteLLMCompletionRejectedError(
+            "LiteLLM returned empty assistant content while JSON output was required "
+            f"(model={litellm_model!r}, finish_reason={finish!r}, "
+            f"max_tokens={mt_display}, approx_prompt_chars={prompt_chars}). "
+            "If finish_reason is 'length', the completion budget was exhausted before any JSON was "
+            "emitted—shorten the input or pass a higher explicit max_tokens if your provider "
+            "requires one.",
+            result=partial,
+        )
+
+    return _build_completion_result(
+        resp=resp,
+        litellm_model=litellm_model,
+        text=text,
+        latency_ms=latency_ms,
     )

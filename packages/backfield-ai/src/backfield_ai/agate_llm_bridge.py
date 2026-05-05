@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
-from backfield_ai.completion import completion_text_sync
+from backfield_ai.completion import LiteLLMCompletionRejectedError, completion_text_sync
 from backfield_ai.json_clean import clean_json_response_text
 from backfield_ai.tracking_context import persist_llm_attempt
 
@@ -36,11 +36,11 @@ def call_llm_tracked_sync(
     force_json: bool,
     max_retries: int,
     temperature: float,
-    max_tokens: int,
     openai_api_key: str | None,
     anthropic_api_key: str | None,
     project_system_prompt: str | None,
     timeout: float,
+    max_tokens: int | None = None,
     model_config_id: str | None = None,
 ) -> str:
     if not prompt:
@@ -137,6 +137,43 @@ def call_llm_tracked_sync(
             )
             text = result.text
             return clean_json_response_text(text) if force_json else text
+        except LiteLLMCompletionRejectedError as exc:
+            last_err = exc
+            r = exc.result
+            err_type = type(exc).__name__
+            err_msg = str(exc)[:2000]
+            logger.warning(
+                "LiteLLM attempt failed model=%s attempt=%s/%s err_type=%s err_msg=%s",
+                lm_model,
+                attempt_idx + 1,
+                max_retries,
+                err_type,
+                err_msg[:500],
+            )
+            snap = {"provider": r.provider, "provider_model_id": r.provider_model_id}
+            persist_llm_attempt(
+                provider=r.provider,
+                provider_model_id=r.provider_model_id,
+                status="failed",
+                attempt_number=attempt_idx + 1,
+                model_config_id=mc_norm,
+                model_config_snapshot_json=snap,
+                prompt_tokens=r.prompt_tokens,
+                completion_tokens=r.completion_tokens,
+                total_tokens=r.total_tokens,
+                estimated_cost=r.estimated_cost,
+                currency=r.currency,
+                cost_estimate_incomplete=r.cost_estimate_incomplete,
+                latency_ms=r.latency_ms,
+                provider_request_id=None,
+                error_type=err_type,
+                error_message=err_msg,
+            )
+            if attempt_idx < max_retries - 1:
+                wait_time = 2**attempt_idx
+                time.sleep(wait_time)
+            else:
+                raise Exception(f"LLM call failed after {max_retries} attempts: {exc}") from exc
         except Exception as exc:
             last_err = exc
             err_type = type(exc).__name__
