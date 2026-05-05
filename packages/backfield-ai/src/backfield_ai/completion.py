@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 import litellm
+
+logger = logging.getLogger(__name__)
+
+# Upper bound for automatic bump when JSON mode hits max_tokens before emitting assistant text.
+# Must stay above ``agate_utils.llm.DEFAULT_MAX_COMPLETION_TOKENS`` so retries can raise the budget.
+_MAX_OUTPUT_RETRY_CEILING = 1_048_576
 
 
 @dataclass(frozen=True)
@@ -55,9 +62,18 @@ def _extract_message_content_text(message: Any) -> str:
         for block in raw:
             if isinstance(block, dict):
                 btype = block.get("type")
+                if btype == "reasoning":
+                    continue
                 tx = block.get("text")
-                if isinstance(tx, str) and btype in ("text", "output_text"):
-                    parts.append(tx)
+                if isinstance(tx, str) and tx.strip():
+                    if btype in ("text", "output_text", None):
+                        parts.append(tx)
+                elif isinstance(block.get("output_text"), str):
+                    parts.append(block["output_text"])
+                elif isinstance(block.get("output_text"), dict):
+                    inner = block["output_text"].get("text")
+                    if isinstance(inner, str) and inner.strip():
+                        parts.append(inner)
             else:
                 tx = getattr(block, "text", None)
                 if isinstance(tx, str):
@@ -107,18 +123,43 @@ def completion_text_sync(
 
     t0 = time.perf_counter()
     resp = litellm.completion(**kwargs)
-    latency_ms = int((time.perf_counter() - t0) * 1000)
 
     choice = resp.choices[0]
     msg = choice.message
     text = _extract_message_content_text(msg)
+    finish = getattr(choice, "finish_reason", None)
+
+    refusal = getattr(msg, "refusal", None)
+    if refusal is not None and str(refusal).strip():
+        raise RuntimeError(f"Model refused to produce output: {refusal!r}")
+
+    # Large prompts + JSON mode can burn the whole completion budget with no visible text yet.
+    if force_json_response and text == "" and finish == "length":
+        current_cap = int(kwargs["max_tokens"])
+        bumped = min(max(current_cap * 2, 8192), _MAX_OUTPUT_RETRY_CEILING)
+        if bumped > current_cap:
+            logger.info(
+                "LiteLLM empty JSON + finish_reason=length; retry max_tokens=%s (was %s)",
+                bumped,
+                kwargs["max_tokens"],
+            )
+            kwargs["max_tokens"] = bumped
+            resp = litellm.completion(**kwargs)
+            choice = resp.choices[0]
+            msg = choice.message
+            text = _extract_message_content_text(msg)
+            finish = getattr(choice, "finish_reason", None)
+
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+
     if force_json_response and text == "":
-        finish = getattr(choice, "finish_reason", None)
+        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
         raise RuntimeError(
             "LiteLLM returned empty assistant content while JSON output was required "
-            f"(model={litellm_model!r}, finish_reason={finish!r}). "
-            "Often caused by missing JSON mode for this provider, truncated output, or "
-            "content returned only as structured blocks."
+            f"(model={litellm_model!r}, finish_reason={finish!r}, "
+            f"max_tokens={kwargs['max_tokens']}, approx_prompt_chars={prompt_chars}). "
+            "If finish_reason is 'length', the completion token limit was hit before any JSON was "
+            "emitted—increase max_tokens or shorten the input."
         )
     pt, ct, tt = _usage_from_response(resp)
 

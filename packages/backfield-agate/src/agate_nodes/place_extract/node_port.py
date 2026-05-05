@@ -11,16 +11,19 @@ Use JSON path placeholders in your prompt to extract specific fields:
   {raw} - passes entire input JSON
 """
 
-import os
 import asyncio
-import time
 import json
+import logging
+import os
 import re
+import time
 from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 from backfield_agate.context import AgateEnvContext
 from agate_utils.llm import call_llm
+
+logger = logging.getLogger(__name__)
 
 # Get Celery timeout limits from environment (defaults match worker/tasks.py)
 TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))  # 60 minutes default
@@ -288,12 +291,12 @@ class PlaceExtractNode:
         # Debug logging to trace meta fields
         try:
             meta_keys = [k for k in flattened_input.keys() if k.startswith("meta_")]
-            print(f"[PlaceExtract] Input keys: {list(input_dict.keys())}")
-            print(f"[PlaceExtract] Flattened keys: {list(flattened_input.keys())}")
+            logger.debug("[PlaceExtract] input keys: %s", list(input_dict.keys()))
+            logger.debug("[PlaceExtract] flattened keys: %s", list(flattened_input.keys()))
             if meta_keys:
-                print(f"[PlaceExtract] Found meta_* keys: {meta_keys}")
+                logger.debug("[PlaceExtract] meta_* keys: %s", meta_keys)
             else:
-                print(f"[PlaceExtract] WARNING: No meta_* keys in flattened_input")
+                logger.debug("[PlaceExtract] no meta_* keys in flattened_input")
         except Exception:
             pass
         
@@ -335,10 +338,7 @@ class PlaceExtractNode:
             "The results should be returned in a JSON that looks like the following.\n\n"
             f"{output_format}"
         )
-        
-        # Log the prompt for debugging
-        print(f"[PlaceExtract] Prompt:\n{prompt}")
-        
+
         # Check if we're approaching Celery timeout before making LLM call
         # Calculate elapsed time since node start
         elapsed_time = time.time() - start_time
@@ -364,9 +364,11 @@ class PlaceExtractNode:
                 f"Need at least 60 seconds. Elapsed: {elapsed_time:.1f}s"
             )
         
-        print(
-            f"[PlaceExtract] Executing LLM call with timeout: {effective_timeout}s "
-            f"(elapsed: {elapsed_time:.1f}s, remaining safe time: {remaining_safe_time:.1f}s)"
+        logger.info(
+            "[PlaceExtract] scheduling LLM call timeout_s=%.1f elapsed_s=%.1f remaining_safe_s=%.1f",
+            effective_timeout,
+            elapsed_time,
+            remaining_safe_time,
         )
 
         resolved_model = params.model
@@ -384,10 +386,23 @@ class PlaceExtractNode:
                         params,
                     )
             except Exception as exc:
-                print(f"[PlaceExtract] Could not resolve catalog AI model; using legacy id: {exc}")
+                logger.warning(
+                    "[PlaceExtract] could not resolve catalog AI model; using legacy id: %s",
+                    exc,
+                )
 
         raw_mc = getattr(params, "aiModelConfigId", None)
         place_model_config_id = str(raw_mc).strip() if raw_mc else None
+
+        logger.info(
+            "[PlaceExtract] LLM call starting model=%s prompt_chars=%d timeout_s=%.1f "
+            "model_config_id=%s project_prompt_overlay=%s",
+            resolved_model,
+            len(prompt),
+            effective_timeout,
+            place_model_config_id or "none",
+            "yes" if ctx.project_system_prompt else "no",
+        )
 
         # Call the LLM with API keys from context, wrapped in asyncio timeout
         # Since call_llm is synchronous, we need to run it in a thread pool
@@ -419,7 +434,7 @@ class PlaceExtractNode:
             )
         
         elapsed = time.time() - start_time
-        print(f"[PlaceExtract] LLM call completed in {elapsed:.1f}s")
+        logger.info("[PlaceExtract] LLM call finished elapsed_s=%.1f", elapsed)
         
         # Parse the response
         response_data = None
@@ -569,7 +584,11 @@ class PlaceExtractNode:
                 if key != "locations":
                     llm_top_level_fields[key] = value
                     try:
-                        print(f"[PlaceExtract] LLM top-level field: {key} (type={type(value).__name__})")
+                        logger.debug(
+                            "[PlaceExtract] LLM top-level field: %s (type=%s)",
+                            key,
+                            type(value).__name__,
+                        )
                     except Exception:
                         pass
         
@@ -581,7 +600,11 @@ class PlaceExtractNode:
                 if key.startswith("meta_"):
                     output_data[key] = value
                     try:
-                        print(f"[PlaceExtract] Preserved meta field: {key} (type={type(value).__name__})")
+                        logger.debug(
+                            "[PlaceExtract] preserved meta field: %s (type=%s)",
+                            key,
+                            type(value).__name__,
+                        )
                     except Exception:
                         pass
                 elif key not in output_data:
@@ -594,7 +617,11 @@ class PlaceExtractNode:
             if meta_key not in flattened_input and key not in output_data:
                 output_data[key] = value
                 try:
-                    print(f"[PlaceExtract] Added LLM field: {key} (type={type(value).__name__})")
+                    logger.debug(
+                        "[PlaceExtract] added LLM field: %s (type=%s)",
+                        key,
+                        type(value).__name__,
+                    )
                 except Exception:
                     pass
         

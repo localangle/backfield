@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 from backfield_ai.completion import completion_text_sync
 from backfield_ai.json_clean import clean_json_response_text
 from backfield_ai.tracking_context import persist_llm_attempt
+
+logger = logging.getLogger(__name__)
 
 
 def _legacy_to_litellm_model(model: str) -> str:
@@ -73,9 +76,25 @@ def call_llm_tracked_sync(
     is_gpt5 = lm_model.startswith("gpt-5")
     temp_arg: float | None = None if is_gpt5 else float(temperature)
 
+    sys_chars = len(system_message or "")
+    prompt_chars = len(prompt)
+
     last_err: Exception | None = None
     for attempt_idx in range(max_retries):
         try:
+            logger.info(
+                "LiteLLM attempt %s/%s model=%s prompt_chars=%d system_chars=%d "
+                "max_tokens=%s force_json=%s timeout_s=%s model_config_id=%s",
+                attempt_idx + 1,
+                max_retries,
+                lm_model,
+                prompt_chars,
+                sys_chars,
+                max_tokens,
+                force_json,
+                timeout,
+                mc_norm or "none",
+            )
             result = completion_text_sync(
                 litellm_model=lm_model,
                 messages=messages,
@@ -104,12 +123,32 @@ def call_llm_tracked_sync(
                 error_type=None,
                 error_message=None,
             )
+            logger.info(
+                "LiteLLM ok model=%s latency_ms=%s prompt_tokens=%s completion_tokens=%s "
+                "total_tokens=%s est_cost=%s cost_incomplete=%s provider=%s",
+                lm_model,
+                result.latency_ms,
+                result.prompt_tokens,
+                result.completion_tokens,
+                result.total_tokens,
+                result.estimated_cost,
+                result.cost_estimate_incomplete,
+                result.provider,
+            )
             text = result.text
             return clean_json_response_text(text) if force_json else text
         except Exception as exc:
             last_err = exc
             err_type = type(exc).__name__
             err_msg = str(exc)[:2000]
+            logger.warning(
+                "LiteLLM attempt failed model=%s attempt=%s/%s err_type=%s err_msg=%s",
+                lm_model,
+                attempt_idx + 1,
+                max_retries,
+                err_type,
+                err_msg[:500],
+            )
             snap = {"litellm_model": lm_model}
             persist_llm_attempt(
                 provider="unknown",

@@ -7,6 +7,11 @@ import base64
 from openai import OpenAI
 from typing import Optional, Union
 
+# Default completion budget for ``call_llm`` / worker-tracked LiteLLM calls. Deliberately high so
+# pipeline items are not truncated by an artificial Backfield cap; each provider/model still enforces
+# its own output limit.
+DEFAULT_MAX_COMPLETION_TOKENS = 262_144
+
 def _get_anthropic_client(api_key: Optional[str] = None, timeout: float = 300.0) -> anthropic.Anthropic:
     """Get or create Anthropic client with provided API key and timeout.
     
@@ -63,7 +68,7 @@ def call_llm(
     force_json: bool = True,
     max_retries: int = 3,
     temperature: float = 0.0,
-    max_tokens: int = 4000,
+    max_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS,
     openai_api_key: Optional[str] = None,
     anthropic_api_key: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
@@ -83,7 +88,7 @@ def call_llm(
         force_json: Whether to force JSON output (default: True)
         max_retries: Maximum number of retry attempts (default: 3)
         temperature: Temperature for generation (default: 0.0)
-        max_tokens: Maximum tokens to generate (default: 4000)
+        max_tokens: Maximum tokens to generate (default: 262144)
         openai_api_key: OpenAI API key (required for OpenAI models)
         anthropic_api_key: Anthropic API key (required for Anthropic models)
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
@@ -243,7 +248,7 @@ def call_llm_with_image(
     system_message: Optional[str] = None,
     force_json: bool = True,
     max_retries: int = 3,
-    max_tokens: int = 4000,
+    max_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS,
     openai_api_key: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
 ) -> str:
@@ -267,7 +272,7 @@ def call_llm_with_image(
                        uses a default JSON system message.
         force_json: Whether to force JSON output (default: True)
         max_retries: Maximum number of retry attempts (default: 3)
-        max_tokens: Maximum tokens to generate (default: 4000)
+        max_tokens: Maximum tokens to generate (default: 262144)
         openai_api_key: OpenAI API key (required)
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
         

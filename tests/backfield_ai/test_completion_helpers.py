@@ -51,3 +51,13 @@ def test_extract_object_blocks_with_text_attr() -> None:
         text = "ok"
 
     assert _extract_message_content_text(_Msg([Block()])) == "ok"
+
+
+def test_extract_skips_reasoning_then_keeps_json_block() -> None:
+    msg = _Msg(
+        [
+            {"type": "reasoning", "text": "internal chain of thought..."},
+            {"type": "output_text", "text": '{"locations":[]}'},
+        ],
+    )
+    assert _extract_message_content_text(msg) == '{"locations":[]}'
