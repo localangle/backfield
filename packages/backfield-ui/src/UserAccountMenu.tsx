@@ -14,6 +14,8 @@ export interface UserAccountMenuProps {
   onManageUsers?: () => void
   /** When set and `isOrgAdmin`, shows “Manage stylebooks”. */
   onManageCatalogs?: () => void
+  /** When set and `isOrgAdmin`, shows “AI models”. */
+  onAiModelsSettings?: () => void
   className?: string
 }
 
@@ -24,6 +26,7 @@ export function UserAccountMenu({
   onLogout,
   onManageUsers,
   onManageCatalogs,
+  onAiModelsSettings,
   className,
 }: UserAccountMenuProps) {
   return (
@@ -88,8 +91,20 @@ export function UserAccountMenu({
               Manage stylebooks
             </DropdownMenu.Item>
           ) : null}
+          {isOrgAdmin && onAiModelsSettings ? (
+            <DropdownMenu.Item
+              className="relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+              onSelect={(e: Event) => {
+                e.preventDefault()
+                onAiModelsSettings()
+              }}
+            >
+              AI models
+            </DropdownMenu.Item>
+          ) : null}
           {onChangePassword ||
-          (isOrgAdmin && (onManageUsers || onManageCatalogs)) ? (
+          (isOrgAdmin &&
+            (onManageUsers || onManageCatalogs || onAiModelsSettings)) ? (
             <DropdownMenu.Separator className="-mx-1 my-1 h-px bg-muted" />
           ) : null}
           <DropdownMenu.Item

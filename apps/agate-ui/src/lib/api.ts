@@ -390,6 +390,33 @@ export async function getRun(id: string | number): Promise<Run> {
   return normalizeRun(raw)
 }
 
+export interface RunEstimatedAiCost {
+  run_id: string
+  currency: string
+  estimated_total: string
+  incomplete_estimate: boolean
+  attempt_count: number
+  node_breakdown: Array<{ node_id: string | null; estimated_total: string }>
+}
+
+export async function getRunEstimatedAiCost(runId: string): Promise<RunEstimatedAiCost> {
+  return fetchAPI(`/runs/${runId}/estimated-ai-cost`) as Promise<RunEstimatedAiCost>
+}
+
+export interface ProjectEstimatedAiCost {
+  project_id: number
+  currency: string
+  estimated_total: string
+  incomplete_estimate: boolean
+  attempt_count: number
+}
+
+export async function getProjectEstimatedAiCost(
+  projectId: number,
+): Promise<ProjectEstimatedAiCost> {
+  return fetchAPI(`/projects/${projectId}/estimated-ai-cost`) as Promise<ProjectEstimatedAiCost>
+}
+
 export async function getProcessedItem(
   runId: string | number,
   itemId: number

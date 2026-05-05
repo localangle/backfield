@@ -12,9 +12,11 @@ import ProjectDetailRunsTab, {
 import {
   getProjectBySlug,
   getProjectStatsBySlug,
+  getProjectEstimatedAiCost,
   updateProject,
   type Project,
   type ProjectStats,
+  type ProjectEstimatedAiCost,
 } from '@/lib/api'
 import { formatDurationMs } from '@/lib/formatDuration'
 import { Edit, Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
@@ -36,6 +38,7 @@ export default function ProjectDetailPage() {
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
   const systemSettingsRef = useRef<ProjectSettingsHandle>(null)
   const credentialsSettingsRef = useRef<ProjectSettingsHandle>(null)
+  const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
 
   const reload = useCallback(async () => {
     if (!slug) return
@@ -72,6 +75,25 @@ export default function ProjectDetailPage() {
       cancelled = true
     }
   }, [slug, reload])
+
+  useEffect(() => {
+    if (!project?.id) {
+      setAiCost(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const c = await getProjectEstimatedAiCost(project.id)
+        if (!cancelled) setAiCost(c)
+      } catch {
+        if (!cancelled) setAiCost(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [project?.id])
 
   useEffect(() => {
     if (editingName) inputRef.current?.focus()
@@ -230,6 +252,38 @@ export default function ProjectDetailPage() {
             </CardContent>
           </Card>
         </div>
+        {aiCost ? (
+          <Card className="mt-4">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Estimated AI usage cost
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {aiCost.attempt_count === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No tracked model usage for this project yet.
+                </p>
+              ) : (
+                <>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {Number(aiCost.estimated_total).toLocaleString(undefined, {
+                      style: 'currency',
+                      currency: aiCost.currency || 'USD',
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 6,
+                    })}
+                  </p>
+                  {aiCost.incomplete_estimate ? (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
+                      Some usage data was missing, so this total may be incomplete.
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
 
       <div className="w-full min-w-0">

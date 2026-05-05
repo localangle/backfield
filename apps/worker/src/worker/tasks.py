@@ -10,6 +10,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import boto3
+from backfield_ai.credentials import merge_project_and_org_llm_api_keys
+from backfield_ai.tracking_context import (
+    LlmAttemptTrackingContext,
+    attach_llm_tracking_context,
+    reset_llm_tracking_context,
+)
 from backfield_core import GraphSpec, execute_graph
 from backfield_core.nodes import NODE_RUNNERS
 from backfield_core.nodes.json_input import json_input_output_from_dict
@@ -18,8 +24,7 @@ from backfield_core.s3_batch import (
     parse_s3_text_json_document,
     s3_max_files_from_params,
 )
-from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, BackfieldProjectSecret
-from backfield_db.crypto import decrypt_secret, fernet_from_env
+from backfield_db import AgateGraph, AgateProcessedItem, AgateRun
 from backfield_db.session import get_engine
 from celery import Celery, chord, group
 from sqlmodel import Session, select
@@ -50,22 +55,6 @@ def _env_overlay(updates: dict[str, str]):
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = prev
-
-
-def _project_env_map(session: Session, project_id: int) -> dict[str, str]:
-    f = fernet_from_env()
-    if f is None:
-        return {}
-    rows = session.exec(
-        select(BackfieldProjectSecret).where(BackfieldProjectSecret.project_id == project_id)
-    ).all()
-    out: dict[str, str] = {}
-    for r in rows:
-        try:
-            out[r.key] = decrypt_secret(r.value_encrypted)
-        except Exception:
-            continue
-    return out
 
 
 @contextmanager
@@ -162,15 +151,25 @@ def execute_agate_run(run_id: str) -> None:
 
         try:
             spec = GraphSpec.model_validate_json(graph.spec_json)
-            overlay = _project_env_map(session, graph.project_id)
+            overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
             node_runners = dict(NODE_RUNNERS)
             node_runners["DBOutput"] = run_db_output
-            with _env_overlay(overlay), _run_execution_env(
-                project_id=graph.project_id,
-                graph_id=graph.id,
-                run_id=run.id,
-            ):
-                outputs = execute_graph(spec, node_runners=node_runners)
+            track_tok = attach_llm_tracking_context(
+                LlmAttemptTrackingContext(
+                    session=session,
+                    project_id=graph.project_id,
+                    run_id=run.id,
+                )
+            )
+            try:
+                with _env_overlay(overlay), _run_execution_env(
+                    project_id=graph.project_id,
+                    graph_id=graph.id,
+                    run_id=run.id,
+                ):
+                    outputs = execute_graph(spec, node_runners=node_runners)
+            finally:
+                reset_llm_tracking_context(track_tok)
             run.status = "succeeded"
             run.result_json = json.dumps(outputs)
             run.error_message = None
@@ -216,7 +215,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
             max_files = s3_max_files_from_params(params)
             prefix = folder_path.rstrip("/") + "/" if folder_path else ""
 
-            overlay = _project_env_map(session, graph.project_id)
+            overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
             with _env_overlay(overlay):
                 s3_client = _s3_client_from_env()
                 keys = list_json_keys_under_prefix(s3_client, bucket=bucket, prefix=prefix)
@@ -415,18 +414,28 @@ def execute_processed_item(item_id: int) -> None:
             out["runs_created"] = []
             return out
 
-        overlay = _project_env_map(session, graph.project_id)
+        overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
         node_runners = dict(NODE_RUNNERS)
         node_runners["S3Input"] = s3_input_shim
         node_runners["DBOutput"] = run_db_output
 
         try:
-            with _env_overlay(overlay), _run_execution_env(
-                project_id=graph.project_id,
-                graph_id=graph.id,
-                run_id=run.id,
-            ):
-                outputs = execute_graph(spec, node_runners=node_runners)
+            track_tok = attach_llm_tracking_context(
+                LlmAttemptTrackingContext(
+                    session=session,
+                    project_id=graph.project_id,
+                    run_id=run.id,
+                )
+            )
+            try:
+                with _env_overlay(overlay), _run_execution_env(
+                    project_id=graph.project_id,
+                    graph_id=graph.id,
+                    run_id=run.id,
+                ):
+                    outputs = execute_graph(spec, node_runners=node_runners)
+            finally:
+                reset_llm_tracking_context(track_tok)
             item.status = "succeeded"
             item.result_json = json.dumps(outputs)
             item.error_message = None

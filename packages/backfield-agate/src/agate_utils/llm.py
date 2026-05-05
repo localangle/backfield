@@ -96,11 +96,29 @@ def call_llm(
     """
     if not prompt:
         raise ValueError("Prompt cannot be empty")
-    
+
+    # Worker runs: route through LiteLLM + optional tracked persistence per attempt.
+    if os.getenv("BACKFIELD_RUN_ID"):
+        from backfield_ai.agate_llm_bridge import call_llm_tracked_sync
+
+        return call_llm_tracked_sync(
+            prompt=prompt,
+            model=model,
+            system_message=system_message,
+            force_json=force_json,
+            max_retries=max_retries,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key,
+            project_system_prompt=project_system_prompt,
+            timeout=timeout,
+        )
+
     # Get model from environment if not specified
     if not model:
         model = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
-    
+
     # Set system message - project system prompt takes precedence
     if project_system_prompt:
         system_message = project_system_prompt
@@ -109,7 +127,7 @@ def call_llm(
             system_message = "You are a helpful assistant that returns only structured JSON output."
         else:
             system_message = "You are a helpful assistant that returns direct, concise responses without markdown formatting or explanations."
-    
+
     # Determine which client to use based on model name
     if model.startswith('gpt'):
         # OpenAI model

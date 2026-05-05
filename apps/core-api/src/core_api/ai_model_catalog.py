@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -405,5 +406,61 @@ def patch_org_model_config(
             status_code=409,
             detail="A model configuration with this name already exists in the organization",
         ) from None
+    session.refresh(row)
+    return row_to_out(row)
+
+
+def run_org_model_connection_test(
+    session: Session,
+    organization_id: int,
+    config_id: str,
+) -> AiModelConfigOut:
+    """Tiny LiteLLM ping; updates latest test columns only (no LLM call records)."""
+    from backfield_ai.completion import completion_text_sync
+    from backfield_ai.credentials import organization_llm_api_keys
+    from backfield_ai.litellm_model import litellm_model_id
+
+    row = get_org_model_config(session, organization_id=organization_id, config_id=config_id)
+    keys = organization_llm_api_keys(session, organization_id)
+    lm = litellm_model_id(str(row.provider), str(row.provider_model_id))
+    prov = str(row.provider).strip().lower()
+    if prov == "openai":
+        api_key = keys.get("OPENAI_API_KEY")
+    elif prov == "anthropic":
+        api_key = keys.get("ANTHROPIC_API_KEY")
+    else:
+        api_key = keys.get("OPENAI_API_KEY") or keys.get("ANTHROPIC_API_KEY")
+
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="No provider credentials configured for this organization",
+        )
+
+    now = datetime.now(UTC)
+    try:
+        messages = [
+            {"role": "system", "content": "Reply with exactly OK."},
+            {"role": "user", "content": "ping"},
+        ]
+        is_gpt5 = lm.startswith("gpt-5")
+        temp = None if is_gpt5 else 0.0
+        completion_text_sync(
+            litellm_model=lm,
+            messages=messages,
+            api_key=api_key,
+            max_tokens=8,
+            temperature=temp,
+            timeout=60.0,
+            force_json_response=False,
+        )
+        row.latest_test_status = "succeeded"
+        row.latest_test_error = None
+    except Exception as exc:  # noqa: BLE001 — safe summary only on config row
+        row.latest_test_status = "failed"
+        row.latest_test_error = str(exc)[:2000]
+    row.latest_tested_at = now
+    session.add(row)
+    session.commit()
     session.refresh(row)
     return row_to_out(row)

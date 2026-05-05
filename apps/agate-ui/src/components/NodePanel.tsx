@@ -10,15 +10,25 @@ import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Suspense } from 'react'
 import { nodeMetadata, panelComponents } from '@/nodes/registry'
 
+export type GeocodeAiModelOption = {
+  label: string
+  providerModelId: string
+  configId?: string
+}
+
 export type GraphPanelContext = {
   /** Organization that owns the resolved flow project (for Stylebook catalog in node panels). */
   organizationId: number | null
+  /** Resolved Backfield project id for AI catalog lookups (when known). */
+  projectId: number | null
   workspaceDefaultStylebookId: number | null
   workspaceStylebookName: string | null
   /** True when a project is selected but the API did not resolve a workspace Stylebook. */
   missingWorkspaceStylebook?: boolean
   /** Flow editor is still fetching the project (for workspace Stylebook). */
   flowProjectLoading?: boolean
+  /** Loads compatible AI models for Geocode Agent selects (Capabilities text+json). */
+  fetchGeocodeAiModelOptions?: () => Promise<GeocodeAiModelOption[]>
 }
 
 interface NodePanelProps {

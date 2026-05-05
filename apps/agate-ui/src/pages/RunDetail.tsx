@@ -5,7 +5,18 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { getRun, getGraph, createRun, cancelRun, rerunProcessedItem, type Run, type Graph, type ProcessedItemSummary } from '@/lib/api'
+import {
+  getRun,
+  getGraph,
+  createRun,
+  cancelRun,
+  rerunProcessedItem,
+  getRunEstimatedAiCost,
+  type Run,
+  type Graph,
+  type ProcessedItemSummary,
+  type RunEstimatedAiCost,
+} from '@/lib/api'
 import { formatDateCentral } from '@/lib/utils'
 import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, ExternalLink, RotateCcw } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -23,6 +34,7 @@ export default function RunDetail() {
   const itemsPerPage = 100
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set())
   const [rerunningItems, setRerunningItems] = useState<Set<number>>(new Set())
+  const [aiCost, setAiCost] = useState<RunEstimatedAiCost | null>(null)
 
   useEffect(() => {
     if (runId) {
@@ -75,6 +87,12 @@ export default function RunDetail() {
       const graphData = await getGraph(runData.graph_id)
       setRun(runData)
       setGraph(graphData)
+      try {
+        const cost = await getRunEstimatedAiCost(runId)
+        setAiCost(cost)
+      } catch {
+        setAiCost(null)
+      }
     } catch (error) {
       console.error('Failed to load run data:', error)
     } finally {
@@ -377,6 +395,50 @@ export default function RunDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {aiCost && aiCost.attempt_count > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Estimated AI usage cost</CardTitle>
+            <CardDescription>
+              Based on tracked model calls for this run (totals are approximate).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-2xl font-semibold">
+              {Number(aiCost.estimated_total).toLocaleString(undefined, {
+                style: 'currency',
+                currency: aiCost.currency || 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 6,
+              })}
+            </div>
+            {aiCost.incomplete_estimate ? (
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                Some usage data was missing, so this total may be incomplete.
+              </p>
+            ) : null}
+            {aiCost.node_breakdown?.length ? (
+              <div className="text-sm text-muted-foreground">
+                <div className="font-medium text-foreground mb-1">By step</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  {aiCost.node_breakdown.map((row) => (
+                    <li key={String(row.node_id)}>
+                      {row.node_id ?? 'Flow'}{': '}
+                      {Number(row.estimated_total).toLocaleString(undefined, {
+                        style: 'currency',
+                        currency: aiCost.currency || 'USD',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6,
+                      })}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Processed Items Table */}
       {run.items && run.items.length > 0 && (

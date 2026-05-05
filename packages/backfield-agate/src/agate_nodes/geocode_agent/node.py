@@ -45,6 +45,7 @@ class GeocodeAgentInput(BaseModel):
 
 class GeocodeAgentParams(BaseModel):
     """Parameters for GeocodeAgent node."""
+
     maxLocations: int = Field(
         default=100,
         ge=1,
@@ -80,6 +81,14 @@ class GeocodeAgentParams(BaseModel):
     routerModel: str = Field(
         default="gpt-5-nano",
         description="OpenAI model for post-cache route_strategy JSON",
+    )
+    evaluationAiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides evaluationModel when set)",
+    )
+    routerAiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides routerModel when set)",
     )
 
 
@@ -219,7 +228,28 @@ async def run_geocode_agent_pipeline(
     openai_api_key = ctx.get_api_key("OPENAI_API_KEY")
     brave_search_api_key = ctx.get_api_key("BRAVE_SEARCH_API_KEY")
     service_api_token = ctx.get_api_key("SERVICE_API_TOKEN")
-        
+
+    eval_lm_model = params.evaluationModel
+    router_lm_model = params.routerModel
+    raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
+    if raw_pid:
+        try:
+            from backfield_ai.model_resolve import resolve_geocode_litellm_models
+            from backfield_db.session import get_engine
+            from sqlmodel import Session
+
+            with Session(get_engine()) as res_sess:
+                eval_lm_model, router_lm_model = resolve_geocode_litellm_models(
+                    res_sess,
+                    int(raw_pid),
+                    params,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Could not resolve catalog AI models for GeocodeAgent; using legacy ids: %s",
+                exc,
+            )
+
     # Get cache parameters
     stylebook_api_url = params.stylebookApiUrl or os.environ.get("STYLEBOOK_API_URL")
     project_slug = params.projectSlug or os.environ.get("PROJECT_SLUG")
@@ -308,8 +338,8 @@ async def run_geocode_agent_pipeline(
                     project_slug=project_slug,
                     service_api_token=service_api_token,
                     cache_resolve=cache_resolve,
-                    evaluation_llm_model=params.evaluationModel,
-                    router_llm_model=params.routerModel,
+                    evaluation_llm_model=eval_lm_model,
+                    router_llm_model=router_lm_model,
                 ),
                 timeout=PER_LOCATION_TIMEOUT,
             )

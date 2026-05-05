@@ -27,6 +27,7 @@ import {
   updateGraph,
   type Project,
 } from '@/lib/api'
+import { fetchProjectEffectiveAiModels } from '@/lib/core-api'
 import { ArrowLeft, Save, Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -99,10 +100,23 @@ export default function GraphBuilder() {
   // Find the selected node
   const selectedNode = nodes.find(n => n.id === selectedNodeId)
 
+  const flowProjectId = resolvedFlowProject?.id ?? null
+
+  const fetchGeocodeAiModelOptions = useCallback(async () => {
+    if (flowProjectId == null) return []
+    const rows = await fetchProjectEffectiveAiModels(flowProjectId, ['text', 'json'])
+    return rows.map((r) => ({
+      label: `${r.name} (${r.provider_model_id})`,
+      providerModelId: r.provider_model_id,
+      configId: r.id,
+    }))
+  }, [flowProjectId])
+
   const graphContext = useMemo(() => {
     if (flowProjectLoading) {
       return {
         organizationId: null as number | null,
+        projectId: null as number | null,
         workspaceDefaultStylebookId: null as number | null,
         workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
@@ -113,6 +127,7 @@ export default function GraphBuilder() {
     if (!p) {
       return {
         organizationId: null as number | null,
+        projectId: null as number | null,
         workspaceDefaultStylebookId: null as number | null,
         workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
@@ -125,12 +140,20 @@ export default function GraphBuilder() {
       typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null
     return {
       organizationId: p.organization_id ?? null,
+      projectId: p.id ?? null,
       workspaceDefaultStylebookId: sid,
       workspaceStylebookName: nm,
       missingWorkspaceStylebook: sid == null && nm == null,
       flowProjectLoading: false,
+      fetchGeocodeAiModelOptions:
+        flowProjectId != null ? fetchGeocodeAiModelOptions : undefined,
     }
-  }, [resolvedFlowProject, flowProjectLoading])
+  }, [
+    resolvedFlowProject,
+    flowProjectLoading,
+    flowProjectId,
+    fetchGeocodeAiModelOptions,
+  ])
 
   // Node click handlers
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {

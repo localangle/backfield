@@ -24,3 +24,14 @@ AI_PROVIDER_SLUG_BY_INTEGRATION_KEY: dict[str, str] = {
     INTEGRATION_KEY_AI_PROVIDER_OPENAI: "openai",
     INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC: "anthropic",
 }
+
+# Project-level default model roles (graph nodes resolve these at execution time).
+AI_DEFAULT_ROLE_GEOCODE_ROUTER = "geocode.router"
+AI_DEFAULT_ROLE_GEOCODE_EVALUATION = "geocode.evaluation"
+
+PROJECT_AI_DEFAULT_ROLES: frozenset[str] = frozenset(
+    {
+        AI_DEFAULT_ROLE_GEOCODE_ROUTER,
+        AI_DEFAULT_ROLE_GEOCODE_EVALUATION,
+    }
+)

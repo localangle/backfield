@@ -3,6 +3,7 @@ name = "agate-worker"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
+    "backfield-ai",
     "celery>=5.3.0",
     "redis>=5.0.0",
     "geoalchemy2>=0.14.0",

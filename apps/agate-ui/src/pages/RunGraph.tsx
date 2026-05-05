@@ -33,6 +33,7 @@ import {
   type Run,
 } from '@/lib/api'
 import { nodeOutputLookupFromReactFlow } from '@/lib/nodeOutputs'
+import { fetchProjectEffectiveAiModels } from '@/lib/core-api'
 import { ArrowLeft, Save, Edit, Loader2, Play, Trash2 } from 'lucide-react'
 
 export default function RunGraph() {
@@ -80,10 +81,23 @@ export default function RunGraph() {
   const [resolvedFlowProject, setResolvedFlowProject] = useState<Project | null>(null)
   const [flowProjectLoading, setFlowProjectLoading] = useState(false)
 
+  const flowProjectId = resolvedFlowProject?.id ?? null
+
+  const fetchGeocodeAiModelOptions = useCallback(async () => {
+    if (flowProjectId == null) return []
+    const rows = await fetchProjectEffectiveAiModels(flowProjectId, ['text', 'json'])
+    return rows.map((r) => ({
+      label: `${r.name} (${r.provider_model_id})`,
+      providerModelId: r.provider_model_id,
+      configId: r.id,
+    }))
+  }, [flowProjectId])
+
   const graphContext = useMemo(() => {
     if (flowProjectLoading) {
       return {
         organizationId: null as number | null,
+        projectId: null as number | null,
         workspaceDefaultStylebookId: null as number | null,
         workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
@@ -94,6 +108,7 @@ export default function RunGraph() {
     if (!p) {
       return {
         organizationId: null as number | null,
+        projectId: null as number | null,
         workspaceDefaultStylebookId: null as number | null,
         workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
@@ -106,12 +121,20 @@ export default function RunGraph() {
       typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null
     return {
       organizationId: p.organization_id ?? null,
+      projectId: p.id ?? null,
       workspaceDefaultStylebookId: sid,
       workspaceStylebookName: nm,
       missingWorkspaceStylebook: sid == null && nm == null,
       flowProjectLoading: false,
+      fetchGeocodeAiModelOptions:
+        flowProjectId != null ? fetchGeocodeAiModelOptions : undefined,
     }
-  }, [resolvedFlowProject, flowProjectLoading])
+  }, [
+    resolvedFlowProject,
+    flowProjectLoading,
+    flowProjectId,
+    fetchGeocodeAiModelOptions,
+  ])
 
   // Find the selected node
   const selectedNode = nodes.find(n => n.id === selectedNodeId)

@@ -69,6 +69,37 @@ export async function listOrgProjects(orgId: number): Promise<ProjectSummary[]> 
   return jsonFetch(`/v1/organizations/${orgId}/projects`)
 }
 
+export interface AiModelConfigSummary {
+  id: string
+  name: string
+  provider: string
+  provider_model_id: string
+  model_kind: string
+  status: string
+  capabilities: string[]
+  latest_test_status?: string | null
+}
+
+export async function listOrganizationAiModels(
+  orgId: number,
+): Promise<AiModelConfigSummary[]> {
+  return jsonFetch(`/v1/organizations/${orgId}/ai-models`)
+}
+
+export interface ProjectEffectiveAiModelRow extends AiModelConfigSummary {
+  project_enabled: boolean
+}
+
+export async function fetchProjectEffectiveAiModels(
+  projectId: number,
+  capabilities?: string[],
+): Promise<ProjectEffectiveAiModelRow[]> {
+  const q = capabilities?.length
+    ? `?capabilities=${encodeURIComponent(capabilities.join(','))}`
+    : ''
+  return jsonFetch(`/v1/projects/${projectId}/ai-models/effective${q}`)
+}
+
 export async function listOrgWorkspaces(
   orgId: number,
 ): Promise<WorkspaceWithProjects[]> {

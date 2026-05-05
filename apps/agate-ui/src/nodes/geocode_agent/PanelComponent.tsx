@@ -64,8 +64,8 @@ const nodeMetadata = {
   ]
 };
 
-import React, { useEffect, useState } from 'react'
-import type { GraphPanelContext } from '@/components/NodePanel'
+import React, { useEffect, useMemo, useState } from 'react'
+import type { GeocodeAiModelOption, GraphPanelContext } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -87,6 +87,8 @@ const DEFAULTS = {
   projectSlug: '',
   evaluationModel: 'gpt-5-nano',
   routerModel: 'gpt-5-nano',
+  evaluationAiModelConfigId: null as string | null,
+  routerAiModelConfigId: null as string | null,
 }
 
 const PANEL_DESCRIPTION =
@@ -99,7 +101,69 @@ const AVAILABLE_MODELS = [
   { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
   { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
   { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-]
+] as const
+
+type UnifiedAiModelOption = {
+  selectValue: string
+  label: string
+  providerModelId: string
+  configId?: string
+}
+
+function buildUnifiedModelOptions(
+  catalog: GeocodeAiModelOption[],
+  builtins: readonly { value: string; label: string }[],
+): UnifiedAiModelOption[] {
+  const out: UnifiedAiModelOption[] = []
+  const seenValue = new Set<string>()
+  for (const row of catalog) {
+    const sv = row.configId ?? row.providerModelId
+    if (seenValue.has(sv)) continue
+    seenValue.add(sv)
+    out.push({
+      selectValue: sv,
+      label: row.label,
+      providerModelId: row.providerModelId,
+      configId: row.configId,
+    })
+  }
+  const catalogProviders = new Set(catalog.map((c) => c.providerModelId))
+  for (const m of builtins) {
+    if (catalogProviders.has(m.value)) continue
+    if (seenValue.has(m.value)) continue
+    seenValue.add(m.value)
+    out.push({
+      selectValue: m.value,
+      label: m.label,
+      providerModelId: m.value,
+    })
+  }
+  return out
+}
+
+function resolvedEvaluationSelectValue(
+  params: Record<string, unknown>,
+  catalog: GeocodeAiModelOption[],
+): string {
+  const cfg = params.evaluationAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
+  const model = String(params.evaluationModel ?? '')
+  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
+  if (hit?.configId) return hit.configId
+  return model
+}
+
+function resolvedRouterSelectValue(
+  params: Record<string, unknown>,
+  catalog: GeocodeAiModelOption[],
+): string {
+  const cfg = params.routerAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
+  const model = String(params.routerModel ?? '')
+  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
+  if (hit?.configId) return hit.configId
+  return model
+}
 
 interface GeocodeAgentPanelProps {
   node: any
@@ -139,12 +203,14 @@ export default function GeocodeAgentPanel({
   }
   const params = merged
 
-  const modelOptions = AVAILABLE_MODELS
-
   const isDisabled = !(editMode && setNodes)
   const orgId = graphContext?.organizationId ?? null
+  const projectId = graphContext?.projectId ?? null
   const [stylebooks, setStylebooks] = useState<OrgStylebook[]>([])
   const [stylebooksError, setStylebooksError] = useState<string | null>(null)
+  const [catalogRows, setCatalogRows] = useState<GeocodeAiModelOption[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!orgId || !params.useCache) {
@@ -168,6 +234,82 @@ export default function GeocodeAgentPanel({
       cancelled = true
     }
   }, [orgId, params.useCache])
+
+  useEffect(() => {
+    const fetcher = graphContext?.fetchGeocodeAiModelOptions
+    if (projectId == null || fetcher == null) {
+      setCatalogRows([])
+      setCatalogError(null)
+      setCatalogLoading(false)
+      return
+    }
+    let cancelled = false
+    setCatalogLoading(true)
+    setCatalogError(null)
+    void fetcher()
+      .then((rows) => {
+        if (!cancelled) {
+          setCatalogRows(rows)
+          setCatalogLoading(false)
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setCatalogRows([])
+          setCatalogError(e instanceof Error ? e.message : 'Could not load models.')
+          setCatalogLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, graphContext?.fetchGeocodeAiModelOptions])
+
+  const paramsRecord = params as Record<string, unknown>
+
+  const evaluationOptions = useMemo(() => {
+    let opts = buildUnifiedModelOptions(catalogRows, AVAILABLE_MODELS)
+    const sv = resolvedEvaluationSelectValue(paramsRecord, catalogRows)
+    if (!opts.some((o) => o.selectValue === sv)) {
+      opts = [
+        {
+          selectValue: sv,
+          label: String(paramsRecord.evaluationModel ?? sv),
+          providerModelId: String(paramsRecord.evaluationModel ?? sv),
+          configId:
+            typeof paramsRecord.evaluationAiModelConfigId === 'string'
+              ? paramsRecord.evaluationAiModelConfigId
+              : undefined,
+        },
+        ...opts,
+      ]
+    }
+    return opts
+  }, [
+    catalogRows,
+    paramsRecord.evaluationModel,
+    paramsRecord.evaluationAiModelConfigId,
+  ])
+
+  const routerOptions = useMemo(() => {
+    let opts = buildUnifiedModelOptions(catalogRows, AVAILABLE_MODELS)
+    const sv = resolvedRouterSelectValue(paramsRecord, catalogRows)
+    if (!opts.some((o) => o.selectValue === sv)) {
+      opts = [
+        {
+          selectValue: sv,
+          label: String(paramsRecord.routerModel ?? sv),
+          providerModelId: String(paramsRecord.routerModel ?? sv),
+          configId:
+            typeof paramsRecord.routerAiModelConfigId === 'string'
+              ? paramsRecord.routerAiModelConfigId
+              : undefined,
+        },
+        ...opts,
+      ]
+    }
+    return opts
+  }, [catalogRows, paramsRecord.routerModel, paramsRecord.routerAiModelConfigId])
 
   const mergeData = (base: Record<string, unknown>) => {
     const out = {
@@ -235,20 +377,44 @@ export default function GeocodeAgentPanel({
     )
   }
 
-  const handleEvaluationModel = (value: string) => {
+  const handleEvaluationModel = (selectValue: string) => {
     if (!setNodes) return
+    const row = evaluationOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
-        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), evaluationModel: value }) } : n,
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({
+                ...(n.data || {}),
+                evaluationModel: providerModelId,
+                evaluationAiModelConfigId: configId ?? null,
+              }),
+            }
+          : n,
       ),
     )
   }
 
-  const handleRouterModel = (value: string) => {
+  const handleRouterModel = (selectValue: string) => {
     if (!setNodes) return
+    const row = routerOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
-        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), routerModel: value }) } : n,
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({
+                ...(n.data || {}),
+                routerModel: providerModelId,
+                routerAiModelConfigId: configId ?? null,
+              }),
+            }
+          : n,
       ),
     )
   }
@@ -301,7 +467,7 @@ export default function GeocodeAgentPanel({
           <div className="space-y-2">
             <Label className="text-xs">Evaluation model</Label>
             <Select
-              value={String(params.evaluationModel)}
+              value={resolvedEvaluationSelectValue(paramsRecord, catalogRows)}
               onValueChange={handleEvaluationModel}
               disabled={isDisabled}
             >
@@ -309,13 +475,22 @@ export default function GeocodeAgentPanel({
                 <SelectValue placeholder="Model" />
               </SelectTrigger>
               <SelectContent>
-                {modelOptions.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
+                {evaluationOptions.map((m) => (
+                  <SelectItem key={`ev-${m.selectValue}`} value={m.selectValue}>
                     {m.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {projectId == null && (
+              <p className="text-xs text-muted-foreground">
+                Save this flow under a project to load organization models alongside the built-in list.
+              </p>
+            )}
+            {projectId != null && catalogLoading && (
+              <p className="text-xs text-muted-foreground">Loading models…</p>
+            )}
+            {catalogError && <p className="text-xs text-destructive">{catalogError}</p>}
             <p className="text-xs text-muted-foreground">
               Used when the area geocoder asks the model to judge ambiguous map results.
             </p>
@@ -324,7 +499,7 @@ export default function GeocodeAgentPanel({
           <div className="space-y-2">
             <Label className="text-xs">Routing model</Label>
             <Select
-              value={String(params.routerModel)}
+              value={resolvedRouterSelectValue(paramsRecord, catalogRows)}
               onValueChange={handleRouterModel}
               disabled={isDisabled}
             >
@@ -332,8 +507,8 @@ export default function GeocodeAgentPanel({
                 <SelectValue placeholder="Model" />
               </SelectTrigger>
               <SelectContent>
-                {modelOptions.map((m) => (
-                  <SelectItem key={`r-${m.value}`} value={m.value}>
+                {routerOptions.map((m) => (
+                  <SelectItem key={`rt-${m.selectValue}`} value={m.selectValue}>
                     {m.label}
                   </SelectItem>
                 ))}

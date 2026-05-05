@@ -32,6 +32,9 @@ export default function Layout({ children }: LayoutProps) {
                 onManageCatalogs={
                   isOrgAdmin ? () => navigate("/admin/stylebooks") : undefined
                 }
+                onAiModelsSettings={
+                  isOrgAdmin ? () => navigate("/admin/ai-models") : undefined
+                }
                 onLogout={() => void logout()}
               />
             ) : null}

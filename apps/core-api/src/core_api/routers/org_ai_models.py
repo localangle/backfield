@@ -14,6 +14,7 @@ from core_api.ai_model_catalog import (
     list_curated_options_out,
     list_org_model_configs,
     patch_org_model_config,
+    run_org_model_connection_test,
 )
 from core_api.authz import require_org_admin
 from core_api.deps import get_auth, get_session
@@ -63,3 +64,15 @@ def patch_organization_ai_model(
 ) -> AiModelConfigOut:
     require_org_admin(session, auth, org_id)
     return patch_org_model_config(session, organization_id=org_id, config_id=config_id, body=body)
+
+
+@router.post("/{org_id}/ai-models/{config_id}/test-connection", response_model=AiModelConfigOut)
+def post_organization_ai_model_test_connection(
+    org_id: int,
+    config_id: str,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> AiModelConfigOut:
+    """Ping provider through LiteLLM; updates latest test metadata only."""
+    require_org_admin(session, auth, org_id)
+    return run_org_model_connection_test(session, org_id, config_id)

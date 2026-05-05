@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 from api.deps import get_auth, get_session
@@ -16,6 +17,7 @@ from backfield_auth.gate import (
 from backfield_db import (
     AgateGraph,
     AgateRun,
+    BackfieldAiCallRecord,
     BackfieldOrganization,
     BackfieldProject,
     BackfieldProjectSecret,
@@ -29,6 +31,14 @@ from sqlmodel import Session, select
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 _KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+
+class ProjectEstimatedAiCostOut(BaseModel):
+    project_id: int
+    currency: str
+    estimated_total: Decimal
+    incomplete_estimate: bool
+    attempt_count: int
 
 
 def _settings_dict(project: BackfieldProject) -> dict:
@@ -426,3 +436,40 @@ def delete_secret(
     session.delete(row)
     session.commit()
     return None
+
+
+@router.get("/{project_id}/estimated-ai-cost", response_model=ProjectEstimatedAiCostOut)
+def get_project_estimated_ai_cost(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    require_project_access(session, auth, project_id)
+    p = session.get(BackfieldProject, project_id)
+    if not p:
+        raise HTTPException(404, "Project not found")
+
+    rows = list(
+        session.exec(
+            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.project_id == project_id)
+        ).all()
+    )
+    total = Decimal("0")
+    incomplete = False
+    currency = "USD"
+    for row in rows:
+        currency = str(row.currency or "USD")
+        if row.estimated_cost is not None:
+            total += row.estimated_cost
+        else:
+            incomplete = True
+        if row.cost_estimate_incomplete:
+            incomplete = True
+
+    return ProjectEstimatedAiCostOut(
+        project_id=project_id,
+        currency=currency,
+        estimated_total=total,
+        incomplete_estimate=incomplete,
+        attempt_count=len(rows),
+    )

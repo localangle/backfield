@@ -5,12 +5,19 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from api.deps import get_auth, get_session
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_core.s3_batch import graph_spec_json_contains_s3_input
-from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, BackfieldProjectSecret
+from backfield_db import (
+    AgateGraph,
+    AgateProcessedItem,
+    AgateRun,
+    BackfieldAiCallRecord,
+    BackfieldProjectSecret,
+)
 from backfield_db.crypto import decrypt_secret
 from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException
@@ -45,6 +52,20 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+
+
+class AiCostNodeBreakdown(BaseModel):
+    node_id: str | None
+    estimated_total: Decimal
+
+
+class RunEstimatedAiCostOut(BaseModel):
+    run_id: str
+    currency: str
+    estimated_total: Decimal
+    incomplete_estimate: bool
+    attempt_count: int
+    node_breakdown: list[AiCostNodeBreakdown]
 
 
 class RunCreate(BaseModel):
@@ -336,4 +357,50 @@ def get_run(
         created_at=r.created_at,
         updated_at=r.updated_at,
         processed_items=processed,
+    )
+
+
+@router.get("/{run_id}/estimated-ai-cost", response_model=RunEstimatedAiCostOut)
+def get_run_estimated_ai_cost(
+    run_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+
+    stmt = select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id == run_id)
+    rows = list(session.exec(stmt).all())
+    total = Decimal("0")
+    incomplete = False
+    by_node: dict[str | None, Decimal] = {}
+    currency = "USD"
+    for row in rows:
+        currency = str(row.currency or "USD")
+        if row.estimated_cost is not None:
+            total += row.estimated_cost
+        else:
+            incomplete = True
+        if row.cost_estimate_incomplete:
+            incomplete = True
+        nk = row.node_id
+        prev = by_node.get(nk, Decimal("0"))
+        by_node[nk] = prev + (row.estimated_cost or Decimal("0"))
+
+    breakdown = [
+        AiCostNodeBreakdown(node_id=k, estimated_total=v)
+        for k, v in sorted(by_node.items(), key=lambda kv: (kv[0] is None, str(kv[0])))
+    ]
+
+    return RunEstimatedAiCostOut(
+        run_id=run_id,
+        currency=currency,
+        estimated_total=total,
+        incomplete_estimate=incomplete,
+        attempt_count=len(rows),
+        node_breakdown=breakdown,
     )
