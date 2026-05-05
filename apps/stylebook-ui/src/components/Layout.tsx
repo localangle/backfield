@@ -28,19 +28,6 @@ interface LayoutProps {
   headerContent?: ReactNode
 }
 
-function defaultStylebookSlugForProject(
-  projects: Project[],
-  stylebooks: OrgStylebookRow[],
-  projectSlug: string,
-): string {
-  if (!stylebooks.length) return ""
-  const project = projects.find((x) => x.slug === projectSlug)
-  const ws = project?.workspace_stylebook_slug
-  if (ws && stylebooks.some((b) => b.slug === ws)) return ws
-  const preferred = stylebooks.find((b) => b.is_default)
-  return preferred?.slug ?? stylebooks[0].slug
-}
-
 export default function Layout({ children, headerContent }: LayoutProps) {
   const { username, logout, isOrgAdmin } = useAuth()
   const agateBase = agateUiOrigin()
@@ -81,12 +68,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     if (stylebookSlug && stylebooks.some((b) => b.slug === stylebookSlug)) {
       return stylebookSlug
     }
-    if (projectScopeSlug) {
-      return defaultStylebookSlugForProject(projects, stylebooks, projectScopeSlug)
-    }
     const preferred = stylebooks.find((b) => b.is_default)
     return preferred?.slug ?? stylebooks[0].slug
-  }, [projectScopeSlug, stylebookSlug, stylebooks, projects])
+  }, [stylebookSlug, stylebooks])
 
   const activeProjectName = useMemo(() => {
     if (!projectScopeSlug) return null
@@ -176,9 +160,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     const known = stylebooks.some((b) => b.slug === stylebookSlug)
     if (known && stylebookSlug) return
 
-    const nextSlug = projectScopeSlug
-      ? defaultStylebookSlugForProject(projects, stylebooks, projectScopeSlug)
-      : (stylebooks.find((b) => b.is_default)?.slug ?? stylebooks[0].slug)
+    const nextSlug = stylebooks.find((b) => b.is_default)?.slug ?? stylebooks[0].slug
     if (!nextSlug || nextSlug === stylebookSlug) return
 
     setSearchParams(

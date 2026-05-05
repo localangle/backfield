@@ -22,7 +22,7 @@ def _engine():
     return engine
 
 
-def test_effective_uses_workspace_when_slug_missing() -> None:
+def test_effective_uses_org_default_when_slug_missing() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(slug="org-eff", name="Org Eff")

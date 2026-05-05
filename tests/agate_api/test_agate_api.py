@@ -419,7 +419,6 @@ def test_create_project_with_workspace_id(tmp_path):
         oid = int(org.id)
         sb = ensure_default_stylebook_for_organization(s, oid)
         sb_id = int(sb.id)  # type: ignore[arg-type]
-        sb_slug = str(sb.slug)
         ws = BackfieldWorkspace(
             organization_id=oid,
             stylebook_id=sb_id,
@@ -446,9 +445,9 @@ def test_create_project_with_workspace_id(tmp_path):
         pid = int(body["id"])
         assert body.get("workspace_id") == int(ws.id)
         assert body.get("organization_id") == oid
-        assert body.get("workspace_stylebook_id") == sb_id
-        assert body.get("workspace_stylebook_name") == "Default Stylebook"
-        assert body.get("workspace_stylebook_slug") == sb_slug
+        assert body.get("workspace_stylebook_id") is None
+        assert body.get("workspace_stylebook_name") is None
+        assert body.get("workspace_stylebook_slug") is None
         with Session(engine) as s:
             p = s.get(BackfieldProject, pid)
             assert p is not None

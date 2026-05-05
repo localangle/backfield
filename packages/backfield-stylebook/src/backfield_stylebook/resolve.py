@@ -22,26 +22,29 @@ catalog-backed canonicalization.
 
 from __future__ import annotations
 
-from backfield_db import BackfieldProject, BackfieldWorkspace, Stylebook
-from sqlmodel import Session
+from backfield_db import BackfieldProject, Stylebook
+from sqlmodel import Session, col, select
 
 STYLEBOOK_SLUG_NOT_IN_ORG = "STYLEBOOK_SLUG_NOT_IN_ORG"
 
 
 def resolve_stylebook_id_for_project_id(session: Session, project_id: int) -> int:
-    """Return ``workspace.stylebook_id`` for the project's workspace.
+    """Return the organization's default Stylebook for the project.
 
-    Raises ``LookupError`` when the project has no workspace or workspace has no Stylebook.
+    Workspaces are no longer used to select a default Stylebook.
     """
     proj = session.get(BackfieldProject, project_id)
     if proj is None:
         raise LookupError(f"project {project_id} not found")
-    if proj.workspace_id is None:
-        raise LookupError(f"project {project_id} has no workspace_id")
-    ws = session.get(BackfieldWorkspace, int(proj.workspace_id))
-    if ws is None:
-        raise LookupError(f"workspace {proj.workspace_id} not found")
-    return int(ws.stylebook_id)
+    oid = int(proj.organization_id)
+    sb = session.exec(
+        select(Stylebook)
+        .where(Stylebook.organization_id == oid)
+        .order_by(col(Stylebook.is_default).desc(), col(Stylebook.id).asc())
+    ).first()
+    if sb is None or sb.id is None:
+        raise LookupError(f"organization {oid} has no stylebooks")
+    return int(sb.id)
 
 
 def resolve_effective_stylebook_id_for_project(

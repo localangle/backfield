@@ -779,12 +779,12 @@ def test_candidates_types_returns_place_extract_taxonomy(client: TestClient) -> 
     assert len(types) == 17
 
 
-def test_candidates_400_when_project_has_no_workspace(client: TestClient) -> None:
+def test_candidates_ok_when_project_has_no_workspace(client: TestClient) -> None:
     r = client.get(
         "/v1/candidates?project_slug=no-ws-proj&status=open",
         headers=_service_headers(),
     )
-    assert r.status_code == 400
+    assert r.status_code == 200
 
 
 def test_candidates_open_queue_empty(client: TestClient) -> None:
