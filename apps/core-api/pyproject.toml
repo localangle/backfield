@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
+    "backfield-ai",
     "backfield-auth",
     "backfield-db",
     "backfield-stylebook",

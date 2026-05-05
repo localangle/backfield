@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from decimal import Decimal
 
 import pytest
 from backfield_db import (
@@ -889,3 +890,151 @@ def test_api_keys_org_admin_revokes_other_users_user_key(client: TestClient) -> 
 
     assert client.delete(f"/v1/projects/1/api-keys/{cred_id}").status_code == 204
     assert client.get("/v1/projects/1/api-keys").json() == []
+
+
+def test_ai_models_curated_options_requires_auth(client: TestClient) -> None:
+    r = client.get("/v1/organizations/1/ai-models/curated-options")
+    assert r.status_code == 401
+
+
+def test_ai_models_catalog_org_admin_flow(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "aiadmin@example.com", "password": "aiadmin-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "aiadmin@example.com", "password": "aiadmin-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+
+    curated = client.get(f"/v1/organizations/{org_id}/ai-models/curated-options")
+    assert curated.status_code == 200
+    opts = curated.json()
+    ids = {o["curated_id"] for o in opts}
+    assert "openai:gpt-5-nano" in ids
+    assert all("provider" in o and "capabilities" in o for o in opts)
+
+    empty = client.get(f"/v1/organizations/{org_id}/ai-models")
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    created = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={"curated_id": "openai:gpt-5-nano", "name": "Fast checks"},
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body["name"] == "Fast checks"
+    assert body["provider"] == "openai"
+    assert body["provider_model_id"] == "gpt-5-nano"
+    assert body["status"] == "active"
+    assert set(body["capabilities"]) >= {"text", "json"}
+    config_id = body["id"]
+
+    custom = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "name": "Custom LiteLLM",
+            "provider": "together_ai",
+            "provider_model_id": "together/meta-llama/Llama-3-70b-chat-hf",
+            "capabilities": ["text"],
+            "currency": "EUR",
+            "input_token_price": "0.000002",
+            "output_token_price": "0.000003",
+        },
+    )
+    assert custom.status_code == 200
+    cb = custom.json()
+    assert cb["currency"] == "EUR"
+    assert Decimal(cb["input_token_price"]) == Decimal("0.000002")
+
+    listed = client.get(f"/v1/organizations/{org_id}/ai-models")
+    assert listed.status_code == 200
+    names = {m["name"] for m in listed.json()}
+    assert names == {"Custom LiteLLM", "Fast checks"}
+
+    dup = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={"curated_id": "openai:gpt-4o-mini", "name": "Fast checks"},
+    )
+    assert dup.status_code == 409
+
+    bad_cap = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "name": "Bad",
+            "provider": "openai",
+            "provider_model_id": "gpt-4o-mini",
+            "capabilities": ["text", "audio"],
+        },
+    )
+    assert bad_cap.status_code == 400
+
+    patched = client.patch(
+        f"/v1/organizations/{org_id}/ai-models/{config_id}",
+        json={"status": "disabled"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["status"] == "disabled"
+
+
+def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "aimoa@example.com", "password": "aimoa-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "aimoa@example.com", "password": "aimoa-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    client.post(
+        f"/v1/organizations/{org_id}/users",
+        json={
+            "email": "aimember@example.com",
+            "password": "aimember-secret-9",
+            "role": "member",
+        },
+    )
+    ws_id = client.get(f"/v1/organizations/{org_id}/workspaces").json()[0]["id"]
+    users = client.get(f"/v1/organizations/{org_id}/users?detail=true").json()
+    member_id = next(u["id"] for u in users if u["email"] == "aimember@example.com")
+    client.put(
+        f"/v1/organizations/{org_id}/users/{member_id}/workspace-memberships",
+        json={"workspace_ids": [ws_id]},
+    )
+    client.post("/v1/auth/logout")
+    client.post(
+        "/v1/auth/login",
+        json={"email": "aimember@example.com", "password": "aimember-secret-9"},
+    )
+
+    r = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={"curated_id": "openai:gpt-5-mini", "name": "Should fail"},
+    )
+    assert r.status_code == 403
+
+
+def test_ai_models_embedding_kind_rejected_for_now(client: TestClient) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "embedadmin@example.com", "password": "embedadmin-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "embedadmin@example.com", "password": "embedadmin-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    r = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "name": "Emb",
+            "provider": "openai",
+            "provider_model_id": "text-embedding-3-small",
+            "capabilities": ["text"],
+            "model_kind": "embedding",
+        },
+    )
+    assert r.status_code == 400
