@@ -68,6 +68,8 @@ def call_llm(
     anthropic_api_key: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
     timeout: float = 300.0,
+    *,
+    model_config_id: Optional[str] = None,
 ) -> str:
     """
     Call an LLM with the given prompt and model with exponential backoff retries.
@@ -86,6 +88,7 @@ def call_llm(
         anthropic_api_key: Anthropic API key (required for Anthropic models)
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
         timeout: Request timeout in seconds (default: 300s / 5 minutes)
+        model_config_id: Optional Backfield AI catalog row id for ``backfield_ai_call_record``.
         
     Returns:
         The LLM response text
@@ -113,6 +116,7 @@ def call_llm(
             anthropic_api_key=anthropic_api_key,
             project_system_prompt=project_system_prompt,
             timeout=timeout,
+            model_config_id=model_config_id,
         )
 
     # Get model from environment if not specified

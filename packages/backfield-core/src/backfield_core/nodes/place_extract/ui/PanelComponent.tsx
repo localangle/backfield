@@ -1,7 +1,68 @@
+import React, { useEffect, useMemo, useState } from 'react'
+import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+const DEFAULTS = {
+  model: 'gpt-4o-mini',
+  aiModelConfigId: null as string | null,
+}
+
+type UnifiedAiModelOption = {
+  selectValue: string
+  label: string
+  providerModelId: string
+  configId?: string
+}
+
+function buildUnifiedModelOptions(
+  catalog: ProjectAiModelOption[],
+  builtins: readonly { value: string; label: string }[],
+  mergeBuiltins: boolean,
+): UnifiedAiModelOption[] {
+  const out: UnifiedAiModelOption[] = []
+  const seenValue = new Set<string>()
+  for (const row of catalog) {
+    const sv = row.configId ?? row.providerModelId
+    if (seenValue.has(sv)) continue
+    seenValue.add(sv)
+    out.push({
+      selectValue: sv,
+      label: row.label,
+      providerModelId: row.providerModelId,
+      configId: row.configId,
+    })
+  }
+  if (!mergeBuiltins) {
+    return out
+  }
+  const catalogProviders = new Set(catalog.map((c) => c.providerModelId))
+  for (const m of builtins) {
+    if (catalogProviders.has(m.value)) continue
+    if (seenValue.has(m.value)) continue
+    seenValue.add(m.value)
+    out.push({
+      selectValue: m.value,
+      label: m.label,
+      providerModelId: m.value,
+    })
+  }
+  return out
+}
+
+function resolvedModelSelectValue(
+  params: Record<string, unknown>,
+  catalog: ProjectAiModelOption[],
+): string {
+  const cfg = params.aiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
+  const model = String(params.model ?? '')
+  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
+  if (hit?.configId) return hit.configId
+  return model
+}
 
 interface PlaceExtractPanelProps {
   node: any
@@ -11,6 +72,7 @@ interface PlaceExtractPanelProps {
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
+  graphContext?: GraphPanelContext
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
 }
 
@@ -33,25 +95,113 @@ function formatSamplePlaceTitle(location: {
 
 export default function PlaceExtractPanel({
   node,
-  onChange,
-  onRun,
-  running,
-  currentRun,
   editMode,
   setNodes,
+  currentRun,
+  graphContext,
   nodeOutputLookupSpec,
 }: PlaceExtractPanelProps) {
+  const merged = {
+    ...DEFAULTS,
+    ...(nodeMetadata.defaultParams || {}),
+    ...(node.data || {}),
+  }
+  const paramsRecord = merged as Record<string, unknown>
+
+  const projectId = graphContext?.projectId ?? null
+  const [catalogRows, setCatalogRows] = useState<ProjectAiModelOption[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetcher = graphContext?.fetchProjectAiModels
+    if (projectId == null || fetcher == null) {
+      setCatalogRows([])
+      setCatalogError(null)
+      setCatalogLoading(false)
+      return
+    }
+    let cancelled = false
+    setCatalogLoading(true)
+    setCatalogError(null)
+    void fetcher(['text', 'json'])
+      .then((rows) => {
+        if (!cancelled) {
+          setCatalogRows(rows)
+          setCatalogLoading(false)
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setCatalogRows([])
+          setCatalogError(e instanceof Error ? e.message : 'Could not load models.')
+          setCatalogLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, graphContext?.fetchProjectAiModels])
+
+  const modelSelectOptions = useMemo(() => {
+    const builtinsFromMetadata =
+      Array.isArray(nodeMetadata.availableModels) && nodeMetadata.availableModels.length > 0
+        ? nodeMetadata.availableModels
+        : [{ value: 'gpt-4o-mini', label: 'GPT-4o Mini' }]
+    const mergeBuiltins = projectId == null
+    let opts = buildUnifiedModelOptions(catalogRows, builtinsFromMetadata, mergeBuiltins)
+    const sv = resolvedModelSelectValue(paramsRecord, catalogRows)
+    if (!opts.some((o) => o.selectValue === sv)) {
+      opts = [
+        {
+          selectValue: sv,
+          label: String(paramsRecord.model ?? sv),
+          providerModelId: String(paramsRecord.model ?? sv),
+          configId:
+            typeof paramsRecord.aiModelConfigId === 'string'
+              ? paramsRecord.aiModelConfigId
+              : undefined,
+        },
+        ...opts,
+      ]
+    }
+    return opts
+  }, [projectId, catalogRows, paramsRecord.model, paramsRecord.aiModelConfigId])
+
+  const isDisabled = !(editMode && setNodes)
+
+  const handleModelChange = (selectValue: string) => {
+    if (!setNodes) return
+    const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
+    setNodes((nds: any[]) =>
+      nds.map((n: any) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: {
+                ...(n.data || {}),
+                model: providerModelId,
+                aiModelConfigId: configId ?? null,
+              },
+            }
+          : n,
+      ),
+    )
+  }
+
+  const selectValue = resolvedModelSelectValue(paramsRecord, catalogRows)
+  const displayModelLabel =
+    modelSelectOptions.find((o) => o.selectValue === selectValue)?.label ??
+    String(paramsRecord.model ?? selectValue)
+
   const nodeOutput = getNodeOutputById(
     currentRun?.node_outputs as Record<string, unknown> | undefined,
     node.id,
     nodeOutputLookupSpec ?? undefined,
   )
   const latestData = nodeOutput || null
-
-  const modelOptions =
-    nodeMetadata.availableModels && nodeMetadata.availableModels.length > 0
-      ? nodeMetadata.availableModels
-      : [{ value: 'gpt-4o-mini', label: 'GPT-4o Mini' }]
 
   return (
     <>
@@ -73,11 +223,12 @@ export default function PlaceExtractPanel({
           </p>
           <ul className="list-disc list-inside text-xs mt-2 space-y-1 text-muted-foreground">
             <li>
-              <code className="bg-muted px-1 rounded">{'{text}'}</code> — plain text or the <code className="bg-muted px-1 rounded">text</code>{' '}
-              field from JSON input
+              <code className="bg-muted px-1 rounded">{'{text}'}</code> — plain text or the{' '}
+              <code className="bg-muted px-1 rounded">text</code> field from JSON input
             </li>
             <li>
-              <code className="bg-muted px-1 rounded">{'{url}'}</code> — <code className="bg-muted px-1 rounded">url</code> field
+              <code className="bg-muted px-1 rounded">{'{url}'}</code> —{' '}
+              <code className="bg-muted px-1 rounded">url</code> field
             </li>
             <li>
               <code className="bg-muted px-1 rounded">{'{results.images}'}</code> — nested paths (e.g.{' '}
@@ -105,33 +256,39 @@ export default function PlaceExtractPanel({
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Model</Label>
             {editMode && setNodes ? (
-              <Select
-                value={node.data.model || nodeMetadata.defaultParams?.model || 'gpt-4o-mini'}
-                onValueChange={(value) => {
-                  setNodes((nds: any[]) =>
-                    nds.map((n: any) =>
-                      n.id === node.id ? { ...n, data: { ...n.data, model: value } } : n
-                    )
-                  )
-                }}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelOptions.map((model) => (
-                    <SelectItem key={model.value} value={model.value}>
-                      {model.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <>
+                <Select
+                  value={selectValue}
+                  onValueChange={handleModelChange}
+                  disabled={isDisabled}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {modelSelectOptions.map((m) => (
+                      <SelectItem key={`pe-${m.selectValue}`} value={m.selectValue}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {projectId == null && (
+                  <p className="text-xs text-muted-foreground">
+                    Save this flow under a project to use only organization-configured models.
+                  </p>
+                )}
+                {projectId != null && catalogLoading && (
+                  <p className="text-xs text-muted-foreground">Loading models…</p>
+                )}
+                {catalogError != null && catalogError !== '' ? (
+                  <p className="text-xs text-destructive">{catalogError}</p>
+                ) : null}
+              </>
             ) : (
               <div className="flex justify-between items-center p-2 bg-muted rounded">
                 <span className="text-muted-foreground">Model</span>
-                <span className="font-medium text-xs">
-                  {node.data.model || nodeMetadata.defaultParams?.model || 'gpt-4o-mini'}
-                </span>
+                <span className="font-medium text-xs">{displayModelLabel}</span>
               </div>
             )}
           </div>
@@ -147,8 +304,8 @@ export default function PlaceExtractPanel({
                   nds.map((n: any) =>
                     n.id === node.id
                       ? { ...n, data: { ...n.data, prompt: e.target.value } }
-                      : n
-                  )
+                      : n,
+                  ),
                 )
               }}
               placeholder="Enter custom prompt"

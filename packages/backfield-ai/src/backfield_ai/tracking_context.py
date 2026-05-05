@@ -16,9 +16,14 @@ class LlmAttemptTrackingContext:
     session: Session
     project_id: int
     run_id: str
+    # Per-file S3/batch runs set this to ``agate_processed_item.id``; single-graph runs leave None.
+    processed_item_id: int | None = None
 
 
 _CTX: ContextVar[LlmAttemptTrackingContext | None] = ContextVar("bf_llm_track_ctx", default=None)
+
+_CURRENT_NODE_ID: ContextVar[str | None] = ContextVar("bf_llm_current_node_id", default=None)
+_CURRENT_NODE_TYPE: ContextVar[str | None] = ContextVar("bf_llm_current_node_type", default=None)
 
 
 def current_llm_tracking_context() -> LlmAttemptTrackingContext | None:
@@ -31,6 +36,12 @@ def attach_llm_tracking_context(ctx: LlmAttemptTrackingContext):
 
 def reset_llm_tracking_context(token: object) -> None:
     _CTX.reset(token)
+
+
+def set_llm_tracking_current_node(node_id: str | None, node_type: str | None) -> None:
+    """Best-effort scope for the graph node executing during worker runs (React Flow id + type)."""
+    _CURRENT_NODE_ID.set(node_id)
+    _CURRENT_NODE_TYPE.set(node_type)
 
 
 def persist_llm_attempt(
@@ -58,9 +69,9 @@ def persist_llm_attempt(
     row = BackfieldAiCallRecord(
         project_id=ctx.project_id,
         run_id=ctx.run_id,
-        processed_item_id=None,
-        node_id=None,
-        node_type=None,
+        processed_item_id=ctx.processed_item_id,
+        node_id=_CURRENT_NODE_ID.get(),
+        node_type=_CURRENT_NODE_TYPE.get(),
         model_config_id=model_config_id,
         model_config_snapshot_json=model_config_snapshot_json,
         provider=provider,

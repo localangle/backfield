@@ -75,6 +75,7 @@ class Place(Address):
                 model=PLACE_LLM_MODEL,
                 openai_api_key=openai_api_key,
                 force_json=False,
+                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
             )
             decision = result.strip()
             logger.info("Addressability check for '%s': %s", full_location, decision)
@@ -110,6 +111,7 @@ class Place(Address):
                 model=PLACE_LLM_MODEL,
                 openai_api_key=openai_api_key,
                 force_json=False,
+                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
             )
             return result.strip()
         except Exception as exc:
@@ -194,6 +196,7 @@ class Place(Address):
                 model=PLACE_LLM_MODEL,
                 openai_api_key=openai_api_key,
                 force_json=True,
+                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
             )
             address_data = json.loads(result)
             return address_data if address_data.get("address_found") else None

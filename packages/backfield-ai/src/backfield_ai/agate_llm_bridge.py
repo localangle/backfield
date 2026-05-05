@@ -38,11 +38,14 @@ def call_llm_tracked_sync(
     anthropic_api_key: str | None,
     project_system_prompt: str | None,
     timeout: float,
+    model_config_id: str | None = None,
 ) -> str:
     if not prompt:
         raise ValueError("Prompt cannot be empty")
 
     import os
+
+    mc_norm = (model_config_id or "").strip() or None
 
     raw_model = model or os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
     lm_model = _legacy_to_litellm_model(raw_model.strip())
@@ -88,7 +91,7 @@ def call_llm_tracked_sync(
                 provider_model_id=result.provider_model_id,
                 status="succeeded",
                 attempt_number=attempt_idx + 1,
-                model_config_id=None,
+                model_config_id=mc_norm,
                 model_config_snapshot_json=snap,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
@@ -113,7 +116,7 @@ def call_llm_tracked_sync(
                 provider_model_id=lm_model,
                 status="failed",
                 attempt_number=attempt_idx + 1,
-                model_config_id=None,
+                model_config_id=mc_norm,
                 model_config_snapshot_json=snap,
                 prompt_tokens=None,
                 completion_tokens=None,

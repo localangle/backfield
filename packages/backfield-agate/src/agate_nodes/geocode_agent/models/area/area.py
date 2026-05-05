@@ -80,6 +80,7 @@ class Area(Location):
                 prompt=prompt,
                 model=model_name,
                 openai_api_key=openai_api_key,
+                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
             )
 
             evaluation = json.loads(response)

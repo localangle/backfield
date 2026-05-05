@@ -86,6 +86,7 @@ class Address(Point):
                 model=ADDRESS_CANDIDATE_LLM_MODEL,
                 openai_api_key=openai_api_key,
                 force_json=True,
+                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
             )
             payload = json.loads(response_text)
         except Exception as exc:

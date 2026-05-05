@@ -340,6 +340,8 @@ async def run_geocode_agent_pipeline(
                     cache_resolve=cache_resolve,
                     evaluation_llm_model=eval_lm_model,
                     router_llm_model=router_lm_model,
+                    evaluation_ai_model_config_id=params.evaluationAiModelConfigId,
+                    router_ai_model_config_id=params.routerAiModelConfigId,
                 ),
                 timeout=PER_LOCATION_TIMEOUT,
             )

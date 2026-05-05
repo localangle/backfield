@@ -79,6 +79,7 @@ class Region(Area):
                 model=REGION_LLM_MODEL,
                 force_json=True,
                 openai_api_key=openai_api_key,
+                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
             )
         except Exception as exc:  # pragma: no cover - defensive
             logger.error("Region LLM call failed for %s: %s", self.name, exc)

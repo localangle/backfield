@@ -37,6 +37,10 @@ class PlaceExtractParams(BaseModel):
         default="gpt-4o-mini",
         description="LLM model to use (e.g., gpt-4o-mini, gpt-5, claude-haiku-4-5-20251001)"
     )
+    aiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides model routing when set in worker)",
+    )
     prompt_file: str = Field(
         default="prompts/extract.md",
         description="Path to the prompt file relative to the node directory. Defaults to prompts/extract.md"
@@ -364,7 +368,27 @@ class PlaceExtractNode:
             f"[PlaceExtract] Executing LLM call with timeout: {effective_timeout}s "
             f"(elapsed: {elapsed_time:.1f}s, remaining safe time: {remaining_safe_time:.1f}s)"
         )
-        
+
+        resolved_model = params.model
+        raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
+        if raw_pid:
+            try:
+                from backfield_ai.model_resolve import resolve_place_extract_litellm_model
+                from backfield_db.session import get_engine
+                from sqlmodel import Session
+
+                with Session(get_engine()) as res_sess:
+                    resolved_model = resolve_place_extract_litellm_model(
+                        res_sess,
+                        int(raw_pid),
+                        params,
+                    )
+            except Exception as exc:
+                print(f"[PlaceExtract] Could not resolve catalog AI model; using legacy id: {exc}")
+
+        raw_mc = getattr(params, "aiModelConfigId", None)
+        place_model_config_id = str(raw_mc).strip() if raw_mc else None
+
         # Call the LLM with API keys from context, wrapped in asyncio timeout
         # Since call_llm is synchronous, we need to run it in a thread pool
         try:
@@ -372,7 +396,7 @@ class PlaceExtractNode:
                 asyncio.to_thread(
                     call_llm,
                     prompt=prompt,
-                    model=params.model,
+                    model=resolved_model,
                     system_message=(
                         "You are a specialized AI assistant for extracting editorially relevant, "
                         "literal physical place information from news text. Return only valid JSON."
@@ -382,7 +406,8 @@ class PlaceExtractNode:
                     timeout=effective_timeout,  # Pass timeout to call_llm as well
                     openai_api_key=ctx.get_api_key("OPENAI_API_KEY"),
                     anthropic_api_key=ctx.get_api_key("ANTHROPIC_API_KEY"),
-                    project_system_prompt=ctx.project_system_prompt
+                    project_system_prompt=ctx.project_system_prompt,
+                    model_config_id=place_model_config_id,
                 ),
                 timeout=effective_timeout
             )
@@ -397,11 +422,17 @@ class PlaceExtractNode:
         print(f"[PlaceExtract] LLM call completed in {elapsed:.1f}s")
         
         # Parse the response
-        import json
         response_data = None
         try:
             response_data = json.loads(response_text)
-            
+        except json.JSONDecodeError as e:
+            preview = (response_text or "")[:800]
+            raise ValueError(
+                f"Failed to parse LLM response as location data: {e}. Preview: {preview!r}"
+            ) from e
+
+        locations: List[Place] = []
+        try:
             # Handle both old format (direct array) and new format (with "locations" wrapper)
             if isinstance(response_data, list):
                 locations_data = response_data
@@ -409,12 +440,11 @@ class PlaceExtractNode:
                 locations_data = response_data['locations']
             else:
                 raise ValueError("Expected a list of locations or an object with 'locations' field")
-            
+
             if not isinstance(locations_data, list):
                 raise ValueError("Expected a list of locations")
-            
+
             # Convert to Place objects - handle new format from updated prompt
-            locations = []
             for location_data in locations_data:
                 # Validate required fields
                 required_fields = ['original_text', 'description', 'location', 'type', 'components']
@@ -521,9 +551,9 @@ class PlaceExtractNode:
                         place_data[key] = value
                 
                 locations.append(Place(**place_data))
-            
-        except (json.JSONDecodeError, ValueError, TypeError) as e:
-            raise ValueError(f"Failed to parse LLM response as location data: {e}")
+
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Failed to parse LLM response as location data: {e}") from e
         
         # Create output with extraction results
         output_data = {

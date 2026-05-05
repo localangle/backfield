@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import type { GeocodeAiModelOption, GraphPanelContext } from '@/components/NodePanel'
+import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -45,8 +45,9 @@ type UnifiedAiModelOption = {
 }
 
 function buildUnifiedModelOptions(
-  catalog: GeocodeAiModelOption[],
+  catalog: ProjectAiModelOption[],
   builtins: readonly { value: string; label: string }[],
+  mergeBuiltins: boolean,
 ): UnifiedAiModelOption[] {
   const out: UnifiedAiModelOption[] = []
   const seenValue = new Set<string>()
@@ -60,6 +61,9 @@ function buildUnifiedModelOptions(
       providerModelId: row.providerModelId,
       configId: row.configId,
     })
+  }
+  if (!mergeBuiltins) {
+    return out
   }
   const catalogProviders = new Set(catalog.map((c) => c.providerModelId))
   for (const m of builtins) {
@@ -77,7 +81,7 @@ function buildUnifiedModelOptions(
 
 function resolvedEvaluationSelectValue(
   params: Record<string, unknown>,
-  catalog: GeocodeAiModelOption[],
+  catalog: ProjectAiModelOption[],
 ): string {
   const cfg = params.evaluationAiModelConfigId
   if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
@@ -89,7 +93,7 @@ function resolvedEvaluationSelectValue(
 
 function resolvedRouterSelectValue(
   params: Record<string, unknown>,
-  catalog: GeocodeAiModelOption[],
+  catalog: ProjectAiModelOption[],
 ): string {
   const cfg = params.routerAiModelConfigId
   if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
@@ -142,7 +146,7 @@ export default function GeocodeAgentPanel({
   const projectId = graphContext?.projectId ?? null
   const [stylebooks, setStylebooks] = useState<OrgStylebook[]>([])
   const [stylebooksError, setStylebooksError] = useState<string | null>(null)
-  const [catalogRows, setCatalogRows] = useState<GeocodeAiModelOption[]>([])
+  const [catalogRows, setCatalogRows] = useState<ProjectAiModelOption[]>([])
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogError, setCatalogError] = useState<string | null>(null)
 
@@ -170,7 +174,7 @@ export default function GeocodeAgentPanel({
   }, [orgId, params.useCache])
 
   useEffect(() => {
-    const fetcher = graphContext?.fetchGeocodeAiModelOptions
+    const fetcher = graphContext?.fetchProjectAiModels
     if (projectId == null || fetcher == null) {
       setCatalogRows([])
       setCatalogError(null)
@@ -180,7 +184,7 @@ export default function GeocodeAgentPanel({
     let cancelled = false
     setCatalogLoading(true)
     setCatalogError(null)
-    void fetcher()
+    void fetcher(['text', 'json'])
       .then((rows) => {
         if (!cancelled) {
           setCatalogRows(rows)
@@ -197,12 +201,13 @@ export default function GeocodeAgentPanel({
     return () => {
       cancelled = true
     }
-  }, [projectId, graphContext?.fetchGeocodeAiModelOptions])
+  }, [projectId, graphContext?.fetchProjectAiModels])
 
   const paramsRecord = params as Record<string, unknown>
 
   const evaluationOptions = useMemo(() => {
-    let opts = buildUnifiedModelOptions(catalogRows, AVAILABLE_MODELS)
+    const mergeBuiltins = projectId == null
+    let opts = buildUnifiedModelOptions(catalogRows, AVAILABLE_MODELS, mergeBuiltins)
     const sv = resolvedEvaluationSelectValue(paramsRecord, catalogRows)
     if (!opts.some((o) => o.selectValue === sv)) {
       opts = [
@@ -220,13 +225,15 @@ export default function GeocodeAgentPanel({
     }
     return opts
   }, [
+    projectId,
     catalogRows,
     paramsRecord.evaluationModel,
     paramsRecord.evaluationAiModelConfigId,
   ])
 
   const routerOptions = useMemo(() => {
-    let opts = buildUnifiedModelOptions(catalogRows, AVAILABLE_MODELS)
+    const mergeBuiltins = projectId == null
+    let opts = buildUnifiedModelOptions(catalogRows, AVAILABLE_MODELS, mergeBuiltins)
     const sv = resolvedRouterSelectValue(paramsRecord, catalogRows)
     if (!opts.some((o) => o.selectValue === sv)) {
       opts = [
@@ -243,7 +250,7 @@ export default function GeocodeAgentPanel({
       ]
     }
     return opts
-  }, [catalogRows, paramsRecord.routerModel, paramsRecord.routerAiModelConfigId])
+  }, [projectId, catalogRows, paramsRecord.routerModel, paramsRecord.routerAiModelConfigId])
 
   const mergeData = (base: Record<string, unknown>) => {
     const out = {

@@ -10,11 +10,14 @@ import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Suspense } from 'react'
 import { nodeMetadata, panelComponents } from '@/nodes/registry'
 
-export type GeocodeAiModelOption = {
+export type ProjectAiModelOption = {
   label: string
   providerModelId: string
   configId?: string
 }
+
+/** @deprecated Use ProjectAiModelOption */
+export type GeocodeAiModelOption = ProjectAiModelOption
 
 export type GraphPanelContext = {
   /** Organization that owns the resolved flow project (for Stylebook catalog in node panels). */
@@ -27,8 +30,8 @@ export type GraphPanelContext = {
   missingWorkspaceStylebook?: boolean
   /** Flow editor is still fetching the project (for workspace Stylebook). */
   flowProjectLoading?: boolean
-  /** Loads compatible AI models for Geocode Agent selects (Capabilities text+json). */
-  fetchGeocodeAiModelOptions?: () => Promise<GeocodeAiModelOption[]>
+  /** Loads project-effective AI models filtered by capability (e.g. text+json for JSON-using nodes). */
+  fetchProjectAiModels?: (capabilities: string[]) => Promise<ProjectAiModelOption[]>
 }
 
 interface NodePanelProps {

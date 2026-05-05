@@ -25,6 +25,47 @@ class LiteLLMCompletionResult:
     raw_response: Any
 
 
+def _litellm_json_object_response_format_supported(litellm_model: str) -> bool:
+    """Whether to pass OpenAI-style ``response_format: json_object`` through LiteLLM.
+
+    Bare OpenAI ids (``gpt-…``) are common; org catalogs may use ``openai/…`` or ``anthropic/…``.
+    Requesting JSON mode only where LiteLLM maps it reduces empty/non-JSON completions.
+    """
+    m = litellm_model.strip().lower()
+    if m.startswith("gpt") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4"):
+        return True
+    if m.startswith("openai/") or m.startswith("azure/"):
+        return True
+    if m.startswith("anthropic/"):
+        return True
+    return False
+
+
+def _extract_message_content_text(message: Any) -> str:
+    """Normalize assistant ``message.content`` from LiteLLM (string or content-block list)."""
+    if message is None:
+        return ""
+    raw = getattr(message, "content", None)
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    if isinstance(raw, list):
+        parts: list[str] = []
+        for block in raw:
+            if isinstance(block, dict):
+                btype = block.get("type")
+                tx = block.get("text")
+                if isinstance(tx, str) and btype in ("text", "output_text"):
+                    parts.append(tx)
+            else:
+                tx = getattr(block, "text", None)
+                if isinstance(tx, str):
+                    parts.append(tx)
+        return "".join(parts).strip()
+    return str(raw).strip()
+
+
 def _usage_from_response(resp: Any) -> tuple[int | None, int | None, int | None]:
     usage = getattr(resp, "usage", None)
     if usage is None:
@@ -61,7 +102,7 @@ def completion_text_sync(
         kwargs["api_key"] = api_key
     if temperature is not None:
         kwargs["temperature"] = temperature
-    if force_json_response and litellm_model.startswith("gpt"):
+    if force_json_response and _litellm_json_object_response_format_supported(litellm_model):
         kwargs["response_format"] = {"type": "json_object"}
 
     t0 = time.perf_counter()
@@ -70,7 +111,15 @@ def completion_text_sync(
 
     choice = resp.choices[0]
     msg = choice.message
-    text = (msg.content or "").strip()
+    text = _extract_message_content_text(msg)
+    if force_json_response and text == "":
+        finish = getattr(choice, "finish_reason", None)
+        raise RuntimeError(
+            "LiteLLM returned empty assistant content while JSON output was required "
+            f"(model={litellm_model!r}, finish_reason={finish!r}). "
+            "Often caused by missing JSON mode for this provider, truncated output, or "
+            "content returned only as structured blocks."
+        )
     pt, ct, tt = _usage_from_response(resp)
 
     incomplete = pt is None and ct is None and tt is None

@@ -67,6 +67,7 @@ class StreetRoad(Area):
                 model=STREET_ROAD_LLM_MODEL,
                 openai_api_key=openai_api_key,
                 force_json=True,
+                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
             )
 
             bbox_data = json.loads(response.strip())

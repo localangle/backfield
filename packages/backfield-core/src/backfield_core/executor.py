@@ -137,9 +137,14 @@ def _merged_outputs_for_output(
 def execute_graph(
     spec: GraphSpec,
     node_runners: Mapping[str, NodeRunner] | None = None,
+    *,
+    before_each_node: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
     """
     Run all nodes in dependency order.
+
+    ``before_each_node``, when provided, is invoked as ``(node_id, node_type)`` immediately
+    before each node's runner (used by the worker for LLM attempt attribution).
 
     Returns a JSON-serializable dict whose top-level keys are stable snake_case strings
     per node (for example ``text_input``, ``json_output``, ``stylebook_output``), not
@@ -165,6 +170,9 @@ def execute_graph(
             inputs = _merged_outputs_for_output(node_outputs, by_id)
         else:
             inputs = _namespaced_upstream_inputs(nid, spec.edges, node_outputs, by_id)
+
+        if before_each_node is not None:
+            before_each_node(nid, node.type)
 
         try:
             result = runner(node.params, inputs)

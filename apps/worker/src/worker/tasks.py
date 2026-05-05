@@ -15,6 +15,7 @@ from backfield_ai.tracking_context import (
     LlmAttemptTrackingContext,
     attach_llm_tracking_context,
     reset_llm_tracking_context,
+    set_llm_tracking_current_node,
 )
 from backfield_core import GraphSpec, execute_graph
 from backfield_core.nodes import NODE_RUNNERS
@@ -167,7 +168,13 @@ def execute_agate_run(run_id: str) -> None:
                     graph_id=graph.id,
                     run_id=run.id,
                 ):
-                    outputs = execute_graph(spec, node_runners=node_runners)
+                    outputs = execute_graph(
+                        spec,
+                        node_runners=node_runners,
+                        before_each_node=lambda nid, ntype: set_llm_tracking_current_node(
+                            nid, ntype
+                        ),
+                    )
             finally:
                 reset_llm_tracking_context(track_tok)
             run.status = "succeeded"
@@ -425,6 +432,7 @@ def execute_processed_item(item_id: int) -> None:
                     session=session,
                     project_id=graph.project_id,
                     run_id=run.id,
+                    processed_item_id=item.id,
                 )
             )
             try:
@@ -433,7 +441,13 @@ def execute_processed_item(item_id: int) -> None:
                     graph_id=graph.id,
                     run_id=run.id,
                 ):
-                    outputs = execute_graph(spec, node_runners=node_runners)
+                    outputs = execute_graph(
+                        spec,
+                        node_runners=node_runners,
+                        before_each_node=lambda nid, ntype: set_llm_tracking_current_node(
+                            nid, ntype
+                        ),
+                    )
             finally:
                 reset_llm_tracking_context(track_tok)
             item.status = "succeeded"

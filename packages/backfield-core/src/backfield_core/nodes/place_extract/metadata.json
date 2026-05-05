@@ -29,6 +29,7 @@
   ],
   "defaultParams": {
     "model": "gpt-4o-mini",
+    "aiModelConfigId": null,
     "prompt_file": "prompts/extract.md",
     "prompt": "",
     "output_format_file": "prompts/_output_format.json",

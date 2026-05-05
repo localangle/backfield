@@ -83,9 +83,9 @@ export default function RunGraph() {
 
   const flowProjectId = resolvedFlowProject?.id ?? null
 
-  const fetchGeocodeAiModelOptions = useCallback(async () => {
+  const fetchProjectAiModels = useCallback(async (capabilities: string[]) => {
     if (flowProjectId == null) return []
-    const rows = await fetchProjectEffectiveAiModels(flowProjectId, ['text', 'json'])
+    const rows = await fetchProjectEffectiveAiModels(flowProjectId, capabilities)
     return rows.map((r) => ({
       label: `${r.name} (${r.provider_model_id})`,
       providerModelId: r.provider_model_id,
@@ -126,14 +126,14 @@ export default function RunGraph() {
       workspaceStylebookName: nm,
       missingWorkspaceStylebook: sid == null && nm == null,
       flowProjectLoading: false,
-      fetchGeocodeAiModelOptions:
-        flowProjectId != null ? fetchGeocodeAiModelOptions : undefined,
+      fetchProjectAiModels:
+        flowProjectId != null ? fetchProjectAiModels : undefined,
     }
   }, [
     resolvedFlowProject,
     flowProjectLoading,
     flowProjectId,
-    fetchGeocodeAiModelOptions,
+    fetchProjectAiModels,
   ])
 
   // Find the selected node

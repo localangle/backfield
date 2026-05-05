@@ -411,6 +411,10 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
         if isinstance(model, Area) and eval_model:
             model._evaluation_llm_model = eval_model  # type: ignore[attr-defined]
 
+        eval_cfg = state.get("evaluation_ai_model_config_id")
+        if eval_cfg:
+            setattr(model, "_evaluation_ai_model_config_id", eval_cfg)
+
         geocode_kwargs: dict = {
             "pelias_api_key": pelias_api_key,
             "geocodio_api_key": geocodio_api_key,

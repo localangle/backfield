@@ -71,3 +71,26 @@ def resolve_geocode_litellm_models(
         router_fallback = litellm_model_id(cfg_r.provider, cfg_r.provider_model_id)
 
     return eval_fallback, router_fallback
+
+
+def resolve_place_extract_litellm_model(
+    session: Session,
+    project_id: int,
+    params: Any,
+) -> str:
+    """LiteLLM model id for PlaceExtract (catalog pin or legacy ``model`` string)."""
+    fallback = str(getattr(params, "model", "") or "gpt-4o-mini")
+    config_id = getattr(params, "aiModelConfigId", None)
+    if not config_id:
+        return fallback
+    proj = session.get(BackfieldProject, project_id)
+    if proj is None:
+        return fallback
+    org_id = int(proj.organization_id)
+    cfg = _load_enabled_org_config(
+        session,
+        organization_id=org_id,
+        project_id=project_id,
+        config_id=str(config_id),
+    )
+    return litellm_model_id(cfg.provider, cfg.provider_model_id)
