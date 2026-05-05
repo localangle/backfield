@@ -29,6 +29,9 @@ export default function Layout({ children }: LayoutProps) {
                 onManageUsers={
                   isOrgAdmin ? () => navigate("/admin/users") : undefined
                 }
+                onManageCatalogs={
+                  isOrgAdmin ? () => navigate("/admin/stylebooks") : undefined
+                }
                 onLogout={() => void logout()}
               />
             ) : null}

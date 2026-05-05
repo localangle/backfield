@@ -1,5 +1,11 @@
 export { UserAccountMenu, type UserAccountMenuProps } from "./UserAccountMenu"
 export { ShellProductBrand, type ShellProductBrandProps } from "./ShellProductBrand"
+export {
+  ShellSidebar,
+  type ShellSidebarProps,
+  type ShellSidebarChildren,
+  type ShellSidebarActions,
+} from "./ShellSidebar"
 export { cn } from "./cn"
 export {
   LeafletMap,

@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -30,6 +32,8 @@ import {
   type ImportGeoJsonResponse,
 } from "@/lib/api"
 import { fetchPlaceExtractLocationTypes } from "@/lib/stylebook-api/taxonomy"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import {
   PLACE_EXTRACT_LOCATION_TYPES,
   placeExtractTypeLabel,
@@ -119,8 +123,10 @@ function formatPropertyExample(v: unknown): string | null {
 
 export default function ImportLocations() {
   const [searchParams] = useSearchParams()
+  const { filterScopeSuffix, stylebookSlug, catalogBasePath } = useProjectCatalogScope()
   const { showError } = useAppMessage()
-  const projectSlug = useMemo(() => searchParams.get("project") || "", [searchParams])
+  const crumbRoot = useScopeBreadcrumbRoot()
+  const canEdit = useCanEditStylebook()
   const [step, setStep] = useState<WizardStep>("upload")
   const [geojsonText, setGeojsonText] = useState<string>("")
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
@@ -213,12 +219,12 @@ export default function ImportLocations() {
     setManualLocationTypeLabel("")
     setPlaceExtractTypesList([...PLACE_EXTRACT_LOCATION_TYPES])
     setManualLocationSelect(MANUAL_LOCATION_TYPE_NONE)
-  }, [projectSlug])
+  }, [stylebookSlug])
 
-  const backHref = useMemo(() => {
-    const q = projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""
-    return `/locations/canonical${q}`
-  }, [projectSlug])
+  const backHref = useMemo(
+    () => `${catalogBasePath}/locations/canonical${filterScopeSuffix}`,
+    [catalogBasePath, filterScopeSuffix],
+  )
 
   const validateAndSetGeojson = (text: string): boolean => {
     const trimmed = text.trim()
@@ -259,7 +265,9 @@ export default function ImportLocations() {
     return true
   }
 
-  const canValidate = Boolean(projectSlug && parsedGeojson && step === "upload" && !analyzing)
+  const canValidate = Boolean(
+    canEdit && stylebookSlug && parsedGeojson && step === "upload" && !analyzing,
+  )
 
   const clearUploadedGeoJson = () => {
     setGeojsonText("")
@@ -327,6 +335,13 @@ export default function ImportLocations() {
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
+          <Breadcrumbs
+            className="mb-3"
+            items={[
+              { label: crumbRoot.label, to: crumbRoot.to },
+              { label: "Import" },
+            ]}
+          />
           <h1 className="text-3xl font-bold">Import locations (GeoJSON)</h1>
         </div>
         <Link to={backHref}>
@@ -450,10 +465,10 @@ export default function ImportLocations() {
                   type="button"
                   disabled={!canValidate}
                   onClick={async () => {
-                    if (!projectSlug || !parsedGeojson) return
+                    if (!stylebookSlug || !parsedGeojson) return
                     setAnalyzing(true)
                     try {
-                      const res = await analyzeImportGeoJson(projectSlug, parsedGeojson)
+                      const res = await analyzeImportGeoJson(stylebookSlug, parsedGeojson)
                       setAnalyzeResult(res)
                     } catch (e) {
                       console.error(e)
@@ -509,7 +524,7 @@ export default function ImportLocations() {
                   </Button>
                   <Button
                     type="button"
-                    disabled={!parsedGeojson || !projectSlug}
+                    disabled={!parsedGeojson || !stylebookSlug}
                     onClick={() => setStep("mapping")}
                   >
                     Continue to mapping
@@ -1039,15 +1054,21 @@ export default function ImportLocations() {
               </Button>
               <Button
                 type="button"
-                disabled={!projectSlug || !importPayload || importPayload.features.length === 0 || importing}
+                disabled={
+                  !canEdit ||
+                  !stylebookSlug ||
+                  !importPayload ||
+                  importPayload.features.length === 0 ||
+                  importing
+                }
                 onClick={async () => {
-                  if (!projectSlug || !importPayload) return
+                  if (!stylebookSlug || !importPayload) return
                   setImporting(true)
                   setStep("importing")
                   try {
                     const metaPayload = buildMetaPropertyMappingsForImport(metaMappingRows)
                     const res = await importGeoJson(
-                      projectSlug,
+                      stylebookSlug,
                       importPayload,
                       {
                         label_property: mappings.labelProperty ?? null,
@@ -1119,7 +1140,7 @@ export default function ImportLocations() {
                               className="break-words font-medium text-primary underline-offset-4 hover:underline"
                               target="_blank"
                               rel="noopener noreferrer"
-                              to={`/locations/canonical/${encodeURIComponent(row.canonical_id)}?project=${encodeURIComponent(projectSlug)}`}
+                              to={`${catalogBasePath}/locations/canonical/${encodeURIComponent(row.canonical_id)}${filterScopeSuffix}`}
                             >
                               {(row.label ?? "").trim() || row.canonical_id}
                             </Link>

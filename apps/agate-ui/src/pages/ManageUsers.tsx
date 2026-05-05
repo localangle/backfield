@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { Building2, UserX } from "lucide-react"
+import { BookOpen, Building2, UserX } from "lucide-react"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { Button } from "@/components/ui/button"
 import {
@@ -37,12 +37,20 @@ import {
   type OrgUserRow,
   type WorkspaceWithProjects,
 } from "@/lib/core-api"
+import {
+  addStylebookEditor,
+  listStylebookCatalogs,
+  listStylebookEditors,
+  removeStylebookEditor,
+  type StylebookCatalogRow,
+} from "@/lib/stylebook-org-api"
 
 export default function ManageUsersPage() {
   const { showConfirm } = useAppMessage()
   const { organizationId } = useAuth()
   const [users, setUsers] = useState<OrgUserRow[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceWithProjects[]>([])
+  const [stylebooks, setStylebooks] = useState<StylebookCatalogRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
@@ -54,6 +62,16 @@ export default function ManageUsersPage() {
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<Set<number>>(
     new Set(),
   )
+  const [stylebookAccessUser, setStylebookAccessUser] =
+    useState<OrgUserRow | null>(null)
+  const [selectedStylebookIds, setSelectedStylebookIds] = useState<
+    Set<number>
+  >(new Set())
+  const [initialStylebookEditorIds, setInitialStylebookEditorIds] = useState<
+    Set<number>
+  >(new Set())
+  const [stylebookDialogLoading, setStylebookDialogLoading] = useState(false)
+  const [stylebookAccessSaving, setStylebookAccessSaving] = useState(false)
 
   const orgId = organizationId ?? 0
 
@@ -62,12 +80,14 @@ export default function ManageUsersPage() {
       return
     }
     setError("")
-    const [u, w] = await Promise.all([
+    const [u, w, s] = await Promise.all([
       listOrgUsers(organizationId, true),
       listOrgWorkspaces(organizationId),
+      listStylebookCatalogs(organizationId),
     ])
     setUsers(u)
     setWorkspaces(w)
+    setStylebooks(s)
   }, [organizationId])
 
   useEffect(() => {
@@ -129,6 +149,83 @@ export default function ManageUsersPage() {
     })
   }
 
+  const openStylebookEditorAccess = async (u: OrgUserRow) => {
+    if (!organizationId || stylebooks.length === 0) {
+      setStylebookAccessUser(u)
+      setSelectedStylebookIds(new Set())
+      setInitialStylebookEditorIds(new Set())
+      setStylebookDialogLoading(false)
+      return
+    }
+    setStylebookAccessUser(u)
+    setStylebookDialogLoading(true)
+    setError("")
+    try {
+      const memberLists = await Promise.all(
+        stylebooks.map((sb) =>
+          listStylebookEditors(organizationId, sb.id),
+        ),
+      )
+      const selected = new Set<number>()
+      memberLists.forEach((members, i) => {
+        if (members.some((m) => m.user_id === u.id)) {
+          selected.add(stylebooks[i].id)
+        }
+      })
+      setSelectedStylebookIds(selected)
+      setInitialStylebookEditorIds(new Set(selected))
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Could not load stylebook editor access",
+      )
+      setStylebookAccessUser(null)
+    } finally {
+      setStylebookDialogLoading(false)
+    }
+  }
+
+  const toggleStylebookEditor = (id: number) => {
+    setSelectedStylebookIds((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) {
+        n.delete(id)
+      } else {
+        n.add(id)
+      }
+      return n
+    })
+  }
+
+  const saveStylebookEditorAccess = async () => {
+    if (!stylebookAccessUser || !organizationId) {
+      return
+    }
+    const uid = stylebookAccessUser.id
+    const email = stylebookAccessUser.email
+    setError("")
+    setStylebookAccessSaving(true)
+    try {
+      for (const sb of stylebooks) {
+        const was = initialStylebookEditorIds.has(sb.id)
+        const now = selectedStylebookIds.has(sb.id)
+        if (!was && now) {
+          await addStylebookEditor(organizationId, sb.id, { email })
+        }
+        if (was && !now) {
+          await removeStylebookEditor(organizationId, sb.id, uid)
+        }
+      }
+      setStylebookAccessUser(null)
+      await reload()
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Could not save stylebook editor access",
+      )
+    } finally {
+      setStylebookAccessSaving(false)
+    }
+  }
+
   const handleCreate = async () => {
     if (!organizationId) {
       return
@@ -161,7 +258,7 @@ export default function ManageUsersPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
           <p className="text-sm text-muted-foreground">
-            Manage people and workspace access in your organization.
+            Manage people, workspace access, and who may edit each stylebook.
           </p>
         </div>
         <Button type="button" onClick={() => setCreateOpen(true)}>
@@ -221,6 +318,27 @@ export default function ManageUsersPage() {
                     >
                       <Building2 className="h-4 w-4 shrink-0" aria-hidden />
                       <span className="hidden lg:inline">Workspaces</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5 max-lg:px-2.5"
+                      disabled={!!u.disabled_at || u.role === "org_admin"}
+                      onClick={() =>
+                        void openStylebookEditorAccess(u).catch((err) =>
+                          setError(String(err)),
+                        )
+                      }
+                      title={
+                        u.role === "org_admin"
+                          ? "Organization admins can edit every stylebook"
+                          : "Choose which stylebooks this user may edit"
+                      }
+                      aria-label="Manage stylebook editing access"
+                    >
+                      <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+                      <span className="hidden lg:inline">Stylebooks</span>
                     </Button>
                     <Button
                       type="button"
@@ -313,12 +431,87 @@ export default function ManageUsersPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={!!stylebookAccessUser}
+        onOpenChange={(o) => {
+          if (!o) {
+            setStylebookAccessUser(null)
+          }
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Stylebook editing</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Choose the stylebooks this user can edit.
+            </p>
+          </DialogHeader>
+          {stylebookDialogLoading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : stylebooks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No stylebooks in this organization yet. Create one under Manage
+              stylebooks.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {stylebooks.map((sb) => (
+                <label
+                  key={sb.id}
+                  className="flex items-center gap-2 text-sm font-medium cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    className="rounded border-input"
+                    checked={selectedStylebookIds.has(sb.id)}
+                    onChange={() => toggleStylebookEditor(sb.id)}
+                  />
+                  <span>
+                    {sb.name}
+                    {sb.is_default ? (
+                      <span className="text-muted-foreground font-normal">
+                        {" "}
+                        · default
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setStylebookAccessUser(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                stylebookDialogLoading ||
+                stylebookAccessSaving ||
+                stylebooks.length === 0
+              }
+              onClick={() =>
+                void saveStylebookEditorAccess().catch((e) =>
+                  setError(String(e)),
+                )
+              }
+            >
+              {stylebookAccessSaving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!accessUser} onOpenChange={(o) => !o && setAccessUser(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Workspace access</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              {accessUser?.email} — members get all projects in each selected workspace.
+              Choose the workspaces this user can access.
             </p>
           </DialogHeader>
           <div className="space-y-4">

@@ -43,31 +43,32 @@ export type ImportGeoJsonResponse = {
 }
 
 export async function analyzeImportGeoJson(
-  projectSlug: string,
+  stylebookSlug: string,
   geojson: Record<string, unknown>,
 ): Promise<AnalyzeGeoJsonResponse> {
-  const params = new URLSearchParams({ project_slug: projectSlug })
-  return stylebookJsonFetch<AnalyzeGeoJsonResponse>(`/v1/import/geojson/analyze?${params}`, {
+  return stylebookJsonFetch<AnalyzeGeoJsonResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/import/geojson/analyze`,
+    {
     method: "POST",
     body: JSON.stringify({ geojson } satisfies AnalyzeGeoJsonRequest),
-  })
+    },
+  )
 }
 
 export async function importGeoJson(
-  projectSlug: string,
+  stylebookSlug: string,
   geojson: Record<string, unknown>,
   mappings: ImportGeoJsonMappings,
   meta_property_mappings?: ImportGeoJsonMetaPropertyMapping[],
 ): Promise<ImportGeoJsonResponse> {
-  const params = new URLSearchParams({ project_slug: projectSlug })
   const body: ImportGeoJsonRequest = {
     geojson,
     mappings,
     meta_property_mappings: meta_property_mappings?.length ? meta_property_mappings : [],
   }
-  return stylebookJsonFetch<ImportGeoJsonResponse>(`/v1/import/geojson?${params}`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  })
+  return stylebookJsonFetch<ImportGeoJsonResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/import/geojson`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
 }
 

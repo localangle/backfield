@@ -11,10 +11,12 @@ from stylebook_api.routers import (
     connections,
     geocode,
     health,
-  imports,
+    imports,
     location_candidates,
     location_meta,
     locations,
+    stylebook_canonicals,
+    stylebook_permissions,
     stylebooks,
     taxonomy,
     ui_stubs,
@@ -49,8 +51,11 @@ app.include_router(stylebooks.router)
 app.include_router(geocode.router)
 app.include_router(locations.router)
 app.include_router(imports.router)
+app.include_router(imports.stylebook_router)
 app.include_router(location_candidates.router)
 app.include_router(location_meta.router)
+app.include_router(stylebook_canonicals.router)
+app.include_router(stylebook_permissions.router)
 app.include_router(connections.connections_router, prefix="/v1/connections")
 app.include_router(connections.locations_connections_router)
 app.include_router(ui_stubs.router)

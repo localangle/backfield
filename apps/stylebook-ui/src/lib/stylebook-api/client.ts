@@ -1,5 +1,41 @@
+import {
+  parseLegacyStylebookQuery,
+  parseStylebookSlugFromPath,
+} from "@/lib/stylebookPaths"
+
 export const stylebookApiBase = (): string =>
   import.meta.env.VITE_STYLEBOOK_API_BASE ?? "/api/stylebook"
+
+/**
+ * Legacy query key (`/?stylebook=`) kept only for redirects; canonical URLs use
+ * ``/stylebook/<slug>/…``.
+ */
+export const STYLEBOOK_URL_QUERY_KEY = "stylebook"
+
+function activeStylebookSlugFromBrowserUrl(): string | null {
+  if (typeof window === "undefined") return null
+  const fromPath = parseStylebookSlugFromPath(window.location.pathname)
+  if (fromPath) return fromPath
+  return parseLegacyStylebookQuery(window.location.search)
+}
+
+/**
+ * Append catalog scope for Stylebook API calls from the current page URL
+ * (`/stylebook/<slug>/…` or legacy ``?stylebook=<slug>``).
+ */
+export function augmentStylebookApiPath(path: string): string {
+  const slug = activeStylebookSlugFromBrowserUrl()
+  if (!slug) return path
+  const cut = path.indexOf("?")
+  const base = cut >= 0 ? path.slice(0, cut) : path
+  const existing = cut >= 0 ? path.slice(cut + 1) : ""
+  const params = new URLSearchParams(existing)
+  if (!params.has("stylebook_slug")) {
+    params.set("stylebook_slug", slug)
+  }
+  const q = params.toString()
+  return q ? `${base}?${q}` : path
+}
 
 /** FastAPI may return `detail` as a string, object, or list of validation errors. */
 function formatFastApiDetail(detail: unknown): string {
@@ -32,7 +68,8 @@ function formatFastApiDetail(detail: unknown): string {
 }
 
 export async function stylebookJsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${stylebookApiBase()}${path}`, {
+  const resolvedPath = augmentStylebookApiPath(path)
+  const response = await fetch(`${stylebookApiBase()}${resolvedPath}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",

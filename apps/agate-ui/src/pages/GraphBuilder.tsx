@@ -33,6 +33,40 @@ import { Link } from 'react-router-dom'
 let id = 0
 const getId = () => `node-${id++}`
 
+function geocodeStylebookIdFromData(data: Record<string, unknown> | undefined): number | null {
+  if (!data) return null
+  const snake = data.stylebook_id
+  const camel = data.stylebookId
+  const raw = snake !== undefined && snake !== null ? snake : camel
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Catalog required when Geocode cache is on (persisted as ``stylebook_id``). */
+function validateGeocodeCatalogSelection(nodes: Node[]): string | null {
+  for (const node of nodes) {
+    if (node.type !== 'GeocodeAgent') continue
+    const d = (node.data || {}) as Record<string, unknown>
+    if (!d.useCache) continue
+    if (geocodeStylebookIdFromData(d) == null) {
+      return 'Turn on catalog selection for Geocode: open each Geocode step with cache turned on and pick a catalog.'
+    }
+  }
+  return null
+}
+
+function paramsForGraphSave(node: Node): Record<string, unknown> {
+  const raw = { ...(node.data || {}) } as Record<string, unknown>
+  if (node.type === 'GeocodeAgent') {
+    delete raw.stylebookId
+    if (!raw.useCache) {
+      delete raw.stylebook_id
+    }
+  }
+  return raw
+}
+
 export default function GraphBuilder() {
   const navigate = useNavigate()
   const { graphId: routeGraphId } = useParams<{ graphId: string }>()
@@ -358,7 +392,12 @@ export default function GraphBuilder() {
       }
       case 'GeocodeAgent': {
         const meta = nodeMetadata.find((m) => m.type === 'GeocodeAgent')
-        return meta?.defaultParams ?? {}
+        const base = { ...(meta?.defaultParams ?? {}) } as Record<string, unknown>
+        const wsid = resolvedFlowProject?.workspace_stylebook_id
+        if (typeof wsid === 'number') {
+          base.stylebook_id = wsid
+        }
+        return base
       }
       case 'GeocodeSimple':
         return {
@@ -379,7 +418,7 @@ export default function GraphBuilder() {
       default:
         return {}
     }
-  }, [])
+  }, [resolvedFlowProject])
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -569,6 +608,18 @@ export default function GraphBuilder() {
       return
     }
 
+    const geocodeCatalogErr = validateGeocodeCatalogSelection(nodes)
+    if (geocodeCatalogErr) {
+      showModal({
+        title: 'Catalog required',
+        description: geocodeCatalogErr,
+        type: 'warning',
+        confirmText: 'OK',
+        onConfirm: () => {},
+      })
+      return
+    }
+
     try {
       setSaving(true)
 
@@ -581,7 +632,7 @@ export default function GraphBuilder() {
           nodes: nodes.map((node) => ({
             id: node.id,
             type: node.type!,
-            params: node.data,
+            params: paramsForGraphSave(node),
             position: { x: node.position.x, y: node.position.y },
           })),
           edges: edges.map((edge) => ({

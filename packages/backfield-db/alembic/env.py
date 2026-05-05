@@ -23,6 +23,7 @@ from backfield_db.models import (  # noqa: F401
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
     Stylebook,
+    StylebookMembership,
     StylebookConnection,
     StylebookLocationAlias,
     StylebookLocationCanonical,

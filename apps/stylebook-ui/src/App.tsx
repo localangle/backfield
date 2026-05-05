@@ -1,7 +1,18 @@
-import type { ReactNode } from "react"
-import { Navigate, Route, Routes, useLocation } from "react-router-dom"
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+  useSearchParams,
+} from "react-router-dom"
 import { AppMessageProvider } from "@/components/AppMessageProvider"
 import { AuthProvider, useAuth } from "@/lib/auth"
+import {
+  parseLegacyStylebookQuery,
+  stripLegacyStylebookFromSearch,
+} from "@/lib/stylebookPaths"
 import Layout from "@/components/Layout"
 import Index from "@/pages/Index"
 import Login from "@/pages/Login"
@@ -12,7 +23,7 @@ import LocationCandidates from "@/pages/LocationCandidates"
 import ImportLocations from "@/pages/ImportLocations"
 import StubPage from "@/pages/StubPage"
 
-function ProtectedRoute({ children }: { children: ReactNode }) {
+function ProtectedLayout() {
   const { isAuthenticated, loading } = useAuth()
 
   if (loading) {
@@ -30,110 +41,145 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     return <Navigate to="/login" replace />
   }
 
-  return <Layout>{children}</Layout>
+  return (
+    <Layout>
+      <Outlet />
+    </Layout>
+  )
+}
+
+/** `/` — migrate legacy `?stylebook=` then default catalog. */
+function RootEntryRedirect() {
+  const { search } = useLocation()
+  const slug = parseLegacyStylebookQuery(search) ?? "default"
+  const qs = stripLegacyStylebookFromSearch(search)
+  return (
+    <Navigate to={`/stylebook/${encodeURIComponent(slug)}${qs}`} replace />
+  )
+}
+
+function LegacyStylebookNavigate({ tail }: { tail: string }) {
+  const { search } = useLocation()
+  const slug = parseLegacyStylebookQuery(search) ?? "default"
+  const qs = stripLegacyStylebookFromSearch(search)
+  return (
+    <Navigate to={`/stylebook/${encodeURIComponent(slug)}${tail}${qs}`} replace />
+  )
+}
+
+function LegacyCanonicalDetailRedirect() {
+  const { id } = useParams<{ id: string }>()
+  const { search } = useLocation()
+  const slug = parseLegacyStylebookQuery(search) ?? "default"
+  const qs = stripLegacyStylebookFromSearch(search)
+  const tail = `/locations/canonical/${encodeURIComponent(id ?? "")}`
+  return (
+    <Navigate to={`/stylebook/${encodeURIComponent(slug)}${tail}${qs}`} replace />
+  )
+}
+
+function LegacyAgentRedirect() {
+  const { agentType } = useParams<{ agentType: string }>()
+  const { search } = useLocation()
+  const slug = parseLegacyStylebookQuery(search) ?? "default"
+  const qs = stripLegacyStylebookFromSearch(search)
+  const tail = `/agents/${encodeURIComponent(agentType ?? "")}`
+  return (
+    <Navigate to={`/stylebook/${encodeURIComponent(slug)}${tail}${qs}`} replace />
+  )
 }
 
 function LegacyImportRedirect() {
-  const location = useLocation()
-  return <Navigate to={`/import/locations${location.search || ""}`} replace />
+  const { search } = useLocation()
+  const slug = parseLegacyStylebookQuery(search) ?? "default"
+  const qs = stripLegacyStylebookFromSearch(search)
+  return (
+    <Navigate
+      to={`/stylebook/${encodeURIComponent(slug)}/import/locations${qs}`}
+      replace
+    />
+  )
+}
+
+function CatchAllRedirect() {
+  const { search } = useLocation()
+  const qs = stripLegacyStylebookFromSearch(search)
+  return <Navigate to={`/stylebook/default${qs}`} replace />
 }
 
 export default function App() {
   return (
     <AuthProvider>
       <AppMessageProvider>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Index />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/locations/candidates"
-          element={
-            <ProtectedRoute>
-              <LocationCandidates />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/locations/canonical"
-          element={
-            <ProtectedRoute>
-              <Locations />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/locations/canonical/:id"
-          element={
-            <ProtectedRoute>
-              <LocationDetail />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/locations/create"
-          element={
-            <ProtectedRoute>
-              <CreateLocation />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/import"
-          element={
-            <ProtectedRoute>
-              <LegacyImportRedirect />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/import/locations"
-          element={
-            <ProtectedRoute>
-              <ImportLocations />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/people/candidates"
-          element={
-            <ProtectedRoute>
-              <StubPage title="People candidates" />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/organizations/candidates"
-          element={
-            <ProtectedRoute>
-              <StubPage title="Organization candidates" />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/works/candidates"
-          element={
-            <ProtectedRoute>
-              <StubPage title="Works candidates" />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/agents/:agentType"
-          element={
-            <ProtectedRoute>
-              <StubPage title="Agents" />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+
+          <Route element={<ProtectedLayout />}>
+            <Route index element={<RootEntryRedirect />} />
+
+            <Route
+              path="/locations/candidates"
+              element={<LegacyStylebookNavigate tail="/locations/candidates" />}
+            />
+            <Route
+              path="/locations/canonical"
+              element={<LegacyStylebookNavigate tail="/locations/canonical" />}
+            />
+            <Route
+              path="/locations/canonical/:id"
+              element={<LegacyCanonicalDetailRedirect />}
+            />
+            <Route
+              path="/locations/create"
+              element={<LegacyStylebookNavigate tail="/locations/create" />}
+            />
+            <Route path="/import" element={<LegacyImportRedirect />} />
+            <Route
+              path="/import/locations"
+              element={<LegacyStylebookNavigate tail="/import/locations" />}
+            />
+            <Route
+              path="/people/candidates"
+              element={<LegacyStylebookNavigate tail="/people/candidates" />}
+            />
+            <Route
+              path="/organizations/candidates"
+              element={<LegacyStylebookNavigate tail="/organizations/candidates" />}
+            />
+            <Route
+              path="/works/candidates"
+              element={<LegacyStylebookNavigate tail="/works/candidates" />}
+            />
+            <Route path="/agents/:agentType" element={<LegacyAgentRedirect />} />
+
+            <Route path="/stylebook/:stylebookSlug" element={<Outlet />}>
+              <Route index element={<Index />} />
+              <Route path="locations/candidates" element={<LocationCandidates />} />
+              <Route path="locations/canonical" element={<Locations />} />
+              <Route path="locations/canonical/:id" element={<LocationDetail />} />
+              <Route path="locations/create" element={<CreateLocation />} />
+              <Route path="import/locations" element={<ImportLocations />} />
+              <Route
+                path="people/candidates"
+                element={<StubPage title="People candidates" />}
+              />
+              <Route
+                path="organizations/candidates"
+                element={<StubPage title="Organization candidates" />}
+              />
+              <Route
+                path="works/candidates"
+                element={<StubPage title="Works candidates" />}
+              />
+              <Route
+                path="agents/:agentType"
+                element={<StubPage title="Agents" />}
+              />
+            </Route>
+
+            <Route path="*" element={<CatchAllRedirect />} />
+          </Route>
+        </Routes>
       </AppMessageProvider>
     </AuthProvider>
   )

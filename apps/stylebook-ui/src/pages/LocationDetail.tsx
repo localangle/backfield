@@ -13,10 +13,14 @@ import {
   type LinkedSubstrateItem,
 } from "@/lib/api"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
 import { cn } from "@/lib/utils"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -191,14 +195,21 @@ function geometryToFeatureCollections(
 
 export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
+  const {
+    projectFilterSlug,
+    filterScopeSuffix,
+    stylebookSlug,
+    catalogBasePath,
+  } = useProjectCatalogScope()
+  const crumbRoot = useScopeBreadcrumbRoot()
+  const canEdit = useCanEditStylebook()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
   const [canonical, setCanonical] = useState<CanonicalLocation | null>(null)
   const [mentions, setMentions] = useState<LinkedMention[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
-  const [projectSlug, setProjectSlug] = useState("")
+  const projectSlug = projectFilterSlug
   const [label, setLabel] = useState("")
   const [locationType, setLocationType] = useState("")
   const [formattedAddress, setFormattedAddress] = useState("")
@@ -232,23 +243,18 @@ export default function LocationDetail() {
   const lastCanonicalKeyRef = useRef<string>("")
 
   useEffect(() => {
-    const key = `${projectSlug}:${id ?? ""}`
+    const key = `${stylebookSlug}:${projectFilterSlug}:${id ?? ""}`
     if (key !== lastCanonicalKeyRef.current) {
       lastCanonicalKeyRef.current = key
       prevMentionCountRef.current = null
       prevSubstrateCountRef.current = null
     }
-  }, [id, projectSlug])
+  }, [id, stylebookSlug, projectFilterSlug])
 
-  useEffect(() => {
-    const slug = searchParams.get("project") || ""
-    setProjectSlug(slug)
-  }, [searchParams])
-
-  const loadCanonical = async (canonicalId: string, slug: string, quiet = false) => {
+  const loadCanonical = async (canonicalId: string, sbSlug: string, quiet = false) => {
     try {
       if (!quiet) setLoading(true)
-      const row = await getCanonicalLocation(canonicalId, slug)
+      const row = await getCanonicalLocation(canonicalId, sbSlug, projectFilterSlug || undefined)
       setCanonical(row)
       setLabel(row.label)
       setLocationType(row.location_type ?? "")
@@ -263,53 +269,65 @@ export default function LocationDetail() {
   }
 
   useEffect(() => {
-    if (!id || !projectSlug) return
-    void loadCanonical(id, projectSlug)
-  }, [id, projectSlug])
+    if (!id || !stylebookSlug) return
+    void loadCanonical(id, stylebookSlug)
+  }, [id, stylebookSlug])
 
-  const loadMentions = useCallback(async (canonicalId: string, slug: string, quiet = false) => {
+  const loadMentions = useCallback(async (canonicalId: string, sbSlug: string, quiet = false) => {
     if (!quiet) setMentionsLoading(true)
     try {
-      const m = await getCanonicalLocationMentions(canonicalId, slug, 500, 0)
+      const m = await getCanonicalLocationMentions(
+        canonicalId,
+        sbSlug,
+        500,
+        0,
+        undefined,
+        "desc",
+        projectSlug || undefined,
+      )
       setMentions(m.mentions)
     } catch {
       setMentions([])
     } finally {
       if (!quiet) setMentionsLoading(false)
     }
-  }, [])
+  }, [projectSlug])
 
   useEffect(() => {
-    if (!id || !projectSlug) return
-    void loadMentions(id, projectSlug)
-  }, [id, projectSlug, loadMentions])
+    if (!id || !stylebookSlug) return
+    void loadMentions(id, stylebookSlug)
+  }, [id, stylebookSlug, loadMentions])
 
-  const loadSubstrates = useCallback(async (canonicalId: string, slug: string, quiet = false) => {
+  const loadSubstrates = useCallback(async (canonicalId: string, sbSlug: string, quiet = false) => {
     if (!quiet) setSubstratesLoading(true)
     try {
-      const r = await listCanonicalLinkedSubstrates(canonicalId, slug)
+      const r = await listCanonicalLinkedSubstrates(
+        canonicalId,
+        sbSlug,
+        projectSlug || undefined,
+      )
       setSubstrates(r.substrates)
     } catch {
       setSubstrates([])
     } finally {
       if (!quiet) setSubstratesLoading(false)
     }
-  }, [])
+  }, [projectSlug])
 
   useEffect(() => {
-    if (!id || !projectSlug) return
-    void loadSubstrates(id, projectSlug)
-  }, [id, projectSlug, loadSubstrates])
+    if (!id || !stylebookSlug) return
+    void loadSubstrates(id, stylebookSlug)
+  }, [id, stylebookSlug, loadSubstrates])
 
   /** @param quiet When true, refresh substrates/mentions without the full-table loading state (avoids a flash after unlink / move). */
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
-      if (!id || !projectSlug) return
-      await loadCanonical(id, projectSlug, true)
-      await loadSubstrates(id, projectSlug, quiet)
-      await loadMentions(id, projectSlug, quiet)
+      if (!id || !stylebookSlug) return
+      await loadCanonical(id, stylebookSlug, true)
+      await loadSubstrates(id, stylebookSlug, quiet)
+      await loadMentions(id, stylebookSlug, quiet)
     },
-    [id, projectSlug, loadCanonical, loadMentions, loadSubstrates],
+    [id, stylebookSlug, loadCanonical, loadMentions, loadSubstrates],
   )
 
   const mentionsBySubstrateId = useMemo(() => {
@@ -326,7 +344,10 @@ export default function LocationDetail() {
   const tableLoading = substratesLoading || mentionsLoading
 
   async function handleUnlinkSubstrate(sub: LinkedSubstrateItem) {
-    if (!projectSlug) return
+    if (!projectSlug) {
+      showError("Select a project filter to unlink substrates.")
+      return
+    }
     setUnlinkingId(sub.id)
     try {
       await unlinkSubstrateFromCanonical(sub.id, projectSlug)
@@ -339,20 +360,25 @@ export default function LocationDetail() {
   }
 
   const saveEdits = async () => {
-    if (!canonical || !id || !projectSlug) return
+    if (!canonical || !id || !stylebookSlug) return
     setSaving(true)
     try {
       const canonicalId = id
-      const updated = await patchCanonicalLocation(canonicalId, projectSlug, {
-        label: label.trim(),
-        location_type: locationType.trim() === "" ? null : locationType.trim().toLowerCase(),
-        formatted_address: formattedAddress.trim() === "" ? null : formattedAddress.trim(),
-      })
+      const updated = await patchCanonicalLocation(
+        canonicalId,
+        stylebookSlug,
+        {
+          label: label.trim(),
+          location_type: locationType.trim() === "" ? null : locationType.trim().toLowerCase(),
+          formatted_address: formattedAddress.trim() === "" ? null : formattedAddress.trim(),
+        },
+        projectSlug || undefined,
+      )
       setCanonical(updated)
       setEditing(false)
-      await loadCanonical(canonicalId, projectSlug)
-      await loadSubstrates(canonicalId, projectSlug)
-      await loadMentions(canonicalId, projectSlug)
+      await loadCanonical(canonicalId, stylebookSlug)
+      await loadSubstrates(canonicalId, stylebookSlug)
+      await loadMentions(canonicalId, stylebookSlug)
     } catch (e) {
       console.error(e)
       showError(e instanceof Error ? e.message : "Save failed")
@@ -362,15 +388,15 @@ export default function LocationDetail() {
   }
 
   const saveGeometry = async () => {
-    if (!canonical || !id || !projectSlug) return
+    if (!canonical || !id || !stylebookSlug) return
     setGeometrySaving(true)
     try {
       const canonicalId = id
-      await updateCanonicalLocationGeometry(canonicalId, projectSlug, geometryDraft)
+      await updateCanonicalLocationGeometry(canonicalId, stylebookSlug, geometryDraft)
       setGeometryEditing(false)
       setGeometryAddMode(null)
       setRectanglePreview(null)
-      await loadCanonical(canonicalId, projectSlug, true)
+      await loadCanonical(canonicalId, stylebookSlug, true)
     } catch (e) {
       console.error(e)
       const msg =
@@ -382,21 +408,21 @@ export default function LocationDetail() {
   }
 
   const onDelete = useCallback(async () => {
-    if (!canonical || !id || !projectSlug) return
+    if (!canonical || !id || !stylebookSlug) return
     setDeleting(true)
     try {
-      await deleteCanonicalLocation(id, projectSlug)
-      navigate(`/locations/canonical?project=${projectSlug}`)
+      await deleteCanonicalLocation(id, stylebookSlug)
+      navigate(`${catalogBasePath}/locations/canonical${filterScopeSuffix}`)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Delete failed")
     } finally {
       setDeleting(false)
       setDeleteOpen(false)
     }
-  }, [canonical, id, navigate, projectSlug, showError])
+  }, [canonical, id, navigate, stylebookSlug, showError, filterScopeSuffix, catalogBasePath])
 
   useEffect(() => {
-    if (!id || !projectSlug) return
+    if (!id) return
     if (mentionsLoading || substratesLoading) return
 
     const mentionCount = mentions.length
@@ -450,7 +476,7 @@ export default function LocationDetail() {
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
   const geometryDraftIsMultiPolygon = geometryEditing && isMultiPolygonGeometry(geometryDraft)
-  const allowGeometryMapEditing = geometryEditing && !geometryDraftIsMultiPolygon
+  const allowGeometryMapEditing = canEdit && geometryEditing && !geometryDraftIsMultiPolygon
 
   const leafletCollections = useMemo(() => {
     const base = geometryToFeatureCollections(geometrySource as any, {
@@ -502,12 +528,12 @@ export default function LocationDetail() {
   )
 
   const handleAdoptSubstrateGeometry = useCallback(async () => {
-    if (!canonical || !projectSlug || !substrateGeometrySubstrate) return
+    if (!canonical || !projectSlug || !substrateGeometrySubstrate || !stylebookSlug) return
     if (!substrateGeometryJson || typeof substrateGeometryJson !== "object") return
     setAdoptingSubstrateGeometry(true)
     try {
-      await updateCanonicalLocationGeometry(canonical.id, projectSlug, substrateGeometryJson)
-      await loadCanonical(canonical.id, projectSlug, true)
+      await updateCanonicalLocationGeometry(canonical.id, stylebookSlug, substrateGeometryJson)
+      await loadCanonical(canonical.id, stylebookSlug, true)
       setSubstrateGeometryOpen(false)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Could not adopt geometry")
@@ -518,6 +544,7 @@ export default function LocationDetail() {
     canonical,
     loadCanonical,
     projectSlug,
+    stylebookSlug,
     showError,
     substrateGeometryJson,
     substrateGeometrySubstrate,
@@ -557,7 +584,17 @@ export default function LocationDetail() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">{canonical.label}</h1>
+        <div className="min-w-0">
+          <Breadcrumbs
+            className="mb-3"
+            items={[
+              { label: crumbRoot.label, to: crumbRoot.to },
+              { label: "Locations", to: `${catalogBasePath}/locations/canonical${filterScopeSuffix}` },
+              { label: canonical.label },
+            ]}
+          />
+          <h1 className="text-3xl font-bold">{canonical.label}</h1>
+        </div>
         <div className="flex gap-2">
           {editing ? (
             <>
@@ -599,10 +636,16 @@ export default function LocationDetail() {
                   }
                   setEditing(true)
                 }}
+                disabled={!canEdit}
               >
                 Edit
               </Button>
-              <Button variant="destructive" size="icon" onClick={() => setDeleteOpen(true)}>
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={() => setDeleteOpen(true)}
+                disabled={!canEdit}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </>
@@ -1041,18 +1084,22 @@ export default function LocationDetail() {
         </CardContent>
       </Card>
 
-      <LocationMetaTab
-        locationId={canonical.id}
-        projectSlug={projectSlug}
-        onMetaUpdated={() => void loadCanonical(canonical.id, projectSlug, true)}
-      />
+      {projectSlug && stylebookSlug ? (
+        <>
+          <LocationMetaTab
+            locationId={canonical.id}
+            projectSlug={projectSlug}
+            onMetaUpdated={() => void loadCanonical(canonical.id, stylebookSlug, true)}
+          />
 
-      <ConnectionsSection
-        entityType="location"
-        entityId={canonical.id}
-        projectSlug={projectSlug}
-        entityDisplayName={canonical.label}
-      />
+          <ConnectionsSection
+            entityType="location"
+            entityId={canonical.id}
+            projectSlug={projectSlug}
+            entityDisplayName={canonical.label}
+          />
+        </>
+      ) : null}
 
       <Dialog open={substrateGeometryOpen} onOpenChange={setSubstrateGeometryOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
@@ -1149,16 +1196,18 @@ export default function LocationDetail() {
         </DialogContent>
       </Dialog>
 
-      <CanonicalLinkModal
-        open={moveSubstrateId !== null}
-        onOpenChange={(o) => {
-          if (!o) setMoveSubstrateId(null)
-        }}
-        projectSlug={projectSlug}
-        substrateLocationId={moveSubstrateId}
-        title="Move substrate to another canonical"
-        onDone={() => void refreshCanonicalPage(true)}
-      />
+      {projectSlug ? (
+        <CanonicalLinkModal
+          open={moveSubstrateId !== null}
+          onOpenChange={(o) => {
+            if (!o) setMoveSubstrateId(null)
+          }}
+          projectSlug={projectSlug}
+          substrateLocationId={moveSubstrateId}
+          title="Move substrate to another canonical"
+          onDone={() => void refreshCanonicalPage(true)}
+        />
+      ) : null}
     </div>
   )
 }

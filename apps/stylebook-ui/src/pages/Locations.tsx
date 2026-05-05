@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import {
   deleteCanonicalLocation,
   listCanonicalLocations,
@@ -30,13 +32,22 @@ import {
 import { Loader2, Trash2 } from "lucide-react"
 import Pagination from "@/components/Pagination"
 import CanonicalSourceIcon from "@/components/CanonicalSourceIcon"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 
 export default function Locations() {
   const { showError } = useAppMessage()
+  const {
+    projectFilterSlug,
+    filterScopeSuffix,
+    filterScopeQueryString,
+    stylebookSlug,
+    catalogBasePath,
+  } = useProjectCatalogScope()
+  const crumbRoot = useScopeBreadcrumbRoot()
   const [searchParams, setSearchParams] = useSearchParams()
   const [canonicals, setCanonicals] = useState<CanonicalLocation[]>([])
   const [loading, setLoading] = useState(true)
-  const [projectSlug, setProjectSlug] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -50,6 +61,7 @@ export default function Locations() {
     row: null,
   })
   const [deleting, setDeleting] = useState(false)
+  const canEdit = useCanEditStylebook()
   const locationsPerPage = 25
   const prevSearchRef = useRef(debouncedSearchQuery)
   const prevTypeFilterRef = useRef(typeFilter)
@@ -62,9 +74,7 @@ export default function Locations() {
   const typeFilterParam = typeFilter === "all" ? undefined : typeFilter
 
   useEffect(() => {
-    const slug = searchParams.get("project") || ""
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10))
-    setProjectSlug(slug)
     setCurrentPage(page)
   }, [searchParams])
 
@@ -76,16 +86,16 @@ export default function Locations() {
   }, [searchQuery])
 
   useEffect(() => {
-    if (!projectSlug) return
+    if (!stylebookSlug) return
     void (async () => {
       try {
-        const res = await listCanonicalLocationTypes(projectSlug)
+        const res = await listCanonicalLocationTypes(stylebookSlug)
         setTypes(res.types)
       } catch {
         setTypes([])
       }
     })()
-  }, [projectSlug])
+  }, [stylebookSlug])
 
   useEffect(() => {
     const prev = prevSearchRef.current
@@ -122,7 +132,14 @@ export default function Locations() {
     try {
       setLoading(true)
       const offset = (page - 1) * locationsPerPage
-      const data = await listCanonicalLocations(slug, q, locationsPerPage, offset, tf)
+      const data = await listCanonicalLocations(
+        slug,
+        q,
+        locationsPerPage,
+        offset,
+        tf,
+        projectFilterSlug || undefined,
+      )
       setCanonicals(data.canonicals)
       setTotal(data.total)
       setHasNext(data.has_next)
@@ -135,27 +152,36 @@ export default function Locations() {
   }
 
   useEffect(() => {
-    if (!projectSlug) return
+    if (!stylebookSlug) return
     void loadCanonicals(
-      projectSlug,
+      stylebookSlug,
       debouncedSearchQuery || undefined,
       currentPage,
       typeFilterParam,
     )
-  }, [currentPage, projectSlug, debouncedSearchQuery, typeFilterParam])
+  }, [currentPage, stylebookSlug, debouncedSearchQuery, typeFilterParam, projectFilterSlug])
 
   return (
     <div className="container mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Canonical locations</h1>
+        <div className="min-w-0">
+          <Breadcrumbs
+            className="mb-3"
+            items={[
+              { label: crumbRoot.label, to: crumbRoot.to },
+              { label: "Locations" },
+            ]}
+          />
+          <h1 className="text-3xl font-bold">Canonical locations</h1>
+        </div>
         <div className="flex gap-2">
-          <Link to={`/locations/candidates?project=${projectSlug}`}>
+          <Link to={`${catalogBasePath}/locations/candidates${filterScopeSuffix}`}>
             <Button variant="outline">Candidates</Button>
           </Link>
-          <Link to={`/locations/create?project=${projectSlug}`}>
+          <Link to={`${catalogBasePath}/locations/create${filterScopeSuffix}`}>
             <Button variant="outline">Create</Button>
           </Link>
-          <Link to={`/import/locations?project=${projectSlug}`}>
+          <Link to={`${catalogBasePath}/import/locations${filterScopeSuffix}`}>
             <Button variant="outline">Import</Button>
           </Link>
         </div>
@@ -240,7 +266,11 @@ export default function Locations() {
                             <CanonicalSourceIcon createdByUserId={undefined} />
                             <CardTitle>
                               <Link
-                                to={`/locations/canonical/${c.id}?project=${projectSlug}&page=${currentPage}`}
+                                to={`${catalogBasePath}/locations/canonical/${c.id}?${(() => {
+                                  const q = new URLSearchParams(filterScopeQueryString)
+                                  q.set("page", String(currentPage))
+                                  return q.toString()
+                                })()}`}
                                 state={{ fromListPage: currentPage }}
                                 className="hover:underline"
                               >
@@ -267,6 +297,7 @@ export default function Locations() {
                           size="sm"
                           onClick={() => setDeleteDialog({ open: true, row: c })}
                           className="ml-4"
+                          disabled={!canEdit}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -327,12 +358,13 @@ export default function Locations() {
               variant="destructive"
               onClick={async () => {
                 if (!deleteDialog.row) return
+                if (!stylebookSlug) return
                 setDeleting(true)
                 try {
-                  await deleteCanonicalLocation(deleteDialog.row.id, projectSlug)
+                  await deleteCanonicalLocation(deleteDialog.row.id, stylebookSlug)
                   setDeleteDialog({ open: false, row: null })
                   await loadCanonicals(
-                    projectSlug,
+                    stylebookSlug,
                     debouncedSearchQuery || undefined,
                     currentPage,
                     typeFilterParam,

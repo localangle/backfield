@@ -1,10 +1,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
+import { fetchProjects, type Project } from "@/lib/api"
 import {
   acceptCandidate,
   deferCandidate,
   getCandidateContext,
-  getCanonicalLocation,
+  getCanonicalLocationLegacy,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
   listCandidates,
@@ -52,6 +55,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
 import {
   CheckCircle2,
   ChevronRight,
@@ -154,8 +158,18 @@ function rankSimilarCandidates(rows: Candidate[], needle: string): Candidate[] {
 }
 
 export default function LocationCandidates() {
-  const [searchParams] = useSearchParams()
-  const projectSlug = searchParams.get("project") || ""
+  const {
+    projectScopeSlug,
+    workflowScopeSuffix,
+    stylebookSlug,
+    catalogBasePath,
+    filterScopeSuffix,
+  } = useProjectCatalogScope()
+  const crumbRoot = useScopeBreadcrumbRoot()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const projectSlug = projectScopeSlug
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(true)
   const [loading, setLoading] = useState(false)
   const [listTotal, setListTotal] = useState(0)
   const [listPage, setListPage] = useState(1)
@@ -170,8 +184,8 @@ export default function LocationCandidates() {
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const filterKey = useMemo(
-    () => `${projectSlug}|${status}|${debouncedQuery}|${typeFilter}`,
-    [projectSlug, status, debouncedQuery, typeFilter],
+    () => `${projectSlug}|${stylebookSlug}|${status}|${debouncedQuery}|${typeFilter}`,
+    [projectSlug, stylebookSlug, status, debouncedQuery, typeFilter],
   )
   const [types, setTypes] = useState<string[]>([])
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
@@ -216,6 +230,26 @@ export default function LocationCandidates() {
   /** Opacity transition before clearing ``linkedToast`` after auto-dismiss timer. */
   const [linkedToastLeaving, setLinkedToastLeaving] = useState(false)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setProjectsLoading(true)
+    void fetchProjects()
+      .then((rows) => {
+        if (cancelled) return
+        setProjects(rows)
+      })
+      .catch((e) => {
+        console.error("Failed to fetch projects:", e)
+        if (!cancelled) setProjects([])
+      })
+      .finally(() => {
+        if (!cancelled) setProjectsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const createModalCandidate = useMemo(
     () => (createModalId === null ? undefined : candidates.find((x) => x.id === createModalId)),
@@ -570,7 +604,7 @@ export default function LocationCandidates() {
       await linkSubstrateToCanonical(c.id, projectSlug, cid)
       let canonLabel = cid
       try {
-        const canon = await getCanonicalLocation(cid, projectSlug)
+        const canon = await getCanonicalLocationLegacy(cid, projectSlug)
         canonLabel = (canon.label ?? "").trim() || cid
       } catch {
         // ignore; fall back to id
@@ -669,7 +703,7 @@ export default function LocationCandidates() {
                 <div className="text-sm text-muted-foreground">
                   Saved as{" "}
                   <Link
-                    to={`/locations/canonical/${createdToast.canonicalId}?project=${encodeURIComponent(projectSlug)}`}
+                    to={`${catalogBasePath}/locations/canonical/${createdToast.canonicalId}${filterScopeSuffix}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline break-words"
                   >
                     {createdToast.canonicalLabel}
@@ -731,7 +765,7 @@ export default function LocationCandidates() {
                   </span>{" "}
                   →{" "}
                   <Link
-                    to={`/locations/canonical/${linkedToast.canonicalId}?project=${encodeURIComponent(projectSlug)}`}
+                    to={`${catalogBasePath}/locations/canonical/${linkedToast.canonicalId}${filterScopeSuffix}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline break-words"
                   >
                     {linkedToast.canonicalLabel}
@@ -756,10 +790,48 @@ export default function LocationCandidates() {
         </div>
       ) : null}
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Location candidates</h1>
-        <Link to={`/locations/canonical?project=${projectSlug}`}>
-          <Button variant="outline">Canonical locations</Button>
-        </Link>
+        <div className="min-w-0">
+          <Breadcrumbs
+            className="mb-3"
+            items={[
+              { label: crumbRoot.label, to: crumbRoot.to },
+              { label: "Locations", to: `${catalogBasePath}/locations/canonical${filterScopeSuffix}` },
+              { label: "Candidates" },
+            ]}
+          />
+          <h1 className="text-3xl font-bold">Location candidates</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground">Project</Label>
+            <Select
+              value={projectSlug}
+              onValueChange={(slug) => {
+                setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev)
+                  next.delete("project_scope")
+                  next.set("project", slug)
+                  return next
+                })
+              }}
+              disabled={projectsLoading || projects.length === 0}
+            >
+              <SelectTrigger className="w-[16rem]">
+                <SelectValue placeholder={projectsLoading ? "Loading…" : "Choose a project"} />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.slug}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Link to={`${catalogBasePath}/locations/canonical${filterScopeSuffix}`}>
+            <Button variant="outline">Canonical locations</Button>
+          </Link>
+        </div>
       </div>
 
       <Card>

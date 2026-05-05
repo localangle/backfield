@@ -1,42 +1,44 @@
-import { useCallback, useEffect, useState } from 'react'
-import { matchPath, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { matchPath, NavLink, useLocation } from 'react-router-dom'
 import {
-  Building2,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
+  BookOpen,
+  FolderKanban,
   HelpCircle,
-  LayoutTemplate,
   Newspaper,
-  Plus,
-  SquarePen,
 } from 'lucide-react'
+import { ShellSidebar } from '@backfield/ui'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { createProject, listProjects, type ProjectCreate } from '@/lib/api'
-import ProjectDialog from '@/components/ProjectDialog'
+import { listProjects, type Project } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { hasWorkspaceAccess } from '@/lib/workspace-access'
+import { helpHref, stylebookShellHref } from '@/lib/platformUrls'
+import {
+  listStylebookCatalogs,
+  type StylebookCatalogRow,
+} from '@/lib/stylebook-org-api'
 
 const STORAGE_EXPANDED = 'agate-sidebar-expanded'
-const STORAGE_WORKSPACES_OPEN = 'agate-sidebar-workspaces-open'
 
-function isSidebarWorkspacePage(ws: WorkspaceWithProjects): boolean {
-  return ws.id > 0 && ws.slug !== '_ungrouped'
+function pickProjectSlugForStylebookLinks(
+  activeSlug: string | null,
+  rows: WorkspaceWithProjects[],
+): string | null {
+  if (activeSlug) return activeSlug
+  for (const ws of rows) {
+    const first = ws.projects[0]
+    if (first) return first.slug
+  }
+  return null
 }
 
 export default function AppSidebar() {
   const location = useLocation()
-  const navigate = useNavigate()
-  const { organizationName, isOrgAdmin } = useAuth()
-  const publicationLabel = organizationName ?? 'Workspaces'
-  const [expanded, setExpanded] = useState(() => readBool(STORAGE_EXPANDED, true))
-  const [workspacesOpen, setWorkspacesOpen] = useState(() =>
-    readBool(STORAGE_WORKSPACES_OPEN, true),
-  )
+  const { organizationId, isOrgAdmin } = useAuth()
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>([])
-  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const [apiProjects, setApiProjects] = useState<Project[]>([])
+  const [stylebooks, setStylebooks] = useState<StylebookCatalogRow[]>([])
 
   const loadWorkspaces = useCallback(async (): Promise<WorkspaceWithProjects[]> => {
     try {
@@ -69,56 +71,46 @@ export default function AppSidebar() {
     }
   }, [])
 
-  useEffect(() => {
-    void loadWorkspaces()
-  }, [loadWorkspaces, location.pathname])
+  const loadProjects = useCallback(async () => {
+    try {
+      const rows = await listProjects()
+      setApiProjects(rows)
+    } catch (e) {
+      console.error(e)
+      setApiProjects([])
+    }
+  }, [])
 
   useEffect(() => {
-    const onChanged = () => void loadWorkspaces()
+    void loadWorkspaces()
+    void loadProjects()
+  }, [loadWorkspaces, loadProjects, location.pathname])
+
+  useEffect(() => {
+    const onChanged = () => {
+      void loadWorkspaces()
+      void loadProjects()
+    }
     window.addEventListener('agate:projects-changed', onChanged)
     window.addEventListener('agate:workspaces-changed', onChanged)
     return () => {
       window.removeEventListener('agate:projects-changed', onChanged)
       window.removeEventListener('agate:workspaces-changed', onChanged)
     }
-  }, [loadWorkspaces])
+  }, [loadWorkspaces, loadProjects])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_EXPANDED, String(expanded))
-    } catch {
-      /* ignore */
+    if (organizationId == null) {
+      setStylebooks([])
+      return
     }
-  }, [expanded])
+    void listStylebookCatalogs(organizationId)
+      .then(setStylebooks)
+      .catch((err) => console.error('Failed to fetch stylebooks:', err))
+  }, [organizationId])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_WORKSPACES_OPEN, String(workspacesOpen))
-    } catch {
-      /* ignore */
-    }
-  }, [workspacesOpen])
-
-  const toggleSidebar = useCallback(() => setExpanded((e) => !e), [])
-  const toggleWorkspaces = useCallback(() => setWorkspacesOpen((o) => !o), [])
-
-  const openNewProject = () => {
-    setProjectDialogOpen(true)
-  }
-
-  const handleSaveProject = async (data: ProjectCreate) => {
-    const p = await createProject(data)
-    await loadWorkspaces()
-    window.dispatchEvent(new CustomEvent('agate:projects-changed'))
-    navigate(`/project/${encodeURIComponent(p.slug)}`)
-  }
-
-  const hubLinkClass = ({ isActive }: { isActive: boolean }) =>
-    cn(
-      'flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors',
-      'hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-      isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
-    )
+  const hubLinkClass =
+    'flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-muted-foreground hover:text-foreground'
 
   const projectRouteMatch = matchPath(
     { path: '/project/:projectSlug', end: true },
@@ -129,205 +121,225 @@ export default function AppSidebar() {
       ? decodeURIComponent(projectRouteMatch.params.projectSlug)
       : null
 
+  const workspaceRouteMatch = matchPath(
+    { path: '/workspace/:workspaceSlug', end: true },
+    location.pathname,
+  )
+  const activeWorkspaceSlug =
+    workspaceRouteMatch?.params.workspaceSlug != null
+      ? decodeURIComponent(workspaceRouteMatch.params.workspaceSlug)
+      : null
+
+  const activeProjectName = useMemo(() => {
+    if (!activeProjectSlug) return null
+    for (const ws of workspaceRows) {
+      const p = ws.projects.find((x) => x.slug === activeProjectSlug)
+      if (p) return p.name
+    }
+    const ap = apiProjects.find((x) => x.slug === activeProjectSlug)
+    return ap?.name ?? activeProjectSlug
+  }, [activeProjectSlug, workspaceRows, apiProjects])
+
+  const sortedStylebooks = useMemo(() => {
+    return [...stylebooks].sort(
+      (a, b) =>
+        Number(b.is_default) - Number(a.is_default) ||
+        a.name.localeCompare(b.name),
+    )
+  }, [stylebooks])
+
+  const stylebookProjectSlug = pickProjectSlugForStylebookLinks(
+    activeProjectSlug,
+    workspaceRows,
+  )
+
   const workspaceAccess = hasWorkspaceAccess(workspaceRows, isOrgAdmin)
+
+  const headerTitle = activeProjectName ?? 'Backfield'
+  const headerTo =
+    activeProjectSlug != null
+      ? `/project/${encodeURIComponent(activeProjectSlug)}`
+      : '/'
+
+  const sectionTitleClass =
+    'flex items-center gap-2 px-2 py-2 text-xs font-medium text-muted-foreground'
+
+  const workspaceRowClass = (active: boolean) =>
+    cn(
+      'rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      'flex w-full min-w-0 items-center px-2 py-2 text-left',
+      active
+        ? 'bg-accent text-accent-foreground'
+        : 'text-foreground hover:bg-muted/60',
+    )
+
+  const projectUnderWorkspaceClass = (active: boolean) =>
+    cn(
+      'rounded-md text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      'flex w-full min-w-0 items-center py-1.5 pr-2 pl-7 text-left',
+      active
+        ? 'bg-accent font-medium text-accent-foreground'
+        : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+    )
 
   return (
     <>
-      <aside
-        className={cn(
-          'flex flex-col border-r bg-muted/30 shrink-0 min-h-0 self-stretch transition-[width] duration-200 ease-out',
-          expanded ? 'w-56' : 'w-14',
-        )}
-        aria-label="Main navigation"
-      >
-        <div
-          className={cn(
-            'flex items-center min-w-0 p-2 border-b border-border/50',
-            expanded ? 'gap-1 justify-between' : 'justify-center',
-          )}
-        >
-          {expanded && (
-            <NavLink
-              to="/"
-              end
-              title={publicationLabel}
-              aria-label={`${publicationLabel} — all workspaces`}
-              className={cn(
-                'flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1',
-                'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              )}
-            >
-              <Newspaper
-                className="h-4 w-4 shrink-0 text-muted-foreground"
-                aria-hidden
-              />
-              <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-                {publicationLabel}
-              </span>
-            </NavLink>
-          )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={toggleSidebar}
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+      <ShellSidebar
+        storageKey={STORAGE_EXPANDED}
+        asideAriaLabel="Platform"
+        headerLeading={
+          <NavLink
+            to={headerTo}
+            title={headerTitle}
+            aria-label={
+              activeProjectName
+                ? `Active project: ${activeProjectName}`
+                : 'Backfield'
+            }
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1',
+              'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            )}
           >
-            {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </Button>
-        </div>
+            <FolderKanban
+              className="h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+            <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+              {headerTitle}
+            </span>
+          </NavLink>
+        }
+      >
+        {(expanded: boolean, { expand }: { expand: () => void }) => (
+          <nav className="flex flex-col flex-1 min-h-0 p-2 gap-0">
+            <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
+              {expanded ? (
+                <div className={sectionTitleClass}>
+                  <Newspaper className="h-4 w-4 shrink-0" aria-hidden />
+                  <span>Agate</span>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="w-full h-9 shrink-0"
+                  onClick={() => expand()}
+                  title="Agate — workspaces"
+                >
+                  <Newspaper className="h-5 w-5" aria-hidden />
+                </Button>
+              )}
 
-        <nav className="flex flex-col gap-1 p-2 flex-1 min-h-0">
-          <div>
-            {expanded ? (
-              <button
-                type="button"
-                onClick={toggleWorkspaces}
-                className={cn(
-                  'flex items-center justify-between w-full rounded-md px-2 py-2 text-sm font-medium',
-                  'text-muted-foreground hover:bg-muted hover:text-foreground',
-                )}
-                aria-expanded={workspacesOpen}
-              >
-                <span className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5 shrink-0" aria-hidden />
-                  Workspaces
-                </span>
-                <ChevronDown
-                  className={cn('h-4 w-4 transition-transform', !workspacesOpen && '-rotate-90')}
-                />
-              </button>
-            ) : (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="w-full h-9"
-                onClick={() => {
-                  setExpanded(true)
-                  setWorkspacesOpen(true)
-                }}
-                title="Workspaces"
-              >
-                <Building2 className="h-5 w-5" />
-              </Button>
-            )}
-
-            {expanded && workspacesOpen && (
-              <div className="mt-1 space-y-3 max-h-[50vh] overflow-y-auto pr-1">
-                {workspaceRows.map((ws) => (
-                  <div key={`${ws.slug}-${ws.id}`}>
-                    <div className="flex items-center gap-0.5 pr-0.5">
-                      <div
-                        className="min-w-0 flex-1 truncate px-2 py-0.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide"
-                        title={ws.name}
-                      >
-                        {ws.name}
-                      </div>
-                      {isSidebarWorkspacePage(ws) ? (
-                        <NavLink
-                          to={`/workspace/${encodeURIComponent(ws.slug)}`}
-                          title={`${ws.name} — manage workspace`}
-                          aria-label={`Open workspace ${ws.name}`}
-                          className={({ isActive }) =>
-                            cn(
-                              'shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/80 transition-colors',
-                              'hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                              isActive && 'bg-muted text-foreground',
-                            )
-                          }
-                        >
-                          <SquarePen className="h-3.5 w-3.5" aria-hidden />
-                        </NavLink>
-                      ) : null}
-                    </div>
-                    <div className="mt-0.5 ml-1 space-y-0.5 border-l border-border/50 pl-2">
-                      {ws.projects.map((p) => (
-                        <NavLink
-                          key={p.id}
-                          to={`/project/${encodeURIComponent(p.slug)}`}
-                          className={() =>
-                            cn(
-                              'block truncate rounded-md px-2 py-1.5 text-sm transition-colors',
-                              activeProjectSlug === p.slug
-                                ? 'bg-background text-foreground font-medium shadow-sm'
-                                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                            )
-                          }
-                          title={p.name}
-                        >
-                          {p.name}
-                        </NavLink>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {workspaceAccess ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start gap-2 mt-1 h-8 text-muted-foreground"
-                    onClick={openNewProject}
-                  >
-                    <Plus className="h-4 w-4" />
-                    New project
-                  </Button>
-                ) : (
+              {(expanded ? workspaceRows : []).map((ws) => {
+                const wsActive = activeWorkspaceSlug === ws.slug
+                const projectsSorted = [...ws.projects].sort((a, b) =>
+                  a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+                )
+                return (
                   <div
-                    className="mt-1 px-2 py-1.5 text-sm text-muted-foreground select-none"
-                    aria-disabled="true"
+                    key={`${ws.slug}-${ws.id}`}
+                    className="flex flex-col gap-0.5"
                   >
-                    None
+                    <NavLink
+                      to={`/workspace/${encodeURIComponent(ws.slug)}`}
+                      title={ws.name}
+                      aria-label={`Open workspace ${ws.name}`}
+                      aria-current={wsActive ? 'page' : undefined}
+                      className={() => workspaceRowClass(wsActive)}
+                    >
+                      <span className="min-w-0 truncate">{ws.name}</span>
+                    </NavLink>
+                    {projectsSorted.map((p) => {
+                      const pActive = activeProjectSlug === p.slug
+                      return (
+                        <NavLink
+                          key={`${ws.slug}-p-${p.id}`}
+                          to={`/project/${encodeURIComponent(p.slug)}`}
+                          title={p.name}
+                          aria-label={`Open project ${p.name}`}
+                          aria-current={pActive ? 'page' : undefined}
+                          className={() => projectUnderWorkspaceClass(pActive)}
+                        >
+                          <span className="min-w-0 truncate">{p.name}</span>
+                        </NavLink>
+                      )
+                    })}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
+                )
+              })}
 
-          <div className="flex-1 min-h-2" />
+              {!workspaceAccess && expanded ? (
+                <div className="px-2 py-1.5 text-sm text-muted-foreground select-none">
+                  No workspaces available
+                </div>
+              ) : null}
 
-          <div className="border-t border-border/50 pt-2 space-y-1">
-            {workspaceAccess ? (
-              <NavLink
-                to="/templates"
+              {sortedStylebooks.length > 0 ? (
+                <>
+                  <div className="border-t border-border/50 my-1" />
+                  {expanded ? (
+                    <div className={sectionTitleClass}>
+                      <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+                      <span>Stylebook</span>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="w-full h-9 shrink-0"
+                      onClick={() => expand()}
+                      title="Stylebook"
+                    >
+                      <BookOpen className="h-5 w-5" aria-hidden />
+                    </Button>
+                  )}
+                  {(expanded ? sortedStylebooks : []).map((sb) => {
+                    const projSlug =
+                      stylebookProjectSlug ??
+                      pickProjectSlugForStylebookLinks(null, workspaceRows)
+                    const openHref = stylebookShellHref(sb.slug, projSlug ?? undefined)
+
+                    return (
+                      <a
+                        key={sb.id}
+                        href={openHref}
+                        className={cn(
+                          'rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          'flex w-full min-w-0 items-center justify-between gap-2 px-2 py-2 text-left',
+                          'text-foreground hover:bg-muted/60',
+                        )}
+                        title={sb.name}
+                        aria-label={`Open ${sb.name} in Stylebook`}
+                      >
+                        <span className="min-w-0 truncate">{sb.name}</span>
+                        {sb.is_default ? (
+                          <span className="shrink-0 rounded border border-border bg-background/80 px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
+                            Default
+                          </span>
+                        ) : null}
+                      </a>
+                    )
+                  })}
+                </>
+              ) : null}
+            </div>
+
+            <div className="border-t border-border/50 pt-2 shrink-0 space-y-1">
+              <a
+                href={helpHref()}
                 className={hubLinkClass}
-                title={!expanded ? 'Templates' : undefined}
+                title={!expanded ? 'Help' : undefined}
               >
-                <LayoutTemplate className="h-5 w-5 shrink-0" aria-hidden />
-                {expanded && <span>Templates</span>}
-              </NavLink>
-            ) : null}
-            <NavLink
-              to="/help"
-              className={hubLinkClass}
-              title={!expanded ? 'Help' : undefined}
-            >
-              <HelpCircle className="h-5 w-5 shrink-0" aria-hidden />
-              {expanded && <span>Help</span>}
-            </NavLink>
-          </div>
-        </nav>
-      </aside>
-
-      <ProjectDialog
-        open={projectDialogOpen}
-        onOpenChange={setProjectDialogOpen}
-        project={null}
-        onSave={handleSaveProject}
-      />
+                <HelpCircle className="h-5 w-5 shrink-0" aria-hidden />
+                {expanded ? <span>Help</span> : null}
+              </a>
+            </div>
+          </nav>
+        )}
+      </ShellSidebar>
     </>
   )
-}
-
-function readBool(key: string, defaultVal: boolean): boolean {
-  try {
-    const v = localStorage.getItem(key)
-    if (v === null) return defaultVal
-    return v === 'true'
-  } catch {
-    return defaultVal
-  }
 }

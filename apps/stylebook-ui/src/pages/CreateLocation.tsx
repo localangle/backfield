@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
+import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { createLocation } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,6 +23,8 @@ import {
   polygonFromAxisAlignedBounds,
 } from "@backfield/ui/axisAlignedRectangle"
 import { cn } from "@/lib/utils"
+import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -139,6 +143,9 @@ function geometryToFeatureCollections(
 export default function CreateLocation() {
   const { showMessage, showError, showConfirm } = useAppMessage()
   const navigate = useNavigate()
+  const { filterScopeSuffix, catalogBasePath } = useProjectCatalogScope()
+  const crumbRoot = useScopeBreadcrumbRoot()
+  const canEdit = useCanEditStylebook()
   const [projectSlug, setProjectSlug] = useState("")
   const [name, setName] = useState("")
   const [locationType, setLocationType] = useState("")
@@ -225,7 +232,7 @@ export default function CreateLocation() {
         geometry_json: geometryToCreate ?? undefined,
         status: "active",
       })
-      navigate(`/locations/canonical/${location.id}?project=${projectSlug}`)
+      navigate(`${catalogBasePath}/locations/canonical/${location.id}${filterScopeSuffix}`)
     } catch (error) {
       console.error("Failed to create location:", error)
       showError(
@@ -237,7 +244,7 @@ export default function CreateLocation() {
   }
 
   const handleCancel = () => {
-    navigate(`/locations/canonical?project=${projectSlug}`)
+    navigate(`${catalogBasePath}/locations/canonical${filterScopeSuffix}`)
   }
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
@@ -300,6 +307,14 @@ export default function CreateLocation() {
   return (
     <div className="container mx-auto p-6">
       <div className="mb-6">
+        <Breadcrumbs
+          className="mb-3"
+          items={[
+            { label: crumbRoot.label, to: crumbRoot.to },
+            { label: "Locations", to: `${catalogBasePath}/locations/canonical${filterScopeSuffix}` },
+            { label: "Create" },
+          ]}
+        />
         <h1 className="text-3xl font-bold">Create Location</h1>
       </div>
 
@@ -648,7 +663,7 @@ export default function CreateLocation() {
         <Button variant="outline" onClick={handleCancel} disabled={creating}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={creating || !name.trim()}>
+        <Button onClick={handleSubmit} disabled={!canEdit || creating || !name.trim()}>
           {creating ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />

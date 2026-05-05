@@ -5,6 +5,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 const coreTarget = process.env.VITE_CORE_API_PROXY_TARGET || 'http://localhost:8004'
 const agateTarget = process.env.VITE_AGATE_API_PROXY_TARGET || 'http://localhost:8000'
+const stylebookTarget = process.env.VITE_STYLEBOOK_API_PROXY_TARGET || 'http://localhost:8003'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -26,6 +27,11 @@ export default defineConfig({
         target: agateTarget,
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api\/agate/, ''),
+      },
+      '/api/stylebook': {
+        target: stylebookTarget,
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/stylebook/, ''),
       },
     },
   },

@@ -147,6 +147,7 @@ class Stylebook(SQLModel, table=True):
     __tablename__ = "stylebook"
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_stylebook_organization_slug"),
+        UniqueConstraint("organization_id", "name", name="uq_stylebook_organization_name"),
         Index(
             "uq_stylebook_org_one_default",
             "organization_id",
@@ -168,6 +169,49 @@ class Stylebook(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
     updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookMembership(SQLModel, table=True):
+    """User role assignment for a specific Stylebook.
+
+    Today we only use `role="editor"`; future roles (viewer, etc.) can be added without
+    changing the table shape.
+    """
+
+    __tablename__ = "stylebook_membership"
+    __table_args__ = (
+        UniqueConstraint("stylebook_id", "user_id", name="uq_stylebook_member_stylebook_user"),
+        Index("ix_stylebook_membership_stylebook_role", "stylebook_id", "role"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    user_id: int = Field(foreign_key="backfield_user.id", index=True)
+    role: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookSlugRedirect(SQLModel, table=True):
+    """Prior slug for a stylebook row (used to redirect URLs after rename)."""
+
+    __tablename__ = "stylebook_slug_redirect"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "old_slug",
+            name="uq_stylebook_slug_redirect_org_old_slug",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    old_slug: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 

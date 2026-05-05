@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
 import {
-  getCanonicalLocation,
+  getCanonicalLocationLegacy,
   getLocation,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
-  listCanonicalLocations,
+  listCanonicalLocationsLegacy,
   type CanonicalLocation,
   type SuggestedCanonicalItem,
 } from "@/lib/api"
@@ -125,7 +125,7 @@ export function CanonicalLinkModal(props: {
     let cancelled = false
     void (async () => {
       try {
-        const c = await getCanonicalLocation(initialCanonicalId, projectSlug)
+        const c = await getCanonicalLocationLegacy(initialCanonicalId, projectSlug)
         if (!cancelled) setInitialCanonExtra(c)
       } catch {
         if (!cancelled) setInitialCanonExtra(null)
@@ -187,7 +187,7 @@ export function CanonicalLinkModal(props: {
     const t = window.setTimeout(() => {
       void (async () => {
         try {
-          const res = await listCanonicalLocations(projectSlug, q, 20, 0)
+          const res = await listCanonicalLocationsLegacy(projectSlug, q, 20, 0)
           if (!cancelled) {
             const exclude = (linkedCanonicalId ?? "").trim()
             const next = exclude ? res.canonicals.filter((c) => String(c.id) !== exclude) : res.canonicals

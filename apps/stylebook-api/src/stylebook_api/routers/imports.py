@@ -8,18 +8,22 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backfield_auth.gate import require_project_access
-from backfield_db import BackfieldProject, StylebookLocationMeta
+from backfield_db import StylebookLocationMeta
 from backfield_stylebook.locations import create_standalone_canonical
-from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select
+from sqlmodel import Session
 
+from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.helpers.meta_utils import validate_meta_json
 from stylebook_api.imports.registry import get_importer, register_importer
+from stylebook_api.routers.locations import _project_by_slug, _require_stylebook_id
+from stylebook_api.stylebook_permissions import require_stylebook_edit_access
+from stylebook_api.stylebook_scope import require_stylebook_by_slug_in_auth_org
 
 router = APIRouter(prefix="/v1/import", tags=["import"])
+stylebook_router = APIRouter(prefix="/v1/stylebooks", tags=["import"])
 
 MAX_IMPORT_BYTES = 25 * 1024 * 1024
 
@@ -42,12 +46,6 @@ def _enforce_request_size_limit(request: Request, *, approx_payload: object | No
         return
     if n2 > MAX_IMPORT_BYTES:
         raise HTTPException(status_code=413, detail="payload exceeds 25MB")
-
-def _project_by_slug(session: Session, slug: str) -> BackfieldProject:
-    row = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return row
 
 
 class ImportGeoJSONAnalyzeRequest(BaseModel):
@@ -217,6 +215,7 @@ class _GeoJsonLocationsImporter:
         self,
         *,
         project_slug: str,
+        stylebook_slug: str | None,
         payload: ImportGeoJSONRequest,
         request: Request,
         session: Session,
@@ -232,7 +231,7 @@ class _GeoJsonLocationsImporter:
         )
         proj = _project_by_slug(session, project_slug)
         require_project_access(session, auth, int(proj.id))
-        stylebook_id = _require_stylebook_id(session, proj)
+        stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
 
         gj = payload.geojson
         if not isinstance(gj, dict) or gj.get("type") != "FeatureCollection":
@@ -384,11 +383,57 @@ def analyze_geojson(
     )
 
 
-def _require_stylebook_id(session: Session, project: BackfieldProject) -> int:
-    try:
-        return resolve_stylebook_id_for_project_id(session, int(project.id))
-    except LookupError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+@stylebook_router.post(
+    "/{stylebook_slug}/import/geojson/analyze",
+    response_model=AnalyzeGeoJSONResponse,
+)
+def analyze_geojson_stylebook(
+    stylebook_slug: str,
+    payload: ImportGeoJSONAnalyzeRequest = Body(...),
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> AnalyzeGeoJSONResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    if request is None:
+        raise HTTPException(status_code=500, detail="request missing")
+    _enforce_request_size_limit(request, approx_payload=payload.geojson)
+    _ = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+
+    gj = payload.geojson
+    if not isinstance(gj, dict) or gj.get("type") != "FeatureCollection":
+        raise HTTPException(status_code=400, detail="geojson must be a FeatureCollection")
+    features = gj.get("features")
+    if not isinstance(features, list):
+        raise HTTPException(status_code=400, detail="geojson.features must be an array")
+    features = _explode_geometry_collections(features)
+    if not features:
+        return AnalyzeGeoJSONResponse(
+            feature_count=0,
+            available_properties=[],
+            sample_feature=None,
+        )
+
+    keys: set[str] = set()
+    sample: dict[str, Any] | None = None
+    for feat in features:
+        if not isinstance(feat, dict):
+            continue
+        props = feat.get("properties")
+        if isinstance(props, dict):
+            for k in props.keys():
+                if isinstance(k, str):
+                    keys.add(k)
+            if sample is None and props:
+                geom = feat.get("geometry")
+                geom_type = geom.get("type") if isinstance(geom, dict) else None
+                sample = {"properties": props, "geometry_type": geom_type}
+
+    return AnalyzeGeoJSONResponse(
+        feature_count=len(features),
+        available_properties=sorted(keys),
+        sample_feature=sample,
+    )
 
 
 def _read_string_prop(props: dict[str, Any], key: str | None) -> str | None:
@@ -428,6 +473,7 @@ def _explode_geometry_collections(features: list[Any]) -> list[dict[str, Any]]:
 @router.post("/geojson", response_model=ImportGeoJSONResponse)
 def import_geojson(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     payload: ImportGeoJSONRequest = Body(...),
     request: Request = None,  # type: ignore[assignment]
     session: Session = Depends(get_session),
@@ -438,9 +484,132 @@ def import_geojson(
         raise HTTPException(status_code=500, detail="request missing")
     return imp.run(
         project_slug=project_slug,
+        stylebook_slug=stylebook_slug,
         payload=payload,
         request=request,
         session=session,
         auth=auth,
+    )
+
+
+@stylebook_router.post(
+    "/{stylebook_slug}/import/geojson",
+    response_model=ImportGeoJSONResponse,
+)
+def import_geojson_stylebook(
+    stylebook_slug: str,
+    payload: ImportGeoJSONRequest = Body(...),
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> ImportGeoJSONResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    if request is None:
+        raise HTTPException(status_code=500, detail="request missing")
+    _enforce_request_size_limit(
+        request,
+        approx_payload={
+            "geojson": payload.geojson,
+            "mappings": payload.mappings.model_dump(),
+            "meta_property_mappings": [m.model_dump() for m in payload.meta_property_mappings],
+        },
+    )
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    stylebook_id = int(sb.id)
+
+    gj = payload.geojson
+    if not isinstance(gj, dict) or gj.get("type") != "FeatureCollection":
+        raise HTTPException(status_code=400, detail="geojson must be a FeatureCollection")
+    features = gj.get("features")
+    if not isinstance(features, list):
+        raise HTTPException(status_code=400, detail="geojson.features must be an array")
+    exploded_features = _explode_geometry_collections(features)
+
+    allowed_prop_keys = _property_keys_union_from_features(exploded_features)
+    _ = _normalize_and_validate_meta_mappings_or_400(
+        payload.meta_property_mappings,
+        allowed_keys=allowed_prop_keys,
+    )
+
+    mappings = payload.mappings
+    label_key = mappings.label_property or "name"
+    type_key = mappings.location_type_property or "type"
+    addr_key = mappings.formatted_address_property or "formatted_address"
+    type_override = (mappings.location_type_value or "").strip().lower() or None
+
+    created: list[ImportGeoJSONCreatedRow] = []
+    failed: list[ImportGeoJSONFailedRow] = []
+
+    for i, feat in enumerate(exploded_features):
+        if not isinstance(feat, dict):
+            failed.append(
+                ImportGeoJSONFailedRow(feature_index=i, error="feature must be an object")
+            )
+            continue
+        if feat.get("type") != "Feature":
+            failed.append(
+                ImportGeoJSONFailedRow(feature_index=i, error="feature.type must be Feature")
+            )
+            continue
+
+        props_raw = feat.get("properties")
+        props = props_raw if isinstance(props_raw, dict) else {}
+
+        label = _read_string_prop(props, label_key)
+        location_type = type_override or _read_string_prop(props, type_key)
+        formatted_address = _read_string_prop(props, addr_key)
+
+        geom_raw = feat.get("geometry")
+        geometry_json = geom_raw if isinstance(geom_raw, dict) else None
+
+        if not label:
+            failed.append(ImportGeoJSONFailedRow(feature_index=i, error="name/label is required"))
+            continue
+        if not location_type:
+            failed.append(ImportGeoJSONFailedRow(feature_index=i, error="type is required"))
+            continue
+        if geometry_json is None:
+            failed.append(ImportGeoJSONFailedRow(feature_index=i, error="geometry is required"))
+            continue
+
+        with contextlib.suppress(Exception):
+            _ = str(geometry_json.get("type"))
+
+        try:
+            with session.begin_nested():
+                canon = create_standalone_canonical(
+                    session,
+                    stylebook_id=stylebook_id,
+                    label=label,
+                    location_type=location_type,
+                    formatted_address=formatted_address,
+                    geometry_json=geometry_json,
+                    provenance="stylebook_ui_import_geojson",
+                )
+                session.flush()
+                created.append(
+                    ImportGeoJSONCreatedRow(
+                        feature_index=i,
+                        canonical_id=str(canon.id),
+                        label=str(canon.label),
+                    )
+                )
+        except Exception as e:  # noqa: BLE001 - per-row boundary
+            failed.append(ImportGeoJSONFailedRow(feature_index=i, error=str(e)))
+
+    if created:
+        session.commit()
+    else:
+        session.rollback()
+
+    return ImportGeoJSONResponse(
+        total_features=len(exploded_features),
+        attempted_features=len(created) + len(failed),
+        created_count=len(created),
+        failed_count=len(failed),
+        created=created,
+        failed=failed,
     )
 

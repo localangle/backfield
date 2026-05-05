@@ -5,23 +5,17 @@ from __future__ import annotations
 from typing import Any
 
 from backfield_auth.gate import require_project_access
-from backfield_db import BackfieldProject, StylebookLocationCanonical, SubstrateLocation
+from backfield_db import StylebookLocationCanonical, SubstrateLocation
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
-from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, func, select
 
+from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.routers.locations import _project_by_slug, _require_stylebook_id
 
 router = APIRouter(prefix="/v1", tags=["stylebook-ui-stubs"])
-
-
-def _project_by_slug(session: Session, slug: str) -> BackfieldProject:
-    row = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return row
 
 
 class StatsOut(BaseModel):
@@ -34,6 +28,7 @@ class StatsOut(BaseModel):
 @router.get("/stats", response_model=StatsOut)
 def get_stats(
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> StatsOut:
@@ -41,9 +36,11 @@ def get_stats(
     require_project_access(session, auth, int(proj.id))
     z = {"canonical_count": 0, "candidate_count": 0}
     try:
-        stylebook_id = resolve_stylebook_id_for_project_id(session, int(proj.id))
-    except LookupError:
-        return StatsOut(locations=z, people=z, organizations=z, works=z)
+        stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+    except HTTPException as e:
+        if e.status_code == 400:
+            return StatsOut(locations=z, people=z, organizations=z, works=z)
+        raise e
 
     canon_cnt = int(
         session.scalar(
