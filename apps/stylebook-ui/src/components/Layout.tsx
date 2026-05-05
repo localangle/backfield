@@ -65,8 +65,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const [orgId, setOrgId] = useState<number | null>(null)
   const navigate = useNavigate()
 
-  const projectScopeSlug = searchParams.get("project_scope") || ""
-  const projectFilterSlug = searchParams.get("project") || ""
+  /** Matches catalogNavigation: workflow scope from `project_scope` or `project`. */
+  const workflowProjectSlug =
+    searchParams.get("project_scope") || searchParams.get("project") || ""
   const routeSlug = (params.stylebookSlug ?? "").trim()
 
   const projectQs = useMemo(
@@ -98,10 +99,10 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   }, [routeSlug, effectiveStylebookSlug, projectQs])
 
   const activeProjectName = useMemo(() => {
-    if (!projectScopeSlug) return null
-    const p = projects.find((x) => x.slug === projectScopeSlug)
-    return p?.name ?? projectScopeSlug
-  }, [projectScopeSlug, projects])
+    if (!workflowProjectSlug) return null
+    const p = projects.find((x) => x.slug === workflowProjectSlug)
+    return p?.name ?? workflowProjectSlug
+  }, [workflowProjectSlug, projects])
   const activeProjectLabel = activeProjectName ?? "Backfield"
 
   const selectedStylebookLabel = useMemo(() => {
@@ -132,12 +133,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   }, [effectiveStylebookSlug])
 
   const activeWorkspaceSlug = useMemo(() => {
-    if (!projectScopeSlug) return null
+    if (!workflowProjectSlug) return null
     for (const ws of workspaceRows) {
-      if (ws.projects.some((p) => p.slug === projectScopeSlug)) return ws.slug
+      if (ws.projects.some((p) => p.slug === workflowProjectSlug)) return ws.slug
     }
     return null
-  }, [projectScopeSlug, workspaceRows])
+  }, [workflowProjectSlug, workspaceRows])
 
   useEffect(() => {
     fetchProjects()
@@ -175,14 +176,14 @@ export default function Layout({ children, headerContent }: LayoutProps) {
       location.pathname.includes("/agents/")
 
     if (!needsProjectScope) return
-    if (projects.length > 0 && !projectScopeSlug) {
+    if (projects.length > 0 && !workflowProjectSlug) {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev)
-        next.set("project_scope", projects[0].slug)
+        next.set("project", projects[0].slug)
         return next
       })
     }
-  }, [projects, projectScopeSlug, setSearchParams, location.pathname])
+  }, [projects, workflowProjectSlug, setSearchParams, location.pathname])
 
   /** Drop legacy ``?stylebook=`` when the slug already lives in the path. */
   useEffect(() => {

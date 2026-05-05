@@ -443,9 +443,7 @@ export default function ManageUsersPage() {
           <DialogHeader>
             <DialogTitle>Stylebook editing</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              {stylebookAccessUser?.email} — checked stylebooks can be edited in the
-              Stylebook app (locations and imports). Organization admins always have
-              full edit access and do not need to be listed here.
+              Choose the stylebooks this user can edit.
             </p>
           </DialogHeader>
           {stylebookDialogLoading ? (
@@ -469,10 +467,7 @@ export default function ManageUsersPage() {
                     onChange={() => toggleStylebookEditor(sb.id)}
                   />
                   <span>
-                    {sb.name}{" "}
-                    <span className="text-muted-foreground font-normal">
-                      ({sb.slug})
-                    </span>
+                    {sb.name}
                     {sb.is_default ? (
                       <span className="text-muted-foreground font-normal">
                         {" "}
@@ -516,7 +511,7 @@ export default function ManageUsersPage() {
           <DialogHeader>
             <DialogTitle>Workspace access</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              {accessUser?.email} — members get all projects in each selected workspace.
+              Choose the workspaces this user can access.
             </p>
           </DialogHeader>
           <div className="space-y-4">

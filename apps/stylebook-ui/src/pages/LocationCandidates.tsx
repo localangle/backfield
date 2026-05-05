@@ -809,7 +809,8 @@ export default function LocationCandidates() {
               onValueChange={(slug) => {
                 setSearchParams((prev) => {
                   const next = new URLSearchParams(prev)
-                  next.set("project_scope", slug)
+                  next.delete("project_scope")
+                  next.set("project", slug)
                   return next
                 })
               }}

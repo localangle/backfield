@@ -9,8 +9,9 @@ import {
  * Reads URL scope for Stylebook UI.
  *
  * - Path `/stylebook/<slug>/…` selects the catalog (preferred).
- * - `project_scope`: workflows such as the review queue
- * - `project`: optional evidence filter on canonical pages
+ * - Workflow scope: `project_scope` if present, otherwise `project` (Agate links).
+ * - Canonical evidence filter: `project` when set alone doubles as workflow scope;
+ *   when both params are set, `project_scope` is workflow and `project` is filter only.
  */
 export function useProjectCatalogScope() {
   const params = useParams<{ stylebookSlug?: string }>()
@@ -20,8 +21,12 @@ export function useProjectCatalogScope() {
     parseLegacyStylebookQuery(`?${searchParams.toString()}`) ?? ""
   const stylebookSlug = fromRoute || fromLegacyQuery
 
-  const projectScopeSlug = searchParams.get("project_scope") ?? ""
-  const projectFilterSlug = searchParams.get("project") ?? ""
+  const explicitWorkflowScope = searchParams.get("project_scope") ?? ""
+  const projectParam = searchParams.get("project") ?? ""
+  /** Review queue / dashboard / shell context */
+  const projectScopeSlug = explicitWorkflowScope || projectParam
+  /** Canonical list/detail evidence filter (`project` query key). */
+  const projectFilterSlug = projectParam
 
   const catalogBasePath = useMemo(
     () => stylebookCatalogBasePath(stylebookSlug),
@@ -30,9 +35,14 @@ export function useProjectCatalogScope() {
 
   const workflowScopeQueryString = useMemo(() => {
     const p = new URLSearchParams()
-    if (projectScopeSlug) p.set("project_scope", projectScopeSlug)
+    if (!projectScopeSlug) return ""
+    if (explicitWorkflowScope) {
+      p.set("project_scope", projectScopeSlug)
+    } else {
+      p.set("project", projectScopeSlug)
+    }
     return p.toString()
-  }, [projectScopeSlug])
+  }, [projectScopeSlug, explicitWorkflowScope])
 
   const filterScopeQueryString = useMemo(() => {
     const p = new URLSearchParams()

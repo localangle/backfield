@@ -26,9 +26,9 @@ export function helpHref(): string {
 }
 
 /**
- * Stylebook UI URL: catalog lives at `/stylebook/<slug>/`. Optionally adds `project`
- * for evidence filters. Omitting `project` is valid (same as opening Stylebook
- * without coming from a flow). Legacy `/?stylebook=` still redirects on load.
+ * Stylebook UI URL: `/stylebook/<slug>/`. Optionally adds Agate project context as
+ * `?project=<slug>` (same query key Stylebook uses for workflow scope when
+ * `project_scope` is omitted). Legacy `/?stylebook=` still redirects on load.
  */
 export function stylebookShellHref(
   stylebookSlug: string,
