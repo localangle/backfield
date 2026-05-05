@@ -11,6 +11,7 @@ Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix*
 | Backfield orgs, users, projects, credentials     | `packages/backfield-db` | Same migration chain                                                   |
 | Shared content/location substrate                | `packages/backfield-db` | `substrate_article`, `substrate_location`, mentions, occurrences, cache |
 | Stylebook editorial / canonical tables           | `packages/backfield-db` | `stylebook`, `stylebook_location_canonical`, `stylebook_location_alias`, **`stylebook_location_meta`**, **`stylebook_connections`**; helpers in `packages/backfield-stylebook` |
+| Shared AI model configuration and usage tracking | `packages/backfield-db` | `backfield_ai_*` tables for model catalog, project overrides, default roles, and LLM call cost records |
 
 
 Do **not** run multiple services that each invoke `alembic upgrade` on startup for the same revision path; pick **one** migration runner (the `agate-api` entrypoint on deploy, or `make migrate` locally).
@@ -27,6 +28,13 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 - `backfield_workspace_membership` — `(user_id, workspace_id)` unique; grants a **member** access to every project whose `workspace_id` is that workspace (same org). Unioned in auth with legacy `backfield_project_membership` rows until the latter are fully deprecated.
 - `backfield_project_membership` — `(user_id, project_id)` with optional per-project `role` (legacy explicit grants).
 - `backfield_api_credential` — per-project API keys (`credential_type` `user` or `service`), `key_prefix` + `key_hash`, `revoked_at`.
+
+### Shared AI model infrastructure (`backfield_ai_*`)
+
+- `backfield_ai_model_config` — organization-owned AI model configuration shared by Agate, Stylebook, and future Backfield AI features. Rows store provider/model identifiers, a model kind (`generative` initially, with room for `embedding` later), text/JSON/vision capabilities, optional custom Decimal/Numeric token prices, currency (`USD` by default), status, and latest settings test metadata.
+- `backfield_ai_project_model_override` — project-level availability override for an inherited organization model config. Unique `(project_id, model_config_id)` keeps one effective override per project/model.
+- `backfield_ai_default_model_role` — default model role assignment scoped to exactly one organization or one project. Partial unique indexes enforce one assignment per `(organization_id, role)` or `(project_id, role)`.
+- `backfield_ai_call_record` — one execution attempt to call an AI model. Records project, optional Agate run/processed-item/node context, resolved provider/model snapshot metadata, token usage, estimated Decimal/Numeric cost, currency, incomplete-estimate flag, latency, request id, and safe error metadata. Prompt and response content are intentionally not stored.
 
 ### Shared content and locations (`substrate_*`)
 
@@ -86,6 +94,8 @@ Revision **`023_sb_name_unique_redirect`** adds unique **`(organization_id, name
 
 Revision **`016_agate_processed_item`** creates **`agate_processed_item`** with FK to **`agate_run.id`** (`ON DELETE CASCADE`) and index **`ix_agate_processed_item_run_id`**.
 
+Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
+
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 
 **Existing databases** that already applied older revisions: follow migration notes in your upgrade path or reset (`make reset-db` + `make up`) for dev.
@@ -100,6 +110,8 @@ The **Starter flow** graph row for the General project is created at runtime whe
   - `agate_processed_item.run_id`
   - `backfield_project_secret.project_id`
   - unique key on `backfield_project_secret (project_id, key)`
+  - AI model catalog lookup indexes on `backfield_ai_model_config (organization_id, status, model_kind)` and `(organization_id, provider, provider_model_id)`
+  - AI call aggregation indexes on `backfield_ai_call_record (project_id, created_at)`, `(run_id, node_id)`, and `(run_id, status)`
   - GIST indexes on shared location geometry columns
 - If a new query path matters for runtime behavior, capture the indexing decision in the migration or model change rather than leaving it implicit.
 

@@ -1,0 +1,19 @@
+"""Shared AI model primitives for Backfield services."""
+
+from backfield_ai.constants import (
+    AI_CAPABILITY_JSON,
+    AI_CAPABILITY_TEXT,
+    AI_CAPABILITY_VISION,
+    AI_MODEL_KIND_EMBEDDING,
+    AI_MODEL_KIND_GENERATIVE,
+    DEFAULT_AI_CURRENCY,
+)
+
+__all__ = [
+    "AI_CAPABILITY_JSON",
+    "AI_CAPABILITY_TEXT",
+    "AI_CAPABILITY_VISION",
+    "AI_MODEL_KIND_EMBEDDING",
+    "AI_MODEL_KIND_GENERATIVE",
+    "DEFAULT_AI_CURRENCY",
+]

@@ -7,6 +7,7 @@ members = [
     "agate-api",
     "agate-worker",
     "backfield-agate",
+    "backfield-ai",
     "backfield-auth",
     "backfield-core",
     "backfield-db",
@@ -194,6 +195,17 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31.0" },
     { name = "shapely", specifier = ">=2.0.0" },
 ]
+
+[[package]]
+name = "backfield-ai"
+version = "0.1.0"
+source = { editable = "packages/backfield-ai" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.0.0" }]
 
 [[package]]
 name = "backfield-auth"
