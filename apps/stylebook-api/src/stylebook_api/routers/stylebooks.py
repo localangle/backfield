@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from backfield_auth.gate import require_org_admin
-from backfield_db import Stylebook
+from backfield_db import BackfieldUser, Stylebook, StylebookMembership
 from backfield_stylebook.graph_stylebook_refs import count_stylebook_usage_in_graphs
 from backfield_stylebook.stylebook_library import (
     StylebookLibraryError,
@@ -81,6 +81,19 @@ class StylebookDeletePreviewOut(BaseModel):
     is_only_stylebook_in_org: bool
     graphs_referencing: int
     nodes_referencing: int
+
+
+class StylebookMemberOut(BaseModel):
+    user_id: int
+    email: str
+    role: str
+    created_at: datetime
+
+
+class StylebookMemberCreateBody(BaseModel):
+    user_id: int | None = None
+    email: str | None = None
+    role: str = "editor"
 
 
 def _http_from_library(err: StylebookLibraryError) -> HTTPException:
@@ -268,3 +281,106 @@ def delete_stylebook_endpoint(
     except StylebookLibraryError as e:
         session.rollback()
         raise _http_from_library(e) from e
+
+
+@router.get("/{org_id}/stylebooks/{stylebook_id}/members", response_model=list[StylebookMemberOut])
+def list_stylebook_members(
+    org_id: int,
+    stylebook_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> list[StylebookMemberOut]:
+    require_org_admin(session, auth, org_id)
+    sb = session.get(Stylebook, stylebook_id)
+    if sb is None or int(sb.organization_id) != org_id:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+
+    rows = session.exec(
+        select(StylebookMembership, BackfieldUser)
+        .join(BackfieldUser, BackfieldUser.id == StylebookMembership.user_id)
+        .where(StylebookMembership.stylebook_id == stylebook_id)
+        .order_by(col(BackfieldUser.email))
+    ).all()
+    return [
+        StylebookMemberOut(
+            user_id=int(m.user_id),
+            email=str(u.email),
+            role=str(m.role),
+            created_at=m.created_at,
+        )
+        for m, u in rows
+    ]
+
+
+@router.post("/{org_id}/stylebooks/{stylebook_id}/members", response_model=list[StylebookMemberOut])
+def add_stylebook_member(
+    org_id: int,
+    stylebook_id: int,
+    body: StylebookMemberCreateBody,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> list[StylebookMemberOut]:
+    require_org_admin(session, auth, org_id)
+    sb = session.get(Stylebook, stylebook_id)
+    if sb is None or int(sb.organization_id) != org_id:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+
+    role = (body.role or "").strip().lower()
+    if role != "editor":
+        raise HTTPException(status_code=400, detail="role must be editor")
+
+    uid: int | None = int(body.user_id) if body.user_id is not None else None
+    email = (body.email or "").strip().lower() or None
+    if uid is None and email is None:
+        raise HTTPException(status_code=400, detail="Provide user_id or email")
+
+    user: BackfieldUser | None
+    if uid is not None:
+        user = session.get(BackfieldUser, uid)
+    else:
+        user = session.exec(select(BackfieldUser).where(col(BackfieldUser.email) == email)).first()
+    if user is None or user.id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    existing = session.exec(
+        select(StylebookMembership).where(
+            StylebookMembership.stylebook_id == stylebook_id,
+            StylebookMembership.user_id == int(user.id),
+        )
+    ).first()
+    if existing is None:
+        session.add(
+            StylebookMembership(
+                stylebook_id=stylebook_id,
+                user_id=int(user.id),
+                role=role,
+            )
+        )
+        session.commit()
+
+    return list_stylebook_members(org_id, stylebook_id, session, auth)
+
+
+@router.delete("/{org_id}/stylebooks/{stylebook_id}/members/{user_id}", status_code=204)
+def remove_stylebook_member(
+    org_id: int,
+    stylebook_id: int,
+    user_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> None:
+    require_org_admin(session, auth, org_id)
+    sb = session.get(Stylebook, stylebook_id)
+    if sb is None or int(sb.organization_id) != org_id:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+
+    row = session.exec(
+        select(StylebookMembership).where(
+            StylebookMembership.stylebook_id == stylebook_id,
+            StylebookMembership.user_id == int(user_id),
+        )
+    ).first()
+    if row is None:
+        return
+    session.delete(row)
+    session.commit()

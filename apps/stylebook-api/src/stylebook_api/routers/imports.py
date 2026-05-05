@@ -19,6 +19,7 @@ from stylebook_api.deps import get_auth, get_session
 from stylebook_api.helpers.meta_utils import validate_meta_json
 from stylebook_api.imports.registry import get_importer, register_importer
 from stylebook_api.routers.locations import _project_by_slug, _require_stylebook_id
+from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import require_stylebook_by_slug_in_auth_org
 
 router = APIRouter(prefix="/v1/import", tags=["import"])
@@ -393,6 +394,7 @@ def analyze_geojson_stylebook(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> AnalyzeGeoJSONResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
     if request is None:
         raise HTTPException(status_code=500, detail="request missing")
     _enforce_request_size_limit(request, approx_payload=payload.geojson)
@@ -501,6 +503,7 @@ def import_geojson_stylebook(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> ImportGeoJSONResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
     if request is None:
         raise HTTPException(status_code=500, detail="request missing")
     _enforce_request_size_limit(

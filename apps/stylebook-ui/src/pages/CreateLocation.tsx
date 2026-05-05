@@ -24,6 +24,7 @@ import {
 } from "@backfield/ui/axisAlignedRectangle"
 import { cn } from "@/lib/utils"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -144,6 +145,7 @@ export default function CreateLocation() {
   const navigate = useNavigate()
   const { filterScopeSuffix } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
+  const canEdit = useCanEditStylebook()
   const [projectSlug, setProjectSlug] = useState("")
   const [name, setName] = useState("")
   const [locationType, setLocationType] = useState("")
@@ -661,7 +663,7 @@ export default function CreateLocation() {
         <Button variant="outline" onClick={handleCancel} disabled={creating}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={creating || !name.trim()}>
+        <Button onClick={handleSubmit} disabled={!canEdit || creating || !name.trim()}>
           {creating ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />

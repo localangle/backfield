@@ -173,6 +173,28 @@ class Stylebook(SQLModel, table=True):
     )
 
 
+class StylebookMembership(SQLModel, table=True):
+    """User role assignment for a specific Stylebook.
+
+    Today we only use `role="editor"`; future roles (viewer, etc.) can be added without
+    changing the table shape.
+    """
+
+    __tablename__ = "stylebook_membership"
+    __table_args__ = (
+        UniqueConstraint("stylebook_id", "user_id", name="uq_stylebook_member_stylebook_user"),
+        Index("ix_stylebook_membership_stylebook_role", "stylebook_id", "role"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    user_id: int = Field(foreign_key="backfield_user.id", index=True)
+    role: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class StylebookSlugRedirect(SQLModel, table=True):
     """Prior slug for a stylebook row (used to redirect URLs after rename)."""
 

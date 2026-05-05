@@ -33,6 +33,7 @@ import {
 } from "@/lib/api"
 import { fetchPlaceExtractLocationTypes } from "@/lib/stylebook-api/taxonomy"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import {
   PLACE_EXTRACT_LOCATION_TYPES,
   placeExtractTypeLabel,
@@ -125,6 +126,7 @@ export default function ImportLocations() {
   const { filterScopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const crumbRoot = useScopeBreadcrumbRoot()
+  const canEdit = useCanEditStylebook()
   const [step, setStep] = useState<WizardStep>("upload")
   const [geojsonText, setGeojsonText] = useState<string>("")
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
@@ -263,7 +265,9 @@ export default function ImportLocations() {
     return true
   }
 
-  const canValidate = Boolean(stylebookSlug && parsedGeojson && step === "upload" && !analyzing)
+  const canValidate = Boolean(
+    canEdit && stylebookSlug && parsedGeojson && step === "upload" && !analyzing,
+  )
 
   const clearUploadedGeoJson = () => {
     setGeojsonText("")
@@ -1050,7 +1054,13 @@ export default function ImportLocations() {
               </Button>
               <Button
                 type="button"
-                disabled={!stylebookSlug || !importPayload || importPayload.features.length === 0 || importing}
+                disabled={
+                  !canEdit ||
+                  !stylebookSlug ||
+                  !importPayload ||
+                  importPayload.features.length === 0 ||
+                  importing
+                }
                 onClick={async () => {
                   if (!stylebookSlug || !importPayload) return
                   setImporting(true)

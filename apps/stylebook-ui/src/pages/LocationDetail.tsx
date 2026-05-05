@@ -15,6 +15,7 @@ import {
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
@@ -196,6 +197,7 @@ export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
   const { projectFilterSlug, filterScopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
+  const canEdit = useCanEditStylebook()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [canonical, setCanonical] = useState<CanonicalLocation | null>(null)
@@ -469,7 +471,7 @@ export default function LocationDetail() {
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
   const geometryDraftIsMultiPolygon = geometryEditing && isMultiPolygonGeometry(geometryDraft)
-  const allowGeometryMapEditing = geometryEditing && !geometryDraftIsMultiPolygon
+  const allowGeometryMapEditing = canEdit && geometryEditing && !geometryDraftIsMultiPolygon
 
   const leafletCollections = useMemo(() => {
     const base = geometryToFeatureCollections(geometrySource as any, {
@@ -629,10 +631,16 @@ export default function LocationDetail() {
                   }
                   setEditing(true)
                 }}
+                disabled={!canEdit}
               >
                 Edit
               </Button>
-              <Button variant="destructive" size="icon" onClick={() => setDeleteOpen(true)}>
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={() => setDeleteOpen(true)}
+                disabled={!canEdit}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </>

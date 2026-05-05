@@ -20,7 +20,9 @@ import {
   fetchOrganizationStylebooks,
   type OrgStylebookRow,
 } from "@/lib/stylebook-api/orgStylebooks"
+import { fetchStylebookPermissions } from "@/lib/stylebook-api/permissions"
 import { agateUiOrigin, helpHref } from "@/lib/platformUrls"
+import { StylebookEditProvider } from "@/lib/stylebookEditContext"
 import { StylebookScopeProvider } from "@/lib/stylebookScopeContext"
 
 interface LayoutProps {
@@ -38,6 +40,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     [],
   )
   const [stylebooks, setStylebooks] = useState<OrgStylebookRow[]>([])
+  const [canEditStylebook, setCanEditStylebook] = useState(false)
   const [orgId, setOrgId] = useState<number | null>(null)
   const navigate = useNavigate()
 
@@ -86,6 +89,25 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     if (name) return name
     return effectiveStylebookSlug
   }, [effectiveStylebookSlug, stylebooks])
+
+  useEffect(() => {
+    if (!effectiveStylebookSlug) {
+      setCanEditStylebook(false)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetchStylebookPermissions(effectiveStylebookSlug)
+        if (!cancelled) setCanEditStylebook(Boolean(res.can_edit))
+      } catch {
+        if (!cancelled) setCanEditStylebook(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [effectiveStylebookSlug])
 
   const activeWorkspaceSlug = useMemo(() => {
     if (!projectScopeSlug) return null
@@ -385,11 +407,13 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           )}
         </ShellSidebar>
         <StylebookScopeProvider selectedStylebookLabel={selectedStylebookLabel}>
-          <main className="flex-1 min-w-0 overflow-auto">
-            <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">
-              {children}
-            </div>
-          </main>
+          <StylebookEditProvider canEditStylebook={canEditStylebook}>
+            <main className="flex-1 min-w-0 overflow-auto">
+              <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">
+                {children}
+              </div>
+            </main>
+          </StylebookEditProvider>
         </StylebookScopeProvider>
       </div>
     </div>

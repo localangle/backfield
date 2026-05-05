@@ -22,6 +22,7 @@ from sqlmodel import Session, col, func, select
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 from stylebook_api.routers.locations import _escape_ilike_metacharacters
+from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import (
     optional_project_filter_to_ids,
     require_stylebook_by_slug_in_auth_org,
@@ -394,6 +395,7 @@ def create_canonical_location(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> CanonicalLocationResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
@@ -444,6 +446,7 @@ def patch_canonical_location(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> CanonicalLocationResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
@@ -502,6 +505,7 @@ def patch_canonical_location_geometry(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, str]:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")

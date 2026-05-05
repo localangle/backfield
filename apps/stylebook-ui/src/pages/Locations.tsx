@@ -33,6 +33,7 @@ import { Loader2, Trash2 } from "lucide-react"
 import Pagination from "@/components/Pagination"
 import CanonicalSourceIcon from "@/components/CanonicalSourceIcon"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 
 export default function Locations() {
   const { showError } = useAppMessage()
@@ -59,6 +60,7 @@ export default function Locations() {
     row: null,
   })
   const [deleting, setDeleting] = useState(false)
+  const canEdit = useCanEditStylebook()
   const locationsPerPage = 25
   const prevSearchRef = useRef(debouncedSearchQuery)
   const prevTypeFilterRef = useRef(typeFilter)
@@ -294,6 +296,7 @@ export default function Locations() {
                           size="sm"
                           onClick={() => setDeleteDialog({ open: true, row: c })}
                           className="ml-4"
+                          disabled={!canEdit}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

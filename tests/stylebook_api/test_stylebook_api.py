@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import Any
 
 import pytest
 from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
+    BackfieldUser,
     BackfieldWorkspace,
     Stylebook,
     StylebookConnection,
     StylebookLocationAlias,
     StylebookLocationCanonical,
     StylebookLocationMeta,
+    StylebookMembership,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
@@ -28,6 +31,7 @@ from backfield_stylebook.canonical_link import (
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine, select
+from stylebook_api.deps import get_auth as get_auth_dep
 from stylebook_api.deps import get_session
 from stylebook_api.main import app
 
@@ -120,6 +124,77 @@ def _service_headers() -> dict[str, str]:
     return {"Authorization": "Bearer backfield-dev"}
 
 
+def _session_auth_for_user(user: BackfieldUser, *, org_id: int, org_role: str) -> dict[str, Any]:
+    return {
+        "type": "session",
+        "user": user,
+        "token_data": {},
+        "organization_id": int(org_id),
+        "org_role": str(org_role),
+        "is_admin": bool(org_role == "org_admin"),
+    }
+
+
+@pytest.fixture
+def member_client(
+    _stylebook_test_stack: tuple[TestClient, Engine],
+) -> Generator[TestClient, None, None]:
+    """Client authenticated as a non-admin session user in org 1."""
+    client, engine = _stylebook_test_stack
+    with Session(engine) as s:
+        user = BackfieldUser(email="member@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+
+    def _get_auth_override() -> dict[str, Any]:
+        with Session(engine) as s:
+            u = s.exec(
+                select(BackfieldUser).where(BackfieldUser.email == "member@example.com")
+            ).one()
+            return _session_auth_for_user(u, org_id=1, org_role="member")
+
+    app.dependency_overrides[get_auth_dep] = _get_auth_override
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
+
+
+@pytest.fixture
+def editor_client(
+    _stylebook_test_stack: tuple[TestClient, Engine],
+) -> Generator[TestClient, None, None]:
+    """Client authenticated as an editor for stylebook `default` in org 1."""
+    client, engine = _stylebook_test_stack
+    with Session(engine) as s:
+        user = BackfieldUser(email="editor@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+        s.refresh(user)
+        sb = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        s.add(
+            StylebookMembership(
+                stylebook_id=int(sb.id),  # type: ignore[arg-type]
+                user_id=int(user.id),  # type: ignore[arg-type]
+                role="editor",
+            )
+        )
+        s.commit()
+
+    def _get_auth_override() -> dict[str, Any]:
+        with Session(engine) as s:
+            u = s.exec(
+                select(BackfieldUser).where(BackfieldUser.email == "editor@example.com")
+            ).one()
+            return _session_auth_for_user(u, org_id=1, org_role="member")
+
+    app.dependency_overrides[get_auth_dep] = _get_auth_override
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
+
+
 def test_health(client: TestClient) -> None:
     r = client.get("/health")
     assert r.status_code == 200
@@ -140,6 +215,42 @@ def test_geocode_resolve_with_service_bearer(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body.get("lat") is not None
+
+
+def test_stylebook_permissions_endpoint_false_for_member(member_client: TestClient) -> None:
+    r = member_client.get("/v1/stylebooks/default/permissions")
+    assert r.status_code == 200
+    assert r.json().get("can_edit") is False
+
+
+def test_stylebook_permissions_endpoint_true_for_editor(editor_client: TestClient) -> None:
+    r = editor_client.get("/v1/stylebooks/default/permissions")
+    assert r.status_code == 200
+    assert r.json().get("can_edit") is True
+
+
+def test_stylebook_scoped_canonical_create_requires_editor(member_client: TestClient) -> None:
+    r = member_client.post(
+        "/v1/stylebooks/default/canonical-locations",
+        json={"label": "Nope", "location_type": "city"},
+    )
+    assert r.status_code == 403
+
+
+def test_stylebook_scoped_canonical_create_allows_editor(editor_client: TestClient) -> None:
+    r = editor_client.post(
+        "/v1/stylebooks/default/canonical-locations",
+        json={"label": "Allowed", "location_type": "city"},
+    )
+    assert r.status_code == 200
+
+
+def test_stylebook_scoped_import_requires_editor(member_client: TestClient) -> None:
+    r = member_client.post(
+        "/v1/stylebooks/default/import/geojson/analyze",
+        json={"geojson": {"type": "FeatureCollection", "features": []}},
+    )
+    assert r.status_code == 403
 
 
 def test_list_stylebooks_service(client: TestClient) -> None:
