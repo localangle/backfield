@@ -2,6 +2,24 @@
 
 const coreBase = () => import.meta.env.VITE_AUTH_API_BASE ?? ''
 
+function formatCoreApiErrorBody(body: unknown): string {
+  if (!body || typeof body !== "object") return "Request failed"
+  const detail = (body as { detail?: unknown }).detail
+  if (typeof detail === "string") return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (item && typeof item === "object" && "msg" in item) {
+          return String((item as { msg?: unknown }).msg ?? JSON.stringify(item))
+        }
+        return typeof item === "string" ? item : JSON.stringify(item)
+      })
+      .join(" ")
+  }
+  if (detail != null && typeof detail === "object") return JSON.stringify(detail)
+  return "Request failed"
+}
+
 async function jsonFetch<T>(
   path: string,
   init?: RequestInit,
@@ -17,10 +35,8 @@ async function jsonFetch<T>(
   if (!r.ok) {
     let detail = r.statusText
     try {
-      const body = (await r.json()) as { detail?: string | unknown }
-      if (typeof body.detail === "string") {
-        detail = body.detail
-      }
+      const body = await r.json()
+      detail = formatCoreApiErrorBody(body)
     } catch {
       /* ignore */
     }
@@ -80,10 +96,133 @@ export interface AiModelConfigSummary {
   latest_test_status?: string | null
 }
 
+/** Full org catalog row from Core API (admin list/create/patch/test). */
+export interface AiModelConfigRow extends AiModelConfigSummary {
+  organization_id: number
+  config_json?: Record<string, unknown> | null
+  input_token_price?: string | number | null
+  output_token_price?: string | number | null
+  currency: string
+  latest_tested_at?: string | null
+  latest_test_error?: string | null
+}
+
 export async function listOrganizationAiModels(
   orgId: number,
-): Promise<AiModelConfigSummary[]> {
+): Promise<AiModelConfigRow[]> {
   return jsonFetch(`/v1/organizations/${orgId}/ai-models`)
+}
+
+export interface CuratedAiModelOption {
+  curated_id: string
+  provider: string
+  provider_model_id: string
+  label: string
+  capabilities: string[]
+}
+
+export async function listAiModelCuratedOptions(
+  orgId: number,
+): Promise<CuratedAiModelOption[]> {
+  return jsonFetch(`/v1/organizations/${orgId}/ai-models/curated-options`)
+}
+
+export interface AiModelConfigCreateInput {
+  name?: string | null
+  curated_id?: string | null
+  provider?: string | null
+  provider_model_id?: string | null
+  model_kind?: string
+  capabilities?: string[] | null
+  config_json?: Record<string, unknown> | null
+  input_token_price?: number | null
+  output_token_price?: number | null
+  currency?: string
+}
+
+export async function createOrganizationAiModel(
+  orgId: number,
+  body: AiModelConfigCreateInput,
+): Promise<AiModelConfigRow> {
+  return jsonFetch(`/v1/organizations/${orgId}/ai-models`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+}
+
+export interface AiModelConfigPatchInput {
+  name?: string
+  status?: string
+  capabilities?: string[]
+  currency?: string
+  input_token_price?: number | null
+  output_token_price?: number | null
+  model_kind?: string
+  config_json?: Record<string, unknown> | null
+}
+
+export async function patchOrganizationAiModel(
+  orgId: number,
+  configId: string,
+  body: AiModelConfigPatchInput,
+): Promise<AiModelConfigRow> {
+  return jsonFetch(`/v1/organizations/${orgId}/ai-models/${encodeURIComponent(configId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })
+}
+
+export async function testOrganizationAiModelConnection(
+  orgId: number,
+  configId: string,
+): Promise<AiModelConfigRow> {
+  return jsonFetch(
+    `/v1/organizations/${orgId}/ai-models/${encodeURIComponent(configId)}/test-connection`,
+    { method: "POST" },
+  )
+}
+
+/** Organization AI provider slots (OpenAI / Anthropic); no secret material. */
+export interface AiProviderCatalogEntry {
+  provider: string
+  integration_key: string
+  configured: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export async function listAiProviderIntegrationCatalog(
+  orgId: number,
+): Promise<AiProviderCatalogEntry[]> {
+  return jsonFetch(`/v1/organizations/${orgId}/integration-secrets/ai-provider-catalog`)
+}
+
+export interface IntegrationSecretMetadata {
+  integration_key: string
+  created_at: string
+  updated_at: string
+}
+
+export async function putOrganizationIntegrationSecret(
+  orgId: number,
+  integrationKey: string,
+  value: string,
+): Promise<IntegrationSecretMetadata> {
+  const enc = encodeURIComponent(integrationKey)
+  return jsonFetch(`/v1/organizations/${orgId}/integration-secrets/${enc}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  })
+}
+
+export async function deleteOrganizationIntegrationSecret(
+  orgId: number,
+  integrationKey: string,
+): Promise<void> {
+  const enc = encodeURIComponent(integrationKey)
+  await jsonFetch(`/v1/organizations/${orgId}/integration-secrets/${enc}`, {
+    method: "DELETE",
+  })
 }
 
 export interface ProjectEffectiveAiModelRow extends AiModelConfigSummary {
