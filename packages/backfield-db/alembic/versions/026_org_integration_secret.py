@@ -1,4 +1,7 @@
-"""Organization-level encrypted integration secrets (AI provider keys first)."""
+"""Organization-level encrypted integration secrets (AI provider keys first).
+
+Revision id must fit ``alembic_version.version_num`` (varchar(32)).
+"""
 
 from __future__ import annotations
 
@@ -7,7 +10,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "026_organization_integration_secret"
+revision: str = "026_org_integration_secret"
 down_revision: Union[str, None] = "025_backfield_ai_foundation"
 branch_labels: Sequence[str] | None = None
 depends_on: Union[str, Sequence[str], None] = None

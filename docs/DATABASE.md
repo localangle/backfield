@@ -97,7 +97,7 @@ Revision **`016_agate_processed_item`** creates **`agate_processed_item`** with 
 
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 
-Revision **`026_organization_integration_secret`** adds **`backfield_organization_integration_secret`** for encrypted organization-level integration credentials (AI provider keys first).
+Revision **`026_org_integration_secret`** adds **`backfield_organization_integration_secret`** for encrypted organization-level integration credentials (AI provider keys first).
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 
