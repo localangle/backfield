@@ -3,7 +3,7 @@
  * Person / organization / work use empty-list stubs until those entities are migrated.
  */
 
-import { listCanonicalLocations } from "@/lib/stylebook-api/locations"
+import { listCanonicalLocationsLegacy } from "@/lib/stylebook-api/locations"
 import { listOrganizations, listPeople, listWorks } from "@/lib/stylebook-api/entityListStubs"
 import type { EntityConfig } from "@/lib/entityTypes"
 
@@ -56,7 +56,7 @@ async function listLocationPickerRows(
   limit: number = 100,
   offset: number = 0,
 ): Promise<{ locations: LocationPickerRow[] }> {
-  const res = await listCanonicalLocations(projectSlug, q, limit, offset)
+  const res = await listCanonicalLocationsLegacy(projectSlug, q, limit, offset)
   return {
     locations: res.canonicals.map((c) => ({
       id: c.id,

@@ -2,11 +2,12 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Link, useSearchParams } from "react-router-dom"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
+import { fetchProjects, type Project } from "@/lib/api"
 import {
   acceptCandidate,
   deferCandidate,
   getCandidateContext,
-  getCanonicalLocation,
+  getCanonicalLocationLegacy,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
   listCandidates,
@@ -157,10 +158,12 @@ function rankSimilarCandidates(rows: Candidate[], needle: string): Candidate[] {
 }
 
 export default function LocationCandidates() {
-  const { scopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const { projectScopeSlug, workflowScopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
-  const [searchParams] = useSearchParams()
-  const projectSlug = searchParams.get("project") || ""
+  const [searchParams, setSearchParams] = useSearchParams()
+  const projectSlug = projectScopeSlug
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(true)
   const [loading, setLoading] = useState(false)
   const [listTotal, setListTotal] = useState(0)
   const [listPage, setListPage] = useState(1)
@@ -221,6 +224,34 @@ export default function LocationCandidates() {
   /** Opacity transition before clearing ``linkedToast`` after auto-dismiss timer. */
   const [linkedToastLeaving, setLinkedToastLeaving] = useState(false)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
+
+  const canonicalScopeSuffix = useMemo(() => {
+    const p = new URLSearchParams()
+    if (projectSlug) p.set("project", projectSlug)
+    if (stylebookSlug) p.set("stylebook", stylebookSlug)
+    const s = p.toString()
+    return s ? `?${s}` : ""
+  }, [projectSlug, stylebookSlug])
+
+  useEffect(() => {
+    let cancelled = false
+    setProjectsLoading(true)
+    void fetchProjects()
+      .then((rows) => {
+        if (cancelled) return
+        setProjects(rows)
+      })
+      .catch((e) => {
+        console.error("Failed to fetch projects:", e)
+        if (!cancelled) setProjects([])
+      })
+      .finally(() => {
+        if (!cancelled) setProjectsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const createModalCandidate = useMemo(
     () => (createModalId === null ? undefined : candidates.find((x) => x.id === createModalId)),
@@ -575,7 +606,7 @@ export default function LocationCandidates() {
       await linkSubstrateToCanonical(c.id, projectSlug, cid)
       let canonLabel = cid
       try {
-        const canon = await getCanonicalLocation(cid, projectSlug)
+        const canon = await getCanonicalLocationLegacy(cid, projectSlug)
         canonLabel = (canon.label ?? "").trim() || cid
       } catch {
         // ignore; fall back to id
@@ -674,7 +705,7 @@ export default function LocationCandidates() {
                 <div className="text-sm text-muted-foreground">
                   Saved as{" "}
                   <Link
-                    to={`/locations/canonical/${createdToast.canonicalId}${scopeSuffix}`}
+                    to={`/locations/canonical/${createdToast.canonicalId}${canonicalScopeSuffix}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline break-words"
                   >
                     {createdToast.canonicalLabel}
@@ -736,7 +767,7 @@ export default function LocationCandidates() {
                   </span>{" "}
                   →{" "}
                   <Link
-                    to={`/locations/canonical/${linkedToast.canonicalId}${scopeSuffix}`}
+                    to={`/locations/canonical/${linkedToast.canonicalId}${canonicalScopeSuffix}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline break-words"
                   >
                     {linkedToast.canonicalLabel}
@@ -766,15 +797,42 @@ export default function LocationCandidates() {
             className="mb-3"
             items={[
               { label: crumbRoot.label, to: crumbRoot.to },
-              { label: "Locations", to: `/locations/canonical${scopeSuffix}` },
+              { label: "Locations", to: `/locations/canonical${canonicalScopeSuffix}` },
               { label: "Candidates" },
             ]}
           />
           <h1 className="text-3xl font-bold">Location candidates</h1>
         </div>
-        <Link to={`/locations/canonical${scopeSuffix}`}>
-          <Button variant="outline">Canonical locations</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground">Project</Label>
+            <Select
+              value={projectSlug}
+              onValueChange={(slug) => {
+                setSearchParams((prev) => {
+                  const next = new URLSearchParams(prev)
+                  next.set("project_scope", slug)
+                  return next
+                })
+              }}
+              disabled={projectsLoading || projects.length === 0}
+            >
+              <SelectTrigger className="w-[16rem]">
+                <SelectValue placeholder={projectsLoading ? "Loading…" : "Choose a project"} />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.slug}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Link to={`/locations/canonical${canonicalScopeSuffix}`}>
+            <Button variant="outline">Canonical locations</Button>
+          </Link>
+        </div>
       </div>
 
       <Card>

@@ -64,7 +64,7 @@ export default function ConnectionsSection({
   projectSlug,
   entityDisplayName,
 }: ConnectionsSectionProps) {
-  const { scopeSuffix } = useProjectCatalogScope()
+  const { filterScopeSuffix } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
@@ -283,7 +283,7 @@ export default function ConnectionsSection({
                     <TableCell>{conn.nature}</TableCell>
                     <TableCell>
                       <a
-                        href={getDetailUrl(otherType(conn), otherId(conn), scopeSuffix)}
+                        href={getDetailUrl(otherType(conn), otherId(conn), filterScopeSuffix)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline inline-flex items-center gap-1"

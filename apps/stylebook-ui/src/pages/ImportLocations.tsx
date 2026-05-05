@@ -122,10 +122,9 @@ function formatPropertyExample(v: unknown): string | null {
 
 export default function ImportLocations() {
   const [searchParams] = useSearchParams()
-  const { scopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const { filterScopeSuffix, stylebookSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const crumbRoot = useScopeBreadcrumbRoot()
-  const projectSlug = useMemo(() => searchParams.get("project") || "", [searchParams])
   const [step, setStep] = useState<WizardStep>("upload")
   const [geojsonText, setGeojsonText] = useState<string>("")
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
@@ -218,9 +217,12 @@ export default function ImportLocations() {
     setManualLocationTypeLabel("")
     setPlaceExtractTypesList([...PLACE_EXTRACT_LOCATION_TYPES])
     setManualLocationSelect(MANUAL_LOCATION_TYPE_NONE)
-  }, [projectSlug, stylebookSlug])
+  }, [stylebookSlug])
 
-  const backHref = useMemo(() => `/locations/canonical${scopeSuffix}`, [scopeSuffix])
+  const backHref = useMemo(
+    () => `/locations/canonical${filterScopeSuffix}`,
+    [filterScopeSuffix],
+  )
 
   const validateAndSetGeojson = (text: string): boolean => {
     const trimmed = text.trim()
@@ -261,7 +263,7 @@ export default function ImportLocations() {
     return true
   }
 
-  const canValidate = Boolean(projectSlug && parsedGeojson && step === "upload" && !analyzing)
+  const canValidate = Boolean(stylebookSlug && parsedGeojson && step === "upload" && !analyzing)
 
   const clearUploadedGeoJson = () => {
     setGeojsonText("")
@@ -459,10 +461,10 @@ export default function ImportLocations() {
                   type="button"
                   disabled={!canValidate}
                   onClick={async () => {
-                    if (!projectSlug || !parsedGeojson) return
+                    if (!stylebookSlug || !parsedGeojson) return
                     setAnalyzing(true)
                     try {
-                      const res = await analyzeImportGeoJson(projectSlug, parsedGeojson)
+                      const res = await analyzeImportGeoJson(stylebookSlug, parsedGeojson)
                       setAnalyzeResult(res)
                     } catch (e) {
                       console.error(e)
@@ -518,7 +520,7 @@ export default function ImportLocations() {
                   </Button>
                   <Button
                     type="button"
-                    disabled={!parsedGeojson || !projectSlug}
+                    disabled={!parsedGeojson || !stylebookSlug}
                     onClick={() => setStep("mapping")}
                   >
                     Continue to mapping
@@ -1048,15 +1050,15 @@ export default function ImportLocations() {
               </Button>
               <Button
                 type="button"
-                disabled={!projectSlug || !importPayload || importPayload.features.length === 0 || importing}
+                disabled={!stylebookSlug || !importPayload || importPayload.features.length === 0 || importing}
                 onClick={async () => {
-                  if (!projectSlug || !importPayload) return
+                  if (!stylebookSlug || !importPayload) return
                   setImporting(true)
                   setStep("importing")
                   try {
                     const metaPayload = buildMetaPropertyMappingsForImport(metaMappingRows)
                     const res = await importGeoJson(
-                      projectSlug,
+                      stylebookSlug,
                       importPayload,
                       {
                         label_property: mappings.labelProperty ?? null,
@@ -1128,7 +1130,7 @@ export default function ImportLocations() {
                               className="break-words font-medium text-primary underline-offset-4 hover:underline"
                               target="_blank"
                               rel="noopener noreferrer"
-                              to={`/locations/canonical/${encodeURIComponent(row.canonical_id)}${scopeSuffix}`}
+                              to={`/locations/canonical/${encodeURIComponent(row.canonical_id)}${filterScopeSuffix}`}
                             >
                               {(row.label ?? "").trim() || row.canonical_id}
                             </Link>

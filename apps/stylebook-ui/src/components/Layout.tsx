@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react"
-import { NavLink, useNavigate, useSearchParams } from "react-router-dom"
+import { NavLink, useLocation, useNavigate, useSearchParams } from "react-router-dom"
 import {
   BookOpen,
   FolderKanban,
@@ -44,6 +44,7 @@ function defaultStylebookSlugForProject(
 export default function Layout({ children, headerContent }: LayoutProps) {
   const { username, logout, isOrgAdmin } = useAuth()
   const agateBase = agateUiOrigin()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>(
@@ -53,16 +54,18 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const [orgId, setOrgId] = useState<number | null>(null)
   const navigate = useNavigate()
 
-  const projectSlug = searchParams.get("project") || ""
+  const projectScopeSlug = searchParams.get("project_scope") || ""
+  const projectFilterSlug = searchParams.get("project") || ""
   const stylebookSlug = searchParams.get(STYLEBOOK_URL_QUERY_KEY) || ""
 
   const indexQuery = useMemo(() => {
     const p = new URLSearchParams()
-    if (projectSlug) p.set("project", projectSlug)
+    if (projectScopeSlug) p.set("project_scope", projectScopeSlug)
+    if (projectFilterSlug) p.set("project", projectFilterSlug)
     if (stylebookSlug) p.set(STYLEBOOK_URL_QUERY_KEY, stylebookSlug)
     const s = p.toString()
     return s ? `?${s}` : ""
-  }, [projectSlug, stylebookSlug])
+  }, [projectScopeSlug, projectFilterSlug, stylebookSlug])
   const indexPath = indexQuery ? `/${indexQuery}` : "/"
 
   const sortedStylebooks = useMemo(() => {
@@ -74,18 +77,22 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   }, [stylebooks])
 
   const effectiveStylebookSlug = useMemo(() => {
-    if (!projectSlug || stylebooks.length === 0) return ""
+    if (stylebooks.length === 0) return ""
     if (stylebookSlug && stylebooks.some((b) => b.slug === stylebookSlug)) {
       return stylebookSlug
     }
-    return defaultStylebookSlugForProject(projects, stylebooks, projectSlug)
-  }, [projectSlug, stylebookSlug, stylebooks, projects])
+    if (projectScopeSlug) {
+      return defaultStylebookSlugForProject(projects, stylebooks, projectScopeSlug)
+    }
+    const preferred = stylebooks.find((b) => b.is_default)
+    return preferred?.slug ?? stylebooks[0].slug
+  }, [projectScopeSlug, stylebookSlug, stylebooks, projects])
 
   const activeProjectName = useMemo(() => {
-    if (!projectSlug) return null
-    const p = projects.find((x) => x.slug === projectSlug)
-    return p?.name ?? projectSlug
-  }, [projectSlug, projects])
+    if (!projectScopeSlug) return null
+    const p = projects.find((x) => x.slug === projectScopeSlug)
+    return p?.name ?? projectScopeSlug
+  }, [projectScopeSlug, projects])
   const activeProjectLabel = activeProjectName ?? "Backfield"
 
   const selectedStylebookLabel = useMemo(() => {
@@ -97,12 +104,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   }, [effectiveStylebookSlug, stylebooks])
 
   const activeWorkspaceSlug = useMemo(() => {
-    if (!projectSlug) return null
+    if (!projectScopeSlug) return null
     for (const ws of workspaceRows) {
-      if (ws.projects.some((p) => p.slug === projectSlug)) return ws.slug
+      if (ws.projects.some((p) => p.slug === projectScopeSlug)) return ws.slug
     }
     return null
-  }, [projectSlug, workspaceRows])
+  }, [projectScopeSlug, workspaceRows])
 
   useEffect(() => {
     fetchProjects()
@@ -132,17 +139,25 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   }, [orgId])
 
   useEffect(() => {
-    if (projects.length > 0 && !projectSlug) {
+    const needsProjectScope =
+      location.pathname.startsWith("/locations/candidates") ||
+      location.pathname.startsWith("/people/") ||
+      location.pathname.startsWith("/organizations/") ||
+      location.pathname.startsWith("/works/") ||
+      location.pathname.startsWith("/agents/")
+
+    if (!needsProjectScope) return
+    if (projects.length > 0 && !projectScopeSlug) {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev)
-        next.set("project", projects[0].slug)
+        next.set("project_scope", projects[0].slug)
         return next
       })
     }
-  }, [projects, projectSlug, setSearchParams])
+  }, [projects, projectScopeSlug, setSearchParams, location.pathname])
 
   useEffect(() => {
-    if (!projectSlug || stylebooks.length === 0) return
+    if (stylebooks.length === 0) return
 
     if (stylebooks.length <= 1) {
       if (stylebookSlug) {
@@ -161,11 +176,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     const known = stylebooks.some((b) => b.slug === stylebookSlug)
     if (known && stylebookSlug) return
 
-    const nextSlug = defaultStylebookSlugForProject(
-      projects,
-      stylebooks,
-      projectSlug,
-    )
+    const nextSlug = projectScopeSlug
+      ? defaultStylebookSlugForProject(projects, stylebooks, projectScopeSlug)
+      : (stylebooks.find((b) => b.is_default)?.slug ?? stylebooks[0].slug)
     if (!nextSlug || nextSlug === stylebookSlug) return
 
     setSearchParams(
@@ -176,7 +189,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
       },
       { replace: true },
     )
-  }, [projectSlug, stylebookSlug, stylebooks, projects, setSearchParams])
+  }, [projectScopeSlug, stylebookSlug, stylebooks, projects, setSearchParams])
 
   const onStylebookChange = useCallback(
     (slug: string) => {

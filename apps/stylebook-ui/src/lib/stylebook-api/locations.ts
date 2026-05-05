@@ -91,6 +91,26 @@ export async function listLocations(
 }
 
 export async function listCanonicalLocations(
+  stylebookSlug: string,
+  q?: string,
+  limit: number = 25,
+  offset: number = 0,
+  typeFilter?: string,
+  projectFilterSlug?: string,
+): Promise<PaginatedCanonicalLocationResponse> {
+  const params = new URLSearchParams()
+  if (projectFilterSlug) params.append("project", projectFilterSlug)
+  if (q) params.append("q", q)
+  if (typeFilter && typeFilter !== "all") params.append("type_filter", typeFilter)
+  params.append("limit", limit.toString())
+  params.append("offset", offset.toString())
+  return stylebookJsonFetch<PaginatedCanonicalLocationResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations?${params}`,
+  )
+}
+
+/** Legacy project-scoped canonical list (kept for project workflows like linking). */
+export async function listCanonicalLocationsLegacy(
   projectSlug: string,
   q?: string,
   limit: number = 25,
@@ -105,12 +125,26 @@ export async function listCanonicalLocations(
   return stylebookJsonFetch<PaginatedCanonicalLocationResponse>(`/v1/canonical-locations?${params}`)
 }
 
-export async function listCanonicalLocationTypes(projectSlug: string): Promise<{ types: string[] }> {
-  const params = new URLSearchParams({ project_slug: projectSlug })
-  return stylebookJsonFetch(`/v1/canonical-locations/types?${params}`)
+export async function listCanonicalLocationTypes(stylebookSlug: string): Promise<{ types: string[] }> {
+  return stylebookJsonFetch(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/types`,
+  )
 }
 
 export async function getCanonicalLocation(
+  canonicalId: string,
+  stylebookSlug: string,
+  projectFilterSlug?: string,
+): Promise<CanonicalLocation> {
+  const params = new URLSearchParams()
+  if (projectFilterSlug) params.set("project", projectFilterSlug)
+  return stylebookJsonFetch<CanonicalLocation>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(canonicalId)}?${params}`,
+  )
+}
+
+/** Legacy project-scoped canonical detail (kept for project workflows like linking). */
+export async function getCanonicalLocationLegacy(
   canonicalId: string,
   projectSlug: string,
 ): Promise<CanonicalLocation> {
@@ -134,10 +168,15 @@ export interface LinkedSubstratesResponse {
 
 export async function listCanonicalLinkedSubstrates(
   canonicalId: string,
-  projectSlug: string,
+  stylebookSlug: string,
+  projectFilterSlug?: string,
 ): Promise<LinkedSubstratesResponse> {
+  const params = new URLSearchParams()
+  if (projectFilterSlug) params.set("project", projectFilterSlug)
   return stylebookJsonFetch<LinkedSubstratesResponse>(
-    `/v1/canonical-locations/${encodeURIComponent(canonicalId)}/linked-substrates?project_slug=${encodeURIComponent(projectSlug)}`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(
+      canonicalId,
+    )}/linked-substrates?${params}`,
   )
 }
 
@@ -207,16 +246,19 @@ export async function createLocation(
 
 /** Create a catalog canonical only (no project substrate row). Prefer over legacy ``createLocation``. */
 export async function createCanonicalLocation(
-  projectSlug: string,
+  stylebookSlug: string,
   data: {
     label: string
     location_type?: string | null
     formatted_address?: string | null
     geometry_json?: Record<string, unknown>
   },
+  projectFilterSlug?: string,
 ): Promise<CanonicalLocation> {
+  const params = new URLSearchParams()
+  if (projectFilterSlug) params.set("project", projectFilterSlug)
   return stylebookJsonFetch<CanonicalLocation>(
-    `/v1/canonical-locations?project_slug=${encodeURIComponent(projectSlug)}`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations?${params}`,
     {
       method: "POST",
       body: JSON.stringify({
@@ -258,11 +300,13 @@ export async function updateLocationGeometry(
 
 export async function updateCanonicalLocationGeometry(
   canonicalId: string,
-  projectSlug: string,
+  stylebookSlug: string,
   geometryJson: Record<string, unknown> | null,
 ): Promise<{ message: string; id: string }> {
   return stylebookJsonFetch<{ message: string; id: string }>(
-    `/v1/canonical-locations/${encodeURIComponent(canonicalId)}/geometry?project_slug=${encodeURIComponent(projectSlug)}`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(
+      canonicalId,
+    )}/geometry`,
     { method: "PATCH", body: JSON.stringify({ geometry_json: geometryJson }) },
   )
 }
@@ -327,40 +371,50 @@ export async function getLocationMentions(
 
 export async function getCanonicalLocationMentions(
   canonicalId: string,
-  projectSlug: string,
+  stylebookSlug: string,
   limit: number = 50,
   offset: number = 0,
   _sort?: string,
   sortDirection: "asc" | "desc" = "desc",
+  projectFilterSlug?: string,
 ): Promise<LocationMentionsResponse> {
   const params = new URLSearchParams({
-    project_slug: projectSlug,
     limit: limit.toString(),
     offset: offset.toString(),
     sort_direction: sortDirection,
   })
+  if (projectFilterSlug) params.set("project", projectFilterSlug)
   return stylebookJsonFetch<LocationMentionsResponse>(
-    `/v1/canonical-locations/${encodeURIComponent(canonicalId)}/mentions?${params}`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(
+      canonicalId,
+    )}/mentions?${params}`,
   )
 }
 
 export async function patchCanonicalLocation(
   canonicalId: string,
-  projectSlug: string,
+  stylebookSlug: string,
   data: { label?: string; location_type?: string | null; formatted_address?: string | null },
+  projectFilterSlug?: string,
 ): Promise<CanonicalLocation> {
+  const params = new URLSearchParams()
+  if (projectFilterSlug) params.set("project", projectFilterSlug)
   return stylebookJsonFetch<CanonicalLocation>(
-    `/v1/canonical-locations/${encodeURIComponent(canonicalId)}?project_slug=${encodeURIComponent(projectSlug)}`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(
+      canonicalId,
+    )}?${params}`,
     { method: "PATCH", body: JSON.stringify(data) },
   )
 }
 
 export async function deleteCanonicalLocation(
   canonicalId: string,
-  projectSlug: string,
+  stylebookSlug: string,
 ): Promise<{ message: string; id: string; unlinked_substrate_count: number }> {
   return stylebookJsonFetch(
-    `/v1/canonical-locations/${encodeURIComponent(canonicalId)}?project_slug=${encodeURIComponent(projectSlug)}`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(
+      canonicalId,
+    )}`,
     { method: "DELETE" },
   )
 }

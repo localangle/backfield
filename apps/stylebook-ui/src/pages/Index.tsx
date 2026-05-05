@@ -16,20 +16,25 @@ import { MapPin, Users, Building2, BookOpen, Loader2 } from "lucide-react"
 
 export default function Index() {
   const navigate = useNavigate()
-  const { projectSlug, scopeSuffix, stylebookSlug } = useProjectCatalogScope()
+  const {
+    projectScopeSlug,
+    workflowScopeSuffix,
+    filterScopeSuffix,
+    stylebookSlug,
+  } = useProjectCatalogScope()
   const selectedStylebookLabel = useSelectedStylebookLabel()
   const crumbRoot = useScopeBreadcrumbRoot()
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (projectSlug) {
-      loadStats(projectSlug)
+    if (projectScopeSlug) {
+      loadStats(projectScopeSlug)
     } else {
       setLoading(false)
       setStats(null)
     }
-  }, [projectSlug, stylebookSlug])
+  }, [projectScopeSlug, stylebookSlug])
 
   const loadStats = async (slug: string) => {
     try {
@@ -45,17 +50,17 @@ export default function Index() {
 
   const handleEntityTypeClick = (type: string) => {
     if (type === "locations") {
-      navigate(`/locations/canonical${scopeSuffix}`)
+      navigate(`/locations/canonical${filterScopeSuffix}`)
     } else if (type === "people") {
-      navigate(`/people/candidates${scopeSuffix}`)
+      navigate(`/people/candidates${workflowScopeSuffix}`)
     } else if (type === "organizations") {
-      navigate(`/organizations/candidates${scopeSuffix}`)
+      navigate(`/organizations/candidates${workflowScopeSuffix}`)
     } else if (type === "works") {
-      navigate(`/works/candidates${scopeSuffix}`)
+      navigate(`/works/candidates${workflowScopeSuffix}`)
     }
   }
 
-  if (loading || !projectSlug) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -65,8 +70,81 @@ export default function Index() {
 
   if (!stats) {
     return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">Failed to load statistics</p>
+      <div className="space-y-6">
+        <div>
+          <Breadcrumbs items={[{ label: crumbRoot.label }]} className="mb-3" />
+          <h1 className="text-3xl font-bold">{selectedStylebookLabel}</h1>
+          <p className="text-muted-foreground mt-2">
+            Manage canonical entities and review candidates
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <Card
+            className="cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => handleEntityTypeClick("locations")}
+          >
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Locations</CardTitle>
+                <MapPin className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <CardDescription>Canonical places and locations</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground">
+                Canonicals are stylebook-scoped. Evidence can be filtered by project.
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="opacity-60">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">People</CardTitle>
+                <Users className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <CardDescription>Canonical people</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground">
+                Select a project to view candidates.
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="opacity-60">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Organizations</CardTitle>
+                <Building2 className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <CardDescription>Canonical organizations and institutions</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground">
+                Select a project to view candidates.
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="opacity-60">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Works</CardTitle>
+                <BookOpen className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <CardDescription>
+                Canonical works (laws, reports, books, products, artworks)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground">
+                Select a project to view candidates.
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     )
   }
