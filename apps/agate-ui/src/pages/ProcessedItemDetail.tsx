@@ -452,7 +452,7 @@ export default function ProcessedItemDetail() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             Item Information
-            <Badge className={getStatusColor(item.status)}>
+            <Badge variant="outline" className={getStatusColor(item.status)}>
               {getStatusIcon(item.status)}
               <span className="ml-1 capitalize">{item.status}</span>
             </Badge>

@@ -350,7 +350,7 @@ export default function RunsList() {
                   return (
                   <tr
                     key={run.id}
-                    className="border-b last:border-b-0 hover:bg-muted/15 transition-colors cursor-pointer"
+                    className="border-b last:border-b-0 hover:bg-muted/[0.07] transition-colors cursor-pointer"
                     onClick={() => navigate(`/runs/${run.id}`)}
                   >
                     <td className="p-4">
@@ -363,7 +363,7 @@ export default function RunsList() {
                       <div className="font-medium">{getGraphName(run.graph_id)}</div>
                     </td>
                     <td className="p-4">
-                      <Badge className={getStatusColor(run.status)}>
+                      <Badge variant="outline" className={getStatusColor(run.status)}>
                         {getStatusIcon(run.status)}
                         <span className="ml-1 capitalize">{run.status.replace(/_/g, ' ')}</span>
                       </Badge>

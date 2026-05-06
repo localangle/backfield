@@ -537,7 +537,7 @@ export default function RunDetail() {
                 {paginatedItems.map((item) => (
                   <TableRow 
                     key={item.id}
-                    className={`cursor-pointer hover:bg-muted/15 ${selectedItems.has(item.id) ? 'bg-muted' : ''}`}
+                    className={`cursor-pointer hover:bg-muted/[0.07] ${selectedItems.has(item.id) ? 'bg-muted' : ''}`}
                     onClick={() => navigate(`/runs/${runId}/items/${item.id}`)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -590,7 +590,7 @@ export default function RunDetail() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <Badge className={`${getStatusColor(item.status)} w-fit`}>
+                        <Badge variant="outline" className={`${getStatusColor(item.status)} w-fit`}>
                           {getStatusIcon(item.status)}
                           <span className="ml-1 capitalize">{item.status}</span>
                         </Badge>

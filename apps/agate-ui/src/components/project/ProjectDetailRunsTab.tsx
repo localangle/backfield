@@ -245,14 +245,14 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
                     return (
                     <tr
                       key={run.id}
-                      className="border-b last:border-b-0 hover:bg-muted/15 cursor-pointer transition-colors"
+                      className="border-b last:border-b-0 hover:bg-muted/[0.07] cursor-pointer transition-colors"
                       onClick={() => navigate(`/runs/${run.id}`)}
                     >
                       <td className="p-3 sm:p-4 align-top">
                         <div className="font-medium">{getGraphName(run.graph_id)}</div>
                       </td>
                       <td className="p-3 sm:p-4 align-top">
-                        <Badge className={getStatusColor(run.status)}>
+                        <Badge variant="outline" className={getStatusColor(run.status)}>
                           {getStatusIcon(run.status)}
                           <span className="ml-1 capitalize">{run.status.replace(/_/g, ' ')}</span>
                         </Badge>
