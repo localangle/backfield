@@ -9,6 +9,12 @@ AI_CAPABILITY_VISION = "vision"
 
 DEFAULT_AI_CURRENCY = "USD"
 
+# ``BackfieldAiCallRecord.cost_estimate_source`` — how ``estimated_cost`` was produced.
+COST_ESTIMATE_SOURCE_LITELLM = "litellm"
+COST_ESTIMATE_SOURCE_MANUAL = "manual"
+# No completion response to run ``litellm.completion_cost`` on (e.g. transport error).
+COST_ESTIMATE_SOURCE_UNAVAILABLE = "unavailable"
+
 # Organization integration secret keys (encrypted at rest; generic pattern for future vendors).
 INTEGRATION_KEY_AI_PROVIDER_OPENAI = "ai.provider.openai"
 INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC = "ai.provider.anthropic"

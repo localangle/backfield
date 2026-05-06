@@ -74,6 +74,10 @@ export interface ProcessedItemSummary {
   input_headline?: string | null
   current_node_types?: string[] | null
   is_array_splitter_item?: boolean
+  /** LiteLLM-derived estimated dollar total for this item’s tracked model calls. */
+  estimated_ai_cost?: number
+  estimated_ai_cost_incomplete?: boolean
+  estimated_ai_cost_currency?: string
 }
 
 export interface ProcessedItem {
@@ -89,6 +93,9 @@ export interface ProcessedItem {
   error: string | null
   created_at: string
   updated_at: string
+  estimated_ai_cost?: number
+  estimated_ai_cost_incomplete?: boolean
+  estimated_ai_cost_currency?: string
 }
 
 export interface Run {
@@ -106,6 +113,10 @@ export interface Run {
   items?: ProcessedItemSummary[] | null
   mapbox_api_token?: string | null
   node_outputs?: Record<string, unknown> | null
+  /** When there are no batch rows, LLM cost for the whole run (``processed_item_id`` null on call rows). */
+  whole_run_ai_cost_estimate?: number
+  whole_run_ai_cost_incomplete?: boolean
+  whole_run_ai_cost_currency?: string
 }
 
 export interface ApiKey {
@@ -171,6 +182,9 @@ interface RawProcessedItem {
   error_message: string | null
   created_at: string
   updated_at: string
+  estimated_ai_cost?: string | number | null
+  estimated_ai_cost_incomplete?: boolean
+  estimated_ai_cost_currency?: string | null
 }
 
 interface RawRun {
@@ -184,6 +198,20 @@ interface RawRun {
   created_at: string
   updated_at: string
   processed_items?: RawProcessedItem[] | null
+  whole_run_ai_cost_estimate?: string | number | null
+  whole_run_ai_cost_incomplete?: boolean
+  whole_run_ai_cost_currency?: string | null
+}
+
+function _parseCostAmount(v: unknown): number {
+  if (v === null || v === undefined) return 0
+  if (typeof v === 'number' && !Number.isNaN(v)) return v
+  const n = Number(v)
+  return Number.isNaN(n) ? 0 : n
+}
+
+function _currencyFromRaw(v: unknown, fallback: string): string {
+  return typeof v === 'string' && v.trim() ? v.trim().toUpperCase() : fallback
 }
 
 function normalizeGraph(raw: RawGraph): Graph {
@@ -218,6 +246,7 @@ function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
           st === 'timed_out'
         ? st
         : 'pending'
+  const cur = _currencyFromRaw(row.estimated_ai_cost_currency, 'USD')
   return {
     id: row.id,
     run_id: row.run_id,
@@ -232,6 +261,9 @@ function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
     input_headline: null,
     current_node_types: null,
     is_array_splitter_item: false,
+    estimated_ai_cost: _parseCostAmount(row.estimated_ai_cost),
+    estimated_ai_cost_incomplete: Boolean(row.estimated_ai_cost_incomplete),
+    estimated_ai_cost_currency: cur,
   }
 }
 
@@ -241,6 +273,10 @@ function normalizeRun(raw: RawRun): Run {
     raw.result && typeof raw.result === 'object' && !Array.isArray(raw.result)
       ? (raw.result as Record<string, unknown>)
       : null
+
+  const wrEst = _parseCostAmount(raw.whole_run_ai_cost_estimate)
+  const wrInc = Boolean(raw.whole_run_ai_cost_incomplete)
+  const wrCur = _currencyFromRaw(raw.whole_run_ai_cost_currency, 'USD')
 
   let items: ProcessedItemSummary[] = []
   if (raw.processed_items && raw.processed_items.length > 0) {
@@ -262,6 +298,9 @@ function normalizeRun(raw: RawRun): Run {
         input_headline: null,
         current_node_types: null,
         is_array_splitter_item: false,
+        estimated_ai_cost: wrEst,
+        estimated_ai_cost_incomplete: wrInc,
+        estimated_ai_cost_currency: wrCur,
       },
     ]
   } else if (st === 'completed_with_errors') {
@@ -281,6 +320,9 @@ function normalizeRun(raw: RawRun): Run {
         input_headline: null,
         current_node_types: null,
         is_array_splitter_item: false,
+        estimated_ai_cost: wrEst,
+        estimated_ai_cost_incomplete: wrInc,
+        estimated_ai_cost_currency: wrCur,
       },
     ]
   }
@@ -305,6 +347,9 @@ function normalizeRun(raw: RawRun): Run {
     items,
     node_outputs: outputs,
     mapbox_api_token: raw.mapbox_api_token ?? null,
+    whole_run_ai_cost_estimate: wrEst,
+    whole_run_ai_cost_incomplete: wrInc,
+    whole_run_ai_cost_currency: wrCur,
   }
 }
 
@@ -417,11 +462,60 @@ export async function getProjectEstimatedAiCost(
   return fetchAPI(`/projects/${projectId}/estimated-ai-cost`) as Promise<ProjectEstimatedAiCost>
 }
 
+interface RawProcessedItemDetail {
+  id: number
+  run_id: string
+  source_file: string | null
+  input: Record<string, unknown>
+  output: Record<string, unknown> | null
+  node_outputs: Record<string, unknown> | null
+  node_logs: Record<string, string[]> | null
+  status: string
+  error: string | null
+  created_at: string
+  updated_at: string
+  estimated_ai_cost?: string | number | null
+  estimated_ai_cost_incomplete?: boolean
+  estimated_ai_cost_currency?: string | null
+}
+
+function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedItem {
+  const st = raw.status
+  const uiStatus: ProcessedItem['status'] =
+    st === 'skipped'
+      ? 'skipped'
+      : st === 'pending' ||
+          st === 'running' ||
+          st === 'succeeded' ||
+          st === 'failed' ||
+          st === 'timed_out'
+        ? st
+        : 'pending'
+  const cur = _currencyFromRaw(raw.estimated_ai_cost_currency, 'USD')
+  return {
+    id: raw.id,
+    run_id: raw.run_id,
+    source_file: raw.source_file,
+    input: raw.input,
+    output: raw.output,
+    node_outputs: raw.node_outputs,
+    node_logs: raw.node_logs,
+    status: uiStatus,
+    error: raw.error,
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+    estimated_ai_cost: _parseCostAmount(raw.estimated_ai_cost),
+    estimated_ai_cost_incomplete: Boolean(raw.estimated_ai_cost_incomplete),
+    estimated_ai_cost_currency: cur,
+  }
+}
+
 export async function getProcessedItem(
   runId: string | number,
   itemId: number
 ): Promise<ProcessedItem> {
-  return (await fetchAPI(`/runs/${runId}/items/${itemId}`)) as ProcessedItem
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}`)) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
 }
 
 export interface RerunItemResponse {

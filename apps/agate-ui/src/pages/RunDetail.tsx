@@ -526,6 +526,7 @@ export default function RunDetail() {
                   <TableHead className="w-[80px]">ID</TableHead>
                   <TableHead className="w-[250px]">Source</TableHead>
                   <TableHead className="w-[120px]">Status</TableHead>
+                  <TableHead className="w-[130px] text-right">Est. cost</TableHead>
                   <TableHead className="w-[180px]">Created</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
@@ -597,6 +598,31 @@ export default function RunDetail() {
                           </span>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-right tabular-nums">
+                      <span className="inline-flex items-center justify-end gap-1">
+                        {(item.estimated_ai_cost !== undefined && item.estimated_ai_cost !== null) ||
+                        item.estimated_ai_cost_incomplete ? (
+                          <>
+                            {Number(item.estimated_ai_cost ?? 0).toLocaleString(undefined, {
+                              style: 'currency',
+                              currency: item.estimated_ai_cost_currency || 'USD',
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 6,
+                            })}
+                            {item.estimated_ai_cost_incomplete ? (
+                              <span
+                                className="text-amber-700 dark:text-amber-400"
+                                title="Some usage or pricing data was missing"
+                              >
+                                *
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatDateCentral(item.created_at)}

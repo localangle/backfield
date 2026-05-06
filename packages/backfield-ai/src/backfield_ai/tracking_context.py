@@ -10,6 +10,8 @@ from typing import Any
 from backfield_db import BackfieldAiCallRecord
 from sqlmodel import Session
 
+from backfield_ai.constants import COST_ESTIMATE_SOURCE_UNAVAILABLE
+
 
 @dataclass(frozen=True)
 class LlmAttemptTrackingContext:
@@ -62,6 +64,7 @@ def persist_llm_attempt(
     provider_request_id: str | None,
     error_type: str | None,
     error_message: str | None,
+    cost_estimate_source: str | None = None,
 ) -> None:
     ctx = current_llm_tracking_context()
     if ctx is None:
@@ -84,7 +87,7 @@ def persist_llm_attempt(
         total_tokens=total_tokens,
         estimated_cost=estimated_cost,
         currency=currency,
-        cost_estimate_source=None,
+        cost_estimate_source=cost_estimate_source or COST_ESTIMATE_SOURCE_UNAVAILABLE,
         cost_estimate_incomplete=cost_estimate_incomplete,
         latency_ms=latency_ms,
         provider_request_id=provider_request_id,

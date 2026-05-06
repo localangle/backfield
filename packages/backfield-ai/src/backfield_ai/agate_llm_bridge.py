@@ -6,6 +6,7 @@ import logging
 import time
 
 from backfield_ai.completion import LiteLLMCompletionRejectedError, completion_text_sync
+from backfield_ai.constants import COST_ESTIMATE_SOURCE_UNAVAILABLE
 from backfield_ai.json_clean import clean_json_response_text
 from backfield_ai.tracking_context import persist_llm_attempt
 
@@ -122,6 +123,7 @@ def call_llm_tracked_sync(
                 provider_request_id=None,
                 error_type=None,
                 error_message=None,
+                cost_estimate_source=result.cost_estimate_source,
             )
             logger.info(
                 "LiteLLM ok model=%s latency_ms=%s prompt_tokens=%s completion_tokens=%s "
@@ -168,6 +170,7 @@ def call_llm_tracked_sync(
                 provider_request_id=None,
                 error_type=err_type,
                 error_message=err_msg,
+                cost_estimate_source=r.cost_estimate_source,
             )
             if attempt_idx < max_retries - 1:
                 wait_time = 2**attempt_idx
@@ -204,6 +207,7 @@ def call_llm_tracked_sync(
                 provider_request_id=None,
                 error_type=err_type,
                 error_message=err_msg,
+                cost_estimate_source=COST_ESTIMATE_SOURCE_UNAVAILABLE,
             )
             if attempt_idx < max_retries - 1:
                 wait_time = 2**attempt_idx

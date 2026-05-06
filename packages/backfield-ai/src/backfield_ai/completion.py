@@ -10,6 +10,8 @@ from typing import Any
 
 import litellm
 
+from backfield_ai.constants import COST_ESTIMATE_SOURCE_LITELLM
+
 logger = logging.getLogger(__name__)
 
 # Upper bound when bumping an explicit ``max_tokens`` after empty JSON + finish_reason=length.
@@ -27,6 +29,7 @@ class LiteLLMCompletionResult:
     estimated_cost: Decimal | None
     currency: str
     cost_estimate_incomplete: bool
+    cost_estimate_source: str
     latency_ms: int
     raw_response: Any
 
@@ -150,6 +153,7 @@ def _build_completion_result(
         estimated_cost=est_cost,
         currency=currency,
         cost_estimate_incomplete=incomplete,
+        cost_estimate_source=COST_ESTIMATE_SOURCE_LITELLM,
         latency_ms=latency_ms,
         raw_response=resp,
     )

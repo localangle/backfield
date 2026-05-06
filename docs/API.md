@@ -84,7 +84,7 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 - `routers/templates.py`
   - List templates and instantiate them into project graphs.
 - `routers/runs.py`
-  - Create, list, and fetch runs; enqueue **`worker.tasks.execute_s3_batch_setup`** when the graph spec includes an **S3Input** node, otherwise **`worker.tasks.execute_agate_run`**. **`GET /runs/{id}`** includes **`processed_items`** (``agate_processed_item`` rows). **`GET /runs/{id}/items/{item_id}`** returns one item’s parsed **`input`** / **`output`** (child graph **`result_json`**).
+  - Create, list, and fetch runs; enqueue **`worker.tasks.execute_s3_batch_setup`** when the graph spec includes an **S3Input** node, otherwise **`worker.tasks.execute_agate_run`**. **`GET /runs/{id}`** includes **`processed_items`** (``agate_processed_item`` rows), each with **`estimated_ai_cost`** / **`estimated_ai_cost_incomplete`** / **`estimated_ai_cost_currency`** rolled up from **`backfield_ai_call_record`**, plus **`whole_run_ai_cost_*`** for LLM rows not tied to a batch item (single-graph runs). **`GET /runs/{id}/items/{item_id}`** returns one item’s parsed **`input`** / **`output`** (child graph **`result_json`**) and the same cost rollup fields.
 - `routers/nodes.py`
   - Surface node metadata derived from `backfield-core`.
 

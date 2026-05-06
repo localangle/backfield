@@ -10,6 +10,7 @@ from backfield_ai.completion import (
     _litellm_json_object_response_format_supported,
     completion_text_sync,
 )
+from backfield_ai.constants import COST_ESTIMATE_SOURCE_LITELLM
 
 
 class _Msg:
@@ -106,3 +107,4 @@ def test_empty_json_rejected_error_carries_tokens_and_provider(
     assert r.provider == "openai"
     assert r.provider_model_id == "gpt-5-nano"
     assert r.latency_ms >= 0
+    assert r.cost_estimate_source == COST_ESTIMATE_SOURCE_LITELLM
