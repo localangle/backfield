@@ -58,6 +58,8 @@ def _litellm_json_object_response_format_supported(litellm_model: str) -> bool:
         return True
     if m.startswith("anthropic/"):
         return True
+    if m.startswith("gemini/"):
+        return True
     return False
 
 

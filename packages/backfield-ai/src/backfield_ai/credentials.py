@@ -12,17 +12,19 @@ from sqlmodel import Session, col, select
 
 from backfield_ai.constants import (
     INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC,
+    INTEGRATION_KEY_AI_PROVIDER_GEMINI,
     INTEGRATION_KEY_AI_PROVIDER_OPENAI,
 )
 
 
 def organization_llm_api_keys(session: Session, organization_id: int) -> dict[str, str]:
-    """OPENAI / ANTHROPIC keys from organization integration secrets only."""
+    """OPENAI / ANTHROPIC / GEMINI keys from organization integration secrets only."""
     if fernet_from_env() is None:
         return {}
     org_keys = (
         INTEGRATION_KEY_AI_PROVIDER_OPENAI,
         INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC,
+        INTEGRATION_KEY_AI_PROVIDER_GEMINI,
     )
     out: dict[str, str] = {}
     org_rows = session.exec(
@@ -40,11 +42,13 @@ def organization_llm_api_keys(session: Session, organization_id: int) -> dict[st
             out["OPENAI_API_KEY"] = plain
         elif row.integration_key == INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC:
             out["ANTHROPIC_API_KEY"] = plain
+        elif row.integration_key == INTEGRATION_KEY_AI_PROVIDER_GEMINI:
+            out["GEMINI_API_KEY"] = plain
     return out
 
 
 def merge_project_and_org_llm_api_keys(session: Session, project_id: int) -> dict[str, str]:
-    """Return env-style map (OPENAI_API_KEY, ANTHROPIC_API_KEY, …).
+    """Return env-style map (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, …).
 
     Organization integration secrets provide defaults; project secrets overwrite.
     """
@@ -61,6 +65,7 @@ def merge_project_and_org_llm_api_keys(session: Session, project_id: int) -> dic
     org_keys = (
         INTEGRATION_KEY_AI_PROVIDER_OPENAI,
         INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC,
+        INTEGRATION_KEY_AI_PROVIDER_GEMINI,
     )
     org_rows = session.exec(
         select(BackfieldOrganizationIntegrationSecret).where(
@@ -77,6 +82,8 @@ def merge_project_and_org_llm_api_keys(session: Session, project_id: int) -> dic
             out["OPENAI_API_KEY"] = plain
         elif row.integration_key == INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC:
             out["ANTHROPIC_API_KEY"] = plain
+        elif row.integration_key == INTEGRATION_KEY_AI_PROVIDER_GEMINI:
+            out["GEMINI_API_KEY"] = plain
 
     proj_rows = session.exec(
         select(BackfieldProjectSecret).where(BackfieldProjectSecret.project_id == project_id)

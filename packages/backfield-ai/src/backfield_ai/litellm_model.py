@@ -10,4 +10,6 @@ def litellm_model_id(provider: str, provider_model_id: str) -> str:
         return mid
     if p == "anthropic":
         return f"anthropic/{mid}"
+    if p == "gemini":
+        return f"gemini/{mid}"
     return f"{p}/{mid}"

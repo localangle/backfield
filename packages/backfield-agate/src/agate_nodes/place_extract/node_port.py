@@ -421,6 +421,7 @@ class PlaceExtractNode:
                     timeout=effective_timeout,  # Pass timeout to call_llm as well
                     openai_api_key=ctx.get_api_key("OPENAI_API_KEY"),
                     anthropic_api_key=ctx.get_api_key("ANTHROPIC_API_KEY"),
+                    gemini_api_key=ctx.get_api_key("GEMINI_API_KEY"),
                     project_system_prompt=ctx.project_system_prompt,
                     model_config_id=place_model_config_id,
                 ),

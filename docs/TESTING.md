@@ -7,7 +7,7 @@
 2. **Integration / API smoke**
   FastAPI apps mounted via `TestClient` where no Docker is required. Run: `make test-integration`.
 3. **End-to-end (manual or CI)**
-  `make up`, then run `make smoke` or open Agate UI and **Run pipeline**. Validates Postgres, Redis, Celery, and the starter pipeline nodes together (including **DBOutput** persistence). `make smoke` runs the **General** project’s **Starter flow** graph (created by local bootstrap on first API start). Put `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (and optional geocoder keys) in repo-root `.env` so the worker and encrypted project secrets receive them, or the run will fail when those nodes call external APIs.
+  `make up`, then run `make smoke` or open Agate UI and **Run pipeline**. Validates Postgres, Redis, Celery, and the starter pipeline nodes together (including **DBOutput** persistence). `make smoke` runs the **General** project’s **Starter flow** graph (created by local bootstrap on first API start). Put `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and/or `GEMINI_API_KEY` (and optional geocoder keys) in repo-root `.env` so the worker and encrypted project secrets receive them, or the run will fail when those nodes call external APIs.
 
 ## Validation ladder
 
@@ -57,6 +57,6 @@ make lint
 make test
 ```
 
-The GitHub Actions **smoke** job brings up Compose (including **`core-api`**), waits for Core + Agate + Stylebook health, bootstraps a fixed CI user when the DB is empty, sets **`SMOKE_EMAIL` / `SMOKE_PASSWORD`**, and runs the **session-shaped** golden path. Configure at least one of **`OPENAI_API_KEY`** or **`ANTHROPIC_API_KEY`** as a [repository secret](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions); optionally add **`MAPBOX_API_TOKEN`**. The workflow writes a short-lived repo-root `.env` so `agate-api` / `worker` receive keys (same mechanism as local dev). Fork PRs from outside contributors typically cannot read those secrets, so smoke may be skipped or failed by policy.
+The GitHub Actions **smoke** job brings up Compose (including **`core-api`**), waits for Core + Agate + Stylebook health, bootstraps a fixed CI user when the DB is empty, sets **`SMOKE_EMAIL` / `SMOKE_PASSWORD`**, and runs the **session-shaped** golden path. Configure at least one of **`OPENAI_API_KEY`**, **`ANTHROPIC_API_KEY`**, or **`GEMINI_API_KEY`** as a [repository secret](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions); optionally add **`MAPBOX_API_TOKEN`**. The workflow writes a short-lived repo-root `.env` so `agate-api` / `worker` receive keys (same mechanism as local dev). Fork PRs from outside contributors typically cannot read those secrets, so smoke may be skipped or failed by policy.
 
 **Note:** `make smoke` runs the same module; GNU Make reports **exit code 2** when the recipe fails even if Python exited 1, which can obscure logs in some UIs—prefer invoking `uv run python -u tests/smoke/golden_path_stack.py` in automation when you need a clear process exit code.

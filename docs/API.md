@@ -25,9 +25,9 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
     - `POST /v1/organizations/{org_id}/ai-models` — create from **`curated_id`** (optional overrides for `name`, prices, `config_json`) or a **custom** row (`name`, `provider`, `provider_model_id`, `capabilities`, prices; generative kind only in this slice — **`embedding`** rejected). Duplicate **`name`** per org returns **409**.
     - `PATCH /v1/organizations/{org_id}/ai-models/{config_id}` — partial update (`name`, prices, `capabilities`, `config_json`, **`status`** `active` | `disabled`). Row must belong to `org_id`.
   - **Organization integration secrets** (`backfield_organization_integration_secret`): org admins manage encrypted vendor credentials. Responses never include plaintext or ciphertext — only metadata (`integration_key`, timestamps). Writes require **`MASTER_ENCRYPTION_KEY`** (same Fernet path as project secrets).
-    - `GET /v1/organizations/{org_id}/integration-secrets/ai-provider-catalog` — OpenAI and Anthropic slots with `configured` plus timestamps when present.
+    - `GET /v1/organizations/{org_id}/integration-secrets/ai-provider-catalog` — OpenAI, Anthropic, and Gemini slots with `configured` plus timestamps when present.
     - `GET /v1/organizations/{org_id}/integration-secrets` — stored rows for the org (metadata only).
-    - `PUT /v1/organizations/{org_id}/integration-secrets/{integration_key}` — JSON body `{ "value": "<secret>" }`; replaces or creates. Allowed keys in v1 include **`ai.provider.openai`** and **`ai.provider.anthropic`**.
+    - `PUT /v1/organizations/{org_id}/integration-secrets/{integration_key}` — JSON body `{ "value": "<secret>" }`; replaces or creates. Allowed keys in v1 include **`ai.provider.openai`**, **`ai.provider.anthropic`**, and **`ai.provider.gemini`** (maps to **`GEMINI_API_KEY`** for LiteLLM).
     - `DELETE /v1/organizations/{org_id}/integration-secrets/{integration_key}` — removes the stored secret (**404** if missing).
 
 **Member project access (sessions / API keys):** `org_admin` sees all org projects. Other members see projects in their assigned workspaces plus any legacy explicit `backfield_project_membership` rows for that org (see `session_project_ids_for_user` in `packages/backfield-auth`).

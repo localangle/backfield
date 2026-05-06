@@ -1088,6 +1088,8 @@ def test_integration_secrets_org_admin_encrypt_and_metadata_only(
     assert openai_row["configured"] is True
     anthropic_row = next(x for x in cat1.json() if x["provider"] == "anthropic")
     assert anthropic_row["configured"] is False
+    gemini_row = next(x for x in cat1.json() if x["provider"] == "gemini")
+    assert gemini_row["configured"] is False
 
     assert (
         client.put(

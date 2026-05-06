@@ -63,6 +63,7 @@ function normalizeCapabilityList(selected: Set<string>): string[] {
 function providerDisplayName(providerSlug: string): string {
   if (providerSlug === 'openai') return 'OpenAI'
   if (providerSlug === 'anthropic') return 'Anthropic'
+  if (providerSlug === 'gemini') return 'Gemini'
   const u = providerSlug.replace(/_/g, ' ')
   return u.slice(0, 1).toUpperCase() + u.slice(1)
 }
@@ -708,7 +709,7 @@ export default function AiModelsSettingsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {(() => {
-                      const providerOrder = ['openai', 'anthropic'] as const
+                      const providerOrder = ['openai', 'anthropic', 'gemini'] as const
                       const byProvider = new Map<string, CuratedAiModelOption[]>()
                       for (const opt of curatedOptions) {
                         const key = String(opt.provider || '').toLowerCase() || 'other'
@@ -725,6 +726,7 @@ export default function AiModelsSettingsPage() {
                       const labelFor = (p: string): string => {
                         if (p === 'openai') return 'OpenAI'
                         if (p === 'anthropic') return 'Anthropic'
+                        if (p === 'gemini') return 'Gemini'
                         return p ? p[0].toUpperCase() + p.slice(1) : 'Other'
                       }
                       return keys.map((providerKey, idx) => {

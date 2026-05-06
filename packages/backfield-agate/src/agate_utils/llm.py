@@ -1,4 +1,4 @@
-"""LLM utilities for calling OpenAI and Anthropic APIs."""
+"""LLM utilities for calling OpenAI, Anthropic, and Gemini APIs."""
 
 import anthropic
 import time
@@ -70,6 +70,7 @@ def call_llm(
     max_tokens: Optional[int] = None,
     openai_api_key: Optional[str] = None,
     anthropic_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
     timeout: float = 300.0,
     *,
@@ -92,6 +93,7 @@ def call_llm(
             explicit cap; legacy Anthropic direct calls use ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK.
         openai_api_key: OpenAI API key (required for OpenAI models)
         anthropic_api_key: Anthropic API key (required for Anthropic models)
+        gemini_api_key: Gemini API key (Google AI Studio; required for Gemini models)
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
         timeout: Request timeout in seconds (default: 300s / 5 minutes)
         model_config_id: Optional Backfield AI catalog row id for ``backfield_ai_call_record``.
@@ -120,6 +122,7 @@ def call_llm(
             max_tokens=max_tokens,
             openai_api_key=openai_api_key,
             anthropic_api_key=anthropic_api_key,
+            gemini_api_key=gemini_api_key,
             project_system_prompt=project_system_prompt,
             timeout=timeout,
             model_config_id=model_config_id,
@@ -203,7 +206,44 @@ def call_llm(
                     time.sleep(wait_time)
                 else:
                     raise Exception(f"Anthropic API call failed after {max_retries} attempts: {str(e)}")
-        
+
+    elif model.strip().lower().startswith("gemini") or model.strip().lower().startswith("gemini/"):
+        from backfield_ai.completion import completion_text_sync
+
+        key = gemini_api_key or os.getenv("GEMINI_API_KEY")
+        if not key:
+            raise ValueError(
+                "GEMINI_API_KEY must be provided for Gemini models "
+                "(configure in organization AI integrations or project keys)"
+            )
+        lm_raw = model.strip()
+        lm_model = lm_raw if "/" in lm_raw else f"gemini/{lm_raw}"
+        messages = [
+            {"role": "system", "content": system_message or ""},
+            {"role": "user", "content": prompt},
+        ]
+        for attempt in range(max_retries):
+            try:
+                result = completion_text_sync(
+                    litellm_model=lm_model,
+                    messages=messages,
+                    api_key=key,
+                    max_tokens=max_tokens,
+                    temperature=float(temperature),
+                    timeout=float(timeout),
+                    force_json_response=bool(force_json),
+                )
+                response_text = result.text.strip()
+                return _clean_json_response(response_text) if force_json else response_text
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    print(f"Gemini API call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                    print(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(f"Gemini API call failed after {max_retries} attempts: {str(e)}") from e
+
     else:
         # Default to OpenAI for unknown models
         client = _get_openai_client(openai_api_key, timeout=timeout)

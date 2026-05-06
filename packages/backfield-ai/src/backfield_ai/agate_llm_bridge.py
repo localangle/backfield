@@ -15,8 +15,11 @@ logger = logging.getLogger(__name__)
 
 def _legacy_to_litellm_model(model: str) -> str:
     m = model.strip()
+    low = m.lower()
     if m.startswith("claude"):
         return f"anthropic/{m}"
+    if low.startswith("gemini") and "/" not in m:
+        return f"gemini/{m}"
     return m
 
 
@@ -24,9 +27,13 @@ def _pick_api_key(
     litellm_model: str,
     openai_key: str | None,
     anthropic_key: str | None,
+    gemini_key: str | None,
 ) -> str | None:
-    if litellm_model.startswith("anthropic/") or litellm_model.startswith("claude"):
+    m = litellm_model.strip().lower()
+    if m.startswith("anthropic/") or m.startswith("claude"):
         return anthropic_key
+    if m.startswith("gemini/") or m.startswith("gemini-"):
+        return gemini_key
     return openai_key
 
 
@@ -39,6 +46,7 @@ def call_llm_tracked_sync(
     temperature: float,
     openai_api_key: str | None,
     anthropic_api_key: str | None,
+    gemini_api_key: str | None,
     project_system_prompt: str | None,
     timeout: float,
     max_tokens: int | None = None,
@@ -70,7 +78,7 @@ def call_llm_tracked_sync(
         {"role": "user", "content": prompt},
     ]
 
-    api_key = _pick_api_key(lm_model, openai_api_key, anthropic_api_key)
+    api_key = _pick_api_key(lm_model, openai_api_key, anthropic_api_key, gemini_api_key)
     if not api_key:
         raise ValueError("No API key available for the selected model.")
 

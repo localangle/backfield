@@ -18,17 +18,20 @@ COST_ESTIMATE_SOURCE_UNAVAILABLE = "unavailable"
 # Organization integration secret keys (encrypted at rest; generic pattern for future vendors).
 INTEGRATION_KEY_AI_PROVIDER_OPENAI = "ai.provider.openai"
 INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC = "ai.provider.anthropic"
+INTEGRATION_KEY_AI_PROVIDER_GEMINI = "ai.provider.gemini"
 
 ORG_AI_PROVIDER_INTEGRATION_KEYS: frozenset[str] = frozenset(
     {
         INTEGRATION_KEY_AI_PROVIDER_OPENAI,
         INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC,
+        INTEGRATION_KEY_AI_PROVIDER_GEMINI,
     }
 )
 
 AI_PROVIDER_SLUG_BY_INTEGRATION_KEY: dict[str, str] = {
     INTEGRATION_KEY_AI_PROVIDER_OPENAI: "openai",
     INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC: "anthropic",
+    INTEGRATION_KEY_AI_PROVIDER_GEMINI: "gemini",
 }
 
 # Project-level default model roles (graph nodes resolve these at execution time).

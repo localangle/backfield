@@ -525,8 +525,14 @@ def run_org_model_connection_test(
         api_key = keys.get("OPENAI_API_KEY")
     elif prov == "anthropic":
         api_key = keys.get("ANTHROPIC_API_KEY")
+    elif prov == "gemini":
+        api_key = keys.get("GEMINI_API_KEY")
     else:
-        api_key = keys.get("OPENAI_API_KEY") or keys.get("ANTHROPIC_API_KEY")
+        api_key = (
+            keys.get("OPENAI_API_KEY")
+            or keys.get("ANTHROPIC_API_KEY")
+            or keys.get("GEMINI_API_KEY")
+        )
 
     if not api_key:
         raise HTTPException(
