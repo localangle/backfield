@@ -957,7 +957,7 @@ def test_ai_models_catalog_org_admin_flow(client: TestClient) -> None:
 
     dup = client.post(
         f"/v1/organizations/{org_id}/ai-models",
-        json={"curated_id": "openai:gpt-4o-mini", "name": "Fast checks"},
+        json={"curated_id": "openai:gpt-5-mini", "name": "Fast checks"},
     )
     assert dup.status_code == 409
 

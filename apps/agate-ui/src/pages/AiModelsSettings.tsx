@@ -86,6 +86,8 @@ export default function AiModelsSettingsPage() {
   const [presetCurrency, setPresetCurrency] = useState('USD')
   const [presetPriceIn, setPresetPriceIn] = useState('')
   const [presetPriceOut, setPresetPriceOut] = useState('')
+  const [presetPriceInAuto, setPresetPriceInAuto] = useState('')
+  const [presetPriceOutAuto, setPresetPriceOutAuto] = useState('')
 
   const [customName, setCustomName] = useState('')
   const [customProvider, setCustomProvider] = useState('')
@@ -199,14 +201,45 @@ export default function AiModelsSettingsPage() {
         const nextCur = (opt.currency ?? 'USD').trim().toUpperCase()
         if (nextCur) setPresetCurrency(nextCur)
       }
-      if (presetPriceIn.trim() === '' && opt.input_token_price != null) {
-        setPresetPriceIn(String(opt.input_token_price))
+      const fmtTokenPrice = (v: unknown): string => {
+        if (v === null || v === undefined) return ''
+        const n = Number(v)
+        if (!Number.isFinite(n)) return String(v)
+        // Prevent scientific notation; keep enough precision for token pricing.
+        const fixed = n.toLocaleString(undefined, {
+          useGrouping: false,
+          maximumFractionDigits: 18,
+        })
+        // Trim trailing zeros (and trailing '.' if needed).
+        return fixed.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.0+$/g, '').replace(/\.$/g, '')
       }
-      if (presetPriceOut.trim() === '' && opt.output_token_price != null) {
-        setPresetPriceOut(String(opt.output_token_price))
+
+      const nextIn = fmtTokenPrice(opt.input_token_price)
+      const nextOut = fmtTokenPrice(opt.output_token_price)
+
+      const canOverwriteIn =
+        presetPriceIn.trim() === '' || presetPriceIn === presetPriceInAuto
+      const canOverwriteOut =
+        presetPriceOut.trim() === '' || presetPriceOut === presetPriceOutAuto
+
+      if (canOverwriteIn) {
+        setPresetPriceIn(nextIn)
+        setPresetPriceInAuto(nextIn)
+      }
+      if (canOverwriteOut) {
+        setPresetPriceOut(nextOut)
+        setPresetPriceOutAuto(nextOut)
       }
     }
-  }, [presetCuratedId, curatedOptions, presetCurrency, presetPriceIn, presetPriceOut])
+  }, [
+    presetCuratedId,
+    curatedOptions,
+    presetCurrency,
+    presetPriceIn,
+    presetPriceOut,
+    presetPriceInAuto,
+    presetPriceOutAuto,
+  ])
 
   function resetAddForm() {
     setAddTab('preset')
@@ -214,6 +247,8 @@ export default function AiModelsSettingsPage() {
     setPresetCurrency('USD')
     setPresetPriceIn('')
     setPresetPriceOut('')
+    setPresetPriceInAuto('')
+    setPresetPriceOutAuto('')
     setCustomName('')
     setCustomProvider('')
     setCustomProviderModelId('')
@@ -745,13 +780,21 @@ export default function AiModelsSettingsPage() {
                   <Label htmlFor="preset-pin" className="text-xs">
                     Input usage price (optional)
                   </Label>
-                  <Input id="preset-pin" value={presetPriceIn} onChange={(e) => setPresetPriceIn(e.target.value)} />
+                  <Input
+                    id="preset-pin"
+                    value={presetPriceIn}
+                    onChange={(e) => setPresetPriceIn(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="preset-pout" className="text-xs">
                     Output usage price (optional)
                   </Label>
-                  <Input id="preset-pout" value={presetPriceOut} onChange={(e) => setPresetPriceOut(e.target.value)} />
+                  <Input
+                    id="preset-pout"
+                    value={presetPriceOut}
+                    onChange={(e) => setPresetPriceOut(e.target.value)}
+                  />
                 </div>
               </div>
             </TabsContent>

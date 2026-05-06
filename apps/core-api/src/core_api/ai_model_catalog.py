@@ -96,18 +96,18 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="GPT-5.5",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
-    "openai:gpt-5.5-pro": CuratedAiModelTemplate(
-        template_id="openai:gpt-5.5-pro",
+    "openai:gpt-5.5-mini": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.5-mini",
         provider="openai",
-        provider_model_id="gpt-5.5-pro",
-        label="GPT-5.5 Pro",
+        provider_model_id="gpt-5.5-mini",
+        label="GPT-5.5 Mini",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
-    "openai:gpt-4o-mini": CuratedAiModelTemplate(
-        template_id="openai:gpt-4o-mini",
+    "openai:gpt-5.5-nano": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.5-nano",
         provider="openai",
-        provider_model_id="gpt-4o-mini",
-        label="GPT-4o Mini",
+        provider_model_id="gpt-5.5-nano",
+        label="GPT-5.5 Nano",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
     # Anthropic (recent generations).
