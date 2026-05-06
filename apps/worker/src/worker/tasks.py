@@ -34,6 +34,9 @@ from worker.nodes.db_output import run_db_output
 
 logger = logging.getLogger(__name__)
 
+# Must match ``apps/agate-api`` cancel handler so workers stop after ``POST /runs/{id}/cancel``.
+_RUN_CANCELLED_MESSAGE = "Run cancelled by user"
+
 celery_app = Celery(
     "agate_worker",
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
@@ -146,9 +149,16 @@ def execute_agate_run(run_id: str) -> None:
             session.commit()
             return
 
+        if run.status != "pending":
+            return
+
         run.status = "running"
         session.add(run)
         session.commit()
+
+        run = session.get(AgateRun, run_id)
+        if not run or run.status != "running":
+            return
 
         try:
             spec = GraphSpec.model_validate_json(graph.spec_json)
@@ -177,13 +187,24 @@ def execute_agate_run(run_id: str) -> None:
                     )
             finally:
                 reset_llm_tracking_context(track_tok)
+            run = session.get(AgateRun, run_id)
+            if not run or run.status != "running":
+                return
             run.status = "succeeded"
             run.result_json = json.dumps(outputs)
             run.error_message = None
         except Exception as e:
+            run = session.get(AgateRun, run_id)
+            if run is None:
+                return
+            if run.error_message == _RUN_CANCELLED_MESSAGE:
+                return
             run.status = "failed"
             run.error_message = str(e)
             run.result_json = None
+        run = session.get(AgateRun, run_id)
+        if run is None:
+            return
         run.updated_at = datetime.now(UTC)
         session.add(run)
         session.commit()
@@ -205,10 +226,17 @@ def execute_s3_batch_setup(run_id: str) -> None:
             session.commit()
             return
 
+        if run.status != "pending":
+            return
+
         run.status = "running"
         run.updated_at = datetime.now(UTC)
         session.add(run)
         session.commit()
+
+        run = session.get(AgateRun, run_id)
+        if not run or run.status != "running":
+            return
 
         try:
             spec = GraphSpec.model_validate_json(graph.spec_json)
@@ -375,6 +403,8 @@ def execute_processed_item(item_id: int) -> None:
     with Session(engine) as session:
         item = session.get(AgateProcessedItem, item_id)
         if not item:
+            return
+        if item.status != "running":
             return
         run = session.get(AgateRun, item.run_id)
         if not run:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -26,6 +26,9 @@ from sqlalchemy import asc, desc
 from sqlmodel import Session, select
 
 DEFAULT_AI_COST_CURRENCY = "USD"
+
+# Matches worker checks — parent run marked failed with this message when the user stops a run.
+_RUN_CANCELLED_MESSAGE = "Run cancelled by user"
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -426,29 +429,19 @@ def get_run_processed_item(
     raise HTTPException(404, "Processed item not found")
 
 
-@router.get("/{run_id}", response_model=RunOut)
-def get_run(
-    run_id: str,
-    session: Session = Depends(get_session),
-    auth: dict[str, Any] = Depends(get_auth),
-):
-    r = session.get(AgateRun, run_id)
-    if not r:
-        raise HTTPException(404, "Run not found")
+def _serialize_run(session: Session, r: AgateRun) -> RunOut:
+    """Build ``RunOut`` for ``GET /runs/{id}`` and ``POST /runs/{id}/cancel`` responses."""
     pid = _graph_project_id(session, r.graph_id)
-    if pid:
-        require_project_access(session, auth, pid)
     result = None
     if r.result_json:
         try:
             result = json.loads(r.result_json)
         except json.JSONDecodeError:
             result = {"raw": r.result_json}
-    pid = _graph_project_id(session, r.graph_id)
-    by_item, null_b, wr_currency = _rollup_ai_costs_for_run(session, run_id)
+    by_item, null_b, wr_currency = _rollup_ai_costs_for_run(session, r.id)
     null_cost, null_incomplete = null_b
     processed = _processed_items_for_run(
-        session, run_id, cost_by_item=by_item, currency=wr_currency
+        session, r.id, cost_by_item=by_item, currency=wr_currency
     )
     return RunOut(
         id=r.id,
@@ -465,6 +458,72 @@ def get_run(
         whole_run_ai_cost_incomplete=null_incomplete,
         whole_run_ai_cost_currency=wr_currency,
     )
+
+
+@router.post("/{run_id}/cancel", response_model=RunOut)
+def cancel_run(
+    run_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    """Mark a pending or running run as stopped and fail in-flight batch items.
+
+    Workers respect the updated row so graph execution can exit before writing success.
+    """
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+
+    if r.status not in ("pending", "running"):
+        raise HTTPException(
+            400,
+            detail=(
+                f"Cannot cancel run with status '{r.status}'. "
+                "Only pending or running runs can be stopped."
+            ),
+        )
+
+    items = list(
+        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
+    )
+    now = datetime.now(UTC)
+    for item in items:
+        if item.status == "pending":
+            item.status = "failed"
+            item.error_message = _RUN_CANCELLED_MESSAGE
+            item.updated_at = now
+            session.add(item)
+        elif item.status == "running":
+            item.status = "failed"
+            item.error_message = _RUN_CANCELLED_MESSAGE + " (was running)"
+            item.updated_at = now
+            session.add(item)
+
+    r.status = "failed"
+    r.error_message = _RUN_CANCELLED_MESSAGE
+    r.updated_at = now
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+    return _serialize_run(session, r)
+
+
+@router.get("/{run_id}", response_model=RunOut)
+def get_run(
+    run_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+    return _serialize_run(session, r)
 
 
 @router.get("/{run_id}/estimated-ai-cost", response_model=RunEstimatedAiCostOut)

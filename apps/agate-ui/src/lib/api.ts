@@ -532,8 +532,11 @@ export async function rerunProcessedItem(
   throw new Error('Rerun is not available in Backfield yet')
 }
 
-export async function cancelRun(_runId: string | number): Promise<Run> {
-  throw new Error('Cancel run is not available in Backfield yet')
+export async function cancelRun(runId: string | number): Promise<Run> {
+  const raw = (await fetchAPI(`/runs/${runId}/cancel`, {
+    method: 'POST',
+  })) as RawRun
+  return normalizeRun(raw)
 }
 
 export async function checkHealth(): Promise<{ ok: boolean }> {
