@@ -16,6 +16,7 @@ from backfield_db import BackfieldAiModelConfig, BackfieldOrganizationIntegratio
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 
@@ -86,6 +87,13 @@ class IntegrationSecretCreatedOut(BaseModel):
     updated_at: datetime
 
 
+class AiCredentialLinkedCatalogModelOut(BaseModel):
+    """Organization catalog row using this credential."""
+
+    id: str
+    name: str
+
+
 class AiCredentialCatalogEntryOut(BaseModel):
     integration_secret_id: int | None = None
     integration_key: str
@@ -94,8 +102,7 @@ class AiCredentialCatalogEntryOut(BaseModel):
     configured: bool
     display_name: str | None = None
     has_api_base: bool = False
-    assigned_model_config_id: str | None = None
-    assigned_model_name: str | None = None
+    linked_catalog_models: list[AiCredentialLinkedCatalogModelOut] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -131,23 +138,12 @@ def integration_keys_loaded(
     return {r.integration_key: r for r in rows}
 
 
-def _assigned_model_for_integration_secret(
-    session: Session, integration_secret_id: int
-) -> BackfieldAiModelConfig | None:
-    return session.exec(
-        select(BackfieldAiModelConfig).where(
-            BackfieldAiModelConfig.integration_secret_id == integration_secret_id,
-        )
-    ).first()
-
-
 def assert_integration_secret_assignable_for_catalog_model(
     session: Session,
     organization_id: int,
     integration_secret_id: int,
-    *,
-    exclude_model_config_id: str | None,
 ) -> BackfieldOrganizationIntegrationSecret:
+    """Ensure the secret belongs to this org and is an ``ai.credential.*`` row."""
     row = session.get(BackfieldOrganizationIntegrationSecret, integration_secret_id)
     if row is None or int(row.organization_id) != organization_id:
         raise HTTPException(status_code=404, detail="Saved credential not found")
@@ -155,17 +151,6 @@ def assert_integration_secret_assignable_for_catalog_model(
         raise HTTPException(
             status_code=400,
             detail="Catalog models must use a credential you added for your organization.",
-        )
-    stmt = select(BackfieldAiModelConfig).where(
-        BackfieldAiModelConfig.integration_secret_id == integration_secret_id,
-    )
-    if exclude_model_config_id:
-        stmt = stmt.where(BackfieldAiModelConfig.id != exclude_model_config_id)
-    conflict = session.exec(stmt).first()
-    if conflict is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="That credential is already linked to another model.",
         )
     return row
 
@@ -190,7 +175,19 @@ def list_ai_credentials_catalog_entries(
     for row in custom_rows:
         rid = row.id
         sid = int(rid) if rid is not None else None
-        assign = _assigned_model_for_integration_secret(session, sid) if sid is not None else None
+        linked_models: list[AiCredentialLinkedCatalogModelOut] = []
+        if sid is not None:
+            linked_rows = session.exec(
+                select(BackfieldAiModelConfig)
+                .where(
+                    BackfieldAiModelConfig.organization_id == organization_id,
+                    BackfieldAiModelConfig.integration_secret_id == sid,
+                )
+                .order_by(col(BackfieldAiModelConfig.name))
+            ).all()
+            linked_models = [
+                AiCredentialLinkedCatalogModelOut(id=r.id, name=r.name) for r in linked_rows
+            ]
         dn = None
         if row.credential_display_name:
             raw_dn = str(row.credential_display_name).strip()
@@ -205,8 +202,7 @@ def list_ai_credentials_catalog_entries(
                 configured=True,
                 display_name=dn,
                 has_api_base=has_ab,
-                assigned_model_config_id=str(assign.id) if assign else None,
-                assigned_model_name=str(assign.name) if assign else None,
+                linked_catalog_models=linked_models,
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
@@ -425,38 +421,39 @@ def delete_org_integration_secret(
     session: Session, organization_id: int, integration_key: str
 ) -> None:
     key = integration_key.strip()
-    if is_built_in_ai_provider_integration_key(key):
-        row = session.exec(
-            select(BackfieldOrganizationIntegrationSecret).where(
-                BackfieldOrganizationIntegrationSecret.organization_id == organization_id,
-                BackfieldOrganizationIntegrationSecret.integration_key == key,
-            )
-        ).first()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Secret not found")
+    if not (
+        is_built_in_ai_provider_integration_key(key) or is_custom_ai_credential_integration_key(key)
+    ):
+        raise HTTPException(status_code=400, detail="Unsupported integration_key")
+
+    row = session.exec(
+        select(BackfieldOrganizationIntegrationSecret).where(
+            BackfieldOrganizationIntegrationSecret.organization_id == organization_id,
+            BackfieldOrganizationIntegrationSecret.integration_key == key,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Secret not found")
+    rid = row.id
+    if rid is None:
+        raise HTTPException(status_code=404, detail="Secret not found")
+
+    from core_api.ai_model_catalog import purge_org_model_config_session
+
+    linked = session.exec(
+        select(BackfieldAiModelConfig).where(
+            BackfieldAiModelConfig.organization_id == organization_id,
+            BackfieldAiModelConfig.integration_secret_id == int(rid),
+        )
+    ).all()
+    try:
+        for m in linked:
+            purge_org_model_config_session(session, organization_id=organization_id, config_id=m.id)
         session.delete(row)
         session.commit()
-        return
-
-    if is_custom_ai_credential_integration_key(key):
-        row = session.exec(
-            select(BackfieldOrganizationIntegrationSecret).where(
-                BackfieldOrganizationIntegrationSecret.organization_id == organization_id,
-                BackfieldOrganizationIntegrationSecret.integration_key == key,
-            )
-        ).first()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Secret not found")
-        rid = row.id
-        if rid is not None:
-            assign = _assigned_model_for_integration_secret(session, int(rid))
-            if assign is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Unlink or delete the catalog model that uses this credential first.",
-                )
-        session.delete(row)
-        session.commit()
-        return
-
-    raise HTTPException(status_code=400, detail="Unsupported integration_key")
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Could not remove this credential (try again or contact support)",
+        ) from None

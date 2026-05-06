@@ -496,10 +496,6 @@ class BackfieldAiModelConfig(SQLModel, table=True):
             "status",
             "model_kind",
         ),
-        UniqueConstraint(
-            "integration_secret_id",
-            name="uq_bf_ai_model_integration_secret_id",
-        ),
         Index(
             "ix_bf_ai_model_integration_secret",
             "integration_secret_id",

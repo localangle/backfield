@@ -181,6 +181,12 @@ export async function patchOrganizationAiModel(
   })
 }
 
+export async function deleteOrganizationAiModel(orgId: number, configId: string): Promise<void> {
+  await jsonFetch(`/v1/organizations/${orgId}/ai-models/${encodeURIComponent(configId)}`, {
+    method: "DELETE",
+  })
+}
+
 export async function testOrganizationAiModelConnection(
   orgId: number,
   configId: string,
@@ -191,7 +197,12 @@ export async function testOrganizationAiModelConnection(
   )
 }
 
-/** Preset provider slots plus saved custom vendor credentials (metadata only). */
+/** Saved vendor credentials and catalog linkage metadata (no secret values). */
+export interface AiCredentialLinkedCatalogModel {
+  id: string
+  name: string
+}
+
 export interface AiCredentialCatalogEntry {
   integration_secret_id: number | null
   integration_key: string
@@ -200,8 +211,7 @@ export interface AiCredentialCatalogEntry {
   configured: boolean
   display_name?: string | null
   has_api_base: boolean
-  assigned_model_config_id?: string | null
-  assigned_model_name?: string | null
+  linked_catalog_models: AiCredentialLinkedCatalogModel[]
   created_at: string | null
   updated_at: string | null
 }

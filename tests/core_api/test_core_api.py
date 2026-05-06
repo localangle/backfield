@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from decimal import Decimal
+from urllib.parse import quote
 
 import pytest
 from backfield_db import (
@@ -992,6 +993,37 @@ def test_ai_models_catalog_org_admin_flow(
     assert patched.json()["status"] == "disabled"
 
 
+def test_ai_models_org_admin_can_delete_catalog_model(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "delaimodel@example.com", "password": "delaimodel-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "delaimodel@example.com", "password": "delaimodel-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    created = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={"curated_id": "openai:gpt-5-nano", "name": "Remove me"},
+    )
+    assert created.status_code == 200
+    cfg_id = created.json()["id"]
+    r = client.delete(f"/v1/organizations/{org_id}/ai-models/{cfg_id}")
+    assert r.status_code == 204
+    listed = client.get(f"/v1/organizations/{org_id}/ai-models")
+    assert listed.status_code == 200
+    assert listed.json() == []
+
+    bogus_id = "00000000-0000-0000-0000-000000000099"
+    missing = client.delete(f"/v1/organizations/{org_id}/ai-models/{bogus_id}")
+    assert missing.status_code == 404
+
+
 def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
     client.post(
         "/v1/bootstrap/first-user",
@@ -1028,6 +1060,9 @@ def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
         json={"curated_id": "openai:gpt-5-mini", "name": "Should fail"},
     )
     assert r.status_code == 403
+
+    r_del = client.delete(f"/v1/organizations/{org_id}/ai-models/not-a-real-id")
+    assert r_del.status_code == 403
 
     r2 = client.post(
         f"/v1/organizations/{org_id}/integration-secrets",
@@ -1149,6 +1184,108 @@ def test_integration_secrets_org_admin_encrypt_and_metadata_only(
         ).status_code
         == 404
     )
+
+
+def test_integration_secrets_delete_credential_removes_linked_catalog_models(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "credcascade@example.com", "password": "credcascade-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "credcascade@example.com", "password": "credcascade-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    cred = client.post(
+        f"/v1/organizations/{org_id}/integration-secrets",
+        json={"value": "sk-test-delete-cascade", "display_name": "Cascade cred"},
+    )
+    assert cred.status_code == 200
+    cred_body = cred.json()
+    secret_id = cred_body["integration_secret_id"]
+    integration_key = cred_body["integration_key"]
+    model_a = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "name": "Uses cascade cred A",
+            "litellm_model": "openai/gpt-4o-mini",
+            "integration_secret_id": secret_id,
+            "capabilities": ["text"],
+        },
+    )
+    assert model_a.status_code == 200
+    model_b = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "name": "Uses cascade cred B",
+            "litellm_model": "anthropic/claude-3-haiku-20240307",
+            "integration_secret_id": secret_id,
+            "capabilities": ["text"],
+        },
+    )
+    assert model_b.status_code == 200
+    enc = quote(integration_key, safe="")
+    r_del = client.delete(f"/v1/organizations/{org_id}/integration-secrets/{enc}")
+    assert r_del.status_code == 204
+    listed = client.get(f"/v1/organizations/{org_id}/ai-models")
+    assert listed.status_code == 200
+    assert listed.json() == []
+
+
+def test_ai_models_org_admin_two_models_can_share_one_credential(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "sharecred@example.com", "password": "sharecred-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "sharecred@example.com", "password": "sharecred-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    cred = client.post(
+        f"/v1/organizations/{org_id}/integration-secrets",
+        json={"value": "sk-shared-by-two-models", "display_name": "Shared"},
+    )
+    assert cred.status_code == 200
+    secret_id = cred.json()["integration_secret_id"]
+    first = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "name": "Shared cred model one",
+            "litellm_model": "openai/gpt-4o-mini",
+            "integration_secret_id": secret_id,
+            "capabilities": ["text"],
+        },
+    )
+    assert first.status_code == 200
+    second = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "name": "Shared cred model two",
+            "litellm_model": "openai/gpt-4o",
+            "integration_secret_id": secret_id,
+            "capabilities": ["text"],
+        },
+    )
+    assert second.status_code == 200
+    assert first.json()["integration_secret_id"] == secret_id
+    assert second.json()["integration_secret_id"] == secret_id
+    cat = client.get(f"/v1/organizations/{org_id}/integration-secrets/catalog")
+    assert cat.status_code == 200
+    rows = cat.json()
+    assert len(rows) == 1
+    linked = rows[0]["linked_catalog_models"]
+    assert len(linked) == 2
+    names = {x["name"] for x in linked}
+    assert names == {"Shared cred model one", "Shared cred model two"}
 
 
 def test_integration_secrets_member_cannot_mutate(

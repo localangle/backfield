@@ -11,6 +11,7 @@ from core_api.ai_model_catalog import (
     AiModelConfigPatchBody,
     CuratedAiModelOptionOut,
     create_org_model_config,
+    delete_org_model_config,
     list_curated_options_out,
     list_org_model_configs,
     patch_org_model_config,
@@ -64,6 +65,17 @@ def patch_organization_ai_model(
 ) -> AiModelConfigOut:
     require_org_admin(session, auth, org_id)
     return patch_org_model_config(session, organization_id=org_id, config_id=config_id, body=body)
+
+
+@router.delete("/{org_id}/ai-models/{config_id}", status_code=204)
+def delete_organization_ai_model(
+    org_id: int,
+    config_id: str,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> None:
+    require_org_admin(session, auth, org_id)
+    delete_org_model_config(session, organization_id=org_id, config_id=config_id)
 
 
 @router.post("/{org_id}/ai-models/{config_id}/test-connection", response_model=AiModelConfigOut)

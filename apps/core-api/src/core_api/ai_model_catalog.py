@@ -17,7 +17,13 @@ from backfield_ai.constants import (
     DEFAULT_AI_CURRENCY,
 )
 from backfield_ai.litellm_model import effective_litellm_model_row, litellm_model_id
-from backfield_db import BackfieldAiModelConfig, BackfieldOrganizationIntegrationSecret
+from backfield_db import (
+    BackfieldAiCallRecord,
+    BackfieldAiDefaultModelRole,
+    BackfieldAiModelConfig,
+    BackfieldAiProjectModelOverride,
+    BackfieldOrganizationIntegrationSecret,
+)
 from backfield_db.crypto import decrypt_secret
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -396,6 +402,40 @@ def get_org_model_config(
     return row
 
 
+def purge_org_model_config_session(
+    session: Session, *, organization_id: int, config_id: str
+) -> None:
+    """Remove one catalog row in-session (no commit). Caller commits."""
+    row = get_org_model_config(session, organization_id=organization_id, config_id=config_id)
+    pk = row.id
+    ov_where = BackfieldAiProjectModelOverride.model_config_id == pk
+    for ov in session.exec(select(BackfieldAiProjectModelOverride).where(ov_where)).all():
+        session.delete(ov)
+    dr_where = BackfieldAiDefaultModelRole.model_config_id == pk
+    for dr in session.exec(select(BackfieldAiDefaultModelRole).where(dr_where)).all():
+        session.delete(dr)
+    cr_where = BackfieldAiCallRecord.model_config_id == pk
+    for rec in session.exec(select(BackfieldAiCallRecord).where(cr_where)).all():
+        rec.model_config_id = None
+        session.add(rec)
+    session.delete(row)
+
+
+def delete_org_model_config(session: Session, *, organization_id: int, config_id: str) -> None:
+    """Remove catalog row; clear overrides and default-role picks; detach call-record FK."""
+    try:
+        purge_org_model_config_session(
+            session, organization_id=organization_id, config_id=config_id
+        )
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Could not remove this model (try again or contact support)",
+        ) from None
+
+
 def create_org_model_config(
     session: Session,
     organization_id: int,
@@ -432,7 +472,6 @@ def create_org_model_config(
                 session,
                 organization_id,
                 int(sid_opt),
-                exclude_model_config_id=None,
             )
             integration_sid = int(sid_opt)
         if body.provider is not None and body.provider.strip().lower() != provider:
@@ -482,7 +521,6 @@ def create_org_model_config(
             session,
             organization_id,
             int(cid_in),
-            exclude_model_config_id=None,
         )
         provider, provider_model_id = _split_litellm_route_for_storage(litellm_route)
         integration_sid = int(cid_in)
@@ -607,7 +645,6 @@ def patch_org_model_config(
             session,
             organization_id,
             new_sid,
-            exclude_model_config_id=config_id,
         )
         row.integration_secret_id = new_sid
 

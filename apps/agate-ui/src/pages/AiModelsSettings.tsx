@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   createOrganizationAiCredential,
   createOrganizationAiModel,
+  deleteOrganizationAiModel,
   deleteOrganizationIntegrationSecret,
   fetchMe,
   listAiCredentialsCatalog,
@@ -72,6 +73,18 @@ function customCredentialSelectLabel(c: AiCredentialCatalogEntry): string {
   return base
 }
 
+function credentialLinkedModelsSummary(entry: AiCredentialCatalogEntry): string {
+  const models = entry.linked_catalog_models ?? []
+  if (models.length === 0) return 'Not linked to a model yet'
+  if (models.length === 1) return `Linked to model: ${models[0].name}`
+  const preview = models
+    .slice(0, 3)
+    .map((m) => m.name)
+    .join(', ')
+  const tail = models.length > 3 ? ` (+${models.length - 3} more)` : ''
+  return `Linked to ${models.length} models: ${preview}${tail}`
+}
+
 export default function AiModelsSettingsPage() {
   const { showConfirm, showError, showMessage } = useAppMessage()
   const [orgId, setOrgId] = useState<number | null>(null)
@@ -81,6 +94,7 @@ export default function AiModelsSettingsPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [editRow, setEditRow] = useState<AiModelConfigRow | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const [curatedOptions, setCuratedOptions] = useState<CuratedAiModelOption[]>([])
@@ -118,25 +132,19 @@ export default function AiModelsSettingsPage() {
   const [vendorCredApiBase, setVendorCredApiBase] = useState('')
   const [vendorCredSecret, setVendorCredSecret] = useState('')
   const [vendorCredSaving, setVendorCredSaving] = useState(false)
+  const [removingCredentialKey, setRemovingCredentialKey] = useState<string | null>(null)
 
   const [credentialCatalog, setCredentialCatalog] = useState<AiCredentialCatalogEntry[]>([])
   const [credentialsError, setCredentialsError] = useState<string | null>(null)
 
   const credentialsAvailableForNewModels = useMemo(
-    () => credentialCatalog.filter((e) => e.integration_secret_id != null && !e.assigned_model_config_id),
+    () => credentialCatalog.filter((e) => e.integration_secret_id != null),
     [credentialCatalog],
   )
 
   const editCredentialChoices = useMemo(() => {
     if (!editRow) return []
-    const sid = editRow.integration_secret_id
-    return credentialCatalog.filter(
-      (e) =>
-        e.integration_secret_id != null &&
-        (!e.assigned_model_config_id ||
-          e.assigned_model_config_id === editRow.id ||
-          (sid != null && String(e.integration_secret_id) === String(sid))),
-    )
+    return credentialCatalog.filter((e) => e.integration_secret_id != null)
   }, [credentialCatalog, editRow])
 
   const refreshOrgAiData = useCallback(async (oid: number) => {
@@ -466,6 +474,30 @@ export default function AiModelsSettingsPage() {
     }
   }
 
+  async function handleDeleteCatalogModel(row: AiModelConfigRow) {
+    if (orgId == null) return
+    const confirmed = await showConfirm(
+      `Remove "${row.name}" from your organization catalog? Project availability choices that pointed at this model are cleared. This cannot be undone.`,
+      {
+        destructive: true,
+        confirmLabel: 'Remove',
+        title: 'Remove model',
+      },
+    )
+    if (!confirmed) return
+    setDeletingId(row.id)
+    try {
+      await deleteOrganizationAiModel(orgId, row.id)
+      await refreshOrgAiData(orgId)
+      setEditRow((prev) => (prev?.id === row.id ? null : prev))
+      showMessage('Model removed from your catalog.')
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Could not remove model.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   async function handleTestConnection(row: AiModelConfigRow) {
     if (orgId == null) return
     setTestingId(row.id)
@@ -522,18 +554,34 @@ export default function AiModelsSettingsPage() {
   async function handleRemoveCatalogCredential(entry: AiCredentialCatalogEntry) {
     if (orgId == null) return
     const label = catalogEntryPrimaryTitle(entry)
-    const ok = await showConfirm(`Remove ${label}? Models that use this credential will fail until you link another key.`, {
+    const linked = entry.linked_catalog_models ?? []
+    const description =
+      linked.length === 0
+        ? `Remove credential "${label}"? You can save a new key later if you need one again.`
+        : linked.length === 1
+          ? `Remove credential "${label}"? The model "${linked[0].name}" that uses it will be removed from your organization as well. This cannot be undone.`
+          : `Remove credential "${label}"? All ${linked.length} catalog models that use it (${linked.map((m) => m.name).join(', ')}) will be removed. This cannot be undone.`
+    const ok = await showConfirm(description, {
       title: 'Remove credential',
       confirmLabel: 'Remove',
       destructive: true,
     })
     if (!ok) return
+    setRemovingCredentialKey(entry.integration_key)
     try {
       await deleteOrganizationIntegrationSecret(orgId, entry.integration_key)
       await refreshOrgAiData(orgId)
+      setEditRow((prev) => {
+        if (prev == null || entry.integration_secret_id == null) return prev
+        return String(prev.integration_secret_id ?? '') === String(entry.integration_secret_id)
+          ? null
+          : prev
+      })
       showMessage('Credential removed.')
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Could not remove credential.')
+    } finally {
+      setRemovingCredentialKey(null)
     }
   }
 
@@ -625,9 +673,7 @@ export default function AiModelsSettingsPage() {
                   <div className="min-w-0 space-y-1">
                     <div className="font-medium">{catalogEntryPrimaryTitle(entry)}</div>
                     <div className="text-xs text-muted-foreground">
-                      {entry.assigned_model_name
-                        ? `Linked to model: ${entry.assigned_model_name}`
-                        : 'Not linked to a model yet'}
+                      {credentialLinkedModelsSummary(entry)}
                       {entry.has_api_base ? ' · Endpoint URL saved' : ''}
                       {entry.updated_at ? ` · Updated ${new Date(entry.updated_at).toLocaleString()}` : ''}
                     </div>
@@ -637,20 +683,28 @@ export default function AiModelsSettingsPage() {
                       type="button"
                       variant="outline"
                       size="sm"
+                      disabled={removingCredentialKey === entry.integration_key}
                       onClick={() => openEditVendorCredentialModal(entry)}
                     >
                       Update
                     </Button>
-                    {!entry.assigned_model_config_id ? (
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => void handleRemoveCatalogCredential(entry)}
-                      >
-                        Remove
-                      </Button>
-                    ) : null}
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="font-normal"
+                      disabled={removingCredentialKey === entry.integration_key}
+                      onClick={() => void handleRemoveCatalogCredential(entry)}
+                    >
+                      {removingCredentialKey === entry.integration_key ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin inline" />
+                          Removing…
+                        </>
+                      ) : (
+                        'Remove'
+                      )}
+                    </Button>
                   </div>
                 </li>
               ))}
@@ -740,15 +794,21 @@ export default function AiModelsSettingsPage() {
                     ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">
-                    <Button type="button" variant="outline" size="sm" onClick={() => openEdit(m)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={deletingId === m.id}
+                      onClick={() => openEdit(m)}
+                    >
                       Edit
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={testingId === m.id}
-                      onClick={() => handleTestConnection(m)}
+                      disabled={testingId === m.id || deletingId === m.id}
+                      onClick={() => void handleTestConnection(m)}
                     >
                       {testingId === m.id ? (
                         <>
@@ -757,6 +817,25 @@ export default function AiModelsSettingsPage() {
                         </>
                       ) : (
                         'Test connection'
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="font-normal"
+                      disabled={
+                        deletingId === m.id || testingId === m.id || (submitting && editRow?.id === m.id)
+                      }
+                      onClick={() => void handleDeleteCatalogModel(m)}
+                    >
+                      {deletingId === m.id ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin inline" />
+                          Removing…
+                        </>
+                      ) : (
+                        'Remove'
                       )}
                     </Button>
                   </div>
