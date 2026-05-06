@@ -14,14 +14,14 @@ import type { CuratedAiModelOption } from '@/lib/core-api'
 export const CURATED_PROVIDER_SECTION_ORDER = [
   'openai',
   'anthropic',
-  'google',
+  'gemini',
   'openrouter',
-  'meta-llama',
   'mistral',
+  'google',
+  'meta-llama',
   'xai',
   'moonshot',
   'cohere',
-  'gemini',
   'azure',
 ] as const
 
@@ -29,8 +29,8 @@ export function curatedProviderSectionTitle(providerKey: string): string {
   const k = providerKey.toLowerCase()
   if (k === 'openai') return 'OpenAI'
   if (k === 'anthropic') return 'Anthropic'
+  if (k === 'gemini') return 'Google Gemini'
   if (k === 'google') return 'Google'
-  if (k === 'gemini') return 'Gemini'
   if (k === 'openrouter') return 'OpenRouter'
   if (k === 'meta-llama') return 'Meta Llama'
   if (k === 'mistral') return 'Mistral'
