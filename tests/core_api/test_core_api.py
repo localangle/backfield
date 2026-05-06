@@ -1090,6 +1090,12 @@ def test_integration_secrets_org_admin_encrypt_and_metadata_only(
     assert anthropic_row["configured"] is False
     gemini_row = next(x for x in cat1.json() if x["provider"] == "gemini")
     assert gemini_row["configured"] is False
+    openrouter_row = next(x for x in cat1.json() if x["provider"] == "openrouter")
+    assert openrouter_row["configured"] is False
+    azure_row = next(x for x in cat1.json() if x["provider"] == "azure")
+    assert azure_row["configured"] is False
+    azure_endpoint_row = next(x for x in cat1.json() if x["provider"] == "azure_endpoint")
+    assert azure_endpoint_row["configured"] is False
 
     assert (
         client.put(

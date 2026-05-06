@@ -12,4 +12,8 @@ def litellm_model_id(provider: str, provider_model_id: str) -> str:
         return f"anthropic/{mid}"
     if p == "gemini":
         return f"gemini/{mid}"
+    if p == "azure":
+        return f"azure/{mid}"
+    if p == "openrouter":
+        return f"openrouter/{mid}"
     return f"{p}/{mid}"

@@ -521,23 +521,36 @@ def run_org_model_connection_test(
     keys = organization_llm_api_keys(session, organization_id)
     lm = litellm_model_id(str(row.provider), str(row.provider_model_id))
     prov = str(row.provider).strip().lower()
+    api_base: str | None = None
     if prov == "openai":
         api_key = keys.get("OPENAI_API_KEY")
     elif prov == "anthropic":
         api_key = keys.get("ANTHROPIC_API_KEY")
     elif prov == "gemini":
         api_key = keys.get("GEMINI_API_KEY")
+    elif prov == "openrouter":
+        api_key = keys.get("OPENROUTER_API_KEY")
+    elif prov == "azure":
+        api_key = keys.get("AZURE_API_KEY")
+        api_base = keys.get("AZURE_API_BASE")
     else:
         api_key = (
             keys.get("OPENAI_API_KEY")
             or keys.get("ANTHROPIC_API_KEY")
             or keys.get("GEMINI_API_KEY")
+            or keys.get("OPENROUTER_API_KEY")
+            or keys.get("AZURE_API_KEY")
         )
 
     if not api_key:
         raise HTTPException(
             status_code=400,
             detail="No provider credentials configured for this organization",
+        )
+    if prov == "azure" and not (api_base or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Azure OpenAI requires a resource endpoint URL in organization integrations",
         )
 
     now = datetime.now(UTC)
@@ -552,6 +565,7 @@ def run_org_model_connection_test(
             litellm_model=lm,
             messages=messages,
             api_key=api_key,
+            api_base=api_base,
             max_tokens=8,
             temperature=temp,
             timeout=60.0,

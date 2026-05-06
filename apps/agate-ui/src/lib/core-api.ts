@@ -185,7 +185,7 @@ export async function testOrganizationAiModelConnection(
   )
 }
 
-/** Organization AI provider slots (OpenAI / Anthropic / Gemini); no secret material. */
+/** Organization AI provider slots (OpenAI, Anthropic, Gemini, OpenRouter, Azure OpenAI); no secret material. */
 export interface AiProviderCatalogEntry {
   provider: string
   integration_key: string

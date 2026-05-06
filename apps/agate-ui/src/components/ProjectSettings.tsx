@@ -45,6 +45,13 @@ const AVAILABLE_KEY_TYPES = [
   { value: 'OPENAI_API_KEY', label: 'OpenAI API Key', description: 'For GPT models and embeddings' },
   { value: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', description: 'For Claude models' },
   { value: 'GEMINI_API_KEY', label: 'Gemini API Key', description: 'For Google Gemini models' },
+  { value: 'OPENROUTER_API_KEY', label: 'OpenRouter API Key', description: 'For models routed through OpenRouter' },
+  { value: 'AZURE_API_KEY', label: 'Azure OpenAI API Key', description: 'For Azure-hosted OpenAI deployments' },
+  {
+    value: 'AZURE_API_BASE',
+    label: 'Azure OpenAI endpoint',
+    description: 'Your Azure resource endpoint URL (for example from the Azure portal)',
+  },
   { value: 'GEOCODIO_API_KEY', label: 'Geocodio API Key', description: 'For geocoding services' },
   { value: 'PELIAS_API_KEY', label: 'Pelias API Key', description: 'For geocoding services' },
   { value: 'BRAVE_SEARCH_API_KEY', label: 'Brave Search API Key', description: 'For web search and place information' },

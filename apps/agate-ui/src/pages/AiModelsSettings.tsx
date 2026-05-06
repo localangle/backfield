@@ -64,8 +64,15 @@ function providerDisplayName(providerSlug: string): string {
   if (providerSlug === 'openai') return 'OpenAI'
   if (providerSlug === 'anthropic') return 'Anthropic'
   if (providerSlug === 'gemini') return 'Gemini'
+  if (providerSlug === 'openrouter') return 'OpenRouter'
+  if (providerSlug === 'azure') return 'Azure OpenAI'
+  if (providerSlug === 'azure_endpoint') return 'Azure OpenAI endpoint'
   const u = providerSlug.replace(/_/g, ' ')
   return u.slice(0, 1).toUpperCase() + u.slice(1)
+}
+
+function credentialIsEndpointUrl(providerSlug: string): boolean {
+  return providerSlug === 'azure_endpoint'
 }
 
 export default function AiModelsSettingsPage() {
@@ -414,7 +421,11 @@ export default function AiModelsSettingsPage() {
     if (orgId == null || credentialDialogEntry == null) return
     const trimmed = credentialValue.trim()
     if (!trimmed) {
-      showError('Paste your API key before saving.')
+      showError(
+        credentialDialogEntry && credentialIsEndpointUrl(credentialDialogEntry.provider)
+          ? 'Paste your resource endpoint URL before saving.'
+          : 'Paste your API key before saving.',
+      )
       return
     }
     const label = providerDisplayName(credentialDialogEntry.provider)
@@ -709,7 +720,13 @@ export default function AiModelsSettingsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {(() => {
-                      const providerOrder = ['openai', 'anthropic', 'gemini'] as const
+                      const providerOrder = [
+                        'openai',
+                        'anthropic',
+                        'gemini',
+                        'openrouter',
+                        'azure',
+                      ] as const
                       const byProvider = new Map<string, CuratedAiModelOption[]>()
                       for (const opt of curatedOptions) {
                         const key = String(opt.provider || '').toLowerCase() || 'other'
@@ -727,6 +744,8 @@ export default function AiModelsSettingsPage() {
                         if (p === 'openai') return 'OpenAI'
                         if (p === 'anthropic') return 'Anthropic'
                         if (p === 'gemini') return 'Gemini'
+                        if (p === 'openrouter') return 'OpenRouter'
+                        if (p === 'azure') return 'Azure OpenAI'
                         return p ? p[0].toUpperCase() + p.slice(1) : 'Other'
                       }
                       return keys.map((providerKey, idx) => {
@@ -971,13 +990,24 @@ export default function AiModelsSettingsPage() {
                 : 'Credentials'}
             </DialogTitle>
             <DialogDescription>
-              Paste the API key from your provider account. You won&apos;t be able to view it here again—you can
-              replace or remove it anytime.
+              {credentialDialogEntry && credentialIsEndpointUrl(credentialDialogEntry.provider) ? (
+                <>
+                  Paste the resource endpoint URL from your Azure account (for example from the Azure portal). You
+                  won&apos;t be able to view it here again—you can replace or remove it anytime.
+                </>
+              ) : (
+                <>
+                  Paste the API key from your provider account. You won&apos;t be able to view it here again—you can
+                  replace or remove it anytime.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
             <Label htmlFor="credential-secret" className="text-xs">
-              API key
+              {credentialDialogEntry && credentialIsEndpointUrl(credentialDialogEntry.provider)
+                ? 'Resource endpoint URL'
+                : 'API key'}
             </Label>
             <Textarea
               id="credential-secret"
@@ -986,7 +1016,11 @@ export default function AiModelsSettingsPage() {
               autoComplete="off"
               spellCheck={false}
               className="font-mono text-sm min-h-[88px]"
-              placeholder="Paste key…"
+              placeholder={
+                credentialDialogEntry && credentialIsEndpointUrl(credentialDialogEntry.provider)
+                  ? 'https://your-resource.openai.azure.com/'
+                  : 'Paste key…'
+              }
             />
           </div>
           <DialogFooter>

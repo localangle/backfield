@@ -60,6 +60,8 @@ def _litellm_json_object_response_format_supported(litellm_model: str) -> bool:
         return True
     if m.startswith("gemini/"):
         return True
+    if m.startswith("openrouter/"):
+        return True
     return False
 
 
@@ -166,6 +168,7 @@ def completion_text_sync(
     litellm_model: str,
     messages: list[dict[str, str]],
     api_key: str | None,
+    api_base: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None,
     timeout: float,
@@ -186,6 +189,8 @@ def completion_text_sync(
         kwargs["max_tokens"] = max_tokens
     if api_key:
         kwargs["api_key"] = api_key
+    if api_base and str(api_base).strip():
+        kwargs["api_base"] = str(api_base).strip()
     if temperature is not None:
         kwargs["temperature"] = temperature
     if force_json_response and _litellm_json_object_response_format_supported(litellm_model):

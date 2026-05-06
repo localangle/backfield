@@ -71,6 +71,9 @@ def call_llm(
     openai_api_key: Optional[str] = None,
     anthropic_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
+    openrouter_api_key: Optional[str] = None,
+    azure_api_key: Optional[str] = None,
+    azure_api_base: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
     timeout: float = 300.0,
     *,
@@ -94,6 +97,9 @@ def call_llm(
         openai_api_key: OpenAI API key (required for OpenAI models)
         anthropic_api_key: Anthropic API key (required for Anthropic models)
         gemini_api_key: Gemini API key (Google AI Studio; required for Gemini models)
+        openrouter_api_key: OpenRouter API key when using OpenRouter-routed models
+        azure_api_key: Azure OpenAI API key when using Azure deployments
+        azure_api_base: Azure OpenAI resource endpoint URL when using Azure deployments
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
         timeout: Request timeout in seconds (default: 300s / 5 minutes)
         model_config_id: Optional Backfield AI catalog row id for ``backfield_ai_call_record``.
@@ -123,6 +129,9 @@ def call_llm(
             openai_api_key=openai_api_key,
             anthropic_api_key=anthropic_api_key,
             gemini_api_key=gemini_api_key,
+            openrouter_api_key=openrouter_api_key,
+            azure_api_key=azure_api_key,
+            azure_api_base=azure_api_base,
             project_system_prompt=project_system_prompt,
             timeout=timeout,
             model_config_id=model_config_id,
@@ -243,6 +252,88 @@ def call_llm(
                     time.sleep(wait_time)
                 else:
                     raise Exception(f"Gemini API call failed after {max_retries} attempts: {str(e)}") from e
+
+    elif model.strip().lower().startswith("openrouter"):
+        from backfield_ai.completion import completion_text_sync
+
+        key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+        if not key:
+            raise ValueError(
+                "OPENROUTER_API_KEY must be provided for OpenRouter models "
+                "(configure in organization AI integrations or project keys)"
+            )
+        lm_raw = model.strip()
+        lm_model = lm_raw if lm_raw.lower().startswith("openrouter/") else f"openrouter/{lm_raw}"
+        messages = [
+            {"role": "system", "content": system_message or ""},
+            {"role": "user", "content": prompt},
+        ]
+        for attempt in range(max_retries):
+            try:
+                result = completion_text_sync(
+                    litellm_model=lm_model,
+                    messages=messages,
+                    api_key=key,
+                    max_tokens=max_tokens,
+                    temperature=float(temperature),
+                    timeout=float(timeout),
+                    force_json_response=bool(force_json),
+                )
+                response_text = result.text.strip()
+                return _clean_json_response(response_text) if force_json else response_text
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    print(f"OpenRouter call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                    print(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(f"OpenRouter call failed after {max_retries} attempts: {str(e)}") from e
+
+    elif model.strip().lower().startswith("azure/"):
+        from backfield_ai.completion import completion_text_sync
+
+        key = azure_api_key or os.getenv("AZURE_API_KEY")
+        base = (azure_api_base or os.getenv("AZURE_API_BASE") or "").strip()
+        if not key:
+            raise ValueError(
+                "AZURE_API_KEY must be provided for Azure OpenAI models "
+                "(configure in organization AI integrations or project keys)"
+            )
+        if not base:
+            raise ValueError(
+                "Azure OpenAI requires a resource endpoint URL "
+                "(configure in organization AI integrations or project keys)"
+            )
+        lm_model = model.strip()
+        messages = [
+            {"role": "system", "content": system_message or ""},
+            {"role": "user", "content": prompt},
+        ]
+        for attempt in range(max_retries):
+            try:
+                result = completion_text_sync(
+                    litellm_model=lm_model,
+                    messages=messages,
+                    api_key=key,
+                    api_base=base,
+                    max_tokens=max_tokens,
+                    temperature=float(temperature),
+                    timeout=float(timeout),
+                    force_json_response=bool(force_json),
+                )
+                response_text = result.text.strip()
+                return _clean_json_response(response_text) if force_json else response_text
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    print(f"Azure OpenAI call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                    print(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(
+                        f"Azure OpenAI call failed after {max_retries} attempts: {str(e)}"
+                    ) from e
 
     else:
         # Default to OpenAI for unknown models

@@ -20,21 +20,34 @@ def _legacy_to_litellm_model(model: str) -> str:
         return f"anthropic/{m}"
     if low.startswith("gemini") and "/" not in m:
         return f"gemini/{m}"
+    if low.startswith("azure/"):
+        return m
+    if low.startswith("openrouter/"):
+        return m
     return m
 
 
-def _pick_api_key(
+def _pick_litellm_auth(
     litellm_model: str,
     openai_key: str | None,
     anthropic_key: str | None,
     gemini_key: str | None,
-) -> str | None:
+    openrouter_key: str | None,
+    azure_key: str | None,
+    azure_api_base: str | None,
+) -> tuple[str | None, str | None]:
+    """Return ``(api_key, api_base)`` for LiteLLM; ``api_base`` is set for Azure OpenAI only."""
     m = litellm_model.strip().lower()
     if m.startswith("anthropic/") or m.startswith("claude"):
-        return anthropic_key
+        return anthropic_key, None
     if m.startswith("gemini/") or m.startswith("gemini-"):
-        return gemini_key
-    return openai_key
+        return gemini_key, None
+    if m.startswith("openrouter/"):
+        return openrouter_key, None
+    if m.startswith("azure/"):
+        base = (azure_api_base or "").strip() or None
+        return azure_key, base
+    return openai_key, None
 
 
 def call_llm_tracked_sync(
@@ -47,6 +60,9 @@ def call_llm_tracked_sync(
     openai_api_key: str | None,
     anthropic_api_key: str | None,
     gemini_api_key: str | None,
+    openrouter_api_key: str | None,
+    azure_api_key: str | None,
+    azure_api_base: str | None,
     project_system_prompt: str | None,
     timeout: float,
     max_tokens: int | None = None,
@@ -78,9 +94,21 @@ def call_llm_tracked_sync(
         {"role": "user", "content": prompt},
     ]
 
-    api_key = _pick_api_key(lm_model, openai_api_key, anthropic_api_key, gemini_api_key)
+    api_key, api_base = _pick_litellm_auth(
+        lm_model,
+        openai_api_key,
+        anthropic_api_key,
+        gemini_api_key,
+        openrouter_api_key,
+        azure_api_key,
+        azure_api_base,
+    )
     if not api_key:
         raise ValueError("No API key available for the selected model.")
+    if lm_model.strip().lower().startswith("azure/") and not (api_base or "").strip():
+        raise ValueError(
+            "Azure OpenAI needs a resource endpoint URL in organization AI integrations."
+        )
 
     is_gpt5 = lm_model.startswith("gpt-5")
     temp_arg: float | None = None if is_gpt5 else float(temperature)
@@ -108,6 +136,7 @@ def call_llm_tracked_sync(
                 litellm_model=lm_model,
                 messages=messages,
                 api_key=api_key,
+                api_base=api_base,
                 max_tokens=max_tokens,
                 temperature=temp_arg,
                 timeout=float(timeout),
