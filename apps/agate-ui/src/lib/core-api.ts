@@ -119,6 +119,9 @@ export interface CuratedAiModelOption {
   provider_model_id: string
   label: string
   capabilities: string[]
+  input_token_price?: string | number | null
+  output_token_price?: string | number | null
+  currency?: string | null
 }
 
 export async function listAiModelCuratedOptions(

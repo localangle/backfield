@@ -15,11 +15,17 @@ from backfield_ai.constants import (
     AI_MODEL_KIND_GENERATIVE,
     DEFAULT_AI_CURRENCY,
 )
+from backfield_ai.litellm_model import litellm_model_id
 from backfield_db import BackfieldAiModelConfig
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
+
+try:  # optional import; used only for curated pricing defaults
+    import litellm  # type: ignore
+except Exception:  # pragma: no cover
+    litellm = None
 
 ALLOWED_CAPABILITIES: frozenset[str] = frozenset(
     {AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON, AI_CAPABILITY_VISION}
@@ -40,20 +46,7 @@ class CuratedAiModelTemplate:
 
 
 CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
-    "openai:gpt-5.4": CuratedAiModelTemplate(
-        template_id="openai:gpt-5.4",
-        provider="openai",
-        provider_model_id="gpt-5.4",
-        label="GPT 5.4",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
-    "openai:gpt-5.2": CuratedAiModelTemplate(
-        template_id="openai:gpt-5.2",
-        provider="openai",
-        provider_model_id="gpt-5.2",
-        label="GPT 5.2",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
+    # OpenAI (ordered for quick selection).
     "openai:gpt-5-mini": CuratedAiModelTemplate(
         template_id="openai:gpt-5-mini",
         provider="openai",
@@ -68,6 +61,48 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="GPT-5 Nano",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
+    "openai:gpt-5": CuratedAiModelTemplate(
+        template_id="openai:gpt-5",
+        provider="openai",
+        provider_model_id="gpt-5",
+        label="GPT-5",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5.4-mini": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.4-mini",
+        provider="openai",
+        provider_model_id="gpt-5.4-mini",
+        label="GPT-5.4 Mini",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5.4-nano": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.4-nano",
+        provider="openai",
+        provider_model_id="gpt-5.4-nano",
+        label="GPT-5.4 Nano",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5.4": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.4",
+        provider="openai",
+        provider_model_id="gpt-5.4",
+        label="GPT-5.4",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5.5": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.5",
+        provider="openai",
+        provider_model_id="gpt-5.5",
+        label="GPT-5.5",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5.5-pro": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.5-pro",
+        provider="openai",
+        provider_model_id="gpt-5.5-pro",
+        label="GPT-5.5 Pro",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
     "openai:gpt-4o-mini": CuratedAiModelTemplate(
         template_id="openai:gpt-4o-mini",
         provider="openai",
@@ -75,6 +110,7 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="GPT-4o Mini",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
+    # Anthropic (recent generations).
     "anthropic:claude-sonnet-4-5": CuratedAiModelTemplate(
         template_id="anthropic:claude-sonnet-4-5",
         provider="anthropic",
@@ -82,11 +118,32 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="Claude Sonnet 4.5",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
+    "anthropic:claude-sonnet-4-6": CuratedAiModelTemplate(
+        template_id="anthropic:claude-sonnet-4-6",
+        provider="anthropic",
+        provider_model_id="claude-sonnet-4-6",
+        label="Claude Sonnet 4.6",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
     "anthropic:claude-haiku-4-5": CuratedAiModelTemplate(
         template_id="anthropic:claude-haiku-4-5",
         provider="anthropic",
         provider_model_id="claude-haiku-4-5-20251001",
         label="Claude Haiku 4.5",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "anthropic:claude-opus-4-5": CuratedAiModelTemplate(
+        template_id="anthropic:claude-opus-4-5",
+        provider="anthropic",
+        provider_model_id="claude-opus-4-5-20251101",
+        label="Claude Opus 4.5",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "anthropic:claude-opus-4-7": CuratedAiModelTemplate(
+        template_id="anthropic:claude-opus-4-7",
+        provider="anthropic",
+        provider_model_id="claude-opus-4-7-20260416",
+        label="Claude Opus 4.7",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
 }
@@ -98,6 +155,9 @@ class CuratedAiModelOptionOut(BaseModel):
     provider_model_id: str
     label: str
     capabilities: list[str]
+    input_token_price: Decimal | None = None
+    output_token_price: Decimal | None = None
+    currency: str = DEFAULT_AI_CURRENCY
 
 
 class AiModelConfigOut(BaseModel):
@@ -153,7 +213,7 @@ class AiModelConfigPatchBody(BaseModel):
 
 
 def list_curated_options_out() -> list[CuratedAiModelOptionOut]:
-    templates = sorted(CURATED_TEMPLATES.values(), key=lambda t: (t.provider, t.label))
+    templates = list(CURATED_TEMPLATES.values())
     return [
         CuratedAiModelOptionOut(
             curated_id=t.template_id,
@@ -161,9 +221,46 @@ def list_curated_options_out() -> list[CuratedAiModelOptionOut]:
             provider_model_id=t.provider_model_id,
             label=t.label,
             capabilities=list(t.capabilities),
+            input_token_price=_litellm_price_per_token(t.provider, t.provider_model_id, "input"),
+            output_token_price=_litellm_price_per_token(t.provider, t.provider_model_id, "output"),
+            currency=DEFAULT_AI_CURRENCY,
         )
         for t in templates
     ]
+
+
+def _litellm_price_per_token(
+    provider: str,
+    provider_model_id: str,
+    which: str,
+) -> Decimal | None:
+    """Best-effort lookup of per-token pricing from LiteLLM's model cost map.
+
+    Backfield stores provider/model separately. LiteLLM cost keys vary by provider, so try variants.
+    """
+    if litellm is None:
+        return None
+
+    key_candidates = [
+        litellm_model_id(provider, provider_model_id),
+        provider_model_id,
+        f"{provider.strip().lower()}/{provider_model_id.strip()}",
+    ]
+    model_cost = getattr(litellm, "model_cost", None)
+    if not isinstance(model_cost, dict):
+        return None
+    for key in key_candidates:
+        entry = model_cost.get(key)
+        if not isinstance(entry, dict):
+            continue
+        raw = entry.get("input_cost_per_token" if which == "input" else "output_cost_per_token")
+        if raw is None:
+            continue
+        try:
+            return Decimal(str(raw))
+        except Exception:
+            return None
+    return None
 
 
 def _normalize_currency(raw: str) -> str:

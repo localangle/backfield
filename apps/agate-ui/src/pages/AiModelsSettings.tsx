@@ -18,7 +18,10 @@ import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -192,8 +195,18 @@ export default function AiModelsSettingsPage() {
     const opt = curatedOptions.find((o) => o.curated_id === presetCuratedId)
     if (opt) {
       setPresetCaps(new Set(opt.capabilities))
+      if (presetCurrency.trim() === '' || presetCurrency.trim().toUpperCase() === 'USD') {
+        const nextCur = (opt.currency ?? 'USD').trim().toUpperCase()
+        if (nextCur) setPresetCurrency(nextCur)
+      }
+      if (presetPriceIn.trim() === '' && opt.input_token_price != null) {
+        setPresetPriceIn(String(opt.input_token_price))
+      }
+      if (presetPriceOut.trim() === '' && opt.output_token_price != null) {
+        setPresetPriceOut(String(opt.output_token_price))
+      }
     }
-  }, [presetCuratedId, curatedOptions])
+  }, [presetCuratedId, curatedOptions, presetCurrency, presetPriceIn, presetPriceOut])
 
   function resetAddForm() {
     setAddTab('preset')
@@ -438,7 +451,7 @@ export default function AiModelsSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6 w-full max-w-none min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">AI models</h1>
@@ -447,17 +460,6 @@ export default function AiModelsSettingsPage() {
             pricing and connection checks up to date. Flow steps only offer models that are enabled for each project.
           </p>
         </div>
-        <Button
-          type="button"
-          onClick={() => {
-            resetAddForm()
-            setAddOpen(true)
-          }}
-          disabled={loading || orgId == null}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add model
-        </Button>
       </div>
 
       <Card>
@@ -469,6 +471,24 @@ export default function AiModelsSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="flex justify-end pb-4">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const preferred =
+                  providerCatalog.find((p) => !p.configured) ?? providerCatalog[0] ?? null
+                if (preferred) {
+                  openCredentialDialog(preferred)
+                }
+              }}
+              disabled={loading || providerCatalog.length === 0}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add provider credential
+            </Button>
+          </div>
           {loading ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -520,12 +540,26 @@ export default function AiModelsSettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Organization catalog</CardTitle>
-          <CardDescription>
-            Active models can be turned on or off per project. Disabled models stay in the catalog but won&apos;t be
-            offered on new runs when a project hides them.
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1.5">
+            <CardTitle>Organization catalog</CardTitle>
+            <CardDescription>
+              Active models can be turned on or off per project. Disabled models stay in the catalog but won&apos;t be
+              offered on new runs when a project hides them.
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            onClick={() => {
+              resetAddForm()
+              setAddOpen(true)
+            }}
+            disabled={loading || orgId == null}
+            className="sm:mt-1"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add model
+          </Button>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -547,14 +581,36 @@ export default function AiModelsSettingsPage() {
                       {m.provider} · {m.provider_model_id}
                     </div>
                     <div className="flex flex-wrap gap-1 pt-1">
-                      <Badge variant="secondary">{m.status}</Badge>
+                      <Badge
+                        variant="outline"
+                        className={
+                          m.status === "active"
+                            ? "bg-green-100 text-green-800 border-green-200"
+                            : "bg-muted text-muted-foreground border-border"
+                        }
+                      >
+                        {m.status === "active" ? "Active" : m.status}
+                      </Badge>
                       {m.capabilities.map((c) => (
                         <Badge key={c} variant="outline">
                           {CAP_LABEL[c as (typeof CAP_KEYS)[number]] ?? c}
                         </Badge>
                       ))}
                       {m.latest_test_status ? (
-                        <Badge variant="outline">Last check: {m.latest_test_status}</Badge>
+                        <Badge variant="outline">
+                          {(() => {
+                            const st = String(m.latest_test_status ?? "").toLowerCase()
+                            const at = m.latest_tested_at ? new Date(m.latest_tested_at) : null
+                            const stamp = at && !Number.isNaN(at.getTime()) ? at.toLocaleString() : null
+                            if (st === "succeeded") {
+                              return `Last check: 🟢 ${stamp ?? "Succeeded"}`
+                            }
+                            if (st === "failed") {
+                              return `Last check: 🔴 ${stamp ?? "Failed"}`
+                            }
+                            return `Last check: ${stamp ?? m.latest_test_status}`
+                          })()}
+                        </Badge>
                       ) : null}
                     </div>
                     {m.latest_test_error ? (
@@ -616,11 +672,43 @@ export default function AiModelsSettingsPage() {
                     <SelectValue placeholder="Choose a model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {curatedOptions.map((o) => (
-                      <SelectItem key={o.curated_id} value={o.curated_id}>
-                        {o.label} ({o.provider})
-                      </SelectItem>
-                    ))}
+                    {(() => {
+                      const providerOrder = ['openai', 'anthropic'] as const
+                      const byProvider = new Map<string, CuratedAiModelOption[]>()
+                      for (const opt of curatedOptions) {
+                        const key = String(opt.provider || '').toLowerCase() || 'other'
+                        const list = byProvider.get(key) ?? []
+                        list.push(opt)
+                        byProvider.set(key, list)
+                      }
+                      const keys = [
+                        ...providerOrder.filter((p) => byProvider.has(p)),
+                        ...Array.from(byProvider.keys()).filter(
+                          (k) => !providerOrder.includes(k as any),
+                        ),
+                      ]
+                      const labelFor = (p: string): string => {
+                        if (p === 'openai') return 'OpenAI'
+                        if (p === 'anthropic') return 'Anthropic'
+                        return p ? p[0].toUpperCase() + p.slice(1) : 'Other'
+                      }
+                      return keys.map((providerKey, idx) => {
+                        const opts = byProvider.get(providerKey) ?? []
+                        return (
+                          <SelectGroup key={providerKey}>
+                            {idx > 0 ? <SelectSeparator /> : null}
+                            <SelectLabel className="pl-2 text-xs text-muted-foreground">
+                              {labelFor(providerKey)}
+                            </SelectLabel>
+                            {opts.map((o) => (
+                              <SelectItem key={o.curated_id} value={o.curated_id} className="pl-10">
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )
+                      })
+                    })()}
                   </SelectContent>
                 </Select>
               </div>
