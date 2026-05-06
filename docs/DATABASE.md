@@ -99,7 +99,7 @@ Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tabl
 
 Revision **`026_org_integration_secret`** adds **`backfield_organization_integration_secret`** for encrypted organization-level integration credentials (AI provider keys first).
 
-Revision **`030_ai_model_share_integration_secret`** drops unique **`uq_bf_ai_model_integration_secret_id`** so several **`backfield_ai_model_config`** rows may reference one saved **`ai.credential.*`** secret.
+Revision **`030_ai_share_int_secret`** drops unique **`uq_bf_ai_model_integration_secret_id`** so several **`backfield_ai_model_config`** rows may reference one saved **`ai.credential.*`** secret.
 
 The **Starter flow** graph row for the General project is created at runtime when `BACKFIELD_LOCAL_BOOTSTRAP=1` on `agate-api` startup (see [docs/OPERATIONS.md](OPERATIONS.md)), not by the baseline migration alone.
 
