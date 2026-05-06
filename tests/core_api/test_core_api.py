@@ -898,7 +898,11 @@ def test_ai_models_curated_options_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
-def test_ai_models_catalog_org_admin_flow(client: TestClient) -> None:
+def test_ai_models_catalog_org_admin_flow(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
     client.post(
         "/v1/bootstrap/first-user",
         json={"email": "aiadmin@example.com", "password": "aiadmin-secret-9"},
@@ -933,12 +937,19 @@ def test_ai_models_catalog_org_admin_flow(client: TestClient) -> None:
     assert set(body["capabilities"]) >= {"text", "json"}
     config_id = body["id"]
 
+    cred = client.post(
+        f"/v1/organizations/{org_id}/integration-secrets",
+        json={"value": "together-api-key-placeholder", "display_name": "Together test"},
+    )
+    assert cred.status_code == 200
+    secret_id = cred.json()["integration_secret_id"]
+
     custom = client.post(
         f"/v1/organizations/{org_id}/ai-models",
         json={
             "name": "Custom LiteLLM",
-            "provider": "together_ai",
-            "provider_model_id": "together/meta-llama/Llama-3-70b-chat-hf",
+            "litellm_model": "together_ai/meta-llama/Llama-3-70b-chat-hf",
+            "integration_secret_id": secret_id,
             "capabilities": ["text"],
             "currency": "EUR",
             "input_token_price": "0.000002",
@@ -949,6 +960,8 @@ def test_ai_models_catalog_org_admin_flow(client: TestClient) -> None:
     cb = custom.json()
     assert cb["currency"] == "EUR"
     assert Decimal(cb["input_token_price"]) == Decimal("0.000002")
+    assert cb["litellm_model"] == "together_ai/meta-llama/Llama-3-70b-chat-hf"
+    assert cb["integration_secret_id"] == secret_id
 
     listed = client.get(f"/v1/organizations/{org_id}/ai-models")
     assert listed.status_code == 200
@@ -964,9 +977,8 @@ def test_ai_models_catalog_org_admin_flow(client: TestClient) -> None:
     bad_cap = client.post(
         f"/v1/organizations/{org_id}/ai-models",
         json={
+            "curated_id": "openai:gpt-5-mini",
             "name": "Bad",
-            "provider": "openai",
-            "provider_model_id": "gpt-4o-mini",
             "capabilities": ["text", "audio"],
         },
     )
@@ -1017,6 +1029,12 @@ def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
     )
     assert r.status_code == 403
 
+    r2 = client.post(
+        f"/v1/organizations/{org_id}/integration-secrets",
+        json={"value": "x"},
+    )
+    assert r2.status_code == 403
+
 
 def test_ai_models_embedding_kind_rejected_for_now(client: TestClient) -> None:
     client.post(
@@ -1031,14 +1049,18 @@ def test_ai_models_embedding_kind_rejected_for_now(client: TestClient) -> None:
     r = client.post(
         f"/v1/organizations/{org_id}/ai-models",
         json={
+            "curated_id": "openai:gpt-5-nano",
             "name": "Emb",
-            "provider": "openai",
-            "provider_model_id": "text-embedding-3-small",
             "capabilities": ["text"],
             "model_kind": "embedding",
         },
     )
     assert r.status_code == 400
+
+
+def test_integration_secrets_unified_catalog_requires_auth(client: TestClient) -> None:
+    r = client.get("/v1/organizations/1/integration-secrets/catalog")
+    assert r.status_code == 401
 
 
 def test_integration_secrets_catalog_requires_auth(client: TestClient) -> None:
@@ -1072,7 +1094,12 @@ def test_integration_secrets_org_admin_encrypt_and_metadata_only(
     )
     assert put.status_code == 200
     body_put = put.json()
-    assert set(body_put.keys()) == {"integration_key", "created_at", "updated_at"}
+    assert set(body_put.keys()) == {
+        "integration_secret_id",
+        "integration_key",
+        "created_at",
+        "updated_at",
+    }
     assert secret_plain not in put.text
 
     listed = client.get(f"/v1/organizations/{org_id}/integration-secrets")
@@ -1094,8 +1121,6 @@ def test_integration_secrets_org_admin_encrypt_and_metadata_only(
     assert openrouter_row["configured"] is False
     azure_row = next(x for x in cat1.json() if x["provider"] == "azure")
     assert azure_row["configured"] is False
-    azure_endpoint_row = next(x for x in cat1.json() if x["provider"] == "azure_endpoint")
-    assert azure_endpoint_row["configured"] is False
 
     assert (
         client.put(

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,31 +22,24 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
+  createOrganizationAiCredential,
   createOrganizationAiModel,
   deleteOrganizationIntegrationSecret,
   fetchMe,
+  listAiCredentialsCatalog,
   listAiModelCuratedOptions,
-  listAiProviderIntegrationCatalog,
   listOrganizationAiModels,
   patchOrganizationAiModel,
-  putOrganizationIntegrationSecret,
+  patchOrganizationIntegrationSecret,
   testOrganizationAiModelConnection,
+  type AiCredentialCatalogEntry,
   type AiModelConfigPatchInput,
   type AiModelConfigRow,
-  type AiProviderCatalogEntry,
   type CuratedAiModelOption,
+  type IntegrationSecretPatchInput,
 } from '@/lib/core-api'
 import { Loader2, Plus } from 'lucide-react'
 
@@ -60,19 +60,16 @@ function normalizeCapabilityList(selected: Set<string>): string[] {
   return CAP_KEYS.filter((k) => selected.has(k))
 }
 
-function providerDisplayName(providerSlug: string): string {
-  if (providerSlug === 'openai') return 'OpenAI'
-  if (providerSlug === 'anthropic') return 'Anthropic'
-  if (providerSlug === 'gemini') return 'Gemini'
-  if (providerSlug === 'openrouter') return 'OpenRouter'
-  if (providerSlug === 'azure') return 'Azure OpenAI'
-  if (providerSlug === 'azure_endpoint') return 'Azure OpenAI endpoint'
-  const u = providerSlug.replace(/_/g, ' ')
-  return u.slice(0, 1).toUpperCase() + u.slice(1)
+function catalogEntryPrimaryTitle(entry: AiCredentialCatalogEntry): string {
+  const custom = entry.display_name?.trim()
+  if (custom) return custom
+  return 'Saved credential'
 }
 
-function credentialIsEndpointUrl(providerSlug: string): boolean {
-  return providerSlug === 'azure_endpoint'
+function customCredentialSelectLabel(c: AiCredentialCatalogEntry): string {
+  const base = catalogEntryPrimaryTitle(c)
+  if (c.has_api_base) return `${base} (endpoint URL set)`
+  return base
 }
 
 export default function AiModelsSettingsPage() {
@@ -96,10 +93,11 @@ export default function AiModelsSettingsPage() {
   const [presetPriceOut, setPresetPriceOut] = useState('')
   const [presetPriceInAuto, setPresetPriceInAuto] = useState('')
   const [presetPriceOutAuto, setPresetPriceOutAuto] = useState('')
+  const [presetIntegrationSecretId, setPresetIntegrationSecretId] = useState('')
 
   const [customName, setCustomName] = useState('')
-  const [customProvider, setCustomProvider] = useState('')
-  const [customProviderModelId, setCustomProviderModelId] = useState('')
+  const [customLitellmModel, setCustomLitellmModel] = useState('')
+  const [customIntegrationSecretId, setCustomIntegrationSecretId] = useState('')
   const [customCaps, setCustomCaps] = useState<Set<string>>(new Set(['text', 'json']))
   const [customCurrency, setCustomCurrency] = useState('USD')
   const [customPriceIn, setCustomPriceIn] = useState('')
@@ -111,22 +109,40 @@ export default function AiModelsSettingsPage() {
   const [editCurrency, setEditCurrency] = useState('USD')
   const [editPriceIn, setEditPriceIn] = useState('')
   const [editPriceOut, setEditPriceOut] = useState('')
+  const [editLitellmModel, setEditLitellmModel] = useState('')
+  const [editIntegrationSecretId, setEditIntegrationSecretId] = useState('')
 
-  const [providerCatalog, setProviderCatalog] = useState<AiProviderCatalogEntry[]>([])
-  const [providersError, setProvidersError] = useState<string | null>(null)
-  const [credentialDialogEntry, setCredentialDialogEntry] = useState<AiProviderCatalogEntry | null>(
-    null,
+  const [vendorCredModalOpen, setVendorCredModalOpen] = useState(false)
+  const [vendorCredEditIntegrationKey, setVendorCredEditIntegrationKey] = useState<string | null>(null)
+  const [vendorCredDisplayName, setVendorCredDisplayName] = useState('')
+  const [vendorCredApiBase, setVendorCredApiBase] = useState('')
+  const [vendorCredSecret, setVendorCredSecret] = useState('')
+  const [vendorCredSaving, setVendorCredSaving] = useState(false)
+
+  const [credentialCatalog, setCredentialCatalog] = useState<AiCredentialCatalogEntry[]>([])
+  const [credentialsError, setCredentialsError] = useState<string | null>(null)
+
+  const credentialsAvailableForNewModels = useMemo(
+    () => credentialCatalog.filter((e) => e.integration_secret_id != null && !e.assigned_model_config_id),
+    [credentialCatalog],
   )
-  const [credentialValue, setCredentialValue] = useState('')
-  const [credentialSaving, setCredentialSaving] = useState(false)
+
+  const editCredentialChoices = useMemo(() => {
+    if (!editRow) return []
+    const sid = editRow.integration_secret_id
+    return credentialCatalog.filter(
+      (e) =>
+        e.integration_secret_id != null &&
+        (!e.assigned_model_config_id ||
+          e.assigned_model_config_id === editRow.id ||
+          (sid != null && String(e.integration_secret_id) === String(sid))),
+    )
+  }, [credentialCatalog, editRow])
 
   const refreshOrgAiData = useCallback(async (oid: number) => {
-    const settled = await Promise.allSettled([
-      listOrganizationAiModels(oid),
-      listAiProviderIntegrationCatalog(oid),
-    ])
+    const settled = await Promise.allSettled([listOrganizationAiModels(oid), listAiCredentialsCatalog(oid)])
     const modelsResult = settled[0]
-    const providersResult = settled[1]
+    const credCatalogResult = settled[1]
     if (modelsResult.status === 'fulfilled') {
       setModels(modelsResult.value)
       setError(null)
@@ -135,15 +151,13 @@ export default function AiModelsSettingsPage() {
       const r = modelsResult.reason
       setError(r instanceof Error ? r.message : 'Could not load catalog.')
     }
-    if (providersResult.status === 'fulfilled') {
-      setProviderCatalog(providersResult.value)
-      setProvidersError(null)
+    if (credCatalogResult.status === 'fulfilled') {
+      setCredentialCatalog(credCatalogResult.value)
+      setCredentialsError(null)
     } else {
-      setProviderCatalog([])
-      const r = providersResult.reason
-      setProvidersError(
-        r instanceof Error ? r.message : 'Could not load provider credentials.',
-      )
+      setCredentialCatalog([])
+      const r = credCatalogResult.reason
+      setCredentialsError(r instanceof Error ? r.message : 'Could not load API credentials.')
     }
   }, [])
 
@@ -152,7 +166,7 @@ export default function AiModelsSettingsPage() {
     ;(async () => {
       setLoading(true)
       setError(null)
-      setProvidersError(null)
+      setCredentialsError(null)
       try {
         const me = await fetchMe()
         const oid = me.organization_id
@@ -165,7 +179,7 @@ export default function AiModelsSettingsPage() {
       } catch (e: unknown) {
         if (!cancelled) {
           setModels([])
-          setProviderCatalog([])
+          setCredentialCatalog([])
           setError(e instanceof Error ? e.message : 'Could not load this page.')
         }
       } finally {
@@ -257,9 +271,10 @@ export default function AiModelsSettingsPage() {
     setPresetPriceOut('')
     setPresetPriceInAuto('')
     setPresetPriceOutAuto('')
+    setPresetIntegrationSecretId('')
     setCustomName('')
-    setCustomProvider('')
-    setCustomProviderModelId('')
+    setCustomLitellmModel('')
+    setCustomIntegrationSecretId('')
     setCustomCaps(new Set(['text', 'json']))
     setCustomCurrency('USD')
     setCustomPriceIn('')
@@ -279,6 +294,34 @@ export default function AiModelsSettingsPage() {
     setEditCurrency(row.currency || 'USD')
     setEditPriceIn(formatPriceField(row.input_token_price))
     setEditPriceOut(formatPriceField(row.output_token_price))
+    setEditLitellmModel(row.litellm_model?.trim() ?? '')
+    setEditIntegrationSecretId(
+      row.integration_secret_id != null ? String(row.integration_secret_id) : '',
+    )
+  }
+
+  function resetVendorCredModal() {
+    setVendorCredModalOpen(false)
+    setVendorCredEditIntegrationKey(null)
+    setVendorCredDisplayName('')
+    setVendorCredApiBase('')
+    setVendorCredSecret('')
+  }
+
+  function openAddVendorCredentialModal() {
+    setVendorCredEditIntegrationKey(null)
+    setVendorCredDisplayName('')
+    setVendorCredApiBase('')
+    setVendorCredSecret('')
+    setVendorCredModalOpen(true)
+  }
+
+  function openEditVendorCredentialModal(entry: AiCredentialCatalogEntry) {
+    setVendorCredEditIntegrationKey(entry.integration_key)
+    setVendorCredDisplayName(entry.display_name?.trim() ?? '')
+    setVendorCredApiBase('')
+    setVendorCredSecret('')
+    setVendorCredModalOpen(true)
   }
 
   function optionalPricePayload(
@@ -317,6 +360,11 @@ export default function AiModelsSettingsPage() {
           showError('Select at least one capability.')
           return
         }
+        const sid = Number(presetIntegrationSecretId)
+        if (!presetIntegrationSecretId.trim() || !Number.isFinite(sid)) {
+          showError('Choose an API credential for this preset.')
+          return
+        }
         const prices =
           presetPriceIn.trim() === '' && presetPriceOut.trim() === ''
             ? {}
@@ -326,6 +374,7 @@ export default function AiModelsSettingsPage() {
           name: presetName.trim() || undefined,
           capabilities: caps,
           currency: presetCurrency.trim().toUpperCase() || 'USD',
+          integration_secret_id: sid,
           ...prices,
         })
       } else {
@@ -333,8 +382,14 @@ export default function AiModelsSettingsPage() {
           showError('Display name is required.')
           return
         }
-        if (!customProvider.trim() || !customProviderModelId.trim()) {
-          showError('Provider and model id are required.')
+        const lm = customLitellmModel.trim()
+        if (!lm) {
+          showError('Enter the model routing string for this vendor (for example dashscope/qwen-turbo).')
+          return
+        }
+        const sid = Number(customIntegrationSecretId)
+        if (!customIntegrationSecretId.trim() || !Number.isFinite(sid)) {
+          showError('Choose a saved API credential for this model.')
           return
         }
         const caps = normalizeCapabilityList(customCaps)
@@ -348,8 +403,8 @@ export default function AiModelsSettingsPage() {
             : optionalPricePayload(customPriceIn, customPriceOut)
         await createOrganizationAiModel(orgId, {
           name: customName.trim(),
-          provider: customProvider.trim().toLowerCase(),
-          provider_model_id: customProviderModelId.trim(),
+          litellm_model: lm,
+          integration_secret_id: sid,
           capabilities: caps,
           currency: customCurrency.trim().toUpperCase() || 'USD',
           ...prices,
@@ -376,13 +431,31 @@ export default function AiModelsSettingsPage() {
         return
       }
       const prices = optionalPricePayload(editPriceIn, editPriceOut)
-      await patchOrganizationAiModel(orgId, editRow.id, {
+      const patchBody: AiModelConfigPatchInput = {
         name: editName.trim(),
         status: editStatus,
         capabilities: caps,
         currency: editCurrency.trim().toUpperCase(),
         ...prices,
-      })
+      }
+      const usesLitellmRouting = Boolean(editRow.litellm_model?.trim())
+      const sid = Number(editIntegrationSecretId)
+      if (!editIntegrationSecretId.trim() || !Number.isFinite(sid)) {
+        showError('Choose an API credential.')
+        return
+      }
+      if (usesLitellmRouting) {
+        const el = editLitellmModel.trim()
+        if (!el) {
+          showError('Model routing string is required for this model.')
+          return
+        }
+        patchBody.litellm_model = el
+        patchBody.integration_secret_id = sid
+      } else if (editRow.integration_secret_id !== sid) {
+        patchBody.integration_secret_id = sid
+      }
+      await patchOrganizationAiModel(orgId, editRow.id, patchBody)
       await refreshOrgAiData(orgId)
       setEditRow(null)
       showMessage('Model updated.')
@@ -412,55 +485,55 @@ export default function AiModelsSettingsPage() {
     }
   }
 
-  function openCredentialDialog(entry: AiProviderCatalogEntry) {
-    setCredentialDialogEntry(entry)
-    setCredentialValue('')
-  }
-
-  async function handleCredentialSave() {
-    if (orgId == null || credentialDialogEntry == null) return
-    const trimmed = credentialValue.trim()
-    if (!trimmed) {
-      showError(
-        credentialDialogEntry && credentialIsEndpointUrl(credentialDialogEntry.provider)
-          ? 'Paste your resource endpoint URL before saving.'
-          : 'Paste your API key before saving.',
-      )
+  async function handleVendorCredentialSave() {
+    if (orgId == null || !vendorCredModalOpen) return
+    const trimmedSecret = vendorCredSecret.trim()
+    if (!vendorCredEditIntegrationKey && !trimmedSecret) {
+      showError('Paste an API key before saving.')
       return
     }
-    const label = providerDisplayName(credentialDialogEntry.provider)
-    setCredentialSaving(true)
+    setVendorCredSaving(true)
     try {
-      await putOrganizationIntegrationSecret(orgId, credentialDialogEntry.integration_key, trimmed)
+      const dn = vendorCredDisplayName.trim() ? vendorCredDisplayName.trim() : null
+      if (vendorCredEditIntegrationKey) {
+        const body: IntegrationSecretPatchInput = {
+          display_name: dn,
+        }
+        if (trimmedSecret) body.value = trimmedSecret
+        if (vendorCredApiBase.trim()) body.api_base = vendorCredApiBase.trim()
+        await patchOrganizationIntegrationSecret(orgId, vendorCredEditIntegrationKey, body)
+      } else {
+        await createOrganizationAiCredential(orgId, {
+          value: trimmedSecret,
+          display_name: dn,
+          api_base: vendorCredApiBase.trim() ? vendorCredApiBase.trim() : null,
+        })
+      }
       await refreshOrgAiData(orgId)
-      setCredentialDialogEntry(null)
-      setCredentialValue('')
-      showMessage(`Saved credentials for ${label}.`)
+      resetVendorCredModal()
+      showMessage(vendorCredEditIntegrationKey ? 'Credential updated.' : 'Credential saved.')
     } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Could not save credentials.')
+      showError(e instanceof Error ? e.message : 'Could not save credential.')
     } finally {
-      setCredentialSaving(false)
+      setVendorCredSaving(false)
     }
   }
 
-  async function handleRemoveCredential(entry: AiProviderCatalogEntry) {
+  async function handleRemoveCatalogCredential(entry: AiCredentialCatalogEntry) {
     if (orgId == null) return
-    const label = providerDisplayName(entry.provider)
-    const ok = await showConfirm(
-      `Remove saved credentials for ${label}? Flows that need this provider will fail until you add a key again.`,
-      {
-        title: 'Remove credentials',
-        confirmLabel: 'Remove',
-        destructive: true,
-      },
-    )
+    const label = catalogEntryPrimaryTitle(entry)
+    const ok = await showConfirm(`Remove ${label}? Models that use this credential will fail until you link another key.`, {
+      title: 'Remove credential',
+      confirmLabel: 'Remove',
+      destructive: true,
+    })
     if (!ok) return
     try {
       await deleteOrganizationIntegrationSecret(orgId, entry.integration_key)
       await refreshOrgAiData(orgId)
-      showMessage('Credentials removed.')
+      showMessage('Credential removed.')
     } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Could not remove credentials.')
+      showError(e instanceof Error ? e.message : 'Could not remove credential.')
     }
   }
 
@@ -503,37 +576,32 @@ export default function AiModelsSettingsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">AI models</h1>
           <p className="text-muted-foreground mt-2">
-            Add approved models for your organization, save provider keys once for the whole organization, and keep
-            pricing and connection checks up to date. Flow steps only offer models that are enabled for each project.
+            Add API credentials, then link each catalog model to one credential. Flow steps only offer models that are
+            enabled for each project.
           </p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Provider credentials</CardTitle>
+          <CardTitle>API credentials</CardTitle>
           <CardDescription>
-            Keys are saved for your whole organization and never shown again after you save. Use Test connection on each
-            model to confirm your setup.
+            Each credential stores one vendor API key (and optional endpoint URL). Every catalog model must use exactly
+            one credential for runs that resolve keys from the catalog. Secrets are write-only here—paste a new key to
+            replace one.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex justify-end pb-4">
+          <div className="flex flex-wrap justify-end gap-2 pb-4">
             <Button
               type="button"
-              variant="outline"
               size="sm"
-              onClick={() => {
-                const preferred =
-                  providerCatalog.find((p) => !p.configured) ?? providerCatalog[0] ?? null
-                if (preferred) {
-                  openCredentialDialog(preferred)
-                }
-              }}
-              disabled={loading || providerCatalog.length === 0}
+              className="bg-black text-white hover:bg-black/90"
+              onClick={() => openAddVendorCredentialModal()}
+              disabled={loading || orgId == null}
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add provider credential
+              Add credential
             </Button>
           </div>
           {loading ? (
@@ -541,39 +609,44 @@ export default function AiModelsSettingsPage() {
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading credentials…
             </div>
-          ) : providersError ? (
-            <p className="text-sm text-destructive">{providersError}</p>
-          ) : providerCatalog.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No provider slots available.</p>
+          ) : credentialsError ? (
+            <p className="text-sm text-destructive">{credentialsError}</p>
+          ) : credentialCatalog.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No credentials yet. Use Add credential to store an API key, then link it when you add a model.
+            </p>
           ) : (
             <ul className="divide-y rounded-md border">
-              {providerCatalog.map((entry) => (
+              {credentialCatalog.map((entry) => (
                 <li
                   key={entry.integration_key}
                   className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0 space-y-1">
-                    <div className="font-medium">{providerDisplayName(entry.provider)}</div>
+                    <div className="font-medium">{catalogEntryPrimaryTitle(entry)}</div>
                     <div className="text-xs text-muted-foreground">
-                      {entry.configured
-                        ? `Saved${
-                            entry.updated_at
-                              ? ` · Updated ${new Date(entry.updated_at).toLocaleString()}`
-                              : ''
-                          }`
-                        : 'No key saved yet'}
+                      {entry.assigned_model_name
+                        ? `Linked to model: ${entry.assigned_model_name}`
+                        : 'Not linked to a model yet'}
+                      {entry.has_api_base ? ' · Endpoint URL saved' : ''}
+                      {entry.updated_at ? ` · Updated ${new Date(entry.updated_at).toLocaleString()}` : ''}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">
-                    <Button type="button" variant="outline" size="sm" onClick={() => openCredentialDialog(entry)}>
-                      {entry.configured ? 'Replace key' : 'Add key'}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditVendorCredentialModal(entry)}
+                    >
+                      Update
                     </Button>
-                    {entry.configured ? (
+                    {!entry.assigned_model_config_id ? (
                       <Button
                         type="button"
                         variant="destructive"
                         size="sm"
-                        onClick={() => void handleRemoveCredential(entry)}
+                        onClick={() => void handleRemoveCatalogCredential(entry)}
                       >
                         Remove
                       </Button>
@@ -625,7 +698,9 @@ export default function AiModelsSettingsPage() {
                   <div className="min-w-0 space-y-1">
                     <div className="font-medium">{m.name}</div>
                     <div className="text-xs text-muted-foreground truncate">
-                      {m.provider} · {m.provider_model_id}
+                      {m.litellm_model?.trim()
+                        ? m.litellm_model.trim()
+                        : `${m.provider} · ${m.provider_model_id}`}
                     </div>
                     <div className="flex flex-wrap gap-1 pt-1">
                       <Badge
@@ -703,7 +778,8 @@ export default function AiModelsSettingsPage() {
           <DialogHeader>
             <DialogTitle>Add model</DialogTitle>
             <DialogDescription>
-              Start from a common preset or add a custom model using your provider&apos;s routing name for that model.
+              Link each model to one saved credential. Presets use templates from the product; custom entries use your own
+              routing string from the vendor&apos;s docs.
             </DialogDescription>
           </DialogHeader>
           <Tabs value={addTab} onValueChange={(v) => setAddTab(v as 'preset' | 'custom')}>
@@ -719,52 +795,13 @@ export default function AiModelsSettingsPage() {
                     <SelectValue placeholder="Choose a model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(() => {
-                      const providerOrder = [
-                        'openai',
-                        'anthropic',
-                        'gemini',
-                        'openrouter',
-                        'azure',
-                      ] as const
-                      const byProvider = new Map<string, CuratedAiModelOption[]>()
-                      for (const opt of curatedOptions) {
-                        const key = String(opt.provider || '').toLowerCase() || 'other'
-                        const list = byProvider.get(key) ?? []
-                        list.push(opt)
-                        byProvider.set(key, list)
-                      }
-                      const keys = [
-                        ...providerOrder.filter((p) => byProvider.has(p)),
-                        ...Array.from(byProvider.keys()).filter(
-                          (k) => !providerOrder.includes(k as any),
-                        ),
-                      ]
-                      const labelFor = (p: string): string => {
-                        if (p === 'openai') return 'OpenAI'
-                        if (p === 'anthropic') return 'Anthropic'
-                        if (p === 'gemini') return 'Gemini'
-                        if (p === 'openrouter') return 'OpenRouter'
-                        if (p === 'azure') return 'Azure OpenAI'
-                        return p ? p[0].toUpperCase() + p.slice(1) : 'Other'
-                      }
-                      return keys.map((providerKey, idx) => {
-                        const opts = byProvider.get(providerKey) ?? []
-                        return (
-                          <SelectGroup key={providerKey}>
-                            {idx > 0 ? <SelectSeparator /> : null}
-                            <SelectLabel className="pl-2 text-xs text-muted-foreground">
-                              {labelFor(providerKey)}
-                            </SelectLabel>
-                            {opts.map((o) => (
-                              <SelectItem key={o.curated_id} value={o.curated_id} className="pl-10">
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        )
-                      })
-                    })()}
+                    {[...curatedOptions]
+                      .sort((a, b) => a.label.localeCompare(b.label))
+                      .map((o) => (
+                        <SelectItem key={o.curated_id} value={o.curated_id}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -778,6 +815,28 @@ export default function AiModelsSettingsPage() {
                   onChange={(e) => setPresetName(e.target.value)}
                   placeholder="Defaults to the preset label"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">API credential</Label>
+                <Select
+                  value={presetIntegrationSecretId || undefined}
+                  onValueChange={(v) => setPresetIntegrationSecretId(v)}
+                >
+                  <SelectTrigger className="text-sm font-normal">
+                    <SelectValue
+                      placeholder={
+                        credentialsAvailableForNewModels.length ? 'Choose credential' : 'Add a credential first'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {credentialsAvailableForNewModels.map((c) => (
+                      <SelectItem key={c.integration_key} value={String(c.integration_secret_id ?? '')}>
+                        {customCredentialSelectLabel(c)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               {capabilityCheckboxes(presetCaps, setPresetCaps)}
               <div className="grid grid-cols-2 gap-3">
@@ -820,35 +879,50 @@ export default function AiModelsSettingsPage() {
               </div>
             </TabsContent>
             <TabsContent value="custom" className="space-y-4 pt-4">
+              <p className="text-xs text-muted-foreground">
+                Use the exact routing string from your vendor&apos;s docs (for example{' '}
+                <span className="font-mono">dashscope/qwen-turbo</span>). Add a credential above first, then pick it
+                here.
+              </p>
               <div className="space-y-2">
                 <Label htmlFor="cust-name" className="text-xs">
                   Display name
                 </Label>
                 <Input id="cust-name" value={customName} onChange={(e) => setCustomName(e.target.value)} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="cust-prov" className="text-xs">
-                    Provider
-                  </Label>
-                  <Input
-                    id="cust-prov"
-                    value={customProvider}
-                    onChange={(e) => setCustomProvider(e.target.value)}
-                    placeholder="openai"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="cust-mid" className="text-xs">
-                    Model id
-                  </Label>
-                  <Input
-                    id="cust-mid"
-                    value={customProviderModelId}
-                    onChange={(e) => setCustomProviderModelId(e.target.value)}
-                    placeholder="Provider model name"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="cust-litellm" className="text-xs">
+                  Model routing string
+                </Label>
+                <Input
+                  id="cust-litellm"
+                  value={customLitellmModel}
+                  onChange={(e) => setCustomLitellmModel(e.target.value)}
+                  placeholder="provider/model-id"
+                  className="font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">API credential</Label>
+                <Select
+                  value={customIntegrationSecretId || undefined}
+                  onValueChange={(v) => setCustomIntegrationSecretId(v)}
+                >
+                  <SelectTrigger className="text-sm font-normal">
+                    <SelectValue
+                      placeholder={
+                        credentialsAvailableForNewModels.length ? 'Choose credential' : 'Add a credential first'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {credentialsAvailableForNewModels.map((c) => (
+                      <SelectItem key={c.integration_key} value={String(c.integration_secret_id ?? '')}>
+                        {customCredentialSelectLabel(c)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               {capabilityCheckboxes(customCaps, setCustomCaps)}
               <div className="space-y-2">
@@ -885,7 +959,12 @@ export default function AiModelsSettingsPage() {
             <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" disabled={submitting} onClick={() => void handleAddSubmit()}>
+            <Button
+              type="button"
+              className="bg-black text-white hover:bg-black/90"
+              disabled={submitting}
+              onClick={() => void handleAddSubmit()}
+            >
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin inline" />
@@ -911,7 +990,37 @@ export default function AiModelsSettingsPage() {
           {editRow ? (
             <div className="space-y-4 py-2">
               <div className="text-xs text-muted-foreground">
-                {editRow.provider} · {editRow.provider_model_id}
+                {editRow.litellm_model?.trim()
+                  ? editRow.litellm_model.trim()
+                  : `${editRow.provider} · ${editRow.provider_model_id}`}
+              </div>
+              {editRow.litellm_model?.trim() ? (
+                <div className="space-y-2">
+                  <Label htmlFor="edit-litellm" className="text-xs">
+                    Model routing string
+                  </Label>
+                  <Input
+                    id="edit-litellm"
+                    value={editLitellmModel}
+                    onChange={(e) => setEditLitellmModel(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                <Label className="text-xs">API credential</Label>
+                <Select value={editIntegrationSecretId} onValueChange={(v) => setEditIntegrationSecretId(v)}>
+                  <SelectTrigger className="text-sm font-normal">
+                    <SelectValue placeholder="Choose credential" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editCredentialChoices.map((c) => (
+                      <SelectItem key={c.integration_key} value={String(c.integration_secret_id ?? '')}>
+                        {customCredentialSelectLabel(c)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-name" className="text-xs">
@@ -959,7 +1068,12 @@ export default function AiModelsSettingsPage() {
             <Button type="button" variant="outline" onClick={() => setEditRow(null)}>
               Cancel
             </Button>
-            <Button type="button" disabled={submitting || editRow == null} onClick={() => void handleEditSave()}>
+            <Button
+              type="button"
+              className="bg-black text-white hover:bg-black/90"
+              disabled={submitting || editRow == null}
+              onClick={() => void handleEditSave()}
+            >
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin inline" />
@@ -974,68 +1088,83 @@ export default function AiModelsSettingsPage() {
       </Dialog>
 
       <Dialog
-        open={credentialDialogEntry != null}
+        open={vendorCredModalOpen}
         onOpenChange={(open) => {
-          if (!open) {
-            setCredentialDialogEntry(null)
-            setCredentialValue('')
-          }
+          if (!open) resetVendorCredModal()
         }}
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>
-              {credentialDialogEntry
-                ? `${providerDisplayName(credentialDialogEntry.provider)} credentials`
-                : 'Credentials'}
-            </DialogTitle>
+            <DialogTitle>{vendorCredEditIntegrationKey ? 'Update credential' : 'Add credential'}</DialogTitle>
             <DialogDescription>
-              {credentialDialogEntry && credentialIsEndpointUrl(credentialDialogEntry.provider) ? (
+              {vendorCredEditIntegrationKey ? (
                 <>
-                  Paste the resource endpoint URL from your Azure account (for example from the Azure portal). You
-                  won&apos;t be able to view it here again—you can replace or remove it anytime.
+                  Paste a new key only if you want to replace the saved one. Leave the key blank to keep the current
+                  secret; display name and endpoint URL updates apply right away.
                 </>
               ) : (
                 <>
-                  Paste the API key from your provider account. You won&apos;t be able to view it here again—you can
-                  replace or remove it anytime.
+                  Name this credential so your team can pick it when adding a model. Add an endpoint URL only if your
+                  vendor needs one. Keys are never shown again after saving.
                 </>
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="credential-secret" className="text-xs">
-              {credentialDialogEntry && credentialIsEndpointUrl(credentialDialogEntry.provider)
-                ? 'Resource endpoint URL'
-                : 'API key'}
-            </Label>
-            <Textarea
-              id="credential-secret"
-              value={credentialValue}
-              onChange={(e) => setCredentialValue(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              className="font-mono text-sm min-h-[88px]"
-              placeholder={
-                credentialDialogEntry && credentialIsEndpointUrl(credentialDialogEntry.provider)
-                  ? 'https://your-resource.openai.azure.com/'
-                  : 'Paste key…'
-              }
-            />
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="vendor-cred-label" className="text-xs">
+                Display name (optional)
+              </Label>
+              <Input
+                id="vendor-cred-label"
+                value={vendorCredDisplayName}
+                onChange={(e) => setVendorCredDisplayName(e.target.value)}
+                placeholder="e.g. Qwen production"
+                maxLength={240}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vendor-cred-base" className="text-xs">
+                Endpoint URL (optional)
+              </Label>
+              <Input
+                id="vendor-cred-base"
+                value={vendorCredApiBase}
+                onChange={(e) => setVendorCredApiBase(e.target.value)}
+                placeholder="https://…"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                Only if your provider expects a base URL in addition to the key (for example some OpenAI-compatible
+                hosts).
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vendor-cred-secret" className="text-xs">
+                API key {vendorCredEditIntegrationKey ? '(optional — paste only to replace)' : ''}
+              </Label>
+              <Textarea
+                id="vendor-cred-secret"
+                value={vendorCredSecret}
+                onChange={(e) => setVendorCredSecret(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                className="font-mono text-sm min-h-[88px]"
+                placeholder={vendorCredEditIntegrationKey ? 'Leave blank to keep current key' : 'Paste key…'}
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setCredentialDialogEntry(null)
-                setCredentialValue('')
-              }}
-            >
+            <Button type="button" variant="outline" onClick={() => resetVendorCredModal()}>
               Cancel
             </Button>
-            <Button type="button" disabled={credentialSaving} onClick={() => void handleCredentialSave()}>
-              {credentialSaving ? (
+            <Button
+              type="button"
+              className="bg-black text-white hover:bg-black/90"
+              disabled={vendorCredSaving}
+              onClick={() => void handleVendorCredentialSave()}
+            >
+              {vendorCredSaving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin inline" />
                   Saving…

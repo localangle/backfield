@@ -11,7 +11,7 @@ from backfield_db import (
 )
 from sqlmodel import Session, select
 
-from backfield_ai.litellm_model import litellm_model_id
+from backfield_ai.litellm_model import effective_litellm_model_row
 
 
 def _load_enabled_org_config(
@@ -60,7 +60,11 @@ def resolve_geocode_litellm_models(
             project_id=project_id,
             config_id=str(eval_id),
         )
-        eval_fallback = litellm_model_id(cfg.provider, cfg.provider_model_id)
+        eval_fallback = effective_litellm_model_row(
+            litellm_model=cfg.litellm_model,
+            provider=str(cfg.provider),
+            provider_model_id=str(cfg.provider_model_id),
+        )
     if router_id:
         cfg_r = _load_enabled_org_config(
             session,
@@ -68,7 +72,11 @@ def resolve_geocode_litellm_models(
             project_id=project_id,
             config_id=str(router_id),
         )
-        router_fallback = litellm_model_id(cfg_r.provider, cfg_r.provider_model_id)
+        router_fallback = effective_litellm_model_row(
+            litellm_model=cfg_r.litellm_model,
+            provider=str(cfg_r.provider),
+            provider_model_id=str(cfg_r.provider_model_id),
+        )
 
     return eval_fallback, router_fallback
 
@@ -93,4 +101,8 @@ def resolve_place_extract_litellm_model(
         project_id=project_id,
         config_id=str(config_id),
     )
-    return litellm_model_id(cfg.provider, cfg.provider_model_id)
+    return effective_litellm_model_row(
+        litellm_model=cfg.litellm_model,
+        provider=str(cfg.provider),
+        provider_model_id=str(cfg.provider_model_id),
+    )

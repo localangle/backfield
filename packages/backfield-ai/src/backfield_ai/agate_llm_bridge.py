@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 import time
 
+from backfield_ai.catalog_runtime import resolve_llm_auth_for_model_config
 from backfield_ai.completion import LiteLLMCompletionRejectedError, completion_text_sync
 from backfield_ai.constants import COST_ESTIMATE_SOURCE_UNAVAILABLE
 from backfield_ai.json_clean import clean_json_response_text
-from backfield_ai.tracking_context import persist_llm_attempt
+from backfield_ai.tracking_context import current_llm_tracking_context, persist_llm_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,17 @@ def call_llm_tracked_sync(
     raw_model = model or os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
     lm_model = _legacy_to_litellm_model(raw_model.strip())
 
+    track_ctx = current_llm_tracking_context()
+    catalog_api_key: str | None = None
+    catalog_api_base: str | None = None
+    if track_ctx and mc_norm:
+        lm_model, catalog_api_key, catalog_api_base = resolve_llm_auth_for_model_config(
+            track_ctx.session,
+            project_id=track_ctx.project_id,
+            model_config_id=mc_norm,
+            fallback_litellm_model=lm_model,
+        )
+
     if project_system_prompt:
         system_message = project_system_prompt
     elif system_message is None:
@@ -94,15 +106,18 @@ def call_llm_tracked_sync(
         {"role": "user", "content": prompt},
     ]
 
-    api_key, api_base = _pick_litellm_auth(
-        lm_model,
-        openai_api_key,
-        anthropic_api_key,
-        gemini_api_key,
-        openrouter_api_key,
-        azure_api_key,
-        azure_api_base,
-    )
+    if catalog_api_key:
+        api_key, api_base = catalog_api_key, catalog_api_base
+    else:
+        api_key, api_base = _pick_litellm_auth(
+            lm_model,
+            openai_api_key,
+            anthropic_api_key,
+            gemini_api_key,
+            openrouter_api_key,
+            azure_api_key,
+            azure_api_base,
+        )
     if not api_key:
         raise ValueError("No API key available for the selected model.")
     if lm_model.strip().lower().startswith("azure/") and not (api_base or "").strip():

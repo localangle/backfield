@@ -457,6 +457,11 @@ class BackfieldOrganizationIntegrationSecret(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
     integration_key: str = Field(sa_column=Column(Text, nullable=False))
+    credential_display_name: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    api_base: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     value_encrypted: str = Field(sa_column=Column(Text, nullable=False))
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -491,6 +496,14 @@ class BackfieldAiModelConfig(SQLModel, table=True):
             "status",
             "model_kind",
         ),
+        UniqueConstraint(
+            "integration_secret_id",
+            name="uq_bf_ai_model_integration_secret_id",
+        ),
+        Index(
+            "ix_bf_ai_model_integration_secret",
+            "integration_secret_id",
+        ),
     )
 
     id: str = Field(default_factory=_uuid, primary_key=True)
@@ -509,6 +522,12 @@ class BackfieldAiModelConfig(SQLModel, table=True):
     capabilities_json: list[str] = Field(
         default_factory=list,
         sa_column=Column(JSON, nullable=False),
+    )
+    litellm_model: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    integration_secret_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_organization_integration_secret.id",
+        nullable=True,
     )
     config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     input_token_price: Decimal | None = Field(

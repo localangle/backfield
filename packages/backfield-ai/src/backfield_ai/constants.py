@@ -21,7 +21,6 @@ INTEGRATION_KEY_AI_PROVIDER_ANTHROPIC = "ai.provider.anthropic"
 INTEGRATION_KEY_AI_PROVIDER_GEMINI = "ai.provider.gemini"
 INTEGRATION_KEY_AI_PROVIDER_OPENROUTER = "ai.provider.openrouter"
 INTEGRATION_KEY_AI_PROVIDER_AZURE = "ai.provider.azure"
-INTEGRATION_KEY_AI_PROVIDER_AZURE_API_BASE = "ai.provider.azure.api_base"
 
 ORG_AI_PROVIDER_INTEGRATION_KEYS: frozenset[str] = frozenset(
     {
@@ -30,9 +29,11 @@ ORG_AI_PROVIDER_INTEGRATION_KEYS: frozenset[str] = frozenset(
         INTEGRATION_KEY_AI_PROVIDER_GEMINI,
         INTEGRATION_KEY_AI_PROVIDER_OPENROUTER,
         INTEGRATION_KEY_AI_PROVIDER_AZURE,
-        INTEGRATION_KEY_AI_PROVIDER_AZURE_API_BASE,
     }
 )
+
+# Arbitrary vendor credentials saved like presets (`BackfieldOrganizationIntegrationSecret`).
+INTEGRATION_KEY_AI_CREDENTIAL_PREFIX = "ai.credential."
 
 AI_PROVIDER_SLUG_BY_INTEGRATION_KEY: dict[str, str] = {
     INTEGRATION_KEY_AI_PROVIDER_OPENAI: "openai",
@@ -40,8 +41,17 @@ AI_PROVIDER_SLUG_BY_INTEGRATION_KEY: dict[str, str] = {
     INTEGRATION_KEY_AI_PROVIDER_GEMINI: "gemini",
     INTEGRATION_KEY_AI_PROVIDER_OPENROUTER: "openrouter",
     INTEGRATION_KEY_AI_PROVIDER_AZURE: "azure",
-    INTEGRATION_KEY_AI_PROVIDER_AZURE_API_BASE: "azure_endpoint",
 }
+
+
+def is_built_in_ai_provider_integration_key(integration_key: str) -> bool:
+    return integration_key in ORG_AI_PROVIDER_INTEGRATION_KEYS
+
+
+def is_custom_ai_credential_integration_key(integration_key: str) -> bool:
+    """Saved credential rows keyed ``ai.credential.<uuid>`` for custom catalog models."""
+    return integration_key.startswith(INTEGRATION_KEY_AI_CREDENTIAL_PREFIX)
+
 
 # Project-level default model roles (graph nodes resolve these at execution time).
 AI_DEFAULT_ROLE_GEOCODE_ROUTER = "geocode.router"

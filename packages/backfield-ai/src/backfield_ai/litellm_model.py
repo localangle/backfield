@@ -17,3 +17,16 @@ def litellm_model_id(provider: str, provider_model_id: str) -> str:
     if p == "openrouter":
         return f"openrouter/{mid}"
     return f"{p}/{mid}"
+
+
+def effective_litellm_model_row(
+    *,
+    litellm_model: str | None,
+    provider: str,
+    provider_model_id: str,
+) -> str:
+    """Prefer explicit routing string on the catalog row; else derive from provider + model id."""
+    lm = (litellm_model or "").strip()
+    if lm:
+        return lm
+    return litellm_model_id(provider, provider_model_id)

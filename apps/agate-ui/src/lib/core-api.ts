@@ -90,6 +90,8 @@ export interface AiModelConfigSummary {
   name: string
   provider: string
   provider_model_id: string
+  litellm_model?: string | null
+  integration_secret_id?: number | null
   model_kind: string
   status: string
   capabilities: string[]
@@ -135,6 +137,8 @@ export interface AiModelConfigCreateInput {
   curated_id?: string | null
   provider?: string | null
   provider_model_id?: string | null
+  litellm_model?: string | null
+  integration_secret_id?: number | null
   model_kind?: string
   capabilities?: string[] | null
   config_json?: Record<string, unknown> | null
@@ -162,6 +166,8 @@ export interface AiModelConfigPatchInput {
   output_token_price?: number | null
   model_kind?: string
   config_json?: Record<string, unknown> | null
+  litellm_model?: string
+  integration_secret_id?: number
 }
 
 export async function patchOrganizationAiModel(
@@ -185,22 +191,27 @@ export async function testOrganizationAiModelConnection(
   )
 }
 
-/** Organization AI provider slots (OpenAI, Anthropic, Gemini, OpenRouter, Azure OpenAI); no secret material. */
-export interface AiProviderCatalogEntry {
-  provider: string
+/** Preset provider slots plus saved custom vendor credentials (metadata only). */
+export interface AiCredentialCatalogEntry {
+  integration_secret_id: number | null
   integration_key: string
+  credential_kind: 'preset' | 'custom'
+  provider: string | null
   configured: boolean
+  display_name?: string | null
+  has_api_base: boolean
+  assigned_model_config_id?: string | null
+  assigned_model_name?: string | null
   created_at: string | null
   updated_at: string | null
 }
 
-export async function listAiProviderIntegrationCatalog(
-  orgId: number,
-): Promise<AiProviderCatalogEntry[]> {
-  return jsonFetch(`/v1/organizations/${orgId}/integration-secrets/ai-provider-catalog`)
+export async function listAiCredentialsCatalog(orgId: number): Promise<AiCredentialCatalogEntry[]> {
+  return jsonFetch(`/v1/organizations/${orgId}/integration-secrets/catalog`)
 }
 
 export interface IntegrationSecretMetadata {
+  integration_secret_id?: number | null
   integration_key: string
   created_at: string
   updated_at: string
@@ -209,12 +220,62 @@ export interface IntegrationSecretMetadata {
 export async function putOrganizationIntegrationSecret(
   orgId: number,
   integrationKey: string,
-  value: string,
+  payload: { value: string; display_name?: string | null; api_base?: string | null },
+): Promise<IntegrationSecretMetadata> {
+  const enc = encodeURIComponent(integrationKey)
+  const body: { value: string; display_name?: string | null; api_base?: string | null } = {
+    value: payload.value,
+  }
+  if (payload.display_name !== undefined) {
+    body.display_name = payload.display_name === '' ? null : payload.display_name
+  }
+  if (payload.api_base !== undefined) {
+    body.api_base = payload.api_base === '' ? null : payload.api_base
+  }
+  return jsonFetch(`/v1/organizations/${orgId}/integration-secrets/${enc}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  })
+}
+
+export interface IntegrationSecretCreateInput {
+  value: string
+  display_name?: string | null
+  api_base?: string | null
+}
+
+export interface IntegrationSecretCreatedResponse {
+  integration_secret_id: number
+  integration_key: string
+  created_at: string
+  updated_at: string
+}
+
+export async function createOrganizationAiCredential(
+  orgId: number,
+  body: IntegrationSecretCreateInput,
+): Promise<IntegrationSecretCreatedResponse> {
+  return jsonFetch(`/v1/organizations/${orgId}/integration-secrets`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+}
+
+export interface IntegrationSecretPatchInput {
+  value?: string
+  display_name?: string | null
+  api_base?: string | null
+}
+
+export async function patchOrganizationIntegrationSecret(
+  orgId: number,
+  integrationKey: string,
+  body: IntegrationSecretPatchInput,
 ): Promise<IntegrationSecretMetadata> {
   const enc = encodeURIComponent(integrationKey)
   return jsonFetch(`/v1/organizations/${orgId}/integration-secrets/${enc}`, {
-    method: "PUT",
-    body: JSON.stringify({ value }),
+    method: "PATCH",
+    body: JSON.stringify(body),
   })
 }
 

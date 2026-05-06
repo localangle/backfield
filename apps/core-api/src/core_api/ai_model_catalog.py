@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -15,12 +16,17 @@ from backfield_ai.constants import (
     AI_MODEL_KIND_GENERATIVE,
     DEFAULT_AI_CURRENCY,
 )
-from backfield_ai.litellm_model import litellm_model_id
-from backfield_db import BackfieldAiModelConfig
+from backfield_ai.litellm_model import effective_litellm_model_row, litellm_model_id
+from backfield_db import BackfieldAiModelConfig, BackfieldOrganizationIntegrationSecret
+from backfield_db.crypto import decrypt_secret
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
+
+from core_api.org_integration_secrets import (
+    assert_integration_secret_assignable_for_catalog_model,
+)
 
 try:  # optional import; used only for curated pricing defaults
     import litellm  # type: ignore
@@ -166,6 +172,8 @@ class AiModelConfigOut(BaseModel):
     name: str
     provider: str
     provider_model_id: str
+    litellm_model: str | None = None
+    integration_secret_id: int | None = None
     model_kind: str
     status: str
     capabilities: list[str]
@@ -179,7 +187,7 @@ class AiModelConfigOut(BaseModel):
 
 
 class AiModelConfigCreateBody(BaseModel):
-    """Create from a curated preset or as a custom LiteLLM-compatible model."""
+    """Create from a curated preset or a custom routed model with its own saved credential."""
 
     name: str | None = Field(
         default=None,
@@ -193,6 +201,14 @@ class AiModelConfigCreateBody(BaseModel):
     )
     provider: str | None = None
     provider_model_id: str | None = None
+    litellm_model: str | None = Field(
+        default=None,
+        description="Full LiteLLM model string for custom models (e.g. dashscope/qwen-turbo).",
+    )
+    integration_secret_id: int | None = Field(
+        default=None,
+        description="Saved credential id (organization integration secret); required for customs.",
+    )
     model_kind: str = AI_MODEL_KIND_GENERATIVE
     capabilities: list[str] | None = None
     config_json: dict[str, Any] | None = None
@@ -210,6 +226,8 @@ class AiModelConfigPatchBody(BaseModel):
     output_token_price: Decimal | None = None
     currency: str | None = None
     model_kind: str | None = None
+    litellm_model: str | None = None
+    integration_secret_id: int | None = None
 
 
 def list_curated_options_out() -> list[CuratedAiModelOptionOut]:
@@ -310,14 +328,40 @@ def _validate_optional_prices(
     return inp, out
 
 
+def _split_litellm_route_for_storage(litellm_model: str) -> tuple[str, str]:
+    """Derive legacy provider columns from a routing string (split on the first slash)."""
+    s = litellm_model.strip()
+    if not s:
+        raise HTTPException(status_code=400, detail="litellm_model is empty")
+    if len(s) > 512:
+        raise HTTPException(status_code=400, detail="litellm_model is too long")
+    if "/" in s:
+        prov, rest = s.split("/", 1)
+        p = prov.strip().lower()
+        r = rest.strip()
+        if not p or not r:
+            raise HTTPException(
+                status_code=400,
+                detail="litellm_model must include both provider and model identifier",
+            )
+        return p, r
+    return "openai", s
+
+
 def row_to_out(row: BackfieldAiModelConfig) -> AiModelConfigOut:
     tested_at = row.latest_tested_at.isoformat() if row.latest_tested_at else None
+    lm_raw = row.litellm_model
+    lm_out = str(lm_raw).strip() if lm_raw else None
+    sid = row.integration_secret_id
+    sid_out = int(sid) if sid is not None else None
     return AiModelConfigOut(
         id=str(row.id),
         organization_id=int(row.organization_id),
         name=str(row.name),
         provider=str(row.provider),
         provider_model_id=str(row.provider_model_id),
+        litellm_model=lm_out,
+        integration_secret_id=sid_out,
         model_kind=str(row.model_kind),
         status=str(row.status),
         capabilities=list(row.capabilities_json or []),
@@ -366,7 +410,15 @@ def create_org_model_config(
     currency = _normalize_currency(body.currency)
     inp_p, out_p = _validate_optional_prices(body.input_token_price, body.output_token_price)
 
+    litellm_route: str | None = None
+    integration_sid: int | None = None
+
     if body.curated_id:
+        if (body.litellm_model or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Curated presets must not set litellm_model",
+            )
         tmpl = CURATED_TEMPLATES.get(body.curated_id.strip())
         if tmpl is None:
             raise HTTPException(status_code=400, detail="Unknown curated_id")
@@ -374,6 +426,15 @@ def create_org_model_config(
         provider = tmpl.provider.strip().lower()
         provider_model_id = tmpl.provider_model_id.strip()
         caps_raw = body.capabilities if body.capabilities is not None else list(tmpl.capabilities)
+        sid_opt = body.integration_secret_id
+        if sid_opt is not None:
+            assert_integration_secret_assignable_for_catalog_model(
+                session,
+                organization_id,
+                int(sid_opt),
+                exclude_model_config_id=None,
+            )
+            integration_sid = int(sid_opt)
         if body.provider is not None and body.provider.strip().lower() != provider:
             raise HTTPException(
                 status_code=400,
@@ -388,12 +449,25 @@ def create_org_model_config(
                 detail="provider_model_id must match the curated template or be omitted",
             )
     else:
-        if not body.provider or not body.provider.strip():
-            raise HTTPException(status_code=400, detail="provider is required for custom models")
-        if not body.provider_model_id or not body.provider_model_id.strip():
+        if (body.provider or "").strip() or (body.provider_model_id or "").strip():
             raise HTTPException(
                 status_code=400,
-                detail="provider_model_id is required for custom models",
+                detail=(
+                    "Use litellm_model and integration_secret_id for custom rows; "
+                    "omit provider fields."
+                ),
+            )
+        lm_in = (body.litellm_model or "").strip()
+        cid_in = body.integration_secret_id
+        if not lm_in:
+            raise HTTPException(
+                status_code=400,
+                detail="litellm_model is required for custom models",
+            )
+        if cid_in is None:
+            raise HTTPException(
+                status_code=400,
+                detail="integration_secret_id is required for custom models",
             )
         if not body.name or not body.name.strip():
             raise HTTPException(status_code=400, detail="name is required for custom models")
@@ -403,8 +477,15 @@ def create_org_model_config(
                 detail="capabilities is required for custom models",
             )
         name = body.name.strip()
-        provider = body.provider.strip().lower()
-        provider_model_id = body.provider_model_id.strip()
+        litellm_route = lm_in
+        assert_integration_secret_assignable_for_catalog_model(
+            session,
+            organization_id,
+            int(cid_in),
+            exclude_model_config_id=None,
+        )
+        provider, provider_model_id = _split_litellm_route_for_storage(litellm_route)
+        integration_sid = int(cid_in)
         caps_raw = body.capabilities
 
     if not name:
@@ -417,6 +498,8 @@ def create_org_model_config(
         name=name,
         provider=provider,
         provider_model_id=provider_model_id,
+        litellm_model=litellm_route,
+        integration_secret_id=integration_sid,
         model_kind=model_kind,
         status="active",
         capabilities_json=capabilities,
@@ -494,6 +577,40 @@ def patch_org_model_config(
         row.input_token_price = new_in
         row.output_token_price = new_out
 
+    if "litellm_model" in data:
+        lm = str(data["litellm_model"]).strip()
+        if not lm:
+            raise HTTPException(status_code=400, detail="litellm_model must not be empty")
+        if len(lm) > 512:
+            raise HTTPException(status_code=400, detail="litellm_model is too long")
+        if row.integration_secret_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Only custom models that use a saved API credential can change routing."
+                ),
+            )
+        row.litellm_model = lm
+        row.provider, row.provider_model_id = _split_litellm_route_for_storage(lm)
+
+    if "integration_secret_id" in data:
+        new_raw = data["integration_secret_id"]
+        if new_raw is None:
+            raise HTTPException(status_code=400, detail="integration_secret_id cannot be cleared")
+        try:
+            new_sid = int(new_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="integration_secret_id must be an integer")
+        if new_sid <= 0:
+            raise HTTPException(status_code=400, detail="integration_secret_id must be positive")
+        assert_integration_secret_assignable_for_catalog_model(
+            session,
+            organization_id,
+            new_sid,
+            exclude_model_config_id=config_id,
+        )
+        row.integration_secret_id = new_sid
+
     session.add(row)
     try:
         session.commit()
@@ -515,42 +632,74 @@ def run_org_model_connection_test(
     """Tiny LiteLLM ping; updates latest test columns only (no LLM call records)."""
     from backfield_ai.completion import completion_text_sync
     from backfield_ai.credentials import organization_llm_api_keys
-    from backfield_ai.litellm_model import litellm_model_id
 
     row = get_org_model_config(session, organization_id=organization_id, config_id=config_id)
-    keys = organization_llm_api_keys(session, organization_id)
-    lm = litellm_model_id(str(row.provider), str(row.provider_model_id))
-    prov = str(row.provider).strip().lower()
+    lm = effective_litellm_model_row(
+        litellm_model=row.litellm_model,
+        provider=str(row.provider),
+        provider_model_id=str(row.provider_model_id),
+    )
+    api_key: str | None = None
     api_base: str | None = None
-    if prov == "openai":
-        api_key = keys.get("OPENAI_API_KEY")
-    elif prov == "anthropic":
-        api_key = keys.get("ANTHROPIC_API_KEY")
-    elif prov == "gemini":
-        api_key = keys.get("GEMINI_API_KEY")
-    elif prov == "openrouter":
-        api_key = keys.get("OPENROUTER_API_KEY")
-    elif prov == "azure":
-        api_key = keys.get("AZURE_API_KEY")
-        api_base = keys.get("AZURE_API_BASE")
+
+    sid = row.integration_secret_id
+    if sid is not None:
+        cred = session.get(BackfieldOrganizationIntegrationSecret, int(sid))
+        if cred is None or int(cred.organization_id) != organization_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Saved API credential for this model was not found.",
+            )
+        try:
+            api_key = decrypt_secret(cred.value_encrypted)
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Could not decrypt saved API credential.",
+            ) from None
+        if not (api_key or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Saved API credential for this model is empty.",
+            )
+        api_base = (cred.api_base or "").strip() or None
     else:
-        api_key = (
-            keys.get("OPENAI_API_KEY")
-            or keys.get("ANTHROPIC_API_KEY")
-            or keys.get("GEMINI_API_KEY")
-            or keys.get("OPENROUTER_API_KEY")
-            or keys.get("AZURE_API_KEY")
-        )
+        keys = organization_llm_api_keys(session, organization_id)
+        prov = str(row.provider).strip().lower()
+        if prov == "openai":
+            api_key = keys.get("OPENAI_API_KEY")
+        elif prov == "anthropic":
+            api_key = keys.get("ANTHROPIC_API_KEY")
+        elif prov == "gemini":
+            api_key = keys.get("GEMINI_API_KEY")
+        elif prov == "openrouter":
+            api_key = keys.get("OPENROUTER_API_KEY")
+        elif prov == "azure":
+            api_key = keys.get("AZURE_API_KEY")
+            api_base = os.getenv("AZURE_API_BASE")
+        else:
+            api_key = (
+                keys.get("OPENAI_API_KEY")
+                or keys.get("ANTHROPIC_API_KEY")
+                or keys.get("GEMINI_API_KEY")
+                or keys.get("OPENROUTER_API_KEY")
+                or keys.get("AZURE_API_KEY")
+            )
 
     if not api_key:
         raise HTTPException(
             status_code=400,
             detail="No provider credentials configured for this organization",
         )
-    if prov == "azure" and not (api_base or "").strip():
+    low_lm = lm.strip().lower()
+    if low_lm.startswith("azure/") and not (api_base or "").strip():
         raise HTTPException(
             status_code=400,
-            detail="Azure OpenAI requires a resource endpoint URL in organization integrations",
+            detail=(
+                "Azure OpenAI needs your resource endpoint URL on the Core API host "
+                "for organization tests, as the credential on this model, "
+                "or under each project's Integrations for flows."
+            ),
         )
 
     now = datetime.now(UTC)
