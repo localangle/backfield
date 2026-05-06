@@ -18,6 +18,7 @@ import {
   type RunEstimatedAiCost,
 } from '@/lib/api'
 import { formatDateCentral } from '@/lib/utils'
+import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, ExternalLink, RotateCcw } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 
@@ -399,7 +400,7 @@ export default function RunDetail() {
       {aiCost && aiCost.attempt_count > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Estimated AI usage cost</CardTitle>
+            <CardTitle>Total estimated AI usage cost</CardTitle>
             <CardDescription>
               Based on tracked model calls for this run (totals are approximate).
             </CardDescription>
@@ -424,7 +425,8 @@ export default function RunDetail() {
                 <ul className="list-disc pl-5 space-y-1">
                   {aiCost.node_breakdown.map((row) => (
                     <li key={String(row.node_id)}>
-                      {row.node_id ?? 'Flow'}{': '}
+                      {getNodeStepDisplayName(graph?.spec?.nodes, row.node_id)}
+                      {': '}
                       {Number(row.estimated_total).toLocaleString(undefined, {
                         style: 'currency',
                         currency: aiCost.currency || 'USD',
@@ -535,7 +537,7 @@ export default function RunDetail() {
                 {paginatedItems.map((item) => (
                   <TableRow 
                     key={item.id}
-                    className={`cursor-pointer hover:bg-muted/50 ${selectedItems.has(item.id) ? 'bg-muted' : ''}`}
+                    className={`cursor-pointer hover:bg-muted/15 ${selectedItems.has(item.id) ? 'bg-muted' : ''}`}
                     onClick={() => navigate(`/runs/${runId}/items/${item.id}`)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>

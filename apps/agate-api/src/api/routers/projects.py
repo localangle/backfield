@@ -16,6 +16,7 @@ from backfield_auth.gate import (
 )
 from backfield_db import (
     AgateGraph,
+    AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
     BackfieldOrganization,
@@ -31,6 +32,9 @@ from sqlmodel import Session, select
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 _KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+# Items still queued or executing are excluded from average-item duration.
+_ITEM_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "timed_out", "skipped"})
 
 
 class ProjectEstimatedAiCostOut(BaseModel):
@@ -182,11 +186,83 @@ def create_project(
 class ProjectStatsOut(BaseModel):
     total_runs: int
     articles_processed: int
+    runs_succeeded: int = 0
+    runs_in_progress: int = 0
+    runs_failed: int = 0
     avg_duration_ms_per_run: float | None = None
     avg_duration_ms_per_item: float | None = None
+    avg_estimated_ai_cost_per_run: Decimal | None = None
+    avg_estimated_ai_cost_currency: str | None = None
+    avg_estimated_ai_cost_incomplete: bool = False
 
 
-_TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed"})
+def _accumulate_ai_cost_rows(rows: list[BackfieldAiCallRecord]) -> tuple[Decimal, bool, str, int]:
+    total = Decimal("0")
+    incomplete = False
+    currency = "USD"
+    for row in rows:
+        currency = str(row.currency or "USD")
+        if row.estimated_cost is not None:
+            total += row.estimated_cost
+        else:
+            incomplete = True
+        if row.cost_estimate_incomplete:
+            incomplete = True
+    return total, incomplete, currency, len(rows)
+
+
+def _rollup_project_ai_cost(session: Session, project_id: int) -> tuple[Decimal, bool, str, int]:
+    rows = list(
+        session.exec(
+            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.project_id == project_id)
+        ).all()
+    )
+    return _accumulate_ai_cost_rows(rows)
+
+
+def _avg_terminal_processed_item_duration_ms(
+    session: Session, succeeded_run_ids: list[str]
+) -> float | None:
+    """Mean wall time per ``agate_processed_item`` row (terminal statuses only).
+
+    Returns ``None`` when there are no such rows (single-graph runs without batch items).
+    """
+    if not succeeded_run_ids:
+        return None
+    rows = list(
+        session.exec(
+            select(AgateProcessedItem).where(
+                AgateProcessedItem.run_id.in_(succeeded_run_ids),
+            )
+        ).all()
+    )
+    durs: list[float] = []
+    for row in rows:
+        if row.status not in _ITEM_TERMINAL_STATUSES:
+            continue
+        ms = (row.updated_at - row.created_at).total_seconds() * 1000
+        if ms < 0:
+            ms = 0.0
+        durs.append(ms)
+    if not durs:
+        return None
+    return sum(durs) / len(durs)
+
+
+def _rollup_project_ai_cost_for_run_ids(
+    session: Session, project_id: int, run_ids: frozenset[str]
+) -> tuple[Decimal, bool, str, int]:
+    if not run_ids:
+        return Decimal("0"), False, "USD", 0
+    rows = list(
+        session.exec(
+            select(BackfieldAiCallRecord).where(
+                BackfieldAiCallRecord.project_id == project_id,
+                BackfieldAiCallRecord.run_id.in_(list(run_ids)),
+            )
+        ).all()
+    )
+    return _accumulate_ai_cost_rows(rows)
 
 
 def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
@@ -198,25 +274,59 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         return ProjectStatsOut(total_runs=0, articles_processed=0)
     runs = session.exec(select(AgateRun).where(AgateRun.graph_id.in_(graph_ids))).all()
     total_runs = len(runs)
-    articles_processed = sum(1 for r in runs if r.status == "succeeded")
-    dur_terminal: list[float] = []
+
+    runs_succeeded = 0
+    runs_in_progress = 0
+    runs_failed = 0
+    succeeded_ids: list[str] = []
+    for r in runs:
+        st = r.status
+        if st == "succeeded":
+            runs_succeeded += 1
+            succeeded_ids.append(r.id)
+        elif st in ("pending", "running"):
+            runs_in_progress += 1
+        elif st == "failed":
+            runs_failed += 1
+        else:
+            runs_failed += 1
+
+    articles_processed = runs_succeeded
+
     dur_success: list[float] = []
     for r in runs:
-        if r.status not in _TERMINAL_RUN_STATUSES:
+        if r.status != "succeeded":
             continue
         ms = (r.updated_at - r.created_at).total_seconds() * 1000
         if ms < 0:
             ms = 0.0
-        dur_terminal.append(ms)
-        if r.status == "succeeded":
-            dur_success.append(ms)
-    avg_run = sum(dur_terminal) / len(dur_terminal) if dur_terminal else None
-    avg_item = sum(dur_success) / len(dur_success) if dur_success else None
+        dur_success.append(ms)
+    avg_run_duration = sum(dur_success) / len(dur_success) if dur_success else None
+
+    avg_item_duration = _avg_terminal_processed_item_duration_ms(session, succeeded_ids)
+    if avg_item_duration is None:
+        avg_item_duration = avg_run_duration
+
+    pid = int(p.id) if p.id is not None else 0
+    succeeded_frozen = frozenset(succeeded_ids)
+    total_ai, ai_incomplete, ai_currency, _n = _rollup_project_ai_cost_for_run_ids(
+        session, pid, succeeded_frozen
+    )
+    avg_ai: Decimal | None = None
+    if runs_succeeded > 0:
+        avg_ai = total_ai / Decimal(runs_succeeded)
+
     return ProjectStatsOut(
         total_runs=total_runs,
         articles_processed=articles_processed,
-        avg_duration_ms_per_run=avg_run,
-        avg_duration_ms_per_item=avg_item,
+        runs_succeeded=runs_succeeded,
+        runs_in_progress=runs_in_progress,
+        runs_failed=runs_failed,
+        avg_duration_ms_per_run=avg_run_duration,
+        avg_duration_ms_per_item=avg_item_duration,
+        avg_estimated_ai_cost_per_run=avg_ai,
+        avg_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
+        avg_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
     )
 
 
@@ -449,27 +559,12 @@ def get_project_estimated_ai_cost(
     if not p:
         raise HTTPException(404, "Project not found")
 
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.project_id == project_id)
-        ).all()
-    )
-    total = Decimal("0")
-    incomplete = False
-    currency = "USD"
-    for row in rows:
-        currency = str(row.currency or "USD")
-        if row.estimated_cost is not None:
-            total += row.estimated_cost
-        else:
-            incomplete = True
-        if row.cost_estimate_incomplete:
-            incomplete = True
+    total, incomplete, currency, attempt_count = _rollup_project_ai_cost(session, project_id)
 
     return ProjectEstimatedAiCostOut(
         project_id=project_id,
         currency=currency,
         estimated_total=total,
         incomplete_estimate=incomplete,
-        attempt_count=len(rows),
+        attempt_count=attempt_count,
     )

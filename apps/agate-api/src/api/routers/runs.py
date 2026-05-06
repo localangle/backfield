@@ -126,6 +126,9 @@ class RunOut(BaseModel):
     whole_run_ai_cost_estimate: Decimal = Decimal("0")
     whole_run_ai_cost_incomplete: bool = False
     whole_run_ai_cost_currency: str = DEFAULT_AI_COST_CURRENCY
+    #: Sum of all tracked LLM costs for this run (whole-graph + per processed item).
+    estimated_ai_cost_total: Decimal = Decimal("0")
+    estimated_ai_cost_total_incomplete: bool = False
 
 
 def _graph_project_id(session: Session, graph_id: str) -> int:
@@ -166,6 +169,59 @@ def _rollup_ai_costs_for_run(
             by_item[iid] = (prev_sum + add_amt, prev_inc or inc_piece)
 
     return by_item, (null_total, null_inc), currency
+
+
+def _total_ai_cost_from_rollup(
+    by_item: dict[int, tuple[Decimal, bool]],
+    null_b: tuple[Decimal, bool],
+) -> tuple[Decimal, bool]:
+    null_cost, null_inc = null_b
+    total = null_cost
+    incomplete = null_inc
+    for _iid, (est, item_inc) in by_item.items():
+        total += est
+        incomplete = incomplete or item_inc
+    return total, incomplete
+
+
+def _total_ai_cost_from_call_rows(rows: list[BackfieldAiCallRecord]) -> tuple[Decimal, bool, str]:
+    """Same totals as ``_rollup_ai_costs_for_run``, built from raw rows (batched list queries)."""
+    total = Decimal("0")
+    incomplete = False
+    currency = DEFAULT_AI_COST_CURRENCY
+    for row in rows:
+        if row.currency:
+            currency = str(row.currency)
+        raw_cost = row.estimated_cost
+        inc_piece = bool(row.cost_estimate_incomplete) or raw_cost is None
+        add_amt = raw_cost if raw_cost is not None else Decimal("0")
+        total += add_amt
+        incomplete = incomplete or inc_piece
+    return total, incomplete, currency
+
+
+def _rollup_ai_cost_totals_for_run_ids(
+    session: Session, run_ids: list[str]
+) -> dict[str, tuple[Decimal, bool, str]]:
+    """Per-run sum of all ``BackfieldAiCallRecord`` rows (one DB round-trip)."""
+    if not run_ids:
+        return {}
+    rows = list(
+        session.exec(
+            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id.in_(run_ids))
+        ).all()
+    )
+    by_run: dict[str, list[BackfieldAiCallRecord]] = {}
+    for row in rows:
+        rid = row.run_id
+        if rid is None:
+            continue
+        by_run.setdefault(rid, []).append(row)
+    out: dict[str, tuple[Decimal, bool, str]] = {}
+    for rid in run_ids:
+        chunk = by_run.get(rid, [])
+        out[rid] = _total_ai_cost_from_call_rows(chunk)
+    return out
 
 
 def _any_agate_processed_items(session: Session, run_id: str) -> bool:
@@ -270,6 +326,7 @@ def list_runs(
     if visible is not None:
         allowed = set(visible)
         rows = [r for r in rows if _graph_project_id(session, r.graph_id) in allowed]
+    cost_map = _rollup_ai_cost_totals_for_run_ids(session, [r.id for r in rows])
     out: list[RunOut] = []
     for r in rows:
         result = None
@@ -279,6 +336,9 @@ def list_runs(
             except json.JSONDecodeError:
                 result = {"raw": r.result_json}
         pid = _graph_project_id(session, r.graph_id)
+        total_est, total_inc, cur = cost_map.get(
+            r.id, (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY)
+        )
         out.append(
             RunOut(
                 id=r.id,
@@ -290,6 +350,9 @@ def list_runs(
                 mapbox_api_token=_mapbox_api_token_for_project(session, pid),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
+                whole_run_ai_cost_currency=cur,
+                estimated_ai_cost_total=total_est,
+                estimated_ai_cost_total_incomplete=total_inc,
             )
         )
     return out
@@ -443,6 +506,7 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
     processed = _processed_items_for_run(
         session, r.id, cost_by_item=by_item, currency=wr_currency
     )
+    total_est, total_inc = _total_ai_cost_from_rollup(by_item, null_b)
     return RunOut(
         id=r.id,
         graph_id=r.graph_id,
@@ -457,6 +521,8 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         whole_run_ai_cost_estimate=null_cost,
         whole_run_ai_cost_incomplete=null_incomplete,
         whole_run_ai_cost_currency=wr_currency,
+        estimated_ai_cost_total=total_est,
+        estimated_ai_cost_total_incomplete=total_inc,
     )
 
 

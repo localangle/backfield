@@ -59,6 +59,38 @@ export function getNodeLabel(type: string): string {
   return metadata?.label || type
 }
 
+/** Node shape from `Graph['spec']['nodes']` (API / flow editor). */
+export type GraphSpecNode = {
+  id: string
+  type: string
+  params?: Record<string, unknown>
+}
+
+/**
+ * User-facing label for a node in summaries (matches ProcessedItemDetail / visualizations).
+ * Falls back to the node-type catalog label, then the raw id if the node is missing from the graph.
+ */
+export function getNodeStepDisplayName(
+  nodes: GraphSpecNode[] | undefined,
+  nodeId: string | null | undefined,
+  options?: { wholeFlowLabel?: string }
+): string {
+  const flowLabel = options?.wholeFlowLabel ?? 'Flow'
+  if (nodeId == null || nodeId === '') {
+    return flowLabel
+  }
+  const node = nodes?.find((n) => n.id === nodeId)
+  if (!node) {
+    return nodeId
+  }
+  const p = node.params ?? {}
+  const name = p.name
+  const label = p.label
+  if (typeof name === 'string' && name.trim()) return name.trim()
+  if (typeof label === 'string' && label.trim()) return label.trim()
+  return getNodeLabel(node.type)
+}
+
 /**
  * Get the background color class for a node type (for colored circles)
  */

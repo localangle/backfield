@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { listRuns, listGraphs, listProjects, cancelRun, type Run, type Graph, type Project } from '@/lib/api'
+import { formatRunEstimatedAiCost } from '@/lib/formatRunEstimatedCost'
 import { formatDateCentral } from '@/lib/utils'
 import { Loader2, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw, Building2, AlertTriangle, StopCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -334,25 +335,24 @@ export default function RunsList() {
             <table className="w-full">
               <thead className="border-b bg-muted/50">
                 <tr>
-                  <th className="text-left p-4 font-medium">Run ID</th>
                   <th className="text-left p-4 font-medium">Project</th>
                   <th className="text-left p-4 font-medium">Flow</th>
                   <th className="text-left p-4 font-medium">Status</th>
                   <th className="text-left p-4 font-medium">Created</th>
+                  <th className="text-left p-4 font-medium">Estimated cost</th>
                   <th className="text-left p-4 font-medium">Duration</th>
                   <th className="text-right p-4 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRuns.map((run) => (
+                {filteredRuns.map((run) => {
+                  const costFmt = formatRunEstimatedAiCost(run)
+                  return (
                   <tr
                     key={run.id}
-                    className="border-b last:border-b-0 hover:bg-muted/50 transition-colors cursor-pointer"
+                    className="border-b last:border-b-0 hover:bg-muted/15 transition-colors cursor-pointer"
                     onClick={() => navigate(`/runs/${run.id}`)}
                   >
-                    <td className="p-4">
-                      <div className="font-medium">#{run.id}</div>
-                    </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <Building2 className="h-3 w-3 text-muted-foreground" />
@@ -361,9 +361,6 @@ export default function RunsList() {
                     </td>
                     <td className="p-4">
                       <div className="font-medium">{getGraphName(run.graph_id)}</div>
-                      <div className="text-sm text-muted-foreground">
-                        Flow ID: {run.graph_id}
-                      </div>
                     </td>
                     <td className="p-4">
                       <Badge className={getStatusColor(run.status)}>
@@ -371,11 +368,24 @@ export default function RunsList() {
                         <span className="ml-1 capitalize">{run.status.replace(/_/g, ' ')}</span>
                       </Badge>
                       <div className="text-xs text-muted-foreground mt-1">
-                        {run.succeeded_items}/{run.total_items} succeeded
+                        {run.succeeded_items}/{run.total_items} completed
                       </div>
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">
                       {formatDateCentral(run.created_at, { dateStyle: 'medium', timeStyle: 'short' })}
+                    </td>
+                    <td className="p-4 text-sm text-muted-foreground tabular-nums">
+                      <>
+                        {costFmt.display}
+                        {costFmt.incomplete ? (
+                          <span
+                            className="text-amber-700 dark:text-amber-400 ml-0.5"
+                            title="Estimate may be incomplete"
+                          >
+                            *
+                          </span>
+                        ) : null}
+                      </>
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">
                       {getDuration(run)}
@@ -411,7 +421,8 @@ export default function RunsList() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
             {/* Pagination Controls */}

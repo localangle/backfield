@@ -34,7 +34,7 @@ interface ProjectSettingsProps {
   /** Full-width panel for project detail page (no dialog chrome). */
   variant?: 'dialog' | 'inline'
   /** With `variant="inline"`, render only this block (project detail tabs). */
-  inlineScope?: 'system' | 'credentials'
+  inlineScope?: 'system' | 'integrations' | 'keys'
   /** Called after project metadata changes (name, slug, system prompt). */
   onRemoteUpdated?: () => void
   /** When true with `variant="inline"`, primary actions render in the project page toolbar. */
@@ -97,9 +97,13 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
         openSystemPromptEdit: () => setEditingSystemPrompt(true),
       }
     }
-    if (variant === 'inline' && inlineScope === 'credentials') {
+    if (variant === 'inline' && inlineScope === 'keys') {
       return {
         openAccessKeyCreate: () => accessKeysPanelRef.current?.openCreateDialog(),
+      }
+    }
+    if (variant === 'inline' && inlineScope === 'integrations') {
+      return {
         openAddProviderSecret: () => setShowAddForm(true),
       }
     }
@@ -127,6 +131,9 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
     setProjectName(project.name)
     setSystemPrompt(project.system_prompt || '')
     if (variant === 'inline' && inlineScope === 'system') {
+      return
+    }
+    if (variant === 'inline' && inlineScope === 'keys') {
       return
     }
     loadApiKeys()
@@ -445,18 +452,9 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
           </div>
   )
 
-  const credentialsSection = (showCredentialsHeading: boolean) => (
-    <div className="w-full min-w-0">
-      {showCredentialsHeading && (
-        <h3 className="text-lg font-semibold mb-4">Credentials</h3>
-      )}
-      {project ? (
-        <ProjectAccessKeysPanel
-          ref={accessKeysPanelRef}
-          projectId={project.id}
-          primaryActionsInToolbar={primaryActionsInToolbar}
-        />
-      ) : null}
+  /** Provider secrets (OpenAI, Mapbox, …). ``toolbarExternalActions``: hide inline Add when parent toolbar has it. */
+  const integrationSecretsSection = (toolbarExternalActions: boolean) => (
+    <>
       <h4 className="text-base font-semibold mb-1">Integration secrets</h4>
       <p className="text-sm text-muted-foreground mb-4">
         Keys for OpenAI, Mapbox, AWS, and other providers used by flows in this project (stored
@@ -468,7 +466,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
         </div>
       ) : (
         <div className="space-y-4 w-full min-w-0">
-          {!primaryActionsInToolbar ? (
+          {!toolbarExternalActions ? (
             <div className="flex justify-end">
               <Button
                 variant="outline"
@@ -638,6 +636,34 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
           )}
         </div>
       )}
+    </>
+  )
+
+  const keysSectionInline = (
+    <div className="w-full min-w-0">
+      {project ? (
+        <ProjectAccessKeysPanel
+          ref={accessKeysPanelRef}
+          projectId={project.id}
+          primaryActionsInToolbar={primaryActionsInToolbar}
+        />
+      ) : null}
+    </div>
+  )
+
+  const credentialsSection = (showCredentialsHeading: boolean) => (
+    <div className="w-full min-w-0">
+      {showCredentialsHeading && (
+        <h3 className="text-lg font-semibold mb-4">Credentials</h3>
+      )}
+      {project ? (
+        <ProjectAccessKeysPanel
+          ref={accessKeysPanelRef}
+          projectId={project.id}
+          primaryActionsInToolbar={false}
+        />
+      ) : null}
+      {integrationSecretsSection(false)}
     </div>
   )
 
@@ -654,11 +680,20 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
     )
   }
 
-  if (variant === 'inline' && inlineScope === 'credentials') {
+  if (variant === 'inline' && inlineScope === 'integrations') {
     return inlineShell(
       <>
         {errorAlert}
-        {credentialsSection(false)}
+        {integrationSecretsSection(primaryActionsInToolbar)}
+      </>
+    )
+  }
+
+  if (variant === 'inline' && inlineScope === 'keys') {
+    return inlineShell(
+      <>
+        {errorAlert}
+        {keysSectionInline}
       </>
     )
   }

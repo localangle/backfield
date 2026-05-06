@@ -25,8 +25,18 @@ export interface Project {
 export interface ProjectStats {
   total_runs: number
   articles_processed: number
+  /** Runs with status ``succeeded``. */
+  runs_succeeded: number
+  /** Runs still ``pending`` or ``running``. */
+  runs_in_progress: number
+  /** Runs with status ``failed`` (includes cancelled runs). */
+  runs_failed: number
   avg_duration_ms_per_run: number | null
   avg_duration_ms_per_item: number | null
+  /** LLM rollup for completed runs only, divided by ``runs_succeeded``. */
+  avg_estimated_ai_cost_per_run?: string | number | null
+  avg_estimated_ai_cost_currency?: string | null
+  avg_estimated_ai_cost_incomplete?: boolean
 }
 
 export interface Graph {
@@ -117,6 +127,9 @@ export interface Run {
   whole_run_ai_cost_estimate?: number
   whole_run_ai_cost_incomplete?: boolean
   whole_run_ai_cost_currency?: string
+  /** Sum of tracked LLM spend for this run (when provided by the API). */
+  estimated_ai_cost_total?: number
+  estimated_ai_cost_total_incomplete?: boolean
 }
 
 export interface ApiKey {
@@ -201,6 +214,8 @@ interface RawRun {
   whole_run_ai_cost_estimate?: string | number | null
   whole_run_ai_cost_incomplete?: boolean
   whole_run_ai_cost_currency?: string | null
+  estimated_ai_cost_total?: string | number | null
+  estimated_ai_cost_total_incomplete?: boolean
 }
 
 function _parseCostAmount(v: unknown): number {
@@ -332,6 +347,9 @@ function normalizeRun(raw: RawRun): Run {
   const pending_items = items.filter((i) => i.status === 'pending').length
   const running_items = items.filter((i) => i.status === 'running').length
 
+  const hasTotalAggregate =
+    raw.estimated_ai_cost_total !== undefined && raw.estimated_ai_cost_total !== null
+
   return {
     id: raw.id,
     graph_id: raw.graph_id,
@@ -350,6 +368,12 @@ function normalizeRun(raw: RawRun): Run {
     whole_run_ai_cost_estimate: wrEst,
     whole_run_ai_cost_incomplete: wrInc,
     whole_run_ai_cost_currency: wrCur,
+    ...(hasTotalAggregate
+      ? {
+          estimated_ai_cost_total: _parseCostAmount(raw.estimated_ai_cost_total),
+          estimated_ai_cost_total_incomplete: Boolean(raw.estimated_ai_cost_total_incomplete),
+        }
+      : {}),
   }
 }
 
