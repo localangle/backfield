@@ -16,7 +16,10 @@ from backfield_ai.constants import (
     AI_MODEL_KIND_GENERATIVE,
     DEFAULT_AI_CURRENCY,
 )
-from backfield_ai.litellm_model import effective_litellm_model_row, litellm_model_id
+from backfield_ai.litellm_model import (
+    effective_litellm_model_row,
+    litellm_model_cost_lookup_keys,
+)
 from backfield_db import (
     BackfieldAiCallRecord,
     BackfieldAiDefaultModelRole,
@@ -57,41 +60,14 @@ class CuratedAiModelTemplate:
     capabilities: tuple[str, ...]
 
 
+# Insertion order controls default API list order and Preset dropdown order within each provider.
 CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
-    # OpenAI (ordered for quick selection).
-    "openai:gpt-5-mini": CuratedAiModelTemplate(
-        template_id="openai:gpt-5-mini",
+    # --- OpenAI (Frontier → Fast/Cheap → Ultra Lightweight → Legacy) ---
+    "openai:gpt-5.5": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.5",
         provider="openai",
-        provider_model_id="gpt-5-mini",
-        label="GPT-5 Mini",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
-    "openai:gpt-5-nano": CuratedAiModelTemplate(
-        template_id="openai:gpt-5-nano",
-        provider="openai",
-        provider_model_id="gpt-5-nano",
-        label="GPT-5 Nano",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
-    "openai:gpt-5": CuratedAiModelTemplate(
-        template_id="openai:gpt-5",
-        provider="openai",
-        provider_model_id="gpt-5",
-        label="GPT-5",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
-    "openai:gpt-5.4-mini": CuratedAiModelTemplate(
-        template_id="openai:gpt-5.4-mini",
-        provider="openai",
-        provider_model_id="gpt-5.4-mini",
-        label="GPT-5.4 Mini",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
-    "openai:gpt-5.4-nano": CuratedAiModelTemplate(
-        template_id="openai:gpt-5.4-nano",
-        provider="openai",
-        provider_model_id="gpt-5.4-nano",
-        label="GPT-5.4 Nano",
+        provider_model_id="gpt-5.5",
+        label="GPT-5.5",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
     "openai:gpt-5.4": CuratedAiModelTemplate(
@@ -101,11 +77,11 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="GPT-5.4",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
-    "openai:gpt-5.5": CuratedAiModelTemplate(
-        template_id="openai:gpt-5.5",
+    "openai:gpt-5": CuratedAiModelTemplate(
+        template_id="openai:gpt-5",
         provider="openai",
-        provider_model_id="gpt-5.5",
-        label="GPT-5.5",
+        provider_model_id="gpt-5",
+        label="GPT-5",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
     "openai:gpt-5.5-mini": CuratedAiModelTemplate(
@@ -115,6 +91,20 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="GPT-5.5 Mini",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
+    "openai:gpt-5.4-mini": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.4-mini",
+        provider="openai",
+        provider_model_id="gpt-5.4-mini",
+        label="GPT-5.4 Mini",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5-mini": CuratedAiModelTemplate(
+        template_id="openai:gpt-5-mini",
+        provider="openai",
+        provider_model_id="gpt-5-mini",
+        label="GPT-5 Mini",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
     "openai:gpt-5.5-nano": CuratedAiModelTemplate(
         template_id="openai:gpt-5.5-nano",
         provider="openai",
@@ -122,40 +112,257 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="GPT-5.5 Nano",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
-    # Anthropic (recent generations).
+    "openai:gpt-5.4-nano": CuratedAiModelTemplate(
+        template_id="openai:gpt-5.4-nano",
+        provider="openai",
+        provider_model_id="gpt-5.4-nano",
+        label="GPT-5.4 Nano",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-5-nano": CuratedAiModelTemplate(
+        template_id="openai:gpt-5-nano",
+        provider="openai",
+        provider_model_id="gpt-5-nano",
+        label="GPT-5 Nano",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-4.1": CuratedAiModelTemplate(
+        template_id="openai:gpt-4.1",
+        provider="openai",
+        provider_model_id="gpt-4.1",
+        label="GPT-4.1",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openai:gpt-4.1-mini": CuratedAiModelTemplate(
+        template_id="openai:gpt-4.1-mini",
+        provider="openai",
+        provider_model_id="gpt-4.1-mini",
+        label="GPT-4.1 Mini",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    # --- Anthropic ---
+    "anthropic:claude-opus-4-5": CuratedAiModelTemplate(
+        template_id="anthropic:claude-opus-4-5",
+        provider="anthropic",
+        provider_model_id="claude-opus-4-5",
+        label="Claude Opus 4.5",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
     "anthropic:claude-sonnet-4-5": CuratedAiModelTemplate(
         template_id="anthropic:claude-sonnet-4-5",
         provider="anthropic",
-        provider_model_id="claude-sonnet-4-5-20250929",
+        provider_model_id="claude-sonnet-4-5",
         label="Claude Sonnet 4.5",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
-    "anthropic:claude-sonnet-4-6": CuratedAiModelTemplate(
-        template_id="anthropic:claude-sonnet-4-6",
-        provider="anthropic",
-        provider_model_id="claude-sonnet-4-6",
-        label="Claude Sonnet 4.6",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
     "anthropic:claude-haiku-4-5": CuratedAiModelTemplate(
         template_id="anthropic:claude-haiku-4-5",
         provider="anthropic",
-        provider_model_id="claude-haiku-4-5-20251001",
+        provider_model_id="claude-haiku-4-5",
         label="Claude Haiku 4.5",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
-    "anthropic:claude-opus-4-5": CuratedAiModelTemplate(
-        template_id="anthropic:claude-opus-4-5",
+    "anthropic:claude-sonnet-3-7": CuratedAiModelTemplate(
+        template_id="anthropic:claude-sonnet-3-7",
         provider="anthropic",
-        provider_model_id="claude-opus-4-5-20251101",
-        label="Claude Opus 4.5",
+        provider_model_id="claude-sonnet-3-7",
+        label="Claude Sonnet 3.7",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
-    "anthropic:claude-opus-4-7": CuratedAiModelTemplate(
-        template_id="anthropic:claude-opus-4-7",
-        provider="anthropic",
-        provider_model_id="claude-opus-4-7-20260416",
-        label="Claude Opus 4.7",
+    # --- Google (Gemini + Gemma; LiteLLM routes gemini/* — see litellm_model_id) ---
+    "google:gemini-3-pro": CuratedAiModelTemplate(
+        template_id="google:gemini-3-pro",
+        provider="google",
+        provider_model_id="gemini-3-pro-preview",
+        label="Gemini 3 Pro",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "google:gemini-2.5-pro": CuratedAiModelTemplate(
+        template_id="google:gemini-2.5-pro",
+        provider="google",
+        provider_model_id="gemini-2.5-pro",
+        label="Gemini 2.5 Pro",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "google:gemini-3-flash": CuratedAiModelTemplate(
+        template_id="google:gemini-3-flash",
+        provider="google",
+        provider_model_id="gemini-3-flash-preview",
+        label="Gemini 3 Flash",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "google:gemini-2.5-flash": CuratedAiModelTemplate(
+        template_id="google:gemini-2.5-flash",
+        provider="google",
+        provider_model_id="gemini-2.5-flash",
+        label="Gemini 2.5 Flash",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "google:gemini-2.5-flash-thinking": CuratedAiModelTemplate(
+        template_id="google:gemini-2.5-flash-thinking",
+        provider="google",
+        provider_model_id="gemini-2.5-flash",
+        label="Gemini 2.5 Flash Thinking",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "google:gemma-4-27b-it": CuratedAiModelTemplate(
+        template_id="google:gemma-4-27b-it",
+        provider="google",
+        provider_model_id="gemma-4-27b-it",
+        label="Gemma 4 27B",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "google:gemma-4-9b-it": CuratedAiModelTemplate(
+        template_id="google:gemma-4-9b-it",
+        provider="google",
+        provider_model_id="gemma-4-9b-it",
+        label="Gemma 4 9B",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "google:gemma-3-12b-it": CuratedAiModelTemplate(
+        template_id="google:gemma-3-12b-it",
+        provider="google",
+        provider_model_id="gemma-3-12b-it",
+        label="Gemma 3 12B",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    # --- OpenRouter (nested provider/model paths in provider_model_id) ---
+    "openrouter:qwen-qwen-3.6-max": CuratedAiModelTemplate(
+        template_id="openrouter:qwen-qwen-3.6-max",
+        provider="openrouter",
+        provider_model_id="qwen/qwen-3.6-max",
+        label="Qwen 3.6 Max",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openrouter:qwen-qwen-3.6-35b-a3b": CuratedAiModelTemplate(
+        template_id="openrouter:qwen-qwen-3.6-35b-a3b",
+        provider="openrouter",
+        provider_model_id="qwen/qwen3.5-35b-a3b",
+        label="Qwen 3.6 35B",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openrouter:qwen-qwen-3.5-plus": CuratedAiModelTemplate(
+        template_id="openrouter:qwen-qwen-3.5-plus",
+        provider="openrouter",
+        provider_model_id="qwen/qwen3.5-plus-02-15",
+        label="Qwen 3.5 Plus",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openrouter:qwen-qwq-32b": CuratedAiModelTemplate(
+        template_id="openrouter:qwen-qwq-32b",
+        provider="openrouter",
+        provider_model_id="qwen/qwq-32b",
+        label="Qwen QwQ 32B",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openrouter:deepseek-deepseek-v3.2": CuratedAiModelTemplate(
+        template_id="openrouter:deepseek-deepseek-v3.2",
+        provider="openrouter",
+        provider_model_id="deepseek/deepseek-v3.2",
+        label="DeepSeek V3.2",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openrouter:deepseek-deepseek-v3-flash": CuratedAiModelTemplate(
+        template_id="openrouter:deepseek-deepseek-v3-flash",
+        provider="openrouter",
+        provider_model_id="deepseek/deepseek-v3-flash",
+        label="DeepSeek V3 Flash",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "openrouter:deepseek-deepseek-r1": CuratedAiModelTemplate(
+        template_id="openrouter:deepseek-deepseek-r1",
+        provider="openrouter",
+        provider_model_id="deepseek/deepseek-r1",
+        label="DeepSeek R1",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    # --- Meta Llama ---
+    "meta-llama:llama-4-maverick": CuratedAiModelTemplate(
+        template_id="meta-llama:llama-4-maverick",
+        provider="meta-llama",
+        provider_model_id="llama-4-maverick",
+        label="Llama 4 Maverick",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "meta-llama:llama-4-scout": CuratedAiModelTemplate(
+        template_id="meta-llama:llama-4-scout",
+        provider="meta-llama",
+        provider_model_id="llama-4-scout",
+        label="Llama 4 Scout",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "meta-llama:llama-3.3-70b": CuratedAiModelTemplate(
+        template_id="meta-llama:llama-3.3-70b",
+        provider="meta-llama",
+        provider_model_id="llama-3.3-70b",
+        label="Llama 3.3 70B",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    # --- Mistral ---
+    "mistral:mistral-medium": CuratedAiModelTemplate(
+        template_id="mistral:mistral-medium",
+        provider="mistral",
+        provider_model_id="mistral-medium",
+        label="Mistral Medium",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "mistral:magistral-medium": CuratedAiModelTemplate(
+        template_id="mistral:magistral-medium",
+        provider="mistral",
+        provider_model_id="magistral-medium-latest",
+        label="Magistral Medium",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "mistral:codestral": CuratedAiModelTemplate(
+        template_id="mistral:codestral",
+        provider="mistral",
+        provider_model_id="codestral-latest",
+        label="Codestral",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    # --- xAI ---
+    "xai:grok-4": CuratedAiModelTemplate(
+        template_id="xai:grok-4",
+        provider="xai",
+        provider_model_id="grok-4",
+        label="Grok 4",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "xai:grok-3": CuratedAiModelTemplate(
+        template_id="xai:grok-3",
+        provider="xai",
+        provider_model_id="grok-3",
+        label="Grok 3",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    # --- Moonshot / Kimi ---
+    "moonshot:kimi-k2.5": CuratedAiModelTemplate(
+        template_id="moonshot:kimi-k2.5",
+        provider="moonshot",
+        provider_model_id="kimi-k2.5",
+        label="Kimi K2.5",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "moonshot:kimi-k2-thinking": CuratedAiModelTemplate(
+        template_id="moonshot:kimi-k2-thinking",
+        provider="moonshot",
+        provider_model_id="kimi-k2-thinking",
+        label="Kimi K2 Thinking",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    # --- Cohere ---
+    "cohere:command-r-plus": CuratedAiModelTemplate(
+        template_id="cohere:command-r-plus",
+        provider="cohere",
+        provider_model_id="command-r-plus",
+        label="Command R+",
+        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
+    ),
+    "cohere:command-r": CuratedAiModelTemplate(
+        template_id="cohere:command-r",
+        provider="cohere",
+        provider_model_id="command-r",
+        label="Command R",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
 }
@@ -260,20 +467,16 @@ def _litellm_price_per_token(
 ) -> Decimal | None:
     """Best-effort lookup of per-token pricing from LiteLLM's model cost map.
 
-    Backfield stores provider/model separately. LiteLLM cost keys vary by provider, so try variants.
+    Keys follow LiteLLM's ``model_prices_and_context_window.json`` naming; see
+    ``litellm_model_cost_lookup_keys``.
     """
     if litellm is None:
         return None
 
-    key_candidates = [
-        litellm_model_id(provider, provider_model_id),
-        provider_model_id,
-        f"{provider.strip().lower()}/{provider_model_id.strip()}",
-    ]
     model_cost = getattr(litellm, "model_cost", None)
     if not isinstance(model_cost, dict):
         return None
-    for key in key_candidates:
+    for key in litellm_model_cost_lookup_keys(provider, provider_model_id):
         entry = model_cost.get(key)
         if not isinstance(entry, dict):
             continue

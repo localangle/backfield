@@ -22,7 +22,16 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   createOrganizationAiCredential,
@@ -42,6 +51,7 @@ import {
   type CuratedAiModelOption,
   type IntegrationSecretPatchInput,
 } from '@/lib/core-api'
+import { groupCuratedOptionsForPresetUi } from '@/lib/ai-curated-presets'
 import { Loader2, Plus } from 'lucide-react'
 
 const CAP_KEYS = ['text', 'json', 'vision'] as const
@@ -52,9 +62,24 @@ const CAP_LABEL: Record<(typeof CAP_KEYS)[number], string> = {
   vision: 'Image inputs',
 }
 
-function formatPriceField(v: unknown): string {
+/** API + DB store usage prices per token; inputs show per 1M tokens for readability. */
+const TOKENS_PER_MILLION = 1_000_000
+
+function formatPriceNumberForInputField(n: number): string {
+  if (!Number.isFinite(n)) return String(n)
+  const fixed = n.toLocaleString(undefined, {
+    useGrouping: false,
+    maximumFractionDigits: 18,
+  })
+  return fixed.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.0+$/g, '').replace(/\.$/g, '')
+}
+
+/** Convert stored per-token price to a display string in “per 1M tokens” units. */
+function perTokenToPerMillionDisplay(v: unknown): string {
   if (v == null || v === '') return ''
-  return typeof v === 'number' ? String(v) : String(v)
+  const n = Number(v)
+  if (!Number.isFinite(n)) return String(v)
+  return formatPriceNumberForInputField(n * TOKENS_PER_MILLION)
 }
 
 function normalizeCapabilityList(selected: Set<string>): string[] {
@@ -147,6 +172,11 @@ export default function AiModelsSettingsPage() {
     return credentialCatalog.filter((e) => e.integration_secret_id != null)
   }, [credentialCatalog, editRow])
 
+  const curatedPresetSections = useMemo(
+    () => groupCuratedOptionsForPresetUi(curatedOptions),
+    [curatedOptions],
+  )
+
   const refreshOrgAiData = useCallback(async (oid: number) => {
     const settled = await Promise.allSettled([listOrganizationAiModels(oid), listAiCredentialsCatalog(oid)])
     const modelsResult = settled[0]
@@ -231,21 +261,8 @@ export default function AiModelsSettingsPage() {
         const nextCur = (opt.currency ?? 'USD').trim().toUpperCase()
         if (nextCur) setPresetCurrency(nextCur)
       }
-      const fmtTokenPrice = (v: unknown): string => {
-        if (v === null || v === undefined) return ''
-        const n = Number(v)
-        if (!Number.isFinite(n)) return String(v)
-        // Prevent scientific notation; keep enough precision for token pricing.
-        const fixed = n.toLocaleString(undefined, {
-          useGrouping: false,
-          maximumFractionDigits: 18,
-        })
-        // Trim trailing zeros (and trailing '.' if needed).
-        return fixed.replace(/(\.\d*?[1-9])0+$/g, '$1').replace(/\.0+$/g, '').replace(/\.$/g, '')
-      }
-
-      const nextIn = fmtTokenPrice(opt.input_token_price)
-      const nextOut = fmtTokenPrice(opt.output_token_price)
+      const nextIn = perTokenToPerMillionDisplay(opt.input_token_price)
+      const nextOut = perTokenToPerMillionDisplay(opt.output_token_price)
 
       const canOverwriteIn =
         presetPriceIn.trim() === '' || presetPriceIn === presetPriceInAuto
@@ -300,8 +317,8 @@ export default function AiModelsSettingsPage() {
     setEditStatus(row.status === 'disabled' ? 'disabled' : 'active')
     setEditCaps(new Set(row.capabilities))
     setEditCurrency(row.currency || 'USD')
-    setEditPriceIn(formatPriceField(row.input_token_price))
-    setEditPriceOut(formatPriceField(row.output_token_price))
+    setEditPriceIn(perTokenToPerMillionDisplay(row.input_token_price))
+    setEditPriceOut(perTokenToPerMillionDisplay(row.output_token_price))
     setEditLitellmModel(row.litellm_model?.trim() ?? '')
     setEditIntegrationSecretId(
       row.integration_secret_id != null ? String(row.integration_secret_id) : '',
@@ -332,6 +349,7 @@ export default function AiModelsSettingsPage() {
     setVendorCredModalOpen(true)
   }
 
+  /** Parses “per 1M tokens” fields from the UI into per-token values for the API. */
   function optionalPricePayload(
     inStr: string,
     outStr: string,
@@ -342,14 +360,18 @@ export default function AiModelsSettingsPage() {
     if (ti === '') out.input_token_price = null
     else {
       const n = Number(ti)
-      if (!Number.isFinite(n) || n < 0) throw new Error('Input usage price must be a valid number.')
-      out.input_token_price = n
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error('Input usage price must be a valid number (per 1 million tokens).')
+      }
+      out.input_token_price = n / TOKENS_PER_MILLION
     }
     if (to === '') out.output_token_price = null
     else {
       const n = Number(to)
-      if (!Number.isFinite(n) || n < 0) throw new Error('Output usage price must be a valid number.')
-      out.output_token_price = n
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error('Output usage price must be a valid number (per 1 million tokens).')
+      }
+      out.output_token_price = n / TOKENS_PER_MILLION
     }
     return out
   }
@@ -519,6 +541,11 @@ export default function AiModelsSettingsPage() {
 
   async function handleVendorCredentialSave() {
     if (orgId == null || !vendorCredModalOpen) return
+    const dnTrim = vendorCredDisplayName.trim()
+    if (!dnTrim) {
+      showError('Enter a display name for this credential.')
+      return
+    }
     const trimmedSecret = vendorCredSecret.trim()
     if (!vendorCredEditIntegrationKey && !trimmedSecret) {
       showError('Paste an API key before saving.')
@@ -526,10 +553,9 @@ export default function AiModelsSettingsPage() {
     }
     setVendorCredSaving(true)
     try {
-      const dn = vendorCredDisplayName.trim() ? vendorCredDisplayName.trim() : null
       if (vendorCredEditIntegrationKey) {
         const body: IntegrationSecretPatchInput = {
-          display_name: dn,
+          display_name: dnTrim,
         }
         if (trimmedSecret) body.value = trimmedSecret
         if (vendorCredApiBase.trim()) body.api_base = vendorCredApiBase.trim()
@@ -537,7 +563,7 @@ export default function AiModelsSettingsPage() {
       } else {
         await createOrganizationAiCredential(orgId, {
           value: trimmedSecret,
-          display_name: dn,
+          display_name: dnTrim,
           api_base: vendorCredApiBase.trim() ? vendorCredApiBase.trim() : null,
         })
       }
@@ -624,34 +650,31 @@ export default function AiModelsSettingsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">AI models</h1>
           <p className="text-muted-foreground mt-2">
-            Add API credentials, then link each catalog model to one credential. Flow steps only offer models that are
-            enabled for each project.
+            Manage organization-wide AI models and credentials.
           </p>
         </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>API credentials</CardTitle>
-          <CardDescription>
-            Each credential stores one vendor API key (and optional endpoint URL). Every catalog model must use exactly
-            one credential for runs that resolve keys from the catalog. Secrets are write-only here—paste a new key to
-            replace one.
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1.5">
+            <CardTitle>Credentials</CardTitle>
+            <CardDescription>
+              Add API keys for your model providers here. Secrets are write-only. Paste a new key to replace one.
+            </CardDescription>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="bg-black text-white hover:bg-black/90 sm:mt-1"
+            onClick={() => openAddVendorCredentialModal()}
+            disabled={loading || orgId == null}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add credential
+          </Button>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap justify-end gap-2 pb-4">
-            <Button
-              type="button"
-              size="sm"
-              className="bg-black text-white hover:bg-black/90"
-              onClick={() => openAddVendorCredentialModal()}
-              disabled={loading || orgId == null}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add credential
-            </Button>
-          </div>
           {loading ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -716,11 +739,8 @@ export default function AiModelsSettingsPage() {
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1.5">
-            <CardTitle>Organization catalog</CardTitle>
-            <CardDescription>
-              Active models can be turned on or off per project. Disabled models stay in the catalog but won&apos;t be
-              offered on new runs when a project hides them.
-            </CardDescription>
+            <CardTitle>Model catalog</CardTitle>
+            <CardDescription>Add and enable AI models for your organization.</CardDescription>
           </div>
           <Button
             type="button"
@@ -874,13 +894,19 @@ export default function AiModelsSettingsPage() {
                     <SelectValue placeholder="Choose a model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {[...curatedOptions]
-                      .sort((a, b) => a.label.localeCompare(b.label))
-                      .map((o) => (
-                        <SelectItem key={o.curated_id} value={o.curated_id}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
+                    {curatedPresetSections.map((section, sectionIdx) => (
+                      <SelectGroup key={section.providerKey}>
+                        {sectionIdx > 0 ? <SelectSeparator /> : null}
+                        <SelectLabel className="pl-2 text-xs text-muted-foreground">
+                          {section.providerLabel}
+                        </SelectLabel>
+                        {section.items.map((o) => (
+                          <SelectItem key={o.curated_id} value={o.curated_id} className="pl-10">
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -932,12 +958,13 @@ export default function AiModelsSettingsPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Optional usage prices are per token and feed run cost estimates.
+                Optional usage prices are per 1 million tokens in your currency; values are stored per token for
+                estimates.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="preset-pin" className="text-xs">
-                    Input usage price (optional)
+                    Input price per 1M tokens (optional)
                   </Label>
                   <Input
                     id="preset-pin"
@@ -947,7 +974,7 @@ export default function AiModelsSettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="preset-pout" className="text-xs">
-                    Output usage price (optional)
+                    Output price per 1M tokens (optional)
                   </Label>
                   <Input
                     id="preset-pout"
@@ -1016,18 +1043,19 @@ export default function AiModelsSettingsPage() {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Optional usage prices are per token and feed run cost estimates.
+                Optional usage prices are per 1 million tokens in your currency; values are stored per token for
+                estimates.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="cust-pin" className="text-xs">
-                    Input usage price (optional)
+                    Input price per 1M tokens (optional)
                   </Label>
                   <Input id="cust-pin" value={customPriceIn} onChange={(e) => setCustomPriceIn(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="cust-pout" className="text-xs">
-                    Output usage price (optional)
+                    Output price per 1M tokens (optional)
                   </Label>
                   <Input id="cust-pout" value={customPriceOut} onChange={(e) => setCustomPriceOut(e.target.value)} />
                 </div>
@@ -1126,17 +1154,19 @@ export default function AiModelsSettingsPage() {
                 </Label>
                 <Input id="edit-currency" value={editCurrency} onChange={(e) => setEditCurrency(e.target.value)} maxLength={3} />
               </div>
-              <p className="text-xs text-muted-foreground">Per token. Clear a field to remove pricing for estimates.</p>
+              <p className="text-xs text-muted-foreground">
+                Per 1 million tokens. Clear a field to remove pricing for estimates.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="edit-pin" className="text-xs">
-                    Input usage price
+                    Input price per 1M tokens
                   </Label>
                   <Input id="edit-pin" value={editPriceIn} onChange={(e) => setEditPriceIn(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-pout" className="text-xs">
-                    Output usage price
+                    Output price per 1M tokens
                   </Label>
                   <Input id="edit-pout" value={editPriceOut} onChange={(e) => setEditPriceOut(e.target.value)} />
                 </div>
@@ -1184,7 +1214,7 @@ export default function AiModelsSettingsPage() {
               ) : (
                 <>
                   Name this credential so your team can pick it when adding a model. Add an endpoint URL only if your
-                  vendor needs one. Keys are never shown again after saving.
+                  vendor needs one. Keys are encrypted and never shown again after saving.
                 </>
               )}
             </DialogDescription>
@@ -1192,14 +1222,15 @@ export default function AiModelsSettingsPage() {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="vendor-cred-label" className="text-xs">
-                Display name (optional)
+                Display name
               </Label>
               <Input
                 id="vendor-cred-label"
                 value={vendorCredDisplayName}
                 onChange={(e) => setVendorCredDisplayName(e.target.value)}
-                placeholder="e.g. Qwen production"
+                placeholder="e.g. OpenAI"
                 maxLength={240}
+                required
               />
             </div>
             <div className="space-y-2">
@@ -1214,8 +1245,7 @@ export default function AiModelsSettingsPage() {
                 autoComplete="off"
               />
               <p className="text-xs text-muted-foreground">
-                Only if your provider expects a base URL in addition to the key (for example some OpenAI-compatible
-                hosts).
+                Only if your provider expects a base URL in addition to the key (for example, Azure OpenAI).
               </p>
             </div>
             <div className="space-y-2">
@@ -1240,7 +1270,11 @@ export default function AiModelsSettingsPage() {
             <Button
               type="button"
               className="bg-black text-white hover:bg-black/90"
-              disabled={vendorCredSaving}
+              disabled={
+                vendorCredSaving ||
+                !vendorCredDisplayName.trim() ||
+                (!vendorCredEditIntegrationKey && !vendorCredSecret.trim())
+              }
               onClick={() => void handleVendorCredentialSave()}
             >
               {vendorCredSaving ? (
