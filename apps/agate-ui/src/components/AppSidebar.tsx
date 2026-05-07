@@ -5,6 +5,7 @@ import {
   FolderKanban,
   HelpCircle,
   Newspaper,
+  Settings,
 } from 'lucide-react'
 import { ShellSidebar } from '@backfield/ui'
 import { Button } from '@/components/ui/button'
@@ -328,6 +329,16 @@ export default function AppSidebar() {
             </div>
 
             <div className="border-t border-border/50 pt-2 shrink-0 space-y-1">
+              {isOrgAdmin ? (
+                <NavLink
+                  to="/settings"
+                  className={hubLinkClass}
+                  title={!expanded ? 'Settings' : undefined}
+                >
+                  <Settings className="h-5 w-5 shrink-0" aria-hidden />
+                  {expanded ? <span>Settings</span> : null}
+                </NavLink>
+              ) : null}
               <a
                 href={helpHref()}
                 className={hubLinkClass}

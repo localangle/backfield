@@ -27,15 +27,6 @@ export default function HubLayout({ children }: HubLayoutProps) {
                 userLabel={username}
                 isOrgAdmin={isOrgAdmin}
                 onChangePassword={() => navigate("/account/password")}
-                onManageUsers={
-                  isOrgAdmin ? () => navigate("/admin/users") : undefined
-                }
-                onManageCatalogs={
-                  isOrgAdmin ? () => navigate("/admin/stylebooks") : undefined
-                }
-                onAiModelsSettings={
-                  isOrgAdmin ? () => navigate("/admin/ai-models") : undefined
-                }
                 onLogout={() => void logout()}
               />
             ) : null}
