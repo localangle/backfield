@@ -19,14 +19,9 @@
     "stylebook_id": null,
     "stylebookApiUrl": "",
     "projectSlug": "",
-    "evaluationModel": "gpt-5-nano",
-    "routerModel": "gpt-5-nano"
-  },
-  "availableModels": [
-    { "value": "gpt-5.4", "label": "GPT 5.4" },
-    { "value": "gpt-5.2", "label": "GPT 5.2" },
-    { "value": "gpt-5-mini", "label": "GPT-5 Mini" },
-    { "value": "gpt-5-nano", "label": "GPT-5 Nano" },
-    { "value": "gpt-4o-mini", "label": "GPT-4o Mini" }
-  ]
+    "evaluationModel": "",
+    "routerModel": "",
+    "evaluationAiModelConfigId": null,
+    "routerAiModelConfigId": null
+  }
 }

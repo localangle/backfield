@@ -5,8 +5,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
+const INVALID_SELECTION_VALUE = '__bf_model_invalid__'
+
 const DEFAULTS = {
-  model: 'gpt-4o-mini',
+  model: '',
   aiModelConfigId: null as string | null,
 }
 
@@ -17,36 +19,18 @@ type UnifiedAiModelOption = {
   configId?: string
 }
 
-function buildUnifiedModelOptions(
-  catalog: ProjectAiModelOption[],
-  builtins: readonly { value: string; label: string }[],
-  mergeBuiltins: boolean,
-): UnifiedAiModelOption[] {
+function catalogToSelectOptions(catalog: ProjectAiModelOption[]): UnifiedAiModelOption[] {
   const out: UnifiedAiModelOption[] = []
-  const seenValue = new Set<string>()
+  const seen = new Set<string>()
   for (const row of catalog) {
     const sv = row.configId ?? row.providerModelId
-    if (seenValue.has(sv)) continue
-    seenValue.add(sv)
+    if (sv === '' || seen.has(sv)) continue
+    seen.add(sv)
     out.push({
       selectValue: sv,
       label: row.label,
       providerModelId: row.providerModelId,
       configId: row.configId,
-    })
-  }
-  if (!mergeBuiltins) {
-    return out
-  }
-  const catalogProviders = new Set(catalog.map((c) => c.providerModelId))
-  for (const m of builtins) {
-    if (catalogProviders.has(m.value)) continue
-    if (seenValue.has(m.value)) continue
-    seenValue.add(m.value)
-    out.push({
-      selectValue: m.value,
-      label: m.label,
-      providerModelId: m.value,
     })
   }
   return out
@@ -61,7 +45,14 @@ function resolvedModelSelectValue(
   const model = String(params.model ?? '')
   const hit = catalog.find((r) => r.providerModelId === model && r.configId)
   if (hit?.configId) return hit.configId
-  return model
+  return model.trim()
+}
+
+function hasExplicitModelChoice(data: Record<string, unknown>): boolean {
+  const cfg = data.aiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return true
+  const model = data.model
+  return typeof model === 'string' && model.trim() !== ''
 }
 
 interface PlaceExtractPanelProps {
@@ -143,35 +134,65 @@ export default function PlaceExtractPanel({
     }
   }, [projectId, graphContext?.fetchProjectAiModels])
 
-  const modelSelectOptions = useMemo(() => {
-    const builtinsFromMetadata =
-      Array.isArray(nodeMetadata.availableModels) && nodeMetadata.availableModels.length > 0
-        ? nodeMetadata.availableModels
-        : [{ value: 'gpt-4o-mini', label: 'GPT-4o Mini' }]
-    const mergeBuiltins = projectId == null
-    let opts = buildUnifiedModelOptions(catalogRows, builtinsFromMetadata, mergeBuiltins)
-    const sv = resolvedModelSelectValue(paramsRecord, catalogRows)
-    if (!opts.some((o) => o.selectValue === sv)) {
-      opts = [
-        {
-          selectValue: sv,
-          label: String(paramsRecord.model ?? sv),
-          providerModelId: String(paramsRecord.model ?? sv),
-          configId:
-            typeof paramsRecord.aiModelConfigId === 'string'
-              ? paramsRecord.aiModelConfigId
-              : undefined,
-        },
-        ...opts,
-      ]
-    }
-    return opts
-  }, [projectId, catalogRows, paramsRecord.model, paramsRecord.aiModelConfigId])
+  const modelSelectOptions = useMemo(
+    () => catalogToSelectOptions(catalogRows),
+    [catalogRows],
+  )
+
+  const resolvedUnderlying = resolvedModelSelectValue(paramsRecord, catalogRows)
+  const selectionValid =
+    resolvedUnderlying !== '' &&
+    modelSelectOptions.some((o) => o.selectValue === resolvedUnderlying)
+
+  const showInvalidPersisted =
+    Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
+    hasExplicitModelChoice((node.data || {}) as Record<string, unknown>) &&
+    !selectionValid
+
+  /** When the saved selection is unavailable, Radix Select needs a value that matches a SelectItem. */
+  const radixSelectValue = selectionValid
+    ? resolvedUnderlying
+    : showInvalidPersisted
+      ? INVALID_SELECTION_VALUE
+      : undefined
+
+  /** First effective model when the node has no explicit choice yet. */
+  useEffect(() => {
+    if (!editMode || !setNodes || catalogLoading || catalogRows.length === 0) return
+    const data = (node.data || {}) as Record<string, unknown>
+    if (hasExplicitModelChoice(data)) return
+    const first = modelSelectOptions[0]
+    if (!first) return
+    const providerModelId = first.providerModelId
+    const cid = first.configId ?? null
+    setNodes((nds: any[]) =>
+      nds.map((n: any) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: {
+                ...(n.data || {}),
+                model: providerModelId,
+                aiModelConfigId: cid,
+              },
+            }
+          : n,
+      ),
+    )
+  }, [
+    editMode,
+    setNodes,
+    catalogLoading,
+    catalogRows,
+    modelSelectOptions,
+    node.id,
+    node.data,
+  ])
 
   const isDisabled = !(editMode && setNodes)
 
   const handleModelChange = (selectValue: string) => {
-    if (!setNodes) return
+    if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
     const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
     const providerModelId = row?.providerModelId ?? selectValue
     const configId = row?.configId
@@ -191,10 +212,13 @@ export default function PlaceExtractPanel({
     )
   }
 
-  const selectValue = resolvedModelSelectValue(paramsRecord, catalogRows)
   const displayModelLabel =
-    modelSelectOptions.find((o) => o.selectValue === selectValue)?.label ??
-    String(paramsRecord.model ?? selectValue)
+    modelSelectOptions.find((o) => o.selectValue === resolvedUnderlying)?.label ??
+    (showInvalidPersisted
+      ? 'Previous model unavailable'
+      : resolvedUnderlying !== ''
+        ? String(paramsRecord.model ?? resolvedUnderlying)
+        : '—')
 
   const nodeOutput = getNodeOutputById(
     currentRun?.node_outputs as Record<string, unknown> | undefined,
@@ -257,25 +281,9 @@ export default function PlaceExtractPanel({
             <Label className="text-xs text-muted-foreground">Model</Label>
             {editMode && setNodes ? (
               <>
-                <Select
-                  value={selectValue}
-                  onValueChange={handleModelChange}
-                  disabled={isDisabled}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {modelSelectOptions.map((m) => (
-                      <SelectItem key={`pe-${m.selectValue}`} value={m.selectValue}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {projectId == null && (
+                {(projectId == null || graphContext?.fetchProjectAiModels == null) && (
                   <p className="text-xs text-muted-foreground">
-                    Save this flow under a project to use only organization-configured models.
+                    Save this flow under a project to choose models your organization enabled for this project.
                   </p>
                 )}
                 {projectId != null && catalogLoading && (
@@ -284,6 +292,42 @@ export default function PlaceExtractPanel({
                 {catalogError != null && catalogError !== '' ? (
                   <p className="text-xs text-destructive">{catalogError}</p>
                 ) : null}
+                {!catalogLoading &&
+                !catalogError &&
+                projectId != null &&
+                graphContext?.fetchProjectAiModels != null &&
+                modelSelectOptions.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    No models available for this project yet. Ask an administrator to enable models for your organization,
+                    then turn them on for this project in project settings if needed.
+                  </p>
+                )}
+                {showInvalidPersisted && (
+                  <p className="text-xs text-muted-foreground">
+                    The saved model is no longer available. Choose another model below.
+                  </p>
+                )}
+                <Select
+                  value={radixSelectValue}
+                  onValueChange={handleModelChange}
+                  disabled={isDisabled || modelSelectOptions.length === 0}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Choose a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {showInvalidPersisted ? (
+                      <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                        Saved model unavailable
+                      </SelectItem>
+                    ) : null}
+                    {modelSelectOptions.map((m) => (
+                      <SelectItem key={`pe-${m.selectValue}`} value={m.selectValue}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </>
             ) : (
               <div className="flex justify-between items-center p-2 bg-muted rounded">

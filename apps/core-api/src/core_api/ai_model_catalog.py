@@ -70,20 +70,6 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="GPT-5.5",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
-    "openai:gpt-5.5-mini": CuratedAiModelTemplate(
-        template_id="openai:gpt-5.5-mini",
-        provider="openai",
-        provider_model_id="gpt-5.5-mini",
-        label="GPT-5.5 Mini",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
-    "openai:gpt-5.5-nano": CuratedAiModelTemplate(
-        template_id="openai:gpt-5.5-nano",
-        provider="openai",
-        provider_model_id="gpt-5.5-nano",
-        label="GPT-5.5 Nano",
-        capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
-    ),
     "openai:gpt-5.4": CuratedAiModelTemplate(
         template_id="openai:gpt-5.4",
         provider="openai",

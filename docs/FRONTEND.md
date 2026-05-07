@@ -78,6 +78,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 - Avoid hand-editing generated registry output unless the sync flow itself is changing.
 - The default Agate palette includes `TextInput`, `JSONInput`, `S3Input`, `PlaceExtract`, `GeocodeAgent`, and `Output`. `PlaceExtract` performs editorially relevant place extraction in a **single** LLM call; there is no separate Place Filter node.
 - **GeocodeAgent (catalog):** when **Use cache** is enabled, the panel requires a **catalog** selection (persisted as integer **`stylebook_id`** in node params, aligned with graph validation). New nodes dropped onto the canvas inherit the current project workspace’s catalog id when available; cache-off flows omit **`stylebook_id`**. Legacy **`stylebookId`** (camelCase) in saved graphs is still accepted for validation until edited.
+- **LLM model pickers (`PlaceExtract`, `GeocodeAgent`):** dropdown options come only from Core API **`GET /v1/projects/{id}/ai-models/effective`** (via `fetchProjectAiModels` on the graph shell). Built-in preset model lists were removed from those panels—new nodes inherit empty model fields until the catalog loads and the panel assigns the first available row (or users pick explicitly).
 
 ## TypeScript expectations
 

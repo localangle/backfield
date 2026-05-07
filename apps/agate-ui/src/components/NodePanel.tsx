@@ -249,7 +249,7 @@ export default function NodePanel({
                 
                 <div className="flex justify-between items-center p-2 bg-muted rounded">
                   <span className="text-muted-foreground">Model</span>
-                  <span className="font-medium text-xs">{selectedNode.data.model || 'gpt-4o-mini'}</span>
+                  <span className="font-medium text-xs">{selectedNode.data.model || '—'}</span>
                 </div>
               </div>
 
@@ -286,7 +286,7 @@ export default function NodePanel({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between items-center p-2 bg-muted rounded">
                   <span className="text-muted-foreground">Model</span>
-                  <span className="font-medium text-xs">{selectedNode.data.model || 'gpt-4o-mini'}</span>
+                  <span className="font-medium text-xs">{selectedNode.data.model || '—'}</span>
                 </div>
               </div>
 

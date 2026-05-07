@@ -10,6 +10,10 @@ import ProjectDetailRunsTab, {
   type ProjectDetailRunsTabHandle,
 } from '@/components/project/ProjectDetailRunsTab'
 import {
+  fetchProjectEffectiveAiModels,
+  type ProjectEffectiveAiModelRow,
+} from '@/lib/core-api'
+import {
   getProjectBySlug,
   getProjectStatsBySlug,
   getProjectEstimatedAiCost,
@@ -40,6 +44,9 @@ export default function ProjectDetailPage() {
   const integrationsSettingsRef = useRef<ProjectSettingsHandle>(null)
   const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
   const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
+  const [effectiveModels, setEffectiveModels] = useState<ProjectEffectiveAiModelRow[]>([])
+  const [effectiveModelsLoading, setEffectiveModelsLoading] = useState(false)
+  const [effectiveModelsError, setEffectiveModelsError] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
     if (!slug) return
@@ -95,6 +102,30 @@ export default function ProjectDetailPage() {
       cancelled = true
     }
   }, [project?.id])
+
+  useEffect(() => {
+    if (workspaceTab !== 'models' || !project?.id) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        setEffectiveModelsError(null)
+        setEffectiveModelsLoading(true)
+        const rows = await fetchProjectEffectiveAiModels(project.id)
+        if (!cancelled) setEffectiveModels(rows)
+      } catch (e) {
+        console.error(e)
+        if (!cancelled) {
+          setEffectiveModels([])
+          setEffectiveModelsError('Could not load models for this project.')
+        }
+      } finally {
+        if (!cancelled) setEffectiveModelsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceTab, project?.id])
 
   useEffect(() => {
     if (editingName) inputRef.current?.focus()
@@ -422,12 +453,15 @@ export default function ProjectDetailPage() {
           onValueChange={setWorkspaceTab}
           className="w-full min-w-0"
         >
-          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-3 lg:grid-cols-5">
+          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-3 lg:grid-cols-6">
             <TabsTrigger value="flows" className="w-full">
               Flows
             </TabsTrigger>
             <TabsTrigger value="runs" className="w-full">
               Runs
+            </TabsTrigger>
+            <TabsTrigger value="models" className="w-full">
+              Models
             </TabsTrigger>
             <TabsTrigger value="settings" className="w-full">
               Settings
@@ -452,6 +486,51 @@ export default function ProjectDetailPage() {
               projectId={project.id}
               onDataChanged={() => void reload()}
             />
+          </TabsContent>
+          <TabsContent value="models" className="mt-6 w-full min-w-0 outline-none">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Enabled models
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {effectiveModelsLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Loading models…
+                  </div>
+                ) : effectiveModelsError ? (
+                  <p className="text-sm text-muted-foreground">{effectiveModelsError}</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {effectiveModels
+                      .filter((m) => m.status === 'active' && m.project_enabled)
+                      .map((m) => (
+                        <li
+                          key={m.id}
+                          className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">{m.name}</div>
+                            <div className="truncate text-xs text-muted-foreground font-mono">
+                              {m.provider}/{m.provider_model_id}
+                            </div>
+                          </div>
+                          <span className="shrink-0 rounded border border-border bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            Enabled
+                          </span>
+                        </li>
+                      ))}
+                    {effectiveModels.filter((m) => m.status === 'active' && m.project_enabled).length === 0 ? (
+                      <li className="text-sm text-muted-foreground">
+                        No enabled models yet.
+                      </li>
+                    ) : null}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
           <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
             <ProjectSettings

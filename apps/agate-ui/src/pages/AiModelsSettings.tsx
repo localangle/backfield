@@ -177,12 +177,14 @@ export default function AiModelsSettingsPage() {
     [curatedOptions],
   )
 
-  const refreshOrgAiData = useCallback(async (oid: number) => {
+  const refreshOrgAiData = useCallback(async (oid: number): Promise<AiModelConfigRow[]> => {
     const settled = await Promise.allSettled([listOrganizationAiModels(oid), listAiCredentialsCatalog(oid)])
     const modelsResult = settled[0]
     const credCatalogResult = settled[1]
+    let nextModels: AiModelConfigRow[] = []
     if (modelsResult.status === 'fulfilled') {
-      setModels(modelsResult.value)
+      nextModels = modelsResult.value
+      setModels(nextModels)
       setError(null)
     } else {
       setModels([])
@@ -197,6 +199,7 @@ export default function AiModelsSettingsPage() {
       const r = credCatalogResult.reason
       setCredentialsError(r instanceof Error ? r.message : 'Could not load API credentials.')
     }
+    return nextModels
   }, [])
 
   useEffect(() => {
@@ -525,8 +528,16 @@ export default function AiModelsSettingsPage() {
     setTestingId(row.id)
     try {
       await testOrganizationAiModelConnection(orgId, row.id)
-      await refreshOrgAiData(orgId)
-      showMessage('Connection test finished. Status updated for this model.')
+      const after = await refreshOrgAiData(orgId)
+      const updated = after.find((m) => m.id === row.id) ?? null
+      const status = (updated?.latest_test_status || '').toLowerCase()
+      if (status === 'succeeded') {
+        showMessage('Connection test succeeded. Status updated for this model.')
+      } else if (status === 'failed') {
+        showError('Connection test failed. Status updated for this model.')
+      } else {
+        showMessage('Connection test finished. Status updated for this model.')
+      }
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Connection test failed.')
       try {
@@ -877,8 +888,7 @@ export default function AiModelsSettingsPage() {
           <DialogHeader>
             <DialogTitle>Add model</DialogTitle>
             <DialogDescription>
-              Link each model to one saved credential. Presets use templates from the product; custom entries use your own
-              routing string from the vendor&apos;s docs.
+              Add a model to your organization and assign credentials.
             </DialogDescription>
           </DialogHeader>
           <Tabs value={addTab} onValueChange={(v) => setAddTab(v as 'preset' | 'custom')}>
@@ -943,58 +953,82 @@ export default function AiModelsSettingsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {capabilityCheckboxes(presetCaps, setPresetCaps)}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="preset-currency" className="text-xs">
-                    Currency
-                  </Label>
-                  <Input
-                    id="preset-currency"
-                    value={presetCurrency}
-                    onChange={(e) => setPresetCurrency(e.target.value)}
-                    maxLength={3}
-                  />
-                </div>
-              </div>
               <p className="text-xs text-muted-foreground">
-                Optional usage prices are per 1 million tokens in your currency; values are stored per token for
-                estimates.
+                Optional. Price per 1 million tokens. Model costs are available on the{' '}
+                <a
+                  href="https://models.litellm.ai/"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  LiteLLM models page
+                </a>
+                .
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="preset-pin" className="text-xs">
                     Input price per 1M tokens (optional)
                   </Label>
-                  <Input
-                    id="preset-pin"
-                    value={presetPriceIn}
-                    onChange={(e) => setPresetPriceIn(e.target.value)}
-                  />
+                  <div className="relative">
+                    <span
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden
+                    >
+                      $
+                    </span>
+                    <Input
+                      id="preset-pin"
+                      value={presetPriceIn}
+                      onChange={(e) => setPresetPriceIn(e.target.value)}
+                      className="pl-7"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="preset-pout" className="text-xs">
                     Output price per 1M tokens (optional)
                   </Label>
-                  <Input
-                    id="preset-pout"
-                    value={presetPriceOut}
-                    onChange={(e) => setPresetPriceOut(e.target.value)}
-                  />
+                  <div className="relative">
+                    <span
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden
+                    >
+                      $
+                    </span>
+                    <Input
+                      id="preset-pout"
+                      value={presetPriceOut}
+                      onChange={(e) => setPresetPriceOut(e.target.value)}
+                      className="pl-7"
+                    />
+                  </div>
                 </div>
               </div>
             </TabsContent>
             <TabsContent value="custom" className="space-y-4 pt-4">
               <p className="text-xs text-muted-foreground">
-                Use the exact routing string from your vendor&apos;s docs (for example{' '}
-                <span className="font-mono">dashscope/qwen-turbo</span>). Add a credential above first, then pick it
-                here.
+                Choose any LiteLLM supported model from{' '}
+                <a
+                  href="https://models.litellm.ai/"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  this list
+                </a>
+                .
               </p>
               <div className="space-y-2">
                 <Label htmlFor="cust-name" className="text-xs">
                   Display name
                 </Label>
-                <Input id="cust-name" value={customName} onChange={(e) => setCustomName(e.target.value)} />
+                <Input
+                  id="cust-name"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="ex. Claude Haiku 4.5 (Azure)"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="cust-litellm" className="text-xs">
@@ -1004,9 +1038,10 @@ export default function AiModelsSettingsPage() {
                   id="cust-litellm"
                   value={customLitellmModel}
                   onChange={(e) => setCustomLitellmModel(e.target.value)}
-                  placeholder="provider/model-id"
+                  placeholder="ex. azure_ai/claude-haiku-4-5"
                   className="font-mono text-sm"
                 />
+                <p className="text-xs text-muted-foreground">Full model name string from LiteLLM</p>
               </div>
               <div className="space-y-2">
                 <Label className="text-xs">API credential</Label>
@@ -1030,34 +1065,56 @@ export default function AiModelsSettingsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {capabilityCheckboxes(customCaps, setCustomCaps)}
-              <div className="space-y-2">
-                <Label htmlFor="cust-currency" className="text-xs">
-                  Currency
-                </Label>
-                <Input
-                  id="cust-currency"
-                  value={customCurrency}
-                  onChange={(e) => setCustomCurrency(e.target.value)}
-                  maxLength={3}
-                />
-              </div>
               <p className="text-xs text-muted-foreground">
-                Optional usage prices are per 1 million tokens in your currency; values are stored per token for
-                estimates.
+                Optional. Price per 1 million tokens. Model costs are available on the{' '}
+                <a
+                  href="https://models.litellm.ai/"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  LiteLLM models page
+                </a>
+                .
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="cust-pin" className="text-xs">
                     Input price per 1M tokens (optional)
                   </Label>
-                  <Input id="cust-pin" value={customPriceIn} onChange={(e) => setCustomPriceIn(e.target.value)} />
+                  <div className="relative">
+                    <span
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden
+                    >
+                      $
+                    </span>
+                    <Input
+                      id="cust-pin"
+                      value={customPriceIn}
+                      onChange={(e) => setCustomPriceIn(e.target.value)}
+                      className="pl-7"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="cust-pout" className="text-xs">
                     Output price per 1M tokens (optional)
                   </Label>
-                  <Input id="cust-pout" value={customPriceOut} onChange={(e) => setCustomPriceOut(e.target.value)} />
+                  <div className="relative">
+                    <span
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden
+                    >
+                      $
+                    </span>
+                    <Input
+                      id="cust-pout"
+                      value={customPriceOut}
+                      onChange={(e) => setCustomPriceOut(e.target.value)}
+                      className="pl-7"
+                    />
+                  </div>
                 </div>
               </div>
             </TabsContent>
