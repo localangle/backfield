@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "Geocode Agent",
   "icon": "MapPin",
   "color": "bg-teal-600",
-  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.",
+  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick routing, geographic reasoning, and evaluation models.",
   "category": "enrichment",
   "requiredUpstreamNodes": [
     "PlaceExtract"
@@ -38,8 +38,10 @@ const nodeMetadata = {
     "stylebookApiUrl": "",
     "projectSlug": "",
     "evaluationModel": "",
+    "geographicReasoningModel": "",
     "routerModel": "",
     "evaluationAiModelConfigId": null,
+    "geographicReasoningAiModelConfigId": null,
     "routerAiModelConfigId": null
   }
 };
@@ -68,13 +70,15 @@ const DEFAULTS = {
   stylebookApiUrl: '',
   projectSlug: '',
   evaluationModel: '',
+  geographicReasoningModel: '',
   routerModel: '',
   evaluationAiModelConfigId: null as string | null,
+  geographicReasoningAiModelConfigId: null as string | null,
   routerAiModelConfigId: null as string | null,
 }
 
 const PANEL_DESCRIPTION =
-  'Turns extracted places into map-ready results: optional location cache, smart routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.'
+  'Turns extracted places into map-ready results: optional location cache, smart routing, then external geocoding. Pick three models: routing after cache, geographic reasoning during lookup, and evaluation for ambiguous hits plus display lines.'
 
 type UnifiedAiModelOption = {
   selectValue: string
@@ -135,6 +139,25 @@ function hasExplicitRouterChoice(data: Record<string, unknown>): boolean {
   const cfg = data.routerAiModelConfigId
   if (typeof cfg === 'string' && cfg.trim() !== '') return true
   const m = data.routerModel
+  return typeof m === 'string' && m.trim() !== ''
+}
+
+function resolvedGeographicReasoningSelectValue(
+  params: Record<string, unknown>,
+  catalog: ProjectAiModelOption[],
+): string {
+  const cfg = params.geographicReasoningAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
+  const model = String(params.geographicReasoningModel ?? '')
+  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
+  if (hit?.configId) return hit.configId
+  return model.trim()
+}
+
+function hasExplicitGeographicReasoningChoice(data: Record<string, unknown>): boolean {
+  const cfg = data.geographicReasoningAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return true
+  const m = data.geographicReasoningModel
   return typeof m === 'string' && m.trim() !== ''
 }
 
@@ -247,11 +270,14 @@ export default function GeocodeAgentPanel({
 
   const resolvedEval = resolvedEvaluationSelectValue(paramsRecord, catalogRows)
   const resolvedRouter = resolvedRouterSelectValue(paramsRecord, catalogRows)
+  const resolvedGeo = resolvedGeographicReasoningSelectValue(paramsRecord, catalogRows)
 
   const evalSelectionValid =
     resolvedEval !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedEval)
   const routerSelectionValid =
     resolvedRouter !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedRouter)
+  const geoSelectionValid =
+    resolvedGeo !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedGeo)
 
   const nodeDataFlat = (node.data || {}) as Record<string, unknown>
 
@@ -265,6 +291,11 @@ export default function GeocodeAgentPanel({
     hasExplicitRouterChoice(nodeDataFlat) &&
     !routerSelectionValid
 
+  const showInvalidGeoPersisted =
+    Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
+    hasExplicitGeographicReasoningChoice(nodeDataFlat) &&
+    !geoSelectionValid
+
   const evalRadixValue = evalSelectionValid
     ? resolvedEval
     : showInvalidEvalPersisted
@@ -274,6 +305,12 @@ export default function GeocodeAgentPanel({
   const routerRadixValue = routerSelectionValid
     ? resolvedRouter
     : showInvalidRouterPersisted
+      ? INVALID_SELECTION_VALUE
+      : undefined
+
+  const geoRadixValue = geoSelectionValid
+    ? resolvedGeo
+    : showInvalidGeoPersisted
       ? INVALID_SELECTION_VALUE
       : undefined
 
@@ -292,7 +329,8 @@ export default function GeocodeAgentPanel({
     const data = nodeDataFlat
     const needEval = !hasExplicitEvaluationChoice(data)
     const needRouter = !hasExplicitRouterChoice(data)
-    if (!needEval && !needRouter) return
+    const needGeo = !hasExplicitGeographicReasoningChoice(data)
+    if (!needEval && !needRouter && !needGeo) return
     const first = modelSelectOptions[0]
     if (!first) return
     const patch: Record<string, unknown> = {}
@@ -303,6 +341,10 @@ export default function GeocodeAgentPanel({
     if (needRouter) {
       patch.routerModel = first.providerModelId
       patch.routerAiModelConfigId = first.configId ?? null
+    }
+    if (needGeo) {
+      patch.geographicReasoningModel = first.providerModelId
+      patch.geographicReasoningAiModelConfigId = first.configId ?? null
     }
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
@@ -423,6 +465,27 @@ export default function GeocodeAgentPanel({
     )
   }
 
+  const handleGeographicReasoningModel = (selectValue: string) => {
+    if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
+    const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({
+                ...(n.data || {}),
+                geographicReasoningModel: providerModelId,
+                geographicReasoningAiModelConfigId: configId ?? null,
+              }),
+            }
+          : n,
+      ),
+    )
+  }
+
   const nodeOutput = getNodeOutputById(
     currentRun?.node_outputs as Record<string, unknown> | undefined,
     node.id,
@@ -488,46 +551,13 @@ export default function GeocodeAgentPanel({
 
         <div className="space-y-3 mt-2">
           <div className="space-y-2">
-            <Label className="text-xs">Evaluation model</Label>
+            <Label className="text-xs">Routing model</Label>
             {catalogHint}
             {projectId != null && catalogLoading && (
               <p className="text-xs text-muted-foreground">Loading models…</p>
             )}
             {catalogError ? <p className="text-xs text-destructive">{catalogError}</p> : null}
             {catalogEmptyHint}
-            {showInvalidEvalPersisted ? (
-              <p className="text-xs text-muted-foreground">
-                The saved evaluation model is no longer available. Choose another model below.
-              </p>
-            ) : null}
-            <Select
-              value={evalRadixValue}
-              onValueChange={handleEvaluationModel}
-              disabled={isDisabled || modelSelectOptions.length === 0}
-            >
-              <SelectTrigger className="text-xs">
-                <SelectValue placeholder="Choose a model" />
-              </SelectTrigger>
-              <SelectContent>
-                {showInvalidEvalPersisted ? (
-                  <SelectItem disabled value={INVALID_SELECTION_VALUE}>
-                    Saved model unavailable
-                  </SelectItem>
-                ) : null}
-                {modelSelectOptions.map((m) => (
-                  <SelectItem key={`ev-${m.selectValue}`} value={m.selectValue}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Used when the area geocoder asks the model to judge ambiguous map results.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-xs">Routing model</Label>
             {showInvalidRouterPersisted ? (
               <p className="text-xs text-muted-foreground">
                 The saved routing model is no longer available. Choose another model below.
@@ -555,8 +585,75 @@ export default function GeocodeAgentPanel({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Model used after cache check to choose how each place is looked up (web vs structured only). Run records
-              can include a short audit for support.
+              After cache: chooses how each place is looked up (web vs structured only). Run records can include a short
+              audit for support.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Geographic reasoning model</Label>
+            {showInvalidGeoPersisted ? (
+              <p className="text-xs text-muted-foreground">
+                The saved geographic reasoning model is no longer available. Choose another model below.
+              </p>
+            ) : null}
+            <Select
+              value={geoRadixValue}
+              onValueChange={handleGeographicReasoningModel}
+              disabled={isDisabled || modelSelectOptions.length === 0}
+            >
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Choose a model" />
+              </SelectTrigger>
+              <SelectContent>
+                {showInvalidGeoPersisted ? (
+                  <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                    Saved model unavailable
+                  </SelectItem>
+                ) : null}
+                {modelSelectOptions.map((m) => (
+                  <SelectItem key={`geo-${m.selectValue}`} value={m.selectValue}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Used during external geocoding for places, addresses, loose regions, natural features, and streets (search
+              helpers, candidate picks, bounding boxes).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Evaluation model</Label>
+            {showInvalidEvalPersisted ? (
+              <p className="text-xs text-muted-foreground">
+                The saved evaluation model is no longer available. Choose another model below.
+              </p>
+            ) : null}
+            <Select
+              value={evalRadixValue}
+              onValueChange={handleEvaluationModel}
+              disabled={isDisabled || modelSelectOptions.length === 0}
+            >
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Choose a model" />
+              </SelectTrigger>
+              <SelectContent>
+                {showInvalidEvalPersisted ? (
+                  <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                    Saved model unavailable
+                  </SelectItem>
+                ) : null}
+                {modelSelectOptions.map((m) => (
+                  <SelectItem key={`ev-${m.selectValue}`} value={m.selectValue}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Judges ambiguous area geocoder results and refines the human-readable location line in consolidated output.
             </p>
           </div>
 

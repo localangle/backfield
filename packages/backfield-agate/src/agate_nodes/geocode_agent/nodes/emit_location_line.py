@@ -16,15 +16,20 @@ from ..types import AgentState
 logger = logging.getLogger(__name__)
 
 
-def _model_config_id_for_named_model(state: AgentState, model: str) -> str | None:
-    """Resolve catalog config id for an LLM call given which resolved model id is in use."""
-    ev = state.get("evaluation_llm_model")
-    rv = state.get("router_llm_model")
-    if ev and model == ev:
-        return state.get("evaluation_ai_model_config_id")
-    if rv and model == rv:
-        return state.get("router_ai_model_config_id")
-    return state.get("evaluation_ai_model_config_id") or state.get("router_ai_model_config_id")
+def _evaluation_litellm_model_for_emit(state: AgentState) -> str | None:
+    raw = state.get("evaluation_llm_model")
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    return s or None
+
+
+def _evaluation_ai_model_config_id_for_emit(state: AgentState) -> str | None:
+    raw = state.get("evaluation_ai_model_config_id")
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s or None
 
 
 _CONTEXT_SNIPPET_MAX = 1200
@@ -544,12 +549,8 @@ async def compute_emit_location_line(
     location_text = (state.get("location_text") or "").strip()
     formatted_address = (formatted_address or "").strip()
     openai_key = state.get("openai_api_key")
-    model = (
-        state.get("evaluation_llm_model")
-        or state.get("router_llm_model")
-        or "gpt-5-nano"
-    )
-    polish_model = state.get("evaluation_llm_model") or state.get("router_llm_model") or "gpt-5-nano"
+    model = _evaluation_litellm_model_for_emit(state)
+    polish_model = model
     components = state.get("location_components") or {}
     if not isinstance(components, dict):
         components = {}
@@ -557,6 +558,8 @@ async def compute_emit_location_line(
     orig_snip, hints_snip = _story_context_snippets(state)
 
     if not openai_key:
+        return _heuristic_emit_location(location_type, location_text, formatted_address)
+    if not model:
         return _heuristic_emit_location(location_type, location_text, formatted_address)
 
     try:
@@ -575,7 +578,7 @@ async def compute_emit_location_line(
     )
     prompt = f"{rules}\n---\n{user_block}"
 
-    emit_mc = _model_config_id_for_named_model(state, model)
+    emit_mc = _evaluation_ai_model_config_id_for_emit(state)
 
     def _sync() -> str:
         return call_llm(
@@ -614,7 +617,7 @@ async def compute_emit_location_line(
         openai_key,
         story_context=orig_snip,
         geocode_hints=hints_snip,
-        model_config_id=_model_config_id_for_named_model(state, polish_model),
+        model_config_id=_evaluation_ai_model_config_id_for_emit(state),
     )
 
 
@@ -658,13 +661,11 @@ async def _maybe_upgrade_to_named_place(
     )
     prompt = f"{rules}\n---\n{user_tail}"
 
-    model = (
-        state.get("evaluation_llm_model")
-        or state.get("router_llm_model")
-        or "gpt-5-nano"
-    )
+    model = _evaluation_litellm_model_for_emit(state)
+    if not model:
+        return baseline_location_line, False
 
-    venue_mc = _model_config_id_for_named_model(state, model)
+    venue_mc = _evaluation_ai_model_config_id_for_emit(state)
 
     def _sync() -> str:
         return call_llm(

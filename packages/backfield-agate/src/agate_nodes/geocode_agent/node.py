@@ -76,7 +76,14 @@ class GeocodeAgentParams(BaseModel):
     )
     evaluationModel: str = Field(
         default="gpt-5-nano",
-        description="OpenAI model for geocoder result evaluation (area flow)",
+        description="OpenAI model for judging ambiguous geocoder results and refining location display lines",
+    )
+    geographicReasoningModel: str = Field(
+        default="gpt-5-nano",
+        description=(
+            "OpenAI model for geographic reasoning during external geocode "
+            "(places, addresses, regions, natural features, streets)"
+        ),
     )
     routerModel: str = Field(
         default="gpt-5-nano",
@@ -85,6 +92,10 @@ class GeocodeAgentParams(BaseModel):
     evaluationAiModelConfigId: Optional[str] = Field(
         default=None,
         description="Optional Backfield AI model config id (overrides evaluationModel when set)",
+    )
+    geographicReasoningAiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides geographicReasoningModel when set)",
     )
     routerAiModelConfigId: Optional[str] = Field(
         default=None,
@@ -231,6 +242,7 @@ async def run_geocode_agent_pipeline(
 
     eval_lm_model = params.evaluationModel
     router_lm_model = params.routerModel
+    geo_lm_model = params.geographicReasoningModel
     raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
     if raw_pid:
         try:
@@ -239,7 +251,7 @@ async def run_geocode_agent_pipeline(
             from sqlmodel import Session
 
             with Session(get_engine()) as res_sess:
-                eval_lm_model, router_lm_model = resolve_geocode_litellm_models(
+                eval_lm_model, router_lm_model, geo_lm_model = resolve_geocode_litellm_models(
                     res_sess,
                     int(raw_pid),
                     params,
@@ -340,8 +352,10 @@ async def run_geocode_agent_pipeline(
                     cache_resolve=cache_resolve,
                     evaluation_llm_model=eval_lm_model,
                     router_llm_model=router_lm_model,
+                    geographic_reasoning_llm_model=geo_lm_model,
                     evaluation_ai_model_config_id=params.evaluationAiModelConfigId,
                     router_ai_model_config_id=params.routerAiModelConfigId,
+                    geographic_reasoning_ai_model_config_id=params.geographicReasoningAiModelConfigId,
                 ),
                 timeout=PER_LOCATION_TIMEOUT,
             )

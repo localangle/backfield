@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "Geocode Agent",
   "icon": "MapPin",
   "color": "bg-teal-600",
-  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.",
+  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick routing, geographic reasoning, and evaluation models.",
   "category": "enrichment",
   "requiredUpstreamNodes": [
     "PlaceExtract"
@@ -38,8 +38,10 @@ const nodeMetadata = {
     "stylebookApiUrl": "",
     "projectSlug": "",
     "evaluationModel": "",
+    "geographicReasoningModel": "",
     "routerModel": "",
     "evaluationAiModelConfigId": null,
+    "geographicReasoningAiModelConfigId": null,
     "routerAiModelConfigId": null
   }
 };

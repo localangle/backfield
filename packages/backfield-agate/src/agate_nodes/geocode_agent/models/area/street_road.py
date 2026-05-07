@@ -14,7 +14,6 @@ from .area import Area
 
 logger = logging.getLogger(__name__)
 
-STREET_ROAD_LLM_MODEL = "gpt-5"
 PROMPT_PATH = Path(__file__).parent.parent.parent / "prompts" / "create_street_road_bounding_box.md"
 
 ########## HELPER FUNCTIONS ##########
@@ -64,10 +63,10 @@ class StreetRoad(Area):
 
             response = call_llm(
                 prompt=prompt,
-                model=STREET_ROAD_LLM_MODEL,
+                model=self._geographic_reasoning_litellm_model(),
                 openai_api_key=openai_api_key,
                 force_json=True,
-                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
+                model_config_id=self._geographic_reasoning_model_config_id(),
             )
 
             bbox_data = json.loads(response.strip())
