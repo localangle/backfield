@@ -4,6 +4,10 @@ All top-level keys from the node's stored ``params`` are passed through to downs
 unchanged (except optional stripping of React-only keys). PlaceExtract and similar nodes
 flatten upstream outputs and substitute ``{headline}``, ``{results.images}``, etc. from
 that merged dict.
+
+Some CMS exports reuse ``text`` for a short section label (e.g. "Music") while the
+article body lives in ``article_text``, ``body``, or ``content``. :func:`resolve_document_body_text`
+picks the longest non-empty string among known body fields so extraction sees real copy.
 """
 
 from __future__ import annotations
@@ -12,6 +16,44 @@ from typing import Any
 
 # Keys that may appear on React Flow ``data`` but must not be persisted or executed.
 _STRIP_PARAM_KEYS = frozenset({"onChange"})
+
+# When multiple fields exist, the longest non-empty string wins (first wins on ties).
+_BODY_TEXT_KEYS: tuple[str, ...] = (
+    "article_text",
+    "articleBody",
+    "article_body",
+    "richTextBody",
+    "rich_text",
+    "body",
+    "content",
+    "story",
+    "full_text",
+    "html",
+    "text",
+)
+
+
+def resolve_document_body_text(data: dict[str, Any]) -> str | None:
+    """Return the best article body string for downstream LLM nodes.
+
+    Exporters sometimes put a category or section name in ``text`` and the narrative in
+    ``article_text`` / ``body``. We prefer the longest non-empty candidate so PlaceExtract
+    receives substantive copy.
+    """
+    best: str | None = None
+    best_len = -1
+    for key in _BODY_TEXT_KEYS:
+        raw = data.get(key)
+        if raw is None:
+            continue
+        s = str(raw).strip()
+        if not s:
+            continue
+        ln = len(s)
+        if ln > best_len:
+            best_len = ln
+            best = s
+    return best
 
 
 def json_input_output_from_dict(data: dict[str, Any]) -> dict[str, Any]:
@@ -24,14 +66,15 @@ def json_input_output_from_dict(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("JSONInput requires params to be a JSON object (dict).")
 
     cleaned = {k: v for k, v in data.items() if k not in _STRIP_PARAM_KEYS}
-    text = cleaned.get("text")
-    if text is None or not str(text).strip():
+    resolved = resolve_document_body_text(cleaned)
+    if not resolved:
         raise ValueError(
-            "JSONInput requires a non-empty top-level string field 'text'. "
-            "Add or edit the JSON in the node panel before running the flow."
+            "JSONInput requires a non-empty article body. Provide one of: "
+            + ", ".join(_BODY_TEXT_KEYS)
+            + ". When several are set, the longest non-empty field is used."
         )
     out = dict(cleaned)
-    out["text"] = str(text)
+    out["text"] = resolved
     return out
 
 

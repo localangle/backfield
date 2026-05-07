@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from backfield_core.nodes.json_input import resolve_document_body_text
+
 
 def list_json_keys_under_prefix(s3_client: Any, *, bucket: str, prefix: str) -> list[str]:
     """Return sorted ``*.json`` object keys under ``prefix`` (paginated)."""
@@ -28,9 +30,12 @@ def list_json_keys_under_prefix(s3_client: Any, *, bucket: str, prefix: str) -> 
 
 
 def parse_s3_text_json_document(raw: str) -> tuple[dict[str, Any] | None, str | None]:
-    """Parse S3 body as JSON with non-empty top-level ``text`` string.
+    """Parse S3 body as JSON with a non-empty article body (see ``resolve_document_body_text``).
 
-    Returns ``(document_dict, None)`` on success, else ``(None, error_reason)``.
+    Returns ``(document_dict, None)`` on success. The returned dict's ``text`` key is set to
+    the resolved body string so batch items match JSONInput normalization.
+
+    Returns ``(None, error_reason)`` on failure.
     """
     try:
         data = json.loads(raw)
@@ -40,11 +45,13 @@ def parse_s3_text_json_document(raw: str) -> tuple[dict[str, Any] | None, str | 
     if not isinstance(data, dict):
         return None, "json_not_object"
 
-    text_val = data.get("text")
-    if text_val is None or not str(text_val).strip():
+    resolved = resolve_document_body_text(data)
+    if not resolved:
         return None, "missing_or_empty_text"
 
-    return data, None
+    out = dict(data)
+    out["text"] = resolved
+    return out, None
 
 
 def s3_max_files_from_params(

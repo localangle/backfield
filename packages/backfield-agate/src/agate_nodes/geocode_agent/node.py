@@ -5,7 +5,7 @@ import asyncio
 import time
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 from backfield_agate.context import AgateEnvContext
 
@@ -101,6 +101,23 @@ class GeocodeAgentParams(BaseModel):
         default=None,
         description="Optional Backfield AI model config id (overrides routerModel when set)",
     )
+
+    @model_validator(mode="after")
+    def _coerce_empty_model_strings(self) -> "GeocodeAgentParams":
+        """Saved graphs may persist empty strings, which override Field defaults and break routing."""
+        defaults = (
+            ("evaluationModel", "gpt-5-nano"),
+            ("routerModel", "gpt-5-nano"),
+            ("geographicReasoningModel", "gpt-5-nano"),
+        )
+        updates: dict[str, str] = {}
+        for key, default in defaults:
+            raw = getattr(self, key)
+            if not (str(raw) if raw is not None else "").strip():
+                updates[key] = default
+        if updates:
+            return self.model_copy(update=updates)
+        return self
 
 
 # Define Place model locally to avoid cross-node dependencies

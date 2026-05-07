@@ -18,7 +18,7 @@ import os
 import re
 import time
 from typing import List, Dict, Any, Optional, Union
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 from backfield_agate.context import AgateEnvContext
 from agate_utils.llm import call_llm
@@ -58,6 +58,13 @@ class PlaceExtractParams(BaseModel):
         le=1800,
         description="Timeout in seconds for the LLM call (default: 10 minutes, max: 30 minutes)"
     )
+
+    @model_validator(mode="after")
+    def _coerce_empty_model_string(self) -> "PlaceExtractParams":
+        """Saved graphs may persist ``model: \"\"`` which overrides the Field default."""
+        if not (self.model or "").strip():
+            return self.model_copy(update={"model": "gpt-4o-mini"})
+        return self
 
 
 class StateInfo(BaseModel):
