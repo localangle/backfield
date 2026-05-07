@@ -37,7 +37,8 @@ const nodeMetadata = {
     "stylebook_id": null,
     "canonicalization_mode": "rules",
     "auto_apply_canonicalization": true,
-    "adjudication_model": "gpt-5-nano"
+    "adjudication_model": "",
+    "adjudication_ai_model_config_id": null
   }
 };
 
