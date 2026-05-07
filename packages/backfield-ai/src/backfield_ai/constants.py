@@ -53,6 +53,19 @@ def is_custom_ai_credential_integration_key(integration_key: str) -> bool:
     return integration_key.startswith(INTEGRATION_KEY_AI_CREDENTIAL_PREFIX)
 
 
+# Per-project keys for one catalog model (not listed in org credential picker UI).
+INTEGRATION_KEY_AI_PROJECT_MODEL_PREFIX = "ai.project_model."
+
+
+def project_model_override_integration_key(project_id: int, model_config_id: str) -> str:
+    """Stable integration_key for one project's override credential on ``model_config_id``."""
+    return f"{INTEGRATION_KEY_AI_PROJECT_MODEL_PREFIX}{int(project_id)}.{model_config_id.strip()}"
+
+
+def is_project_model_override_integration_key(integration_key: str) -> bool:
+    return integration_key.startswith(INTEGRATION_KEY_AI_PROJECT_MODEL_PREFIX)
+
+
 # Project-level default model roles (graph nodes resolve these at execution time).
 AI_DEFAULT_ROLE_GEOCODE_ROUTER = "geocode.router"
 AI_DEFAULT_ROLE_GEOCODE_EVALUATION = "geocode.evaluation"

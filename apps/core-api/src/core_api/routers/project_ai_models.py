@@ -12,10 +12,13 @@ from core_api.project_ai_catalog import (
     ProjectDefaultRolePutBody,
     ProjectEffectiveAiModelOut,
     ProjectModelAvailabilityBody,
+    ProjectModelCredentialOverrideBody,
+    clear_project_model_credential_override,
     list_project_default_roles,
     list_project_effective_models,
     put_project_default_role,
     set_project_model_availability,
+    set_project_model_credential_override,
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -28,6 +31,10 @@ def get_project_effective_ai_models(
         default=None,
         description="Comma-separated capability filter (all must be present), e.g. text,json",
     ),
+    include_disabled: bool = Query(
+        default=False,
+        description="Include models turned off for this project (workspace Models UI).",
+    ),
     session: Session = Depends(get_session),
     auth: dict = Depends(get_auth),
 ) -> list[ProjectEffectiveAiModelOut]:
@@ -35,7 +42,12 @@ def get_project_effective_ai_models(
     cap_list = None
     if capabilities:
         cap_list = [c.strip() for c in capabilities.split(",") if c.strip()]
-    return list_project_effective_models(session, project_id, capabilities=cap_list)
+    return list_project_effective_models(
+        session,
+        project_id,
+        capabilities=cap_list,
+        include_disabled=include_disabled,
+    )
 
 
 @router.put(
@@ -56,6 +68,41 @@ def put_project_ai_model_availability(
         model_config_id,
         enabled=body.enabled,
     )
+
+
+@router.put(
+    "/{project_id}/ai-models/{model_config_id}/credential-override",
+    response_model=ProjectEffectiveAiModelOut,
+)
+def put_project_ai_model_credential_override(
+    project_id: int,
+    model_config_id: str,
+    body: ProjectModelCredentialOverrideBody,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> ProjectEffectiveAiModelOut:
+    require_project_access(session, auth, project_id)
+    return set_project_model_credential_override(
+        session,
+        project_id,
+        model_config_id,
+        api_key=body.api_key,
+        api_base=body.api_base,
+    )
+
+
+@router.delete(
+    "/{project_id}/ai-models/{model_config_id}/credential-override",
+    response_model=ProjectEffectiveAiModelOut,
+)
+def delete_project_ai_model_credential_override(
+    project_id: int,
+    model_config_id: str,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> ProjectEffectiveAiModelOut:
+    require_project_access(session, auth, project_id)
+    return clear_project_model_credential_override(session, project_id, model_config_id)
 
 
 @router.get("/{project_id}/ai-model-defaults", response_model=list[ProjectDefaultRoleAssignmentOut])

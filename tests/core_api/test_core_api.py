@@ -1024,6 +1024,64 @@ def test_ai_models_org_admin_can_delete_catalog_model(
     assert missing.status_code == 404
 
 
+def test_project_ai_models_workspace_toggle_and_project_key(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "projmodels@example.com", "password": "projmodels-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "projmodels@example.com", "password": "projmodels-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    created = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={"curated_id": "openai:gpt-5-nano", "name": "Nano for project tab"},
+    )
+    assert created.status_code == 200
+    cfg_id = created.json()["id"]
+
+    listed_all = client.get("/v1/projects/1/ai-models/effective?include_disabled=true")
+    assert listed_all.status_code == 200
+    rows = listed_all.json()
+    assert any(r["id"] == cfg_id for r in rows)
+    nano = next(r for r in rows if r["id"] == cfg_id)
+    assert nano["project_enabled"] is True
+    assert nano.get("project_credential_override_configured") in (False, None)
+
+    off = client.put(f"/v1/projects/1/ai-models/{cfg_id}/availability", json={"enabled": False})
+    assert off.status_code == 200
+    assert off.json()["project_enabled"] is False
+
+    listed_eff = client.get("/v1/projects/1/ai-models/effective")
+    assert listed_eff.status_code == 200
+    assert all(r["id"] != cfg_id for r in listed_eff.json())
+
+    listed_inc = client.get("/v1/projects/1/ai-models/effective?include_disabled=true").json()
+    assert any(r["id"] == cfg_id and r["project_enabled"] is False for r in listed_inc)
+
+    on_again = client.put(
+        f"/v1/projects/1/ai-models/{cfg_id}/availability",
+        json={"enabled": True},
+    )
+    assert on_again.status_code == 200
+
+    cred_put = client.put(
+        f"/v1/projects/1/ai-models/{cfg_id}/credential-override",
+        json={"api_key": "sk-test-project-model-override"},
+    )
+    assert cred_put.status_code == 200
+    assert cred_put.json()["project_credential_override_configured"] is True
+
+    cred_del = client.delete(f"/v1/projects/1/ai-models/{cfg_id}/credential-override")
+    assert cred_del.status_code == 200
+    assert cred_del.json()["project_credential_override_configured"] is False
+
+
 def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
     client.post(
         "/v1/bootstrap/first-user",

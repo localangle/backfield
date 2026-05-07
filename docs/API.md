@@ -41,7 +41,13 @@ This document covers the Agate API in `apps/agate-api` and summarizes **Core API
   - `POST /v1/projects/{project_id}/api-keys` — body `{ "credential_type": "user" | "service", "label"?: string }`. Returns `raw_key` **once** on create. `user` keys require a browser session; `service` keys require org admin. Response includes `user_id` for `user` keys.
   - `DELETE /v1/projects/{project_id}/api-keys/{credential_id}` — revoke (session rules: org admin for `service` or another user’s `user` key; owner for own `user` key).
 
-Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `me.py`, `admin_org.py`, `credentials.py`, `org_ai_models.py`, `org_integration_secrets.py`). Shared helpers live in [`apps/core-api/src/core_api/ai_model_catalog.py`](../apps/core-api/src/core_api/ai_model_catalog.py) and [`apps/core-api/src/core_api/org_integration_secrets.py`](../apps/core-api/src/core_api/org_integration_secrets.py).
+- **Project AI catalog (any member with project access):**
+  - `GET /v1/projects/{project_id}/ai-models/effective` — inherited organization **active generative** models; optional query **`capabilities`** (comma-separated); optional **`include_disabled=true`** to list models turned off for this project (workspace **Models** tab).
+  - `PUT /v1/projects/{project_id}/ai-models/{model_config_id}/availability` — body **`{ "enabled": boolean }`** toggles visibility for this project only.
+  - `PUT /v1/projects/{project_id}/ai-models/{model_config_id}/credential-override` — body **`{ "api_key": "<secret>", "api_base"?: "<url>" | null }`**; stores an org **`backfield_organization_integration_secret`** keyed **`ai.project_model.{project_id}.{model_config_id}`** (worker prefers it over the catalog row’s credential). **Azure** routes require **`api_base`**.
+  - `DELETE …/credential-override` — removes the project-only secret and restores organization defaults for execution.
+
+Handlers live under [`apps/core-api/src/core_api/routers/`](../apps/core-api/src/core_api/routers/) (`auth.py`, `me.py`, `admin_org.py`, `credentials.py`, `project_ai_models.py`, `org_ai_models.py`, `org_integration_secrets.py`). Shared helpers live in [`apps/core-api/src/core_api/ai_model_catalog.py`](../apps/core-api/src/core_api/ai_model_catalog.py), [`apps/core-api/src/core_api/project_ai_catalog.py`](../apps/core-api/src/core_api/project_ai_catalog.py), and [`apps/core-api/src/core_api/org_integration_secrets.py`](../apps/core-api/src/core_api/org_integration_secrets.py).
 
 ## Stylebook API (`apps/stylebook-api`)
 

@@ -301,16 +301,63 @@ export async function deleteOrganizationIntegrationSecret(
 
 export interface ProjectEffectiveAiModelRow extends AiModelConfigSummary {
   project_enabled: boolean
+  /** Present once Core API supports project keys (omit on older stacks). */
+  project_credential_override_configured?: boolean
 }
 
 export async function fetchProjectEffectiveAiModels(
   projectId: number,
   capabilities?: string[],
+  options?: { includeDisabled?: boolean },
 ): Promise<ProjectEffectiveAiModelRow[]> {
-  const q = capabilities?.length
-    ? `?capabilities=${encodeURIComponent(capabilities.join(','))}`
-    : ''
-  return jsonFetch(`/v1/projects/${projectId}/ai-models/effective${q}`)
+  const params = new URLSearchParams()
+  if (capabilities?.length) {
+    params.set('capabilities', capabilities.join(','))
+  }
+  if (options?.includeDisabled) {
+    params.set('include_disabled', 'true')
+  }
+  const q = params.toString()
+  const suffix = q ? `?${q}` : ''
+  return jsonFetch(`/v1/projects/${projectId}/ai-models/effective${suffix}`)
+}
+
+export async function putProjectAiModelAvailability(
+  projectId: number,
+  modelConfigId: string,
+  enabled: boolean,
+): Promise<ProjectEffectiveAiModelRow> {
+  return jsonFetch(
+    `/v1/projects/${projectId}/ai-models/${encodeURIComponent(modelConfigId)}/availability`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    },
+  )
+}
+
+export async function putProjectAiModelCredentialOverride(
+  projectId: number,
+  modelConfigId: string,
+  body: { api_key: string; api_base?: string | null },
+): Promise<ProjectEffectiveAiModelRow> {
+  return jsonFetch(
+    `/v1/projects/${projectId}/ai-models/${encodeURIComponent(modelConfigId)}/credential-override`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    },
+  )
+}
+
+export async function deleteProjectAiModelCredentialOverride(
+  projectId: number,
+  modelConfigId: string,
+): Promise<ProjectEffectiveAiModelRow> {
+  return jsonFetch(
+    `/v1/projects/${projectId}/ai-models/${encodeURIComponent(modelConfigId)}/credential-override`,
+    { method: 'DELETE' },
+  )
 }
 
 export async function listOrgWorkspaces(

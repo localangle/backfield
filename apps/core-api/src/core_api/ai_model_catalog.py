@@ -15,6 +15,7 @@ from backfield_ai.constants import (
     AI_MODEL_KIND_EMBEDDING,
     AI_MODEL_KIND_GENERATIVE,
     DEFAULT_AI_CURRENCY,
+    is_project_model_override_integration_key,
 )
 from backfield_ai.litellm_model import (
     effective_litellm_model_row,
@@ -497,6 +498,16 @@ def purge_org_model_config_session(
     pk = row.id
     ov_where = BackfieldAiProjectModelOverride.model_config_id == pk
     for ov in session.exec(select(BackfieldAiProjectModelOverride).where(ov_where)).all():
+        sid = ov.integration_secret_id
+        if sid is not None:
+            ov.integration_secret_id = None
+            session.add(ov)
+            session.flush()
+            sec = session.get(BackfieldOrganizationIntegrationSecret, int(sid))
+            if sec is not None:
+                ik = str(sec.integration_key)
+                if is_project_model_override_integration_key(ik):
+                    session.delete(sec)
         session.delete(ov)
     dr_where = BackfieldAiDefaultModelRole.model_config_id == pk
     for dr in session.exec(select(BackfieldAiDefaultModelRole).where(dr_where)).all():

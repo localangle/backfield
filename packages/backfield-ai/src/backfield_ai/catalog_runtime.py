@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from backfield_db import (
     BackfieldAiModelConfig,
+    BackfieldAiProjectModelOverride,
     BackfieldOrganizationIntegrationSecret,
     BackfieldProject,
 )
 from backfield_db.crypto import decrypt_secret
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from backfield_ai.litellm_model import effective_litellm_model_row
 
@@ -44,7 +45,17 @@ def resolve_llm_auth_for_model_config(
         provider=str(cfg.provider),
         provider_model_id=str(cfg.provider_model_id),
     )
-    sid = cfg.integration_secret_id
+
+    sid: int | None = cfg.integration_secret_id
+    ovr = session.exec(
+        select(BackfieldAiProjectModelOverride).where(
+            BackfieldAiProjectModelOverride.project_id == project_id,
+            BackfieldAiProjectModelOverride.model_config_id == mc,
+        )
+    ).first()
+    if ovr is not None and ovr.integration_secret_id is not None:
+        sid = int(ovr.integration_secret_id)
+
     if sid is None:
         return lm, None, None
 

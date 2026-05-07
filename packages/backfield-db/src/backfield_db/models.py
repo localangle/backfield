@@ -567,11 +567,20 @@ class BackfieldAiProjectModelOverride(SQLModel, table=True):
             "project_id",
             "enabled",
         ),
+        Index(
+            "ix_backfield_ai_override_integration_secret_id",
+            "integration_secret_id",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
     model_config_id: str = Field(foreign_key="backfield_ai_model_config.id", index=True)
+    integration_secret_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_organization_integration_secret.id",
+        nullable=True,
+    )
     enabled: bool = Field(
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default="true"),

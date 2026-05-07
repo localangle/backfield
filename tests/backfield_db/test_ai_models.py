@@ -110,6 +110,9 @@ def test_project_override_is_unique_per_project_model() -> None:
     assert "ix_backfield_ai_project_model_override_project_enabled" in _index_names(
         BackfieldAiProjectModelOverride
     )
+    assert "ix_backfield_ai_override_integration_secret_id" in _index_names(
+        BackfieldAiProjectModelOverride
+    )
 
 
 def test_default_model_role_requires_exactly_one_scope_and_indexes_roles() -> None:
