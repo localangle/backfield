@@ -101,6 +101,20 @@ class GeocodeAgentParams(BaseModel):
         default=None,
         description="Optional Backfield AI model config id (overrides routerModel when set)",
     )
+    useCacheLlmAdjudication: bool = Field(
+        default=True,
+        description=(
+            "When useCache and DB bundle are active: run evaluation LLM on ambiguous tier-1 "
+            "or tier-2 sanity failures before external geocoding"
+        ),
+    )
+    useCacheLlmAdjudicationOnMissRecall: bool = Field(
+        default=False,
+        description=(
+            "When useCache and DB bundle: also run adjudication on strict cache miss "
+            "if trigram recall returns canonical candidates (extra LLM cost)"
+        ),
+    )
 
     @model_validator(mode="after")
     def _coerce_empty_model_strings(self) -> "GeocodeAgentParams":
@@ -285,6 +299,8 @@ async def run_geocode_agent_pipeline(
     meta = ctx.metadata if isinstance(ctx.metadata, dict) else {}
     raw_resolve = meta.get("cache_resolve")
     cache_resolve = raw_resolve if callable(raw_resolve) else None
+    geocode_cache_bundle = meta.get("geocode_cache_bundle")
+    cache_bundle = geocode_cache_bundle if isinstance(geocode_cache_bundle, dict) else None
         
     # Configuration for timeout handling
     PER_LOCATION_TIMEOUT = params.perLocationTimeout
@@ -367,6 +383,9 @@ async def run_geocode_agent_pipeline(
                     project_slug=project_slug,
                     service_api_token=service_api_token,
                     cache_resolve=cache_resolve,
+                    geocode_cache_bundle=cache_bundle,
+                    use_cache_llm_ambiguous_sanity=params.useCacheLlmAdjudication,
+                    use_cache_llm_miss_recall=params.useCacheLlmAdjudicationOnMissRecall,
                     evaluation_llm_model=eval_lm_model,
                     router_llm_model=router_lm_model,
                     geographic_reasoning_llm_model=geo_lm_model,

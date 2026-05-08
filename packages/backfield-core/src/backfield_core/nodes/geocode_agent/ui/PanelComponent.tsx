@@ -27,6 +27,8 @@ const DEFAULTS = {
   evaluationAiModelConfigId: null as string | null,
   geographicReasoningAiModelConfigId: null as string | null,
   routerAiModelConfigId: null as string | null,
+  useCacheLlmAdjudication: true,
+  useCacheLlmAdjudicationOnMissRecall: false,
 }
 
 const PANEL_DESCRIPTION =
@@ -359,6 +361,34 @@ export default function GeocodeAgentPanel({
     }
   }
 
+  const handleCacheLlmAdjChange = (checked: boolean) => {
+    if (!setNodes) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({ ...(n.data || {}), useCacheLlmAdjudication: checked }),
+            }
+          : n,
+      ),
+    )
+  }
+
+  const handleCacheLlmMissRecallChange = (checked: boolean) => {
+    if (!setNodes) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({ ...(n.data || {}), useCacheLlmAdjudicationOnMissRecall: checked }),
+            }
+          : n,
+      ),
+    )
+  }
+
   const paramStylebookId = resolvedStylebookId(params as Record<string, unknown>)
   const stylebookSelectValue =
     paramStylebookId != null ? String(paramStylebookId) : ''
@@ -657,6 +687,35 @@ export default function GeocodeAgentPanel({
                 <p className="text-xs text-muted-foreground">Loading catalogs…</p>
               )}
               {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
+              <div className="flex items-center space-x-2 pt-2">
+                <Checkbox
+                  id="geocode-cache-llm-adj"
+                  checked={params.useCacheLlmAdjudication !== false}
+                  onCheckedChange={(c) => handleCacheLlmAdjChange(c === true)}
+                  disabled={isDisabled}
+                />
+                <Label htmlFor="geocode-cache-llm-adj" className="text-xs font-medium cursor-pointer">
+                  Use evaluation model when cache is ambiguous or fails sanity checks
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground ml-6">
+                Runs after strict catalog and substrate fingerprint tiers: chooses among recalled catalog candidates
+                (same evaluation model as area judging).
+              </p>
+              <div className="flex items-center space-x-2 pt-1">
+                <Checkbox
+                  id="geocode-cache-llm-recall"
+                  checked={params.useCacheLlmAdjudicationOnMissRecall === true}
+                  onCheckedChange={(c) => handleCacheLlmMissRecallChange(c === true)}
+                  disabled={isDisabled}
+                />
+                <Label htmlFor="geocode-cache-llm-recall" className="text-xs font-medium cursor-pointer">
+                  Also adjudicate on strict cache miss when recall finds candidates
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground ml-6">
+                Optional; increases LLM usage when aliases nearly match but strict tiers miss.
+              </p>
             </div>
           )}
         </div>

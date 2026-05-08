@@ -251,14 +251,60 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
 
     geocoding_result = None
     cache_resolve_fn = state.get("cache_resolve")
-    if use_cache and cache_resolve_fn is not None:
-        _adv_info(state, "[CACHE ENABLED] DB cache resolve for '%s'", location_text)
+    geocode_cache_bundle = state.get("geocode_cache_bundle")
+    strict_out_fn = (
+        geocode_cache_bundle.get("strict_resolve_with_outcome")
+        if isinstance(geocode_cache_bundle, dict)
+        else None
+    )
+    if use_cache and callable(strict_out_fn):
+        _adv_info(state, "[CACHE ENABLED] DB cache bundle (strict) for '%s'", location_text)
+        try:
+            outcome = await asyncio.to_thread(
+                strict_out_fn,
+                location_text,
+                location_type,
+                components if isinstance(components, dict) else {},
+            )
+            state["cache_strict_outcome"] = outcome if isinstance(outcome, dict) else None
+            match_dict = outcome.get("match_dict") if isinstance(outcome, dict) else None
+            if match_dict:
+                src = (match_dict.get("confidence") or {}).get("source")
+                try:
+                    if src == "canonical_db":
+                        geocoding_result = stylebook_match_to_geocoding_result(match_dict, location_text)
+                    elif src == "location_cache":
+                        geocoding_result = cache_match_to_geocoding_result(match_dict, location_text)
+                    else:
+                        geocoding_result = None
+                    if geocoding_result and not geocoding_result.result.geometry:
+                        logger.warning(
+                            "DB cache match for '%s' has no geometry, falling back to external geocoding",
+                            location_text,
+                        )
+                        geocoding_result = None
+                    elif geocoding_result:
+                        _adv_info(
+                            state,
+                            "[CACHE HIT] DB cache for '%s' (source=%s, id=%s)",
+                            location_text,
+                            src,
+                            match_dict.get("id"),
+                        )
+                except Exception as e:
+                    logger.warning("Error converting DB cache match for '%s': %s", location_text, e)
+                    geocoding_result = None
+        except Exception as e:
+            logger.warning("Error during DB cache resolve for '%s': %s", location_text, e)
+
+    elif use_cache and cache_resolve_fn is not None:
+        _adv_info(state, "[CACHE ENABLED] DB cache resolve (legacy) for '%s'", location_text)
         try:
             match_dict = await asyncio.to_thread(
                 cache_resolve_fn,
                 location_text,
                 location_type,
-                components,
+                components if isinstance(components, dict) else {},
             )
             if match_dict:
                 src = (match_dict.get("confidence") or {}).get("source")
@@ -374,14 +420,24 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
 
     if not use_cache:
         _adv_info(state, "[CACHE SKIP] Cache lookup disabled for '%s'", location_text)
-    elif cache_resolve_fn is None and not stylebook_api_url:
+    elif (
+        not callable(strict_out_fn)
+        and cache_resolve_fn is None
+        and not isinstance(geocode_cache_bundle, dict)
+        and not stylebook_api_url
+    ):
         _adv_info(
             state,
-            "[CACHE SKIP] No DB cache_resolve and no Stylebook API URL for '%s'",
+            "[CACHE SKIP] No DB cache bundle/resolve and no Stylebook API URL for '%s'",
             location_text,
         )
-    elif cache_resolve_fn is None and not project_slug:
-        _adv_info(state, "[CACHE SKIP] No DB cache_resolve and no project slug for '%s'", location_text)
+    elif (
+        not callable(strict_out_fn)
+        and cache_resolve_fn is None
+        and not isinstance(geocode_cache_bundle, dict)
+        and not project_slug
+    ):
+        _adv_info(state, "[CACHE SKIP] No DB cache bundle/resolve and no project slug for '%s'", location_text)
     else:
         _adv_info(
             state,
@@ -487,7 +543,12 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
     """
     Baseline graph entry: cache resolution then external geocoding when needed.
     """
+    from .cache_adjudication import adjudicate_stylebook_cache_node
+
     await resolve_cache_or_miss(state)
+    if state.get("geocoding_result") is not None:
+        return state
+    await adjudicate_stylebook_cache_node(state)
     if state.get("geocoding_result") is not None:
         return state
     return await orchestrate_external_geocode(state)

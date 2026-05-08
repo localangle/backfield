@@ -11,7 +11,12 @@ from backfield_db import (
     SubstrateLocationCache,
 )
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-from backfield_stylebook.geocode_cache_resolve import try_resolve_geocode_cache
+from backfield_stylebook.geocode_cache_resolve import (
+    build_geocode_cache_adjudication_candidates,
+    materialize_canonical_match_dict,
+    resolve_geocode_cache_strict_with_outcome,
+    try_resolve_geocode_cache,
+)
 from backfield_stylebook.substrate_location_cache_fingerprint import (
     normalize_substrate_cache_query,
     substrate_location_cache_query_fingerprint,
@@ -195,6 +200,222 @@ def test_try_resolve_chicago_il_without_comma_misses_label_with_comma() -> None:
             location_type="city",
         )
     assert hit is None
+
+
+def test_ambiguous_tier1_skips_substrate_tier2() -> None:
+    """Ambiguous exact tier-1 must not fall through to fingerprint tier-2."""
+    gj = {"type": "Point", "coordinates": [-87.0, 41.0]}
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        c1 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            slug="chicago-il",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        c2 = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, Illinois",
+            slug="chicago-illinois",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        session.add(c1)
+        session.add(c2)
+        session.commit()
+        session.refresh(c1)
+        session.refresh(c2)
+        for c in (c1, c2):
+            cid = str(c.id)
+            session.add(
+                StylebookLocationAlias(
+                    location_canonical_id=cid,
+                    alias_text="Chicago, IL",
+                    normalized_alias="chicago, il",
+                    provenance="test",
+                    suppressed=False,
+                )
+            )
+        fp = substrate_location_cache_query_fingerprint(
+            project_id=pid,
+            normalized_query="chicago, il",
+            location_type="city",
+        )
+        session.add(
+            SubstrateLocationCache(
+                project_id=pid,
+                query_text="Chicago, IL",
+                normalized_query="chicago, il",
+                query_fingerprint=fp,
+                location_name="Chicago, IL",
+                location_type="city",
+                geocode_type="pelias",
+                formatted_address="Chicago, IL, USA",
+                geometry_json=gj,
+                geometry_type="Point",
+                response_payload_json={},
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Chicago, IL",
+            location_type="city",
+        )
+    assert hit is None
+
+
+def test_try_resolve_neighborhood_extract_blocks_city_canonical_tier1() -> None:
+    """Extractor type incompatible with canonical must not auto-hit tier 1."""
+    gj = {"type": "Point", "coordinates": [-87.0, 41.0]}
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        c = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            slug="chicago-il",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        session.add(c)
+        session.commit()
+        session.refresh(c)
+        cid = str(c.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Chicago, IL",
+            location_type="neighborhood",
+        )
+    assert hit is None
+
+
+def test_tier2_sanity_rejects_state_mismatch() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        gj = {"type": "Point", "coordinates": [-88.0, 42.0]}
+        fp = substrate_location_cache_query_fingerprint(
+            project_id=pid,
+            normalized_query=normalize_substrate_cache_query("Rockford, IL"),
+            location_type="city",
+        )
+        session.add(
+            SubstrateLocationCache(
+                project_id=pid,
+                query_text="Rockford, IL",
+                normalized_query=normalize_substrate_cache_query("Rockford, IL"),
+                query_fingerprint=fp,
+                location_name="Rockford, IL",
+                location_type="city",
+                geocode_type="pelias",
+                formatted_address="Rockford, IL, USA",
+                geometry_json=gj,
+                geometry_type="Point",
+                response_payload_json={},
+            )
+        )
+        session.commit()
+
+        outcome = resolve_geocode_cache_strict_with_outcome(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Rockford, IL",
+            location_type="city",
+            components={"state": {"abbr": "NE"}},
+        )
+    assert outcome.match_dict is None
+    assert outcome.tier2_sanity_failed is True
+
+
+def test_materialize_canonical_match_dict_active_only() -> None:
+    gj = {"type": "Point", "coordinates": [-87.0, 41.0]}
+    engine = _engine()
+    with Session(engine) as session:
+        _, sb_id, _ = _seed_org_sb_project(session)
+        c = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            slug="chicago-il",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        session.add(c)
+        session.commit()
+        session.refresh(c)
+        cid = str(c.id)
+        md = materialize_canonical_match_dict(session, stylebook_id=sb_id, canonical_id=cid)
+    assert md is not None
+    assert md["confidence"]["source"] == "canonical_db"
+
+
+def test_build_adjudication_candidates_includes_canonical() -> None:
+    gj = {"type": "Point", "coordinates": [-87.0, 41.0]}
+    engine = _engine()
+    with Session(engine) as session:
+        _, sb_id, _ = _seed_org_sb_project(session)
+        c = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            slug="chicago-il",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        session.add(c)
+        session.commit()
+        session.refresh(c)
+        cid = str(c.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        cands = build_geocode_cache_adjudication_candidates(
+            session,
+            stylebook_id=sb_id,
+            location_text="Chicago, IL",
+            location_type="city",
+            components=None,
+            limit=10,
+        )
+    assert len(cands) >= 1
+    ids = {str(x["id"]) for x in cands}
+    assert cid in ids
 
 
 def test_try_resolve_ambiguous_two_canonicals_returns_none() -> None:
