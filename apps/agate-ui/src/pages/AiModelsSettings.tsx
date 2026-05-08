@@ -1,16 +1,8 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type Dispatch,
-  type SetStateAction,
-} from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -111,7 +103,7 @@ function credentialLinkedModelsSummary(entry: AiCredentialCatalogEntry): string 
 }
 
 export default function AiModelsSettingsPage() {
-  const { showConfirm, showError, showMessage } = useAppMessage()
+  const { showConfirm, showError } = useAppMessage()
   const [orgId, setOrgId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -446,7 +438,6 @@ export default function AiModelsSettingsPage() {
       await refreshOrgAiData(orgId)
       setAddOpen(false)
       resetAddForm()
-      showMessage('Model added to your organization catalog.')
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Could not add model.')
     } finally {
@@ -491,7 +482,6 @@ export default function AiModelsSettingsPage() {
       await patchOrganizationAiModel(orgId, editRow.id, patchBody)
       await refreshOrgAiData(orgId)
       setEditRow(null)
-      showMessage('Model updated.')
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Could not update model.')
     } finally {
@@ -515,7 +505,6 @@ export default function AiModelsSettingsPage() {
       await deleteOrganizationAiModel(orgId, row.id)
       await refreshOrgAiData(orgId)
       setEditRow((prev) => (prev?.id === row.id ? null : prev))
-      showMessage('Model removed from your catalog.')
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Could not remove model.')
     } finally {
@@ -531,12 +520,8 @@ export default function AiModelsSettingsPage() {
       const after = await refreshOrgAiData(orgId)
       const updated = after.find((m) => m.id === row.id) ?? null
       const status = (updated?.latest_test_status || '').toLowerCase()
-      if (status === 'succeeded') {
-        showMessage('Connection test succeeded. Status updated for this model.')
-      } else if (status === 'failed') {
+      if (status === 'failed') {
         showError('Connection test failed. Status updated for this model.')
-      } else {
-        showMessage('Connection test finished. Status updated for this model.')
       }
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Connection test failed.')
@@ -580,7 +565,6 @@ export default function AiModelsSettingsPage() {
       }
       await refreshOrgAiData(orgId)
       resetVendorCredModal()
-      showMessage(vendorCredEditIntegrationKey ? 'Credential updated.' : 'Credential saved.')
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Could not save credential.')
     } finally {
@@ -614,45 +598,11 @@ export default function AiModelsSettingsPage() {
           ? null
           : prev
       })
-      showMessage('Credential removed.')
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Could not remove credential.')
     } finally {
       setRemovingCredentialKey(null)
     }
-  }
-
-  function toggleCap(setter: Dispatch<SetStateAction<Set<string>>>, key: string, on: boolean) {
-    setter((prev) => {
-      const next = new Set(prev)
-      if (on) next.add(key)
-      else next.delete(key)
-      return next
-    })
-  }
-
-  function capabilityCheckboxes(
-    selected: Set<string>,
-    setter: Dispatch<SetStateAction<Set<string>>>,
-    disabled?: boolean,
-  ) {
-    return (
-      <div className="flex flex-col gap-2">
-        <Label className="text-xs">Capabilities</Label>
-        <div className="flex flex-wrap gap-4">
-          {CAP_KEYS.map((key) => (
-            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
-              <Checkbox
-                checked={selected.has(key)}
-                disabled={disabled}
-                onCheckedChange={(c) => toggleCap(setter, key, c === true)}
-              />
-              <span>{CAP_LABEL[key]}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -1147,18 +1097,149 @@ export default function AiModelsSettingsPage() {
           <DialogHeader>
             <DialogTitle>Edit model</DialogTitle>
             <DialogDescription>
-              Update how this model appears, whether it is active, capabilities, and optional usage pricing for
-              estimates.
+              Update credential, display name, status, and optional usage pricing.
             </DialogDescription>
           </DialogHeader>
           {editRow ? (
-            <div className="space-y-4 py-2">
-              <div className="text-xs text-muted-foreground">
-                {editRow.litellm_model?.trim()
-                  ? editRow.litellm_model.trim()
-                  : `${editRow.provider} · ${editRow.provider_model_id}`}
-              </div>
-              {editRow.litellm_model?.trim() ? (
+            <Tabs
+              key={editRow.id}
+              value={editRow.litellm_model?.trim() ? 'custom' : 'preset'}
+              className="w-full"
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="preset" disabled={Boolean(editRow.litellm_model?.trim())}>
+                  Preset
+                </TabsTrigger>
+                <TabsTrigger value="custom" disabled={!editRow.litellm_model?.trim()}>
+                  Custom
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="preset" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label className="text-xs">Preset</Label>
+                  <div className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm">
+                    {editRow.provider} · {editRow.provider_model_id}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-preset-name" className="text-xs">
+                    Display name (optional)
+                  </Label>
+                  <Input
+                    id="edit-preset-name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Defaults to the catalog label"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">API credential</Label>
+                  <Select value={editIntegrationSecretId} onValueChange={(v) => setEditIntegrationSecretId(v)}>
+                    <SelectTrigger className="text-sm font-normal">
+                      <SelectValue
+                        placeholder={
+                          editCredentialChoices.length ? 'Choose credential' : 'Add a credential first'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {editCredentialChoices.map((c) => (
+                        <SelectItem key={c.integration_key} value={String(c.integration_secret_id ?? '')}>
+                          {customCredentialSelectLabel(c)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Status</Label>
+                  <Select value={editStatus} onValueChange={(v) => setEditStatus(v as 'active' | 'disabled')}>
+                    <SelectTrigger className="text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="disabled">Disabled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Optional. Price per 1 million tokens. Model costs are available on the{' '}
+                  <a
+                    href="https://models.litellm.ai/"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    LiteLLM models page
+                  </a>
+                  .
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-preset-pin" className="text-xs">
+                      Input price per 1M tokens (optional)
+                    </Label>
+                    <div className="relative">
+                      <span
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden
+                      >
+                        $
+                      </span>
+                      <Input
+                        id="edit-preset-pin"
+                        value={editPriceIn}
+                        onChange={(e) => setEditPriceIn(e.target.value)}
+                        className="pl-7"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-preset-pout" className="text-xs">
+                      Output price per 1M tokens (optional)
+                    </Label>
+                    <div className="relative">
+                      <span
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden
+                      >
+                        $
+                      </span>
+                      <Input
+                        id="edit-preset-pout"
+                        value={editPriceOut}
+                        onChange={(e) => setEditPriceOut(e.target.value)}
+                        className="pl-7"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="custom" className="space-y-4 pt-4">
+                <p className="text-xs text-muted-foreground">
+                  Choose any LiteLLM supported model from{' '}
+                  <a
+                    href="https://models.litellm.ai/"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    this list
+                  </a>
+                  .
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-cust-name" className="text-xs">
+                    Display name
+                  </Label>
+                  <Input
+                    id="edit-cust-name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="ex. Claude Haiku 4.5 (Azure)"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-litellm" className="text-xs">
                     Model routing string
@@ -1167,68 +1248,96 @@ export default function AiModelsSettingsPage() {
                     id="edit-litellm"
                     value={editLitellmModel}
                     onChange={(e) => setEditLitellmModel(e.target.value)}
+                    placeholder="ex. azure_ai/claude-haiku-4-5"
                     className="font-mono text-sm"
                   />
-                </div>
-              ) : null}
-              <div className="space-y-2">
-                <Label className="text-xs">API credential</Label>
-                <Select value={editIntegrationSecretId} onValueChange={(v) => setEditIntegrationSecretId(v)}>
-                  <SelectTrigger className="text-sm font-normal">
-                    <SelectValue placeholder="Choose credential" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {editCredentialChoices.map((c) => (
-                      <SelectItem key={c.integration_key} value={String(c.integration_secret_id ?? '')}>
-                        {customCredentialSelectLabel(c)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-name" className="text-xs">
-                  Display name
-                </Label>
-                <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs">Status</Label>
-                <Select value={editStatus} onValueChange={(v) => setEditStatus(v as 'active' | 'disabled')}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="disabled">Disabled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {capabilityCheckboxes(editCaps, setEditCaps)}
-              <div className="space-y-2">
-                <Label htmlFor="edit-currency" className="text-xs">
-                  Currency
-                </Label>
-                <Input id="edit-currency" value={editCurrency} onChange={(e) => setEditCurrency(e.target.value)} maxLength={3} />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Per 1 million tokens. Clear a field to remove pricing for estimates.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-pin" className="text-xs">
-                    Input price per 1M tokens
-                  </Label>
-                  <Input id="edit-pin" value={editPriceIn} onChange={(e) => setEditPriceIn(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">Full model name string from LiteLLM</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-pout" className="text-xs">
-                    Output price per 1M tokens
-                  </Label>
-                  <Input id="edit-pout" value={editPriceOut} onChange={(e) => setEditPriceOut(e.target.value)} />
+                  <Label className="text-xs">API credential</Label>
+                  <Select value={editIntegrationSecretId} onValueChange={(v) => setEditIntegrationSecretId(v)}>
+                    <SelectTrigger className="text-sm font-normal">
+                      <SelectValue
+                        placeholder={
+                          editCredentialChoices.length ? 'Choose credential' : 'Add a credential first'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {editCredentialChoices.map((c) => (
+                        <SelectItem key={c.integration_key} value={String(c.integration_secret_id ?? '')}>
+                          {customCredentialSelectLabel(c)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
-            </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Status</Label>
+                  <Select value={editStatus} onValueChange={(v) => setEditStatus(v as 'active' | 'disabled')}>
+                    <SelectTrigger className="text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="disabled">Disabled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Optional. Price per 1 million tokens. Model costs are available on the{' '}
+                  <a
+                    href="https://models.litellm.ai/"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    LiteLLM models page
+                  </a>
+                  .
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cust-pin" className="text-xs">
+                      Input price per 1M tokens (optional)
+                    </Label>
+                    <div className="relative">
+                      <span
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden
+                      >
+                        $
+                      </span>
+                      <Input
+                        id="edit-cust-pin"
+                        value={editPriceIn}
+                        onChange={(e) => setEditPriceIn(e.target.value)}
+                        className="pl-7"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-cust-pout" className="text-xs">
+                      Output price per 1M tokens (optional)
+                    </Label>
+                    <div className="relative">
+                      <span
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden
+                      >
+                        $
+                      </span>
+                      <Input
+                        id="edit-cust-pout"
+                        value={editPriceOut}
+                        onChange={(e) => setEditPriceOut(e.target.value)}
+                        className="pl-7"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setEditRow(null)}>
