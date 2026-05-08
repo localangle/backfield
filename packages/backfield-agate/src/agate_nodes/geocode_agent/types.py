@@ -41,10 +41,20 @@ class AgentState(TypedDict, total=False):
     service_api_token: Optional[str]  # Service API token for Stylebook API
     # When set with ``use_cache``, DB-backed canonical + substrate_location_cache (Backfield worker).
     cache_resolve: Optional[CacheResolveFn]
+    # Worker bundles strict resolve + adjudication recall + materialize (``backfield-core`` metadata).
+    geocode_cache_bundle: Optional[dict[str, Any]]
+    cache_strict_outcome: Optional[dict[str, Any]]
+    use_cache_llm_ambiguous_sanity: bool
+    use_cache_llm_miss_recall: bool
+    cache_adjudication_audit: Optional[dict[str, Any]]
     final_output: Optional[dict]
     # Optional per-run OpenAI model overrides (GeocodeAgent LangGraph).
     evaluation_llm_model: Optional[str]
     router_llm_model: Optional[str]
+    geographic_reasoning_llm_model: Optional[str]
+    evaluation_ai_model_config_id: Optional[str]
+    router_ai_model_config_id: Optional[str]
+    geographic_reasoning_ai_model_config_id: Optional[str]
     # LangGraph pipeline: explicit routing + quieter per-location logs when True.
     advanced_quiet_logs: Optional[bool]
     geocode_strategy: Optional[str]

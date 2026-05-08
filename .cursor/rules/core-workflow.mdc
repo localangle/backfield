@@ -13,4 +13,5 @@ alwaysApply: true
 - Run relevant validation before finishing:
   - default: `make lint` and `make test`
   - runtime changes: also run `make smoke`
-- When implementation starts, **branch fresh** from the task’s base (usually `main`) unless directed otherwise. Work in short-lived branches and keep one coherent task per diff; create a **new** branch for large or unrelated changes instead of continuing on whatever branch is checked out.
+- **Branching (agent default):** within a single agent session, **do not create or check out new branches unless the user explicitly asks**. Stay on the currently-checked-out branch and keep diffs surgical and tied to the request.
+- **New sessions:** start a new agent session on a **fresh branch** cut from the task’s base (usually `main`) unless the task explicitly says to continue existing work.

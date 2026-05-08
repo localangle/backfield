@@ -10,6 +10,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 import boto3
+from backfield_ai.credentials import merge_project_and_org_llm_api_keys
+from backfield_ai.tracking_context import (
+    LlmAttemptTrackingContext,
+    attach_llm_tracking_context,
+    reset_llm_tracking_context,
+    set_llm_tracking_current_node,
+)
 from backfield_core import GraphSpec, execute_graph
 from backfield_core.nodes import NODE_RUNNERS
 from backfield_core.nodes.json_input import json_input_output_from_dict
@@ -18,8 +25,7 @@ from backfield_core.s3_batch import (
     parse_s3_text_json_document,
     s3_max_files_from_params,
 )
-from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, BackfieldProjectSecret
-from backfield_db.crypto import decrypt_secret, fernet_from_env
+from backfield_db import AgateGraph, AgateProcessedItem, AgateRun
 from backfield_db.session import get_engine
 from celery import Celery, chord, group
 from sqlmodel import Session, select
@@ -27,6 +33,9 @@ from sqlmodel import Session, select
 from worker.nodes.db_output import run_db_output
 
 logger = logging.getLogger(__name__)
+
+# Must match ``apps/agate-api`` cancel handler so workers stop after ``POST /runs/{id}/cancel``.
+_RUN_CANCELLED_MESSAGE = "Run cancelled by user"
 
 celery_app = Celery(
     "agate_worker",
@@ -50,22 +59,6 @@ def _env_overlay(updates: dict[str, str]):
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = prev
-
-
-def _project_env_map(session: Session, project_id: int) -> dict[str, str]:
-    f = fernet_from_env()
-    if f is None:
-        return {}
-    rows = session.exec(
-        select(BackfieldProjectSecret).where(BackfieldProjectSecret.project_id == project_id)
-    ).all()
-    out: dict[str, str] = {}
-    for r in rows:
-        try:
-            out[r.key] = decrypt_secret(r.value_encrypted)
-        except Exception:
-            continue
-    return out
 
 
 @contextmanager
@@ -156,28 +149,62 @@ def execute_agate_run(run_id: str) -> None:
             session.commit()
             return
 
+        if run.status != "pending":
+            return
+
         run.status = "running"
         session.add(run)
         session.commit()
 
+        run = session.get(AgateRun, run_id)
+        if not run or run.status != "running":
+            return
+
         try:
             spec = GraphSpec.model_validate_json(graph.spec_json)
-            overlay = _project_env_map(session, graph.project_id)
+            overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
             node_runners = dict(NODE_RUNNERS)
             node_runners["DBOutput"] = run_db_output
-            with _env_overlay(overlay), _run_execution_env(
-                project_id=graph.project_id,
-                graph_id=graph.id,
-                run_id=run.id,
-            ):
-                outputs = execute_graph(spec, node_runners=node_runners)
+            track_tok = attach_llm_tracking_context(
+                LlmAttemptTrackingContext(
+                    session=session,
+                    project_id=graph.project_id,
+                    run_id=run.id,
+                )
+            )
+            try:
+                with _env_overlay(overlay), _run_execution_env(
+                    project_id=graph.project_id,
+                    graph_id=graph.id,
+                    run_id=run.id,
+                ):
+                    outputs = execute_graph(
+                        spec,
+                        node_runners=node_runners,
+                        before_each_node=lambda nid, ntype: set_llm_tracking_current_node(
+                            nid, ntype
+                        ),
+                    )
+            finally:
+                reset_llm_tracking_context(track_tok)
+            run = session.get(AgateRun, run_id)
+            if not run or run.status != "running":
+                return
             run.status = "succeeded"
             run.result_json = json.dumps(outputs)
             run.error_message = None
         except Exception as e:
+            run = session.get(AgateRun, run_id)
+            if run is None:
+                return
+            if run.error_message == _RUN_CANCELLED_MESSAGE:
+                return
             run.status = "failed"
             run.error_message = str(e)
             run.result_json = None
+        run = session.get(AgateRun, run_id)
+        if run is None:
+            return
         run.updated_at = datetime.now(UTC)
         session.add(run)
         session.commit()
@@ -199,10 +226,17 @@ def execute_s3_batch_setup(run_id: str) -> None:
             session.commit()
             return
 
+        if run.status != "pending":
+            return
+
         run.status = "running"
         run.updated_at = datetime.now(UTC)
         session.add(run)
         session.commit()
+
+        run = session.get(AgateRun, run_id)
+        if not run or run.status != "running":
+            return
 
         try:
             spec = GraphSpec.model_validate_json(graph.spec_json)
@@ -216,7 +250,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
             max_files = s3_max_files_from_params(params)
             prefix = folder_path.rstrip("/") + "/" if folder_path else ""
 
-            overlay = _project_env_map(session, graph.project_id)
+            overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
             with _env_overlay(overlay):
                 s3_client = _s3_client_from_env()
                 keys = list_json_keys_under_prefix(s3_client, bucket=bucket, prefix=prefix)
@@ -370,6 +404,8 @@ def execute_processed_item(item_id: int) -> None:
         item = session.get(AgateProcessedItem, item_id)
         if not item:
             return
+        if item.status != "running":
+            return
         run = session.get(AgateRun, item.run_id)
         if not run:
             item.status = "failed"
@@ -415,18 +451,35 @@ def execute_processed_item(item_id: int) -> None:
             out["runs_created"] = []
             return out
 
-        overlay = _project_env_map(session, graph.project_id)
+        overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
         node_runners = dict(NODE_RUNNERS)
         node_runners["S3Input"] = s3_input_shim
         node_runners["DBOutput"] = run_db_output
 
         try:
-            with _env_overlay(overlay), _run_execution_env(
-                project_id=graph.project_id,
-                graph_id=graph.id,
-                run_id=run.id,
-            ):
-                outputs = execute_graph(spec, node_runners=node_runners)
+            track_tok = attach_llm_tracking_context(
+                LlmAttemptTrackingContext(
+                    session=session,
+                    project_id=graph.project_id,
+                    run_id=run.id,
+                    processed_item_id=item.id,
+                )
+            )
+            try:
+                with _env_overlay(overlay), _run_execution_env(
+                    project_id=graph.project_id,
+                    graph_id=graph.id,
+                    run_id=run.id,
+                ):
+                    outputs = execute_graph(
+                        spec,
+                        node_runners=node_runners,
+                        before_each_node=lambda nid, ntype: set_llm_tracking_current_node(
+                            nid, ntype
+                        ),
+                    )
+            finally:
+                reset_llm_tracking_context(track_tok)
             item.status = "succeeded"
             item.result_json = json.dumps(outputs)
             item.error_message = None

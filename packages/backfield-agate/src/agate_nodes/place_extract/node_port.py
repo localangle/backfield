@@ -11,16 +11,19 @@ Use JSON path placeholders in your prompt to extract specific fields:
   {raw} - passes entire input JSON
 """
 
-import os
 import asyncio
-import time
 import json
+import logging
+import os
 import re
+import time
 from typing import List, Dict, Any, Optional, Union
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 from backfield_agate.context import AgateEnvContext
 from agate_utils.llm import call_llm
+
+logger = logging.getLogger(__name__)
 
 # Get Celery timeout limits from environment (defaults match worker/tasks.py)
 TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))  # 60 minutes default
@@ -37,6 +40,10 @@ class PlaceExtractParams(BaseModel):
         default="gpt-4o-mini",
         description="LLM model to use (e.g., gpt-4o-mini, gpt-5, claude-haiku-4-5-20251001)"
     )
+    aiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides model routing when set in worker)",
+    )
     prompt_file: str = Field(
         default="prompts/extract.md",
         description="Path to the prompt file relative to the node directory. Defaults to prompts/extract.md"
@@ -51,6 +58,13 @@ class PlaceExtractParams(BaseModel):
         le=1800,
         description="Timeout in seconds for the LLM call (default: 10 minutes, max: 30 minutes)"
     )
+
+    @model_validator(mode="after")
+    def _coerce_empty_model_string(self) -> "PlaceExtractParams":
+        """Saved graphs may persist ``model: \"\"`` which overrides the Field default."""
+        if not (self.model or "").strip():
+            return self.model_copy(update={"model": "gpt-4o-mini"})
+        return self
 
 
 class StateInfo(BaseModel):
@@ -284,12 +298,12 @@ class PlaceExtractNode:
         # Debug logging to trace meta fields
         try:
             meta_keys = [k for k in flattened_input.keys() if k.startswith("meta_")]
-            print(f"[PlaceExtract] Input keys: {list(input_dict.keys())}")
-            print(f"[PlaceExtract] Flattened keys: {list(flattened_input.keys())}")
+            logger.debug("[PlaceExtract] input keys: %s", list(input_dict.keys()))
+            logger.debug("[PlaceExtract] flattened keys: %s", list(flattened_input.keys()))
             if meta_keys:
-                print(f"[PlaceExtract] Found meta_* keys: {meta_keys}")
+                logger.debug("[PlaceExtract] meta_* keys: %s", meta_keys)
             else:
-                print(f"[PlaceExtract] WARNING: No meta_* keys in flattened_input")
+                logger.debug("[PlaceExtract] no meta_* keys in flattened_input")
         except Exception:
             pass
         
@@ -331,10 +345,7 @@ class PlaceExtractNode:
             "The results should be returned in a JSON that looks like the following.\n\n"
             f"{output_format}"
         )
-        
-        # Log the prompt for debugging
-        print(f"[PlaceExtract] Prompt:\n{prompt}")
-        
+
         # Check if we're approaching Celery timeout before making LLM call
         # Calculate elapsed time since node start
         elapsed_time = time.time() - start_time
@@ -360,11 +371,46 @@ class PlaceExtractNode:
                 f"Need at least 60 seconds. Elapsed: {elapsed_time:.1f}s"
             )
         
-        print(
-            f"[PlaceExtract] Executing LLM call with timeout: {effective_timeout}s "
-            f"(elapsed: {elapsed_time:.1f}s, remaining safe time: {remaining_safe_time:.1f}s)"
+        logger.info(
+            "[PlaceExtract] scheduling LLM call timeout_s=%.1f elapsed_s=%.1f remaining_safe_s=%.1f",
+            effective_timeout,
+            elapsed_time,
+            remaining_safe_time,
         )
-        
+
+        resolved_model = params.model
+        raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
+        if raw_pid:
+            try:
+                from backfield_ai.model_resolve import resolve_place_extract_litellm_model
+                from backfield_db.session import get_engine
+                from sqlmodel import Session
+
+                with Session(get_engine()) as res_sess:
+                    resolved_model = resolve_place_extract_litellm_model(
+                        res_sess,
+                        int(raw_pid),
+                        params,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[PlaceExtract] could not resolve catalog AI model; using legacy id: %s",
+                    exc,
+                )
+
+        raw_mc = getattr(params, "aiModelConfigId", None)
+        place_model_config_id = str(raw_mc).strip() if raw_mc else None
+
+        logger.info(
+            "[PlaceExtract] LLM call starting model=%s prompt_chars=%d timeout_s=%.1f "
+            "model_config_id=%s project_prompt_overlay=%s",
+            resolved_model,
+            len(prompt),
+            effective_timeout,
+            place_model_config_id or "none",
+            "yes" if ctx.project_system_prompt else "no",
+        )
+
         # Call the LLM with API keys from context, wrapped in asyncio timeout
         # Since call_llm is synchronous, we need to run it in a thread pool
         try:
@@ -372,7 +418,7 @@ class PlaceExtractNode:
                 asyncio.to_thread(
                     call_llm,
                     prompt=prompt,
-                    model=params.model,
+                    model=resolved_model,
                     system_message=(
                         "You are a specialized AI assistant for extracting editorially relevant, "
                         "literal physical place information from news text. Return only valid JSON."
@@ -382,7 +428,12 @@ class PlaceExtractNode:
                     timeout=effective_timeout,  # Pass timeout to call_llm as well
                     openai_api_key=ctx.get_api_key("OPENAI_API_KEY"),
                     anthropic_api_key=ctx.get_api_key("ANTHROPIC_API_KEY"),
-                    project_system_prompt=ctx.project_system_prompt
+                    gemini_api_key=ctx.get_api_key("GEMINI_API_KEY"),
+                    openrouter_api_key=ctx.get_api_key("OPENROUTER_API_KEY"),
+                    azure_api_key=ctx.get_api_key("AZURE_API_KEY"),
+                    azure_api_base=ctx.get_api_key("AZURE_API_BASE"),
+                    project_system_prompt=ctx.project_system_prompt,
+                    model_config_id=place_model_config_id,
                 ),
                 timeout=effective_timeout
             )
@@ -394,14 +445,20 @@ class PlaceExtractNode:
             )
         
         elapsed = time.time() - start_time
-        print(f"[PlaceExtract] LLM call completed in {elapsed:.1f}s")
+        logger.info("[PlaceExtract] LLM call finished elapsed_s=%.1f", elapsed)
         
         # Parse the response
-        import json
         response_data = None
         try:
             response_data = json.loads(response_text)
-            
+        except json.JSONDecodeError as e:
+            preview = (response_text or "")[:800]
+            raise ValueError(
+                f"Failed to parse LLM response as location data: {e}. Preview: {preview!r}"
+            ) from e
+
+        locations: List[Place] = []
+        try:
             # Handle both old format (direct array) and new format (with "locations" wrapper)
             if isinstance(response_data, list):
                 locations_data = response_data
@@ -409,12 +466,11 @@ class PlaceExtractNode:
                 locations_data = response_data['locations']
             else:
                 raise ValueError("Expected a list of locations or an object with 'locations' field")
-            
+
             if not isinstance(locations_data, list):
                 raise ValueError("Expected a list of locations")
-            
+
             # Convert to Place objects - handle new format from updated prompt
-            locations = []
             for location_data in locations_data:
                 # Validate required fields
                 required_fields = ['original_text', 'description', 'location', 'type', 'components']
@@ -521,9 +577,9 @@ class PlaceExtractNode:
                         place_data[key] = value
                 
                 locations.append(Place(**place_data))
-            
-        except (json.JSONDecodeError, ValueError, TypeError) as e:
-            raise ValueError(f"Failed to parse LLM response as location data: {e}")
+
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Failed to parse LLM response as location data: {e}") from e
         
         # Create output with extraction results
         output_data = {
@@ -539,7 +595,11 @@ class PlaceExtractNode:
                 if key != "locations":
                     llm_top_level_fields[key] = value
                     try:
-                        print(f"[PlaceExtract] LLM top-level field: {key} (type={type(value).__name__})")
+                        logger.debug(
+                            "[PlaceExtract] LLM top-level field: %s (type=%s)",
+                            key,
+                            type(value).__name__,
+                        )
                     except Exception:
                         pass
         
@@ -551,7 +611,11 @@ class PlaceExtractNode:
                 if key.startswith("meta_"):
                     output_data[key] = value
                     try:
-                        print(f"[PlaceExtract] Preserved meta field: {key} (type={type(value).__name__})")
+                        logger.debug(
+                            "[PlaceExtract] preserved meta field: %s (type=%s)",
+                            key,
+                            type(value).__name__,
+                        )
                     except Exception:
                         pass
                 elif key not in output_data:
@@ -564,7 +628,11 @@ class PlaceExtractNode:
             if meta_key not in flattened_input and key not in output_data:
                 output_data[key] = value
                 try:
-                    print(f"[PlaceExtract] Added LLM field: {key} (type={type(value).__name__})")
+                    logger.debug(
+                        "[PlaceExtract] added LLM field: %s (type=%s)",
+                        key,
+                        type(value).__name__,
+                    )
                 except Exception:
                     pass
         

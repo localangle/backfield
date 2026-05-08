@@ -15,6 +15,7 @@ dependencies = [
 [tool.uv.workspace]
 members = [
     "packages/backfield-core",
+    "packages/backfield-ai",
     "packages/backfield-auth",
     "packages/backfield-stylebook",
     "packages/backfield-agate",
@@ -27,6 +28,7 @@ members = [
 
 [tool.uv.sources]
 backfield-core = { workspace = true }
+backfield-ai = { workspace = true }
 backfield-auth = { workspace = true }
 backfield-agate = { workspace = true }
 backfield-db = { workspace = true }
@@ -37,6 +39,7 @@ core-api = { workspace = true }
 testpaths = ["packages/backfield-core/tests", "packages/backfield-auth/tests", "tests"]
 pythonpath = [
     "packages/backfield-core/src",
+    "packages/backfield-ai/src",
     "packages/backfield-auth/src",
     "packages/backfield-agate/src",
     "packages/backfield-db/src",

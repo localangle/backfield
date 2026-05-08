@@ -16,6 +16,8 @@ import Login from './pages/Login'
 import ChangePasswordPage from './pages/ChangePassword'
 import ManageUsers from './pages/ManageUsers'
 import ManageCatalogs from './pages/ManageCatalogs'
+import AiModelsSettings from './pages/AiModelsSettings'
+import SettingsPage from './pages/Settings'
 import HubLayout from './components/HubLayout'
 import { AppMessageProvider } from '@/components/AppMessageProvider'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -182,6 +184,30 @@ function AppRoutes() {
             <OrgAdminRoute>
               <HubLayout>
                 <ManageCatalogs />
+              </HubLayout>
+            </OrgAdminRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/ai-models"
+        element={
+          <ProtectedRoute>
+            <OrgAdminRoute>
+              <HubLayout>
+                <AiModelsSettings />
+              </HubLayout>
+            </OrgAdminRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <OrgAdminRoute>
+              <HubLayout>
+                <SettingsPage />
               </HubLayout>
             </OrgAdminRoute>
           </ProtectedRoute>

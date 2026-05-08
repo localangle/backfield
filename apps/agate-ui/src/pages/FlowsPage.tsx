@@ -146,7 +146,7 @@ export default function FlowsPage() {
                   {graphs.map((graph) => (
                     <tr
                       key={graph.id}
-                      className="border-b last:border-b-0 hover:bg-muted/50 transition-colors"
+                      className="border-b last:border-b-0 hover:bg-muted/[0.07] transition-colors"
                     >
                       <td
                         className="p-4 cursor-pointer"

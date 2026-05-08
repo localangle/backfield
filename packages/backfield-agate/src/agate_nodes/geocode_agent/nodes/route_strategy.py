@@ -138,16 +138,17 @@ async def route_strategy_node(state: AgentState) -> AgentState:
     def _sync_llm() -> str:
         return call_llm(
             user_prompt,
-            router_model,
-            None,
-            True,
-            1,
-            0.0,
-            1024,
-            openai_key,
-            None,
-            None,
-            120.0,
+            model=router_model,
+            system_message=None,
+            force_json=True,
+            max_retries=1,
+            temperature=0.0,
+            max_tokens=1024,
+            openai_api_key=openai_key,
+            anthropic_api_key=None,
+            project_system_prompt=None,
+            timeout=120.0,
+            model_config_id=state.get("router_ai_model_config_id"),
         )
 
     for attempt_idx in range(3):

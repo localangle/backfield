@@ -1,4 +1,4 @@
-"""LLM utilities for calling OpenAI and Anthropic APIs."""
+"""LLM utilities for calling OpenAI, Anthropic, and Gemini APIs."""
 
 import anthropic
 import time
@@ -6,6 +6,10 @@ import os
 import base64
 from openai import OpenAI
 from typing import Optional, Union
+
+# Anthropic Messages API requires ``max_tokens``. Used only for the non-LiteLLM ``call_llm`` path
+# when the caller does not pass ``max_tokens`` (worker runs omit it and use LiteLLM defaults).
+ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK = 128_000
 
 def _get_anthropic_client(api_key: Optional[str] = None, timeout: float = 300.0) -> anthropic.Anthropic:
     """Get or create Anthropic client with provided API key and timeout.
@@ -63,11 +67,17 @@ def call_llm(
     force_json: bool = True,
     max_retries: int = 3,
     temperature: float = 0.0,
-    max_tokens: int = 4000,
+    max_tokens: Optional[int] = None,
     openai_api_key: Optional[str] = None,
     anthropic_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
+    openrouter_api_key: Optional[str] = None,
+    azure_api_key: Optional[str] = None,
+    azure_api_base: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
     timeout: float = 300.0,
+    *,
+    model_config_id: Optional[str] = None,
 ) -> str:
     """
     Call an LLM with the given prompt and model with exponential backoff retries.
@@ -81,11 +91,18 @@ def call_llm(
         force_json: Whether to force JSON output (default: True)
         max_retries: Maximum number of retry attempts (default: 3)
         temperature: Temperature for generation (default: 0.0)
-        max_tokens: Maximum tokens to generate (default: 4000)
+        max_tokens: Optional max completion tokens. Default None omits the parameter so OpenAI /
+            LiteLLM use the model/provider default (recommended). Required only when you need an
+            explicit cap; legacy Anthropic direct calls use ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK.
         openai_api_key: OpenAI API key (required for OpenAI models)
         anthropic_api_key: Anthropic API key (required for Anthropic models)
+        gemini_api_key: Gemini API key (Google AI Studio; required for Gemini models)
+        openrouter_api_key: OpenRouter API key when using OpenRouter-routed models
+        azure_api_key: Azure OpenAI API key when using Azure deployments
+        azure_api_base: Azure OpenAI resource endpoint URL when using Azure deployments
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
         timeout: Request timeout in seconds (default: 300s / 5 minutes)
+        model_config_id: Optional Backfield AI catalog row id for ``backfield_ai_call_record``.
         
     Returns:
         The LLM response text
@@ -96,11 +113,34 @@ def call_llm(
     """
     if not prompt:
         raise ValueError("Prompt cannot be empty")
-    
+
+    # Worker runs: route through LiteLLM + optional tracked persistence per attempt.
+    if os.getenv("BACKFIELD_RUN_ID"):
+        from backfield_ai.agate_llm_bridge import call_llm_tracked_sync
+
+        return call_llm_tracked_sync(
+            prompt=prompt,
+            model=model,
+            system_message=system_message,
+            force_json=force_json,
+            max_retries=max_retries,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            openai_api_key=openai_api_key,
+            anthropic_api_key=anthropic_api_key,
+            gemini_api_key=gemini_api_key,
+            openrouter_api_key=openrouter_api_key,
+            azure_api_key=azure_api_key,
+            azure_api_base=azure_api_base,
+            project_system_prompt=project_system_prompt,
+            timeout=timeout,
+            model_config_id=model_config_id,
+        )
+
     # Get model from environment if not specified
     if not model:
         model = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
-    
+
     # Set system message - project system prompt takes precedence
     if project_system_prompt:
         system_message = project_system_prompt
@@ -109,7 +149,7 @@ def call_llm(
             system_message = "You are a helpful assistant that returns only structured JSON output."
         else:
             system_message = "You are a helpful assistant that returns direct, concise responses without markdown formatting or explanations."
-    
+
     # Determine which client to use based on model name
     if model.startswith('gpt'):
         # OpenAI model
@@ -150,12 +190,15 @@ def call_llm(
     elif model.startswith(('claude-', 'claude')):
         # Anthropic model
         client = _get_anthropic_client(anthropic_api_key, timeout=timeout)
-        
+        anthropic_max = (
+            max_tokens if max_tokens is not None else ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK
+        )
+
         for attempt in range(max_retries):
             try:
                 response = client.messages.create(
                     model=model,
-                    max_tokens=max_tokens,
+                    max_tokens=anthropic_max,
                     temperature=temperature,
                     system=system_message,
                     messages=[
@@ -172,7 +215,126 @@ def call_llm(
                     time.sleep(wait_time)
                 else:
                     raise Exception(f"Anthropic API call failed after {max_retries} attempts: {str(e)}")
-        
+
+    elif model.strip().lower().startswith("gemini") or model.strip().lower().startswith("gemini/"):
+        from backfield_ai.completion import completion_text_sync
+
+        key = gemini_api_key or os.getenv("GEMINI_API_KEY")
+        if not key:
+            raise ValueError(
+                "GEMINI_API_KEY must be provided for Gemini models "
+                "(configure in organization AI integrations or project keys)"
+            )
+        lm_raw = model.strip()
+        lm_model = lm_raw if "/" in lm_raw else f"gemini/{lm_raw}"
+        messages = [
+            {"role": "system", "content": system_message or ""},
+            {"role": "user", "content": prompt},
+        ]
+        for attempt in range(max_retries):
+            try:
+                result = completion_text_sync(
+                    litellm_model=lm_model,
+                    messages=messages,
+                    api_key=key,
+                    max_tokens=max_tokens,
+                    temperature=float(temperature),
+                    timeout=float(timeout),
+                    force_json_response=bool(force_json),
+                )
+                response_text = result.text.strip()
+                return _clean_json_response(response_text) if force_json else response_text
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    print(f"Gemini API call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                    print(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(f"Gemini API call failed after {max_retries} attempts: {str(e)}") from e
+
+    elif model.strip().lower().startswith("openrouter"):
+        from backfield_ai.completion import completion_text_sync
+
+        key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+        if not key:
+            raise ValueError(
+                "OPENROUTER_API_KEY must be provided for OpenRouter models "
+                "(configure in organization AI integrations or project keys)"
+            )
+        lm_raw = model.strip()
+        lm_model = lm_raw if lm_raw.lower().startswith("openrouter/") else f"openrouter/{lm_raw}"
+        messages = [
+            {"role": "system", "content": system_message or ""},
+            {"role": "user", "content": prompt},
+        ]
+        for attempt in range(max_retries):
+            try:
+                result = completion_text_sync(
+                    litellm_model=lm_model,
+                    messages=messages,
+                    api_key=key,
+                    max_tokens=max_tokens,
+                    temperature=float(temperature),
+                    timeout=float(timeout),
+                    force_json_response=bool(force_json),
+                )
+                response_text = result.text.strip()
+                return _clean_json_response(response_text) if force_json else response_text
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    print(f"OpenRouter call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                    print(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(f"OpenRouter call failed after {max_retries} attempts: {str(e)}") from e
+
+    elif model.strip().lower().startswith("azure/"):
+        from backfield_ai.completion import completion_text_sync
+
+        key = azure_api_key or os.getenv("AZURE_API_KEY")
+        base = (azure_api_base or os.getenv("AZURE_API_BASE") or "").strip()
+        if not key:
+            raise ValueError(
+                "AZURE_API_KEY must be provided for Azure OpenAI models "
+                "(configure in organization AI integrations or project keys)"
+            )
+        if not base:
+            raise ValueError(
+                "Azure OpenAI requires a resource endpoint URL "
+                "(configure in organization AI integrations or project keys)"
+            )
+        lm_model = model.strip()
+        messages = [
+            {"role": "system", "content": system_message or ""},
+            {"role": "user", "content": prompt},
+        ]
+        for attempt in range(max_retries):
+            try:
+                result = completion_text_sync(
+                    litellm_model=lm_model,
+                    messages=messages,
+                    api_key=key,
+                    api_base=base,
+                    max_tokens=max_tokens,
+                    temperature=float(temperature),
+                    timeout=float(timeout),
+                    force_json_response=bool(force_json),
+                )
+                response_text = result.text.strip()
+                return _clean_json_response(response_text) if force_json else response_text
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    print(f"Azure OpenAI call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                    print(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(
+                        f"Azure OpenAI call failed after {max_retries} attempts: {str(e)}"
+                    ) from e
+
     else:
         # Default to OpenAI for unknown models
         client = _get_openai_client(openai_api_key, timeout=timeout)
@@ -221,7 +383,6 @@ def call_llm_with_image(
     system_message: Optional[str] = None,
     force_json: bool = True,
     max_retries: int = 3,
-    max_tokens: int = 4000,
     openai_api_key: Optional[str] = None,
     project_system_prompt: Optional[str] = None,
 ) -> str:
@@ -245,7 +406,6 @@ def call_llm_with_image(
                        uses a default JSON system message.
         force_json: Whether to force JSON output (default: True)
         max_retries: Maximum number of retry attempts (default: 3)
-        max_tokens: Maximum tokens to generate (default: 4000)
         openai_api_key: OpenAI API key (required)
         project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
         

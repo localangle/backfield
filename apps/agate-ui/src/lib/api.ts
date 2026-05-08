@@ -25,8 +25,18 @@ export interface Project {
 export interface ProjectStats {
   total_runs: number
   articles_processed: number
+  /** Runs with status ``succeeded``. */
+  runs_succeeded: number
+  /** Runs still ``pending`` or ``running``. */
+  runs_in_progress: number
+  /** Runs with status ``failed`` (includes cancelled runs). */
+  runs_failed: number
   avg_duration_ms_per_run: number | null
   avg_duration_ms_per_item: number | null
+  /** LLM rollup for completed runs only, divided by ``runs_succeeded``. */
+  avg_estimated_ai_cost_per_run?: string | number | null
+  avg_estimated_ai_cost_currency?: string | null
+  avg_estimated_ai_cost_incomplete?: boolean
 }
 
 export interface Graph {
@@ -74,6 +84,10 @@ export interface ProcessedItemSummary {
   input_headline?: string | null
   current_node_types?: string[] | null
   is_array_splitter_item?: boolean
+  /** LiteLLM-derived estimated dollar total for this item’s tracked model calls. */
+  estimated_ai_cost?: number
+  estimated_ai_cost_incomplete?: boolean
+  estimated_ai_cost_currency?: string
 }
 
 export interface ProcessedItem {
@@ -89,6 +103,9 @@ export interface ProcessedItem {
   error: string | null
   created_at: string
   updated_at: string
+  estimated_ai_cost?: number
+  estimated_ai_cost_incomplete?: boolean
+  estimated_ai_cost_currency?: string
 }
 
 export interface Run {
@@ -106,6 +123,13 @@ export interface Run {
   items?: ProcessedItemSummary[] | null
   mapbox_api_token?: string | null
   node_outputs?: Record<string, unknown> | null
+  /** When there are no batch rows, LLM cost for the whole run (``processed_item_id`` null on call rows). */
+  whole_run_ai_cost_estimate?: number
+  whole_run_ai_cost_incomplete?: boolean
+  whole_run_ai_cost_currency?: string
+  /** Sum of tracked LLM spend for this run (when provided by the API). */
+  estimated_ai_cost_total?: number
+  estimated_ai_cost_total_incomplete?: boolean
 }
 
 export interface ApiKey {
@@ -171,6 +195,9 @@ interface RawProcessedItem {
   error_message: string | null
   created_at: string
   updated_at: string
+  estimated_ai_cost?: string | number | null
+  estimated_ai_cost_incomplete?: boolean
+  estimated_ai_cost_currency?: string | null
 }
 
 interface RawRun {
@@ -184,6 +211,22 @@ interface RawRun {
   created_at: string
   updated_at: string
   processed_items?: RawProcessedItem[] | null
+  whole_run_ai_cost_estimate?: string | number | null
+  whole_run_ai_cost_incomplete?: boolean
+  whole_run_ai_cost_currency?: string | null
+  estimated_ai_cost_total?: string | number | null
+  estimated_ai_cost_total_incomplete?: boolean
+}
+
+function _parseCostAmount(v: unknown): number {
+  if (v === null || v === undefined) return 0
+  if (typeof v === 'number' && !Number.isNaN(v)) return v
+  const n = Number(v)
+  return Number.isNaN(n) ? 0 : n
+}
+
+function _currencyFromRaw(v: unknown, fallback: string): string {
+  return typeof v === 'string' && v.trim() ? v.trim().toUpperCase() : fallback
 }
 
 function normalizeGraph(raw: RawGraph): Graph {
@@ -218,6 +261,7 @@ function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
           st === 'timed_out'
         ? st
         : 'pending'
+  const cur = _currencyFromRaw(row.estimated_ai_cost_currency, 'USD')
   return {
     id: row.id,
     run_id: row.run_id,
@@ -232,6 +276,9 @@ function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
     input_headline: null,
     current_node_types: null,
     is_array_splitter_item: false,
+    estimated_ai_cost: _parseCostAmount(row.estimated_ai_cost),
+    estimated_ai_cost_incomplete: Boolean(row.estimated_ai_cost_incomplete),
+    estimated_ai_cost_currency: cur,
   }
 }
 
@@ -241,6 +288,10 @@ function normalizeRun(raw: RawRun): Run {
     raw.result && typeof raw.result === 'object' && !Array.isArray(raw.result)
       ? (raw.result as Record<string, unknown>)
       : null
+
+  const wrEst = _parseCostAmount(raw.whole_run_ai_cost_estimate)
+  const wrInc = Boolean(raw.whole_run_ai_cost_incomplete)
+  const wrCur = _currencyFromRaw(raw.whole_run_ai_cost_currency, 'USD')
 
   let items: ProcessedItemSummary[] = []
   if (raw.processed_items && raw.processed_items.length > 0) {
@@ -262,6 +313,9 @@ function normalizeRun(raw: RawRun): Run {
         input_headline: null,
         current_node_types: null,
         is_array_splitter_item: false,
+        estimated_ai_cost: wrEst,
+        estimated_ai_cost_incomplete: wrInc,
+        estimated_ai_cost_currency: wrCur,
       },
     ]
   } else if (st === 'completed_with_errors') {
@@ -281,6 +335,9 @@ function normalizeRun(raw: RawRun): Run {
         input_headline: null,
         current_node_types: null,
         is_array_splitter_item: false,
+        estimated_ai_cost: wrEst,
+        estimated_ai_cost_incomplete: wrInc,
+        estimated_ai_cost_currency: wrCur,
       },
     ]
   }
@@ -289,6 +346,9 @@ function normalizeRun(raw: RawRun): Run {
   const failed = items.filter((i) => i.status === 'failed' || i.status === 'timed_out').length
   const pending_items = items.filter((i) => i.status === 'pending').length
   const running_items = items.filter((i) => i.status === 'running').length
+
+  const hasTotalAggregate =
+    raw.estimated_ai_cost_total !== undefined && raw.estimated_ai_cost_total !== null
 
   return {
     id: raw.id,
@@ -305,6 +365,15 @@ function normalizeRun(raw: RawRun): Run {
     items,
     node_outputs: outputs,
     mapbox_api_token: raw.mapbox_api_token ?? null,
+    whole_run_ai_cost_estimate: wrEst,
+    whole_run_ai_cost_incomplete: wrInc,
+    whole_run_ai_cost_currency: wrCur,
+    ...(hasTotalAggregate
+      ? {
+          estimated_ai_cost_total: _parseCostAmount(raw.estimated_ai_cost_total),
+          estimated_ai_cost_total_incomplete: Boolean(raw.estimated_ai_cost_total_incomplete),
+        }
+      : {}),
   }
 }
 
@@ -390,11 +459,87 @@ export async function getRun(id: string | number): Promise<Run> {
   return normalizeRun(raw)
 }
 
+export interface RunEstimatedAiCost {
+  run_id: string
+  currency: string
+  estimated_total: string
+  incomplete_estimate: boolean
+  attempt_count: number
+  node_breakdown: Array<{ node_id: string | null; estimated_total: string }>
+}
+
+export async function getRunEstimatedAiCost(runId: string): Promise<RunEstimatedAiCost> {
+  return fetchAPI(`/runs/${runId}/estimated-ai-cost`) as Promise<RunEstimatedAiCost>
+}
+
+export interface ProjectEstimatedAiCost {
+  project_id: number
+  currency: string
+  estimated_total: string
+  incomplete_estimate: boolean
+  attempt_count: number
+}
+
+export async function getProjectEstimatedAiCost(
+  projectId: number,
+): Promise<ProjectEstimatedAiCost> {
+  return fetchAPI(`/projects/${projectId}/estimated-ai-cost`) as Promise<ProjectEstimatedAiCost>
+}
+
+interface RawProcessedItemDetail {
+  id: number
+  run_id: string
+  source_file: string | null
+  input: Record<string, unknown>
+  output: Record<string, unknown> | null
+  node_outputs: Record<string, unknown> | null
+  node_logs: Record<string, string[]> | null
+  status: string
+  error: string | null
+  created_at: string
+  updated_at: string
+  estimated_ai_cost?: string | number | null
+  estimated_ai_cost_incomplete?: boolean
+  estimated_ai_cost_currency?: string | null
+}
+
+function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedItem {
+  const st = raw.status
+  const uiStatus: ProcessedItem['status'] =
+    st === 'skipped'
+      ? 'skipped'
+      : st === 'pending' ||
+          st === 'running' ||
+          st === 'succeeded' ||
+          st === 'failed' ||
+          st === 'timed_out'
+        ? st
+        : 'pending'
+  const cur = _currencyFromRaw(raw.estimated_ai_cost_currency, 'USD')
+  return {
+    id: raw.id,
+    run_id: raw.run_id,
+    source_file: raw.source_file,
+    input: raw.input,
+    output: raw.output,
+    node_outputs: raw.node_outputs,
+    node_logs: raw.node_logs,
+    status: uiStatus,
+    error: raw.error,
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+    estimated_ai_cost: _parseCostAmount(raw.estimated_ai_cost),
+    estimated_ai_cost_incomplete: Boolean(raw.estimated_ai_cost_incomplete),
+    estimated_ai_cost_currency: cur,
+  }
+}
+
 export async function getProcessedItem(
   runId: string | number,
   itemId: number
 ): Promise<ProcessedItem> {
-  return (await fetchAPI(`/runs/${runId}/items/${itemId}`)) as ProcessedItem
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}`)) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
 }
 
 export interface RerunItemResponse {
@@ -405,14 +550,19 @@ export interface RerunItemResponse {
 }
 
 export async function rerunProcessedItem(
-  _runId: string | number,
-  _itemId: number
+  runId: string | number,
+  itemId: number
 ): Promise<RerunItemResponse> {
-  throw new Error('Rerun is not available in Backfield yet')
+  return fetchAPI(`/runs/${runId}/items/${itemId}/rerun`, {
+    method: 'POST',
+  }) as Promise<RerunItemResponse>
 }
 
-export async function cancelRun(_runId: string | number): Promise<Run> {
-  throw new Error('Cancel run is not available in Backfield yet')
+export async function cancelRun(runId: string | number): Promise<Run> {
+  const raw = (await fetchAPI(`/runs/${runId}/cancel`, {
+    method: 'POST',
+  })) as RawRun
+  return normalizeRun(raw)
 }
 
 export async function checkHealth(): Promise<{ ok: boolean }> {

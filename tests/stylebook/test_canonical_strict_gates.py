@@ -84,6 +84,9 @@ from sqlmodel import Session, SQLModel, create_engine
         ("city", "city", True),
         ("place", "place", True),
         ("region_city", "region_city", True),
+        ("city", "political_district", False),
+        ("political_district", "city", False),
+        ("town", "political_district", False),
     ],
 )
 def test_link_pair_allowed_deny_list(s: str, c: str, expect: bool) -> None:

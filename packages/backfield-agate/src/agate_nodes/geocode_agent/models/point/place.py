@@ -11,8 +11,6 @@ from .address import Address
 
 logger = logging.getLogger(__name__)
 
-PLACE_LLM_MODEL = "gpt-5-nano"
-
 ########## PLACE MODEL ##########
 
 class Place(Address):
@@ -72,9 +70,10 @@ class Place(Address):
             prompt = template.format(location=full_location)
             result = call_llm(
                 prompt=prompt,
-                model=PLACE_LLM_MODEL,
+                model=self._geographic_reasoning_litellm_model(),
                 openai_api_key=openai_api_key,
                 force_json=False,
+                model_config_id=self._geographic_reasoning_model_config_id(),
             )
             decision = result.strip()
             logger.info("Addressability check for '%s': %s", full_location, decision)
@@ -107,9 +106,10 @@ class Place(Address):
             )
             result = call_llm(
                 prompt=prompt,
-                model=PLACE_LLM_MODEL,
+                model=self._geographic_reasoning_litellm_model(),
                 openai_api_key=openai_api_key,
                 force_json=False,
+                model_config_id=self._geographic_reasoning_model_config_id(),
             )
             return result.strip()
         except Exception as exc:
@@ -191,9 +191,10 @@ class Place(Address):
             )
             result = call_llm(
                 prompt=prompt,
-                model=PLACE_LLM_MODEL,
+                model=self._geographic_reasoning_litellm_model(),
                 openai_api_key=openai_api_key,
                 force_json=True,
+                model_config_id=self._geographic_reasoning_model_config_id(),
             )
             address_data = json.loads(result)
             return address_data if address_data.get("address_found") else None

@@ -5,7 +5,7 @@ import asyncio
 import time
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 from backfield_agate.context import AgateEnvContext
 
@@ -45,6 +45,7 @@ class GeocodeAgentInput(BaseModel):
 
 class GeocodeAgentParams(BaseModel):
     """Parameters for GeocodeAgent node."""
+
     maxLocations: int = Field(
         default=100,
         ge=1,
@@ -75,12 +76,62 @@ class GeocodeAgentParams(BaseModel):
     )
     evaluationModel: str = Field(
         default="gpt-5-nano",
-        description="OpenAI model for geocoder result evaluation (area flow)",
+        description="OpenAI model for judging ambiguous geocoder results and refining location display lines",
+    )
+    geographicReasoningModel: str = Field(
+        default="gpt-5-nano",
+        description=(
+            "OpenAI model for geographic reasoning during external geocode "
+            "(places, addresses, regions, natural features, streets)"
+        ),
     )
     routerModel: str = Field(
         default="gpt-5-nano",
         description="OpenAI model for post-cache route_strategy JSON",
     )
+    evaluationAiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides evaluationModel when set)",
+    )
+    geographicReasoningAiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides geographicReasoningModel when set)",
+    )
+    routerAiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides routerModel when set)",
+    )
+    useCacheLlmAdjudication: bool = Field(
+        default=True,
+        description=(
+            "When useCache and DB bundle are active: run evaluation LLM on ambiguous tier-1 "
+            "or tier-2 sanity failures before external geocoding"
+        ),
+    )
+    useCacheLlmAdjudicationOnMissRecall: bool = Field(
+        default=False,
+        description=(
+            "When useCache and DB bundle: also run adjudication on strict cache miss "
+            "if trigram recall returns canonical candidates (extra LLM cost)"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _coerce_empty_model_strings(self) -> "GeocodeAgentParams":
+        """Saved graphs may persist empty strings, which override Field defaults and break routing."""
+        defaults = (
+            ("evaluationModel", "gpt-5-nano"),
+            ("routerModel", "gpt-5-nano"),
+            ("geographicReasoningModel", "gpt-5-nano"),
+        )
+        updates: dict[str, str] = {}
+        for key, default in defaults:
+            raw = getattr(self, key)
+            if not (str(raw) if raw is not None else "").strip():
+                updates[key] = default
+        if updates:
+            return self.model_copy(update=updates)
+        return self
 
 
 # Define Place model locally to avoid cross-node dependencies
@@ -195,6 +246,9 @@ async def run_geocode_agent_pipeline(
         "region_state",
         "region_national",
         "natural",
+        # PlaceExtract ``political_district`` (wards, legislative districts, etc.):
+        # must pass through so Stylebook cache + Region geocode path can run.
+        "political_district",
     ]
     filtered_locations = [
         loc for loc in locations_data 
@@ -219,13 +273,37 @@ async def run_geocode_agent_pipeline(
     openai_api_key = ctx.get_api_key("OPENAI_API_KEY")
     brave_search_api_key = ctx.get_api_key("BRAVE_SEARCH_API_KEY")
     service_api_token = ctx.get_api_key("SERVICE_API_TOKEN")
-        
+
+    eval_lm_model = params.evaluationModel
+    router_lm_model = params.routerModel
+    geo_lm_model = params.geographicReasoningModel
+    raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
+    if raw_pid:
+        try:
+            from backfield_ai.model_resolve import resolve_geocode_litellm_models
+            from backfield_db.session import get_engine
+            from sqlmodel import Session
+
+            with Session(get_engine()) as res_sess:
+                eval_lm_model, router_lm_model, geo_lm_model = resolve_geocode_litellm_models(
+                    res_sess,
+                    int(raw_pid),
+                    params,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Could not resolve catalog AI models for GeocodeAgent; using legacy ids: %s",
+                exc,
+            )
+
     # Get cache parameters
     stylebook_api_url = params.stylebookApiUrl or os.environ.get("STYLEBOOK_API_URL")
     project_slug = params.projectSlug or os.environ.get("PROJECT_SLUG")
     meta = ctx.metadata if isinstance(ctx.metadata, dict) else {}
     raw_resolve = meta.get("cache_resolve")
     cache_resolve = raw_resolve if callable(raw_resolve) else None
+    geocode_cache_bundle = meta.get("geocode_cache_bundle")
+    cache_bundle = geocode_cache_bundle if isinstance(geocode_cache_bundle, dict) else None
         
     # Configuration for timeout handling
     PER_LOCATION_TIMEOUT = params.perLocationTimeout
@@ -308,8 +386,15 @@ async def run_geocode_agent_pipeline(
                     project_slug=project_slug,
                     service_api_token=service_api_token,
                     cache_resolve=cache_resolve,
-                    evaluation_llm_model=params.evaluationModel,
-                    router_llm_model=params.routerModel,
+                    geocode_cache_bundle=cache_bundle,
+                    use_cache_llm_ambiguous_sanity=params.useCacheLlmAdjudication,
+                    use_cache_llm_miss_recall=params.useCacheLlmAdjudicationOnMissRecall,
+                    evaluation_llm_model=eval_lm_model,
+                    router_llm_model=router_lm_model,
+                    geographic_reasoning_llm_model=geo_lm_model,
+                    evaluation_ai_model_config_id=params.evaluationAiModelConfigId,
+                    router_ai_model_config_id=params.routerAiModelConfigId,
+                    geographic_reasoning_ai_model_config_id=params.geographicReasoningAiModelConfigId,
                 ),
                 timeout=PER_LOCATION_TIMEOUT,
             )

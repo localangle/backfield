@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
 from geoalchemy2 import Geometry
 from pydantic import ConfigDict
-from sqlalchemy import JSON, Boolean, Column, DateTime, Index, Text, UniqueConstraint, func, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Index,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
@@ -425,6 +438,265 @@ class BackfieldProjectSecret(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
     updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class BackfieldOrganizationIntegrationSecret(SQLModel, table=True):
+    """Organization-scoped encrypted integration secret (AI provider keys first)."""
+
+    __tablename__ = "backfield_organization_integration_secret"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "integration_key",
+            name="uq_backfield_org_integration_secret_org_key",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    integration_key: str = Field(sa_column=Column(Text, nullable=False))
+    credential_display_name: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    api_base: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    value_encrypted: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+# ----- Shared AI model configuration and usage tracking (backfield_ai_*) -----
+
+
+class BackfieldAiModelConfig(SQLModel, table=True):
+    """Organization-owned AI model configuration shared by Agate and Stylebook."""
+
+    __tablename__ = "backfield_ai_model_config"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "name",
+            name="uq_backfield_ai_model_config_org_name",
+        ),
+        Index(
+            "ix_backfield_ai_model_config_org_provider_model",
+            "organization_id",
+            "provider",
+            "provider_model_id",
+        ),
+        Index(
+            "ix_backfield_ai_model_config_org_status_kind",
+            "organization_id",
+            "status",
+            "model_kind",
+        ),
+        Index(
+            "ix_bf_ai_model_integration_secret",
+            "integration_secret_id",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    name: str = Field(sa_column=Column(Text, nullable=False))
+    provider: str = Field(sa_column=Column(Text, nullable=False))
+    provider_model_id: str = Field(sa_column=Column(Text, nullable=False))
+    model_kind: str = Field(
+        default="generative",
+        sa_column=Column(Text, nullable=False, server_default="generative"),
+    )
+    status: str = Field(
+        default="active",
+        sa_column=Column(Text, nullable=False, server_default="active"),
+    )
+    capabilities_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    litellm_model: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    integration_secret_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_organization_integration_secret.id",
+        nullable=True,
+    )
+    config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    input_token_price: Decimal | None = Field(
+        default=None,
+        sa_column=Column(Numeric(18, 12), nullable=True),
+    )
+    output_token_price: Decimal | None = Field(
+        default=None,
+        sa_column=Column(Numeric(18, 12), nullable=True),
+    )
+    currency: str = Field(
+        default="USD",
+        sa_column=Column(Text, nullable=False, server_default="USD"),
+    )
+    latest_test_status: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    latest_tested_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    latest_test_error: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class BackfieldAiProjectModelOverride(SQLModel, table=True):
+    """Project-level availability override for inherited organization AI models."""
+
+    __tablename__ = "backfield_ai_project_model_override"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "model_config_id",
+            name="uq_backfield_ai_project_model_override_project_model",
+        ),
+        Index(
+            "ix_backfield_ai_project_model_override_project_enabled",
+            "project_id",
+            "enabled",
+        ),
+        Index(
+            "ix_backfield_ai_override_integration_secret_id",
+            "integration_secret_id",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    model_config_id: str = Field(foreign_key="backfield_ai_model_config.id", index=True)
+    integration_secret_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_organization_integration_secret.id",
+        nullable=True,
+    )
+    enabled: bool = Field(
+        default=True,
+        sa_column=Column(Boolean, nullable=False, server_default="true"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class BackfieldAiDefaultModelRole(SQLModel, table=True):
+    """Default model assignment for an organization or one of its projects."""
+
+    __tablename__ = "backfield_ai_default_model_role"
+    __table_args__ = (
+        CheckConstraint(
+            "(organization_id IS NOT NULL AND project_id IS NULL) "
+            "OR (organization_id IS NULL AND project_id IS NOT NULL)",
+            name="ck_backfield_ai_default_model_role_one_scope",
+        ),
+        Index(
+            "uq_backfield_ai_default_model_role_org_role",
+            "organization_id",
+            "role",
+            unique=True,
+            postgresql_where=text("organization_id IS NOT NULL AND project_id IS NULL"),
+            sqlite_where=text("organization_id IS NOT NULL AND project_id IS NULL"),
+        ),
+        Index(
+            "uq_backfield_ai_default_model_role_project_role",
+            "project_id",
+            "role",
+            unique=True,
+            postgresql_where=text("project_id IS NOT NULL AND organization_id IS NULL"),
+            sqlite_where=text("project_id IS NOT NULL AND organization_id IS NULL"),
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    organization_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_organization.id",
+        index=True,
+    )
+    project_id: int | None = Field(default=None, foreign_key="backfield_project.id", index=True)
+    role: str = Field(sa_column=Column(Text, nullable=False))
+    model_config_id: str = Field(foreign_key="backfield_ai_model_config.id", index=True)
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class BackfieldAiCallRecord(SQLModel, table=True):
+    """One persisted attempt to call an AI model during execution."""
+
+    __tablename__ = "backfield_ai_call_record"
+    __table_args__ = (
+        Index("ix_backfield_ai_call_record_project_created", "project_id", "created_at"),
+        Index("ix_backfield_ai_call_record_run_node", "run_id", "node_id"),
+        Index("ix_backfield_ai_call_record_run_status", "run_id", "status"),
+        Index("ix_backfield_ai_call_record_model_status", "model_config_id", "status"),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    run_id: str | None = Field(default=None, foreign_key="agate_run.id", index=True)
+    processed_item_id: int | None = Field(
+        default=None,
+        foreign_key="agate_processed_item.id",
+        index=True,
+    )
+    node_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    node_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    model_config_id: str | None = Field(
+        default=None,
+        foreign_key="backfield_ai_model_config.id",
+        index=True,
+    )
+    model_config_snapshot_json: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    provider: str = Field(sa_column=Column(Text, nullable=False))
+    provider_model_id: str = Field(sa_column=Column(Text, nullable=False))
+    model_kind: str = Field(
+        default="generative",
+        sa_column=Column(Text, nullable=False, server_default="generative"),
+    )
+    status: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    attempt_number: int = Field(default=1, nullable=False)
+    prompt_tokens: int | None = Field(default=None)
+    completion_tokens: int | None = Field(default=None)
+    total_tokens: int | None = Field(default=None)
+    estimated_cost: Decimal | None = Field(
+        default=None,
+        sa_column=Column(Numeric(18, 12), nullable=True),
+    )
+    currency: str = Field(
+        default="USD",
+        sa_column=Column(Text, nullable=False, server_default="USD"),
+    )
+    cost_estimate_source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    cost_estimate_incomplete: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    latency_ms: int | None = Field(default=None)
+    provider_request_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    error_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 

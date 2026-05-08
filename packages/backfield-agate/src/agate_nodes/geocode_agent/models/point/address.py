@@ -17,7 +17,6 @@ from .point import Point
 
 logger = logging.getLogger(__name__)
 
-ADDRESS_CANDIDATE_LLM_MODEL = "gpt-5-mini"
 _ADDRESS_PICKER_PROMPT = Path(__file__).parent.parent.parent / "prompts" / "address_candidate_picker.md"
 
 ########## ADDRESS MODEL ##########
@@ -35,6 +34,19 @@ class Address(Point):
     def _geocode_hints_prompt_value(self) -> str:
         raw = (self._geocode_hints or "").strip()
         return raw if raw else "(none)"
+
+    def _geographic_reasoning_litellm_model(self) -> str:
+        raw = getattr(self, "_geographic_reasoning_llm_model", None)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return "gpt-5-nano"
+
+    def _geographic_reasoning_model_config_id(self) -> str | None:
+        raw = getattr(self, "_geographic_reasoning_ai_model_config_id", None)
+        if raw is None:
+            return None
+        s = str(raw).strip()
+        return s or None
 
     def _address_candidate_rows(self, candidates: List[GeocodingResult]) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
@@ -83,9 +95,10 @@ class Address(Point):
         try:
             response_text = call_llm(
                 prompt=prompt,
-                model=ADDRESS_CANDIDATE_LLM_MODEL,
+                model=self._geographic_reasoning_litellm_model(),
                 openai_api_key=openai_api_key,
                 force_json=True,
+                model_config_id=self._geographic_reasoning_model_config_id(),
             )
             payload = json.loads(response_text)
         except Exception as exc:

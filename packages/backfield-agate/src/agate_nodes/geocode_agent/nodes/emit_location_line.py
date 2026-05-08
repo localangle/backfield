@@ -15,6 +15,23 @@ from ..types import AgentState
 
 logger = logging.getLogger(__name__)
 
+
+def _evaluation_litellm_model_for_emit(state: AgentState) -> str | None:
+    raw = state.get("evaluation_llm_model")
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    return s or None
+
+
+def _evaluation_ai_model_config_id_for_emit(state: AgentState) -> str | None:
+    raw = state.get("evaluation_ai_model_config_id")
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s or None
+
+
 _CONTEXT_SNIPPET_MAX = 1200
 _HINTS_SNIPPET_MAX = 800
 
@@ -467,6 +484,7 @@ async def _maybe_polish_with_llm(
     *,
     story_context: str = "(none)",
     geocode_hints: str = "(none)",
+    model_config_id: str | None = None,
 ) -> str:
     """Optional final LLM pass for edge cases; deterministic pass reapplied after."""
     cand = (candidate or "").strip()
@@ -487,17 +505,18 @@ async def _maybe_polish_with_llm(
 
     def _sync() -> str:
         return call_llm(
-            prompt,
-            model,
-            None,
-            True,
-            1,
-            0.0,
-            512,
-            openai_key,
-            None,
-            None,
-            45.0,
+            prompt=prompt,
+            model=model,
+            system_message=None,
+            force_json=True,
+            max_retries=1,
+            temperature=0.0,
+            max_tokens=512,
+            openai_api_key=openai_key,
+            anthropic_api_key=None,
+            project_system_prompt=None,
+            timeout=45.0,
+            model_config_id=model_config_id,
         )
 
     try:
@@ -530,12 +549,8 @@ async def compute_emit_location_line(
     location_text = (state.get("location_text") or "").strip()
     formatted_address = (formatted_address or "").strip()
     openai_key = state.get("openai_api_key")
-    model = (
-        state.get("evaluation_llm_model")
-        or state.get("router_llm_model")
-        or "gpt-5-nano"
-    )
-    polish_model = state.get("evaluation_llm_model") or state.get("router_llm_model") or "gpt-5-nano"
+    model = _evaluation_litellm_model_for_emit(state)
+    polish_model = model
     components = state.get("location_components") or {}
     if not isinstance(components, dict):
         components = {}
@@ -543,6 +558,8 @@ async def compute_emit_location_line(
     orig_snip, hints_snip = _story_context_snippets(state)
 
     if not openai_key:
+        return _heuristic_emit_location(location_type, location_text, formatted_address)
+    if not model:
         return _heuristic_emit_location(location_type, location_text, formatted_address)
 
     try:
@@ -561,19 +578,22 @@ async def compute_emit_location_line(
     )
     prompt = f"{rules}\n---\n{user_block}"
 
+    emit_mc = _evaluation_ai_model_config_id_for_emit(state)
+
     def _sync() -> str:
         return call_llm(
-            prompt,
-            model,
-            None,
-            True,
-            1,
-            0.0,
-            512,
-            openai_key,
-            None,
-            None,
-            45.0,
+            prompt=prompt,
+            model=model,
+            system_message=None,
+            force_json=True,
+            max_retries=1,
+            temperature=0.0,
+            max_tokens=512,
+            openai_api_key=openai_key,
+            anthropic_api_key=None,
+            project_system_prompt=None,
+            timeout=45.0,
+            model_config_id=emit_mc,
         )
 
     try:
@@ -597,6 +617,7 @@ async def compute_emit_location_line(
         openai_key,
         story_context=orig_snip,
         geocode_hints=hints_snip,
+        model_config_id=_evaluation_ai_model_config_id_for_emit(state),
     )
 
 
@@ -640,25 +661,26 @@ async def _maybe_upgrade_to_named_place(
     )
     prompt = f"{rules}\n---\n{user_tail}"
 
-    model = (
-        state.get("evaluation_llm_model")
-        or state.get("router_llm_model")
-        or "gpt-5-nano"
-    )
+    model = _evaluation_litellm_model_for_emit(state)
+    if not model:
+        return baseline_location_line, False
+
+    venue_mc = _evaluation_ai_model_config_id_for_emit(state)
 
     def _sync() -> str:
         return call_llm(
-            prompt,
-            model,
-            None,
-            True,
-            1,
-            0.0,
-            256,
-            openai_key,
-            None,
-            None,
-            45.0,
+            prompt=prompt,
+            model=model,
+            system_message=None,
+            force_json=True,
+            max_retries=1,
+            temperature=0.0,
+            max_tokens=256,
+            openai_api_key=openai_key,
+            anthropic_api_key=None,
+            project_system_prompt=None,
+            timeout=45.0,
+            model_config_id=venue_mc,
         )
 
     try:

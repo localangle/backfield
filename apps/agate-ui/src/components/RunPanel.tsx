@@ -85,7 +85,7 @@ export default function RunPanel({
                       View Details
                     </Button>
                   </Link>
-                  <Badge className={getStatusColor(currentRun.status)}>
+                  <Badge variant="outline" className={getStatusColor(currentRun.status)}>
                     <div className="flex items-center gap-1">
                       {getStatusIcon(currentRun.status)}
                       {formatStatusLabel(currentRun.status)}

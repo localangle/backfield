@@ -5,8 +5,20 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { getRun, getGraph, createRun, cancelRun, rerunProcessedItem, type Run, type Graph, type ProcessedItemSummary } from '@/lib/api'
+import {
+  getRun,
+  getGraph,
+  createRun,
+  cancelRun,
+  rerunProcessedItem,
+  getRunEstimatedAiCost,
+  type Run,
+  type Graph,
+  type ProcessedItemSummary,
+  type RunEstimatedAiCost,
+} from '@/lib/api'
 import { formatDateCentral } from '@/lib/utils'
+import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, ExternalLink, RotateCcw } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 
@@ -23,6 +35,7 @@ export default function RunDetail() {
   const itemsPerPage = 100
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set())
   const [rerunningItems, setRerunningItems] = useState<Set<number>>(new Set())
+  const [aiCost, setAiCost] = useState<RunEstimatedAiCost | null>(null)
 
   useEffect(() => {
     if (runId) {
@@ -75,6 +88,12 @@ export default function RunDetail() {
       const graphData = await getGraph(runData.graph_id)
       setRun(runData)
       setGraph(graphData)
+      try {
+        const cost = await getRunEstimatedAiCost(runId)
+        setAiCost(cost)
+      } catch {
+        setAiCost(null)
+      }
     } catch (error) {
       console.error('Failed to load run data:', error)
     } finally {
@@ -378,6 +397,51 @@ export default function RunDetail() {
         </CardContent>
       </Card>
 
+      {aiCost && aiCost.attempt_count > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Total estimated AI usage cost</CardTitle>
+            <CardDescription>
+              Based on tracked model calls for this run (totals are approximate).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-2xl font-semibold">
+              {Number(aiCost.estimated_total).toLocaleString(undefined, {
+                style: 'currency',
+                currency: aiCost.currency || 'USD',
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 6,
+              })}
+            </div>
+            {aiCost.incomplete_estimate ? (
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                Some usage data was missing, so this total may be incomplete.
+              </p>
+            ) : null}
+            {aiCost.node_breakdown?.length ? (
+              <div className="text-sm text-muted-foreground">
+                <div className="font-medium text-foreground mb-1">By step</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  {aiCost.node_breakdown.map((row) => (
+                    <li key={String(row.node_id)}>
+                      {getNodeStepDisplayName(graph?.spec?.nodes, row.node_id)}
+                      {': '}
+                      {Number(row.estimated_total).toLocaleString(undefined, {
+                        style: 'currency',
+                        currency: aiCost.currency || 'USD',
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6,
+                      })}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {/* Processed Items Table */}
       {run.items && run.items.length > 0 && (
         <Card>
@@ -464,6 +528,7 @@ export default function RunDetail() {
                   <TableHead className="w-[80px]">ID</TableHead>
                   <TableHead className="w-[250px]">Source</TableHead>
                   <TableHead className="w-[120px]">Status</TableHead>
+                  <TableHead className="w-[130px] text-right">Est. cost</TableHead>
                   <TableHead className="w-[180px]">Created</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
@@ -472,7 +537,7 @@ export default function RunDetail() {
                 {paginatedItems.map((item) => (
                   <TableRow 
                     key={item.id}
-                    className={`cursor-pointer hover:bg-muted/50 ${selectedItems.has(item.id) ? 'bg-muted' : ''}`}
+                    className={`cursor-pointer hover:bg-muted/[0.07] ${selectedItems.has(item.id) ? 'bg-muted' : ''}`}
                     onClick={() => navigate(`/runs/${runId}/items/${item.id}`)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -525,7 +590,7 @@ export default function RunDetail() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <Badge className={`${getStatusColor(item.status)} w-fit`}>
+                        <Badge variant="outline" className={`${getStatusColor(item.status)} w-fit`}>
                           {getStatusIcon(item.status)}
                           <span className="ml-1 capitalize">{item.status}</span>
                         </Badge>
@@ -535,6 +600,31 @@ export default function RunDetail() {
                           </span>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-right tabular-nums">
+                      <span className="inline-flex items-center justify-end gap-1">
+                        {(item.estimated_ai_cost !== undefined && item.estimated_ai_cost !== null) ||
+                        item.estimated_ai_cost_incomplete ? (
+                          <>
+                            {Number(item.estimated_ai_cost ?? 0).toLocaleString(undefined, {
+                              style: 'currency',
+                              currency: item.estimated_ai_cost_currency || 'USD',
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 6,
+                            })}
+                            {item.estimated_ai_cost_incomplete ? (
+                              <span
+                                className="text-amber-700 dark:text-amber-400"
+                                title="Some usage or pricing data was missing"
+                              >
+                                *
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatDateCentral(item.created_at)}

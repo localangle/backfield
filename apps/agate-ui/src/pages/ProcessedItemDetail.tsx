@@ -112,6 +112,9 @@ export default function ProcessedItemDetail() {
             error: syn.error,
             created_at: syn.created_at,
             updated_at: syn.updated_at,
+            estimated_ai_cost: syn.estimated_ai_cost,
+            estimated_ai_cost_incomplete: syn.estimated_ai_cost_incomplete,
+            estimated_ai_cost_currency: syn.estimated_ai_cost_currency,
           })
         } else {
           setItem(null)
@@ -449,7 +452,7 @@ export default function ProcessedItemDetail() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             Item Information
-            <Badge className={getStatusColor(item.status)}>
+            <Badge variant="outline" className={getStatusColor(item.status)}>
               {getStatusIcon(item.status)}
               <span className="ml-1 capitalize">{item.status}</span>
             </Badge>
@@ -485,6 +488,33 @@ export default function ProcessedItemDetail() {
                 </p>
               </div>
             )}
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">Estimated AI cost</label>
+              <p className="text-sm tabular-nums">
+                {item.estimated_ai_cost !== undefined && item.estimated_ai_cost !== null ? (
+                  <>
+                    {Number(item.estimated_ai_cost).toLocaleString(undefined, {
+                      style: 'currency',
+                      currency: item.estimated_ai_cost_currency || 'USD',
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 6,
+                    })}
+                    {item.estimated_ai_cost_incomplete ? (
+                      <span className="text-amber-700 dark:text-amber-400 ml-1" title="Estimate may be incomplete">
+                        *
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </p>
+              {item.estimated_ai_cost_incomplete ? (
+                <p className="text-xs text-muted-foreground mt-1">
+                  The asterisk means part of this estimate may be missing.
+                </p>
+              ) : null}
+            </div>
           </div>
         </CardContent>
       </Card>

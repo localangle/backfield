@@ -106,6 +106,7 @@ def adjudicate_ambiguous_plan_with_llm(
     location: SubstrateLocation,
     stylebook_id: int,
     model: str,
+    model_config_id: str | None = None,
 ) -> CanonicalPersistPlan:
     """LLM pick for ambiguous recall or ``political_district`` fuzzy autolink."""
     ctx = _recall_context_for_adjudication(plan, location)
@@ -182,6 +183,7 @@ def adjudicate_ambiguous_plan_with_llm(
             temperature=0.0,
             max_tokens=800,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
+            model_config_id=model_config_id,
         )
         data = json.loads(raw)
     except Exception:

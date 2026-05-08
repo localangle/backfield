@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "Geocode Agent",
   "icon": "MapPin",
   "color": "bg-teal-600",
-  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.",
+  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick routing, geographic reasoning, and evaluation models.",
   "category": "enrichment",
   "requiredUpstreamNodes": [
     "PlaceExtract"
@@ -37,31 +37,15 @@ const nodeMetadata = {
     "stylebook_id": null,
     "stylebookApiUrl": "",
     "projectSlug": "",
-    "evaluationModel": "gpt-5-nano",
-    "routerModel": "gpt-5-nano"
-  },
-  "availableModels": [
-    {
-      "value": "gpt-5.4",
-      "label": "GPT 5.4"
-    },
-    {
-      "value": "gpt-5.2",
-      "label": "GPT 5.2"
-    },
-    {
-      "value": "gpt-5-mini",
-      "label": "GPT-5 Mini"
-    },
-    {
-      "value": "gpt-5-nano",
-      "label": "GPT-5 Nano"
-    },
-    {
-      "value": "gpt-4o-mini",
-      "label": "GPT-4o Mini"
-    }
-  ]
+    "evaluationModel": "",
+    "geographicReasoningModel": "",
+    "routerModel": "",
+    "evaluationAiModelConfigId": null,
+    "geographicReasoningAiModelConfigId": null,
+    "routerAiModelConfigId": null,
+    "useCacheLlmAdjudication": true,
+    "useCacheLlmAdjudicationOnMissRecall": false
+  }
 };
 
 import { memo } from 'react'

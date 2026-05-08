@@ -47,23 +47,30 @@ def _geocode_hints_for_context(state: AgentState) -> str | None:
 
 
 def _create_model(location_type: str, location_text: str, components: dict, state: AgentState):
+    country_code = "US"
+    country_info = components.get("country")
+    if isinstance(country_info, dict):
+        abbr = country_info.get("abbr")
+        if isinstance(abbr, str) and abbr.strip():
+            country_code = abbr.strip().upper()
+
     if location_type == "state":
         state_info = components.get("state", {})
         state_name = state_info.get("name") if isinstance(state_info, dict) else location_text
-        return State(name=state_name, country="US")
+        return State(name=state_name, country=country_code)
 
     if location_type == "county":
         county_name = components.get("county", location_text)
         state_info = components.get("state", {})
         state_name = state_info.get("name") if isinstance(state_info, dict) else "Unknown"
-        return County(name=county_name, state=state_name, country="US")
+        return County(name=county_name, state=state_name, country=country_code)
 
     if location_type == "city":
         city_name = components.get("city", location_text)
         state_info = components.get("state", {})
         state_name = state_info.get("name") if isinstance(state_info, dict) else "Unknown"
         county_name = components.get("county", "")
-        return City(name=city_name, state=state_name, county=county_name, country="US")
+        return City(name=city_name, state=state_name, county=county_name, country=country_code)
 
     if location_type == "neighborhood":
         neighborhood_name = components.get("neighborhood", location_text)
@@ -76,7 +83,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
             city=city_name,
             state=state_name,
             county=county_name,
-            country="US",
+            country=country_code,
         )
 
     if location_type == "address":
@@ -84,7 +91,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         city_name = components.get("city", "")
         state_info = components.get("state", {})
         state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else None
-        addr = Address(name=address, city=city_name, state_abbr=state_abbr, country="US")
+        addr = Address(name=address, city=city_name, state_abbr=state_abbr, country=country_code)
         addr._original_text = state.get("original_text", "")
         addr._geocode_hints = _geocode_hints_for_context(state)
         return addr
@@ -101,7 +108,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         city_name = components.get("city", "")
         state_info = components.get("state", {})
         state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else None
-        model = Place(name=place_name, city=city_name, state_abbr=state_abbr, country="US")
+        model = Place(name=place_name, city=city_name, state_abbr=state_abbr, country=country_code)
         model._input_addressability = is_addressable
         model._original_text = state.get("original_text", "")
         hints = state.get("geocode_hints") or normalized_geocode_hints(state.get("extra_fields"))
@@ -109,7 +116,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         return model
 
     if location_type in {"intersection_road", "intersection_highway"}:
-        model = Intersection(name=location_text, country="US")
+        model = Intersection(name=location_text, country=country_code)
         model._original_text = state.get("original_text", "")
         model._geocode_hints = _geocode_hints_for_context(state)
         return model
@@ -124,7 +131,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         city_name = components.get("city", "")
         state_info = components.get("state", {})
         state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else ""
-        sr = StreetRoad(name=street_name, city=city_name, state=state_abbr, country="US")
+        sr = StreetRoad(name=street_name, city=city_name, state=state_abbr, country=country_code)
         sr._geocode_hints = _geocode_hints_for_context(state)
         return sr
 
@@ -162,7 +169,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         label_bits = [f"{kind} {num}".strip(), city_name, state_abbr or state_name or ""]
         name = location_text.strip() or ", ".join(b for b in label_bits if b)
         additional_context = "\n".join(extra_context_parts) if extra_context_parts else None
-        return Region(name=name or location_text, country="US", additional_context=additional_context)
+        return Region(name=name or location_text, country=country_code, additional_context=additional_context)
 
     if location_type.startswith("region"):
         extra_context_parts = []
@@ -176,7 +183,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         if hints_line:
             extra_context_parts.append(f"Geocode hints: {hints_line}")
         additional_context = "\n".join(extra_context_parts) if extra_context_parts else None
-        return Region(name=location_text, country="US", additional_context=additional_context)
+        return Region(name=location_text, country=country_code, additional_context=additional_context)
 
     if location_type == "natural":
         city_name = components.get("city", "")
@@ -213,7 +220,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
             city=city_name or None,
             state=state_name,
             state_abbr=state_abbr,
-            country="US",
+            country=country_code,
             place_name=place_name,
             place_is_natural=place_is_natural,
             additional_context=additional_context,
@@ -221,7 +228,7 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
 
     if location_type == "span":
         span_info = components.get("span", {}) if isinstance(components, dict) else {}
-        sp = Span(name=location_text, span=span_info, country="US")
+        sp = Span(name=location_text, span=span_info, country=country_code)
         sp._geocode_hints = _geocode_hints_for_context(state)
         return sp
 
@@ -244,14 +251,60 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
 
     geocoding_result = None
     cache_resolve_fn = state.get("cache_resolve")
-    if use_cache and cache_resolve_fn is not None:
-        _adv_info(state, "[CACHE ENABLED] DB cache resolve for '%s'", location_text)
+    geocode_cache_bundle = state.get("geocode_cache_bundle")
+    strict_out_fn = (
+        geocode_cache_bundle.get("strict_resolve_with_outcome")
+        if isinstance(geocode_cache_bundle, dict)
+        else None
+    )
+    if use_cache and callable(strict_out_fn):
+        _adv_info(state, "[CACHE ENABLED] DB cache bundle (strict) for '%s'", location_text)
+        try:
+            outcome = await asyncio.to_thread(
+                strict_out_fn,
+                location_text,
+                location_type,
+                components if isinstance(components, dict) else {},
+            )
+            state["cache_strict_outcome"] = outcome if isinstance(outcome, dict) else None
+            match_dict = outcome.get("match_dict") if isinstance(outcome, dict) else None
+            if match_dict:
+                src = (match_dict.get("confidence") or {}).get("source")
+                try:
+                    if src == "canonical_db":
+                        geocoding_result = stylebook_match_to_geocoding_result(match_dict, location_text)
+                    elif src == "location_cache":
+                        geocoding_result = cache_match_to_geocoding_result(match_dict, location_text)
+                    else:
+                        geocoding_result = None
+                    if geocoding_result and not geocoding_result.result.geometry:
+                        logger.warning(
+                            "DB cache match for '%s' has no geometry, falling back to external geocoding",
+                            location_text,
+                        )
+                        geocoding_result = None
+                    elif geocoding_result:
+                        _adv_info(
+                            state,
+                            "[CACHE HIT] DB cache for '%s' (source=%s, id=%s)",
+                            location_text,
+                            src,
+                            match_dict.get("id"),
+                        )
+                except Exception as e:
+                    logger.warning("Error converting DB cache match for '%s': %s", location_text, e)
+                    geocoding_result = None
+        except Exception as e:
+            logger.warning("Error during DB cache resolve for '%s': %s", location_text, e)
+
+    elif use_cache and cache_resolve_fn is not None:
+        _adv_info(state, "[CACHE ENABLED] DB cache resolve (legacy) for '%s'", location_text)
         try:
             match_dict = await asyncio.to_thread(
                 cache_resolve_fn,
                 location_text,
                 location_type,
-                components,
+                components if isinstance(components, dict) else {},
             )
             if match_dict:
                 src = (match_dict.get("confidence") or {}).get("source")
@@ -367,14 +420,24 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
 
     if not use_cache:
         _adv_info(state, "[CACHE SKIP] Cache lookup disabled for '%s'", location_text)
-    elif cache_resolve_fn is None and not stylebook_api_url:
+    elif (
+        not callable(strict_out_fn)
+        and cache_resolve_fn is None
+        and not isinstance(geocode_cache_bundle, dict)
+        and not stylebook_api_url
+    ):
         _adv_info(
             state,
-            "[CACHE SKIP] No DB cache_resolve and no Stylebook API URL for '%s'",
+            "[CACHE SKIP] No DB cache bundle/resolve and no Stylebook API URL for '%s'",
             location_text,
         )
-    elif cache_resolve_fn is None and not project_slug:
-        _adv_info(state, "[CACHE SKIP] No DB cache_resolve and no project slug for '%s'", location_text)
+    elif (
+        not callable(strict_out_fn)
+        and cache_resolve_fn is None
+        and not isinstance(geocode_cache_bundle, dict)
+        and not project_slug
+    ):
+        _adv_info(state, "[CACHE SKIP] No DB cache bundle/resolve and no project slug for '%s'", location_text)
     else:
         _adv_info(
             state,
@@ -410,6 +473,18 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
         eval_model = state.get("evaluation_llm_model")
         if isinstance(model, Area) and eval_model:
             model._evaluation_llm_model = eval_model  # type: ignore[attr-defined]
+
+        eval_cfg = state.get("evaluation_ai_model_config_id")
+        if eval_cfg:
+            setattr(model, "_evaluation_ai_model_config_id", eval_cfg)
+
+        geo_lm = state.get("geographic_reasoning_llm_model")
+        geo_cfg = state.get("geographic_reasoning_ai_model_config_id")
+        if isinstance(model, (Place, Address, Region, NaturalPlace, StreetRoad)):
+            if geo_lm:
+                setattr(model, "_geographic_reasoning_llm_model", geo_lm)
+            if geo_cfg:
+                setattr(model, "_geographic_reasoning_ai_model_config_id", geo_cfg)
 
         geocode_kwargs: dict = {
             "pelias_api_key": pelias_api_key,
@@ -468,7 +543,12 @@ async def orchestrate_geocode(state: AgentState) -> AgentState:
     """
     Baseline graph entry: cache resolution then external geocoding when needed.
     """
+    from .cache_adjudication import adjudicate_stylebook_cache_node
+
     await resolve_cache_or_miss(state)
+    if state.get("geocoding_result") is not None:
+        return state
+    await adjudicate_stylebook_cache_node(state)
     if state.get("geocoding_result") is not None:
         return state
     return await orchestrate_external_geocode(state)

@@ -15,9 +15,6 @@ from .area import Area
 
 logger = logging.getLogger(__name__)
 
-NATURAL_CANDIDATE_LLM_MODEL = "gpt-5-mini"
-NATURAL_FALLBACK_LLM_MODEL = "gpt-5"
-
 ########## NATURAL PLACE MODEL ##########
 
 class NaturalPlace(Area):
@@ -116,9 +113,10 @@ class NaturalPlace(Area):
         try:
             response_text = call_llm(
                 prompt=prompt,
-                model=NATURAL_CANDIDATE_LLM_MODEL,
+                model=self._geographic_reasoning_litellm_model(),
                 openai_api_key=openai_api_key,
                 force_json=True,
+                model_config_id=self._geographic_reasoning_model_config_id(),
             )
             payload = json.loads(response_text)
         except Exception as exc:
@@ -232,9 +230,10 @@ class NaturalPlace(Area):
         try:
             response_text = call_llm(
                 prompt=prompt,
-                model=NATURAL_FALLBACK_LLM_MODEL,
+                model=self._geographic_reasoning_litellm_model(),
                 openai_api_key=openai_api_key,
                 force_json=True,
+                model_config_id=self._geographic_reasoning_model_config_id(),
             )
             payload = json.loads(response_text)
         except Exception as exc:

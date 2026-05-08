@@ -11,6 +11,7 @@ from api.main import app
 from api.routers import runs
 from backfield_auth import create_session_token
 from backfield_db import (
+    AgateProcessedItem,
     AgateRun,
     BackfieldOrganization,
     BackfieldOrganizationMembership,
@@ -322,6 +323,108 @@ def test_get_run_processed_item_synthetic_second_item_404(monkeypatch, client: T
     ).json()
     run = client.post("/runs", json={"graph_id": graph["id"]}).json()
     assert client.get(f"/runs/{run['id']}/items/2").status_code == 404
+
+
+def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path):
+    """Batch ``agate_processed_item`` rows can be re-queued via POST …/rerun."""
+    database_path = tmp_path / "agate-rerun.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    captured: dict[str, object] = {}
+
+    def capture_send_task(name: str, args: list[int] | None = None, **kwargs: object) -> None:
+        captured["name"] = name
+        captured["args"] = args
+        captured["queue"] = kwargs.get("queue")
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", capture_send_task)
+
+    try:
+        tc = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project = tc.post("/projects", json={"name": "Rerun API", "slug": "rerun-api"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch",
+                "project_id": project["id"],
+                "spec": {"name": "b", "nodes": [], "edges": []},
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+        rid = run["id"]
+        with Session(engine) as s:
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "succeeded"
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="a.json",
+                input_json='{"text":"hello"}',
+                status="succeeded",
+                result_json='{"ok":true}',
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+        assert iid is not None
+
+        resp = tc.post(f"/runs/{rid}/items/{iid}/rerun")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["item_id"] == iid
+        assert body["run_id"] == rid
+        assert body["status"] == "pending"
+        assert "re-queued" in body["message"]
+
+        with Session(engine) as s:
+            again = s.get(AgateProcessedItem, iid)
+            assert again is not None
+            assert again.status == "pending"
+            assert again.result_json is None
+            assert again.error_message is None
+            run_row = s.get(AgateRun, rid)
+            assert run_row is not None
+            assert run_row.status == "running"
+
+        assert captured["name"] == "worker.tasks.execute_processed_item"
+        assert captured["args"] == [iid]
+        assert captured["queue"] == "agate"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_rerun_processed_item_404_when_no_such_row(monkeypatch, client: TestClient):
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    project = client.post("/projects", json={"name": "Rerun 404", "slug": "rerun-404"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "t",
+            "project_id": project["id"],
+            "spec": {"name": "t", "nodes": [], "edges": []},
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert client.post(f"/runs/{run['id']}/items/99999/rerun").status_code == 404
 
 
 def test_get_run_processed_item_synthetic_with_run_result_json(tmp_path, monkeypatch):

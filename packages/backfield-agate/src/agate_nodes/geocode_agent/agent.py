@@ -1,6 +1,6 @@
 """LangGraph agent for intelligent geocoding with fallback strategies."""
 
-from typing import Optional
+from typing import Any, Optional
 from langgraph.graph import END, StateGraph  # type: ignore
 
 from .nodes import (
@@ -11,6 +11,7 @@ from .nodes import (
     resolve_cache_or_miss,
     route_strategy_node,
 )
+from .nodes.cache_adjudication import adjudicate_stylebook_cache_node
 from .types import AgentState, CacheResolveFn, normalized_geocode_hints
 
 
@@ -39,15 +40,17 @@ def create_geocoding_agent():
 
 
 def create_advanced_geocoding_agent():
-    """Advanced graph: cache → route_strategy → external geocode → consolidate → output."""
+    """Advanced graph: cache → Stylebook adjudication → route_strategy → external geocode → …"""
     workflow = StateGraph(AgentState)
     workflow.add_node("resolve_cache_or_miss", resolve_cache_or_miss)
+    workflow.add_node("adjudicate_stylebook_cache", adjudicate_stylebook_cache_node)
     workflow.add_node("route_strategy", route_strategy_node)
     workflow.add_node("orchestrate_external_geocode", orchestrate_external_geocode)
     workflow.add_node("consolidate", consolidate_node)
     workflow.add_node("output", output_node)
     workflow.set_entry_point("resolve_cache_or_miss")
-    workflow.add_edge("resolve_cache_or_miss", "route_strategy")
+    workflow.add_edge("resolve_cache_or_miss", "adjudicate_stylebook_cache")
+    workflow.add_edge("adjudicate_stylebook_cache", "route_strategy")
     workflow.add_edge("route_strategy", "orchestrate_external_geocode")
     workflow.add_edge("orchestrate_external_geocode", "consolidate")
     workflow.add_edge("consolidate", "output")
@@ -72,8 +75,15 @@ async def run_geocoding_agent(
     project_slug: Optional[str] = None,
     service_api_token: Optional[str] = None,
     cache_resolve: Optional[CacheResolveFn] = None,
+    geocode_cache_bundle: Optional[dict[str, Any]] = None,
+    use_cache_llm_ambiguous_sanity: bool = True,
+    use_cache_llm_miss_recall: bool = False,
     evaluation_llm_model: Optional[str] = None,
     router_llm_model: Optional[str] = None,
+    geographic_reasoning_llm_model: Optional[str] = None,
+    evaluation_ai_model_config_id: Optional[str] = None,
+    router_ai_model_config_id: Optional[str] = None,
+    geographic_reasoning_ai_model_config_id: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Run the geocoding agent workflow for a single location.
@@ -119,9 +129,16 @@ async def run_geocoding_agent(
         "project_slug": project_slug,
         "service_api_token": service_api_token,
         "cache_resolve": cache_resolve,
+        "geocode_cache_bundle": geocode_cache_bundle,
+        "use_cache_llm_ambiguous_sanity": use_cache_llm_ambiguous_sanity,
+        "use_cache_llm_miss_recall": use_cache_llm_miss_recall,
         "final_output": None,
         "evaluation_llm_model": evaluation_llm_model,
         "router_llm_model": router_llm_model,
+        "geographic_reasoning_llm_model": geographic_reasoning_llm_model,
+        "evaluation_ai_model_config_id": evaluation_ai_model_config_id,
+        "router_ai_model_config_id": router_ai_model_config_id,
+        "geographic_reasoning_ai_model_config_id": geographic_reasoning_ai_model_config_id,
     }
 
     # Run the agent
@@ -145,8 +162,15 @@ async def run_advanced_geocoding_agent(
     project_slug: Optional[str] = None,
     service_api_token: Optional[str] = None,
     cache_resolve: Optional[CacheResolveFn] = None,
+    geocode_cache_bundle: Optional[dict[str, Any]] = None,
+    use_cache_llm_ambiguous_sanity: bool = True,
+    use_cache_llm_miss_recall: bool = False,
     evaluation_llm_model: Optional[str] = None,
     router_llm_model: Optional[str] = None,
+    geographic_reasoning_llm_model: Optional[str] = None,
+    evaluation_ai_model_config_id: Optional[str] = None,
+    router_ai_model_config_id: Optional[str] = None,
+    geographic_reasoning_ai_model_config_id: Optional[str] = None,
 ) -> Optional[dict]:
     """Same IO as ``run_geocoding_agent`` but uses the Advanced graph (router + quieter INFO)."""
     agent = create_advanced_geocoding_agent()
@@ -169,9 +193,16 @@ async def run_advanced_geocoding_agent(
         "project_slug": project_slug,
         "service_api_token": service_api_token,
         "cache_resolve": cache_resolve,
+        "geocode_cache_bundle": geocode_cache_bundle,
+        "use_cache_llm_ambiguous_sanity": use_cache_llm_ambiguous_sanity,
+        "use_cache_llm_miss_recall": use_cache_llm_miss_recall,
         "final_output": None,
         "evaluation_llm_model": evaluation_llm_model,
         "router_llm_model": router_llm_model,
+        "geographic_reasoning_llm_model": geographic_reasoning_llm_model,
+        "evaluation_ai_model_config_id": evaluation_ai_model_config_id,
+        "router_ai_model_config_id": router_ai_model_config_id,
+        "geographic_reasoning_ai_model_config_id": geographic_reasoning_ai_model_config_id,
         "advanced_quiet_logs": True,
     }
     final_state = await agent.ainvoke(initial_state)

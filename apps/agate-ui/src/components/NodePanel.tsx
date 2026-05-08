@@ -10,15 +10,28 @@ import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Suspense } from 'react'
 import { nodeMetadata, panelComponents } from '@/nodes/registry'
 
+export type ProjectAiModelOption = {
+  label: string
+  providerModelId: string
+  configId?: string
+}
+
+/** @deprecated Use ProjectAiModelOption */
+export type GeocodeAiModelOption = ProjectAiModelOption
+
 export type GraphPanelContext = {
   /** Organization that owns the resolved flow project (for Stylebook catalog in node panels). */
   organizationId: number | null
+  /** Resolved Backfield project id for AI catalog lookups (when known). */
+  projectId: number | null
   workspaceDefaultStylebookId: number | null
   workspaceStylebookName: string | null
   /** True when a project is selected but the API did not resolve a workspace Stylebook. */
   missingWorkspaceStylebook?: boolean
   /** Flow editor is still fetching the project (for workspace Stylebook). */
   flowProjectLoading?: boolean
+  /** Loads project-effective AI models filtered by capability (e.g. text+json for JSON-using nodes). */
+  fetchProjectAiModels?: (capabilities: string[]) => Promise<ProjectAiModelOption[]>
 }
 
 interface NodePanelProps {
@@ -236,7 +249,7 @@ export default function NodePanel({
                 
                 <div className="flex justify-between items-center p-2 bg-muted rounded">
                   <span className="text-muted-foreground">Model</span>
-                  <span className="font-medium text-xs">{selectedNode.data.model || 'gpt-4o-mini'}</span>
+                  <span className="font-medium text-xs">{selectedNode.data.model || '—'}</span>
                 </div>
               </div>
 
@@ -273,7 +286,7 @@ export default function NodePanel({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between items-center p-2 bg-muted rounded">
                   <span className="text-muted-foreground">Model</span>
-                  <span className="font-medium text-xs">{selectedNode.data.model || 'gpt-4o-mini'}</span>
+                  <span className="font-medium text-xs">{selectedNode.data.model || '—'}</span>
                 </div>
               </div>
 

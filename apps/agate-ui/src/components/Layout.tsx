@@ -26,12 +26,6 @@ export default function Layout({ children }: LayoutProps) {
                 userLabel={username}
                 isOrgAdmin={isOrgAdmin}
                 onChangePassword={() => navigate("/account/password")}
-                onManageUsers={
-                  isOrgAdmin ? () => navigate("/admin/users") : undefined
-                }
-                onManageCatalogs={
-                  isOrgAdmin ? () => navigate("/admin/stylebooks") : undefined
-                }
                 onLogout={() => void logout()}
               />
             ) : null}

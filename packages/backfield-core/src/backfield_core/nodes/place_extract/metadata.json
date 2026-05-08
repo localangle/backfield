@@ -28,56 +28,11 @@
     }
   ],
   "defaultParams": {
-    "model": "gpt-4o-mini",
+    "model": "",
+    "aiModelConfigId": null,
     "prompt_file": "prompts/extract.md",
     "prompt": "",
     "output_format_file": "prompts/_output_format.json",
     "llmTimeout": 600
-  },
-  "availableModels": [
-    {
-      "value": "gpt-5.2",
-      "label": "GPT 5.2"
-    },
-    {
-      "value": "gpt-5.1",
-      "label": "GPT 5.1"
-    },
-    {
-      "value": "gpt-5",
-      "label": "GPT-5"
-    },
-    {
-      "value": "gpt-5-mini",
-      "label": "GPT-5 Mini"
-    },
-    {
-      "value": "gpt-5-nano",
-      "label": "GPT-5 Nano"
-    },
-    {
-      "value": "gpt-4o",
-      "label": "GPT-4o"
-    },
-    {
-      "value": "gpt-4o-mini",
-      "label": "GPT-4o Mini"
-    },
-    {
-      "value": "gpt-4-turbo",
-      "label": "GPT-4 Turbo"
-    },
-    {
-      "value": "claude-haiku-4-5-20251001",
-      "label": "Claude 4.5 Haiku"
-    },
-    {
-      "value": "claude-sonnet-4-5-20250929",
-      "label": "Claude 4.5 Sonnet"
-    },
-    {
-      "value": "claude-opus-4-1-20250805",
-      "label": "Claude 4.1 Opus"
-    }
-  ]
+  }
 }

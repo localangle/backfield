@@ -15,7 +15,30 @@ from backfield_core.s3_batch import (
 def test_parse_s3_text_json_document_accepts_valid() -> None:
     doc, err = parse_s3_text_json_document(json.dumps({"text": " Hello ", "x": 1}))
     assert err is None
-    assert doc == {"text": " Hello ", "x": 1}
+    assert doc == {"text": "Hello", "x": 1}
+
+
+def test_parse_s3_text_json_document_accepts_article_text_when_text_empty() -> None:
+    raw = json.dumps(
+        {
+            "text": "",
+            "article_text": "Full narrative here.",
+            "headline": "Hi",
+        }
+    )
+    doc, err = parse_s3_text_json_document(raw)
+    assert err is None
+    assert doc is not None
+    assert doc["text"] == "Full narrative here."
+
+
+def test_parse_s3_text_json_document_prefers_longest_body_field() -> None:
+    doc, err = parse_s3_text_json_document(
+        json.dumps({"text": "Music", "article_text": "Something longer than Music."})
+    )
+    assert err is None
+    assert doc is not None
+    assert doc["text"] == "Something longer than Music."
 
 
 @pytest.mark.parametrize(

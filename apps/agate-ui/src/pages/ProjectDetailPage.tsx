@@ -9,12 +9,15 @@ import ProjectDetailFlowsTab from '@/components/project/ProjectDetailFlowsTab'
 import ProjectDetailRunsTab, {
   type ProjectDetailRunsTabHandle,
 } from '@/components/project/ProjectDetailRunsTab'
+import ProjectDetailModelsTab from '@/components/project/ProjectDetailModelsTab'
 import {
   getProjectBySlug,
   getProjectStatsBySlug,
+  getProjectEstimatedAiCost,
   updateProject,
   type Project,
   type ProjectStats,
+  type ProjectEstimatedAiCost,
 } from '@/lib/api'
 import { formatDurationMs } from '@/lib/formatDuration'
 import { Edit, Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
@@ -35,8 +38,9 @@ export default function ProjectDetailPage() {
   const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
   const systemSettingsRef = useRef<ProjectSettingsHandle>(null)
-  const credentialsSettingsRef = useRef<ProjectSettingsHandle>(null)
-
+  const integrationsSettingsRef = useRef<ProjectSettingsHandle>(null)
+  const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
+  const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
   const reload = useCallback(async () => {
     if (!slug) return
     try {
@@ -72,6 +76,25 @@ export default function ProjectDetailPage() {
       cancelled = true
     }
   }, [slug, reload])
+
+  useEffect(() => {
+    if (!project?.id) {
+      setAiCost(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const c = await getProjectEstimatedAiCost(project.id)
+        if (!cancelled) setAiCost(c)
+      } catch {
+        if (!cancelled) setAiCost(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [project?.id])
 
   useEffect(() => {
     if (editingName) inputRef.current?.focus()
@@ -186,50 +209,134 @@ export default function ProjectDetailPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Runs</CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold tabular-nums">{stats.total_runs}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Articles processed
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold tabular-nums">{stats.articles_processed}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Successful runs (one unit per run in Agate today)
+            <CardContent className="space-y-3">
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
+                  <span aria-hidden="true">🟢</span>
+                  Completed
+                </span>
+                <span className="text-2xl font-semibold tabular-nums">{stats.runs_succeeded}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
+                  <span aria-hidden="true">🟡</span>
+                  In progress
+                </span>
+                <span className="text-2xl font-semibold tabular-nums">{stats.runs_in_progress}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
+                  <span aria-hidden="true">🔴</span>
+                  Stopped
+                </span>
+                <span className="text-2xl font-semibold tabular-nums">{stats.runs_failed}</span>
+              </div>
+              <p className="text-xs text-muted-foreground pt-1 border-t border-border">
+                Stopped includes runs that ended with an error or were cancelled. Total:{' '}
+                {stats.total_runs}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Avg time per run
+                Average cost per run
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {stats.runs_succeeded > 0 &&
+              stats.avg_estimated_ai_cost_per_run != null &&
+              stats.avg_estimated_ai_cost_currency ? (
+                <>
+                  <p className="text-3xl font-semibold tabular-nums">
+                    {Number(stats.avg_estimated_ai_cost_per_run).toLocaleString(undefined, {
+                      style: 'currency',
+                      currency: stats.avg_estimated_ai_cost_currency || 'USD',
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 6,
+                    })}
+                    {stats.avg_estimated_ai_cost_incomplete ? (
+                      <span
+                        className="text-amber-700 dark:text-amber-400 ml-1"
+                        title="Some usage data was missing"
+                      >
+                        *
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Among completed runs</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-3xl font-semibold tabular-nums text-muted-foreground">—</p>
+                  <p className="text-xs text-muted-foreground mt-1">No completed runs yet</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Average time per run
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-semibold tabular-nums">
                 {formatDurationMs(stats.avg_duration_ms_per_run)}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">Finished runs only</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Wall time per completed run
+              </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Avg time per item
+                Average time per item
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-semibold tabular-nums">
                 {formatDurationMs(stats.avg_duration_ms_per_item)}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">Per successful run</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Mean duration per processed item (completed runs)
+              </p>
             </CardContent>
           </Card>
         </div>
+        {aiCost ? (
+          <Card className="mt-4">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total estimated AI usage cost
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {aiCost.attempt_count === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No tracked model usage for this project yet.
+                </p>
+              ) : (
+                <>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {Number(aiCost.estimated_total).toLocaleString(undefined, {
+                      style: 'currency',
+                      currency: aiCost.currency || 'USD',
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 6,
+                    })}
+                  </p>
+                  {aiCost.incomplete_estimate ? (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
+                      Some usage data was missing, so this total may be incomplete.
+                    </p>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
 
       <div className="w-full min-w-0">
@@ -237,7 +344,7 @@ export default function ProjectDetailPage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">Project workspace</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Flows, runs, defaults, and API credentials for this project.
+              Flows, runs, defaults, outside integrations, and API keys for this project.
             </p>
           </div>
           <div className="flex flex-shrink-0 flex-wrap items-center gap-2 sm:justify-end">
@@ -286,27 +393,27 @@ export default function ProjectDetailPage() {
                 Edit system prompt
               </Button>
             ) : null}
-            {workspaceTab === 'credentials' ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => credentialsSettingsRef.current?.openAccessKeyCreate?.()}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  New access key
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => credentialsSettingsRef.current?.openAddProviderSecret?.()}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add provider secret
-                </Button>
-              </>
+            {workspaceTab === 'integrations' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => integrationsSettingsRef.current?.openAddProviderSecret?.()}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add provider secret
+              </Button>
+            ) : null}
+            {workspaceTab === 'keys' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => keysSettingsRef.current?.openAccessKeyCreate?.()}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New access key
+              </Button>
             ) : null}
           </div>
         </div>
@@ -315,18 +422,24 @@ export default function ProjectDetailPage() {
           onValueChange={setWorkspaceTab}
           className="w-full min-w-0"
         >
-          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-4">
+          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-3 lg:grid-cols-6">
             <TabsTrigger value="flows" className="w-full">
               Flows
             </TabsTrigger>
             <TabsTrigger value="runs" className="w-full">
               Runs
             </TabsTrigger>
+            <TabsTrigger value="models" className="w-full">
+              Models
+            </TabsTrigger>
             <TabsTrigger value="settings" className="w-full">
               Settings
             </TabsTrigger>
-            <TabsTrigger value="credentials" className="w-full">
-              Credentials
+            <TabsTrigger value="integrations" className="w-full">
+              Integrations
+            </TabsTrigger>
+            <TabsTrigger value="keys" className="w-full col-span-2 sm:col-span-1 lg:col-span-1">
+              Keys
             </TabsTrigger>
           </TabsList>
           <TabsContent value="flows" className="mt-6 w-full min-w-0 outline-none">
@@ -343,6 +456,9 @@ export default function ProjectDetailPage() {
               onDataChanged={() => void reload()}
             />
           </TabsContent>
+          <TabsContent value="models" className="mt-6 w-full min-w-0 outline-none">
+            <ProjectDetailModelsTab projectId={project.id} />
+          </TabsContent>
           <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
             <ProjectSettings
               ref={systemSettingsRef}
@@ -355,14 +471,26 @@ export default function ProjectDetailPage() {
               onRemoteUpdated={reload}
             />
           </TabsContent>
-          <TabsContent value="credentials" className="mt-6 w-full min-w-0 outline-none">
+          <TabsContent value="integrations" className="mt-6 w-full min-w-0 outline-none">
             <ProjectSettings
-              ref={credentialsSettingsRef}
+              ref={integrationsSettingsRef}
               project={project}
               open={true}
               onOpenChange={() => {}}
               variant="inline"
-              inlineScope="credentials"
+              inlineScope="integrations"
+              primaryActionsInToolbar
+              onRemoteUpdated={reload}
+            />
+          </TabsContent>
+          <TabsContent value="keys" className="mt-6 w-full min-w-0 outline-none">
+            <ProjectSettings
+              ref={keysSettingsRef}
+              project={project}
+              open={true}
+              onOpenChange={() => {}}
+              variant="inline"
+              inlineScope="keys"
               primaryActionsInToolbar
               onRemoteUpdated={reload}
             />

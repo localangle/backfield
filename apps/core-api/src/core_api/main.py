@@ -14,6 +14,9 @@ from core_api.routers import auth as auth_router
 from core_api.routers import bootstrap as bootstrap_router
 from core_api.routers import credentials as credentials_router
 from core_api.routers import me as me_router
+from core_api.routers import org_ai_models as org_ai_models_router
+from core_api.routers import org_integration_secrets as org_integration_secrets_router
+from core_api.routers import project_ai_models as project_ai_models_router
 from core_api.routers import public as public_router
 from core_api.routers import secure as secure_router
 
@@ -54,7 +57,10 @@ app.include_router(public_router.router, prefix="/v1")
 app.include_router(secure_router.router, prefix="/v1")
 app.include_router(bootstrap_router.router, prefix="/v1")
 app.include_router(admin_org_router.router, prefix="/v1")
+app.include_router(org_ai_models_router.router, prefix="/v1")
+app.include_router(org_integration_secrets_router.router, prefix="/v1")
 app.include_router(credentials_router.router, prefix="/v1")
+app.include_router(project_ai_models_router.router, prefix="/v1")
 app.include_router(me_router.router, prefix="/v1")
 app.include_router(auth_router.router, prefix="/v1")
 

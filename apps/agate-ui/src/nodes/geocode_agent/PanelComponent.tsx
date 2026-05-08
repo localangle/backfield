@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "Geocode Agent",
   "icon": "MapPin",
   "color": "bg-teal-600",
-  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.",
+  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick routing, geographic reasoning, and evaluation models.",
   "category": "enrichment",
   "requiredUpstreamNodes": [
     "PlaceExtract"
@@ -37,35 +37,19 @@ const nodeMetadata = {
     "stylebook_id": null,
     "stylebookApiUrl": "",
     "projectSlug": "",
-    "evaluationModel": "gpt-5-nano",
-    "routerModel": "gpt-5-nano"
-  },
-  "availableModels": [
-    {
-      "value": "gpt-5.4",
-      "label": "GPT 5.4"
-    },
-    {
-      "value": "gpt-5.2",
-      "label": "GPT 5.2"
-    },
-    {
-      "value": "gpt-5-mini",
-      "label": "GPT-5 Mini"
-    },
-    {
-      "value": "gpt-5-nano",
-      "label": "GPT-5 Nano"
-    },
-    {
-      "value": "gpt-4o-mini",
-      "label": "GPT-4o Mini"
-    }
-  ]
+    "evaluationModel": "",
+    "geographicReasoningModel": "",
+    "routerModel": "",
+    "evaluationAiModelConfigId": null,
+    "geographicReasoningAiModelConfigId": null,
+    "routerAiModelConfigId": null,
+    "useCacheLlmAdjudication": true,
+    "useCacheLlmAdjudicationOnMissRecall": false
+  }
 };
 
-import React, { useEffect, useState } from 'react'
-import type { GraphPanelContext } from '@/components/NodePanel'
+import React, { useEffect, useMemo, useState } from 'react'
+import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -78,6 +62,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+const INVALID_SELECTION_VALUE = '__bf_model_invalid__'
+
 const DEFAULTS = {
   maxLocations: 100,
   perLocationTimeout: 300,
@@ -85,21 +71,99 @@ const DEFAULTS = {
   stylebook_id: null as number | null,
   stylebookApiUrl: '',
   projectSlug: '',
-  evaluationModel: 'gpt-5-nano',
-  routerModel: 'gpt-5-nano',
+  evaluationModel: '',
+  geographicReasoningModel: '',
+  routerModel: '',
+  evaluationAiModelConfigId: null as string | null,
+  geographicReasoningAiModelConfigId: null as string | null,
+  routerAiModelConfigId: null as string | null,
+  useCacheLlmAdjudication: true,
+  useCacheLlmAdjudicationOnMissRecall: false,
 }
 
 const PANEL_DESCRIPTION =
-  'Turns extracted places into map-ready results: optional location cache, smart routing, then external geocoding. Pick models for area checks and for how each place is looked up after cache.'
+  'Turns extracted places into map-ready results: optional location cache, smart routing, then external geocoding. Pick three models: routing after cache, geographic reasoning during lookup, and evaluation for ambiguous hits plus display lines.'
 
-/** Same options as ``metadata.json`` ``availableModels`` (sync-nodes also injects ``nodeMetadata`` for the app). */
-const AVAILABLE_MODELS = [
-  { value: 'gpt-5.4', label: 'GPT 5.4' },
-  { value: 'gpt-5.2', label: 'GPT 5.2' },
-  { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
-  { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-]
+type UnifiedAiModelOption = {
+  selectValue: string
+  label: string
+  providerModelId: string
+  configId?: string
+}
+
+function catalogToSelectOptions(catalog: ProjectAiModelOption[]): UnifiedAiModelOption[] {
+  const out: UnifiedAiModelOption[] = []
+  const seen = new Set<string>()
+  for (const row of catalog) {
+    const sv = row.configId ?? row.providerModelId
+    if (sv === '' || seen.has(sv)) continue
+    seen.add(sv)
+    out.push({
+      selectValue: sv,
+      label: row.label,
+      providerModelId: row.providerModelId,
+      configId: row.configId,
+    })
+  }
+  return out
+}
+
+function resolvedEvaluationSelectValue(
+  params: Record<string, unknown>,
+  catalog: ProjectAiModelOption[],
+): string {
+  const cfg = params.evaluationAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
+  const model = String(params.evaluationModel ?? '')
+  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
+  if (hit?.configId) return hit.configId
+  return model.trim()
+}
+
+function resolvedRouterSelectValue(
+  params: Record<string, unknown>,
+  catalog: ProjectAiModelOption[],
+): string {
+  const cfg = params.routerAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
+  const model = String(params.routerModel ?? '')
+  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
+  if (hit?.configId) return hit.configId
+  return model.trim()
+}
+
+function hasExplicitEvaluationChoice(data: Record<string, unknown>): boolean {
+  const cfg = data.evaluationAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return true
+  const m = data.evaluationModel
+  return typeof m === 'string' && m.trim() !== ''
+}
+
+function hasExplicitRouterChoice(data: Record<string, unknown>): boolean {
+  const cfg = data.routerAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return true
+  const m = data.routerModel
+  return typeof m === 'string' && m.trim() !== ''
+}
+
+function resolvedGeographicReasoningSelectValue(
+  params: Record<string, unknown>,
+  catalog: ProjectAiModelOption[],
+): string {
+  const cfg = params.geographicReasoningAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
+  const model = String(params.geographicReasoningModel ?? '')
+  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
+  if (hit?.configId) return hit.configId
+  return model.trim()
+}
+
+function hasExplicitGeographicReasoningChoice(data: Record<string, unknown>): boolean {
+  const cfg = data.geographicReasoningAiModelConfigId
+  if (typeof cfg === 'string' && cfg.trim() !== '') return true
+  const m = data.geographicReasoningModel
+  return typeof m === 'string' && m.trim() !== ''
+}
 
 interface GeocodeAgentPanelProps {
   node: any
@@ -139,12 +203,14 @@ export default function GeocodeAgentPanel({
   }
   const params = merged
 
-  const modelOptions = AVAILABLE_MODELS
-
   const isDisabled = !(editMode && setNodes)
   const orgId = graphContext?.organizationId ?? null
+  const projectId = graphContext?.projectId ?? null
   const [stylebooks, setStylebooks] = useState<OrgStylebook[]>([])
   const [stylebooksError, setStylebooksError] = useState<string | null>(null)
+  const [catalogRows, setCatalogRows] = useState<ProjectAiModelOption[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!orgId || !params.useCache) {
@@ -169,6 +235,89 @@ export default function GeocodeAgentPanel({
     }
   }, [orgId, params.useCache])
 
+  useEffect(() => {
+    const fetcher = graphContext?.fetchProjectAiModels
+    if (projectId == null || fetcher == null) {
+      setCatalogRows([])
+      setCatalogError(null)
+      setCatalogLoading(false)
+      return
+    }
+    let cancelled = false
+    setCatalogLoading(true)
+    setCatalogError(null)
+    void fetcher(['text', 'json'])
+      .then((rows) => {
+        if (!cancelled) {
+          setCatalogRows(rows)
+          setCatalogLoading(false)
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setCatalogRows([])
+          setCatalogError(e instanceof Error ? e.message : 'Could not load models.')
+          setCatalogLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, graphContext?.fetchProjectAiModels])
+
+  const paramsRecord = params as Record<string, unknown>
+
+  const modelSelectOptions = useMemo(
+    () => catalogToSelectOptions(catalogRows),
+    [catalogRows],
+  )
+
+  const resolvedEval = resolvedEvaluationSelectValue(paramsRecord, catalogRows)
+  const resolvedRouter = resolvedRouterSelectValue(paramsRecord, catalogRows)
+  const resolvedGeo = resolvedGeographicReasoningSelectValue(paramsRecord, catalogRows)
+
+  const evalSelectionValid =
+    resolvedEval !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedEval)
+  const routerSelectionValid =
+    resolvedRouter !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedRouter)
+  const geoSelectionValid =
+    resolvedGeo !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedGeo)
+
+  const nodeDataFlat = (node.data || {}) as Record<string, unknown>
+
+  const showInvalidEvalPersisted =
+    Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
+    hasExplicitEvaluationChoice(nodeDataFlat) &&
+    !evalSelectionValid
+
+  const showInvalidRouterPersisted =
+    Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
+    hasExplicitRouterChoice(nodeDataFlat) &&
+    !routerSelectionValid
+
+  const showInvalidGeoPersisted =
+    Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
+    hasExplicitGeographicReasoningChoice(nodeDataFlat) &&
+    !geoSelectionValid
+
+  const evalRadixValue = evalSelectionValid
+    ? resolvedEval
+    : showInvalidEvalPersisted
+      ? INVALID_SELECTION_VALUE
+      : undefined
+
+  const routerRadixValue = routerSelectionValid
+    ? resolvedRouter
+    : showInvalidRouterPersisted
+      ? INVALID_SELECTION_VALUE
+      : undefined
+
+  const geoRadixValue = geoSelectionValid
+    ? resolvedGeo
+    : showInvalidGeoPersisted
+      ? INVALID_SELECTION_VALUE
+      : undefined
+
   const mergeData = (base: Record<string, unknown>) => {
     const out = {
       ...DEFAULTS,
@@ -177,6 +326,49 @@ export default function GeocodeAgentPanel({
     delete (out as { stylebookId?: unknown }).stylebookId
     return out
   }
+
+  /** Fill missing model picks from the effective catalog once it loads (no silent built-in presets). */
+  useEffect(() => {
+    if (!editMode || !setNodes || catalogLoading || catalogRows.length === 0) return
+    const data = nodeDataFlat
+    const needEval = !hasExplicitEvaluationChoice(data)
+    const needRouter = !hasExplicitRouterChoice(data)
+    const needGeo = !hasExplicitGeographicReasoningChoice(data)
+    if (!needEval && !needRouter && !needGeo) return
+    const first = modelSelectOptions[0]
+    if (!first) return
+    const patch: Record<string, unknown> = {}
+    if (needEval) {
+      patch.evaluationModel = first.providerModelId
+      patch.evaluationAiModelConfigId = first.configId ?? null
+    }
+    if (needRouter) {
+      patch.routerModel = first.providerModelId
+      patch.routerAiModelConfigId = first.configId ?? null
+    }
+    if (needGeo) {
+      patch.geographicReasoningModel = first.providerModelId
+      patch.geographicReasoningAiModelConfigId = first.configId ?? null
+    }
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({ ...(n.data || {}), ...patch }),
+            }
+          : n,
+      ),
+    )
+  }, [
+    editMode,
+    setNodes,
+    catalogLoading,
+    catalogRows,
+    modelSelectOptions,
+    node.id,
+    node.data,
+  ])
 
   /** When cache is on, ensure a concrete catalog id (no empty selection). */
   useEffect(() => {
@@ -219,6 +411,34 @@ export default function GeocodeAgentPanel({
     }
   }
 
+  const handleCacheLlmAdjChange = (checked: boolean) => {
+    if (!setNodes) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({ ...(n.data || {}), useCacheLlmAdjudication: checked }),
+            }
+          : n,
+      ),
+    )
+  }
+
+  const handleCacheLlmMissRecallChange = (checked: boolean) => {
+    if (!setNodes) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({ ...(n.data || {}), useCacheLlmAdjudicationOnMissRecall: checked }),
+            }
+          : n,
+      ),
+    )
+  }
+
   const paramStylebookId = resolvedStylebookId(params as Record<string, unknown>)
   const stylebookSelectValue =
     paramStylebookId != null ? String(paramStylebookId) : ''
@@ -235,20 +455,65 @@ export default function GeocodeAgentPanel({
     )
   }
 
-  const handleEvaluationModel = (value: string) => {
-    if (!setNodes) return
+  const handleEvaluationModel = (selectValue: string) => {
+    if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
+    const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
-        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), evaluationModel: value }) } : n,
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({
+                ...(n.data || {}),
+                evaluationModel: providerModelId,
+                evaluationAiModelConfigId: configId ?? null,
+              }),
+            }
+          : n,
       ),
     )
   }
 
-  const handleRouterModel = (value: string) => {
-    if (!setNodes) return
+  const handleRouterModel = (selectValue: string) => {
+    if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
+    const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
-        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), routerModel: value }) } : n,
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({
+                ...(n.data || {}),
+                routerModel: providerModelId,
+                routerAiModelConfigId: configId ?? null,
+              }),
+            }
+          : n,
+      ),
+    )
+  }
+
+  const handleGeographicReasoningModel = (selectValue: string) => {
+    if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
+    const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({
+                ...(n.data || {}),
+                geographicReasoningModel: providerModelId,
+                geographicReasoningAiModelConfigId: configId ?? null,
+              }),
+            }
+          : n,
       ),
     )
   }
@@ -283,6 +548,25 @@ export default function GeocodeAgentPanel({
         ? JSON.stringify(locationsList[0], null, 2)
         : ''
 
+  const catalogHint =
+    (projectId == null || graphContext?.fetchProjectAiModels == null) && editMode ? (
+      <p className="text-xs text-muted-foreground">
+        Save this flow under a project to choose models your organization enabled for this project.
+      </p>
+    ) : null
+
+  const catalogEmptyHint =
+    !catalogLoading &&
+    !catalogError &&
+    projectId != null &&
+    graphContext?.fetchProjectAiModels != null &&
+    modelSelectOptions.length === 0 ? (
+      <p className="text-xs text-muted-foreground">
+        No models available for this project yet. Ask an administrator to enable models for your organization, then turn
+        them on for this project in project settings if needed.
+      </p>
+    ) : null
+
   return (
     <>
       <div className="space-y-3">
@@ -299,49 +583,109 @@ export default function GeocodeAgentPanel({
 
         <div className="space-y-3 mt-2">
           <div className="space-y-2">
-            <Label className="text-xs">Evaluation model</Label>
+            <Label className="text-xs">Routing model</Label>
+            {catalogHint}
+            {projectId != null && catalogLoading && (
+              <p className="text-xs text-muted-foreground">Loading models…</p>
+            )}
+            {catalogError ? <p className="text-xs text-destructive">{catalogError}</p> : null}
+            {catalogEmptyHint}
+            {showInvalidRouterPersisted ? (
+              <p className="text-xs text-muted-foreground">
+                The saved routing model is no longer available. Choose another model below.
+              </p>
+            ) : null}
             <Select
-              value={String(params.evaluationModel)}
-              onValueChange={handleEvaluationModel}
-              disabled={isDisabled}
+              value={routerRadixValue}
+              onValueChange={handleRouterModel}
+              disabled={isDisabled || modelSelectOptions.length === 0}
             >
               <SelectTrigger className="text-xs">
-                <SelectValue placeholder="Model" />
+                <SelectValue placeholder="Choose a model" />
               </SelectTrigger>
               <SelectContent>
-                {modelOptions.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
+                {showInvalidRouterPersisted ? (
+                  <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                    Saved model unavailable
+                  </SelectItem>
+                ) : null}
+                {modelSelectOptions.map((m) => (
+                  <SelectItem key={`rt-${m.selectValue}`} value={m.selectValue}>
                     {m.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Used when the area geocoder asks the model to judge ambiguous map results.
+              After cache: chooses how each place is looked up (web vs structured only). Run records can include a short
+              audit for support.
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs">Routing model</Label>
+            <Label className="text-xs">Geographic reasoning model</Label>
+            {showInvalidGeoPersisted ? (
+              <p className="text-xs text-muted-foreground">
+                The saved geographic reasoning model is no longer available. Choose another model below.
+              </p>
+            ) : null}
             <Select
-              value={String(params.routerModel)}
-              onValueChange={handleRouterModel}
-              disabled={isDisabled}
+              value={geoRadixValue}
+              onValueChange={handleGeographicReasoningModel}
+              disabled={isDisabled || modelSelectOptions.length === 0}
             >
               <SelectTrigger className="text-xs">
-                <SelectValue placeholder="Model" />
+                <SelectValue placeholder="Choose a model" />
               </SelectTrigger>
               <SelectContent>
-                {modelOptions.map((m) => (
-                  <SelectItem key={`r-${m.value}`} value={m.value}>
+                {showInvalidGeoPersisted ? (
+                  <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                    Saved model unavailable
+                  </SelectItem>
+                ) : null}
+                {modelSelectOptions.map((m) => (
+                  <SelectItem key={`geo-${m.selectValue}`} value={m.selectValue}>
                     {m.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Model used after cache check to choose how each place is looked up (web vs structured only). Run
-              records can include a short audit for support.
+              Used during external geocoding for places, addresses, loose regions, natural features, and streets (search
+              helpers, candidate picks, bounding boxes).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs">Evaluation model</Label>
+            {showInvalidEvalPersisted ? (
+              <p className="text-xs text-muted-foreground">
+                The saved evaluation model is no longer available. Choose another model below.
+              </p>
+            ) : null}
+            <Select
+              value={evalRadixValue}
+              onValueChange={handleEvaluationModel}
+              disabled={isDisabled || modelSelectOptions.length === 0}
+            >
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Choose a model" />
+              </SelectTrigger>
+              <SelectContent>
+                {showInvalidEvalPersisted ? (
+                  <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                    Saved model unavailable
+                  </SelectItem>
+                ) : null}
+                {modelSelectOptions.map((m) => (
+                  <SelectItem key={`ev-${m.selectValue}`} value={m.selectValue}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Judges ambiguous area geocoder results and refines the human-readable location line in consolidated output.
             </p>
           </div>
 
@@ -386,14 +730,42 @@ export default function GeocodeAgentPanel({
               </Select>
               {orgId == null && (
                 <p className="text-xs text-muted-foreground">
-                  Save the flow to a project (or open an existing project flow) to load catalogs for your
-                  organization.
+                  Save the flow to a project (or open an existing project flow) to load catalogs for your organization.
                 </p>
               )}
               {orgId != null && params.useCache && stylebooks.length === 0 && !stylebooksError && (
                 <p className="text-xs text-muted-foreground">Loading catalogs…</p>
               )}
               {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
+              <div className="flex items-center space-x-2 pt-2">
+                <Checkbox
+                  id="geocode-cache-llm-adj"
+                  checked={params.useCacheLlmAdjudication !== false}
+                  onCheckedChange={(c) => handleCacheLlmAdjChange(c === true)}
+                  disabled={isDisabled}
+                />
+                <Label htmlFor="geocode-cache-llm-adj" className="text-xs font-medium cursor-pointer">
+                  Use evaluation model when cache is ambiguous or fails sanity checks
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground ml-6">
+                Runs after strict catalog and substrate fingerprint tiers: chooses among recalled catalog candidates
+                (same evaluation model as area judging).
+              </p>
+              <div className="flex items-center space-x-2 pt-1">
+                <Checkbox
+                  id="geocode-cache-llm-recall"
+                  checked={params.useCacheLlmAdjudicationOnMissRecall === true}
+                  onCheckedChange={(c) => handleCacheLlmMissRecallChange(c === true)}
+                  disabled={isDisabled}
+                />
+                <Label htmlFor="geocode-cache-llm-recall" className="text-xs font-medium cursor-pointer">
+                  Also adjudicate on strict cache miss when recall finds candidates
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground ml-6">
+                Optional; increases LLM usage when aliases nearly match but strict tiers miss.
+              </p>
             </div>
           )}
         </div>

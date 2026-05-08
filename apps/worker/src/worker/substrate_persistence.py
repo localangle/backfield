@@ -96,12 +96,14 @@ def persist_from_consolidated(
                 settings.canonicalization_mode == "ai_assisted"
                 and plan_requires_llm_canonical_adjudication(plan, loc)
             ):
+                adj_model = (settings.adjudication_model or "").strip() or "gpt-5-nano"
                 plan = adjudicate_ambiguous_plan_with_llm(
                     session,
                     plan=plan,
                     location=loc,
                     stylebook_id=stylebook_id,
-                    model=settings.adjudication_model,
+                    model=adj_model,
+                    model_config_id=settings.adjudication_ai_model_config_id,
                 )
             if settings.auto_apply_canonicalization:
                 apply_canonical_persist_plan(

@@ -117,7 +117,7 @@ def test_execute_s3_batch_setup_fanout_and_finalize(batch_engine, monkeypatch):
 
     monkeypatch.setattr(worker_tasks, "_s3_client_from_env", _fake_s3)
 
-    def _stub_execute_graph(spec, node_runners=None):  # noqa: ARG001
+    def _stub_execute_graph(spec, node_runners=None, *, before_each_node=None, **kwargs):  # noqa: ARG001
         return {"s3_input": {"text": "stub"}}
 
     monkeypatch.setattr(worker_tasks, "execute_graph", _stub_execute_graph)

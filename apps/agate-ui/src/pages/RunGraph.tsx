@@ -33,6 +33,7 @@ import {
   type Run,
 } from '@/lib/api'
 import { nodeOutputLookupFromReactFlow } from '@/lib/nodeOutputs'
+import { fetchProjectEffectiveAiModels } from '@/lib/core-api'
 import { ArrowLeft, Save, Edit, Loader2, Play, Trash2 } from 'lucide-react'
 
 export default function RunGraph() {
@@ -80,10 +81,26 @@ export default function RunGraph() {
   const [resolvedFlowProject, setResolvedFlowProject] = useState<Project | null>(null)
   const [flowProjectLoading, setFlowProjectLoading] = useState(false)
 
+  const flowProjectId = resolvedFlowProject?.id ?? null
+
+  const fetchProjectAiModels = useCallback(async (capabilities: string[]) => {
+    if (flowProjectId == null) return []
+    const rows = await fetchProjectEffectiveAiModels(flowProjectId, capabilities)
+    return rows.map((r) => ({
+      label:
+        typeof r.name === 'string' && r.name.trim() !== ''
+          ? r.name.trim()
+          : String(r.provider_model_id ?? ''),
+      providerModelId: r.provider_model_id,
+      configId: r.id,
+    }))
+  }, [flowProjectId])
+
   const graphContext = useMemo(() => {
     if (flowProjectLoading) {
       return {
         organizationId: null as number | null,
+        projectId: null as number | null,
         workspaceDefaultStylebookId: null as number | null,
         workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
@@ -94,6 +111,7 @@ export default function RunGraph() {
     if (!p) {
       return {
         organizationId: null as number | null,
+        projectId: null as number | null,
         workspaceDefaultStylebookId: null as number | null,
         workspaceStylebookName: null as string | null,
         missingWorkspaceStylebook: false,
@@ -106,12 +124,93 @@ export default function RunGraph() {
       typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null
     return {
       organizationId: p.organization_id ?? null,
+      projectId: p.id ?? null,
       workspaceDefaultStylebookId: sid,
       workspaceStylebookName: nm,
       missingWorkspaceStylebook: sid == null && nm == null,
       flowProjectLoading: false,
+      fetchProjectAiModels:
+        flowProjectId != null ? fetchProjectAiModels : undefined,
     }
-  }, [resolvedFlowProject, flowProjectLoading])
+  }, [
+    resolvedFlowProject,
+    flowProjectLoading,
+    flowProjectId,
+    fetchProjectAiModels,
+  ])
+
+  const getDefaultNodeData = useCallback(
+    (type: string) => {
+      switch (type) {
+        case 'TextInput':
+          return {
+            text: '',
+            onChange: (text: string) => {
+              setNodes((nds) =>
+                nds.map((node) =>
+                  node.type === 'TextInput'
+                    ? { ...node, data: { ...node.data, text } }
+                    : node,
+                ),
+              )
+            },
+          }
+        case 'Embed':
+          return {
+            model: 'text-embedding-3-small',
+            dimensions: 1536,
+          }
+        case 'LLMEnrich':
+          return {
+            model: 'gpt-4o-mini',
+            prompt: 'Analyze the following text: {text}',
+            json_format: '{"sentiment": "positive|negative|neutral", "confidence": 0.95}',
+          }
+        case 'PlaceExtract': {
+          const meta = nodeMetadata.find((m) => m.type === 'PlaceExtract')
+          return (
+            meta?.defaultParams ?? {
+              model: '',
+              aiModelConfigId: null,
+            }
+          )
+        }
+        case 'GeocodeAgent': {
+          const meta = nodeMetadata.find((m) => m.type === 'GeocodeAgent')
+          const base = { ...(meta?.defaultParams ?? {}) } as Record<string, unknown>
+          const wsid = resolvedFlowProject?.workspace_stylebook_id
+          if (typeof wsid === 'number') {
+            base.stylebook_id = wsid
+          }
+          return base
+        }
+        case 'GeocodeSimple':
+          return {
+            user_agent: 'agate-ai-platform/1.0',
+            rate_limit: 1.0,
+          }
+        case 'S3Input':
+          return {
+            bucket: '',
+            folder_path: '',
+          }
+        case 'JSONInput':
+          return {
+            text: '',
+          }
+        case 'APIInput':
+          return {
+            enable_api_access: true,
+            sample_json: '',
+          }
+        case 'Output':
+          return {}
+        default:
+          return {}
+      }
+    },
+    [resolvedFlowProject, setNodes],
+  )
 
   // Find the selected node
   const selectedNode = nodes.find(n => n.id === selectedNodeId)
@@ -489,64 +588,9 @@ export default function RunGraph() {
 
       setNodes((nds) => nds.concat(newNode))
     },
-    [reactFlowInstance, setNodes]
+    [reactFlowInstance, setNodes, getDefaultNodeData]
   )
 
-  const getDefaultNodeData = (type: string) => {
-    switch (type) {
-      case 'TextInput':
-        return {
-          text: '',
-          onChange: (text: string) => {
-            setNodes((nds) =>
-              nds.map((node) =>
-                node.type === 'TextInput'
-                  ? { ...node, data: { ...node.data, text } }
-                  : node
-              )
-            )
-          },
-        }
-      case 'Embed':
-        return {
-          model: 'text-embedding-3-small',
-          dimensions: 1536,
-        }
-      case 'LLMEnrich':
-        return {
-          model: 'gpt-4o-mini',
-          prompt: 'Analyze the following text: {text}',
-          json_format: '{"sentiment": "positive|negative|neutral", "confidence": 0.95}',
-        }
-      case 'PlaceExtract':
-        return {
-          model: 'gpt-4o-mini',
-        }
-      case 'GeocodeSimple':
-        return {
-          user_agent: 'agate-ai-platform/1.0',
-          rate_limit: 1.0,
-        }
-      case 'S3Input':
-        return {
-          bucket: '',
-          folder_path: '',
-        }
-      case 'JSONInput':
-        return {
-          text: '',
-        }
-      case 'APIInput':
-        return {
-          enable_api_access: true,
-          sample_json: '',
-        }
-      case 'Output':
-        return {}
-      default:
-        return {}
-    }
-  }
   
   const handleDeleteNode = useCallback((nodeId: string) => {
     // Remove the node
