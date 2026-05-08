@@ -11,6 +11,7 @@ from backfield_ai.constants import (
     ORG_AI_PROVIDER_INTEGRATION_KEYS,
     is_built_in_ai_provider_integration_key,
     is_custom_ai_credential_integration_key,
+    is_platform_integration_key,
 )
 from backfield_db import BackfieldAiModelConfig, BackfieldOrganizationIntegrationSecret
 from backfield_db.crypto import encrypt_secret, fernet_from_env
@@ -307,6 +308,8 @@ def upsert_org_integration_secret(
     key = integration_key.strip()
     if is_built_in_ai_provider_integration_key(key):
         pass
+    elif is_platform_integration_key(key):
+        pass
     elif is_custom_ai_credential_integration_key(key):
         existing_chk = session.exec(
             select(BackfieldOrganizationIntegrationSecret).where(
@@ -352,7 +355,7 @@ def upsert_org_integration_secret(
             updated_at=existing.updated_at,
         )
 
-    if not is_built_in_ai_provider_integration_key(key):
+    if not (is_built_in_ai_provider_integration_key(key) or is_platform_integration_key(key)):
         raise HTTPException(status_code=404, detail="Unknown credential key")
 
     row = BackfieldOrganizationIntegrationSecret(
@@ -422,7 +425,9 @@ def delete_org_integration_secret(
 ) -> None:
     key = integration_key.strip()
     if not (
-        is_built_in_ai_provider_integration_key(key) or is_custom_ai_credential_integration_key(key)
+        is_built_in_ai_provider_integration_key(key)
+        or is_custom_ai_credential_integration_key(key)
+        or is_platform_integration_key(key)
     ):
         raise HTTPException(status_code=400, detail="Unsupported integration_key")
 

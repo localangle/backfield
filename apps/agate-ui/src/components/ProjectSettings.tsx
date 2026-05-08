@@ -24,7 +24,6 @@ import { format } from 'date-fns'
 export type ProjectSettingsHandle = {
   openSystemPromptEdit?: () => void
   openAccessKeyCreate?: () => void
-  openAddProviderSecret?: () => void
 }
 
 interface ProjectSettingsProps {
@@ -34,14 +33,15 @@ interface ProjectSettingsProps {
   /** Full-width panel for project detail page (no dialog chrome). */
   variant?: 'dialog' | 'inline'
   /** With `variant="inline"`, render only this block (project detail tabs). */
-  inlineScope?: 'system' | 'integrations' | 'keys'
+  inlineScope?: 'system' | 'keys'
   /** Called after project metadata changes (name, slug, system prompt). */
   onRemoteUpdated?: () => void
   /** When true with `variant="inline"`, primary actions render in the project page toolbar. */
   primaryActionsInToolbar?: boolean
 }
 
-const AVAILABLE_KEY_TYPES = [
+/** LLM / Azure only — geocoding, search, and S3 use the Integrations tab. */
+const CREDENTIAL_KEY_TYPES = [
   { value: 'OPENAI_API_KEY', label: 'OpenAI API Key', description: 'For GPT models and embeddings' },
   { value: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', description: 'For Claude models' },
   { value: 'GEMINI_API_KEY', label: 'Gemini API Key', description: 'For Google Gemini models' },
@@ -52,16 +52,9 @@ const AVAILABLE_KEY_TYPES = [
     label: 'Azure OpenAI endpoint',
     description: 'Your Azure resource endpoint URL (for example from the Azure portal)',
   },
-  { value: 'GEOCODIO_API_KEY', label: 'Geocodio API Key', description: 'For geocoding services' },
-  { value: 'PELIAS_API_KEY', label: 'Pelias API Key', description: 'For geocoding services' },
-  { value: 'BRAVE_SEARCH_API_KEY', label: 'Brave Search API Key', description: 'For web search and place information' },
-  { value: 'AWS_ACCESS_KEY_ID', label: 'AWS Access Key ID', description: 'For S3 bucket access' },
-  { value: 'AWS_SECRET_ACCESS_KEY', label: 'AWS Secret Access Key', description: 'For S3 bucket access' },
-  { value: 'AWS_SESSION_TOKEN', label: 'AWS Session Token', description: 'For temporary S3 credentials (optional)' },
-  { value: 'MAPBOX_API_TOKEN', label: 'Mapbox API Token', description: 'Required for map visualizations on processed items' },
 ]
 
-const KNOWN_PROVIDER_KEYS = new Set(AVAILABLE_KEY_TYPES.map((t) => t.value))
+const KNOWN_CREDENTIAL_KEYS = new Set(CREDENTIAL_KEY_TYPES.map((t) => t.value))
 
 const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(function ProjectSettings(
   {
@@ -108,11 +101,6 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
     if (variant === 'inline' && inlineScope === 'keys') {
       return {
         openAccessKeyCreate: () => accessKeysPanelRef.current?.openCreateDialog(),
-      }
-    }
-    if (variant === 'inline' && inlineScope === 'integrations') {
-      return {
-        openAddProviderSecret: () => setShowAddForm(true),
       }
     }
     return {}
@@ -292,14 +280,14 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
   }
 
   const getKeyTypeInfo = (keyName: string) => {
-    return AVAILABLE_KEY_TYPES.find(type => type.value === keyName)
+    return CREDENTIAL_KEY_TYPES.find((type) => type.value === keyName)
   }
 
-  const providerKeys = apiKeys.filter((k) => KNOWN_PROVIDER_KEYS.has(k.key_name))
+  const providerKeys = apiKeys.filter((k) => KNOWN_CREDENTIAL_KEYS.has(k.key_name))
 
   const getAvailableKeyTypes = () => {
     const existingKeyNames = providerKeys.map((key) => key.key_name)
-    return AVAILABLE_KEY_TYPES.filter((type) => !existingKeyNames.includes(type.value))
+    return CREDENTIAL_KEY_TYPES.filter((type) => !existingKeyNames.includes(type.value))
   }
 
   if (!project) return null
@@ -460,13 +448,14 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
           </div>
   )
 
-  /** Provider secrets (OpenAI, Mapbox, …). ``toolbarExternalActions``: hide inline Add when parent toolbar has it. */
+  /** Model and map keys not managed on the Integrations tab. */
   const integrationSecretsSection = (toolbarExternalActions: boolean) => (
     <>
-      <h4 className="text-base font-semibold mb-1">Integration secrets</h4>
+      <h4 className="text-base font-semibold mb-1">Model and map keys</h4>
       <p className="text-sm text-muted-foreground mb-4">
-        Keys for OpenAI, Mapbox, AWS, and other providers used by flows in this project (stored
-        encrypted on the server).
+        Optional keys for models on this project. Prefer organization AI model settings and the
+        project Models tab for LLM credentials. Geocoding, search, and S3 belong on the
+        Integrations tab.
       </p>
       {loading ? (
         <div className="text-center py-4">
@@ -483,7 +472,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
                 disabled={saving}
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Add provider secret
+                Add key
               </Button>
             </div>
           ) : null}
@@ -491,9 +480,9 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
             <Card>
               <CardContent className="text-center py-8">
                 <Key className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h4 className="font-medium mb-2">No provider secrets</h4>
+                <h4 className="font-medium mb-2">No model or map keys</h4>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Add secrets for OpenAI, Mapbox, AWS, and other integrated providers.
+                  Add keys here only when a flow needs a project-specific model credential.
                 </p>
               </CardContent>
             </Card>
@@ -546,7 +535,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
             </div>
           )}
 
-          {editingKey && KNOWN_PROVIDER_KEYS.has(editingKey) && (
+          {editingKey && KNOWN_CREDENTIAL_KEYS.has(editingKey) && (
             <Card className="mt-4">
               <CardHeader>
                 <CardTitle className="text-base">Edit API key</CardTitle>
@@ -588,7 +577,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
           {showAddForm && (
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle className="text-base">Add provider secret</CardTitle>
+                <CardTitle className="text-base">Add model or map key</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
@@ -688,15 +677,6 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
     )
   }
 
-  if (variant === 'inline' && inlineScope === 'integrations') {
-    return inlineShell(
-      <>
-        {errorAlert}
-        {integrationSecretsSection(primaryActionsInToolbar)}
-      </>
-    )
-  }
-
   if (variant === 'inline' && inlineScope === 'keys') {
     return inlineShell(
       <>
@@ -728,7 +708,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
             Project Settings - {project.name}
           </DialogTitle>
           <DialogDescription>
-            Manage project settings, API access keys, and provider integration secrets.
+            Manage project settings, API access keys, and optional model or map keys.
           </DialogDescription>
         </DialogHeader>
 

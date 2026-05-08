@@ -17,7 +17,8 @@ import ChangePasswordPage from './pages/ChangePassword'
 import ManageUsers from './pages/ManageUsers'
 import ManageCatalogs from './pages/ManageCatalogs'
 import AiModelsSettings from './pages/AiModelsSettings'
-import SettingsPage from './pages/Settings'
+import OrgIntegrationsSettings from './pages/OrgIntegrationsSettings'
+import SettingsLayout from './pages/SettingsLayout'
 import HubLayout from './components/HubLayout'
 import { AppMessageProvider } from '@/components/AppMessageProvider'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -189,30 +190,24 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/admin/ai-models"
-        element={
-          <ProtectedRoute>
-            <OrgAdminRoute>
-              <HubLayout>
-                <AiModelsSettings />
-              </HubLayout>
-            </OrgAdminRoute>
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/admin/ai-models" element={<Navigate to="/settings/models" replace />} />
+      <Route path="/admin/integrations" element={<Navigate to="/settings/integrations" replace />} />
       <Route
         path="/settings"
         element={
           <ProtectedRoute>
             <OrgAdminRoute>
               <HubLayout>
-                <SettingsPage />
+                <SettingsLayout />
               </HubLayout>
             </OrgAdminRoute>
           </ProtectedRoute>
         }
-      />
+      >
+        <Route index element={<Navigate to="models" replace />} />
+        <Route path="models" element={<AiModelsSettings />} />
+        <Route path="integrations" element={<OrgIntegrationsSettings />} />
+      </Route>
       <Route
         path="/flow/:graphId"
         element={

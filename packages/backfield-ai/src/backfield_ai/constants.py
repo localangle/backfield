@@ -66,6 +66,30 @@ def is_project_model_override_integration_key(integration_key: str) -> bool:
     return integration_key.startswith(INTEGRATION_KEY_AI_PROJECT_MODEL_PREFIX)
 
 
+# Organization preset slots for geocoding, search, and S3 (Core API + worker env).
+INTEGRATION_KEY_PLATFORM_GEOCODE_EARTH = "platform.geocode.geocode_earth"
+INTEGRATION_KEY_PLATFORM_GEOCODIO = "platform.geocode.geocodio"
+INTEGRATION_KEY_PLATFORM_BRAVE_SEARCH = "platform.search.brave"
+INTEGRATION_KEY_PLATFORM_S3_ACCESS_KEY_ID = "platform.storage.s3_access_key_id"
+INTEGRATION_KEY_PLATFORM_S3_SECRET_ACCESS_KEY = "platform.storage.s3_secret_access_key"
+INTEGRATION_KEY_PLATFORM_S3_SESSION_TOKEN = "platform.storage.s3_session_token"
+
+ORG_PLATFORM_INTEGRATION_KEYS: frozenset[str] = frozenset(
+    {
+        INTEGRATION_KEY_PLATFORM_GEOCODE_EARTH,
+        INTEGRATION_KEY_PLATFORM_GEOCODIO,
+        INTEGRATION_KEY_PLATFORM_BRAVE_SEARCH,
+        INTEGRATION_KEY_PLATFORM_S3_ACCESS_KEY_ID,
+        INTEGRATION_KEY_PLATFORM_S3_SECRET_ACCESS_KEY,
+        INTEGRATION_KEY_PLATFORM_S3_SESSION_TOKEN,
+    }
+)
+
+
+def is_platform_integration_key(integration_key: str) -> bool:
+    return integration_key in ORG_PLATFORM_INTEGRATION_KEYS
+
+
 # Project-level default model roles (graph nodes resolve these at execution time).
 AI_DEFAULT_ROLE_GEOCODE_ROUTER = "geocode.router"
 AI_DEFAULT_ROLE_GEOCODE_EVALUATION = "geocode.evaluation"
