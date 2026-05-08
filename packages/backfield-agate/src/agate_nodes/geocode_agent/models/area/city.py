@@ -19,15 +19,21 @@ class City(Area):
 
     def _prep(self) -> Dict[str, Any]:
         """Prepare city data for geocoding."""
+        boundary_country = self.country if isinstance(self.country, str) and self.country.strip() else None
         return {
             "pelias_structured": {
                 "locality": self.name,
                 "region": self.state,
                 "country": self.country,
-                "size": 1,
+                "size": 5,
+                "layers": "locality",
+                **({"boundary.country": boundary_country} if boundary_country else {}),
             },
             "pelias_search": {
                 "text": f"{self.name}, {self.state}, {self.country}",
+                "size": 5,
+                "layers": "locality",
+                **({"boundary.country": boundary_country} if boundary_country else {}),
             },
             "geocodio": {
                 "query": f"{self.name}, {self.state}, {self.country}",

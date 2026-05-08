@@ -3,7 +3,10 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from agate_utils.geocoding.geocoding_types import GeocodingResult
-from agate_utils.geocoding.pelias import geocode_search as pelias_search, geocode_structured as pelias_structured
+from agate_utils.geocoding.pelias import (
+    geocode_search_candidates as pelias_search_candidates,
+    geocode_structured_candidates as pelias_structured_candidates,
+)
 from agate_utils.geocoding.geocodio import geocode_search as geocodio_search
 from agate_utils.geocoding.nominatim import geocode_address
 from agate_utils.llm import call_llm
@@ -17,6 +20,167 @@ class Area(Location):
     """Base class for area-type locations."""
 
     ########## PRIVATE/HELPER METHODS ##########
+
+    @staticmethod
+    def _is_wof_candidate(result: GeocodingResult) -> bool:
+        if not result or not result.result:
+            return False
+        conf = result.result.confidence or {}
+        src = str(conf.get("pelias_source") or "").strip().lower()
+        gid = str(conf.get("pelias_gid") or result.result.id or "").strip().lower()
+        return src == "whosonfirst" or gid.startswith("whosonfirst:")
+
+    @staticmethod
+    def _candidate_has_bbox(result: GeocodingResult) -> bool:
+        if not result or not result.result:
+            return False
+        conf = result.result.confidence or {}
+        if conf.get("pelias_has_bbox") is True:
+            return True
+        geom = getattr(result.result, "geometry", None)
+        return getattr(geom, "type", None) == "Polygon"
+
+    @staticmethod
+    def _candidate_layer(result: GeocodingResult) -> str:
+        if not result or not result.result:
+            return ""
+        conf = result.result.confidence or {}
+        return str(conf.get("pelias_layer") or "").strip().lower()
+
+    def _score_area_candidate(self, result: GeocodingResult, *, expected_layer: str) -> int:
+        """Deterministic score; higher is better. Area models prefer WOF and bbox."""
+        if not result or not result.result:
+            return -10_000
+        layer = self._candidate_layer(result)
+        if expected_layer and layer and layer != expected_layer:
+            return -10_000
+
+        conf = result.result.confidence or {}
+        score = 0
+
+        # Strongly prefer WOF for admin/area layers.
+        if self._is_wof_candidate(result):
+            score += 100
+
+        # Prefer bbox/polygon extents.
+        if self._candidate_has_bbox(result):
+            score += 20
+
+        mt = str(conf.get("pelias_match_type") or "").strip().lower()
+        if mt == "exact":
+            score += 10
+
+        # Prefer candidates whose label includes the queried name.
+        try:
+            label = str(result.result.processed_str or "").lower()
+            name_lower = str(self.name or "").lower()
+            if name_lower and name_lower in label:
+                score += 5
+        except Exception:
+            pass
+
+        return score
+
+    def _choose_best_area_candidate(
+        self, candidates: list[GeocodingResult], *, expected_layer: str
+    ) -> GeocodingResult | None:
+        if not candidates:
+            return None
+        scored = sorted(
+            ((self._score_area_candidate(c, expected_layer=expected_layer), c) for c in candidates),
+            key=lambda pair: pair[0],
+            reverse=True,
+        )
+        best_score, best = scored[0]
+        if best_score < 0:
+            return None
+        return best
+
+    def _adjudicate_area_candidates_with_llm(
+        self,
+        *,
+        candidates: list[GeocodingResult],
+        expected_layer: str,
+        openai_api_key: str,
+    ) -> GeocodingResult | None:
+        """Use LLM to pick among multiple plausible area candidates."""
+        if not candidates:
+            return None
+
+        try:
+            prompt_path = Path(__file__).parent.parent.parent / "prompts" / "choose_area_candidate.md"
+            template = prompt_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            logger.warning("Missing choose_area_candidate prompt: %s", exc)
+            return None
+
+        simplified: list[dict[str, Any]] = []
+        for c in candidates:
+            if not c or not c.result:
+                continue
+            conf = c.result.confidence or {}
+            simplified.append(
+                {
+                    "label": c.result.processed_str,
+                    "id": c.result.id,
+                    "layer": conf.get("pelias_layer"),
+                    "source": conf.get("pelias_source"),
+                    "country_code": conf.get("pelias_country_code"),
+                    "region": conf.get("pelias_region"),
+                    "region_a": conf.get("pelias_region_a"),
+                    "locality": conf.get("pelias_locality"),
+                    "localadmin": conf.get("pelias_localadmin"),
+                    "neighbourhood": conf.get("pelias_neighbourhood"),
+                    "borough": conf.get("pelias_borough"),
+                    "match_type": conf.get("pelias_match_type"),
+                    "accuracy": conf.get("pelias_accuracy"),
+                    "has_bbox": bool(conf.get("pelias_has_bbox")),
+                }
+            )
+
+        original_text = str(getattr(self, "_original_text", "") or "")
+        geocode_hints = str(getattr(self, "_geocode_hints", "") or "")
+        # Some area types have `state` or `city` fields; pull best-effort hints.
+        region_hint = str(getattr(self, "state", "") or getattr(self, "state_abbr", "") or "")
+        locality_hint = str(getattr(self, "city", "") or "")
+        country_code = str(self.country or "").strip().upper()
+
+        prompt = template.format(
+            query_name=self.name,
+            expected_layer=expected_layer,
+            country_code=country_code,
+            region_hint=region_hint,
+            locality_hint=locality_hint,
+            original_text=original_text,
+            geocode_hints=geocode_hints,
+            candidates_json=json.dumps(simplified, indent=2),
+        )
+
+        try:
+            response_text = call_llm(
+                prompt=prompt,
+                model=self._evaluation_litellm_model(),
+                openai_api_key=openai_api_key,
+                force_json=True,
+                model_config_id=getattr(self, "_evaluation_ai_model_config_id", None),
+            )
+            payload = json.loads(response_text)
+        except Exception as exc:
+            logger.warning("Area candidate adjudication LLM failed: %s", exc)
+            return None
+
+        if payload.get("needs_review") is True:
+            return None
+
+        idx = payload.get("selected_index")
+        if not isinstance(idx, int) or not (1 <= idx <= len(simplified)):
+            return None
+        # idx is 1-indexed over our filtered/simplified list, which aligns with candidates iteration order above.
+        # Rebuild that order: pick from candidates in the same sequence.
+        chosen_candidates: list[GeocodingResult] = [c for c in candidates if c and c.result]
+        if idx <= len(chosen_candidates):
+            return chosen_candidates[idx - 1]
+        return None
 
     def _get_placetype(self) -> str:
         """Get the placetype for this area model."""
@@ -125,59 +289,92 @@ class Area(Location):
         geocodio_api_key: Optional[str] = None,
         openai_api_key: Optional[str] = None,
     ) -> Optional[GeocodingResult]:
-        """Geocode an area using Pelias → Geocodio → Nominatim fallback chain."""
+        """Geocode an area using Pelias candidates → Geocodio → Nominatim fallback chain."""
         logger.info(f"Geocoding area: {self.name}")
         
-        # Try Pelias structured first (most accurate for areas with known components)
+        # Try Pelias structured candidates first (most accurate for areas with known components)
         if pelias_api_key:
             try:
                 prep_data = self._prep()
                 if "pelias_structured" in prep_data:
-                    result = await pelias_structured(
-                        **prep_data["pelias_structured"],
-                        api_key=pelias_api_key
+                    structured_params = dict(prep_data["pelias_structured"])
+                    expected_layer = str(structured_params.get("layers") or "").strip().lower()
+                    candidates = await pelias_structured_candidates(
+                        api_key=pelias_api_key,
+                        **structured_params,
                     )
-
-                    if result:
-                        if self._is_clear_match(result):
-                            logger.info(f"Pelias structured success for {self.name} (rules-based)")
-                            self.geocoding_result = result
-                            return result
-                        elif openai_api_key:
-                            evaluation = self._evaluate_result(result, "Pelias Structured", openai_api_key)
-                            if evaluation and evaluation.get("quality") == "good":
-                                logger.info(f"Pelias structured success for {self.name} (LLM evaluation)")
-                                self.geocoding_result = result
-                                return result
-                            else:
-                                reason = evaluation.get('reason', 'No reason') if evaluation else 'LLM evaluation failed'
-                                logger.info(f"Pelias structured result poor for {self.name}: {reason}")
+                    chosen = self._choose_best_area_candidate(candidates, expected_layer=expected_layer)
+                    if chosen is not None:
+                        logger.info(
+                            "Pelias structured selected for %s (layer=%s wof=%s bbox=%s)",
+                            self.name,
+                            expected_layer,
+                            self._is_wof_candidate(chosen),
+                            self._candidate_has_bbox(chosen),
+                        )
+                        self.geocoding_result = chosen
+                        return chosen
+                    # LLM adjudication only when multiple plausible candidates exist.
+                    if openai_api_key and len(candidates) >= 2:
+                        llm_pick = self._adjudicate_area_candidates_with_llm(
+                            candidates=candidates,
+                            expected_layer=expected_layer,
+                            openai_api_key=openai_api_key,
+                        )
+                        if llm_pick is not None:
+                            logger.info(
+                                "Pelias structured LLM-selected for %s (layer=%s wof=%s bbox=%s)",
+                                self.name,
+                                expected_layer,
+                                self._is_wof_candidate(llm_pick),
+                                self._candidate_has_bbox(llm_pick),
+                            )
+                            self.geocoding_result = llm_pick
+                            return llm_pick
             except Exception as e:
                 logger.warning(f"Pelias structured failed for {self.name}: {e}")
         
-        # Try Pelias search
+        # Try Pelias search candidates
         if pelias_api_key:
             try:
                 prep_data = self._prep()
                 if "pelias_search" in prep_data:
-                    result = await pelias_search(
-                        text=prep_data["pelias_search"]["text"],
-                        api_key=pelias_api_key
-                    )
-                    if result:
-                        if self._is_clear_match(result):
-                            logger.info(f"Pelias search success for {self.name} (rules-based)")
-                            self.geocoding_result = result
-                            return result
-                        elif openai_api_key:
-                            evaluation = self._evaluate_result(result, "Pelias Search", openai_api_key)
-                            if evaluation and evaluation.get("quality") == "good":
-                                logger.info(f"Pelias search success for {self.name} (LLM evaluation)")
-                                self.geocoding_result = result
-                                return result
-                            else:
-                                reason = evaluation.get('reason', 'No reason') if evaluation else 'LLM evaluation failed'
-                                logger.info(f"Pelias search result poor for {self.name}: {reason}")
+                    search_params = dict(prep_data["pelias_search"])
+                    text = str(search_params.pop("text") or "").strip()
+                    expected_layer = str(search_params.get("layers") or "").strip().lower()
+                    if text:
+                        candidates = await pelias_search_candidates(
+                            text=text,
+                            api_key=pelias_api_key,
+                            **search_params,
+                        )
+                        chosen = self._choose_best_area_candidate(candidates, expected_layer=expected_layer)
+                        if chosen is not None:
+                            logger.info(
+                                "Pelias search selected for %s (layer=%s wof=%s bbox=%s)",
+                                self.name,
+                                expected_layer,
+                                self._is_wof_candidate(chosen),
+                                self._candidate_has_bbox(chosen),
+                            )
+                            self.geocoding_result = chosen
+                            return chosen
+                        if openai_api_key and len(candidates) >= 2:
+                            llm_pick = self._adjudicate_area_candidates_with_llm(
+                                candidates=candidates,
+                                expected_layer=expected_layer,
+                                openai_api_key=openai_api_key,
+                            )
+                            if llm_pick is not None:
+                                logger.info(
+                                    "Pelias search LLM-selected for %s (layer=%s wof=%s bbox=%s)",
+                                    self.name,
+                                    expected_layer,
+                                    self._is_wof_candidate(llm_pick),
+                                    self._candidate_has_bbox(llm_pick),
+                                )
+                                self.geocoding_result = llm_pick
+                                return llm_pick
             except Exception as e:
                 logger.warning(f"Pelias search failed for {self.name}: {e}")
         

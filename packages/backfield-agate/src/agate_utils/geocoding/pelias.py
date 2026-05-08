@@ -80,8 +80,18 @@ def _log_pelias_exception(operation: str, exc: Exception, *, detail: str = "") -
     )
 
 
-def _pelias_search_feature_to_result(text: str, feature: dict[str, Any]) -> Optional[GeocodingResult]:
-    """Map one Pelias /v1/search GeoJSON feature to a ``GeocodingResult``."""
+def _pelias_feature_to_result(
+    *,
+    geocoder_name: str,
+    input_str: str,
+    feature: dict[str, Any],
+) -> Optional[GeocodingResult]:
+    """Map one Pelias GeoJSON feature to a ``GeocodingResult``.
+
+    Notes:
+    - Prefer feature-level ``bbox`` (not top-level FeatureCollection bbox).
+    - Include enough Pelias metadata in ``confidence`` for model-side candidate selection.
+    """
     properties = feature.get("properties", {})
     geometry = feature.get("geometry", {})
     bbox = feature.get("bbox")
@@ -131,17 +141,48 @@ def _pelias_search_feature_to_result(text: str, feature: dict[str, Any]) -> Opti
     else:
         result_id = properties.get("gid")
 
+    confidence: dict[str, Any] = {
+        "pelias_layer": layer,
+        "pelias_source": properties.get("source"),
+        "pelias_source_id": properties.get("source_id"),
+        "pelias_gid": properties.get("gid"),
+        "pelias_accuracy": properties.get("accuracy"),
+        "pelias_match_type": properties.get("match_type"),
+        "pelias_confidence": properties.get("confidence"),
+        "pelias_has_bbox": bool(bbox and len(bbox) == 4),
+        "pelias_bbox": bbox if isinstance(bbox, list) and len(bbox) == 4 else None,
+        # Useful for jurisdiction filtering in area models.
+        "pelias_country_code": properties.get("country_code"),
+        "pelias_country": properties.get("country"),
+        "pelias_region": properties.get("region"),
+        "pelias_region_a": properties.get("region_a"),
+        "pelias_county": properties.get("county"),
+        "pelias_locality": properties.get("locality"),
+        "pelias_localadmin": properties.get("localadmin"),
+        "pelias_neighbourhood": properties.get("neighbourhood"),
+        "pelias_borough": properties.get("borough"),
+    }
+
     result_data = GeocodingResultData(
         id=result_id,
-        processed_str=properties.get("label", text),
+        processed_str=properties.get("label", input_str),
         geometry=result_geometry,
-        confidence={"pelias_layer": layer},
+        confidence=confidence,
     )
 
     return GeocodingResult(
-        geocoder="pelias_search",
-        input_str=text,
+        geocoder=geocoder_name,
+        input_str=input_str,
         result=result_data,
+    )
+
+
+def _pelias_search_feature_to_result(text: str, feature: dict[str, Any]) -> Optional[GeocodingResult]:
+    """Map one Pelias /v1/search GeoJSON feature to a ``GeocodingResult``."""
+    return _pelias_feature_to_result(
+        geocoder_name="pelias_search",
+        input_str=text,
+        feature=feature,
     )
 
 
@@ -302,71 +343,18 @@ async def geocode_structured(
             logger.warning(f"No results found for structured query")
             return None
         
-        # Use the first (best) result
-        feature = features[0]
-        properties = feature.get("properties", {})
-        geometry = feature.get("geometry", {})
-        bbox = feature.get("bbox")  # Bounding box [west, south, east, north]
-        
-        # Determine if this is an area (has bbox) or a point
-        layer = properties.get("layer", "")
-        is_area = layer in ["city", "county", "region",
-        "country", "localadmin", "neighbourhood", "locality"]
-        
-        if bbox and is_area and len(bbox) == 4:
-            # Use bounding box for area-type results
-            logger.info(f"Using bbox for {layer}: {bbox}")
-            result_geometry = GeometryPolygon(
-                type="Polygon",
-                coordinates=bbox_west_south_east_north_to_polygon_coordinates(bbox),
-            )
-        else:
-            # Use point geometry
-            if geometry.get("type") != "Point":
-                logger.warning(f"Unexpected geometry type: {geometry.get('type')}")
-                return None
-            
-            coords = geometry.get("coordinates", [])
-            if len(coords) < 2:
-                logger.warning("Invalid coordinates in result")
-                return None
-            
-            lon, lat = coords[0], coords[1]
-            result_geometry = GeometryPoint(
-                type="Point",
-                coordinates=[lon, lat]
-            )
-        
         # Build input string from components
         input_parts = [p for p in [address, locality, county, region, postalcode, country] if p]
         input_str = ", ".join(input_parts)
-        
-        # Use specific GID based on layer type
-        layer = properties.get("layer", "")
-        if layer == "neighbourhood":
-            result_id = properties.get("neighbourhood_gid")
-        elif layer == "locality":
-            result_id = properties.get("locality_gid")
-        elif layer == "county":
-            result_id = properties.get("county_gid")
-        elif layer == "region":
-            result_id = properties.get("region_gid")
-        else:
-            result_id = properties.get("gid")  # Fallback to generic gid
-        
-        # Build result
-        result_data = GeocodingResultData(
-            id=result_id,
-            processed_str=properties.get("label", input_str),
-            geometry=result_geometry,
-            confidence={"pelias_layer": layer},
-        )
-        
-        return GeocodingResult(
-            geocoder="pelias_structured",
+
+        mapped = _pelias_feature_to_result(
+            geocoder_name="pelias_structured",
             input_str=input_str,
-            result=result_data
+            feature=features[0],
         )
+        if mapped is None:
+            logger.warning("No mappable Pelias structured result for input=%s", input_str)
+        return mapped
 
     except Exception as e:
         raw_params = locals().get("params")
@@ -377,6 +365,72 @@ async def geocode_structured(
             detail = "params=<unavailable>"
         _log_pelias_exception("structured geocoding", e, detail=detail)
         return None
+
+
+async def geocode_structured_candidates(
+    *,
+    address: Optional[str] = None,
+    locality: Optional[str] = None,
+    county: Optional[str] = None,
+    region: Optional[str] = None,
+    neighbourhood: Optional[str] = None,
+    postalcode: Optional[str] = None,
+    country: str = "US",
+    api_key: Optional[str] = None,
+    size: int = 5,
+    **kwargs: Any,
+) -> list[GeocodingResult]:
+    """Structured Pelias request returning one ``GeocodingResult`` per feature."""
+    out: list[GeocodingResult] = []
+    try:
+        url = "https://api.geocode.earth/v1/search/structured"
+
+        params: dict[str, Any] = {"country": country, "size": size}
+        if address:
+            params["address"] = address
+        if locality:
+            params["locality"] = locality
+        if county:
+            params["county"] = county
+        if neighbourhood:
+            params["neighbourhood"] = neighbourhood
+        if region:
+            params["region"] = region
+        if postalcode:
+            params["postalcode"] = postalcode
+        params.update(kwargs)
+
+        if api_key:
+            params["api_key"] = api_key
+
+        input_parts = [p for p in [address, locality, county, region, postalcode, country] if p]
+        input_str = ", ".join(input_parts)
+
+        logger.info("Pelias structured candidates: %s", _params_for_log(params))
+
+        async with httpx.AsyncClient(timeout=_PELIAS_HTTP_TIMEOUT) as client:
+            response = await _pelias_get(client, url, params)
+            response.raise_for_status()
+            data = response.json()
+
+        for feature in data.get("features", []):
+            if not isinstance(feature, dict):
+                continue
+            mapped = _pelias_feature_to_result(
+                geocoder_name="pelias_structured",
+                input_str=input_str,
+                feature=feature,
+            )
+            if mapped is not None:
+                out.append(mapped)
+
+        if not out:
+            logger.warning("No mappable Pelias structured candidates for input=%s", input_str)
+        return out
+    except Exception as e:
+        safe = {k: v for k, v in params.items() if k != "api_key"} if "params" in locals() else {}
+        _log_pelias_exception("structured candidates", e, detail=f"params={safe!r}")
+        return []
 
 
 async def reverse_geocode(
