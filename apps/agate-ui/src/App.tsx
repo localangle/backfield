@@ -19,6 +19,7 @@ import ManageCatalogs from './pages/ManageCatalogs'
 import AiModelsSettings from './pages/AiModelsSettings'
 import OrgIntegrationsSettings from './pages/OrgIntegrationsSettings'
 import SettingsLayout from './pages/SettingsLayout'
+import SettingsHub from './pages/SettingsHub'
 import HubLayout from './components/HubLayout'
 import { AppMessageProvider } from '@/components/AppMessageProvider'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -204,7 +205,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="models" replace />} />
+        <Route index element={<SettingsHub />} />
         <Route path="models" element={<AiModelsSettings />} />
         <Route path="integrations" element={<OrgIntegrationsSettings />} />
       </Route>
