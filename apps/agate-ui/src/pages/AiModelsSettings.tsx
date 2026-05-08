@@ -48,12 +48,6 @@ import { Loader2, Plus } from 'lucide-react'
 
 const CAP_KEYS = ['text', 'json', 'vision'] as const
 
-const CAP_LABEL: Record<(typeof CAP_KEYS)[number], string> = {
-  text: 'Text',
-  json: 'Structured responses',
-  vision: 'Image inputs',
-}
-
 /** API + DB store usage prices per token; inputs show per 1M tokens for readability. */
 const TOKENS_PER_MILLION = 1_000_000
 
@@ -748,11 +742,6 @@ export default function AiModelsSettingsPage() {
                       >
                         {m.status === "active" ? "Active" : m.status}
                       </Badge>
-                      {m.capabilities.map((c) => (
-                        <Badge key={c} variant="outline">
-                          {CAP_LABEL[c as (typeof CAP_KEYS)[number]] ?? c}
-                        </Badge>
-                      ))}
                       {m.latest_test_status ? (
                         <Badge variant="outline">
                           {(() => {
