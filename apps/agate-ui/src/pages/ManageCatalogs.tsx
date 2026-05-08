@@ -28,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { SettingsScreenHeader } from "@/components/SettingsScreenHeader"
 import { useAuth } from "@/lib/auth"
 import {
   createStylebookCatalog,
@@ -257,16 +258,13 @@ export default function ManageCatalogsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stylebooks</h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Stylebooks hold your organization&apos;s canonical locations and related
-          editorial data. Use{" "}
-          <span className="text-foreground font-medium">Users</span> to choose who may
-          edit each stylebook; this page is for creating stylebooks and setting the
-          organization default.
-        </p>
-      </div>
+      <SettingsScreenHeader title="Stylebooks">
+        <>
+          Stylebooks hold your organization&apos;s canonical locations and related editorial data.
+          Use <span className="text-foreground font-medium">Users</span> to choose who may edit each
+          stylebook; this page is for creating stylebooks and setting the organization default.
+        </>
+      </SettingsScreenHeader>
 
       <div className="flex justify-end">
         <Button type="button" onClick={() => setCreateOpen(true)}>

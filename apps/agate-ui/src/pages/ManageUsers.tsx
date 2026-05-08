@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { SettingsScreenHeader } from "@/components/SettingsScreenHeader"
 import { useAuth } from "@/lib/auth"
 import {
   createOrgUser,
@@ -254,14 +255,11 @@ export default function ManageUsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage people, workspace access, and who may edit each stylebook.
-          </p>
-        </div>
-        <Button type="button" onClick={() => setCreateOpen(true)}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <SettingsScreenHeader title="Users">
+          Manage people, workspace access, and who may edit each stylebook.
+        </SettingsScreenHeader>
+        <Button type="button" className="shrink-0" onClick={() => setCreateOpen(true)}>
           Add user
         </Button>
       </div>

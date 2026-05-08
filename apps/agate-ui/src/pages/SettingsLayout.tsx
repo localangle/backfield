@@ -1,26 +1,31 @@
-import { Link, Outlet, useMatch } from 'react-router-dom'
+import { Outlet, useMatch } from 'react-router-dom'
+
+import { SettingsScreenHeader } from '@/components/SettingsScreenHeader'
+
+const SECTION_TITLE: Record<string, string> = {
+  models: 'AI models',
+  integrations: 'Integrations',
+}
 
 /**
- * Organization Settings: hub at `/settings`, nested pages for models and integrations.
+ * Organization Settings: hub at `/settings`, nested pages with breadcrumb + page title.
  */
 export default function SettingsLayout() {
   const isHub = useMatch({ path: '/settings', end: true })
+  const sectionMatch = useMatch('/settings/:section')
+  const section = sectionMatch?.params.section
+  const nestedTitle = section != null ? SECTION_TITLE[section] : undefined
 
   return (
     <div className="w-full max-w-none min-w-0 space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        {isHub ? (
+      {isHub ? (
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
           <p className="text-sm text-muted-foreground">Manage organization settings.</p>
-        ) : (
-          <Link
-            to="/settings"
-            className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline inline-block"
-          >
-            All settings
-          </Link>
-        )}
-      </div>
+        </div>
+      ) : nestedTitle != null ? (
+        <SettingsScreenHeader title={nestedTitle} />
+      ) : null}
 
       <Outlet />
     </div>

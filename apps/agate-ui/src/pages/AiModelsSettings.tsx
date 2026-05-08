@@ -601,14 +601,9 @@ export default function AiModelsSettingsPage() {
 
   return (
     <div className="space-y-6 w-full max-w-none min-w-0">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">AI models</h2>
-          <p className="text-muted-foreground mt-2">
-            Manage organization-wide AI models and credentials.
-          </p>
-        </div>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Manage organization-wide AI models and credentials.
+      </p>
 
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

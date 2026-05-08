@@ -116,13 +116,10 @@ export default function OrgIntegrationsSettings() {
 
   return (
     <div className="w-full max-w-4xl space-y-8">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">Integrations</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Organization defaults for geocoding, web search, and cloud storage. Projects can override
-          these on each project’s Integrations tab.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Organization defaults for geocoding, web search, and cloud storage. Projects can override
+        these on each project’s Integrations tab.
+      </p>
 
       {error ? (
         <Alert variant="destructive">
