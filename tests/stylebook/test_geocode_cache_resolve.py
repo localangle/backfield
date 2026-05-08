@@ -418,6 +418,208 @@ def test_build_adjudication_candidates_includes_canonical() -> None:
     assert cid in ids
 
 
+def test_city_substrate_blocks_political_district_canonical_tier1() -> None:
+    """City-level query must not strict-hit an electoral ward canonical."""
+    gj = {"type": "MultiPolygon", "coordinates": []}
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        ward = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 15, Chicago, IL",
+            slug="ward-15-chicago",
+            location_type="political_district",
+            status="active",
+            geometry_json=gj,
+            geometry_type="MultiPolygon",
+            formatted_address="Ward 15, Chicago, IL",
+        )
+        session.add(ward)
+        session.commit()
+        session.refresh(ward)
+        wid = str(ward.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=wid,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Chicago, IL",
+            location_type="city",
+        )
+    assert hit is None
+
+
+def test_city_substrate_blocks_ward_like_label_even_when_canonical_type_city() -> None:
+    """Mis-typed city rows whose label is ward-shaped must not auto-hit for municipality queries."""
+    gj = {"type": "MultiPolygon", "coordinates": []}
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        w = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 15, Chicago, IL",
+            slug="ward15-chicago-mislabeled",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="MultiPolygon",
+        )
+        session.add(w)
+        session.commit()
+        session.refresh(w)
+        wid = str(w.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=wid,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Chicago, IL",
+            location_type="city",
+        )
+    assert hit is None
+
+
+def test_city_tier2_rejects_ward_shaped_substrate_row() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        gj = {"type": "MultiPolygon", "coordinates": []}
+        fp = substrate_location_cache_query_fingerprint(
+            project_id=pid,
+            normalized_query="chicago, il",
+            location_type="city",
+        )
+        session.add(
+            SubstrateLocationCache(
+                project_id=pid,
+                query_text="Chicago, IL",
+                normalized_query="chicago, il",
+                query_fingerprint=fp,
+                location_name="Chicago, IL",
+                location_type="city",
+                geocode_type="pelias",
+                formatted_address="Ward 15, Chicago, IL",
+                geometry_json=gj,
+                geometry_type="MultiPolygon",
+                response_payload_json={},
+            )
+        )
+        session.commit()
+
+        outcome = resolve_geocode_cache_strict_with_outcome(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="Chicago, IL",
+            location_type="city",
+            components=None,
+        )
+    assert outcome.match_dict is None
+    assert outcome.tier2_sanity_failed is True
+
+
+def test_materialize_rejects_ward_for_city_substrate() -> None:
+    gj = {"type": "MultiPolygon", "coordinates": []}
+    engine = _engine()
+    with Session(engine) as session:
+        _, sb_id, _ = _seed_org_sb_project(session)
+        ward = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 15, Chicago, IL",
+            slug="ward-15",
+            location_type="political_district",
+            status="active",
+            geometry_json=gj,
+            geometry_type="MultiPolygon",
+        )
+        session.add(ward)
+        session.commit()
+        session.refresh(ward)
+        wid = str(ward.id)
+        md = materialize_canonical_match_dict(
+            session,
+            stylebook_id=sb_id,
+            canonical_id=wid,
+            substrate_location_type="city",
+        )
+    assert md is None
+
+
+def test_build_candidates_excludes_ward_for_city_query() -> None:
+    gj_city = {"type": "Point", "coordinates": [-87.0, 41.0]}
+    gj_ward = {"type": "MultiPolygon", "coordinates": []}
+    engine = _engine()
+    with Session(engine) as session:
+        _, sb_id, _ = _seed_org_sb_project(session)
+        city = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            slug="chicago-il",
+            location_type="city",
+            status="active",
+            geometry_json=gj_city,
+            geometry_type="Point",
+        )
+        ward = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Ward 99, Chicago, IL",
+            slug="ward-99",
+            location_type="political_district",
+            status="active",
+            geometry_json=gj_ward,
+            geometry_type="MultiPolygon",
+        )
+        session.add(city)
+        session.add(ward)
+        session.commit()
+        session.refresh(city)
+        session.refresh(ward)
+        cid_city = str(city.id)
+        cid_ward = str(ward.id)
+        for cid in (cid_city, cid_ward):
+            session.add(
+                StylebookLocationAlias(
+                    location_canonical_id=cid,
+                    alias_text="Chicago, IL",
+                    normalized_alias="chicago, il",
+                    provenance="test",
+                    suppressed=False,
+                )
+            )
+        session.commit()
+
+        cands = build_geocode_cache_adjudication_candidates(
+            session,
+            stylebook_id=sb_id,
+            location_text="Chicago, IL",
+            location_type="city",
+            limit=20,
+        )
+    ids = {str(x["id"]) for x in cands}
+    assert cid_city in ids
+    assert cid_ward not in ids
+
+
 def test_try_resolve_ambiguous_two_canonicals_returns_none() -> None:
     """Two canonicals both match the same normalized string → ambiguous tier-1 → miss."""
     gj = {"type": "Point", "coordinates": [-87.0, 41.0]}

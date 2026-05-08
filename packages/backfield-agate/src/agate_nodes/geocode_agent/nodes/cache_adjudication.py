@@ -159,8 +159,10 @@ async def adjudicate_stylebook_cache_node(state: AgentState) -> AgentState:
         )
         return state
 
+    substrate_lt = location_type.strip() if isinstance(location_type, str) and location_type.strip() else None
+
     try:
-        match_dict = await asyncio.to_thread(mat_fn, cid)
+        match_dict = await asyncio.to_thread(mat_fn, cid, substrate_lt)
     except Exception as exc:
         logger.warning("Materialize canonical %r failed: %s", cid, exc)
         return state

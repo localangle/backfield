@@ -63,12 +63,16 @@ def _build_geocode_cache_bundle(
                 components=comps,
             )
 
-    def materialize_canonical(canonical_id: str) -> dict[str, Any] | None:
+    def materialize_canonical(
+        canonical_id: str,
+        substrate_location_type: str | None = None,
+    ) -> dict[str, Any] | None:
         with Session(get_engine()) as session:
             return materialize_canonical_match_dict(
                 session,
                 stylebook_id=stylebook_id,
                 canonical_id=str(canonical_id).strip(),
+                substrate_location_type=substrate_location_type,
             )
 
     return {

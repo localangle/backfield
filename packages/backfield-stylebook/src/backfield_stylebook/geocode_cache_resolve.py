@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +23,40 @@ from backfield_stylebook.substrate_location_cache_fingerprint import (
 )
 
 _DEFAULT_ADJUDICATION_CANDIDATE_LIMIT: int = 18
+
+_MUNICIPALITY_SUBSTRATE_TYPES: frozenset[str] = frozenset({"city", "town", "village"})
+# Labels like "Ward 15, Chicago, IL" may still carry ``location_type=city`` in legacy rows.
+_WARD_OR_PRECINCT_RE = re.compile(r"\b(ward|precinct)\b", re.IGNORECASE)
+
+
+def _text_suggests_ward_or_precinct(text: str) -> bool:
+    return bool(_WARD_OR_PRECINCT_RE.search(text or ""))
+
+
+def _canonical_is_sub_municipal_slice_for_municipality_query(
+    canon: StylebookLocationCanonical,
+    substrate_lt: str | None,
+) -> bool:
+    """True when canonical is a ward/precinct-like admin slice unsuitable for a city-level query."""
+    s = (substrate_lt or "").strip().lower()
+    if s not in _MUNICIPALITY_SUBSTRATE_TYPES:
+        return False
+    clt = (canon.location_type or "").strip().lower()
+    if clt == "political_district":
+        return True
+    blob = f"{canon.label} {canon.formatted_address or ''}"
+    return _text_suggests_ward_or_precinct(blob)
+
+
+def _substrate_cache_row_is_sub_municipal_for_municipality_query(
+    row: SubstrateLocationCache,
+    substrate_lt: str | None,
+) -> bool:
+    s = (substrate_lt or "").strip().lower()
+    if s not in _MUNICIPALITY_SUBSTRATE_TYPES:
+        return False
+    blob = f"{row.location_name} {row.formatted_address or ''} {row.query_text or ''}"
+    return _text_suggests_ward_or_precinct(blob)
 
 
 def _canonical_to_stylebook_match_dict(canon: StylebookLocationCanonical) -> dict[str, Any]:
@@ -191,7 +226,12 @@ def resolve_geocode_cache_strict_with_outcome(
         winner = winners[0]
         canon_lt = (winner.location_type or "").strip().lower() or None
         geom_ok = isinstance(winner.geometry_json, dict)
-        if geom_ok and _strict_type_pair_allowed(substrate_lt, canon_lt):
+        slice_bad = _canonical_is_sub_municipal_slice_for_municipality_query(winner, substrate_lt)
+        if (
+            geom_ok
+            and _strict_type_pair_allowed(substrate_lt, canon_lt)
+            and not slice_bad
+        ):
             return GeocodeCacheStrictOutcome(
                 _canonical_to_stylebook_match_dict(winner),
                 False,
@@ -222,6 +262,8 @@ def resolve_geocode_cache_strict_with_outcome(
         )
         if not sane:
             return GeocodeCacheStrictOutcome(None, False, True)
+    if _substrate_cache_row_is_sub_municipal_for_municipality_query(row, substrate_lt):
+        return GeocodeCacheStrictOutcome(None, False, True)
     return GeocodeCacheStrictOutcome(_substrate_cache_row_to_cache_match_dict(row), False, False)
 
 
@@ -263,6 +305,7 @@ def materialize_canonical_match_dict(
     *,
     stylebook_id: int,
     canonical_id: str,
+    substrate_location_type: str | None = None,
 ) -> dict[str, Any] | None:
     """Load active canonical geometry into converter match dict shape, or ``None``."""
     canon = session.get(StylebookLocationCanonical, canonical_id)
@@ -273,6 +316,9 @@ def materialize_canonical_match_dict(
     if (canon.status or "").strip().lower() != "active":
         return None
     if not isinstance(canon.geometry_json, dict):
+        return None
+    lt = (substrate_location_type or "").strip().lower() or None
+    if _canonical_is_sub_municipal_slice_for_municipality_query(canon, lt):
         return None
     return _canonical_to_stylebook_match_dict(canon)
 
@@ -331,11 +377,14 @@ def build_geocode_cache_adjudication_candidates(
 
     features = load_canonical_match_features(session, canonical_ids=ordered_ids)
     out: list[dict[str, Any]] = []
+    substrate_lt = (location_type or "").strip().lower() or None
     for cid in ordered_ids:
         tup = features.get(cid)
         if tup is None:
             continue
         canon, alias_tuple = tup
+        if _canonical_is_sub_municipal_slice_for_municipality_query(canon, substrate_lt):
+            continue
         aliases = list(alias_tuple)[:8]
         out.append(
             {

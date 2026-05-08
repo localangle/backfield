@@ -92,6 +92,10 @@ _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
         # POI / point identity must not collapse onto a street corridor canonical.
         frozenset({"place", "street_road"}),
         frozenset({"point", "street_road"}),
+        # Municipality mentions must not collapse onto electoral wards / districts.
+        frozenset({"city", "political_district"}),
+        frozenset({"town", "political_district"}),
+        frozenset({"village", "political_district"}),
     }
 )
 

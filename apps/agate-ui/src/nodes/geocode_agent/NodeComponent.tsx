@@ -42,7 +42,9 @@ const nodeMetadata = {
     "routerModel": "",
     "evaluationAiModelConfigId": null,
     "geographicReasoningAiModelConfigId": null,
-    "routerAiModelConfigId": null
+    "routerAiModelConfigId": null,
+    "useCacheLlmAdjudication": true,
+    "useCacheLlmAdjudicationOnMissRecall": false
   }
 };
 
