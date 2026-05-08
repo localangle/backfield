@@ -246,6 +246,9 @@ async def run_geocode_agent_pipeline(
         "region_state",
         "region_national",
         "natural",
+        # PlaceExtract ``political_district`` (wards, legislative districts, etc.):
+        # must pass through so Stylebook cache + Region geocode path can run.
+        "political_district",
     ]
     filtered_locations = [
         loc for loc in locations_data 
