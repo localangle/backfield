@@ -87,7 +87,10 @@ export default function RunGraph() {
     if (flowProjectId == null) return []
     const rows = await fetchProjectEffectiveAiModels(flowProjectId, capabilities)
     return rows.map((r) => ({
-      label: `${r.name} (${r.provider_model_id})`,
+      label:
+        typeof r.name === 'string' && r.name.trim() !== ''
+          ? r.name.trim()
+          : String(r.provider_model_id ?? ''),
       providerModelId: r.provider_model_id,
       configId: r.id,
     }))

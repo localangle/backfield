@@ -550,10 +550,12 @@ export interface RerunItemResponse {
 }
 
 export async function rerunProcessedItem(
-  _runId: string | number,
-  _itemId: number
+  runId: string | number,
+  itemId: number
 ): Promise<RerunItemResponse> {
-  throw new Error('Rerun is not available in Backfield yet')
+  return fetchAPI(`/runs/${runId}/items/${itemId}/rerun`, {
+    method: 'POST',
+  }) as Promise<RerunItemResponse>
 }
 
 export async function cancelRun(runId: string | number): Promise<Run> {

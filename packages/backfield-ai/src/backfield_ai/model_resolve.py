@@ -41,8 +41,8 @@ def resolve_geocode_litellm_models(
     session: Session,
     project_id: int,
     params: Any,
-) -> tuple[str, str]:
-    """Return LiteLLM model ids for evaluation and router paths."""
+) -> tuple[str, str, str]:
+    """Return LiteLLM model ids for evaluation, router, and geographic-reasoning paths."""
     proj = session.get(BackfieldProject, project_id)
     if proj is None:
         raise ValueError("Project not found.")
@@ -50,8 +50,10 @@ def resolve_geocode_litellm_models(
 
     eval_id = getattr(params, "evaluationAiModelConfigId", None)
     router_id = getattr(params, "routerAiModelConfigId", None)
+    geo_id = getattr(params, "geographicReasoningAiModelConfigId", None)
     eval_fallback = str(params.evaluationModel)
     router_fallback = str(params.routerModel)
+    geo_fallback = str(getattr(params, "geographicReasoningModel", None) or "gpt-5-nano")
 
     if eval_id:
         cfg = _load_enabled_org_config(
@@ -77,8 +79,20 @@ def resolve_geocode_litellm_models(
             provider=str(cfg_r.provider),
             provider_model_id=str(cfg_r.provider_model_id),
         )
+    if geo_id:
+        cfg_g = _load_enabled_org_config(
+            session,
+            organization_id=org_id,
+            project_id=project_id,
+            config_id=str(geo_id),
+        )
+        geo_fallback = effective_litellm_model_row(
+            litellm_model=cfg_g.litellm_model,
+            provider=str(cfg_g.provider),
+            provider_model_id=str(cfg_g.provider_model_id),
+        )
 
-    return eval_fallback, router_fallback
+    return eval_fallback, router_fallback, geo_fallback
 
 
 def resolve_place_extract_litellm_model(

@@ -415,6 +415,14 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
         if eval_cfg:
             setattr(model, "_evaluation_ai_model_config_id", eval_cfg)
 
+        geo_lm = state.get("geographic_reasoning_llm_model")
+        geo_cfg = state.get("geographic_reasoning_ai_model_config_id")
+        if isinstance(model, (Place, Address, Region, NaturalPlace, StreetRoad)):
+            if geo_lm:
+                setattr(model, "_geographic_reasoning_llm_model", geo_lm)
+            if geo_cfg:
+                setattr(model, "_geographic_reasoning_ai_model_config_id", geo_cfg)
+
         geocode_kwargs: dict = {
             "pelias_api_key": pelias_api_key,
             "geocodio_api_key": geocodio_api_key,

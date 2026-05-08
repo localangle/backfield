@@ -11,8 +11,6 @@ from ..base import Location
 
 logger = logging.getLogger(__name__)
 
-LLM_EVALUATION_MODEL = "gpt-5-nano"
-
 ########## BASE AREA MODEL ##########
 
 class Area(Location):
@@ -33,6 +31,25 @@ class Area(Location):
             return "neighborhood"
         else:
             return "unknown"
+
+    def _geographic_reasoning_litellm_model(self) -> str:
+        raw = getattr(self, "_geographic_reasoning_llm_model", None)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return "gpt-5-nano"
+
+    def _geographic_reasoning_model_config_id(self) -> str | None:
+        raw = getattr(self, "_geographic_reasoning_ai_model_config_id", None)
+        if raw is None:
+            return None
+        s = str(raw).strip()
+        return s or None
+
+    def _evaluation_litellm_model(self) -> str:
+        raw = getattr(self, "_evaluation_llm_model", None)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return "gpt-5-nano"
 
     def _is_clear_match(self, result: GeocodingResult) -> bool:
         """Determine if a geocoding result is conclusively correct without LLM evaluation."""
@@ -75,7 +92,7 @@ class Area(Location):
                 coordinates=str(coordinates),
             )
 
-            model_name = getattr(self, "_evaluation_llm_model", None) or LLM_EVALUATION_MODEL
+            model_name = self._evaluation_litellm_model()
             response = call_llm(
                 prompt=prompt,
                 model=model_name,

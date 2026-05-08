@@ -11,7 +11,6 @@ from sqlmodel import Session
 from backfield_stylebook.resolve import resolve_effective_stylebook_id_for_project
 
 CanonicalizationMode = Literal["rules", "ai_assisted"]
-AdjudicationModel = Literal["gpt-5-nano", "gpt-5-mini"]
 
 
 class DbOutputCanonicalSettings(BaseModel):
@@ -24,7 +23,14 @@ class DbOutputCanonicalSettings(BaseModel):
     )
     canonicalization_mode: CanonicalizationMode = "rules"
     auto_apply_canonicalization: bool = True
-    adjudication_model: AdjudicationModel = "gpt-5-nano"
+    adjudication_model: str = Field(
+        default="gpt-5-nano",
+        description="Provider model id for AI-assisted adjudication (legacy default when unset).",
+    )
+    adjudication_ai_model_config_id: str | None = Field(
+        default=None,
+        description="Optional Backfield AI catalog row id for credentials / LiteLLM routing.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -34,6 +40,9 @@ class DbOutputCanonicalSettings(BaseModel):
         out = dict(data)
         if "stylebook_id" in out and out["stylebook_id"] == "":
             out["stylebook_id"] = None
+        am = out.get("adjudication_model")
+        if isinstance(am, str) and am.strip() == "":
+            out.pop("adjudication_model", None)
         return out
 
     @classmethod

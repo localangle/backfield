@@ -7,7 +7,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "031_project_model_override_secret"
+revision: str = "031_ai_prj_ovrd_secret"
 down_revision: Union[str, None] = "030_ai_share_int_secret"
 branch_labels: Sequence[str] | None = None
 depends_on: Union[str, Sequence[str], None] = None

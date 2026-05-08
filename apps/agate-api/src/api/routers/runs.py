@@ -59,6 +59,10 @@ celery_app = Celery(
 )
 
 
+def _celery_queue() -> str:
+    return str(os.environ.get("CELERY_QUEUE", "agate"))
+
+
 class AiCostNodeBreakdown(BaseModel):
     node_id: str | None
     estimated_total: Decimal
@@ -109,6 +113,15 @@ class ProcessedItemDetailOut(BaseModel):
     estimated_ai_cost: Decimal = Decimal("0")
     estimated_ai_cost_incomplete: bool = False
     estimated_ai_cost_currency: str = DEFAULT_AI_COST_CURRENCY
+
+
+class RerunItemResponse(BaseModel):
+    """Response when re-queuing a single batch processed item."""
+
+    item_id: int
+    run_id: str
+    status: str
+    message: str
 
 
 class RunOut(BaseModel):
@@ -294,7 +307,7 @@ def create_run(
     celery_app.send_task(
         task_name,
         args=[run.id],
-        queue=os.environ.get("CELERY_QUEUE", "agate"),
+        queue=_celery_queue(),
     )
     return RunOut(
         id=run.id,
@@ -490,6 +503,59 @@ def get_run_processed_item(
         return synthetic
 
     raise HTTPException(404, "Processed item not found")
+
+
+@router.post("/{run_id}/items/{item_id}/rerun", response_model=RerunItemResponse)
+def rerun_run_processed_item(
+    run_id: str,
+    item_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> RerunItemResponse:
+    """Reset one ``agate_processed_item`` row to pending and enqueue ``execute_processed_item``.
+
+    Applies only to real batch rows (not the synthetic whole-graph ``items/1`` view).
+    """
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+
+    item = session.get(AgateProcessedItem, item_id)
+    if item is None or item.run_id != run_id:
+        raise HTTPException(404, "Processed item not found")
+
+    if r.status != "running":
+        r.status = "running"
+        r.updated_at = datetime.now(UTC)
+        session.add(r)
+
+    item.status = "pending"
+    item.result_json = None
+    item.error_message = None
+    item.updated_at = datetime.now(UTC)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+
+    celery_app.send_task(
+        "worker.tasks.execute_processed_item",
+        args=[item.id],
+        queue=_celery_queue(),
+    )
+
+    iid = item.id
+    if iid is None:
+        raise HTTPException(500, "Processed item id missing after save")
+
+    return RerunItemResponse(
+        item_id=int(iid),
+        run_id=r.id,
+        status=item.status,
+        message=f"Item {iid} reset to pending and re-queued for processing",
+    )
 
 
 def _serialize_run(session: Session, r: AgateRun) -> RunOut:
