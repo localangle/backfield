@@ -188,19 +188,19 @@ export default function ProjectDetailIntegrationsTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span>Geocode Earth</span>
               <OrgIntegrationStatusBadge configured={orgGeocodeEarth} />
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span>Geocodio</span>
               <OrgIntegrationStatusBadge configured={orgGeocodio} />
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span>Brave Search</span>
               <OrgIntegrationStatusBadge configured={orgBrave} />
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span>Amazon S3</span>
               <OrgIntegrationStatusBadge configured={orgS3} />
             </div>
