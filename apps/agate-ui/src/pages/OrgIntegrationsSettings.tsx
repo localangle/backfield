@@ -491,7 +491,7 @@ export default function OrgIntegrationsSettings() {
                     }
                   }}
                 >
-                  Save S3 keys
+                  Save
                 </Button>
                 <Button
                   type="button"
@@ -526,7 +526,7 @@ export default function OrgIntegrationsSettings() {
                     }
                   }}
                 >
-                  Remove S3 keys
+                  Remove
                 </Button>
               </div>
             </CardContent>
