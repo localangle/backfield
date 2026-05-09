@@ -54,6 +54,7 @@ const OVERRIDE_LABELS: Record<string, { title: string; hint: string }> = {
   },
 }
 
+/** Project-specific key saved for this row (replaces organization default for this project). */
 function OverriddenBadge() {
   return (
     <Badge
@@ -61,6 +62,15 @@ function OverriddenBadge() {
       className="border-amber-300 bg-amber-50 text-amber-950 shadow-none dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100"
     >
       Overridden
+    </Badge>
+  )
+}
+
+/** Organization Settings → Integrations has a saved key for this slot (no project override). */
+function OrgDefaultStatusBadge({ orgHasKey }: { orgHasKey: boolean }) {
+  return (
+    <Badge variant={orgHasKey ? 'success' : 'secondary'}>
+      {orgHasKey ? 'Configured' : 'Not set'}
     </Badge>
   )
 }
@@ -122,7 +132,8 @@ export default function ProjectDetailIntegrationsTab({
     [projectKeys],
   )
 
-  const showOrgIntegrationStatus = isOrgAdmin && organizationId != null
+  /** Org integration metadata is only available to organization admins (Core API). */
+  const showOrgDefaultPills = isOrgAdmin && organizationId != null
 
   const setDraft = (keyName: string, value: string) => {
     setDrafts((d) => ({ ...d, [keyName]: value }))
@@ -181,7 +192,11 @@ export default function ProjectDetailIntegrationsTab({
         <CardHeader>
           <CardTitle className="text-base">Project overrides</CardTitle>
           <CardDescription>
-            Leave blank and remove overrides to rely on organization defaults.
+            Leave blank and remove overrides to rely on organization defaults.{' '}
+            <span className="font-medium text-foreground">Configured</span> means this project uses the
+            key from Settings → Integrations;{' '}
+            <span className="font-medium text-foreground">Overridden</span> means this project has its own
+            key saved here.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-8">
@@ -190,7 +205,7 @@ export default function ProjectDetailIntegrationsTab({
             const has = projectKeyNames.has(keyName)
             const draft = drafts[keyName] ?? ''
             const draftEmpty = !draft.trim()
-            const orgSlotConfigured = orgConfigured.has(OVERRIDE_TO_ORG_PLATFORM_KEY[keyName])
+            const orgHasKeyForSlot = orgConfigured.has(OVERRIDE_TO_ORG_PLATFORM_KEY[keyName])
             return (
               <div key={keyName} className="space-y-2 border-b border-border pb-6 last:border-0 last:pb-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -198,10 +213,8 @@ export default function ProjectDetailIntegrationsTab({
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
                     {has ? (
                       <OverriddenBadge />
-                    ) : showOrgIntegrationStatus ? (
-                      <Badge variant={orgSlotConfigured ? 'success' : 'secondary'}>
-                        {orgSlotConfigured ? 'Configured' : 'Not set'}
-                      </Badge>
+                    ) : showOrgDefaultPills ? (
+                      <OrgDefaultStatusBadge orgHasKey={orgHasKeyForSlot} />
                     ) : null}
                   </div>
                 </div>
