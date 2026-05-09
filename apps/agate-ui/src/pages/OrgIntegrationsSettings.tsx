@@ -369,7 +369,7 @@ export default function OrgIntegrationsSettings() {
             <CardHeader>
               <CardTitle className="text-base">Web search fallback</CardTitle>
               <CardDescription>
-                When Brave Search is not configured, flows that need search fall back automatically.
+                These services are always available. No API key is required.
               </CardDescription>
             </CardHeader>
             <CardContent>
