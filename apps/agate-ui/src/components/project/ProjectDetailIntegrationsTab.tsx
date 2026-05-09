@@ -232,7 +232,7 @@ export default function ProjectDetailIntegrationsTab({
               <div key={keyName} className="space-y-2 border-b border-border pb-6 last:border-0 last:pb-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-sm font-medium">{meta.title}</h4>
-                  <StatusBadge configured={has} />
+                  <StatusBadge configured={!draftEmpty} />
                 </div>
                 <p className="text-xs text-muted-foreground">{meta.hint}</p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
