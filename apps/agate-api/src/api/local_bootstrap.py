@@ -35,6 +35,9 @@ DEFAULT_WORKSPACE_SLUG = "default"
 DEFAULT_WORKSPACE_DISPLAY_NAME = "Default Workspace"
 
 # Keys mirrored from host/.env into backfield_project_secret for the General project.
+# Platform geocoding / search / S3 keys are intentionally omitted: they are configured under
+# Settings → Integrations (organization secrets) or worker env merge. Seeding them here created
+# rows that the Project Integrations UI treated as project-specific overrides.
 _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -42,13 +45,7 @@ _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
     "OPENROUTER_API_KEY",
     "AZURE_API_KEY",
     "AZURE_API_BASE",
-    "PELIAS_API_KEY",
-    "GEOCODIO_API_KEY",
-    "BRAVE_SEARCH_API_KEY",
     "MAPBOX_API_TOKEN",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
 )
 
 

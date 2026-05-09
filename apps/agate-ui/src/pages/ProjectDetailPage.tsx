@@ -10,6 +10,7 @@ import ProjectDetailRunsTab, {
   type ProjectDetailRunsTabHandle,
 } from '@/components/project/ProjectDetailRunsTab'
 import ProjectDetailModelsTab from '@/components/project/ProjectDetailModelsTab'
+import ProjectDetailIntegrationsTab from '@/components/project/ProjectDetailIntegrationsTab'
 import {
   getProjectBySlug,
   getProjectStatsBySlug,
@@ -20,10 +21,12 @@ import {
   type ProjectEstimatedAiCost,
 } from '@/lib/api'
 import { formatDurationMs } from '@/lib/formatDuration'
+import { useAuth } from '@/lib/auth'
 import { Edit, Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
 
 export default function ProjectDetailPage() {
   const navigate = useNavigate()
+  const { organizationId, isOrgAdmin } = useAuth()
   const { projectSlug: projectSlugParam } = useParams<{ projectSlug: string }>()
   const slug = projectSlugParam ? decodeURIComponent(projectSlugParam) : ''
   const [project, setProject] = useState<Project | null>(null)
@@ -38,7 +41,6 @@ export default function ProjectDetailPage() {
   const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
   const systemSettingsRef = useRef<ProjectSettingsHandle>(null)
-  const integrationsSettingsRef = useRef<ProjectSettingsHandle>(null)
   const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
   const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
   const reload = useCallback(async () => {
@@ -393,17 +395,6 @@ export default function ProjectDetailPage() {
                 Edit system prompt
               </Button>
             ) : null}
-            {workspaceTab === 'integrations' ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => integrationsSettingsRef.current?.openAddProviderSecret?.()}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add provider secret
-              </Button>
-            ) : null}
             {workspaceTab === 'keys' ? (
               <Button
                 type="button"
@@ -432,14 +423,14 @@ export default function ProjectDetailPage() {
             <TabsTrigger value="models" className="w-full">
               Models
             </TabsTrigger>
-            <TabsTrigger value="settings" className="w-full">
-              Settings
-            </TabsTrigger>
             <TabsTrigger value="integrations" className="w-full">
               Integrations
             </TabsTrigger>
+            <TabsTrigger value="settings" className="w-full">
+              Settings
+            </TabsTrigger>
             <TabsTrigger value="keys" className="w-full col-span-2 sm:col-span-1 lg:col-span-1">
-              Keys
+              API
             </TabsTrigger>
           </TabsList>
           <TabsContent value="flows" className="mt-6 w-full min-w-0 outline-none">
@@ -459,6 +450,13 @@ export default function ProjectDetailPage() {
           <TabsContent value="models" className="mt-6 w-full min-w-0 outline-none">
             <ProjectDetailModelsTab projectId={project.id} />
           </TabsContent>
+          <TabsContent value="integrations" className="mt-6 w-full min-w-0 outline-none">
+            <ProjectDetailIntegrationsTab
+              projectId={project.id}
+              organizationId={organizationId}
+              isOrgAdmin={isOrgAdmin}
+            />
+          </TabsContent>
           <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
             <ProjectSettings
               ref={systemSettingsRef}
@@ -467,18 +465,6 @@ export default function ProjectDetailPage() {
               onOpenChange={() => {}}
               variant="inline"
               inlineScope="system"
-              primaryActionsInToolbar
-              onRemoteUpdated={reload}
-            />
-          </TabsContent>
-          <TabsContent value="integrations" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectSettings
-              ref={integrationsSettingsRef}
-              project={project}
-              open={true}
-              onOpenChange={() => {}}
-              variant="inline"
-              inlineScope="integrations"
               primaryActionsInToolbar
               onRemoteUpdated={reload}
             />

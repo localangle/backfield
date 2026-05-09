@@ -1128,6 +1128,15 @@ def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
     )
     assert r2.status_code == 403
 
+    r_plat = client.put(
+        f"/v1/organizations/{org_id}/integration-secrets/platform.geocode.geocode_earth",
+        json={"value": "pelias-member-denied"},
+    )
+    assert r_plat.status_code == 403
+
+    r_list_meta = client.get(f"/v1/organizations/{org_id}/integration-secrets")
+    assert r_list_meta.status_code == 403
+
 
 def test_ai_models_embedding_kind_rejected_for_now(client: TestClient) -> None:
     client.post(
@@ -1242,6 +1251,43 @@ def test_integration_secrets_org_admin_encrypt_and_metadata_only(
         ).status_code
         == 404
     )
+
+
+def test_platform_integration_secrets_put_round_trip_and_unknown_key_rejected(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "platadm@example.com", "password": "platadm-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "platadm@example.com", "password": "platadm-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    k_earth = "platform.geocode.geocode_earth"
+    put = client.put(
+        f"/v1/organizations/{org_id}/integration-secrets/{k_earth}",
+        json={"value": "geocode-earth-test-secret"},
+    )
+    assert put.status_code == 200
+    assert put.json()["integration_key"] == k_earth
+    assert "geocode-earth-test-secret" not in put.text
+
+    listed = client.get(f"/v1/organizations/{org_id}/integration-secrets")
+    assert listed.status_code == 200
+    keys = {r["integration_key"] for r in listed.json()}
+    assert k_earth in keys
+
+    bad_platform = client.put(
+        f"/v1/organizations/{org_id}/integration-secrets/platform.geocode.not_a_real_slot",
+        json={"value": "x"},
+    )
+    assert bad_platform.status_code == 400
+
+    enc = quote(k_earth, safe="")
+    assert client.delete(f"/v1/organizations/{org_id}/integration-secrets/{enc}").status_code == 204
 
 
 def test_integration_secrets_delete_credential_removes_linked_catalog_models(

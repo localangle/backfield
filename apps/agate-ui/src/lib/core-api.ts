@@ -227,6 +227,13 @@ export interface IntegrationSecretMetadata {
   updated_at: string
 }
 
+/** Metadata for all organization integration secrets (org admin). */
+export async function listOrganizationIntegrationSecretMetadata(
+  orgId: number,
+): Promise<IntegrationSecretMetadata[]> {
+  return jsonFetch(`/v1/organizations/${orgId}/integration-secrets`)
+}
+
 export async function putOrganizationIntegrationSecret(
   orgId: number,
   integrationKey: string,

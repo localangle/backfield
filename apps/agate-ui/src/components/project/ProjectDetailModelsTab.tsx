@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -25,6 +26,18 @@ function isAzureStyleModel(row: ProjectEffectiveAiModelRow): boolean {
   const p = row.provider?.toLowerCase() ?? ''
   const lm = row.litellm_model?.toLowerCase() ?? ''
   return p === 'azure' || lm.startsWith('azure/')
+}
+
+/** Matches Integrations tab — project-specific credential saved for this model. */
+function OverriddenBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="border-amber-300 bg-amber-50 text-amber-950 shadow-none dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100"
+    >
+      Overridden
+    </Badge>
+  )
 }
 
 interface ProjectDetailModelsTabProps {
@@ -153,22 +166,30 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
 
   const renderRow = (row: ProjectEffectiveAiModelRow) => {
     const busy = busyModelId === row.id
+    const override = row.project_credential_override_configured ?? false
     return (
-      <li
+      <div
         key={row.id}
-        className="rounded-md border border-border px-3 py-3 space-y-3"
+        className="space-y-3 border-b border-border pb-6 last:border-0 last:pb-0"
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{row.name}</div>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 space-y-0.5">
+            <div className="text-sm font-medium">{row.name}</div>
             <div className="truncate text-xs text-muted-foreground font-mono">
               {row.provider}/{row.provider_model_id}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Label htmlFor={`model-${row.id}-enabled`} className="text-xs text-muted-foreground sr-only">
-              Enabled for this project
-            </Label>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {override ? <OverriddenBadge /> : <Badge variant="success">Configured</Badge>}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {override
+            ? 'This project uses its own provider key for this model.'
+            : 'This project uses your organization’s saved credential for this model.'}
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
             <Switch
               id={`model-${row.id}-enabled`}
               checked={row.project_enabled}
@@ -176,52 +197,52 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
               onCheckedChange={(v) => void handleToggleEnabled(row, v)}
               aria-label={row.project_enabled ? 'Turn off for this project' : 'Turn on for this project'}
             />
+            <Label htmlFor={`model-${row.id}-enabled`} className="text-sm font-normal cursor-pointer">
+              Available for this project
+            </Label>
           </div>
-        </div>
-        <div className="text-xs text-muted-foreground">
-          {(row.project_credential_override_configured ?? false)
-            ? 'This project uses its own provider key for this model.'
-            : 'This project uses your organization’s saved credential for this model.'}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={() => openCredentialDialog(row)}
-          >
-            {(row.project_credential_override_configured ?? false) ? 'Update project key' : 'Use project key'}
-          </Button>
-          {(row.project_credential_override_configured ?? false) ? (
+          <div className="flex flex-wrap gap-2 shrink-0">
             <Button
               type="button"
-              variant="ghost"
               size="sm"
+              className="bg-black text-white hover:bg-black/90"
               disabled={busy}
-              onClick={() => void handleClearOverride(row)}
+              onClick={() => openCredentialDialog(row)}
             >
-              Use organization key
+              {override ? 'Update project key' : 'Use project key'}
             </Button>
-          ) : null}
+            {override ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => void handleClearOverride(row)}
+              >
+                Remove
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </li>
+      </div>
     )
   }
 
   return (
-    <>
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Models for this project
-          </CardTitle>
-          <p className="text-sm text-muted-foreground pt-1">
-            Turn models off for this project or paste a provider key that applies only here. Organization admins still
-            manage which models exist for your organization.
-          </p>
+    <div className="w-full min-w-0 space-y-6">
+      <p className="text-sm text-muted-foreground">
+        Turn models on or off for this project, or save a provider key that applies only to flows run here.
+      </p>
+
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle className="text-base">Project models</CardTitle>
+          <CardDescription>
+            Organization admins manage the catalog. Use the switch to include or exclude a model here; optional keys
+            override organization credentials for this project only.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-10">
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -231,26 +252,27 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             <p className="text-sm text-muted-foreground">{listError}</p>
           ) : (
             <>
-              <div>
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              <section className="space-y-4" aria-labelledby="models-available-heading">
+                <h2 id="models-available-heading" className="text-sm font-semibold tracking-tight">
                   Available in this project
-                </h3>
+                </h2>
                 {enabledRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No models enabled for this project.</p>
                 ) : (
-                  <ul className="space-y-3">{enabledRows.map(renderRow)}</ul>
+                  <div className="space-y-0">{enabledRows.map(renderRow)}</div>
                 )}
-              </div>
-              <div>
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              </section>
+
+              <section className="space-y-4 border-t border-border pt-10" aria-labelledby="models-off-heading">
+                <h2 id="models-off-heading" className="text-sm font-semibold tracking-tight">
                   Turned off for this project
-                </h3>
+                </h2>
                 {disabledRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">None — every organization model is available.</p>
                 ) : (
-                  <ul className="space-y-3">{disabledRows.map(renderRow)}</ul>
+                  <div className="space-y-0">{disabledRows.map(renderRow)}</div>
                 )}
-              </div>
+              </section>
             </>
           )}
         </CardContent>
@@ -297,6 +319,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             <Button
               type="button"
               disabled={credentialSaving}
+              className="bg-black text-white hover:bg-black/90"
               onClick={() => void submitCredentialOverride()}
             >
               {credentialSaving ? (
@@ -311,6 +334,6 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   )
 }
