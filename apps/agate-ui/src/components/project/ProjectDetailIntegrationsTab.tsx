@@ -14,6 +14,9 @@ import {
 } from '@/lib/api'
 import { listOrganizationIntegrationSecretMetadata } from '@/lib/core-api'
 import { PLATFORM_INTEGRATION_KEYS, PROJECT_OVERRIDE_ENV_KEYS } from '@/lib/platform-integration-keys'
+import { cn } from '@/lib/utils'
+
+const STORED_SECRET_PLACEHOLDER = 'Secret on file — paste to replace'
 
 const OVERRIDE_LABELS: Record<string, { title: string; hint: string }> = {
   PELIAS_API_KEY: {
@@ -44,7 +47,7 @@ const OVERRIDE_LABELS: Record<string, { title: string; hint: string }> = {
 
 function StatusBadge({ configured }: { configured: boolean }) {
   return (
-    <Badge variant={configured ? 'default' : 'secondary'}>
+    <Badge variant={configured ? 'success' : 'secondary'}>
       {configured ? 'Override set' : 'No override'}
     </Badge>
   )
@@ -228,6 +231,8 @@ export default function ProjectDetailIntegrationsTab({
           {PROJECT_OVERRIDE_ENV_KEYS.map((keyName) => {
             const meta = OVERRIDE_LABELS[keyName]
             const has = projectKeyNames.has(keyName)
+            const draft = drafts[keyName] ?? ''
+            const draftEmpty = !draft.trim()
             return (
               <div key={keyName} className="space-y-2 border-b border-border pb-6 last:border-0 last:pb-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -244,11 +249,22 @@ export default function ProjectDetailIntegrationsTab({
                       id={`ov-${keyName}`}
                       type="password"
                       autoComplete="off"
-                      value={drafts[keyName] ?? ''}
+                      value={draft}
                       onChange={(e) => setDraft(keyName, e.target.value)}
-                      placeholder={has ? 'New value to replace' : 'Paste key'}
+                      placeholder={
+                        has && draftEmpty
+                          ? STORED_SECRET_PLACEHOLDER
+                          : !has
+                            ? 'Paste key'
+                            : undefined
+                      }
                       disabled={saving}
-                      className="font-mono text-sm"
+                      className={cn(
+                        'font-mono text-sm',
+                        has &&
+                          draftEmpty &&
+                          'border-emerald-600/40 bg-emerald-50/70 dark:border-emerald-500/45 dark:bg-emerald-950/35',
+                      )}
                     />
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">
