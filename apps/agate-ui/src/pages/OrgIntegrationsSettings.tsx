@@ -373,7 +373,7 @@ export default function OrgIntegrationsSettings() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Badge variant="outline">DuckDuckGo (no API key)</Badge>
+              <Badge variant="outline">DuckDuckGo</Badge>
             </CardContent>
           </Card>
         </div>
