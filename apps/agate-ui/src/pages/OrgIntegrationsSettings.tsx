@@ -133,6 +133,36 @@ export default function OrgIntegrationsSettings() {
         <h2 id="integrations-geocoding-heading" className="text-lg font-semibold tracking-tight">
           Geocoding
         </h2>
+        <p className="text-sm text-muted-foreground max-w-prose">
+          Backfield recommends the use of{' '}
+          <a
+            href="https://geocode.earth/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            Geocode Earth
+          </a>{' '}
+          and{' '}
+          <a
+            href="https://www.geocod.io/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            Geocodio
+          </a>{' '}
+          to enrich extracted place data. Both are based on open data and allow results to be stored.{' '}
+          <a
+            href="https://nominatim.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            Nominatim
+          </a>{' '}
+          is used as a fallback.
+        </p>
         <div className="flex flex-col gap-4 w-full">
           <Card className="w-full">
             <CardHeader>
