@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/table"
 import { SettingsScreenHeader } from "@/components/SettingsScreenHeader"
 import { useAuth } from "@/lib/auth"
-import { listOrgProjects, type ProjectSummary } from "@/lib/core-api"
 import {
   createBundleExportJob,
   createBundleImportJob,
@@ -49,8 +48,6 @@ import {
   type StylebookBundleManifestPreview,
   type StylebookCatalogRow,
 } from "@/lib/stylebook-org-api"
-
-const IMPORT_PROJECT_SKIP = "__import_skip__"
 
 function sortCatalogs(rows: StylebookCatalogRow[]): StylebookCatalogRow[] {
   return [...rows].sort(
@@ -94,8 +91,6 @@ export default function ManageCatalogsPage() {
     useState<StylebookBundleManifestPreview | null>(null)
   const [importPreviewLoading, setImportPreviewLoading] = useState(false)
   const [importName, setImportName] = useState("")
-  const [importMappings, setImportMappings] = useState<Record<string, string>>({})
-  const [orgProjects, setOrgProjects] = useState<ProjectSummary[]>([])
   const [importBusy, setImportBusy] = useState(false)
 
   const sorted = useMemo(() => sortCatalogs(rows), [rows])
@@ -259,28 +254,11 @@ export default function ManageCatalogsPage() {
     return sorted.filter((c) => c.id !== deleteRow.id)
   }, [deleteRow, sorted])
 
-  useEffect(() => {
-    if (!importOpen || !organizationId) return
-    let cancelled = false
-    void (async () => {
-      try {
-        const list = await listOrgProjects(organizationId)
-        if (!cancelled) setOrgProjects(list)
-      } catch {
-        if (!cancelled) setOrgProjects([])
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [importOpen, organizationId])
-
   const openImport = () => {
     setImportOpen(true)
     setImportFile(null)
     setImportPreview(null)
     setImportName("")
-    setImportMappings({})
   }
 
   const onImportFileChange = (file: File | null) => {
@@ -299,12 +277,6 @@ export default function ManageCatalogsPage() {
           ? `${String(prev.source_stylebook.name)} copy`
           : "Imported stylebook"
         setImportName(baseName)
-        const next: Record<string, string> = {}
-        for (const s of prev.project_slices) {
-          const match = orgProjects.find((p) => p.slug === s.project_slug)
-          next[s.project_slug] = match ? String(match.id) : ""
-        }
-        setImportMappings(next)
       } catch (e) {
         showError(e instanceof Error ? e.message : "Could not read that file.")
         setImportFile(null)
@@ -313,23 +285,6 @@ export default function ManageCatalogsPage() {
       }
     })()
   }
-
-  useEffect(() => {
-    if (!importPreview || orgProjects.length === 0) return
-    setImportMappings((prev) => {
-      const next = { ...prev }
-      let changed = false
-      for (const s of importPreview.project_slices) {
-        if (next[s.project_slug]) continue
-        const match = orgProjects.find((p) => p.slug === s.project_slug)
-        if (match) {
-          next[s.project_slug] = String(match.id)
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [importPreview, orgProjects])
 
   const onExportCatalog = async (row: StylebookCatalogRow) => {
     if (!organizationId) return
@@ -363,18 +318,11 @@ export default function ManageCatalogsPage() {
       showError("Enter a name for the new stylebook.")
       return
     }
-    const mappings: Record<string, number> = {}
-    for (const s of importPreview.project_slices) {
-      const raw = importMappings[s.project_slug]?.trim()
-      if (!raw) continue
-      const pid = parseInt(raw, 10)
-      if (Number.isFinite(pid)) mappings[s.project_slug] = pid
-    }
     try {
       setImportBusy(true)
       const job = await createBundleImportJob(organizationId, {
         new_stylebook_name: name,
-        project_mappings: mappings,
+        project_mappings: {},
       })
       await uploadBundleZipViaApi(organizationId, job.id, importFile)
       await finalizeBundleImportJob(organizationId, job.id)
@@ -517,8 +465,8 @@ export default function ManageCatalogsPage() {
           <DialogHeader>
             <DialogTitle>Import a stylebook copy</DialogTitle>
             <DialogDescription>
-              Upload a stylebook file you previously downloaded from this product. A new stylebook
-              will be created; locations get new internal identifiers.
+              Upload a stylebook file you previously downloaded from this product. Only canonical
+              locations are copied; a new stylebook is created with new internal identifiers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -548,47 +496,6 @@ export default function ManageCatalogsPage() {
                     placeholder="e.g. Metro (imported)"
                   />
                 </div>
-                {importPreview.project_slices.length > 0 ? (
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      This file includes notes or connections tied to projects from where it was
-                      created. Choose which projects in your organization should receive that data,
-                      or leave a row unselected to skip it.
-                    </p>
-                    {importPreview.project_slices.map((s) => (
-                      <div key={s.project_slug} className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">
-                          From file: {s.project_slug}
-                        </Label>
-                        <Select
-                          value={
-                            importMappings[s.project_slug]?.trim()
-                              ? importMappings[s.project_slug]
-                              : IMPORT_PROJECT_SKIP
-                          }
-                          onValueChange={(v) =>
-                            setImportMappings((m) => ({
-                              ...m,
-                              [s.project_slug]: v === IMPORT_PROJECT_SKIP ? "" : v,
-                            }))
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Skip this data" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={IMPORT_PROJECT_SKIP}>Skip this data</SelectItem>
-                            {orgProjects.map((p) => (
-                              <SelectItem key={p.id} value={String(p.id)}>
-                                {p.name} ({p.slug})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
               </>
             ) : null}
           </div>

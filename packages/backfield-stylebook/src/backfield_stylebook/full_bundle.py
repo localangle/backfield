@@ -14,25 +14,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from backfield_db import (
-    BackfieldProject,
-    Stylebook,
-    StylebookConnection,
-    StylebookLocationAlias,
-    StylebookLocationCanonical,
-    StylebookLocationMeta,
-)
-from sqlalchemy import and_, or_
+from backfield_db import Stylebook, StylebookLocationCanonical
 from sqlmodel import Session, col, select
 
 from backfield_stylebook.canonical_slug import allocate_unique_canonical_slug
-from backfield_stylebook.locations import upsert_alias_for_canonical_text
 from backfield_stylebook.stylebook_library import (
     StylebookLibraryError,
     create_stylebook_for_import,
 )
 
-BUNDLE_SCHEMA_VERSION = 1
+# v2: canonical rows only (no aliases, meta, connections, or candidate-queue data).
+BUNDLE_SCHEMA_VERSION = 2
+ALLOWED_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2})
 ROWS_PER_SHARD = 2000
 DEFAULT_MAX_ZIP_BYTES = 512 * 1024 * 1024  # 512 MiB guardrail
 
@@ -66,46 +59,6 @@ def canonical_to_export_dict(c: StylebookLocationCanonical) -> dict[str, Any]:
         "district_key": c.district_key,
         "created_at": _iso_utc(c.created_at),
         "updated_at": _iso_utc(c.updated_at),
-    }
-
-
-def alias_to_export_dict(a: StylebookLocationAlias) -> dict[str, Any]:
-    return {
-        "id": int(a.id) if a.id is not None else None,
-        "location_canonical_id": str(a.location_canonical_id),
-        "alias_text": a.alias_text,
-        "normalized_alias": a.normalized_alias,
-        "provenance": a.provenance,
-        "suppressed": bool(a.suppressed),
-        "created_at": _iso_utc(a.created_at),
-        "updated_at": _iso_utc(a.updated_at),
-    }
-
-
-def meta_to_export_dict(m: StylebookLocationMeta) -> dict[str, Any]:
-    return {
-        "id": int(m.id) if m.id is not None else None,
-        "project_id": int(m.project_id),
-        "stylebook_location_canonical_id": str(m.stylebook_location_canonical_id),
-        "meta_type": m.meta_type,
-        "data_json": m.data_json,
-        "added": bool(m.added),
-        "edited": bool(m.edited),
-        "deleted": bool(m.deleted),
-        "created_at": _iso_utc(m.created_at),
-    }
-
-
-def connection_to_export_dict(c: StylebookConnection) -> dict[str, Any]:
-    return {
-        "id": int(c.id) if c.id is not None else None,
-        "project_id": int(c.project_id),
-        "from_entity_type": c.from_entity_type,
-        "from_entity_id": str(c.from_entity_id),
-        "to_entity_type": c.to_entity_type,
-        "to_entity_id": str(c.to_entity_id),
-        "nature": c.nature,
-        "created_at": _iso_utc(c.created_at),
     }
 
 
@@ -169,87 +122,6 @@ def _iter_canonicals(session: Session, stylebook_id: int) -> Iterator[StylebookL
         offset += page
 
 
-def _iter_aliases(session: Session, stylebook_id: int) -> Iterator[StylebookLocationAlias]:
-    offset = 0
-    page = 500
-    while True:
-        batch = session.exec(
-            select(StylebookLocationAlias)
-            .join(
-                StylebookLocationCanonical,
-                StylebookLocationAlias.location_canonical_id == StylebookLocationCanonical.id,
-            )
-            .where(StylebookLocationCanonical.stylebook_id == stylebook_id)
-            .order_by(col(StylebookLocationAlias.id))
-            .offset(offset)
-            .limit(page)
-        ).all()
-        if not batch:
-            break
-        yield from batch
-        offset += page
-
-
-def _iter_meta_for_project(
-    session: Session, *, stylebook_id: int, project_id: int
-) -> Iterator[StylebookLocationMeta]:
-    offset = 0
-    page = 500
-    while True:
-        batch = session.exec(
-            select(StylebookLocationMeta)
-            .join(
-                StylebookLocationCanonical,
-                StylebookLocationMeta.stylebook_location_canonical_id
-                == StylebookLocationCanonical.id,
-            )
-            .where(
-                StylebookLocationMeta.project_id == project_id,
-                StylebookLocationCanonical.stylebook_id == stylebook_id,
-            )
-            .order_by(col(StylebookLocationMeta.id))
-            .offset(offset)
-            .limit(page)
-        ).all()
-        if not batch:
-            break
-        yield from batch
-        offset += page
-
-
-def _iter_connections_for_project(
-    session: Session, *, stylebook_id: int, project_id: int
-) -> Iterator[StylebookConnection]:
-    canon_sq = select(StylebookLocationCanonical.id).where(
-        StylebookLocationCanonical.stylebook_id == stylebook_id
-    )
-    cond = or_(
-        and_(
-            StylebookConnection.from_entity_type == "location",
-            col(StylebookConnection.from_entity_id).in_(canon_sq),
-        ),
-        and_(
-            StylebookConnection.to_entity_type == "location",
-            col(StylebookConnection.to_entity_id).in_(canon_sq),
-        ),
-    )
-    offset = 0
-    page = 500
-    while True:
-        batch = session.exec(
-            select(StylebookConnection)
-            .where(StylebookConnection.project_id == project_id)
-            .where(cond)
-            .order_by(col(StylebookConnection.id))
-            .offset(offset)
-            .limit(page)
-        ).all()
-        if not batch:
-            break
-        yield from batch
-        offset += page
-
-
 def export_stylebook_bundle(
     session: Session,
     *,
@@ -284,64 +156,7 @@ def export_stylebook_bundle(
         )
         file_entries.extend(canon_files)
 
-        prog({"phase": "aliases"})
-        alias_files = _write_jsonl_shards(
-            work,
-            "aliases",
-            (alias_to_export_dict(a) for a in _iter_aliases(session, stylebook_id)),
-            kind="alias",
-            project_slug=None,
-            rows_per_shard=rows_per_shard,
-        )
-        file_entries.extend(alias_files)
-
-        projects = session.exec(
-            select(BackfieldProject).where(BackfieldProject.organization_id == organization_id)
-        ).all()
-
         project_slices: list[dict[str, Any]] = []
-        for proj in projects:
-            pid = int(proj.id)
-            slug = str(proj.slug)
-            meta_rows = list(
-                _iter_meta_for_project(session, stylebook_id=stylebook_id, project_id=pid)
-            )
-            conn_rows = list(
-                _iter_connections_for_project(session, stylebook_id=stylebook_id, project_id=pid)
-            )
-            if not meta_rows and not conn_rows:
-                continue
-
-            slice_entry: dict[str, Any] = {
-                "project_id": pid,
-                "project_slug": slug,
-                "meta_row_count": len(meta_rows),
-                "connection_row_count": len(conn_rows),
-            }
-
-            if meta_rows:
-                mf = _write_jsonl_shards(
-                    work,
-                    f"meta/{slug}",
-                    (meta_to_export_dict(m) for m in meta_rows),
-                    kind="meta",
-                    project_slug=slug,
-                    rows_per_shard=rows_per_shard,
-                )
-                file_entries.extend(mf)
-
-            if conn_rows:
-                cf = _write_jsonl_shards(
-                    work,
-                    f"connections/{slug}",
-                    (connection_to_export_dict(c) for c in conn_rows),
-                    kind="connection",
-                    project_slug=slug,
-                    rows_per_shard=rows_per_shard,
-                )
-                file_entries.extend(cf)
-
-            project_slices.append(slice_entry)
 
         manifest: dict[str, Any] = {
             "schema_version": BUNDLE_SCHEMA_VERSION,
@@ -393,7 +208,7 @@ def read_manifest_from_zip(zip_path: str | Path) -> dict[str, Any]:
             raise ValueError("bundle is missing manifest.json") from e
     manifest = json.loads(raw.decode("utf-8"))
     ver = manifest.get("schema_version")
-    if ver != BUNDLE_SCHEMA_VERSION:
+    if ver not in ALLOWED_MANIFEST_SCHEMA_VERSIONS:
         raise ValueError(f"unsupported bundle schema_version: {ver!r}")
     if not isinstance(manifest.get("files"), list):
         raise ValueError("bundle manifest missing files list")
@@ -412,11 +227,10 @@ def import_stylebook_bundle(
     organization_id: int,
     zip_path: str | Path,
     new_stylebook_name: str,
-    project_mappings: dict[str, int],
     on_progress: ProgressFn | None = None,
     max_zip_bytes: int = DEFAULT_MAX_ZIP_BYTES,
 ) -> tuple[Stylebook, dict[str, Any]]:
-    """Import bundle into a new stylebook; remap canonical UUIDs and project ids per mappings."""
+    """Import bundle into a new stylebook; remap canonical UUIDs (canonical rows only)."""
     validate_zip_size(zip_path, max_bytes=max_zip_bytes)
     manifest = read_manifest_from_zip(zip_path)
 
@@ -429,15 +243,6 @@ def import_stylebook_bundle(
         if on_progress:
             on_progress(p)
 
-    # Validate target projects belong to org
-    for slug, tid in project_mappings.items():
-        p = session.get(BackfieldProject, int(tid))
-        if p is None or int(p.organization_id) != organization_id:
-            raise ValueError(f"invalid target project for slug {slug!r}")
-        if str(p.slug) != str(slug):
-            # Allow mapping from export slug to different project slug? Plan: key is source slug.
-            pass
-
     new_book = create_stylebook_for_import(
         session,
         organization_id=organization_id,
@@ -447,16 +252,7 @@ def import_stylebook_bundle(
     session.refresh(new_book)
     new_sb_id = int(new_book.id)  # type: ignore[arg-type]
 
-    stats: dict[str, Any] = {
-        "canonicals": 0,
-        "aliases": 0,
-        "meta": 0,
-        "connections": 0,
-        "meta_skipped_slices": 0,
-        "connection_skipped_slices": 0,
-        "aliases_skipped": 0,
-        "connections_skipped": 0,
-    }
+    stats: dict[str, Any] = {"canonicals": 0}
     id_map: dict[str, str] = {}
 
     prog({"phase": "canonicals"})
@@ -501,94 +297,6 @@ def import_stylebook_bundle(
                     id_map[old_id] = nid
                     stats["canonicals"] += 1
         session.commit()
-
-        prog({"phase": "aliases"})
-        for fe in manifest["files"]:
-            if fe.get("kind") != "alias":
-                continue
-            rel = fe["path"]
-            with zf.open(rel) as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    row = json.loads(line)
-                    old_cid = str(row["location_canonical_id"])
-                    new_cid = id_map.get(old_cid)
-                    if not new_cid:
-                        stats["aliases_skipped"] += 1
-                        continue
-                    upsert_alias_for_canonical_text(
-                        session,
-                        canon_id=new_cid,
-                        alias_text=str(row["alias_text"]),
-                        normalized_alias=str(row["normalized_alias"]),
-                        provenance=str(row.get("provenance") or "bundle_import"),
-                    )
-                    stats["aliases"] += 1
-        session.commit()
-
-        prog({"phase": "meta_and_connections"})
-
-        for fe in manifest["files"]:
-            kind = fe.get("kind")
-            slug = fe.get("project_slug")
-            if kind not in ("meta", "connection") or not slug:
-                continue
-            target_pid = project_mappings.get(str(slug))
-            if target_pid is None:
-                if kind == "meta":
-                    stats["meta_skipped_slices"] += 1
-                else:
-                    stats["connection_skipped_slices"] += 1
-                continue
-            rel = fe["path"]
-            with zf.open(rel) as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    row = json.loads(line)
-                    if kind == "meta":
-                        old_cid = str(row["stylebook_location_canonical_id"])
-                        new_cid = id_map.get(old_cid)
-                        if not new_cid:
-                            continue
-                        meta = StylebookLocationMeta(
-                            project_id=int(target_pid),
-                            stylebook_location_canonical_id=new_cid,
-                            meta_type=str(row["meta_type"]),
-                            data_json=row.get("data_json"),
-                            added=bool(row.get("added", False)),
-                            edited=bool(row.get("edited", False)),
-                            deleted=bool(row.get("deleted", False)),
-                        )
-                        session.add(meta)
-                        stats["meta"] += 1
-                    else:
-                        from_t = str(row["from_entity_type"])
-                        to_t = str(row["to_entity_type"])
-                        from_id = str(row["from_entity_id"])
-                        to_id = str(row["to_entity_id"])
-                        if from_t == "location" and from_id not in id_map:
-                            stats["connections_skipped"] += 1
-                            continue
-                        if to_t == "location" and to_id not in id_map:
-                            stats["connections_skipped"] += 1
-                            continue
-                        new_from = id_map[from_id] if from_t == "location" else from_id
-                        new_to = id_map[to_id] if to_t == "location" else to_id
-                        conn = StylebookConnection(
-                            project_id=int(target_pid),
-                            from_entity_type=from_t,
-                            from_entity_id=new_from,
-                            to_entity_type=to_t,
-                            to_entity_id=new_to,
-                            nature=str(row["nature"]),
-                        )
-                        session.add(conn)
-                        stats["connections"] += 1
-            session.commit()
 
     prog({"phase": "done", "stylebook_id": new_sb_id})
     return new_book, stats

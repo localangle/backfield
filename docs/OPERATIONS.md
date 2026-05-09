@@ -45,8 +45,8 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
   - `worker.tasks.execute_s3_batch_setup` — lists/validates S3 JSON under the S3Input prefix, inserts **`agate_processed_item`** rows, then queues a **`chord`** of **`execute_processed_item`** tasks.
   - `worker.tasks.execute_processed_item` — one Celery task per queued item; runs `execute_graph` with an S3Input shim (parent **`agate_run.id`** remains **`BACKFIELD_RUN_ID`** for DBOutput / substrate).
   - `worker.tasks.finalize_s3_parent_run` — chord callback that aggregates parent **`agate_run`** status after all items finish.
-  - `worker.tasks.export_stylebook_bundle` — builds a full stylebook ZIP (manifest + JSONL shards) and uploads it to **`STYLEBOOK_BUNDLE_S3_BUCKET`** for org-admin download links from **stylebook-api**.
-  - `worker.tasks.import_stylebook_bundle` — downloads a staged ZIP from the same bucket and imports it into a **new** stylebook (new canonical ids; optional per-project mapping for notes and connections).
+  - `worker.tasks.export_stylebook_bundle` — builds a stylebook ZIP (**manifest + canonical JSONL shards only**; no aliases, meta, connections, or candidate-queue data) and uploads it to **`STYLEBOOK_BUNDLE_S3_BUCKET`** for org-admin download links from **stylebook-api**.
+  - `worker.tasks.import_stylebook_bundle` — downloads a staged ZIP from the same bucket and imports **canonical locations** into a **new** stylebook (new canonical UUIDs). Manifest schema **1** or **2** is accepted; only `canonical` shards are applied.
 - Worker app name: `agate_worker`
 - Health endpoints:
   - Agate API: `GET /health`

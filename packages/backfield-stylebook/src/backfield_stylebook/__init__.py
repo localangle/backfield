@@ -15,6 +15,7 @@ from backfield_stylebook.canonical_policy import (
     rank_scored_canonical_recall_matches,
 )
 from backfield_stylebook.full_bundle import (
+    ALLOWED_MANIFEST_SCHEMA_VERSIONS,
     BUNDLE_SCHEMA_VERSION,
     DEFAULT_MAX_ZIP_BYTES,
     export_stylebook_bundle,
@@ -57,6 +58,7 @@ from backfield_stylebook.stylebook_record_slug import (
 )
 
 __all__ = [
+    "ALLOWED_MANIFEST_SCHEMA_VERSIONS",
     "BUNDLE_SCHEMA_VERSION",
     "DEFAULT_MAX_ZIP_BYTES",
     "CANONICAL_LINK_LINKED",

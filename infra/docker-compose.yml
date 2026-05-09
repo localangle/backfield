@@ -182,10 +182,11 @@ services:
     ports:
       - "5173:5173"
     environment:
-      # Same-origin dev: browser calls /api/agate and /v1 on :5173; Vite proxies to backend services.
+      # Same-origin dev: browser calls /api/agate, /api/stylebook, and /v1 on :5173; Vite proxies.
       VITE_API_BASE: /api/agate
       VITE_AUTH_API_BASE: ""
-      VITE_STYLEBOOK_API_BASE: http://localhost:8003
+      VITE_STYLEBOOK_API_BASE: /api/stylebook
+      VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
       VITE_CORE_API_PROXY_TARGET: http://core-api:8004
       VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
     volumes:

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from backfield_db import BackfieldWorkspace, Stylebook, StylebookSlugRedirect
+from backfield_db import BackfieldWorkspace, Stylebook, StylebookBundleJob, StylebookSlugRedirect
+from sqlalchemy import delete, or_
 from sqlmodel import Session, col, select
 
 from backfield_stylebook.stylebook_record_slug import allocate_unique_stylebook_slug
@@ -217,6 +218,17 @@ def delete_stylebook(
         replacement.is_default = True
         session.add(replacement)
         session.flush()
+
+    # Async bundle jobs reference this stylebook; remove them so FK does not block delete.
+    session.exec(
+        delete(StylebookBundleJob).where(
+            or_(
+                StylebookBundleJob.source_stylebook_id == stylebook_id,
+                StylebookBundleJob.result_stylebook_id == stylebook_id,
+            )
+        )
+    )
+    session.flush()
 
     session.delete(book)
     session.flush()

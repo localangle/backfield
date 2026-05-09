@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import uuid
+
 from backfield_db import (
     BackfieldOrganization,
     BackfieldWorkspace,
     Stylebook,
+    StylebookBundleJob,
     StylebookSlugRedirect,
 )
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
@@ -143,6 +146,40 @@ def test_cannot_delete_when_workspace_references() -> None:
             assert "workspace" in str(e).lower()
         else:
             raise AssertionError("expected StylebookLibraryError")
+
+
+def test_delete_stylebook_removes_referencing_bundle_jobs() -> None:
+    """Bundle import/export jobs FK to stylebook; delete must clear them first."""
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="O", slug="o-bjob")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        oid = int(org.id)  # type: ignore[arg-type]
+        create_stylebook(session, organization_id=oid, name="A", is_default=True)
+        b = create_stylebook(session, organization_id=oid, name="B", is_default=False)
+        session.commit()
+        session.refresh(b)
+        bid = int(b.id)  # type: ignore[arg-type]
+
+        session.add(
+            StylebookBundleJob(
+                id=str(uuid.uuid4()),
+                organization_id=oid,
+                kind="import",
+                status="succeeded",
+                result_stylebook_id=bid,
+            )
+        )
+        session.commit()
+
+        delete_stylebook(session, bid)
+        session.commit()
+
+        assert session.get(Stylebook, bid) is None
+        remaining_jobs = session.exec(select(StylebookBundleJob)).all()
+        assert len(remaining_jobs) == 0
 
 
 def test_delete_default_with_replacement() -> None:

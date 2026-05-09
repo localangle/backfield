@@ -674,10 +674,6 @@ def import_stylebook_bundle_task(job_id: str) -> None:
         if not name or not str(name).strip():
             _fail_stylebook_bundle_job(engine, job_id, "import job missing new_stylebook_name")
             return
-        raw_map = req.get("project_mappings") or {}
-        project_mappings: dict[str, int] = {}
-        for sk, vid in raw_map.items():
-            project_mappings[str(sk)] = int(vid)
         job.status = "running"
         job.updated_at = datetime.now(UTC)
         session.add(job)
@@ -697,7 +693,6 @@ def import_stylebook_bundle_task(job_id: str) -> None:
                 organization_id=org_id,
                 zip_path=tmp_path,
                 new_stylebook_name=str(name).strip(),
-                project_mappings=project_mappings,
                 on_progress=lambda p: _update_bundle_job_progress(engine, job_id, p),
             )
             jid = new_book.id  # type: ignore[union-attr]
