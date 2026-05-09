@@ -134,7 +134,7 @@ export default function OrgIntegrationsSettings() {
           Geocoding
         </h2>
         <p className="text-sm text-muted-foreground max-w-prose">
-          Backfield recommends the use of{' '}
+          Backfield supports the use of{' '}
           <a
             href="https://geocode.earth/"
             target="_blank"
