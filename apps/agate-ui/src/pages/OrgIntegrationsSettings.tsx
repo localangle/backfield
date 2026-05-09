@@ -173,7 +173,7 @@ export default function OrgIntegrationsSettings() {
                 <CardTitle className="text-base">Geocode Earth</CardTitle>
                 <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodeEarth)} />
               </div>
-              <CardDescription>Pelias-compatible API key (stored securely).</CardDescription>
+              <CardDescription>Primary geocoding service. Free trial available.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
