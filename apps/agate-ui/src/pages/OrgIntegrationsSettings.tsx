@@ -320,7 +320,7 @@ export default function OrgIntegrationsSettings() {
                 <CardTitle className="text-base">Brave Search</CardTitle>
                 <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.braveSearch)} />
               </div>
-              <CardDescription>Optional richer web results where the flow uses Brave.</CardDescription>
+              <CardDescription>Agentic web search.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
