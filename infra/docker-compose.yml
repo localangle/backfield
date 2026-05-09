@@ -48,8 +48,8 @@ services:
       # (not localhost:5433, which is only valid from the host machine).
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
-      STYLEBOOK_BUNDLE_S3_BUCKET: ${STYLEBOOK_BUNDLE_S3_BUCKET:-}
-      STYLEBOOK_BUNDLE_S3_PREFIX: ${STYLEBOOK_BUNDLE_S3_PREFIX:-stylebook-bundles}
+      # STYLEBOOK_BUNDLE_* comes from env_file (../.env); do not set empty ${...} here or it
+      # overrides env_file when host-side interpolation is unset.
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,8 +156,7 @@ services:
       BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-3}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
-      STYLEBOOK_BUNDLE_S3_BUCKET: ${STYLEBOOK_BUNDLE_S3_BUCKET:-}
-      STYLEBOOK_BUNDLE_S3_PREFIX: ${STYLEBOOK_BUNDLE_S3_PREFIX:-stylebook-bundles}
+      # STYLEBOOK_BUNDLE_* from env_file (../.env); avoid empty compose override (see stylebook-api).
       # LLM / geocoder keys: repo-root .env via env_file above.
       PROJECT_SLUG: ${PROJECT_SLUG:-}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}

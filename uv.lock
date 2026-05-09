@@ -3172,6 +3172,7 @@ dependencies = [
     { name = "celery" },
     { name = "fastapi" },
     { name = "python-multipart" },
+    { name = "redis" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -3184,6 +3185,7 @@ requires-dist = [
     { name = "celery", specifier = ">=5.3.0" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "redis", specifier = ">=5.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
 ]
 

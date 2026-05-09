@@ -425,17 +425,17 @@ export default function ManageCatalogsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <SettingsScreenHeader title="Stylebooks">
           <>
-            Stylebooks hold your organization&apos;s canonical locations and related editorial data.
-            Use <span className="text-foreground font-medium">Users</span> to choose who may edit each
-            stylebook; this page is for creating stylebooks and setting the organization default.
+            Stylebooks hold your organization&apos;s canonical locations and related editorial data.{" "}
+            Manage access to stylebooks via{" "}
+            <span className="text-foreground font-medium">Users</span>.
           </>
         </SettingsScreenHeader>
-        <div className="flex flex-wrap gap-2 justify-end">
-          <Button type="button" variant="outline" className="shrink-0" onClick={openImport}>
-            Import a copy
-          </Button>
+        <div className="flex flex-row flex-nowrap items-center justify-end gap-2 shrink-0 self-start sm:self-auto">
           <Button type="button" className="shrink-0" onClick={() => setCreateOpen(true)}>
             New stylebook
+          </Button>
+          <Button type="button" variant="outline" className="shrink-0" onClick={openImport}>
+            Import
           </Button>
         </div>
       </div>
@@ -481,7 +481,7 @@ export default function ManageCatalogsPage() {
                       disabled={exportingId === r.id}
                       onClick={() => void onExportCatalog(r)}
                     >
-                      {exportingId === r.id ? "Preparing…" : "Download a copy"}
+                      {exportingId === r.id ? "Exporting…" : "Export"}
                     </Button>
                     <Button
                       type="button"
