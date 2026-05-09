@@ -184,8 +184,7 @@ export default function ProjectDetailIntegrationsTab({
       ) : null}
 
       <p className="text-sm text-muted-foreground">
-        Configure geocoding, search, and S3 credentials for this project. Values here replace
-        organization defaults for runs in this project only. API access keys stay on the Keys tab.
+        Override geocoding, search and S3 credentials for this project.
       </p>
 
       <Card>
