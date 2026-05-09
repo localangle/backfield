@@ -39,9 +39,8 @@ export default function OrgIntegrationsSettings() {
   const reload = useCallback(async () => {
     if (organizationId == null) return
     const rows = await listOrganizationIntegrationSecretMetadata(organizationId)
-    const next = new Set(
-      rows.map((r) => r.integration_key).filter((k) => Object.values(PLATFORM_INTEGRATION_KEYS).includes(k)),
-    )
+    const allowed = new Set<string>(Object.values(PLATFORM_INTEGRATION_KEYS))
+    const next = new Set(rows.map((r) => r.integration_key).filter((k) => allowed.has(k)))
     setConfiguredKeys(next)
   }, [organizationId])
 
@@ -115,7 +114,7 @@ export default function OrgIntegrationsSettings() {
   }
 
   return (
-    <div className="w-full max-w-4xl space-y-8">
+    <div className="w-full max-w-none min-w-0 space-y-10">
       <p className="text-sm text-muted-foreground">
         Organization defaults for geocoding, web search, and cloud storage. Projects can override
         these on each project’s Integrations tab.
@@ -128,297 +127,322 @@ export default function OrgIntegrationsSettings() {
         </Alert>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Built-in geocoding helpers</CardTitle>
-          <CardDescription>
-            These services are always available for flows that use them. No API key is required.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Badge variant="outline">Nominatim</Badge>
-          <Badge variant="outline">Overpass</Badge>
-        </CardContent>
-      </Card>
+      {/* Geocoding */}
+      <section className="space-y-4" aria-labelledby="integrations-geocoding-heading">
+        <h2 id="integrations-geocoding-heading" className="text-lg font-semibold tracking-tight">
+          Geocoding
+        </h2>
+        <div className="flex flex-col gap-4 w-full">
+          <Card className="w-full">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-base">Geocode Earth</CardTitle>
+                <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodeEarth)} />
+              </div>
+              <CardDescription>Pelias-compatible API key (stored securely).</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label htmlFor="org-pelias">API key</Label>
+                <Input
+                  id="org-pelias"
+                  type="password"
+                  autoComplete="off"
+                  value={pelias}
+                  onChange={(e) => setPelias(e.target.value)}
+                  disabled={saving}
+                  className="font-mono text-sm mt-1 w-full"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saving || !pelias.trim()}
+                  onClick={async () => {
+                    const ok = await savePlatform(PLATFORM_INTEGRATION_KEYS.geocodeEarth, pelias.trim())
+                    if (ok) setPelias('')
+                  }}
+                >
+                  Save
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || !configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodeEarth)}
+                  onClick={() => void removePlatform(PLATFORM_INTEGRATION_KEYS.geocodeEarth)}
+                >
+                  Remove
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Web search fallback</CardTitle>
-          <CardDescription>
-            When Brave Search is not configured, flows that need search fall back automatically.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Badge variant="outline">DuckDuckGo (no API key)</Badge>
-        </CardContent>
-      </Card>
+          <Card className="w-full">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-base">Geocodio</CardTitle>
+                <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodio)} />
+              </div>
+              <CardDescription>Optional commercial geocoding provider.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label htmlFor="org-gc">API key</Label>
+                <Input
+                  id="org-gc"
+                  type="password"
+                  autoComplete="off"
+                  value={geocodio}
+                  onChange={(e) => setGeocodio(e.target.value)}
+                  disabled={saving}
+                  className="font-mono text-sm mt-1 w-full"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saving || !geocodio.trim()}
+                  onClick={async () => {
+                    const ok = await savePlatform(PLATFORM_INTEGRATION_KEYS.geocodio, geocodio.trim())
+                    if (ok) setGeocodio('')
+                  }}
+                >
+                  Save
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || !configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodio)}
+                  onClick={() => void removePlatform(PLATFORM_INTEGRATION_KEYS.geocodio)}
+                >
+                  Remove
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-base">Geocode Earth</CardTitle>
-            <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodeEarth)} />
-          </div>
-          <CardDescription>Pelias-compatible API key (stored securely).</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <Label htmlFor="org-pelias">API key</Label>
-            <Input
-              id="org-pelias"
-              type="password"
-              autoComplete="off"
-              value={pelias}
-              onChange={(e) => setPelias(e.target.value)}
-              disabled={saving}
-              className="font-mono text-sm mt-1"
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={saving || !pelias.trim()}
-              onClick={async () => {
-                const ok = await savePlatform(PLATFORM_INTEGRATION_KEYS.geocodeEarth, pelias.trim())
-                if (ok) setPelias('')
-              }}
-            >
-              Save
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={saving || !configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodeEarth)}
-              onClick={() => void removePlatform(PLATFORM_INTEGRATION_KEYS.geocodeEarth)}
-            >
-              Remove
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          <Card className="w-full">
+            <CardHeader>
+              <CardTitle className="text-base">Built-in geocoding helpers</CardTitle>
+              <CardDescription>
+                These services are always available for flows that use them. No API key is required.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Badge variant="outline">Nominatim</Badge>
+              <Badge variant="outline">Overpass</Badge>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-base">Geocodio</CardTitle>
-            <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodio)} />
-          </div>
-          <CardDescription>Optional commercial geocoding provider.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <Label htmlFor="org-gc">API key</Label>
-            <Input
-              id="org-gc"
-              type="password"
-              autoComplete="off"
-              value={geocodio}
-              onChange={(e) => setGeocodio(e.target.value)}
-              disabled={saving}
-              className="font-mono text-sm mt-1"
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={saving || !geocodio.trim()}
-              onClick={async () => {
-                const ok = await savePlatform(PLATFORM_INTEGRATION_KEYS.geocodio, geocodio.trim())
-                if (ok) setGeocodio('')
-              }}
-            >
-              Save
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={saving || !configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodio)}
-              onClick={() => void removePlatform(PLATFORM_INTEGRATION_KEYS.geocodio)}
-            >
-              Remove
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Search */}
+      <section className="space-y-4" aria-labelledby="integrations-search-heading">
+        <h2 id="integrations-search-heading" className="text-lg font-semibold tracking-tight">
+          Search
+        </h2>
+        <div className="flex flex-col gap-4 w-full">
+          <Card className="w-full">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-base">Brave Search</CardTitle>
+                <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.braveSearch)} />
+              </div>
+              <CardDescription>Optional richer web results where the flow uses Brave.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label htmlFor="org-brave">API key</Label>
+                <Input
+                  id="org-brave"
+                  type="password"
+                  autoComplete="off"
+                  value={brave}
+                  onChange={(e) => setBrave(e.target.value)}
+                  disabled={saving}
+                  className="font-mono text-sm mt-1 w-full"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saving || !brave.trim()}
+                  onClick={async () => {
+                    const ok = await savePlatform(PLATFORM_INTEGRATION_KEYS.braveSearch, brave.trim())
+                    if (ok) setBrave('')
+                  }}
+                >
+                  Save
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || !configuredKeys.has(PLATFORM_INTEGRATION_KEYS.braveSearch)}
+                  onClick={() => void removePlatform(PLATFORM_INTEGRATION_KEYS.braveSearch)}
+                >
+                  Remove
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-base">Brave Search</CardTitle>
-            <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.braveSearch)} />
-          </div>
-          <CardDescription>Optional richer web results where the flow uses Brave.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <Label htmlFor="org-brave">API key</Label>
-            <Input
-              id="org-brave"
-              type="password"
-              autoComplete="off"
-              value={brave}
-              onChange={(e) => setBrave(e.target.value)}
-              disabled={saving}
-              className="font-mono text-sm mt-1"
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={saving || !brave.trim()}
-              onClick={async () => {
-                const ok = await savePlatform(PLATFORM_INTEGRATION_KEYS.braveSearch, brave.trim())
-                if (ok) setBrave('')
-              }}
-            >
-              Save
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={saving || !configuredKeys.has(PLATFORM_INTEGRATION_KEYS.braveSearch)}
-              onClick={() => void removePlatform(PLATFORM_INTEGRATION_KEYS.braveSearch)}
-            >
-              Remove
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          <Card className="w-full">
+            <CardHeader>
+              <CardTitle className="text-base">Web search fallback</CardTitle>
+              <CardDescription>
+                When Brave Search is not configured, flows that need search fall back automatically.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Badge variant="outline">DuckDuckGo (no API key)</Badge>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-base">Amazon S3</CardTitle>
-            <StatusBadge configured={s3Complete} />
-          </div>
-          <CardDescription>
-            Access keys for flows that read from S3. Bucket and prefix stay on each flow node.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <Label htmlFor="org-aws-id">Access key ID</Label>
-            <Input
-              id="org-aws-id"
-              type="password"
-              autoComplete="off"
-              value={awsId}
-              onChange={(e) => setAwsId(e.target.value)}
-              disabled={saving}
-              className="font-mono text-sm mt-1"
-            />
-          </div>
-          <div>
-            <Label htmlFor="org-aws-sec">Secret access key</Label>
-            <Input
-              id="org-aws-sec"
-              type="password"
-              autoComplete="off"
-              value={awsSecret}
-              onChange={(e) => setAwsSecret(e.target.value)}
-              disabled={saving}
-              className="font-mono text-sm mt-1"
-            />
-          </div>
-          <div>
-            <Label htmlFor="org-aws-st">Session token (optional)</Label>
-            <Input
-              id="org-aws-st"
-              type="password"
-              autoComplete="off"
-              value={awsSession}
-              onChange={(e) => setAwsSession(e.target.value)}
-              disabled={saving}
-              className="font-mono text-sm mt-1"
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={saving || !awsId.trim() || !awsSecret.trim()}
-              onClick={async () => {
-                setSaving(true)
-                setError(null)
-                try {
-                  await putOrganizationIntegrationSecret(organizationId, PLATFORM_INTEGRATION_KEYS.s3AccessKeyId, {
-                    value: awsId.trim(),
-                  })
-                  await putOrganizationIntegrationSecret(
-                    organizationId,
-                    PLATFORM_INTEGRATION_KEYS.s3SecretAccessKey,
-                    { value: awsSecret.trim() },
-                  )
-                  if (awsSession.trim()) {
-                    await putOrganizationIntegrationSecret(
-                      organizationId,
-                      PLATFORM_INTEGRATION_KEYS.s3SessionToken,
-                      { value: awsSession.trim() },
-                    )
-                  } else if (configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3SessionToken)) {
-                    await deleteOrganizationIntegrationSecret(
-                      organizationId,
-                      PLATFORM_INTEGRATION_KEYS.s3SessionToken,
-                    )
-                  }
-                  setAwsId('')
-                  setAwsSecret('')
-                  setAwsSession('')
-                  await reload()
-                } catch (e) {
-                  setError('Could not save S3 keys')
-                  console.error(e)
-                } finally {
-                  setSaving(false)
-                }
-              }}
-            >
-              Save S3 keys
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={saving || !s3Complete}
-              onClick={async () => {
-                if (organizationId == null) return
-                setSaving(true)
-                setError(null)
-                try {
-                  await deleteOrganizationIntegrationSecret(
-                    organizationId,
-                    PLATFORM_INTEGRATION_KEYS.s3AccessKeyId,
-                  )
-                  await deleteOrganizationIntegrationSecret(
-                    organizationId,
-                    PLATFORM_INTEGRATION_KEYS.s3SecretAccessKey,
-                  )
-                  if (configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3SessionToken)) {
-                    await deleteOrganizationIntegrationSecret(
-                      organizationId,
-                      PLATFORM_INTEGRATION_KEYS.s3SessionToken,
-                    )
-                  }
-                  await reload()
-                } catch (e) {
-                  setError('Could not remove S3 keys')
-                  console.error(e)
-                } finally {
-                  setSaving(false)
-                }
-              }}
-            >
-              Remove S3 keys
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Storage */}
+      <section className="space-y-4" aria-labelledby="integrations-storage-heading">
+        <h2 id="integrations-storage-heading" className="text-lg font-semibold tracking-tight">
+          Storage
+        </h2>
+        <div className="flex flex-col gap-4 w-full">
+          <Card className="w-full">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-base">Amazon S3</CardTitle>
+                <StatusBadge configured={s3Complete} />
+              </div>
+              <CardDescription>
+                Access keys for flows that read from S3. Bucket and prefix stay on each flow node.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label htmlFor="org-aws-id">Access key ID</Label>
+                <Input
+                  id="org-aws-id"
+                  type="password"
+                  autoComplete="off"
+                  value={awsId}
+                  onChange={(e) => setAwsId(e.target.value)}
+                  disabled={saving}
+                  className="font-mono text-sm mt-1 w-full"
+                />
+              </div>
+              <div>
+                <Label htmlFor="org-aws-sec">Secret access key</Label>
+                <Input
+                  id="org-aws-sec"
+                  type="password"
+                  autoComplete="off"
+                  value={awsSecret}
+                  onChange={(e) => setAwsSecret(e.target.value)}
+                  disabled={saving}
+                  className="font-mono text-sm mt-1 w-full"
+                />
+              </div>
+              <div>
+                <Label htmlFor="org-aws-st">Session token (optional)</Label>
+                <Input
+                  id="org-aws-st"
+                  type="password"
+                  autoComplete="off"
+                  value={awsSession}
+                  onChange={(e) => setAwsSession(e.target.value)}
+                  disabled={saving}
+                  className="font-mono text-sm mt-1 w-full"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saving || !awsId.trim() || !awsSecret.trim()}
+                  onClick={async () => {
+                    if (organizationId == null) return
+                    setSaving(true)
+                    setError(null)
+                    try {
+                      await putOrganizationIntegrationSecret(organizationId, PLATFORM_INTEGRATION_KEYS.s3AccessKeyId, {
+                        value: awsId.trim(),
+                      })
+                      await putOrganizationIntegrationSecret(
+                        organizationId,
+                        PLATFORM_INTEGRATION_KEYS.s3SecretAccessKey,
+                        { value: awsSecret.trim() },
+                      )
+                      if (awsSession.trim()) {
+                        await putOrganizationIntegrationSecret(
+                          organizationId,
+                          PLATFORM_INTEGRATION_KEYS.s3SessionToken,
+                          { value: awsSession.trim() },
+                        )
+                      } else if (configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3SessionToken)) {
+                        await deleteOrganizationIntegrationSecret(
+                          organizationId,
+                          PLATFORM_INTEGRATION_KEYS.s3SessionToken,
+                        )
+                      }
+                      setAwsId('')
+                      setAwsSecret('')
+                      setAwsSession('')
+                      await reload()
+                    } catch (e) {
+                      setError('Could not save S3 keys')
+                      console.error(e)
+                    } finally {
+                      setSaving(false)
+                    }
+                  }}
+                >
+                  Save S3 keys
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || !s3Complete}
+                  onClick={async () => {
+                    if (organizationId == null) return
+                    setSaving(true)
+                    setError(null)
+                    try {
+                      await deleteOrganizationIntegrationSecret(
+                        organizationId,
+                        PLATFORM_INTEGRATION_KEYS.s3AccessKeyId,
+                      )
+                      await deleteOrganizationIntegrationSecret(
+                        organizationId,
+                        PLATFORM_INTEGRATION_KEYS.s3SecretAccessKey,
+                      )
+                      if (configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3SessionToken)) {
+                        await deleteOrganizationIntegrationSecret(
+                          organizationId,
+                          PLATFORM_INTEGRATION_KEYS.s3SessionToken,
+                        )
+                      }
+                      await reload()
+                    } catch (e) {
+                      setError('Could not remove S3 keys')
+                      console.error(e)
+                    } finally {
+                      setSaving(false)
+                    }
+                  }}
+                >
+                  Remove S3 keys
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
     </div>
   )
 }
