@@ -238,6 +238,8 @@ def _external_identity_from_geocode_result(result: dict[str, Any]) -> tuple[str 
         return "wof", rid_str
     if rid_str.startswith("pelias:"):
         return "pelias", rid_str
+    if rid_str.startswith("geocodio:"):
+        return "geocodio", rid_str
     if rid_str.startswith("h3:"):
         return "h3", rid_str
     return "geocoder", rid_str

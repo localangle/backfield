@@ -5,7 +5,6 @@ from typing import Optional
 from agate_utils.geocoding.geocodio import geocode_search as geocodio_search, is_valid_intersection_result
 from agate_utils.geocoding.geocoding_types import GeocodingResult, GeocodingResultData, GeometryPoint
 from agate_utils.geocoding.overpass import find_intersection_coordinates_from_text
-from agate_utils.geocoding.wof import get_id_by_coords
 
 from .point import Point
 
@@ -61,7 +60,7 @@ class Intersection(Point):
             lat, lon = point.y, point.x
 
             result_data = GeocodingResultData(
-                id=get_id_by_coords(lat, lon, "address"),
+                id=f"overpass:{lon:.6f},{lat:.6f}",
                 processed_str=self.name,
                 geometry=GeometryPoint(type="Point", coordinates=[lon, lat]),
                 confidence={},

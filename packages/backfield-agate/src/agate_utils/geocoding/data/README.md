@@ -1,7 +1,3 @@
-# Who's On First SQLite (optional)
+# Geocoding data directory
 
-Geocode enrichment (`wof.py`) can use a local copy of the Who's On First admin US SQLite database.
-
-The file `whosonfirst-data-admin-us-latest.db` is **not** committed (GitHub file size limit). Download a release from the [Who's On First distribution](https://whosonfirst.org/download/) and place it in this directory, or set **`WOF_SQLITE_DB_PATH`** to an absolute path to the database file.
-
-If the database is missing, WOF-backed helpers may raise `FileNotFoundError` or log warnings when those code paths run.
+Reserved for optional local artifacts used during development. Agate geocoding IDs come from geocoder responses (for example Pelias, Nominatim, Geocodio); this repo does not ship or require a local Who’s On First SQLite database.

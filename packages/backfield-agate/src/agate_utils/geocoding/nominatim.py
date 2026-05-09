@@ -25,8 +25,6 @@ from .geocoding_types import (
     GeometryPolygon,
     bbox_west_south_east_north_to_polygon_coordinates,
 )
-from .wof import get_id_by_coords
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -100,7 +98,7 @@ class NominatimGeocoder:
             'raw_data': raw_data
         }
     
-    def _location_to_result(self, location: Location, input_str: str, placetype: Optional[str] = None) -> GeocodingResult:
+    def _location_to_result(self, location: Location, input_str: str, _placetype: Optional[str] = None) -> GeocodingResult:
         """
         Convert a geopy Location object to a standardized GeocodingResult.
         
@@ -134,16 +132,7 @@ class NominatimGeocoder:
             # Create Point geometry from lat/lon
             geometry = GeometryPoint(coordinates=[location.longitude or 0.0, location.latitude or 0.0])
         
-        # Get ID from WOF if placetype is recognized, otherwise use Nominatim place_id
-        wof_id = None
-        if placetype:
-            try:
-                wof_id = get_id_by_coords(location.latitude, location.longitude, placetype)
-            except Exception as e:
-                logger.warning(f"Failed to get WOF ID for coordinates: {e}")
-        
-        # Use WOF ID if available, otherwise fall back to Nominatim place_id
-        result_id = wof_id if wof_id else (f"nominatim:{place_id}" if place_id else None)
+        result_id = f"nominatim:{place_id}" if place_id else None
         
         # Create result data
         result_data = GeocodingResultData(

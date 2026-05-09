@@ -1,13 +1,23 @@
 """Geocodio geocoding service wrapper using geopy."""
 
 import logging
-from typing import Dict, Any, Optional, Union
+from typing import Any, Dict, Optional
 from geopy.geocoders import Geocodio
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut
-from agate_utils.geocoding.geocoding_types import GeocodingResult, GeocodingResultData, GeometryPoint, Confidence
-from agate_utils.geocoding.wof import get_id_by_coords
+from agate_utils.geocoding.geocoding_types import GeocodingResult, GeocodingResultData, GeometryPoint
 
 logger = logging.getLogger(__name__)
+
+
+def _geocodio_result_id(raw_data: Dict[str, Any]) -> Optional[str]:
+    """Stable id from Geocodio when the API returns stable_address_key."""
+    key = raw_data.get("stable_address_key")
+    if key is None:
+        return None
+    key_str = str(key).strip()
+    if not key_str:
+        return None
+    return f"geocodio:{key_str}"
 
 
 def is_valid_intersection_result(raw_data: dict) -> bool:
@@ -50,7 +60,8 @@ def geocode_search(
         geolocator = Geocodio(api_key=api_key, timeout=timeout)
         
         logger.info(f"Geocodio search geocoding: {query}")
-        
+        logger.debug("Geocodio search placetype hint: %r", placetype)
+
         location = geolocator.geocode(query)
         
         if not location:
@@ -62,7 +73,7 @@ def geocode_search(
         
         # Build result
         result_data = GeocodingResultData(
-            id=get_id_by_coords(location.latitude, location.longitude, placetype),
+            id=_geocodio_result_id(raw_data),
             processed_str=raw_data.get("formatted_address", location.address),
             geometry=GeometryPoint(
                 type="Point",
@@ -138,7 +149,8 @@ def geocode_structured(
             return None
         
         logger.info(f"Geocodio structured geocoding: {query_dict}")
-        
+        logger.debug("Geocodio structured placetype hint: %r", placetype)
+
         location = geolocator.geocode(query_dict)
         
         if not location:
@@ -148,16 +160,18 @@ def geocode_structured(
         # Build input string from components for display
         input_parts = [p for p in [street, city, state, postal_code, country] if p]
         input_str = ", ".join(input_parts)
-        
+
+        raw_data = location.raw if hasattr(location, "raw") and location.raw else {}
+
         # Build result
         result_data = GeocodingResultData(
-            id=get_id_by_coords(location.latitude, location.longitude, placetype),
-            processed_str=location.raw.get("formatted_address", location.address),
+            id=_geocodio_result_id(raw_data),
+            processed_str=raw_data.get("formatted_address", location.address),
             geometry=GeometryPoint(
                 type="Point",
                 coordinates=[location.longitude, location.latitude]
             ),
-            confidence={},  # geopy doesn't expose Geocodio's accuracy score
+            confidence=raw_data,
         )
         
         return GeocodingResult(
@@ -209,16 +223,18 @@ def reverse_geocode(
         if not location:
             logger.warning(f"No results found for coordinates: ({lat}, {lon})")
             return None
-        
+
+        raw_data = location.raw if hasattr(location, "raw") and location.raw else {}
+
         # Build result
         result_data = GeocodingResultData(
-            id=None,
+            id=_geocodio_result_id(raw_data),
             processed_str=location.address,
             geometry=GeometryPoint(
                 type="Point",
                 coordinates=[location.longitude, location.latitude]
             ),
-            confidence={},
+            confidence=raw_data,
         )
         
         return GeocodingResult(

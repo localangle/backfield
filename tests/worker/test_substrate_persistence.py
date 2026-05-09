@@ -191,6 +191,71 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         assert occ[0].occurrence_order == 0
 
 
+def test_persist_geocodio_id_sets_external_source() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org_gc", project_slug="proj_gc")
+        session.add(AgateRun(id="run-gc", graph_id="graph-gc", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Hello El Campo.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:gc1",
+                            "original_text": "El Campo",
+                            "description": "Setting.",
+                            "role_in_story": "Setting",
+                            "nature": "primary",
+                            "nature_secondary_tags": [],
+                            "location": "El Campo, TX",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "geocodio_structured",
+                                "result": {
+                                    "id": "geocodio:gcod_fixture_key",
+                                    "formatted_address": "El Campo, TX 77437, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-gc",
+            run_id="run-gc",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateArticle, SubstrateLocation
+
+        articles = session.exec(select(SubstrateArticle)).all()
+        assert len(articles) == 1
+
+        locations = session.exec(select(SubstrateLocation)).all()
+        assert len(locations) == 1
+        assert locations[0].external_source == "geocodio"
+        assert locations[0].external_id == "geocodio:gcod_fixture_key"
+
+
 def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
