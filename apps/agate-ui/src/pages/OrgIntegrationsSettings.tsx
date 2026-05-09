@@ -384,6 +384,9 @@ export default function OrgIntegrationsSettings() {
         <h2 id="integrations-storage-heading" className="text-lg font-semibold tracking-tight">
           Storage
         </h2>
+        <p className="text-sm text-muted-foreground max-w-prose">
+          Backfield supports reading from and writing to Amazon S3. Add credentials for your buckets here.
+        </p>
         <div className="flex flex-col gap-4 w-full">
           <Card className="w-full">
             <CardHeader>
@@ -391,9 +394,6 @@ export default function OrgIntegrationsSettings() {
                 <CardTitle className="text-base">Amazon S3</CardTitle>
                 <StatusBadge configured={s3Complete} />
               </div>
-              <CardDescription>
-                Access keys for flows that read from S3.
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
