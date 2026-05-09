@@ -423,14 +423,14 @@ export default function ProjectDetailPage() {
             <TabsTrigger value="models" className="w-full">
               Models
             </TabsTrigger>
-            <TabsTrigger value="settings" className="w-full">
-              Settings
-            </TabsTrigger>
             <TabsTrigger value="integrations" className="w-full">
               Integrations
             </TabsTrigger>
+            <TabsTrigger value="settings" className="w-full">
+              Settings
+            </TabsTrigger>
             <TabsTrigger value="keys" className="w-full col-span-2 sm:col-span-1 lg:col-span-1">
-              Keys
+              API
             </TabsTrigger>
           </TabsList>
           <TabsContent value="flows" className="mt-6 w-full min-w-0 outline-none">
@@ -450,6 +450,13 @@ export default function ProjectDetailPage() {
           <TabsContent value="models" className="mt-6 w-full min-w-0 outline-none">
             <ProjectDetailModelsTab projectId={project.id} />
           </TabsContent>
+          <TabsContent value="integrations" className="mt-6 w-full min-w-0 outline-none">
+            <ProjectDetailIntegrationsTab
+              projectId={project.id}
+              organizationId={organizationId}
+              isOrgAdmin={isOrgAdmin}
+            />
+          </TabsContent>
           <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
             <ProjectSettings
               ref={systemSettingsRef}
@@ -460,13 +467,6 @@ export default function ProjectDetailPage() {
               inlineScope="system"
               primaryActionsInToolbar
               onRemoteUpdated={reload}
-            />
-          </TabsContent>
-          <TabsContent value="integrations" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailIntegrationsTab
-              projectId={project.id}
-              organizationId={organizationId}
-              isOrgAdmin={isOrgAdmin}
             />
           </TabsContent>
           <TabsContent value="keys" className="mt-6 w-full min-w-0 outline-none">
