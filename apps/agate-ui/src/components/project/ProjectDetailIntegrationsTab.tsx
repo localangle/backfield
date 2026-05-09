@@ -14,7 +14,6 @@ import {
 } from '@/lib/api'
 import { listOrganizationIntegrationSecretMetadata } from '@/lib/core-api'
 import { PLATFORM_INTEGRATION_KEYS, PROJECT_OVERRIDE_ENV_KEYS } from '@/lib/platform-integration-keys'
-import { cn } from '@/lib/utils'
 
 const STORED_SECRET_PLACEHOLDER = 'Secret on file — paste to replace'
 
@@ -259,12 +258,7 @@ export default function ProjectDetailIntegrationsTab({
                             : undefined
                       }
                       disabled={saving}
-                      className={cn(
-                        'font-mono text-sm',
-                        has &&
-                          draftEmpty &&
-                          'border-emerald-600/40 bg-emerald-50/70 dark:border-emerald-500/45 dark:bg-emerald-950/35',
-                      )}
+                      className="font-mono text-sm"
                     />
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">

@@ -13,7 +13,6 @@ import {
   putOrganizationIntegrationSecret,
 } from '@/lib/core-api'
 import { PLATFORM_INTEGRATION_KEYS } from '@/lib/platform-integration-keys'
-import { cn } from '@/lib/utils'
 
 /** Shown when a secret exists server-side and the field is empty (write-only UI). */
 const STORED_SECRET_PLACEHOLDER = 'Secret on file — paste to replace'
@@ -23,15 +22,6 @@ function StatusBadge({ configured }: { configured: boolean }) {
     <Badge variant={configured ? 'success' : 'secondary'}>
       {configured ? 'Configured' : 'Not set'}
     </Badge>
-  )
-}
-
-function storedSecretInputClassName(hasStored: boolean, draftEmpty: boolean) {
-  return cn(
-    'font-mono text-sm mt-1 w-full',
-    hasStored &&
-      draftEmpty &&
-      'border-emerald-600/40 bg-emerald-50/70 dark:border-emerald-500/45 dark:bg-emerald-950/35',
   )
 }
 
@@ -200,10 +190,7 @@ export default function OrgIntegrationsSettings() {
                       ? STORED_SECRET_PLACEHOLDER
                       : undefined
                   }
-                  className={storedSecretInputClassName(
-                    configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodeEarth),
-                    !pelias.trim(),
-                  )}
+                  className="font-mono text-sm mt-1 w-full"
                 />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -254,10 +241,7 @@ export default function OrgIntegrationsSettings() {
                       ? STORED_SECRET_PLACEHOLDER
                       : undefined
                   }
-                  className={storedSecretInputClassName(
-                    configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodio),
-                    !geocodio.trim(),
-                  )}
+                  className="font-mono text-sm mt-1 w-full"
                 />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -329,10 +313,7 @@ export default function OrgIntegrationsSettings() {
                       ? STORED_SECRET_PLACEHOLDER
                       : undefined
                   }
-                  className={storedSecretInputClassName(
-                    configuredKeys.has(PLATFORM_INTEGRATION_KEYS.braveSearch),
-                    !brave.trim(),
-                  )}
+                  className="font-mono text-sm mt-1 w-full"
                 />
               </div>
               <div className="flex flex-wrap gap-2">
@@ -405,10 +386,7 @@ export default function OrgIntegrationsSettings() {
                       ? STORED_SECRET_PLACEHOLDER
                       : undefined
                   }
-                  className={storedSecretInputClassName(
-                    configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3AccessKeyId),
-                    !awsId.trim(),
-                  )}
+                  className="font-mono text-sm mt-1 w-full"
                 />
               </div>
               <div>
@@ -426,10 +404,7 @@ export default function OrgIntegrationsSettings() {
                       ? STORED_SECRET_PLACEHOLDER
                       : undefined
                   }
-                  className={storedSecretInputClassName(
-                    configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3SecretAccessKey),
-                    !awsSecret.trim(),
-                  )}
+                  className="font-mono text-sm mt-1 w-full"
                 />
               </div>
               <div>
@@ -447,10 +422,7 @@ export default function OrgIntegrationsSettings() {
                       ? STORED_SECRET_PLACEHOLDER
                       : undefined
                   }
-                  className={storedSecretInputClassName(
-                    configuredKeys.has(PLATFORM_INTEGRATION_KEYS.s3SessionToken),
-                    !awsSession.trim(),
-                  )}
+                  className="font-mono text-sm mt-1 w-full"
                 />
               </div>
               <div className="flex flex-wrap gap-2">
