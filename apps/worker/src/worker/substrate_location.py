@@ -223,17 +223,29 @@ def _upsert_location_cache(
     session.flush()
 
 
+def _stylebook_prefixed_external_id(value: str) -> str:
+    """Return ``stylebook:{id}`` for substrate ``external_id`` (same pattern as ``pelias:``…)."""
+    s = str(value).strip()
+    if not s:
+        return s
+    if s.startswith("stylebook:"):
+        return s
+    return f"stylebook:{s}"
+
+
 def _external_identity_from_geocode_result(result: dict[str, Any]) -> tuple[str | None, str | None]:
     canonical_id = result.get("canonical_id")
     if canonical_id is not None:
-        return "stylebook_location", str(canonical_id).strip()
+        raw = str(canonical_id).strip()
+        if raw:
+            return "stylebook_location", _stylebook_prefixed_external_id(raw)
 
     rid = result.get("id")
     if rid is None:
         return None, None
     rid_str = str(rid)
     if rid_str.startswith("stylebook:"):
-        return "stylebook_location", rid_str.removeprefix("stylebook:")
+        return "stylebook_location", rid_str
     if rid_str.startswith("wof:"):
         return "wof", rid_str
     if rid_str.startswith("pelias:"):

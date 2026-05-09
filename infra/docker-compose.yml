@@ -35,17 +35,25 @@ services:
     build:
       context: ..
       dockerfile: apps/stylebook-api/Dockerfile
+    env_file:
+      - path: ../.env
+        required: false
     ports:
       - "8003:8003"
     environment:
       <<: *shared-env
       UI_ORIGIN: http://localhost:5175
+      REDIS_URL: redis://redis:6379/0
       # Same DB as agate-api/core-api; inside Compose use service hostname `postgres:5432`
       # (not localhost:5433, which is only valid from the host machine).
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      STYLEBOOK_BUNDLE_S3_BUCKET: ${STYLEBOOK_BUNDLE_S3_BUCKET:-}
+      STYLEBOOK_BUNDLE_S3_PREFIX: ${STYLEBOOK_BUNDLE_S3_PREFIX:-stylebook-bundles}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   core-api:
@@ -148,6 +156,8 @@ services:
       BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-3}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
+      STYLEBOOK_BUNDLE_S3_BUCKET: ${STYLEBOOK_BUNDLE_S3_BUCKET:-}
+      STYLEBOOK_BUNDLE_S3_PREFIX: ${STYLEBOOK_BUNDLE_S3_PREFIX:-stylebook-bundles}
       # LLM / geocoder keys: repo-root .env via env_file above.
       PROJECT_SLUG: ${PROJECT_SLUG:-}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}

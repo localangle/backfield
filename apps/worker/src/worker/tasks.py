@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import boto3
@@ -25,8 +27,9 @@ from backfield_core.s3_batch import (
     parse_s3_text_json_document,
     s3_max_files_from_params,
 )
-from backfield_db import AgateGraph, AgateProcessedItem, AgateRun
+from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, StylebookBundleJob
 from backfield_db.session import get_engine
+from backfield_stylebook.full_bundle import export_stylebook_bundle, import_stylebook_bundle
 from celery import Celery, chord, group
 from sqlmodel import Session, select
 
@@ -499,3 +502,219 @@ def finalize_s3_parent_run(header_results: list[Any], run_id: str) -> None:
     engine = get_engine()
     with Session(engine) as session:
         _finalize_s3_parent_run(session, run_id)
+
+
+def _stylebook_bundle_bucket_prefix() -> tuple[str, str]:
+    bucket = os.environ.get("STYLEBOOK_BUNDLE_S3_BUCKET", "").strip()
+    prefix = os.environ.get("STYLEBOOK_BUNDLE_S3_PREFIX", "stylebook-bundles").strip().strip("/")
+    if not bucket:
+        raise ValueError(
+            "STYLEBOOK_BUNDLE_S3_BUCKET must be set to export or import stylebook bundles."
+        )
+    return bucket, prefix
+
+
+def _s3_client_stylebook_bundles() -> Any:
+    aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+    aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    aws_session_token = os.environ.get("AWS_SESSION_TOKEN")
+    if not aws_access_key or not aws_secret_key:
+        raise ValueError(
+            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set for stylebook bundle staging."
+        )
+    session_kwargs: dict[str, str] = {
+        "aws_access_key_id": aws_access_key,
+        "aws_secret_access_key": aws_secret_key,
+    }
+    if aws_session_token:
+        session_kwargs["aws_session_token"] = aws_session_token
+    endpoint = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("AWS_ENDPOINT_URL")
+    if endpoint:
+        return boto3.client("s3", endpoint_url=endpoint, **session_kwargs)
+    return boto3.client("s3", **session_kwargs)
+
+
+def _fail_stylebook_bundle_job(engine: Any, job_id: str, message: str) -> None:
+    with Session(engine) as session:
+        job = session.get(StylebookBundleJob, job_id)
+        if job is None:
+            return
+        job.status = "failed"
+        job.error_message = message[:10000]
+        job.updated_at = datetime.now(UTC)
+        session.add(job)
+        session.commit()
+
+
+def _update_bundle_job_progress(engine: Any, job_id: str, payload: dict[str, Any]) -> None:
+    with Session(engine) as session:
+        job = session.get(StylebookBundleJob, job_id)
+        if job is None:
+            return
+        base: dict[str, Any] = {}
+        if isinstance(job.progress_json, dict):
+            base = dict(job.progress_json)
+        base["latest"] = payload
+        job.progress_json = base
+        job.updated_at = datetime.now(UTC)
+        session.add(job)
+        session.commit()
+
+
+@celery_app.task(name="worker.tasks.export_stylebook_bundle")
+def export_stylebook_bundle_task(job_id: str) -> None:
+    """Build a stylebook ZIP bundle and upload it to the configured staging bucket."""
+    engine = get_engine()
+    try:
+        _stylebook_bundle_bucket_prefix()
+    except ValueError as e:
+        _fail_stylebook_bundle_job(engine, job_id, str(e))
+        return
+
+    with Session(engine) as session:
+        job = session.get(StylebookBundleJob, job_id)
+        if job is None:
+            return
+        if job.kind != "export":
+            return
+        if job.status != "queued":
+            return
+        org_id = int(job.organization_id)
+        sb_id = job.source_stylebook_id
+        if sb_id is None:
+            job.status = "failed"
+            job.error_message = "export job missing source_stylebook_id"
+            job.updated_at = datetime.now(UTC)
+            session.add(job)
+            session.commit()
+            return
+        bucket = job.s3_bucket
+        key = job.s3_key
+        if not bucket or not key:
+            job.status = "failed"
+            job.error_message = "export job missing s3_bucket or s3_key"
+            job.updated_at = datetime.now(UTC)
+            session.add(job)
+            session.commit()
+            return
+        job.status = "running"
+        job.updated_at = datetime.now(UTC)
+        session.add(job)
+        session.commit()
+
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+            tmp_path = tf.name
+        assert tmp_path is not None
+        with Session(engine) as session:
+            manifest = export_stylebook_bundle(
+                session,
+                organization_id=org_id,
+                stylebook_id=int(sb_id),
+                zip_path=tmp_path,
+                on_progress=lambda p: _update_bundle_job_progress(engine, job_id, p),
+            )
+        client = _s3_client_stylebook_bundles()
+        client.upload_file(
+            tmp_path,
+            bucket,
+            key,
+            ExtraArgs={"ContentType": "application/zip"},
+        )
+        with Session(engine) as session:
+            job2 = session.get(StylebookBundleJob, job_id)
+            if job2 is None:
+                return
+            job2.status = "succeeded"
+            job2.progress_json = {
+                "manifest": {
+                    "source_stylebook": manifest.get("source_stylebook"),
+                    "project_slices": manifest.get("project_slices"),
+                    "file_count": len(manifest.get("files", [])),
+                }
+            }
+            job2.error_message = None
+            job2.updated_at = datetime.now(UTC)
+            session.add(job2)
+            session.commit()
+    except Exception as e:
+        logger.exception("export_stylebook_bundle_task failed")
+        _fail_stylebook_bundle_job(engine, job_id, str(e))
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
+
+
+@celery_app.task(name="worker.tasks.import_stylebook_bundle")
+def import_stylebook_bundle_task(job_id: str) -> None:
+    """Download a staged ZIP from S3 and import it into a new stylebook."""
+    engine = get_engine()
+    try:
+        _stylebook_bundle_bucket_prefix()
+    except ValueError as e:
+        _fail_stylebook_bundle_job(engine, job_id, str(e))
+        return
+
+    with Session(engine) as session:
+        job = session.get(StylebookBundleJob, job_id)
+        if job is None:
+            return
+        if job.kind != "import":
+            return
+        if job.status != "queued":
+            return
+        bucket = job.s3_bucket
+        key = job.s3_key
+        if not bucket or not key:
+            _fail_stylebook_bundle_job(engine, job_id, "import job missing s3_bucket or s3_key")
+            return
+        req = job.import_request_json or {}
+        name = req.get("new_stylebook_name") or req.get("name")
+        if not name or not str(name).strip():
+            _fail_stylebook_bundle_job(engine, job_id, "import job missing new_stylebook_name")
+            return
+        raw_map = req.get("project_mappings") or {}
+        project_mappings: dict[str, int] = {}
+        for sk, vid in raw_map.items():
+            project_mappings[str(sk)] = int(vid)
+        job.status = "running"
+        job.updated_at = datetime.now(UTC)
+        session.add(job)
+        session.commit()
+        org_id = int(job.organization_id)
+
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+            tmp_path = tf.name
+        assert tmp_path is not None
+        client = _s3_client_stylebook_bundles()
+        client.download_file(bucket, key, tmp_path)
+        with Session(engine) as session:
+            new_book, stats = import_stylebook_bundle(
+                session,
+                organization_id=org_id,
+                zip_path=tmp_path,
+                new_stylebook_name=str(name).strip(),
+                project_mappings=project_mappings,
+                on_progress=lambda p: _update_bundle_job_progress(engine, job_id, p),
+            )
+            jid = new_book.id  # type: ignore[union-attr]
+            new_sb_id = int(jid)  # type: ignore[arg-type]
+            job2 = session.get(StylebookBundleJob, job_id)
+            if job2 is None:
+                return
+            job2.status = "succeeded"
+            job2.result_stylebook_id = new_sb_id
+            job2.progress_json = stats
+            job2.error_message = None
+            job2.updated_at = datetime.now(UTC)
+            session.add(job2)
+            session.commit()
+    except Exception as e:
+        logger.exception("import_stylebook_bundle_task failed")
+        _fail_stylebook_bundle_job(engine, job_id, str(e))
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)

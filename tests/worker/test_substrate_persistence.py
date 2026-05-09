@@ -256,6 +256,187 @@ def test_persist_geocodio_id_sets_external_source() -> None:
         assert locations[0].external_id == "geocodio:gcod_fixture_key"
 
 
+def test_persist_stylebook_canonical_id_prefixes_external_id() -> None:
+    sb_uuid = "550e8400-e29b-41d4-a716-446655440000"
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org_sb", project_slug="proj_sb")
+        session.add(AgateRun(id="run-sb", graph_id="graph-sb", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Cached place.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:sb1",
+                            "original_text": "Example City",
+                            "location": "Example City, IL",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "canonical_db",
+                                "result": {
+                                    "id": "pelias:ignored_when_canonical_present",
+                                    "canonical_id": sb_uuid,
+                                    "formatted_address": "Example City, IL, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-sb",
+            run_id="run-sb",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].external_source == "stylebook_location"
+        assert locs[0].external_id == f"stylebook:{sb_uuid}"
+
+
+def test_persist_stylebook_id_keeps_full_prefixed_external_id() -> None:
+    sb_uuid = "660e8400-e29b-41d4-a716-446655440001"
+    prefixed = f"stylebook:{sb_uuid}"
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org_sb2", project_slug="proj_sb2")
+        session.add(AgateRun(id="run-sb2", graph_id="graph-sb2", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Stylebook id only.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:sb2",
+                            "original_text": "Other City",
+                            "location": "Other City, WI",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "canonical_db",
+                                "result": {
+                                    "id": prefixed,
+                                    "formatted_address": "Other City, WI, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-sb2",
+            run_id="run-sb2",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].external_source == "stylebook_location"
+        assert locs[0].external_id == prefixed
+
+
+def test_persist_stylebook_canonical_id_no_double_prefix() -> None:
+    sb_uuid = "770e8400-e29b-41d4-a716-446655440002"
+    already = f"stylebook:{sb_uuid}"
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org_sb3", project_slug="proj_sb3")
+        session.add(AgateRun(id="run-sb3", graph_id="graph-sb3", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Prefixed canonical.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:sb3",
+                            "original_text": "Third City",
+                            "location": "Third City, MN",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "canonical_db",
+                                "result": {
+                                    "id": "pelias:x",
+                                    "canonical_id": already,
+                                    "formatted_address": "Third City, MN, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-sb3",
+            run_id="run-sb3",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].external_source == "stylebook_location"
+        assert locs[0].external_id == already
+
+
 def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

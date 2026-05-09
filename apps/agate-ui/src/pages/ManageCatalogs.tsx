@@ -30,16 +30,27 @@ import {
 } from "@/components/ui/table"
 import { SettingsScreenHeader } from "@/components/SettingsScreenHeader"
 import { useAuth } from "@/lib/auth"
+import { listOrgProjects, type ProjectSummary } from "@/lib/core-api"
 import {
+  createBundleExportJob,
+  createBundleImportJob,
   createStylebookCatalog,
   deleteStylebookCatalog,
+  finalizeBundleImportJob,
+  getBundleJob,
   getStylebookCatalogDeletePreview,
   listStylebookCatalogs,
+  pollBundleJob,
+  previewBundleManifest,
   renameStylebookCatalog,
   setDefaultStylebookCatalog,
+  uploadBundleZipPut,
   type CatalogDeletePreview,
+  type StylebookBundleManifestPreview,
   type StylebookCatalogRow,
 } from "@/lib/stylebook-org-api"
+
+const IMPORT_PROJECT_SKIP = "__import_skip__"
 
 function sortCatalogs(rows: StylebookCatalogRow[]): StylebookCatalogRow[] {
   return [...rows].sort(
@@ -74,6 +85,18 @@ export default function ManageCatalogsPage() {
   const [deleteReplacementId, setDeleteReplacementId] = useState<string>("")
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const [exportingId, setExportingId] = useState<number | null>(null)
+
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importPreview, setImportPreview] =
+    useState<StylebookBundleManifestPreview | null>(null)
+  const [importPreviewLoading, setImportPreviewLoading] = useState(false)
+  const [importName, setImportName] = useState("")
+  const [importMappings, setImportMappings] = useState<Record<string, string>>({})
+  const [orgProjects, setOrgProjects] = useState<ProjectSummary[]>([])
+  const [importBusy, setImportBusy] = useState(false)
 
   const sorted = useMemo(() => sortCatalogs(rows), [rows])
 
@@ -236,6 +259,147 @@ export default function ManageCatalogsPage() {
     return sorted.filter((c) => c.id !== deleteRow.id)
   }, [deleteRow, sorted])
 
+  useEffect(() => {
+    if (!importOpen || !organizationId) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await listOrgProjects(organizationId)
+        if (!cancelled) setOrgProjects(list)
+      } catch {
+        if (!cancelled) setOrgProjects([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [importOpen, organizationId])
+
+  const openImport = () => {
+    setImportOpen(true)
+    setImportFile(null)
+    setImportPreview(null)
+    setImportName("")
+    setImportMappings({})
+  }
+
+  const onImportFileChange = (file: File | null) => {
+    setImportFile(file)
+    setImportPreview(null)
+    if (!file || !organizationId) {
+      setImportPreviewLoading(false)
+      return
+    }
+    setImportPreviewLoading(true)
+    void (async () => {
+      try {
+        const prev = await previewBundleManifest(organizationId, file)
+        setImportPreview(prev)
+        const baseName = prev.source_stylebook?.name
+          ? `${String(prev.source_stylebook.name)} copy`
+          : "Imported stylebook"
+        setImportName(baseName)
+        const next: Record<string, string> = {}
+        for (const s of prev.project_slices) {
+          const match = orgProjects.find((p) => p.slug === s.project_slug)
+          next[s.project_slug] = match ? String(match.id) : ""
+        }
+        setImportMappings(next)
+      } catch (e) {
+        showError(e instanceof Error ? e.message : "Could not read that file.")
+        setImportFile(null)
+      } finally {
+        setImportPreviewLoading(false)
+      }
+    })()
+  }
+
+  useEffect(() => {
+    if (!importPreview || orgProjects.length === 0) return
+    setImportMappings((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const s of importPreview.project_slices) {
+        if (next[s.project_slug]) continue
+        const match = orgProjects.find((p) => p.slug === s.project_slug)
+        if (match) {
+          next[s.project_slug] = String(match.id)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [importPreview, orgProjects])
+
+  const onExportCatalog = async (row: StylebookCatalogRow) => {
+    if (!organizationId) return
+    try {
+      setExportingId(row.id)
+      showMessage("Preparing a downloadable copy…", { title: "Export" })
+      const started = await createBundleExportJob(organizationId, row.id)
+      const done = await pollBundleJob(organizationId, started.id)
+      if (done.status === "failed") {
+        showError(done.error_message || "Export did not finish.")
+        return
+      }
+      const withUrl = await getBundleJob(organizationId, started.id)
+      const url = withUrl.download_url
+      if (!url) {
+        showError("Download link is not available yet. Try again in a moment.")
+        return
+      }
+      window.open(url, "_blank", "noopener,noreferrer")
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Export failed.")
+    } finally {
+      setExportingId(null)
+    }
+  }
+
+  const onImportSubmit = async () => {
+    if (!organizationId || !importFile || !importPreview) return
+    const name = importName.trim()
+    if (!name) {
+      showError("Enter a name for the new stylebook.")
+      return
+    }
+    const mappings: Record<string, number> = {}
+    for (const s of importPreview.project_slices) {
+      const raw = importMappings[s.project_slug]?.trim()
+      if (!raw) continue
+      const pid = parseInt(raw, 10)
+      if (Number.isFinite(pid)) mappings[s.project_slug] = pid
+    }
+    try {
+      setImportBusy(true)
+      const job = await createBundleImportJob(organizationId, {
+        new_stylebook_name: name,
+        project_mappings: mappings,
+      })
+      const putUrl = job.upload_url
+      if (!putUrl) {
+        showError("Upload link missing. Check that bundle transfers are configured.")
+        return
+      }
+      await uploadBundleZipPut(putUrl, importFile)
+      await finalizeBundleImportJob(organizationId, job.id)
+      showMessage("Import started. This may take a minute…", { title: "Import" })
+      const done = await pollBundleJob(organizationId, job.id)
+      if (done.status === "failed") {
+        showError(done.error_message || "Import did not finish.")
+        return
+      }
+      setImportOpen(false)
+      await reload()
+      notifyWorkspaceRefresh()
+      showMessage("Stylebook imported.", { title: "Done" })
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Import failed.")
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
   if (!organizationId) {
     return (
       <div className="text-center text-muted-foreground py-12">
@@ -266,9 +430,14 @@ export default function ManageCatalogsPage() {
             stylebook; this page is for creating stylebooks and setting the organization default.
           </>
         </SettingsScreenHeader>
-        <Button type="button" className="shrink-0" onClick={() => setCreateOpen(true)}>
-          New stylebook
-        </Button>
+        <div className="flex flex-wrap gap-2 justify-end">
+          <Button type="button" variant="outline" className="shrink-0" onClick={openImport}>
+            Import a copy
+          </Button>
+          <Button type="button" className="shrink-0" onClick={() => setCreateOpen(true)}>
+            New stylebook
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-md border">
@@ -309,6 +478,16 @@ export default function ManageCatalogsPage() {
                       variant="outline"
                       size="sm"
                       className="shrink-0"
+                      disabled={exportingId === r.id}
+                      onClick={() => void onExportCatalog(r)}
+                    >
+                      {exportingId === r.id ? "Preparing…" : "Download a copy"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
                       onClick={() => {
                         setRenameRow(r)
                         setRenameValue(r.name)
@@ -332,6 +511,112 @@ export default function ManageCatalogsPage() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog
+        open={importOpen}
+        onOpenChange={(o) => {
+          if (!o) setImportOpen(false)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import a stylebook copy</DialogTitle>
+            <DialogDescription>
+              Upload a stylebook file you previously downloaded from this product. A new stylebook
+              will be created; locations get new internal identifiers.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="import-bundle">File</Label>
+              <Input
+                id="import-bundle"
+                type="file"
+                accept=".zip,application/zip"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null
+                  onImportFileChange(f)
+                }}
+              />
+              {importPreviewLoading ? (
+                <p className="text-sm text-muted-foreground">Reading file…</p>
+              ) : null}
+            </div>
+            {importPreview ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="import-name">Name for the new stylebook</Label>
+                  <Input
+                    id="import-name"
+                    value={importName}
+                    onChange={(e) => setImportName(e.target.value)}
+                    placeholder="e.g. Metro (imported)"
+                  />
+                </div>
+                {importPreview.project_slices.length > 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      This file includes notes or connections tied to projects from where it was
+                      created. Choose which projects in your organization should receive that data,
+                      or leave a row unselected to skip it.
+                    </p>
+                    {importPreview.project_slices.map((s) => (
+                      <div key={s.project_slug} className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">
+                          From file: {s.project_slug}
+                        </Label>
+                        <Select
+                          value={
+                            importMappings[s.project_slug]?.trim()
+                              ? importMappings[s.project_slug]
+                              : IMPORT_PROJECT_SKIP
+                          }
+                          onValueChange={(v) =>
+                            setImportMappings((m) => ({
+                              ...m,
+                              [s.project_slug]: v === IMPORT_PROJECT_SKIP ? "" : v,
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Skip this data" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={IMPORT_PROJECT_SKIP}>Skip this data</SelectItem>
+                            {orgProjects.map((p) => (
+                              <SelectItem key={p.id} value={String(p.id)}>
+                                {p.name} ({p.slug})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void onImportSubmit()}
+              disabled={
+                importBusy ||
+                !importFile ||
+                !importPreview ||
+                importPreviewLoading ||
+                !importName.trim()
+              }
+            >
+              {importBusy ? "Importing…" : "Import"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">

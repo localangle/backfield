@@ -38,6 +38,29 @@ def resolve_stylebook_by_slug(
     return session.get(Stylebook, redir.stylebook_id)
 
 
+def create_stylebook_for_import(
+    session: Session,
+    *,
+    organization_id: int,
+    desired_name: str,
+) -> Stylebook:
+    """Create a stylebook from an import, suffixing the display name until unique in the org."""
+    base = desired_name.strip()
+    if not base:
+        raise StylebookLibraryError("name is required")
+    name = base
+    n = 2
+    while session.exec(
+        select(Stylebook.id).where(
+            Stylebook.organization_id == organization_id,
+            Stylebook.name == name,
+        )
+    ).first():
+        name = f"{base} ({n})"
+        n += 1
+    return create_stylebook(session, organization_id=organization_id, name=name, is_default=False)
+
+
 def create_stylebook(
     session: Session,
     *,
