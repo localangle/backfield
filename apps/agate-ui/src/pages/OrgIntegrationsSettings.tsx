@@ -155,7 +155,7 @@ export default function OrgIntegrationsSettings() {
           >
             Geocodio
           </a>{' '}
-          to enrich extracted place data. Both are based on open data and allow results to be stored.{' '}
+          to enrich extracted places. Both are based on open data and allow results to be stored.{' '}
           <a
             href="https://nominatim.org/"
             target="_blank"
