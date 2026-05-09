@@ -392,7 +392,7 @@ export default function OrgIntegrationsSettings() {
                 <StatusBadge configured={s3Complete} />
               </div>
               <CardDescription>
-                Access keys for flows that read from S3. Bucket and prefix stay on each flow node.
+                Access keys for flows that read from S3.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
