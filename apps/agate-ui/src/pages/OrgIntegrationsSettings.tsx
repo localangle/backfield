@@ -276,7 +276,7 @@ export default function OrgIntegrationsSettings() {
             <CardHeader>
               <CardTitle className="text-base">Built-in geocoding helpers</CardTitle>
               <CardDescription>
-                These services are always available for flows that use them. No API key is required.
+                These services are always available. No API key is required.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
