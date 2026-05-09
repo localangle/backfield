@@ -289,6 +289,27 @@ export default function OrgIntegrationsSettings() {
         <h2 id="integrations-search-heading" className="text-lg font-semibold tracking-tight">
           Search
         </h2>
+        <p className="text-sm text-muted-foreground max-w-prose">
+          Backfield supports the use of{' '}
+          <a
+            href="https://brave.com/search/api/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            Brave Search
+          </a>{' '}
+          to gather metadata that improves the accuracy of geocoding and gathers other metadata.{' '}
+          <a
+            href="https://duckduckgo.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            DuckDuckGo
+          </a>{' '}
+          is used as a fallback.
+        </p>
         <div className="flex flex-col gap-4 w-full">
           <Card className="w-full">
             <CardHeader>
