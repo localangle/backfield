@@ -198,29 +198,6 @@ export default function ProjectDetailIntegrationsTab({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Built-in geocoding helpers</CardTitle>
-          <CardDescription>In use for supported flows. No API key required.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Badge variant="outline">Nominatim</Badge>
-          <Badge variant="outline">Overpass</Badge>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Web search</CardTitle>
-          <CardDescription>
-            DuckDuckGo is used automatically when Brave is not configured.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Badge variant="outline">DuckDuckGo</Badge>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle className="text-base">Project overrides</CardTitle>
           <CardDescription>
             Leave blank and remove overrides to rely on organization defaults.
