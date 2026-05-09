@@ -190,13 +190,7 @@ export default function ProjectDetailIntegrationsTab({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Project overrides</CardTitle>
-          <CardDescription>
-            Leave blank and remove overrides to rely on organization defaults.{' '}
-            <span className="font-medium text-foreground">Configured</span> means this project uses the
-            key from Settings → Integrations;{' '}
-            <span className="font-medium text-foreground">Overridden</span> means this project has its own
-            key saved here.
-          </CardDescription>
+          <CardDescription>Leave blank to use organization defaults.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-8">
           {PROJECT_OVERRIDE_ENV_KEYS.map((keyName) => {
