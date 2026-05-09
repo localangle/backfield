@@ -127,8 +127,9 @@ export default function OrgIntegrationsSettings() {
         </Alert>
       ) : null}
 
+      <div className="divide-y divide-border">
       {/* Geocoding */}
-      <section className="space-y-4" aria-labelledby="integrations-geocoding-heading">
+      <section className="space-y-4 pb-10" aria-labelledby="integrations-geocoding-heading">
         <h2 id="integrations-geocoding-heading" className="text-lg font-semibold tracking-tight">
           Geocoding
         </h2>
@@ -241,7 +242,7 @@ export default function OrgIntegrationsSettings() {
       </section>
 
       {/* Search */}
-      <section className="space-y-4" aria-labelledby="integrations-search-heading">
+      <section className="space-y-4 py-10" aria-labelledby="integrations-search-heading">
         <h2 id="integrations-search-heading" className="text-lg font-semibold tracking-tight">
           Search
         </h2>
@@ -307,7 +308,7 @@ export default function OrgIntegrationsSettings() {
       </section>
 
       {/* Storage */}
-      <section className="space-y-4" aria-labelledby="integrations-storage-heading">
+      <section className="space-y-4 pt-10 pb-0" aria-labelledby="integrations-storage-heading">
         <h2 id="integrations-storage-heading" className="text-lg font-semibold tracking-tight">
           Storage
         </h2>
@@ -443,6 +444,7 @@ export default function OrgIntegrationsSettings() {
           </Card>
         </div>
       </section>
+      </div>
     </div>
   )
 }
