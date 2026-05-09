@@ -235,6 +235,55 @@ def create_bundle_import_job(
     return BundleJobOut.from_row(job, upload_url=upload_url)
 
 
+@router.post("/{org_id}/stylebook-bundle-jobs/{job_id}/upload", response_model=BundleJobOut)
+async def upload_bundle_zip_for_import(
+    org_id: int,
+    job_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+    bundle: UploadFile = File(...),
+) -> BundleJobOut:
+    """Stream the ZIP to the staging bucket via the API (avoids browser CORS on direct S3 PUT)."""
+    require_org_admin(session, auth, org_id)
+    _require_org_scope(auth, org_id)
+    job = session.get(StylebookBundleJob, job_id)
+    if job is None or int(job.organization_id) != org_id:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.kind != "import":
+        raise HTTPException(status_code=400, detail="Not an import job.")
+    if job.status != "awaiting_upload":
+        raise HTTPException(status_code=400, detail="This job is not waiting for an upload.")
+    bucket = job.s3_bucket
+    key = job.s3_key
+    if not bucket or not key:
+        raise HTTPException(status_code=500, detail="Job is missing staging object location.")
+
+    buf = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
+    total = 0
+    try:
+        while chunk := await bundle.read(1024 * 1024):
+            total += len(chunk)
+            if total > DEFAULT_MAX_ZIP_BYTES:
+                raise HTTPException(status_code=413, detail="File is too large.")
+            buf.write(chunk)
+        buf.seek(0)
+        client = _s3_client_bundles()
+        client.upload_fileobj(
+            buf,
+            bucket,
+            key,
+            ExtraArgs={"ContentType": "application/zip"},
+        )
+    finally:
+        buf.close()
+
+    job.updated_at = datetime.now(UTC)
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    return BundleJobOut.from_row(job)
+
+
 @router.post("/{org_id}/stylebook-bundle-jobs/{job_id}/finalize", response_model=BundleJobOut)
 def finalize_bundle_import_job(
     org_id: int,

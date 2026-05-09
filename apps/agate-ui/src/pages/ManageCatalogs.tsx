@@ -44,7 +44,7 @@ import {
   previewBundleManifest,
   renameStylebookCatalog,
   setDefaultStylebookCatalog,
-  uploadBundleZipPut,
+  uploadBundleZipViaApi,
   type CatalogDeletePreview,
   type StylebookBundleManifestPreview,
   type StylebookCatalogRow,
@@ -376,12 +376,7 @@ export default function ManageCatalogsPage() {
         new_stylebook_name: name,
         project_mappings: mappings,
       })
-      const putUrl = job.upload_url
-      if (!putUrl) {
-        showError("Upload link missing. Check that bundle transfers are configured.")
-        return
-      }
-      await uploadBundleZipPut(putUrl, importFile)
+      await uploadBundleZipViaApi(organizationId, job.id, importFile)
       await finalizeBundleImportJob(organizationId, job.id)
       showMessage("Import started. This may take a minute…", { title: "Import" })
       const done = await pollBundleJob(organizationId, job.id)

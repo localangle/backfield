@@ -297,16 +297,29 @@ export async function finalizeBundleImportJob(
   )
 }
 
-export async function uploadBundleZipPut(
-  uploadUrl: string,
+/** Upload ZIP through stylebook-api (same origin) so the browser does not hit S3 CORS. */
+export async function uploadBundleZipViaApi(
+  orgId: number,
+  jobId: string,
   file: File,
 ): Promise<void> {
-  const r = await fetch(uploadUrl, {
-    method: "PUT",
-    body: file,
-    headers: { "Content-Type": "application/zip" },
-  })
+  const form = new FormData()
+  form.append("bundle", file)
+  const r = await fetch(
+    `${stylebookBase()}/v1/organizations/${orgId}/stylebook-bundle-jobs/${encodeURIComponent(jobId)}/upload`,
+    { method: "POST", credentials: "include", body: form },
+  )
   if (!r.ok) {
-    throw new Error(`Upload failed (${r.status}).`)
+    let msg = r.statusText
+    try {
+      const body = (await r.json()) as { detail?: unknown }
+      if (body.detail !== undefined) {
+        const f = formatDetail(body.detail)
+        if (f) msg = f
+      }
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg)
   }
 }
