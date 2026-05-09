@@ -224,7 +224,10 @@ export default function OrgIntegrationsSettings() {
                 <CardTitle className="text-base">Geocodio</CardTitle>
                 <StatusBadge configured={configuredKeys.has(PLATFORM_INTEGRATION_KEYS.geocodio)} />
               </div>
-              <CardDescription>Optional commercial geocoding provider.</CardDescription>
+              <CardDescription>
+                Secondary geocoding service. Useful for intersections and other special cases. Free trial
+                available.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
