@@ -17,6 +17,16 @@ import { PLATFORM_INTEGRATION_KEYS, PROJECT_OVERRIDE_ENV_KEYS } from '@/lib/plat
 
 const STORED_SECRET_PLACEHOLDER = 'Secret on file — paste to replace'
 
+/** Maps project env override keys to organization integration_secret keys (metadata only). */
+const OVERRIDE_TO_ORG_PLATFORM_KEY: Record<(typeof PROJECT_OVERRIDE_ENV_KEYS)[number], string> = {
+  PELIAS_API_KEY: PLATFORM_INTEGRATION_KEYS.geocodeEarth,
+  GEOCODIO_API_KEY: PLATFORM_INTEGRATION_KEYS.geocodio,
+  BRAVE_SEARCH_API_KEY: PLATFORM_INTEGRATION_KEYS.braveSearch,
+  AWS_ACCESS_KEY_ID: PLATFORM_INTEGRATION_KEYS.s3AccessKeyId,
+  AWS_SECRET_ACCESS_KEY: PLATFORM_INTEGRATION_KEYS.s3SecretAccessKey,
+  AWS_SESSION_TOKEN: PLATFORM_INTEGRATION_KEYS.s3SessionToken,
+}
+
 const OVERRIDE_LABELS: Record<string, { title: string; hint: string }> = {
   PELIAS_API_KEY: {
     title: 'Geocode Earth',
@@ -44,19 +54,13 @@ const OVERRIDE_LABELS: Record<string, { title: string; hint: string }> = {
   },
 }
 
-function StatusBadge({ configured }: { configured: boolean }) {
+function OverriddenBadge() {
   return (
-    <Badge variant={configured ? 'success' : 'secondary'}>
-      {configured ? 'Override set' : 'No override'}
-    </Badge>
-  )
-}
-
-/** Matches Settings → Integrations status pills for organization defaults summary. */
-function OrgIntegrationStatusBadge({ configured }: { configured: boolean }) {
-  return (
-    <Badge variant={configured ? 'success' : 'secondary'}>
-      {configured ? 'Configured' : 'Not set'}
+    <Badge
+      variant="outline"
+      className="border-amber-300 bg-amber-50 text-amber-950 shadow-none dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100"
+    >
+      Overridden
     </Badge>
   )
 }
@@ -84,15 +88,14 @@ export default function ProjectDetailIntegrationsTab({
     if (isOrgAdmin && organizationId != null) {
       try {
         const meta = await listOrganizationIntegrationSecretMetadata(organizationId)
-        const platform = new Set(
-          meta
-            .map((m) => m.integration_key)
-            .filter((k) => Object.values(PLATFORM_INTEGRATION_KEYS).includes(k)),
-        )
+        const allowed = new Set<string>(Object.values(PLATFORM_INTEGRATION_KEYS))
+        const platform = new Set(meta.map((m) => m.integration_key).filter((k) => allowed.has(k)))
         setOrgConfigured(platform)
       } catch {
         setOrgConfigured(new Set())
       }
+    } else {
+      setOrgConfigured(new Set())
     }
   }, [projectId, organizationId, isOrgAdmin])
 
@@ -119,12 +122,7 @@ export default function ProjectDetailIntegrationsTab({
     [projectKeys],
   )
 
-  const orgGeocodeEarth = orgConfigured.has(PLATFORM_INTEGRATION_KEYS.geocodeEarth)
-  const orgGeocodio = orgConfigured.has(PLATFORM_INTEGRATION_KEYS.geocodio)
-  const orgBrave = orgConfigured.has(PLATFORM_INTEGRATION_KEYS.braveSearch)
-  const orgS3 =
-    orgConfigured.has(PLATFORM_INTEGRATION_KEYS.s3AccessKeyId) &&
-    orgConfigured.has(PLATFORM_INTEGRATION_KEYS.s3SecretAccessKey)
+  const showOrgIntegrationStatus = isOrgAdmin && organizationId != null
 
   const setDraft = (keyName: string, value: string) => {
     setDrafts((d) => ({ ...d, [keyName]: value }))
@@ -179,42 +177,6 @@ export default function ProjectDetailIntegrationsTab({
         organization defaults for runs in this project only. API access keys stay on the Keys tab.
       </p>
 
-      {isOrgAdmin && organizationId != null ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Organization defaults</CardTitle>
-            <CardDescription>
-              Summary of what is configured for the whole organization (not secret values).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span>Geocode Earth</span>
-              <OrgIntegrationStatusBadge configured={orgGeocodeEarth} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span>Geocodio</span>
-              <OrgIntegrationStatusBadge configured={orgGeocodio} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span>Brave Search</span>
-              <OrgIntegrationStatusBadge configured={orgBrave} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span>Amazon S3</span>
-              <OrgIntegrationStatusBadge configured={orgS3} />
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-4 text-sm text-muted-foreground">
-            Organization defaults are managed in Settings → Integrations (organization
-            administrators).
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Project overrides</CardTitle>
@@ -228,11 +190,20 @@ export default function ProjectDetailIntegrationsTab({
             const has = projectKeyNames.has(keyName)
             const draft = drafts[keyName] ?? ''
             const draftEmpty = !draft.trim()
+            const orgSlotConfigured = orgConfigured.has(OVERRIDE_TO_ORG_PLATFORM_KEY[keyName])
             return (
               <div key={keyName} className="space-y-2 border-b border-border pb-6 last:border-0 last:pb-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-sm font-medium">{meta.title}</h4>
-                  <StatusBadge configured={!draftEmpty} />
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {has ? (
+                      <OverriddenBadge />
+                    ) : showOrgIntegrationStatus ? (
+                      <Badge variant={orgSlotConfigured ? 'success' : 'secondary'}>
+                        {orgSlotConfigured ? 'Configured' : 'Not set'}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground">{meta.hint}</p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
