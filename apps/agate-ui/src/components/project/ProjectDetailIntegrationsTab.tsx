@@ -52,6 +52,15 @@ function StatusBadge({ configured }: { configured: boolean }) {
   )
 }
 
+/** Matches Settings → Integrations status pills for organization defaults summary. */
+function OrgIntegrationStatusBadge({ configured }: { configured: boolean }) {
+  return (
+    <Badge variant={configured ? 'success' : 'secondary'}>
+      {configured ? 'Configured' : 'Not set'}
+    </Badge>
+  )
+}
+
 export default function ProjectDetailIntegrationsTab({
   projectId,
   organizationId,
@@ -178,13 +187,23 @@ export default function ProjectDetailIntegrationsTab({
               Summary of what is configured for the whole organization (not secret values).
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
-            <div>
-              Geocode Earth: {orgGeocodeEarth ? 'Configured' : 'Not set'}
+          <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Geocode Earth</span>
+              <OrgIntegrationStatusBadge configured={orgGeocodeEarth} />
             </div>
-            <div>Geocodio: {orgGeocodio ? 'Configured' : 'Not set'}</div>
-            <div>Brave Search: {orgBrave ? 'Configured' : 'Not set'}</div>
-            <div>Amazon S3: {orgS3 ? 'Configured' : 'Not set'}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Geocodio</span>
+              <OrgIntegrationStatusBadge configured={orgGeocodio} />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Brave Search</span>
+              <OrgIntegrationStatusBadge configured={orgBrave} />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Amazon S3</span>
+              <OrgIntegrationStatusBadge configured={orgS3} />
+            </div>
           </CardContent>
         </Card>
       ) : (
