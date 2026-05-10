@@ -201,6 +201,7 @@ export default function LocationDetail() {
     stylebookSlug,
     catalogBasePath,
   } = useProjectCatalogScope()
+  const [searchParams] = useSearchParams()
   const crumbRoot = useScopeBreadcrumbRoot()
   const canEdit = useCanEditStylebook()
   const { id } = useParams<{ id: string }>()
@@ -237,6 +238,13 @@ export default function LocationDetail() {
   const [substrateGeometryJson, setSubstrateGeometryJson] = useState<Record<string, unknown> | null>(
     null,
   )
+
+  const canonicalListHref = useMemo(() => {
+    const base = `${catalogBasePath}/locations/canonical`
+    const qs = searchParams.toString()
+    if (qs) return `${base}?${qs}`
+    return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
+  }, [catalogBasePath, searchParams, filterScopeSuffix])
   const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
   const prevMentionCountRef = useRef<number | null>(null)
   const prevSubstrateCountRef = useRef<number | null>(null)
@@ -412,14 +420,14 @@ export default function LocationDetail() {
     setDeleting(true)
     try {
       await deleteCanonicalLocation(id, stylebookSlug)
-      navigate(`${catalogBasePath}/locations/canonical${filterScopeSuffix}`)
+      navigate(canonicalListHref)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Delete failed")
     } finally {
       setDeleting(false)
       setDeleteOpen(false)
     }
-  }, [canonical, id, navigate, stylebookSlug, showError, filterScopeSuffix, catalogBasePath])
+  }, [canonical, id, navigate, stylebookSlug, showError, canonicalListHref])
 
   useEffect(() => {
     if (!id) return
@@ -589,7 +597,7 @@ export default function LocationDetail() {
             className="mb-3"
             items={[
               { label: crumbRoot.label, to: crumbRoot.to },
-              { label: "Locations", to: `${catalogBasePath}/locations/canonical${filterScopeSuffix}` },
+              { label: "Locations", to: canonicalListHref },
               { label: canonical.label },
             ]}
           />
