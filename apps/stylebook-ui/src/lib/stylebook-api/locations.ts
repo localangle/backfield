@@ -90,6 +90,8 @@ export async function listLocations(
   return stylebookJsonFetch<PaginatedLocationResponse>(`/v1/locations?${params}`)
 }
 
+export type CanonicalListSort = "label" | "recent"
+
 export async function listCanonicalLocations(
   stylebookSlug: string,
   q?: string,
@@ -97,11 +99,16 @@ export async function listCanonicalLocations(
   offset: number = 0,
   typeFilter?: string,
   projectFilterSlug?: string,
+  options?: { minMentions?: number; sort?: CanonicalListSort },
 ): Promise<PaginatedCanonicalLocationResponse> {
   const params = new URLSearchParams()
   if (projectFilterSlug) params.append("project", projectFilterSlug)
   if (q) params.append("q", q)
   if (typeFilter && typeFilter !== "all") params.append("type_filter", typeFilter)
+  const minMentions = options?.minMentions ?? 0
+  if (minMentions > 0) params.append("min_mentions", String(minMentions))
+  const sort = options?.sort ?? "label"
+  if (sort !== "label") params.append("sort", sort)
   params.append("limit", limit.toString())
   params.append("offset", offset.toString())
   return stylebookJsonFetch<PaginatedCanonicalLocationResponse>(

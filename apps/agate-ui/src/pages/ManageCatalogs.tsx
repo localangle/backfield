@@ -288,23 +288,30 @@ export default function ManageCatalogsPage() {
 
   const onExportCatalog = async (row: StylebookCatalogRow) => {
     if (!organizationId) return
+    const progressDlg = showMessage("Preparing a downloadable copy…", {
+      title: "Export",
+      pending: true,
+    })
     try {
       setExportingId(row.id)
-      showMessage("Preparing a downloadable copy…", { title: "Export" })
       const started = await createBundleExportJob(organizationId, row.id)
       const done = await pollBundleJob(organizationId, started.id)
       if (done.status === "failed") {
+        progressDlg.dismiss()
         showError(done.error_message || "Export did not finish.")
         return
       }
       const withUrl = await getBundleJob(organizationId, started.id)
       const url = withUrl.download_url
       if (!url) {
+        progressDlg.dismiss()
         showError("Download link is not available yet. Try again in a moment.")
         return
       }
       window.open(url, "_blank", "noopener,noreferrer")
+      progressDlg.dismiss()
     } catch (e) {
+      progressDlg.dismiss()
       showError(e instanceof Error ? e.message : "Export failed.")
     } finally {
       setExportingId(null)
@@ -318,6 +325,7 @@ export default function ManageCatalogsPage() {
       showError("Enter a name for the new stylebook.")
       return
     }
+    let progressDlg: ReturnType<typeof showMessage> | null = null
     try {
       setImportBusy(true)
       const job = await createBundleImportJob(organizationId, {
@@ -326,8 +334,13 @@ export default function ManageCatalogsPage() {
       })
       await uploadBundleZipViaApi(organizationId, job.id, importFile)
       await finalizeBundleImportJob(organizationId, job.id)
-      showMessage("Import started. This may take a minute…", { title: "Import" })
+      progressDlg = showMessage("Import started. This may take a minute…", {
+        title: "Import",
+        pending: true,
+      })
       const done = await pollBundleJob(organizationId, job.id)
+      progressDlg.dismiss()
+      progressDlg = null
       if (done.status === "failed") {
         showError(done.error_message || "Import did not finish.")
         return
@@ -337,6 +350,7 @@ export default function ManageCatalogsPage() {
       notifyWorkspaceRefresh()
       showMessage("Stylebook imported.", { title: "Done" })
     } catch (e) {
+      progressDlg?.dismiss()
       showError(e instanceof Error ? e.message : "Import failed.")
     } finally {
       setImportBusy(false)

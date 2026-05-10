@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -21,6 +22,13 @@ export type ShowAppMessageOptions = {
   title?: string
   /** Use destructive styling for the title (errors). */
   variant?: "default" | "destructive"
+  /** When true, OK and closing the dialog are disabled until updated or dismissed via the handle. */
+  pending?: boolean
+}
+
+export type MessageDialogHandle = {
+  update: (description: string, options?: Pick<ShowAppMessageOptions, "title" | "variant" | "pending">) => void
+  dismiss: () => void
 }
 
 export type ShowAppConfirmOptions = {
@@ -38,6 +46,7 @@ type AppDialogState =
       title: string
       description: string
       variant: "default" | "destructive"
+      pending: boolean
     }
   | {
       kind: "confirm"
@@ -50,7 +59,7 @@ type AppDialogState =
     }
 
 type AppMessageContextValue = {
-  showMessage: (description: string, options?: ShowAppMessageOptions) => void
+  showMessage: (description: string, options?: ShowAppMessageOptions) => MessageDialogHandle
   showError: (description: string, options?: { title?: string }) => void
   showConfirm: (description: string, options?: ShowAppConfirmOptions) => Promise<boolean>
 }
@@ -84,13 +93,29 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const showMessage = useCallback((description: string, options?: ShowAppMessageOptions) => {
+  const showMessage = useCallback((description: string, options?: ShowAppMessageOptions): MessageDialogHandle => {
     setState({
       kind: "message",
       title: options?.title ?? "Notice",
       description,
       variant: options?.variant ?? "default",
+      pending: options?.pending ?? false,
     })
+    return {
+      update: (d, o) => {
+        setState((prev) => {
+          if (prev.kind !== "message") return prev
+          return {
+            ...prev,
+            description: d,
+            title: o?.title !== undefined ? o.title : prev.title,
+            variant: o?.variant !== undefined ? o.variant : prev.variant,
+            pending: o?.pending !== undefined ? o.pending : prev.pending,
+          }
+        })
+      },
+      dismiss: () => setState({ kind: "closed" }),
+    }
   }, [])
 
   const showError = useCallback(
@@ -131,10 +156,24 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
       <Dialog
         open={open}
         onOpenChange={(next) => {
-          if (!next) close()
+          if (!next) {
+            if (state.kind === "message" && state.pending) {
+              return
+            }
+            close()
+          }
         }}
       >
-        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent
+          className="sm:max-w-md"
+          hideCloseButton={state.kind === "message" && state.pending}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => {
+            if (state.kind === "message" && state.pending) {
+              e.preventDefault()
+            }
+          }}
+        >
           {state.kind === "message" ? (
             <>
               <DialogHeader>
@@ -143,12 +182,33 @@ export function AppMessageProvider({ children }: { children: ReactNode }) {
                 >
                   {state.title}
                 </DialogTitle>
-                <DialogDescription className="text-left whitespace-pre-wrap break-words">
-                  {state.description}
-                </DialogDescription>
+                {state.pending ? (
+                  <div
+                    className="flex items-start gap-3 text-left text-sm text-muted-foreground"
+                    role="status"
+                    aria-live="polite"
+                    aria-busy
+                  >
+                    <Loader2
+                      className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-muted-foreground"
+                      aria-hidden
+                    />
+                    <DialogDescription className="text-left whitespace-pre-wrap break-words !mt-0">
+                      {state.description}
+                    </DialogDescription>
+                  </div>
+                ) : (
+                  <DialogDescription className="text-left whitespace-pre-wrap break-words">
+                    {state.description}
+                  </DialogDescription>
+                )}
               </DialogHeader>
               <DialogFooter>
-                <Button type="button" onClick={() => setState({ kind: "closed" })}>
+                <Button
+                  type="button"
+                  disabled={state.pending}
+                  onClick={() => setState({ kind: "closed" })}
+                >
                   OK
                 </Button>
               </DialogFooter>

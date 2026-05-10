@@ -952,7 +952,7 @@ export default function LocationDetail() {
               Loading…
             </div>
           ) : substrates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked substrate places.</p>
+            <p className="text-sm text-muted-foreground">No linked mentions.</p>
           ) : (
             <div className="w-full overflow-x-auto">
               <Table className="w-full min-w-[56rem]">

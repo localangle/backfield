@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from backfield_db import (
     BackfieldProject,
@@ -161,6 +161,46 @@ def _canonical_filters(
     return filters
 
 
+def _min_mentions_subquery(*, project_ids: list[int], min_mentions: int) -> Any:
+    """Canonical ids with at least ``min_mentions`` non-deleted mentions in ``project_ids``."""
+    return (
+        select(SubstrateLocation.stylebook_location_canonical_id)
+        .select_from(SubstrateLocationMention)
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(
+            col(SubstrateLocation.project_id).in_(project_ids),
+            col(SubstrateLocation.stylebook_location_canonical_id).is_not(None),
+            SubstrateLocationMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstrateLocation.stylebook_location_canonical_id)
+        .having(func.count(col(SubstrateLocationMention.id)) >= min_mentions)
+    )
+
+
+def _activity_order_columns(
+    *, project_ids: list[int]
+) -> tuple[Any, ...]:
+    """Order by latest catalog edit or latest linked substrate update in scope (desc)."""
+    max_sub_updated = (
+        select(func.max(col(SubstrateLocation.updated_at)))
+        .where(
+            col(SubstrateLocation.stylebook_location_canonical_id)
+            == col(StylebookLocationCanonical.id),
+            col(SubstrateLocation.project_id).in_(project_ids),
+        )
+        .scalar_subquery()
+    )
+    canon_updated = col(StylebookLocationCanonical.updated_at)
+    # Portable across Postgres and SQLite (no ``greatest`` on SQLite).
+    coalesced = func.coalesce(max_sub_updated, canon_updated)
+    activity = case(
+        (coalesced > canon_updated, coalesced),
+        else_=canon_updated,
+    )
+    label_lower = func.lower(col(StylebookLocationCanonical.label))
+    return (activity.desc(), label_lower.asc(), col(StylebookLocationCanonical.id).asc())
+
+
 class LinkedSubstrateItem(BaseModel):
     id: int
     name: str
@@ -248,6 +288,19 @@ def list_canonical_locations(
     ),
     q: str | None = None,
     type_filter: str | None = Query(None),
+    min_mentions: int = Query(
+        0,
+        ge=0,
+        le=1_000_000,
+        description="Only canonicals with at least this many mentions in the project scope.",
+    ),
+    sort: Literal["label", "recent"] = Query(
+        "label",
+        description=(
+            "``label``: alphabetical (default; search uses relevance rank first). "
+            "``recent``: most recently edited canonical or linked substrate in scope, newest first."
+        ),
+    ),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
@@ -264,7 +317,14 @@ def list_canonical_locations(
         organization_id=int(sb.organization_id),
     )
 
-    filters = _canonical_filters(stylebook_id=int(sb.id), q=q, type_filter=type_filter)
+    filters = list(_canonical_filters(stylebook_id=int(sb.id), q=q, type_filter=type_filter))
+    if min_mentions > 0:
+        filters.append(
+            col(StylebookLocationCanonical.id).in_(_min_mentions_subquery(
+                project_ids=project_ids,
+                min_mentions=min_mentions,
+            ))
+        )
     total = int(
         session.scalar(select(func.count()).select_from(StylebookLocationCanonical).where(*filters))
         or 0
@@ -273,7 +333,9 @@ def list_canonical_locations(
     label_lower = func.lower(col(StylebookLocationCanonical.label))
     label_col = col(StylebookLocationCanonical.label)
     q_text = (q or "").strip()
-    if q_text:
+    if sort == "recent":
+        order_by = _activity_order_columns(project_ids=project_ids)
+    elif q_text:
         q_lower = q_text.lower()
         esc = _escape_ilike_metacharacters(q_text)
         prefix_pat = f"{esc}%"

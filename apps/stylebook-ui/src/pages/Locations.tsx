@@ -7,6 +7,7 @@ import {
   deleteCanonicalLocation,
   listCanonicalLocations,
   listCanonicalLocationTypes,
+  type CanonicalListSort,
   type CanonicalLocation,
 } from "@/lib/api"
 import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
@@ -31,7 +32,6 @@ import {
 } from "@/components/ui/select"
 import { Loader2, Trash2 } from "lucide-react"
 import Pagination from "@/components/Pagination"
-import CanonicalSourceIcon from "@/components/CanonicalSourceIcon"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 
@@ -51,6 +51,8 @@ export default function Locations() {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
+  const [sortBy, setSortBy] = useState<CanonicalListSort>("label")
+  const [minMentions, setMinMentions] = useState<number>(0)
   const [types, setTypes] = useState<string[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -65,6 +67,8 @@ export default function Locations() {
   const locationsPerPage = 25
   const prevSearchRef = useRef(debouncedSearchQuery)
   const prevTypeFilterRef = useRef(typeFilter)
+  const prevSortRef = useRef(sortBy)
+  const prevMinMentionsRef = useRef(minMentions)
 
   const orderedTypeFilterOptions = useMemo(
     () => sortReviewQueueTypeFilterOptions(types),
@@ -123,11 +127,39 @@ export default function Locations() {
     }
   }, [typeFilter, setSearchParams])
 
+  useEffect(() => {
+    const prev = prevSortRef.current
+    prevSortRef.current = sortBy
+    if (prev !== sortBy) {
+      setCurrentPage(1)
+      setSearchParams((prevParams) => {
+        const next = new URLSearchParams(prevParams)
+        next.set("page", "1")
+        return next
+      })
+    }
+  }, [sortBy, setSearchParams])
+
+  useEffect(() => {
+    const prev = prevMinMentionsRef.current
+    prevMinMentionsRef.current = minMentions
+    if (prev !== minMentions) {
+      setCurrentPage(1)
+      setSearchParams((prevParams) => {
+        const next = new URLSearchParams(prevParams)
+        next.set("page", "1")
+        return next
+      })
+    }
+  }, [minMentions, setSearchParams])
+
   const loadCanonicals = async (
     slug: string,
     q?: string,
     page: number = 1,
     tf?: string,
+    listSort: CanonicalListSort = "label",
+    mentionsMin: number = 0,
   ) => {
     try {
       setLoading(true)
@@ -139,6 +171,7 @@ export default function Locations() {
         offset,
         tf,
         projectFilterSlug || undefined,
+        { sort: listSort, minMentions: mentionsMin },
       )
       setCanonicals(data.canonicals)
       setTotal(data.total)
@@ -158,8 +191,18 @@ export default function Locations() {
       debouncedSearchQuery || undefined,
       currentPage,
       typeFilterParam,
+      sortBy,
+      minMentions,
     )
-  }, [currentPage, stylebookSlug, debouncedSearchQuery, typeFilterParam, projectFilterSlug])
+  }, [
+    currentPage,
+    stylebookSlug,
+    debouncedSearchQuery,
+    typeFilterParam,
+    projectFilterSlug,
+    sortBy,
+    minMentions,
+  ])
 
   return (
     <div className="container mx-auto p-6">
@@ -218,6 +261,48 @@ export default function Locations() {
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <Label>Sort by</Label>
+                <Select
+                  value={sortBy}
+                  onValueChange={(v) => setSortBy(v as CanonicalListSort)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="label">Name (A–Z)</SelectItem>
+                    <SelectItem value="recent">Recently active</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Recently active uses edits to the place record or new linked places in your
+                  filtered projects.
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="min-mentions">Minimum mentions</Label>
+                <Input
+                  id="min-mentions"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={minMentions === 0 ? "" : String(minMentions)}
+                  placeholder="0"
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    if (raw === "") {
+                      setMinMentions(0)
+                      return
+                    }
+                    const n = parseInt(raw, 10)
+                    if (!Number.isNaN(n) && n >= 0) setMinMentions(n)
+                  }}
+                />
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Counts mentions in the same projects as the header filter.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -263,7 +348,6 @@ export default function Locations() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <CanonicalSourceIcon createdByUserId={undefined} />
                             <CardTitle>
                               <Link
                                 to={`${catalogBasePath}/locations/canonical/${c.id}?${(() => {
@@ -368,6 +452,8 @@ export default function Locations() {
                     debouncedSearchQuery || undefined,
                     currentPage,
                     typeFilterParam,
+                    sortBy,
+                    minMentions,
                   )
                 } catch (error) {
                   console.error("Failed to delete canonical:", error)

@@ -245,6 +245,20 @@ def test_stylebook_scoped_canonical_create_allows_editor(editor_client: TestClie
     assert r.status_code == 200
 
 
+def test_stylebook_canonical_locations_sort_recent(editor_client: TestClient) -> None:
+    r = editor_client.get("/v1/stylebooks/default/canonical-locations?sort=recent&limit=5")
+    assert r.status_code == 200
+    body = r.json()
+    assert "canonicals" in body
+    assert body["total"] >= 0
+
+
+def test_stylebook_canonical_locations_min_mentions(editor_client: TestClient) -> None:
+    r = editor_client.get("/v1/stylebooks/default/canonical-locations?min_mentions=1")
+    assert r.status_code == 200
+    assert r.json().get("canonicals") == []
+
+
 def test_stylebook_scoped_import_requires_editor(member_client: TestClient) -> None:
     r = member_client.post(
         "/v1/stylebooks/default/import/geojson/analyze",
