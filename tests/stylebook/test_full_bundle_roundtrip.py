@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import zipfile
 from pathlib import Path
 from uuid import uuid4
 
 from backfield_db import BackfieldOrganization, Stylebook, StylebookLocationCanonical
-from backfield_stylebook.full_bundle import export_stylebook_bundle, import_stylebook_bundle
+from backfield_stylebook.full_bundle import (
+    export_stylebook_bundle,
+    import_stylebook_bundle,
+    read_manifest_from_zip,
+)
 from sqlmodel import Session, SQLModel, create_engine, select
 
 
@@ -14,6 +20,43 @@ def _engine():
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
     return engine
+
+
+def test_read_manifest_accepts_single_nested_bundle_folder(tmp_path: Path) -> None:
+    """Manifest may live under one top-level directory; paths stay root-relative."""
+    root_name = "b06657cd-4811-4725-9504-58fa31c37b0a"
+    root = tmp_path / root_name
+    root.mkdir()
+    (root / "canonicals").mkdir()
+    cid = str(uuid4())
+    (root / "canonicals" / "part-00001.jsonl").write_text(
+        json.dumps({"id": cid, "label": "Nested", "slug": "nested"}) + "\n",
+        encoding="utf-8",
+    )
+    manifest = {
+        "schema_version": 1,
+        "files": [
+            {
+                "path": "canonicals/part-00001.jsonl",
+                "kind": "canonical",
+                "rows": 1,
+                "sha256": "0" * 64,
+            },
+        ],
+        "project_slices": [],
+    }
+    (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    zip_path = tmp_path / "nested.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.write(root / "manifest.json", arcname=f"{root_name}/manifest.json")
+        zf.write(
+            root / "canonicals" / "part-00001.jsonl",
+            arcname=f"{root_name}/canonicals/part-00001.jsonl",
+        )
+
+    loaded = read_manifest_from_zip(zip_path)
+    assert loaded["schema_version"] == 1
+    assert len(loaded["files"]) == 1
 
 
 def test_export_import_roundtrip_canonicals_only(tmp_path: Path) -> None:

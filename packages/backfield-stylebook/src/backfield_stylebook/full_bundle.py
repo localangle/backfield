@@ -198,12 +198,52 @@ def export_stylebook_bundle(
         return read_manifest_from_zip(out)
 
 
+def _bundle_root_prefix_from_zip(zf: zipfile.ZipFile) -> str:
+    """Return ``''`` if ``manifest.json`` is at the ZIP root.
+
+    Otherwise return ``'{folder}/'`` when there is exactly one nested ``manifest.json``.
+
+    Some external tools wrap the bundle in a single top-level directory (e.g. export job id).
+    """
+    names: list[str] = []
+    for raw in zf.namelist():
+        n = raw.replace("\\", "/").strip("/")
+        if n:
+            names.append(n)
+    if not names:
+        raise ValueError("bundle zip is empty")
+    if "manifest.json" in names:
+        return ""
+    manifest_paths = [n for n in names if n.endswith("manifest.json")]
+    if not manifest_paths:
+        raise ValueError("bundle is missing manifest.json")
+    if len(manifest_paths) > 1:
+        raise ValueError(
+            "bundle contains multiple manifest.json paths; expected one bundle root or a "
+            "single nested folder",
+        )
+    path = manifest_paths[0]
+    prefix = path[: -len("manifest.json")]
+    if prefix and not prefix.endswith("/"):
+        prefix = prefix + "/"
+    return prefix
+
+
+def _zip_member_path(prefix: str, relative_path: str) -> str:
+    rel = relative_path.replace("\\", "/").lstrip("/")
+    if not prefix:
+        return rel
+    return f"{prefix}{rel}".replace("//", "/")
+
+
 def read_manifest_from_zip(zip_path: str | Path) -> dict[str, Any]:
     """Load and validate manifest.json from a bundle ZIP."""
     zp = Path(zip_path)
     with zipfile.ZipFile(zp, "r") as zf:
+        prefix = _bundle_root_prefix_from_zip(zf)
+        manifest_member = _zip_member_path(prefix, "manifest.json")
         try:
-            raw = zf.read("manifest.json")
+            raw = zf.read(manifest_member)
         except KeyError as e:
             raise ValueError("bundle is missing manifest.json") from e
     manifest = json.loads(raw.decode("utf-8"))
@@ -257,11 +297,17 @@ def import_stylebook_bundle(
 
     prog({"phase": "canonicals"})
     with zipfile.ZipFile(Path(zip_path), "r") as zf:
+        prefix = _bundle_root_prefix_from_zip(zf)
         for fe in manifest["files"]:
             if fe.get("kind") != "canonical":
                 continue
-            rel = fe["path"]
-            with zf.open(rel) as fh:
+            rel = str(fe["path"])
+            member = _zip_member_path(prefix, rel)
+            try:
+                fh_ctx = zf.open(member)
+            except KeyError:
+                fh_ctx = zf.open(rel)
+            with fh_ctx as fh:
                 for line in fh:
                     line = line.strip()
                     if not line:
