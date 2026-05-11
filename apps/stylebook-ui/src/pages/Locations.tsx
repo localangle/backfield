@@ -5,10 +5,12 @@ import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import {
   deleteCanonicalLocation,
+  fetchProjects,
   listCanonicalLocations,
   listCanonicalLocationTypes,
   type CanonicalListSort,
   type CanonicalLocation,
+  type Project,
 } from "@/lib/api"
 import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
 import { Button } from "@/components/ui/button"
@@ -67,6 +69,8 @@ export default function Locations() {
   const [canonicals, setCanonicals] = useState<CanonicalLocation[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("q") ?? "")
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(true)
   const [types, setTypes] = useState<string[]>([])
   const [total, setTotal] = useState(0)
   const [hasNext, setHasNext] = useState(false)
@@ -105,6 +109,24 @@ export default function Locations() {
   }, [searchQuery, searchParams, setSearchParams])
 
   useEffect(() => {
+    let cancelled = false
+    setProjectsLoading(true)
+    void fetchProjects()
+      .then((rows) => {
+        if (!cancelled) setProjects(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setProjects([])
+      })
+      .finally(() => {
+        if (!cancelled) setProjectsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (!stylebookSlug) return
     void (async () => {
       try {
@@ -122,6 +144,19 @@ export default function Locations() {
         const next = new URLSearchParams(prev)
         if (value === "all") next.delete("type")
         else next.set("type", value)
+        next.delete("page")
+        return next
+      })
+    },
+    [setSearchParams],
+  )
+
+  const setProjectFilterParam = useCallback(
+    (value: string) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        if (value === "all-projects") next.delete("project")
+        else next.set("project", value)
         next.delete("page")
         return next
       })
@@ -240,6 +275,26 @@ export default function Locations() {
                 />
               </div>
               <div>
+                <Label>Evidence project</Label>
+                <Select
+                  value={projectFilterSlug || "all-projects"}
+                  onValueChange={setProjectFilterParam}
+                  disabled={projectsLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={projectsLoading ? "Loading…" : "All projects"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all-projects">All projects</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.slug}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
                 <Label>Type</Label>
                 <Select value={typeFilter} onValueChange={setTypeFilterParam}>
                   <SelectTrigger>
@@ -254,25 +309,6 @@ export default function Locations() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div>
-                <Label>Sort by</Label>
-                <Select
-                  value={sortBy}
-                  onValueChange={(v) => setSortParam(v as CanonicalListSort)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="label">Name (A–Z)</SelectItem>
-                    <SelectItem value="recent">Recently active</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1.5">
-                  Recently active uses edits to the place record or new linked places in your
-                  filtered projects.
-                </p>
               </div>
               <div>
                 <Label htmlFor="min-mentions">Minimum mentions</Label>
@@ -293,9 +329,21 @@ export default function Locations() {
                     if (!Number.isNaN(n) && n >= 0) setMinMentionsParam(n)
                   }}
                 />
-                <p className="text-xs text-muted-foreground mt-1.5">
-                  Counts mentions in the same projects as the header filter.
-                </p>
+              </div>
+              <div>
+                <Label>Sort by</Label>
+                <Select
+                  value={sortBy}
+                  onValueChange={(v) => setSortParam(v as CanonicalListSort)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="label">Name (A–Z)</SelectItem>
+                    <SelectItem value="recent">Recently active</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>

@@ -82,7 +82,7 @@ export function CanonicalLinkModal(props: {
   }, [open])
 
   useEffect(() => {
-    if (!open || !substrateLocationId || !projectSlug) {
+    if (!open || substrateLocationId == null || !projectSlug) {
       setLinkedCanonicalId(null)
       setLinkedMetaLoaded(false)
       return
@@ -137,7 +137,7 @@ export function CanonicalLinkModal(props: {
   }, [open, initialCanonicalId, projectSlug, suggestions, linkedCanonicalId])
 
   useEffect(() => {
-    if (!open || !substrateLocationId || !projectSlug) {
+    if (!open || substrateLocationId == null || !projectSlug) {
       setSuggestions([])
       return
     }
@@ -241,7 +241,7 @@ export function CanonicalLinkModal(props: {
   ])
 
   async function linkToCanonical(canonicalId: string) {
-    if (!substrateLocationId || !projectSlug) return
+    if (substrateLocationId == null || !projectSlug) return
     setLinkingCanonicalId(canonicalId)
     setError(null)
     try {
@@ -284,7 +284,7 @@ export function CanonicalLinkModal(props: {
                   rows={suggestionRows}
                   includeAddress={false}
                   busyKey={linkingCanonicalId}
-                  linkDisabled={!substrateLocationId}
+                  linkDisabled={substrateLocationId == null}
                   onLink={(key) => void linkToCanonical(String(key))}
                   linkActionLabel="Link to this canonical"
                 />
@@ -311,7 +311,7 @@ export function CanonicalLinkModal(props: {
                   rows={searchRows}
                   includeAddress={false}
                   busyKey={linkingCanonicalId}
-                  linkDisabled={!substrateLocationId}
+                  linkDisabled={substrateLocationId == null}
                   onLink={(key) => void linkToCanonical(String(key))}
                   linkActionLabel="Link to this canonical"
                 />

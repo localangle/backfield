@@ -167,6 +167,9 @@ export interface LinkedSubstrateItem {
   location_type: string
   canonical_link_status: string
   formatted_address?: string | null
+  project_id: number
+  project_slug: string
+  project_name: string
 }
 
 export interface LinkedSubstratesResponse {

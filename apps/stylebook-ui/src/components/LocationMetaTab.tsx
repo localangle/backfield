@@ -1,10 +1,10 @@
 import React from "react"
 import MetaTab, { type MetaTabConfig } from "@/components/MetaTab"
 import {
-  createCanonicalLocationMeta,
-  deleteCanonicalLocationMeta,
-  getCanonicalLocationMeta,
-  updateCanonicalLocationMeta,
+  createStylebookCanonicalLocationMeta,
+  deleteStylebookCanonicalLocationMeta,
+  getStylebookCanonicalLocationMeta,
+  updateStylebookCanonicalLocationMeta,
 } from "@/lib/stylebook-api/meta"
 
 const locationMetaTabConfig: MetaTabConfig = {
@@ -12,27 +12,32 @@ const locationMetaTabConfig: MetaTabConfig = {
   displayName: { singular: "Location", plural: "Locations" },
   subtitle: "Additional details about this location.",
   api: {
-    getMeta: (entityId, projectSlug) => getCanonicalLocationMeta(String(entityId), projectSlug),
-    createMeta: (entityId, projectSlug, data) =>
-      createCanonicalLocationMeta(String(entityId), projectSlug, data),
-    updateMeta: (entityId, metaId, projectSlug, data) =>
-      updateCanonicalLocationMeta(String(entityId), metaId, projectSlug, data),
-    deleteMeta: (entityId, metaId, projectSlug) =>
-      deleteCanonicalLocationMeta(String(entityId), metaId, projectSlug),
+    getMeta: (entityId, stylebookSlug) =>
+      getStylebookCanonicalLocationMeta(stylebookSlug, String(entityId)),
+    createMeta: (entityId, stylebookSlug, data) =>
+      createStylebookCanonicalLocationMeta(stylebookSlug, String(entityId), data),
+    updateMeta: (entityId, metaId, stylebookSlug, data) =>
+      updateStylebookCanonicalLocationMeta(stylebookSlug, String(entityId), metaId, data),
+    deleteMeta: (entityId, metaId, stylebookSlug) =>
+      deleteStylebookCanonicalLocationMeta(stylebookSlug, String(entityId), metaId),
   },
 }
 
 interface LocationMetaTabProps {
   locationId: string | null
-  projectSlug: string
+  stylebookSlug: string
   onMetaUpdated?: () => void
 }
 
-export default function LocationMetaTab({ locationId, projectSlug, onMetaUpdated }: LocationMetaTabProps) {
+export default function LocationMetaTab({
+  locationId,
+  stylebookSlug,
+  onMetaUpdated,
+}: LocationMetaTabProps) {
   return (
     <MetaTab
       entityId={locationId}
-      projectSlug={projectSlug}
+      projectSlug={stylebookSlug}
       config={locationMetaTabConfig}
       onMetaUpdated={onMetaUpdated}
     />

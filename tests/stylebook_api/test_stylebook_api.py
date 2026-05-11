@@ -1983,6 +1983,93 @@ def test_get_canonical_linked_substrates(
     assert data["substrates"][0]["formatted_address"] == "Listed City, ST, USA"
 
 
+def test_stylebook_canonical_linked_substrates_include_project_fields(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        user = BackfieldUser(email="stylebook-admin@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+        s.refresh(user)
+        demo_proj = s.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        other_proj = s.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "no-ws-proj")
+        ).one()
+        ws = s.get(BackfieldWorkspace, int(demo_proj.workspace_id))  # type: ignore[arg-type]
+        assert ws is not None
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Shared Canon",
+            slug="shared-canon",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.commit()
+        s.refresh(canon)
+        cid = str(canon.id)
+        loc_a = SubstrateLocation(
+            project_id=int(demo_proj.id),  # type: ignore[arg-type]
+            name="Alpha",
+            normalized_name="alpha",
+            location_type="city",
+            identity_fingerprint="fp-alpha",
+            stylebook_location_canonical_id=cid,
+            canonical_link_status=CANONICAL_LINK_LINKED,
+        )
+        loc_b = SubstrateLocation(
+            project_id=int(other_proj.id),  # type: ignore[arg-type]
+            name="Beta",
+            normalized_name="beta",
+            location_type="city",
+            identity_fingerprint="fp-beta",
+            stylebook_location_canonical_id=cid,
+            canonical_link_status=CANONICAL_LINK_LINKED,
+        )
+        s.add(loc_a)
+        s.add(loc_b)
+        s.commit()
+        s.refresh(loc_a)
+        s.refresh(loc_b)
+        loc_a_id = int(loc_a.id)  # type: ignore[arg-type]
+        demo_proj_id = int(demo_proj.id)  # type: ignore[arg-type]
+        other_proj_id = int(other_proj.id)  # type: ignore[arg-type]
+        admin_user_id = int(user.id)  # type: ignore[arg-type]
+
+    def _get_auth_override() -> dict[str, Any]:
+        with Session(engine) as s:
+            u = s.get(BackfieldUser, admin_user_id)
+            assert u is not None
+            return _session_auth_for_user(u, org_id=1, org_role="org_admin")
+
+    app.dependency_overrides[get_auth_dep] = _get_auth_override
+    try:
+        r_all = client.get(
+            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates"
+        )
+        assert r_all.status_code == 200
+        all_rows = r_all.json()["substrates"]
+        assert [row["project_slug"] for row in all_rows] == ["demo-proj", "no-ws-proj"]
+        assert [row["project_name"] for row in all_rows] == ["Demo", "No workspace"]
+        assert [row["project_id"] for row in all_rows] == [demo_proj_id, other_proj_id]
+
+        r_filtered = client.get(
+            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates?project=demo-proj"
+        )
+        assert r_filtered.status_code == 200
+        filtered_rows = r_filtered.json()["substrates"]
+        assert len(filtered_rows) == 1
+        assert filtered_rows[0]["id"] == loc_a_id
+        assert filtered_rows[0]["project_slug"] == "demo-proj"
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
+
+
 def test_get_suggested_canonicals_for_pending_candidate(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:
@@ -2149,6 +2236,132 @@ def test_canonical_location_connections_roundtrip(
     r4 = client.delete(
         f"/v1/canonical-locations/{aid}/connections/{conn_id}?project_slug=demo-proj",
         headers=_service_headers(),
+    )
+    assert r4.status_code == 200
+
+    with Session(engine) as s:
+        row = s.get(StylebookConnection, conn_id)
+        assert row is None
+
+
+def test_stylebook_canonical_location_meta_crud(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        canon = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Shared Meta Canon",
+            slug="shared-meta-canon",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.commit()
+        s.refresh(canon)
+        cid = str(canon.id)
+
+    r0 = editor_client.get(f"/v1/stylebooks/default/canonical-locations/{cid}/meta")
+    assert r0.status_code == 200
+    assert r0.json()["count"] == 0
+
+    r1 = editor_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{cid}/meta",
+        json={"meta_type": "tag", "data": {"shared": True}},
+    )
+    assert r1.status_code == 200
+    mid = int(r1.json()["id"])
+
+    r2 = editor_client.get(f"/v1/stylebooks/default/canonical-locations/{cid}/meta")
+    assert r2.status_code == 200
+    assert r2.json()["count"] == 1
+    assert r2.json()["meta"][0]["data"] == {"shared": True}
+
+    r3 = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}",
+        json={"data": {"shared": "everywhere"}, "meta_type": "note"},
+    )
+    assert r3.status_code == 200
+    assert r3.json()["meta_type"] == "note"
+    assert r3.json()["data"] == {"shared": "everywhere"}
+
+    r4 = editor_client.delete(
+        f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}"
+    )
+    assert r4.status_code == 200
+
+    with Session(engine) as s:
+        row = s.exec(
+            select(StylebookLocationMeta).where(StylebookLocationMeta.id == mid)
+        ).first()
+        assert row is None
+
+
+def test_stylebook_canonical_location_connections_roundtrip(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        ca = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Shared Conn A",
+            slug="shared-conn-a",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        cb = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Shared Conn B",
+            slug="shared-conn-b",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(ca)
+        s.add(cb)
+        s.commit()
+        s.refresh(ca)
+        s.refresh(cb)
+        aid = str(ca.id)
+        bid = str(cb.id)
+
+    r0 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
+    )
+    assert r0.status_code == 200
+    assert r0.json()["connections"] == []
+
+    r1 = editor_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
+        json={"to_entity_type": "location", "to_entity_id": bid, "nature": "near"},
+    )
+    assert r1.status_code == 200
+    conn_id = int(r1.json()["id"])
+
+    r2 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
+    )
+    assert r2.status_code == 200
+    assert len(r2.json()["connections"]) == 1
+    assert r2.json()["connections"][0]["to_display_name"] == "Shared Conn B"
+
+    r2b = editor_client.get("/v1/connections/stylebooks/default/natures")
+    assert r2b.status_code == 200
+    assert "near" in r2b.json()["natures"]
+
+    r3 = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections/{conn_id}",
+        json={"nature": "adjacent"},
+    )
+    assert r3.status_code == 200
+    assert r3.json()["nature"] == "adjacent"
+
+    r4 = editor_client.delete(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections/{conn_id}"
     )
     assert r4.status_code == 200
 

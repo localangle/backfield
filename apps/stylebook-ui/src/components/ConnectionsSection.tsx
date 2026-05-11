@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback } from "react"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import type { Connection } from "@/lib/stylebook-api/connections"
 import {
-  listConnectionsForLocation,
-  listConnectionNatures,
-  createConnectionForLocation,
-  updateConnectionForLocation,
-  deleteConnectionForLocation,
+  listStylebookConnectionsForLocation,
+  listStylebookConnectionNatures,
+  createStylebookConnectionForLocation,
+  updateStylebookConnectionForLocation,
+  deleteStylebookConnectionForLocation,
 } from "@/lib/stylebook-api/connections"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -30,13 +30,14 @@ import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
 import type { ConnectionsEntityType } from "@/lib/connectionsEntityTypes"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
 
 export type EntityType = ConnectionsEntityType
 
 interface ConnectionsSectionProps {
   entityType: EntityType
   entityId: string | number
-  projectSlug: string
+  stylebookSlug: string
   entityDisplayName: string
 }
 
@@ -63,14 +64,15 @@ function getDetailUrl(
 export default function ConnectionsSection({
   entityType,
   entityId,
-  projectSlug,
+  stylebookSlug,
   entityDisplayName,
 }: ConnectionsSectionProps) {
-  const { filterScopeSuffix, catalogBasePath } = useProjectCatalogScope()
+  const { filterScopeSuffix, catalogBasePath, projectScopeSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
 
   const [addOpen, setAddOpen] = useState(false)
   const [selectorOpen, setSelectorOpen] = useState(false)
@@ -89,13 +91,28 @@ export default function ConnectionsSection({
 
   const [deleteConnection, setDeleteConnection] = useState<Connection | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const selectorProjectSlug = projectScopeSlug || projects[0]?.slug || ""
+
+  useEffect(() => {
+    let active = true
+    void fetchProjects()
+      .then((rows) => {
+        if (active) setProjects(rows)
+      })
+      .catch(() => {
+        if (active) setProjects([])
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const fetchConnections = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       if (entityType === "location") {
-        const res = await listConnectionsForLocation(String(entityId), projectSlug)
+        const res = await listStylebookConnectionsForLocation(stylebookSlug, String(entityId))
         setConnections(res.connections)
       } else {
         setConnections([])
@@ -105,7 +122,7 @@ export default function ConnectionsSection({
     } finally {
       setLoading(false)
     }
-  }, [entityType, entityId, projectSlug])
+  }, [entityType, entityId, stylebookSlug])
 
   useEffect(() => {
     fetchConnections()
@@ -115,16 +132,18 @@ export default function ConnectionsSection({
   useEffect(() => {
     if (!addOpen) return
     const q = natureSearch.trim() || nature
-    listConnectionNatures(projectSlug, q || undefined).then((r) => setNatureSuggestions(r.natures))
-  }, [addOpen, projectSlug, natureSearch, nature])
+    listStylebookConnectionNatures(stylebookSlug, q || undefined).then((r) =>
+      setNatureSuggestions(r.natures)
+    )
+  }, [addOpen, stylebookSlug, natureSearch, nature])
 
   // Nature typeahead for edit form
   useEffect(() => {
     if (!editConnection) return
-    listConnectionNatures(projectSlug, editNature.trim() || undefined).then((r) =>
+    listStylebookConnectionNatures(stylebookSlug, editNature.trim() || undefined).then((r) =>
       setEditNatureSuggestions(r.natures)
     )
-  }, [editConnection, projectSlug, editNature])
+  }, [editConnection, stylebookSlug, editNature])
 
   const handleAddOpen = () => {
     setAddOpen(true)
@@ -145,7 +164,7 @@ export default function ConnectionsSection({
       if (entityType !== "location") {
         throw new Error("Connections can only be edited from canonical location detail in this build.")
       }
-      await createConnectionForLocation(String(entityId), projectSlug, {
+      await createStylebookConnectionForLocation(stylebookSlug, String(entityId), {
         to_entity_type: toType,
         to_entity_id: selectedTargetId,
         nature: nature.trim(),
@@ -171,7 +190,7 @@ export default function ConnectionsSection({
       if (entityType !== "location") {
         throw new Error("Connections can only be edited from canonical location detail in this build.")
       }
-      await updateConnectionForLocation(String(entityId), editConnection.id, projectSlug, {
+      await updateStylebookConnectionForLocation(stylebookSlug, String(entityId), editConnection.id, {
         nature: editNature.trim(),
       })
       setEditConnection(null)
@@ -190,7 +209,7 @@ export default function ConnectionsSection({
       if (entityType !== "location") {
         throw new Error("Connections can only be edited from canonical location detail in this build.")
       }
-      await deleteConnectionForLocation(String(entityId), deleteConnection.id, projectSlug)
+      await deleteStylebookConnectionForLocation(stylebookSlug, String(entityId), deleteConnection.id)
       setDeleteConnection(null)
       fetchConnections()
     } catch (e) {
@@ -324,7 +343,6 @@ export default function ConnectionsSection({
                 <ConnectionsGraph
                   entityType={entityType}
                   entityId={entityId}
-                  projectSlug={projectSlug}
                   entityDisplayName={entityDisplayName}
                   connections={connections}
                 />
@@ -436,7 +454,7 @@ export default function ConnectionsSection({
                 <PersonSelector
                   open={selectorOpen}
                   onOpenChange={setSelectorOpen}
-                  projectSlug={projectSlug}
+                  projectSlug={selectorProjectSlug}
                   excludeIds={entityType === 'person' ? [entityId] : undefined}
                   onSelect={(id, displayName) => {
                     setSelectedTargetId(id)
@@ -448,7 +466,7 @@ export default function ConnectionsSection({
                 <OrganizationSelector
                   open={selectorOpen}
                   onOpenChange={setSelectorOpen}
-                  projectSlug={projectSlug}
+                  projectSlug={selectorProjectSlug}
                   excludeIds={entityType === 'organization' ? [entityId] : undefined}
                   onSelect={(id, displayName) => {
                     setSelectedTargetId(id)
@@ -460,7 +478,7 @@ export default function ConnectionsSection({
                 <WorkSelector
                   open={selectorOpen}
                   onOpenChange={setSelectorOpen}
-                  projectSlug={projectSlug}
+                  projectSlug={selectorProjectSlug}
                   excludeIds={entityType === 'work' ? [entityId] : undefined}
                   onSelect={(id, displayName) => {
                     setSelectedTargetId(id)
@@ -472,7 +490,7 @@ export default function ConnectionsSection({
                 <LocationSelector
                   open={selectorOpen}
                   onOpenChange={setSelectorOpen}
-                  projectSlug={projectSlug}
+                  projectSlug={selectorProjectSlug}
                   excludeIds={entityType === 'location' ? [entityId] : undefined}
                   onSelect={(id, displayName) => {
                     setSelectedTargetId(id)

@@ -208,6 +208,9 @@ class LinkedSubstrateItem(BaseModel):
     location_type: str
     canonical_link_status: str
     formatted_address: str | None = None
+    project_id: int
+    project_slug: str
+    project_name: str
 
 
 class LinkedSubstratesResponse(BaseModel):
@@ -663,25 +666,33 @@ def list_canonical_linked_substrates(
     )
     rows = list(
         session.exec(
-            select(SubstrateLocation)
+            select(SubstrateLocation, BackfieldProject)
+            .join(BackfieldProject, BackfieldProject.id == SubstrateLocation.project_id)
             .where(
                 col(SubstrateLocation.project_id).in_(project_ids),
                 SubstrateLocation.stylebook_location_canonical_id == str(canon.id),
             )
-            .order_by(col(SubstrateLocation.name))
+            .order_by(
+                func.lower(col(BackfieldProject.name)).asc(),
+                func.lower(col(SubstrateLocation.name)).asc(),
+                col(SubstrateLocation.id).asc(),
+            )
         ).all()
     )
     return LinkedSubstratesResponse(
         substrates=[
             LinkedSubstrateItem(
-                id=int(r.id),  # type: ignore[arg-type]
-                name=str(r.name),
-                normalized_name=str(r.normalized_name or ""),
-                location_type=str(r.location_type or ""),
-                canonical_link_status=str(r.canonical_link_status or ""),
-                formatted_address=(r.formatted_address or "").strip() or None,
+                id=int(loc.id),  # type: ignore[arg-type]
+                name=str(loc.name),
+                normalized_name=str(loc.normalized_name or ""),
+                location_type=str(loc.location_type or ""),
+                canonical_link_status=str(loc.canonical_link_status or ""),
+                formatted_address=(loc.formatted_address or "").strip() or None,
+                project_id=int(project_row.id),  # type: ignore[arg-type]
+                project_slug=str(project_row.slug),
+                project_name=str(project_row.name),
             )
-            for r in rows
+            for loc, project_row in rows
         ]
     )
 

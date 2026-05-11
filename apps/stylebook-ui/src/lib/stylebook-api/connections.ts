@@ -71,3 +71,58 @@ export async function deleteConnectionForLocation(
     { method: "DELETE" },
   )
 }
+
+export async function listStylebookConnectionNatures(
+  stylebookSlug: string,
+  q?: string,
+): Promise<{ natures: string[] }> {
+  const params = new URLSearchParams()
+  if (q?.trim()) params.set("q", q.trim())
+  const suffix = params.toString()
+  return stylebookJsonFetch<{ natures: string[] }>(
+    `/v1/connections/stylebooks/${encodeURIComponent(stylebookSlug)}/natures${suffix ? `?${suffix}` : ""}`,
+  )
+}
+
+export async function listStylebookConnectionsForLocation(
+  stylebookSlug: string,
+  locationCanonicalId: string,
+): Promise<ConnectionListResponse> {
+  return stylebookJsonFetch<ConnectionListResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections`,
+  )
+}
+
+export async function createStylebookConnectionForLocation(
+  stylebookSlug: string,
+  locationCanonicalId: string,
+  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
+}
+
+export async function updateStylebookConnectionForLocation(
+  stylebookSlug: string,
+  locationCanonicalId: string,
+  connectionId: number,
+  body: { nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections/${connectionId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )
+}
+
+export async function deleteStylebookConnectionForLocation(
+  stylebookSlug: string,
+  locationCanonicalId: string,
+  connectionId: number,
+): Promise<{ ok: boolean }> {
+  return stylebookJsonFetch<{ ok: boolean }>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections/${connectionId}`,
+    { method: "DELETE" },
+  )
+}

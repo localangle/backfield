@@ -45,7 +45,6 @@ function getDetailUrl(
 interface ConnectionsGraphProps {
   entityType: ConnectionsEntityType
   entityId: string | number
-  projectSlug: string
   entityDisplayName: string
   connections: Connection[]
 }
@@ -53,7 +52,6 @@ interface ConnectionsGraphProps {
 export default function ConnectionsGraph({
   entityType,
   entityId,
-  projectSlug,
   entityDisplayName,
   connections,
 }: ConnectionsGraphProps) {
