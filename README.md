@@ -92,6 +92,6 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 ```
 apps/agate-api    apps/agate-ui
 apps/worker       apps/stylebook-api    apps/stylebook-ui    apps/core-api
-packages/backfield-core   packages/backfield-auth   packages/backfield-db   packages/backfield-agate
+packages/backfield-agate  packages/backfield-auth   packages/backfield-db   packages/backfield-ui
 infra/docker-compose.yml   .env.example
 ```

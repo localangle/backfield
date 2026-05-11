@@ -32,9 +32,7 @@ interface JSONInputData {
 function JSONInputNode({ data, selected }: NodeProps<JSONInputData>) {
   const text = typeof data.text === 'string' ? data.text : ''
   const textPreview = text ? text.substring(0, 50) : 'No text provided'
-  const additionalFields = Object.keys(data).filter(
-    (k) => k !== 'text' && k !== 'onChange',
-  ).length
+  const additionalFields = Object.keys(data).filter((k) => k !== 'text' && k !== 'onChange').length
   const icon = getNodeIcon('JSONInput', 'h-4 w-4')
   const bgColor = getNodeBgColor('JSONInput')
 
@@ -50,9 +48,7 @@ function JSONInputNode({ data, selected }: NodeProps<JSONInputData>) {
       </CardHeader>
       <CardContent className="space-y-2">
         <div className="text-xs text-gray-600">
-          {additionalFields > 0
-            ? `+ ${additionalFields} field${additionalFields > 1 ? 's' : ''}`
-            : 'Text only'}
+          {additionalFields > 0 ? `+ ${additionalFields} field${additionalFields > 1 ? 's' : ''}` : 'Text only'}
         </div>
         {textPreview && (
           <div className="text-xs text-gray-600 italic">

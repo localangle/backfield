@@ -8,17 +8,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc curl && rm 
 COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
-COPY packages/backfield-core /app/packages/backfield-core
 COPY packages/backfield-stylebook /app/packages/backfield-stylebook
 COPY packages/backfield-auth /app/packages/backfield-auth
 COPY apps/agate-api /app/apps/agate-api
 
-# Local packages are not on PyPI: db → ai → agate → stylebook → core → auth → app.
+# Local packages are not on PyPI: db → ai → stylebook → agate → auth → app.
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
-    && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir -e /app/packages/backfield-stylebook \
-    && pip install --no-cache-dir -e /app/packages/backfield-core \
+    && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
     && pip install --no-cache-dir \
         "fastapi>=0.109.0" \

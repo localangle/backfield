@@ -8,16 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc curl && rm 
 COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
-COPY packages/backfield-core /app/packages/backfield-core
 COPY packages/backfield-stylebook /app/packages/backfield-stylebook
 COPY apps/worker /app/apps/worker
 
-# Local packages are not on PyPI: db → ai → agate → stylebook → core → app.
+# Local packages are not on PyPI: db → ai → stylebook → agate → app.
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
-    && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir -e /app/packages/backfield-stylebook \
-    && pip install --no-cache-dir -e /app/packages/backfield-core \
+    && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir "celery>=5.3.0" "redis>=5.0.0" \
     && pip install --no-cache-dir -e /app/apps/worker --no-deps
 

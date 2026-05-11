@@ -39,7 +39,7 @@ export default function TextInputPanel({
   running,
   currentRun,
   editMode,
-  setNodes
+  setNodes,
 }: TextInputPanelProps) {
   const isDisabled = !(editMode && setNodes)
 
@@ -49,7 +49,8 @@ export default function TextInputPanel({
         <div>
           <Label className="text-sm font-medium">Description</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            This node provides text input for processing by downstream nodes. The text is passed to connected nodes and changes are saved automatically.
+            This node provides text input for processing by downstream nodes. The text is passed
+            to connected nodes and changes are saved automatically.
           </p>
         </div>
       </div>
@@ -58,10 +59,12 @@ export default function TextInputPanel({
         <div>
           <Label className="text-sm font-medium">Parameters</Label>
         </div>
-        
+
         <div className="space-y-2 mt-2">
           <div>
-            <Label htmlFor="node-text" className="text-xs text-muted-foreground">Input Text</Label>
+            <Label htmlFor="node-text" className="text-xs text-muted-foreground">
+              Input Text
+            </Label>
             <Textarea
               id="node-text"
               value={node.data.text || ''}

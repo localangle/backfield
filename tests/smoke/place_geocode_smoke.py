@@ -316,7 +316,7 @@ def run_via_agate_api() -> int:
             graphs = _assert_ok(agate.get("/graphs"), "list graphs")
             if not isinstance(graphs, list):
                 raise RuntimeError("graphs response must be a list")
-            from backfield_core import STARTER_FLOW_GRAPH_DISPLAY_NAME
+            from backfield_agate import STARTER_FLOW_GRAPH_DISPLAY_NAME
 
             starter = next(
                 (

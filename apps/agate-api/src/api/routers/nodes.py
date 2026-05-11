@@ -11,10 +11,9 @@ router = APIRouter(prefix="/nodes", tags=["nodes"])
 
 
 def _metadata_dir() -> Path:
-    import backfield_core
+    import agate_nodes
 
-    base = Path(backfield_core.__file__).resolve().parent / "nodes"
-    return base
+    return Path(agate_nodes.__file__).resolve().parent
 
 
 @router.get("/metadata")

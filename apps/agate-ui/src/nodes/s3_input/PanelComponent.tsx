@@ -77,9 +77,7 @@ export default function S3InputPanel({
                 onChange={(e) => {
                   setNodes((nds: any[]) =>
                     nds.map((n: any) =>
-                      n.id === node.id
-                        ? { ...n, data: { ...n.data, bucket: e.target.value } }
-                        : n,
+                      n.id === node.id ? { ...n, data: { ...n.data, bucket: e.target.value } } : n,
                     ),
                   )
                 }}

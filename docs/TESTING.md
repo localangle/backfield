@@ -2,8 +2,8 @@
 
 ## Layers
 
-1. **Unit (backfield-core, backfield-auth)**
-  Graph execution, node behavior, and wiring; session/service token helpers. Run: `make test-unit` or `uv run pytest packages/backfield-core/tests packages/backfield-auth/tests`.
+1. **Unit (backfield-agate, backfield-auth)**
+  Graph execution, node behavior, and wiring; session/service token helpers. Run: `make test-unit` or `uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests`.
 2. **Integration / API smoke**
   FastAPI apps mounted via `TestClient` where no Docker is required. Run: `make test-integration`.
 3. **End-to-end (manual or CI)**
@@ -33,12 +33,12 @@
 
 - Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → Stylebook Output / `DBOutput`, no JSON Output node) as the canonical regression story; add tests when changing execution or handles.
 - Prefer a few high-signal tests over broad shallow coverage.
-- When adding nodes, add a focused unit test under `packages/backfield-core/tests/`.
+- When adding nodes, add a focused unit test under `packages/backfield-agate/tests/`.
 - When changing API or worker contracts, add or update a test that guards the naming, queue, status, or schema assumption.
 
 ### Root `tests/` layout
 
-- **Packages:** unit and tight library tests live under `packages/*/tests/` (for example `packages/backfield-core/tests/`).
+- **Packages:** unit and tight library tests live under `packages/*/tests/` (for example `packages/backfield-agate/tests/`).
 - **Repo root `tests/`:** integration and contract tests, grouped by surface so the tree stays navigable:
   - `tests/core_api/` — `core-api` HTTP tests and core-api-only bootstrap/env behavior.
   - `tests/agate_api/` — Agate API `TestClient` tests.

@@ -9,8 +9,8 @@ from decimal import Decimal
 from typing import Any
 
 from api.deps import get_auth, get_session
+from backfield_agate.s3_batch import graph_spec_json_contains_s3_input
 from backfield_auth.gate import require_project_access, visible_project_ids
-from backfield_core.s3_batch import graph_spec_json_contains_s3_input
 from backfield_db import (
     AgateGraph,
     AgateProcessedItem,

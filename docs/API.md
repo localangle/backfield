@@ -96,11 +96,11 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 - `routers/runs.py`
   - Create, list, fetch, and cancel runs; enqueue **`worker.tasks.execute_s3_batch_setup`** when the graph spec includes an **S3Input** node, otherwise **`worker.tasks.execute_agate_run`**. **`POST /runs/{id}/cancel`** stops a **`pending`** or **`running`** run (marks the run **`failed`** with a fixed cancellation message, fails in-flight batch **`agate_processed_item`** rows). **`POST /runs/{id}/items/{item_id}/rerun`** resets one batch **`agate_processed_item`** row to **`pending`**, clears **`result_json`** / **`error_message`**, sets the parent run back to **`running`** when needed, and enqueues **`worker.tasks.execute_processed_item`** on the **`agate`** Celery queue (same as **`CELERY_QUEUE`**). **`GET /runs`** (list) includes **`estimated_ai_cost_total`** / **`estimated_ai_cost_total_incomplete`** (sum of all **`backfield_ai_call_record`** rows for each run, batched in one query). **`GET /runs/{id}`** includes **`processed_items`** (``agate_processed_item`` rows), each with **`estimated_ai_cost`** / **`estimated_ai_cost_incomplete`** / **`estimated_ai_cost_currency`** rolled up from **`backfield_ai_call_record`**, plus **`whole_run_ai_cost_*`** for LLM rows not tied to a batch item (single-graph runs); detail responses also include **`estimated_ai_cost_total`** matching the sum of those rollups. **`GET /runs/{id}/items/{item_id}`** returns one item’s parsed **`input`** / **`output`** (child graph **`result_json`**) and the same cost rollup fields.
 - `routers/nodes.py`
-  - Surface node metadata derived from `backfield-core`.
+  - Surface node metadata derived from `backfield-agate`.
 
 ## Boundary rules
 
-- Parse data at the route boundary with **Pydantic** models (`BaseModel` or shared types like `GraphSpec` from `backfield-core`). Prefer explicit request/response models over untyped dicts.
+- Parse data at the route boundary with **Pydantic** models (`BaseModel` or shared types like `GraphSpec` from `backfield-agate`). Prefer explicit request/response models over untyped dicts.
 - Prefer **strict typing** in router modules: annotated handlers and helpers, minimal use of `Any`.
 - Keep DB table details in `backfield-db`, not duplicated in routers.
 - Keep worker task names, queue names, and response statuses aligned with the worker implementation.

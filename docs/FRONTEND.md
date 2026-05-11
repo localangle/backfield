@@ -43,7 +43,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 
 - Reusable shell components for multiple Backfield apps (Agate UI and Stylebook UI) live in `[packages/backfield-ui](../packages/backfield-ui)`.
 - **`LeafletMap` geocoder:** optional **`geocoder`** prop shows a compact place/address search while editing geography. It uses the public **[Photon](https://photon.komoot.io)** API (OpenStreetMap data, no API key): viewport **`lat`/`lon`/`zoom`** bias and **`location_bias_scale`**, **`dedupe=0`** when the query contains digits (better house-level matches), a **global** `/api` retry if the biased search is empty, optional **`/structured`** fallback for `housenumber street, city` patterns, then **setView** / **fit bounds** without animation (avoids bad map clicks mid-transition) (Photon `extent` is **`[lon, lat, lon, lat]`** for two corners, not min/max ordered) plus a **non-interactive** temporary blue dot at the hit (cleared when the geocoder unmounts). Results do not change saved geometry by themselves.
-- **`nodeOutputs`:** `@backfield/ui/nodeOutputs` holds the canonical mapping from graph topology + node types to **`execute_graph` output keys** (snake_case slugs, legacy keys, `__outputKeysByNodeId`). Agate UI imports it through `[apps/agate-ui/src/lib/nodeOutputs.ts](../apps/agate-ui/src/lib/nodeOutputs.ts)`. Synced `backfield-core` panels use `@/lib/nodeOutputs` (resolved to that re-export). **`packages/backfield-agate`** Geocode UI sources import the same subpath so parity copies stay aligned with `backfield-ui`’s package **`exports`** (no separate filesystem-relative path).
+- **`nodeOutputs`:** `@backfield/ui/nodeOutputs` holds the canonical mapping from graph topology + node types to **`execute_graph` output keys** (snake_case slugs, legacy keys, `__outputKeysByNodeId`). Agate UI imports it through `[apps/agate-ui/src/lib/nodeOutputs.ts](../apps/agate-ui/src/lib/nodeOutputs.ts)`. Synced `backfield-agate` panels use `@/lib/nodeOutputs` (resolved to that re-export) so parity copies stay aligned with `backfield-ui`’s package **`exports`** (no separate filesystem-relative path).
 - **Tailwind:** add `../../packages/backfield-ui/src/**/*.{ts,tsx}` to the app’s Tailwind `content` array (see `[apps/agate-ui/tailwind.config.js](../apps/agate-ui/tailwind.config.js)`).
 - **Exports:** `ShellProductBrand` (large product title + “Backfield Platform” subtitle, `Link` to home); `UserAccountMenu` (account icon + dropdown: signed-in email when `userLabel` is set, optional change password when `onChangePassword` is provided, optional manage users and manage stylebooks for org admins when the corresponding callbacks are provided, optional **AI models** when `onAiModelsSettings` is provided, log out). Navigation is via callbacks so hosts keep their own router.
 
@@ -75,7 +75,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 
 ## Node sync flow
 
-- Source of truth lives in `packages/backfield-core/src/backfield_core/nodes`.
+- Source of truth lives in `packages/backfield-agate/src/agate_nodes`.
 - `apps/agate-ui/scripts/sync-nodes.js` copies UI files into `apps/agate-ui/src/nodes`.
 - The sync script also generates `src/nodes/registry.ts`.
 - Avoid hand-editing generated registry output unless the sync flow itself is changing.

@@ -18,7 +18,7 @@ help:
 	@echo "  make docker-trim          - docker system prune -f only (safe for Postgres/compose volumes across down/up)"
 	@echo "  make docker-trim-full     - docker-trim then docker-prune-volumes (aggressive disk reclaim)"
 	@echo "  make test        - Unit + integration tests"
-	@echo "  make test-unit   - Python unit tests (backfield-core)"
+	@echo "  make test-unit   - Python unit tests (backfield-agate)"
 	@echo "  make test-integration - API smoke tests"
 	@echo "  make lint        - Ruff check"
 	@echo "  make format      - Ruff format"
@@ -77,7 +77,7 @@ docker-trim-full: docker-trim docker-prune-volumes
 test: test-unit test-integration
 
 test-unit:
-	uv run pytest packages/backfield-core/tests packages/backfield-auth/tests -q
+	uv run pytest packages/backfield-agate/tests packages/backfield-auth/tests -q
 
 test-integration:
 	uv run pytest tests -q

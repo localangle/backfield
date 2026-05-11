@@ -9,7 +9,6 @@ members = [
     "backfield-agate",
     "backfield-ai",
     "backfield-auth",
-    "backfield-core",
     "backfield-db",
     "backfield-stylebook",
     "backfield-workspace",
@@ -22,8 +21,8 @@ name = "agate-api"
 version = "0.1.0"
 source = { editable = "apps/agate-api" }
 dependencies = [
+    { name = "backfield-agate" },
     { name = "backfield-auth" },
-    { name = "backfield-core" },
     { name = "backfield-db" },
     { name = "backfield-stylebook" },
     { name = "celery" },
@@ -35,8 +34,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backfield-agate", editable = "packages/backfield-agate" },
     { name = "backfield-auth", editable = "packages/backfield-auth" },
-    { name = "backfield-core", editable = "packages/backfield-core" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },
     { name = "celery", specifier = ">=5.3.0" },
@@ -51,8 +50,8 @@ name = "agate-worker"
 version = "0.1.0"
 source = { editable = "apps/worker" }
 dependencies = [
+    { name = "backfield-agate" },
     { name = "backfield-ai" },
-    { name = "backfield-core" },
     { name = "backfield-db" },
     { name = "backfield-stylebook" },
     { name = "celery" },
@@ -62,8 +61,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backfield-agate", editable = "packages/backfield-agate" },
     { name = "backfield-ai", editable = "packages/backfield-ai" },
-    { name = "backfield-core", editable = "packages/backfield-core" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },
     { name = "celery", specifier = ">=5.3.0" },
@@ -296,6 +295,9 @@ source = { editable = "packages/backfield-agate" }
 dependencies = [
     { name = "anthropic" },
     { name = "backfield-ai" },
+    { name = "backfield-db" },
+    { name = "backfield-stylebook" },
+    { name = "boto3" },
     { name = "duckduckgo-search" },
     { name = "geopy" },
     { name = "h3" },
@@ -312,6 +314,9 @@ dependencies = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.18.0" },
     { name = "backfield-ai", editable = "packages/backfield-ai" },
+    { name = "backfield-db", editable = "packages/backfield-db" },
+    { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },
+    { name = "boto3", specifier = ">=1.34.0" },
     { name = "duckduckgo-search", specifier = ">=7.0.0" },
     { name = "geopy", specifier = ">=2.4.0" },
     { name = "h3", specifier = ">=4.3.1" },
@@ -356,29 +361,6 @@ requires-dist = [
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "itsdangerous", specifier = ">=2.1.0" },
-]
-
-[[package]]
-name = "backfield-core"
-version = "0.1.0"
-source = { editable = "packages/backfield-core" }
-dependencies = [
-    { name = "backfield-agate" },
-    { name = "backfield-db" },
-    { name = "backfield-stylebook" },
-    { name = "boto3" },
-    { name = "httpx" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "backfield-agate", editable = "packages/backfield-agate" },
-    { name = "backfield-db", editable = "packages/backfield-db" },
-    { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },
-    { name = "boto3", specifier = ">=1.34.0" },
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
 ]
 
 [[package]]
@@ -428,7 +410,7 @@ name = "backfield-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "backfield-core" },
+    { name = "backfield-agate" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "python-dotenv" },
@@ -437,7 +419,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "backfield-core", editable = "packages/backfield-core" },
+    { name = "backfield-agate", editable = "packages/backfield-agate" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },

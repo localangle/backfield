@@ -4,7 +4,7 @@ globs:
   - apps/agate-ui/**/*.{ts,tsx}
   - apps/stylebook-ui/**/*.{ts,tsx}
   - packages/backfield-ui/**/*.{ts,tsx}
-  - packages/backfield-core/src/**/*.tsx
+  - packages/backfield-agate/src/**/*.tsx
 alwaysApply: false
 ---
 

@@ -7,9 +7,9 @@ from typing import Any
 
 from api.deps import get_auth, get_session
 from api.routers.graphs import GraphOut
+from backfield_agate import GraphSpec
+from backfield_agate.types import Edge, NodeConfig
 from backfield_auth.gate import require_project_access
-from backfield_core import GraphSpec
-from backfield_core.types import Edge, NodeConfig
 from backfield_db import AgateGraph, AgateTemplate, BackfieldProject
 from backfield_stylebook.graph_stylebook_refs import (
     StylebookGraphRefsError,

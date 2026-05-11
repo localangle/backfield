@@ -29,10 +29,7 @@ interface TextInputData {
 }
 
 function TextInputNode({ data, selected }: NodeProps<TextInputData>) {
-  // Truncate text for display in the node
-  const displayText = data.text.length > 100 
-    ? `${data.text.substring(0, 100)}...` 
-    : data.text
+  const displayText = data.text.length > 100 ? `${data.text.substring(0, 100)}...` : data.text
   const icon = getNodeIcon('TextInput', 'h-4 w-4')
   const bgColor = getNodeBgColor('TextInput')
 
@@ -49,13 +46,9 @@ function TextInputNode({ data, selected }: NodeProps<TextInputData>) {
       <CardContent>
         <div className="min-h-[100px] p-3 bg-muted rounded-md text-sm text-muted-foreground">
           {data.text ? (
-            <div className="whitespace-pre-wrap break-words">
-              {displayText}
-            </div>
+            <div className="whitespace-pre-wrap break-words">{displayText}</div>
           ) : (
-            <div className="text-center text-muted-foreground/60">
-              Click to edit text in panel
-            </div>
+            <div className="text-center text-muted-foreground/60">Click to edit text in panel</div>
           )}
         </div>
         <Handle

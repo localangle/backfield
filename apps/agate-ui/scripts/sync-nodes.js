@@ -9,9 +9,9 @@ const __dirname = path.dirname(__filename);
 
 // Try different paths for local vs Docker environments
 const possiblePaths = [
-  path.join(__dirname, '../../../packages/backfield-core/src/backfield_core/nodes'),
-  path.join(__dirname, '../packages/backfield-core/src/backfield_core/nodes'),
-  '/app/packages/backfield-core/src/backfield_core/nodes',
+  path.join(__dirname, '../../../packages/backfield-agate/src/agate_nodes'),
+  path.join(__dirname, '../packages/backfield-agate/src/agate_nodes'),
+  '/app/packages/backfield-agate/src/agate_nodes',
 ];
 
 let NODES_SOURCE_DIR = null;
@@ -23,7 +23,7 @@ for (const testPath of possiblePaths) {
 }
 
 if (!NODES_SOURCE_DIR) {
-  console.error('Could not find backfield_core/nodes. Tried paths:', possiblePaths);
+  console.error('Could not find agate_nodes. Tried paths:', possiblePaths);
   process.exit(1);
 }
 const NODES_TARGET_DIR = path.join(__dirname, '../src/nodes');

@@ -9,12 +9,11 @@ dependencies = [
     "pytest>=8.0",
     "python-dotenv>=1.0.0",
     "ruff>=0.6.0",
-    "backfield-core",
+    "backfield-agate",
 ]
 
 [tool.uv.workspace]
 members = [
-    "packages/backfield-core",
     "packages/backfield-ai",
     "packages/backfield-auth",
     "packages/backfield-stylebook",
@@ -27,7 +26,6 @@ members = [
 ]
 
 [tool.uv.sources]
-backfield-core = { workspace = true }
 backfield-ai = { workspace = true }
 backfield-auth = { workspace = true }
 backfield-agate = { workspace = true }
@@ -36,9 +34,8 @@ backfield-stylebook = { workspace = true }
 core-api = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["packages/backfield-core/tests", "packages/backfield-auth/tests", "tests"]
+testpaths = ["packages/backfield-agate/tests", "packages/backfield-auth/tests", "tests"]
 pythonpath = [
-    "packages/backfield-core/src",
     "packages/backfield-ai/src",
     "packages/backfield-auth/src",
     "packages/backfield-agate/src",
@@ -56,7 +53,11 @@ target-version = "py311"
 extend-exclude = [
     "packages/backfield-db/alembic",
     "**/node_modules",
-    "packages/backfield-agate",
+    "packages/backfield-agate/src/agate_nodes/geocode_agent",
+    "packages/backfield-agate/src/agate_nodes/place_extract",
+    "packages/backfield-agate/src/agate_utils",
+    "packages/backfield-agate/src/backfield_agate/output_node.py",
+    "packages/backfield-agate/src/backfield_agate/runners.py",
 ]
 
 [tool.ruff.lint]

@@ -9,7 +9,7 @@ Backfield keeps a **tightly coupled monorepo** similar in spirit to Agate: multi
 | --------------- | ------------ | ----------------------------------------------------- |
 | `agate-api`     | Agate        | Graph CRUD, run enqueue, node metadata API            |
 | `agate-ui`      | Agate        | React + React Flow editor                             |
-| `worker`        | Agate        | Celery consumer; executes graphs via `backfield-core` |
+| `worker`        | Agate        | Celery consumer; executes graphs via `backfield-agate` |
 | `stylebook-api` | Stylebook    | Geocode stub + future entity APIs                     |
 | `stylebook-ui`  | Stylebook    | Thin shell; links to Agate                            |
 | `core-api`      | Core API     | Domain HTTP API (article import later); auth testing now |
@@ -20,10 +20,9 @@ Backfield keeps a **tightly coupled monorepo** similar in spirit to Agate: multi
 
 | Package            | Responsibility                                                                                  |
 | ------------------ | ----------------------------------------------------------------------------------------------- |
-| `backfield-core`   | `GraphSpec`, synchronous executor, starter node implementations + `metadata.json` for UI sync |
+| `backfield-agate`  | `GraphSpec`, synchronous executor, starter flow helpers, node definitions, and vendored Agate runtime |
 | `backfield-auth`   | Session signing, service tokens, FastAPI dependencies (`require_auth_or_service`, etc.)          |
 | `backfield-db`     | SQLModel models (`agate_`* tables), Alembic migrations, session helpers                          |
-| `backfield-agate`  | Vendored PlaceExtract, LangGraph GeocodeAgent, `agate_utils` / `agate_nodes` (parity with agate-ai-platform) |
 | `backfield-ui`     | Shared React UI (`@backfield/ui`), e.g. account menu; consumed by Agate UI and future apps     |
 
 

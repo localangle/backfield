@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from backfield_core import (
+from backfield_agate import (
     STARTER_FLOW_GRAPH_DISPLAY_NAME,
     GraphSpec,
     starter_geocode_flow_graph_spec,
