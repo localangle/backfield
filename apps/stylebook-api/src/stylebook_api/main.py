@@ -15,6 +15,7 @@ from stylebook_api.routers import (
     location_candidates,
     location_meta,
     locations,
+    stylebook_bundle_jobs,
     stylebook_canonicals,
     stylebook_permissions,
     stylebooks,
@@ -48,6 +49,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(taxonomy.router)
 app.include_router(stylebooks.router)
+app.include_router(stylebook_bundle_jobs.router)
 app.include_router(geocode.router)
 app.include_router(locations.router)
 app.include_router(imports.router)

@@ -31,13 +31,21 @@ import {
 import { SettingsScreenHeader } from "@/components/SettingsScreenHeader"
 import { useAuth } from "@/lib/auth"
 import {
+  createBundleExportJob,
+  createBundleImportJob,
   createStylebookCatalog,
   deleteStylebookCatalog,
+  finalizeBundleImportJob,
+  getBundleJob,
   getStylebookCatalogDeletePreview,
   listStylebookCatalogs,
+  pollBundleJob,
+  previewBundleManifest,
   renameStylebookCatalog,
   setDefaultStylebookCatalog,
+  uploadBundleZipViaApi,
   type CatalogDeletePreview,
+  type StylebookBundleManifestPreview,
   type StylebookCatalogRow,
 } from "@/lib/stylebook-org-api"
 
@@ -74,6 +82,16 @@ export default function ManageCatalogsPage() {
   const [deleteReplacementId, setDeleteReplacementId] = useState<string>("")
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const [exportingId, setExportingId] = useState<number | null>(null)
+
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importPreview, setImportPreview] =
+    useState<StylebookBundleManifestPreview | null>(null)
+  const [importPreviewLoading, setImportPreviewLoading] = useState(false)
+  const [importName, setImportName] = useState("")
+  const [importBusy, setImportBusy] = useState(false)
 
   const sorted = useMemo(() => sortCatalogs(rows), [rows])
 
@@ -236,6 +254,109 @@ export default function ManageCatalogsPage() {
     return sorted.filter((c) => c.id !== deleteRow.id)
   }, [deleteRow, sorted])
 
+  const openImport = () => {
+    setImportOpen(true)
+    setImportFile(null)
+    setImportPreview(null)
+    setImportName("")
+  }
+
+  const onImportFileChange = (file: File | null) => {
+    setImportFile(file)
+    setImportPreview(null)
+    if (!file || !organizationId) {
+      setImportPreviewLoading(false)
+      return
+    }
+    setImportPreviewLoading(true)
+    void (async () => {
+      try {
+        const prev = await previewBundleManifest(organizationId, file)
+        setImportPreview(prev)
+        const baseName = prev.source_stylebook?.name
+          ? `${String(prev.source_stylebook.name)} copy`
+          : "Imported stylebook"
+        setImportName(baseName)
+      } catch (e) {
+        showError(e instanceof Error ? e.message : "Could not read that file.")
+        setImportFile(null)
+      } finally {
+        setImportPreviewLoading(false)
+      }
+    })()
+  }
+
+  const onExportCatalog = async (row: StylebookCatalogRow) => {
+    if (!organizationId) return
+    const progressDlg = showMessage("Preparing a downloadable copy…", {
+      title: "Export",
+      pending: true,
+    })
+    try {
+      setExportingId(row.id)
+      const started = await createBundleExportJob(organizationId, row.id)
+      const done = await pollBundleJob(organizationId, started.id)
+      if (done.status === "failed") {
+        progressDlg.dismiss()
+        showError(done.error_message || "Export did not finish.")
+        return
+      }
+      const withUrl = await getBundleJob(organizationId, started.id)
+      const url = withUrl.download_url
+      if (!url) {
+        progressDlg.dismiss()
+        showError("Download link is not available yet. Try again in a moment.")
+        return
+      }
+      window.open(url, "_blank", "noopener,noreferrer")
+      progressDlg.dismiss()
+    } catch (e) {
+      progressDlg.dismiss()
+      showError(e instanceof Error ? e.message : "Export failed.")
+    } finally {
+      setExportingId(null)
+    }
+  }
+
+  const onImportSubmit = async () => {
+    if (!organizationId || !importFile || !importPreview) return
+    const name = importName.trim()
+    if (!name) {
+      showError("Enter a name for the new stylebook.")
+      return
+    }
+    let progressDlg: ReturnType<typeof showMessage> | null = null
+    try {
+      setImportBusy(true)
+      const job = await createBundleImportJob(organizationId, {
+        new_stylebook_name: name,
+        project_mappings: {},
+      })
+      await uploadBundleZipViaApi(organizationId, job.id, importFile)
+      await finalizeBundleImportJob(organizationId, job.id)
+      progressDlg = showMessage("Import started. This may take a minute…", {
+        title: "Import",
+        pending: true,
+      })
+      const done = await pollBundleJob(organizationId, job.id)
+      progressDlg.dismiss()
+      progressDlg = null
+      if (done.status === "failed") {
+        showError(done.error_message || "Import did not finish.")
+        return
+      }
+      setImportOpen(false)
+      await reload()
+      notifyWorkspaceRefresh()
+      showMessage("Stylebook imported.", { title: "Done" })
+    } catch (e) {
+      progressDlg?.dismiss()
+      showError(e instanceof Error ? e.message : "Import failed.")
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
   if (!organizationId) {
     return (
       <div className="text-center text-muted-foreground py-12">
@@ -261,14 +382,19 @@ export default function ManageCatalogsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <SettingsScreenHeader title="Stylebooks">
           <>
-            Stylebooks hold your organization&apos;s canonical locations and related editorial data.
-            Use <span className="text-foreground font-medium">Users</span> to choose who may edit each
-            stylebook; this page is for creating stylebooks and setting the organization default.
+            Stylebooks hold your organization&apos;s canonical locations and related editorial data.{" "}
+            Manage access to stylebooks via{" "}
+            <span className="text-foreground font-medium">Users</span>.
           </>
         </SettingsScreenHeader>
-        <Button type="button" className="shrink-0" onClick={() => setCreateOpen(true)}>
-          New stylebook
-        </Button>
+        <div className="flex flex-row flex-nowrap items-center justify-end gap-2 shrink-0 self-start sm:self-auto">
+          <Button type="button" className="shrink-0" onClick={() => setCreateOpen(true)}>
+            New stylebook
+          </Button>
+          <Button type="button" variant="outline" className="shrink-0" onClick={openImport}>
+            Import
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-md border">
@@ -309,6 +435,16 @@ export default function ManageCatalogsPage() {
                       variant="outline"
                       size="sm"
                       className="shrink-0"
+                      disabled={exportingId === r.id}
+                      onClick={() => void onExportCatalog(r)}
+                    >
+                      {exportingId === r.id ? "Exporting…" : "Export"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
                       onClick={() => {
                         setRenameRow(r)
                         setRenameValue(r.name)
@@ -332,6 +468,71 @@ export default function ManageCatalogsPage() {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog
+        open={importOpen}
+        onOpenChange={(o) => {
+          if (!o) setImportOpen(false)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import a stylebook copy</DialogTitle>
+            <DialogDescription>
+              Upload a stylebook file you previously downloaded from this product. Only canonical
+              locations are copied; a new stylebook is created with new internal identifiers.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="import-bundle">File</Label>
+              <Input
+                id="import-bundle"
+                type="file"
+                accept=".zip,application/zip"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null
+                  onImportFileChange(f)
+                }}
+              />
+              {importPreviewLoading ? (
+                <p className="text-sm text-muted-foreground">Reading file…</p>
+              ) : null}
+            </div>
+            {importPreview ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="import-name">Name for the new stylebook</Label>
+                  <Input
+                    id="import-name"
+                    value={importName}
+                    onChange={(e) => setImportName(e.target.value)}
+                    placeholder="e.g. Metro (imported)"
+                  />
+                </div>
+              </>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void onImportSubmit()}
+              disabled={
+                importBusy ||
+                !importFile ||
+                !importPreview ||
+                importPreviewLoading ||
+                !importName.trim()
+              }
+            >
+              {importBusy ? "Importing…" : "Import"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">

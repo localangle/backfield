@@ -35,17 +35,25 @@ services:
     build:
       context: ..
       dockerfile: apps/stylebook-api/Dockerfile
+    env_file:
+      - path: ../.env
+        required: false
     ports:
       - "8003:8003"
     environment:
       <<: *shared-env
       UI_ORIGIN: http://localhost:5175
+      REDIS_URL: redis://redis:6379/0
       # Same DB as agate-api/core-api; inside Compose use service hostname `postgres:5432`
       # (not localhost:5433, which is only valid from the host machine).
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      # STYLEBOOK_BUNDLE_* comes from env_file (../.env); do not set empty ${...} here or it
+      # overrides env_file when host-side interpolation is unset.
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   core-api:
@@ -148,6 +156,7 @@ services:
       BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-3}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
+      # STYLEBOOK_BUNDLE_* from env_file (../.env); avoid empty compose override (see stylebook-api).
       # LLM / geocoder keys: repo-root .env via env_file above.
       PROJECT_SLUG: ${PROJECT_SLUG:-}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}
@@ -173,10 +182,11 @@ services:
     ports:
       - "5173:5173"
     environment:
-      # Same-origin dev: browser calls /api/agate and /v1 on :5173; Vite proxies to backend services.
+      # Same-origin dev: browser calls /api/agate, /api/stylebook, and /v1 on :5173; Vite proxies.
       VITE_API_BASE: /api/agate
       VITE_AUTH_API_BASE: ""
-      VITE_STYLEBOOK_API_BASE: http://localhost:8003
+      VITE_STYLEBOOK_API_BASE: /api/stylebook
+      VITE_STYLEBOOK_API_PROXY_TARGET: http://stylebook-api:8003
       VITE_CORE_API_PROXY_TARGET: http://core-api:8004
       VITE_AGATE_API_PROXY_TARGET: http://agate-api:8000
     volumes:

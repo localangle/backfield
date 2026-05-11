@@ -14,6 +14,14 @@ from backfield_stylebook.canonical_policy import (
     find_existing_canonical_id_by_alias,
     rank_scored_canonical_recall_matches,
 )
+from backfield_stylebook.full_bundle import (
+    ALLOWED_MANIFEST_SCHEMA_VERSIONS,
+    BUNDLE_SCHEMA_VERSION,
+    DEFAULT_MAX_ZIP_BYTES,
+    export_stylebook_bundle,
+    import_stylebook_bundle,
+    read_manifest_from_zip,
+)
 from backfield_stylebook.graph_stylebook_refs import (
     STYLEBOOK_NODE_PARAM_KEY,
     StylebookGraphRefsError,
@@ -50,6 +58,9 @@ from backfield_stylebook.stylebook_record_slug import (
 )
 
 __all__ = [
+    "ALLOWED_MANIFEST_SCHEMA_VERSIONS",
+    "BUNDLE_SCHEMA_VERSION",
+    "DEFAULT_MAX_ZIP_BYTES",
     "CANONICAL_LINK_LINKED",
     "CANONICAL_LINK_PENDING",
     "CANONICAL_LINK_UNLINKED",
@@ -67,12 +78,15 @@ __all__ = [
     "count_stylebook_usage_in_graphs",
     "create_stylebook",
     "delete_stylebook",
+    "export_stylebook_bundle",
     "ensure_default_stylebook_for_organization",
     "iter_stylebook_refs_from_spec_dict",
     "find_existing_canonical_id_by_alias",
+    "import_stylebook_bundle",
     "rank_scored_canonical_recall_matches",
     "link_to_existing_canonical",
     "materialize_new_canonical_and_link",
+    "read_manifest_from_zip",
     "refresh_aliases_for_linked_location",
     "rename_stylebook",
     "resolve_stylebook_by_slug",

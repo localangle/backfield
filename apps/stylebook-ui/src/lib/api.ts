@@ -5,6 +5,7 @@
 export { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
 export {
   LOCATION_TYPES,
+  type CanonicalListSort,
   type CanonicalLocation,
   type LinkedMention,
   type LinkedSubstrateItem,

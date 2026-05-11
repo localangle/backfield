@@ -917,9 +917,9 @@ export default function LocationCandidates() {
             </div>
             <Table className="table-fixed">
               <colgroup>
-                <col style={{ width: "30%" }} />
-                <col style={{ width: "9%" }} />
-                <col style={{ width: "28%" }} />
+                <col style={{ width: "27%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "27%" }} />
                 <col style={{ width: "10%" }} />
                 {/* Four icon buttons, gaps, cell padding, and focus rings need a firm minimum. */}
                 <col style={{ width: "13rem" }} />
@@ -927,7 +927,9 @@ export default function LocationCandidates() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-0">Location</TableHead>
-                  <TableHead className="whitespace-nowrap">Type</TableHead>
+                  <TableHead className="min-w-0 overflow-hidden">
+                    <span className="block truncate">Type</span>
+                  </TableHead>
                   <TableHead className="min-w-0">Address</TableHead>
                   <TableHead className="whitespace-nowrap">Created</TableHead>
                   <TableHead className="min-w-0 text-right">
@@ -952,6 +954,9 @@ export default function LocationCandidates() {
                       c.canonical_suggestion?.stylebook_location_canonical_id != null
                         ? String(c.canonical_suggestion.stylebook_location_canonical_id).trim()
                         : ""
+                    const typeLabel = c.suggested_type
+                      ? placeExtractTypeLabel(c.suggested_type)
+                      : "—"
                     return (
                     <Fragment key={c.id}>
                       <TableRow id={`candidate-row-${c.id}`}>
@@ -1003,10 +1008,13 @@ export default function LocationCandidates() {
                           ) : null}
                           </div>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {c.suggested_type
-                            ? placeExtractTypeLabel(c.suggested_type)
-                            : "—"}
+                        <TableCell className="min-w-0 overflow-hidden align-top">
+                          <span
+                            className="block truncate"
+                            title={typeLabel !== "—" ? typeLabel : undefined}
+                          >
+                            {typeLabel}
+                          </span>
                         </TableCell>
                         <TableCell className="min-w-0 max-w-xs truncate">
                           {c.suggested_formatted_address || "—"}

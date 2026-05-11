@@ -181,3 +181,145 @@ export async function removeStylebookEditor(
     { method: "DELETE" },
   )
 }
+
+/** Async full-catalog ZIP export/import job (org admin). */
+export interface StylebookBundleJobRow {
+  id: string
+  organization_id: number
+  kind: string
+  status: string
+  source_stylebook_id: number | null
+  result_stylebook_id: number | null
+  s3_bucket: string | null
+  s3_key: string | null
+  download_url: string | null
+  upload_url: string | null
+  progress_json: Record<string, unknown> | unknown[] | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface StylebookBundleManifestPreview {
+  schema_version: number | null
+  source_stylebook?: { id?: number; name?: string; slug?: string }
+  project_slices: Array<{
+    project_id: number
+    project_slug: string
+    meta_row_count: number
+    connection_row_count: number
+  }>
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+export async function createBundleExportJob(
+  orgId: number,
+  stylebookId: number,
+): Promise<StylebookBundleJobRow> {
+  return stylebookJsonFetch<StylebookBundleJobRow>(
+    `/v1/organizations/${orgId}/stylebooks/${stylebookId}/bundle-export-jobs`,
+    { method: "POST" },
+  )
+}
+
+export async function getBundleJob(
+  orgId: number,
+  jobId: string,
+): Promise<StylebookBundleJobRow> {
+  return stylebookJsonFetch<StylebookBundleJobRow>(
+    `/v1/organizations/${orgId}/stylebook-bundle-jobs/${encodeURIComponent(jobId)}`,
+  )
+}
+
+export async function pollBundleJob(
+  orgId: number,
+  jobId: string,
+  opts?: { intervalMs?: number; maxAttempts?: number },
+): Promise<StylebookBundleJobRow> {
+  const intervalMs = opts?.intervalMs ?? 2000
+  const maxAttempts = opts?.maxAttempts ?? 300
+  for (let i = 0; i < maxAttempts; i++) {
+    const job = await getBundleJob(orgId, jobId)
+    if (job.status === "succeeded" || job.status === "failed") return job
+    await sleep(intervalMs)
+  }
+  throw new Error(
+    "This is taking longer than expected. Refresh the page and check again in a moment.",
+  )
+}
+
+export async function previewBundleManifest(
+  orgId: number,
+  file: File,
+): Promise<StylebookBundleManifestPreview> {
+  const form = new FormData()
+  form.append("bundle", file)
+  const r = await fetch(
+    `${stylebookBase()}/v1/organizations/${orgId}/stylebook-bundles/manifest-preview`,
+    { method: "POST", credentials: "include", body: form },
+  )
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = (await r.json()) as { detail?: unknown }
+      if (body.detail !== undefined) {
+        const f = formatDetail(body.detail)
+        if (f) msg = f
+      }
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg)
+  }
+  return (await r.json()) as StylebookBundleManifestPreview
+}
+
+export async function createBundleImportJob(
+  orgId: number,
+  body: { new_stylebook_name: string; project_mappings: Record<string, number> },
+): Promise<StylebookBundleJobRow> {
+  return stylebookJsonFetch<StylebookBundleJobRow>(
+    `/v1/organizations/${orgId}/stylebook-bundle-import-jobs`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
+}
+
+export async function finalizeBundleImportJob(
+  orgId: number,
+  jobId: string,
+): Promise<StylebookBundleJobRow> {
+  return stylebookJsonFetch<StylebookBundleJobRow>(
+    `/v1/organizations/${orgId}/stylebook-bundle-jobs/${encodeURIComponent(jobId)}/finalize`,
+    { method: "POST" },
+  )
+}
+
+/** Upload ZIP through stylebook-api (same origin) so the browser does not hit S3 CORS. */
+export async function uploadBundleZipViaApi(
+  orgId: number,
+  jobId: string,
+  file: File,
+): Promise<void> {
+  const form = new FormData()
+  form.append("bundle", file)
+  const r = await fetch(
+    `${stylebookBase()}/v1/organizations/${orgId}/stylebook-bundle-jobs/${encodeURIComponent(jobId)}/upload`,
+    { method: "POST", credentials: "include", body: form },
+  )
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = (await r.json()) as { detail?: unknown }
+      if (body.detail !== undefined) {
+        const f = formatDetail(body.detail)
+        if (f) msg = f
+      }
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg)
+  }
+}

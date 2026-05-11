@@ -13,6 +13,5 @@
 **/dist
 **/*.egg-info
 
-# Who's On First SQLite (multi-GB; not in git — see geocoding/data/README.md).
-# Excluding prevents "no space left on device" during image build if present locally.
+# Optional large local *.db under geocoding data (excluded so image builds do not copy them).
 packages/backfield-agate/src/agate_utils/geocoding/data/*.db

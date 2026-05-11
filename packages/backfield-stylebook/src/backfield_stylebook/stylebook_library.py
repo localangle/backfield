@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from backfield_db import BackfieldWorkspace, Stylebook, StylebookSlugRedirect
+from backfield_db import BackfieldWorkspace, Stylebook, StylebookBundleJob, StylebookSlugRedirect
+from sqlalchemy import delete, or_
 from sqlmodel import Session, col, select
 
 from backfield_stylebook.stylebook_record_slug import allocate_unique_stylebook_slug
@@ -36,6 +37,29 @@ def resolve_stylebook_by_slug(
     if redir is None:
         return None
     return session.get(Stylebook, redir.stylebook_id)
+
+
+def create_stylebook_for_import(
+    session: Session,
+    *,
+    organization_id: int,
+    desired_name: str,
+) -> Stylebook:
+    """Create a stylebook from an import, suffixing the display name until unique in the org."""
+    base = desired_name.strip()
+    if not base:
+        raise StylebookLibraryError("name is required")
+    name = base
+    n = 2
+    while session.exec(
+        select(Stylebook.id).where(
+            Stylebook.organization_id == organization_id,
+            Stylebook.name == name,
+        )
+    ).first():
+        name = f"{base} ({n})"
+        n += 1
+    return create_stylebook(session, organization_id=organization_id, name=name, is_default=False)
 
 
 def create_stylebook(
@@ -194,6 +218,17 @@ def delete_stylebook(
         replacement.is_default = True
         session.add(replacement)
         session.flush()
+
+    # Async bundle jobs reference this stylebook; remove them so FK does not block delete.
+    session.exec(
+        delete(StylebookBundleJob).where(
+            or_(
+                StylebookBundleJob.source_stylebook_id == stylebook_id,
+                StylebookBundleJob.result_stylebook_id == stylebook_id,
+            )
+        )
+    )
+    session.flush()
 
     session.delete(book)
     session.flush()

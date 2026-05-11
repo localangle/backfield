@@ -201,6 +201,7 @@ export default function LocationDetail() {
     stylebookSlug,
     catalogBasePath,
   } = useProjectCatalogScope()
+  const [searchParams] = useSearchParams()
   const crumbRoot = useScopeBreadcrumbRoot()
   const canEdit = useCanEditStylebook()
   const { id } = useParams<{ id: string }>()
@@ -209,7 +210,7 @@ export default function LocationDetail() {
   const [mentions, setMentions] = useState<LinkedMention[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
-  const projectSlug = projectFilterSlug
+  const evidenceProjectSlug = projectFilterSlug || ""
   const [label, setLabel] = useState("")
   const [locationType, setLocationType] = useState("")
   const [formattedAddress, setFormattedAddress] = useState("")
@@ -228,7 +229,7 @@ export default function LocationDetail() {
   const [substrates, setSubstrates] = useState<LinkedSubstrateItem[]>([])
   const [substratesLoading, setSubstratesLoading] = useState(false)
   const [mentionsLoading, setMentionsLoading] = useState(false)
-  const [moveSubstrateId, setMoveSubstrateId] = useState<number | null>(null)
+  const [moveSubstrate, setMoveSubstrate] = useState<LinkedSubstrateItem | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [substrateGeometryOpen, setSubstrateGeometryOpen] = useState(false)
   const [substrateGeometryLoading, setSubstrateGeometryLoading] = useState(false)
@@ -237,24 +238,31 @@ export default function LocationDetail() {
   const [substrateGeometryJson, setSubstrateGeometryJson] = useState<Record<string, unknown> | null>(
     null,
   )
+
+  const canonicalListHref = useMemo(() => {
+    const base = `${catalogBasePath}/locations/canonical`
+    const qs = searchParams.toString()
+    if (qs) return `${base}?${qs}`
+    return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
+  }, [catalogBasePath, searchParams, filterScopeSuffix])
   const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
   const prevMentionCountRef = useRef<number | null>(null)
   const prevSubstrateCountRef = useRef<number | null>(null)
   const lastCanonicalKeyRef = useRef<string>("")
 
   useEffect(() => {
-    const key = `${stylebookSlug}:${projectFilterSlug}:${id ?? ""}`
+    const key = `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`
     if (key !== lastCanonicalKeyRef.current) {
       lastCanonicalKeyRef.current = key
       prevMentionCountRef.current = null
       prevSubstrateCountRef.current = null
     }
-  }, [id, stylebookSlug, projectFilterSlug])
+  }, [id, stylebookSlug, evidenceProjectSlug])
 
   const loadCanonical = async (canonicalId: string, sbSlug: string, quiet = false) => {
     try {
       if (!quiet) setLoading(true)
-      const row = await getCanonicalLocation(canonicalId, sbSlug, projectFilterSlug || undefined)
+      const row = await getCanonicalLocation(canonicalId, sbSlug, evidenceProjectSlug || undefined)
       setCanonical(row)
       setLabel(row.label)
       setLocationType(row.location_type ?? "")
@@ -271,7 +279,7 @@ export default function LocationDetail() {
   useEffect(() => {
     if (!id || !stylebookSlug) return
     void loadCanonical(id, stylebookSlug)
-  }, [id, stylebookSlug])
+  }, [id, stylebookSlug, evidenceProjectSlug])
 
   const loadMentions = useCallback(async (canonicalId: string, sbSlug: string, quiet = false) => {
     if (!quiet) setMentionsLoading(true)
@@ -283,7 +291,7 @@ export default function LocationDetail() {
         0,
         undefined,
         "desc",
-        projectSlug || undefined,
+        evidenceProjectSlug || undefined,
       )
       setMentions(m.mentions)
     } catch {
@@ -291,7 +299,7 @@ export default function LocationDetail() {
     } finally {
       if (!quiet) setMentionsLoading(false)
     }
-  }, [projectSlug])
+  }, [evidenceProjectSlug])
 
   useEffect(() => {
     if (!id || !stylebookSlug) return
@@ -304,7 +312,7 @@ export default function LocationDetail() {
       const r = await listCanonicalLinkedSubstrates(
         canonicalId,
         sbSlug,
-        projectSlug || undefined,
+        evidenceProjectSlug || undefined,
       )
       setSubstrates(r.substrates)
     } catch {
@@ -312,7 +320,7 @@ export default function LocationDetail() {
     } finally {
       if (!quiet) setSubstratesLoading(false)
     }
-  }, [projectSlug])
+  }, [evidenceProjectSlug])
 
   useEffect(() => {
     if (!id || !stylebookSlug) return
@@ -344,13 +352,13 @@ export default function LocationDetail() {
   const tableLoading = substratesLoading || mentionsLoading
 
   async function handleUnlinkSubstrate(sub: LinkedSubstrateItem) {
-    if (!projectSlug) {
-      showError("Select a project filter to unlink substrates.")
+    if (!sub.project_slug) {
+      showError("Missing project for this linked place.")
       return
     }
     setUnlinkingId(sub.id)
     try {
-      await unlinkSubstrateFromCanonical(sub.id, projectSlug)
+      await unlinkSubstrateFromCanonical(sub.id, sub.project_slug)
       await refreshCanonicalPage(true)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Unlink failed")
@@ -372,7 +380,7 @@ export default function LocationDetail() {
           location_type: locationType.trim() === "" ? null : locationType.trim().toLowerCase(),
           formatted_address: formattedAddress.trim() === "" ? null : formattedAddress.trim(),
         },
-        projectSlug || undefined,
+        evidenceProjectSlug || undefined,
       )
       setCanonical(updated)
       setEditing(false)
@@ -412,14 +420,14 @@ export default function LocationDetail() {
     setDeleting(true)
     try {
       await deleteCanonicalLocation(id, stylebookSlug)
-      navigate(`${catalogBasePath}/locations/canonical${filterScopeSuffix}`)
+      navigate(canonicalListHref)
     } catch (e) {
       showError(e instanceof Error ? e.message : "Delete failed")
     } finally {
       setDeleting(false)
       setDeleteOpen(false)
     }
-  }, [canonical, id, navigate, stylebookSlug, showError, filterScopeSuffix, catalogBasePath])
+  }, [canonical, id, navigate, stylebookSlug, showError, canonicalListHref])
 
   useEffect(() => {
     if (!id) return
@@ -465,7 +473,7 @@ export default function LocationDetail() {
     prevSubstrateCountRef.current = substrateCount
   }, [
     id,
-    projectSlug,
+    evidenceProjectSlug,
     mentions,
     mentionsLoading,
     substrates,
@@ -509,13 +517,16 @@ export default function LocationDetail() {
 
   const openSubstrateGeometry = useCallback(
     async (sub: LinkedSubstrateItem) => {
-      if (!projectSlug) return
+      if (!sub.project_slug) {
+        showError("Missing project for this linked place.")
+        return
+      }
       setSubstrateGeometrySubstrate(sub)
       setSubstrateGeometryJson(null)
       setSubstrateGeometryOpen(true)
       setSubstrateGeometryLoading(true)
       try {
-        const row = await getLocation(sub.id, projectSlug)
+        const row = await getLocation(sub.id, sub.project_slug)
         const g = (row.geometry_json as Record<string, unknown> | undefined) ?? null
         setSubstrateGeometryJson(g)
       } catch (e) {
@@ -524,11 +535,11 @@ export default function LocationDetail() {
         setSubstrateGeometryLoading(false)
       }
     },
-    [projectSlug, showError],
+    [showError],
   )
 
   const handleAdoptSubstrateGeometry = useCallback(async () => {
-    if (!canonical || !projectSlug || !substrateGeometrySubstrate || !stylebookSlug) return
+    if (!canonical || !substrateGeometrySubstrate || !stylebookSlug) return
     if (!substrateGeometryJson || typeof substrateGeometryJson !== "object") return
     setAdoptingSubstrateGeometry(true)
     try {
@@ -543,7 +554,6 @@ export default function LocationDetail() {
   }, [
     canonical,
     loadCanonical,
-    projectSlug,
     stylebookSlug,
     showError,
     substrateGeometryJson,
@@ -589,7 +599,7 @@ export default function LocationDetail() {
             className="mb-3"
             items={[
               { label: crumbRoot.label, to: crumbRoot.to },
-              { label: "Locations", to: `${catalogBasePath}/locations/canonical${filterScopeSuffix}` },
+              { label: "Locations", to: canonicalListHref },
               { label: canonical.label },
             ]}
           />
@@ -697,6 +707,7 @@ export default function LocationDetail() {
 
       <Card
         className={cn(
+          "relative z-0 isolate",
           geometryEditing &&
             "border-2 border-foreground/80 bg-white shadow-sm transition-colors",
         )}
@@ -938,7 +949,7 @@ export default function LocationDetail() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="relative z-10">
         <CardHeader>
           <CardTitle>Mentions</CardTitle>
           <CardDescription>
@@ -952,7 +963,7 @@ export default function LocationDetail() {
               Loading…
             </div>
           ) : substrates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked substrate places.</p>
+            <p className="text-sm text-muted-foreground">No linked mentions.</p>
           ) : (
             <div className="w-full overflow-x-auto">
               <Table className="w-full min-w-[56rem]">
@@ -976,13 +987,16 @@ export default function LocationDetail() {
                               <div className="font-medium min-w-0 break-words">{s.name}</div>
                               <button
                                 type="button"
-                                className="text-xs text-primary hover:underline shrink-0"
+                                className="relative z-10 text-xs text-primary hover:underline shrink-0"
                                 onClick={() => void openSubstrateGeometry(s)}
                               >
                                 View geometry
                               </button>
                             </div>
-                            <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground break-words">
+                              <Badge variant="outline" className="font-normal">
+                                Project: {s.project_name}
+                              </Badge>
                               {(s.location_type || "").trim()
                                 ? placeExtractTypeLabel(s.location_type)
                                 : "—"}{" "}
@@ -993,18 +1007,20 @@ export default function LocationDetail() {
                           <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
                             <div className="flex flex-wrap justify-end gap-2">
                               <Button
+                                type="button"
                                 size="sm"
                                 variant="outline"
-                                className="shrink-0"
+                                className="relative z-10 shrink-0"
                                 disabled={unlinkingId === s.id}
-                                onClick={() => setMoveSubstrateId(s.id)}
+                                onClick={() => setMoveSubstrate(s)}
                               >
                                 Move…
                               </Button>
                               <Button
+                                type="button"
                                 size="sm"
                                 variant="secondary"
-                                className="shrink-0"
+                                className="relative z-10 shrink-0"
                                 disabled={unlinkingId === s.id}
                                 onClick={() => void handleUnlinkSubstrate(s)}
                               >
@@ -1084,18 +1100,18 @@ export default function LocationDetail() {
         </CardContent>
       </Card>
 
-      {projectSlug && stylebookSlug ? (
+      {stylebookSlug ? (
         <>
           <LocationMetaTab
             locationId={canonical.id}
-            projectSlug={projectSlug}
+            stylebookSlug={stylebookSlug}
             onMetaUpdated={() => void loadCanonical(canonical.id, stylebookSlug, true)}
           />
 
           <ConnectionsSection
             entityType="location"
             entityId={canonical.id}
-            projectSlug={projectSlug}
+            stylebookSlug={stylebookSlug}
             entityDisplayName={canonical.label}
           />
         </>
@@ -1196,15 +1212,15 @@ export default function LocationDetail() {
         </DialogContent>
       </Dialog>
 
-      {projectSlug ? (
+      {moveSubstrate ? (
         <CanonicalLinkModal
-          open={moveSubstrateId !== null}
+          open={moveSubstrate !== null}
           onOpenChange={(o) => {
-            if (!o) setMoveSubstrateId(null)
+            if (!o) setMoveSubstrate(null)
           }}
-          projectSlug={projectSlug}
-          substrateLocationId={moveSubstrateId}
-          title="Move substrate to another canonical"
+          projectSlug={moveSubstrate.project_slug}
+          substrateLocationId={moveSubstrate.id}
+          title="Move linked place to another canonical"
           onDone={() => void refreshCanonicalPage(true)}
         />
       ) : null}

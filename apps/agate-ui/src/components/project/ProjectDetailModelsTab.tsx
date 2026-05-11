@@ -170,7 +170,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
     return (
       <div
         key={row.id}
-        className="space-y-3 border-b border-border pb-6 last:border-0 last:pb-0"
+        className="space-y-3 border-b border-border pb-6 pt-6 first:pt-0 last:border-0 last:pb-0"
       >
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0 space-y-0.5">

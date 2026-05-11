@@ -229,6 +229,53 @@ class StylebookSlugRedirect(SQLModel, table=True):
     )
 
 
+class StylebookBundleJob(SQLModel, table=True):
+    """Async full stylebook ZIP export/import job (staging on S3-compatible object storage)."""
+
+    __tablename__ = "stylebook_bundle_job"
+    __table_args__ = (Index("ix_stylebook_bundle_job_org_status", "organization_id", "status"),)
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    organization_id: int = Field(foreign_key="backfield_organization.id", index=True)
+    kind: str = Field(sa_column=Column(Text, nullable=False))
+    status: str = Field(
+        default="queued",
+        sa_column=Column(Text, nullable=False, server_default="queued"),
+    )
+    created_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    source_stylebook_id: int | None = Field(
+        default=None,
+        foreign_key="stylebook.id",
+        index=True,
+    )
+    result_stylebook_id: int | None = Field(
+        default=None,
+        foreign_key="stylebook.id",
+        index=True,
+    )
+    s3_bucket: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    s3_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    progress_json: dict[str, Any] | list[Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    import_request_json: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class StylebookLocationCanonical(SQLModel, table=True):
     """Canonical location row within a Stylebook."""
 
