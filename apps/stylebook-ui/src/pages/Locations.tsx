@@ -53,6 +53,7 @@ function parseCanonicalListSearchParams(sp: URLSearchParams) {
 export default function Locations() {
   const { showError } = useAppMessage()
   const {
+    projectScopeSlug,
     projectFilterSlug,
     filterScopeSuffix,
     stylebookSlug,
@@ -91,6 +92,20 @@ export default function Locations() {
   useEffect(() => {
     setSearchQuery(searchParams.get("q") ?? "")
   }, [searchParams])
+
+  useEffect(() => {
+    const workflowScope = searchParams.get("project_scope")
+    const inheritedProject = searchParams.get("project")
+    if (workflowScope || !inheritedProject) return
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      const project = next.get("project")
+      if (!project || next.get("project_scope")) return next
+      next.set("project_scope", project)
+      next.delete("project")
+      return next
+    }, { replace: true })
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     const urlQ = searchParams.get("q") ?? ""
@@ -156,12 +171,17 @@ export default function Locations() {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev)
         if (value === "all-projects") next.delete("project")
-        else next.set("project", value)
+        else {
+          next.set("project", value)
+          if (!next.get("project_scope")) {
+            next.set("project_scope", projectScopeSlug || value)
+          }
+        }
         next.delete("page")
         return next
       })
     },
-    [setSearchParams],
+    [projectScopeSlug, setSearchParams],
   )
 
   const setSortParam = useCallback(
@@ -275,7 +295,23 @@ export default function Locations() {
                 />
               </div>
               <div>
-                <Label>Evidence project</Label>
+                <Label>Type</Label>
+                <Select value={typeFilter} onValueChange={setTypeFilterParam}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {orderedTypeFilterOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {placeExtractTypeLabel(t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Project</Label>
                 <Select
                   value={projectFilterSlug || "all-projects"}
                   onValueChange={setProjectFilterParam}
@@ -289,22 +325,6 @@ export default function Locations() {
                     {projects.map((project) => (
                       <SelectItem key={project.id} value={project.slug}>
                         {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Type</Label>
-                <Select value={typeFilter} onValueChange={setTypeFilterParam}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    {orderedTypeFilterOptions.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {placeExtractTypeLabel(t)}
                       </SelectItem>
                     ))}
                   </SelectContent>
