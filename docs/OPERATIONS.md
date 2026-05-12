@@ -30,6 +30,7 @@ When a migration is **destructive** toward existing Stylebook catalog data (for 
 - `make smoke`: run the Agate-to-Stylebook handoff lane against a live stack (`tests/smoke/golden_path_stack.py`). With **`SMOKE_EMAIL`** and **`SMOKE_PASSWORD`** set, it exercises Core login and **`GET /v1/me/workspaces`** before Agate; otherwise it uses the service Bearer path. This lane still needs whichever LLM keys the Starter flow model uses.
 - `make smoke-runtime`: run the handoff lane plus `smoke-worker-async`.
 - `make smoke-slower`: run `smoke-stylebook-editorial`, `smoke-stylebook-import-export`, and `smoke-s3-batch`.
+- Most live smoke lanes delete their temporary graphs, runs, canonicals, and substrate rows when they finish. Set `SMOKE_KEEP_DATA=1` to preserve those artifacts for debugging.
 - `make docker-prune-build`: reclaim disk from Docker build cache only (`docker builder prune -f`).
 - `make docker-prune-system`: remove stopped containers, dangling images, unused networks, and build cache (`docker system prune -f`).
 - `make docker-prune-volumes`: run `docker volume prune -f` (**unused** volumes only — after `make down`, Compose DB volumes are typically unused and **can be deleted**; use only when you intend to reclaim space or reset anonymous volumes).
@@ -69,6 +70,7 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 - `CELERY_WORKER_CONCURRENCY`: optional override for the Agate worker process pool size (Compose passes **`--concurrency`**; default **8** when unset). Higher values improve S3 batch parallelism when many **`execute_processed_item`** tasks are in flight.
 - `STYLEBOOK_API_URL`: worker/node access to Stylebook API.
 - `SERVICE_API_TOKEN`: shared Bearer token for service-to-service calls. **Agate API** requires `Authorization: Bearer` (this token or a project `bfk_` key) on protected routes; the service-token versions of `make smoke` and `make smoke-place-geocode-stack` send it automatically (override with `SMOKE_AGATE_BEARER` if needed).
+- `SMOKE_KEEP_DATA`: when `1`/`true`/`yes`, skip the normal smoke cleanup so you can inspect the temporary graphs, runs, canonicals, and substrate rows left behind by live smoke lanes.
 - `SESSION_SECRET`: signing key for session cookies (`itsdangerous`); shared across services that verify the same `session` cookie (Compose default `dev-session-secret`).
 - `MASTER_ENCRYPTION_KEY`: Fernet key (URL-safe base64) for **`backfield_project_secret`** (agate-api, worker) and **organization integration secrets** (core-api). Compose injects the same dev default on **agate-api**, **worker**, and **core-api** when the variable is unset; use one shared key across those services in production.
 - `UI_ORIGIN`: allowed browser origin for local UI access.

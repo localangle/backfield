@@ -15,10 +15,15 @@ from typing import Any
 
 import httpx
 from _helpers import (
+    SmokeDataSnapshot,
     assert_list,
     assert_object,
+    capture_smoke_snapshot,
+    cleanup_snapshot_delta,
+    delete_smoke_run,
     ensure_health,
     http_error_detail,
+    keep_smoke_data,
     log,
     login_session_context,
     session_cookie_headers,
@@ -30,7 +35,13 @@ from agate_runtime import (
     GraphSpec,
     starter_geocode_flow_graph_spec,
 )
-from backfield_db import SubstrateArticle, SubstrateLocation, SubstrateLocationMention
+from backfield_db import (
+    BackfieldProject,
+    BackfieldWorkspace,
+    SubstrateArticle,
+    SubstrateLocation,
+    SubstrateLocationMention,
+)
 from sqlmodel import select
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
@@ -239,6 +250,37 @@ def _assert_stylebook_persistence_visible(
             )
 
 
+def _project_stylebook_id(project_id: int) -> int | None:
+    with smoke_db_session() as session:
+        project = session.get(BackfieldProject, project_id)
+        if project is None or project.workspace_id is None:
+            return None
+        workspace = session.get(BackfieldWorkspace, int(project.workspace_id))
+        if workspace is None or workspace.stylebook_id is None:
+            return None
+        return int(workspace.stylebook_id)
+
+
+def _cleanup_handoff_artifacts(
+    *,
+    project_id: int,
+    before_snapshot: SmokeDataSnapshot | None,
+    run_id: str | None,
+) -> None:
+    if keep_smoke_data() or before_snapshot is None:
+        return
+    with smoke_db_session() as session:
+        after_snapshot = capture_smoke_snapshot(
+            session,
+            project_id=project_id,
+            stylebook_id=_project_stylebook_id(project_id),
+        )
+        cleanup_snapshot_delta(session, before=before_snapshot, after=after_snapshot)
+        if run_id:
+            delete_smoke_run(session, run_id=run_id)
+        session.commit()
+
+
 def run_service_bearer_flow() -> int:
     log(
         "Smoke agate-stylebook-handoff (service bearer): "
@@ -252,6 +294,8 @@ def run_service_bearer_flow() -> int:
         agate_headers=agate_headers,
         stylebook_headers=agate_headers,
     )
+    run_id: str | None = None
+    before_snapshot: SmokeDataSnapshot | None = None
     with httpx.Client(base_url=AGATE_API_BASE, timeout=10.0, headers=agate_headers) as agate_client:
         plist = assert_list(agate_client.get("/projects"), "list projects")
         general = next((p for p in plist if p.get("slug") == SMOKE_PROJECT_SLUG), None)
@@ -261,33 +305,50 @@ def run_service_bearer_flow() -> int:
                 "Run migrations (agate-api entrypoint or make migrate)."
             )
         project_id = int(general["id"])
-
-        graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
-
-        run = assert_object(agate_client.post("/runs", json={"graph_id": graph_id}), "create run")
-        terminal_run = wait_for_terminal_run(
-            agate_client,
-            str(run["id"]),
-            timeout_s=POLL_TIMEOUT_SECONDS,
-            interval_s=POLL_INTERVAL_SECONDS,
-        )
-        if terminal_run.get("status") != "succeeded":
-            raise RuntimeError(
-                "Smoke run failed: "
-                f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
+        with smoke_db_session() as session:
+            before_snapshot = capture_smoke_snapshot(
+                session,
+                project_id=project_id,
+                stylebook_id=_project_stylebook_id(project_id),
             )
-        stylebook_output = _assert_golden_run_result(terminal_run.get("result"))
-        _assert_stylebook_persistence_visible(
-            article_id=int(stylebook_output["article_id"]),
-            project_slug=SMOKE_PROJECT_SLUG,
-            stylebook_headers=agate_headers,
-        )
 
-        log("Smoke agate-stylebook-handoff passed (service bearer).")
-        log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
-        log(f"Graph: {graph_id} ({graph_name})")
-        log(f"Run: {terminal_run['id']}")
-        return 0
+        try:
+            graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
+
+            run = assert_object(
+                agate_client.post("/runs", json={"graph_id": graph_id}),
+                "create run",
+            )
+            run_id = str(run["id"])
+            terminal_run = wait_for_terminal_run(
+                agate_client,
+                run_id,
+                timeout_s=POLL_TIMEOUT_SECONDS,
+                interval_s=POLL_INTERVAL_SECONDS,
+            )
+            if terminal_run.get("status") != "succeeded":
+                raise RuntimeError(
+                    "Smoke run failed: "
+                    f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
+                )
+            stylebook_output = _assert_golden_run_result(terminal_run.get("result"))
+            _assert_stylebook_persistence_visible(
+                article_id=int(stylebook_output["article_id"]),
+                project_slug=SMOKE_PROJECT_SLUG,
+                stylebook_headers=agate_headers,
+            )
+
+            log("Smoke agate-stylebook-handoff passed (service bearer).")
+            log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
+            log(f"Graph: {graph_id} ({graph_name})")
+            log(f"Run: {terminal_run['id']}")
+            return 0
+        finally:
+            _cleanup_handoff_artifacts(
+                project_id=project_id,
+                before_snapshot=before_snapshot,
+                run_id=run_id,
+            )
 
 
 def run_session_flow() -> int:
@@ -312,6 +373,8 @@ def run_session_flow() -> int:
     )
     project_id = ctx.project_id
     cookie_header = session_cookie_headers(ctx.session_token)
+    run_id: str | None = None
+    before_snapshot: SmokeDataSnapshot | None = None
     ensure_health(
         agate_base=AGATE_API_BASE,
         stylebook_base=STYLEBOOK_API_BASE,
@@ -320,6 +383,12 @@ def run_session_flow() -> int:
         stylebook_headers=cookie_header,
     )
     with httpx.Client(base_url=AGATE_API_BASE, timeout=10.0, headers=cookie_header) as agate_client:
+        with smoke_db_session() as session:
+            before_snapshot = capture_smoke_snapshot(
+                session,
+                project_id=project_id,
+                stylebook_id=_project_stylebook_id(project_id),
+            )
         plist = assert_list(agate_client.get("/projects"), "list projects")
         match = next((p for p in plist if p.get("slug") == SMOKE_PROJECT_SLUG), None)
         if match is None or int(match["id"]) != project_id:
@@ -329,33 +398,44 @@ def run_session_flow() -> int:
             )
         log("Smoke: Agate project list matches session scope.")
 
-        graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
-        log(f"Smoke: selected graph {graph_name!r} (id={graph_id}).")
+        try:
+            graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
+            log(f"Smoke: selected graph {graph_name!r} (id={graph_id}).")
 
-        run = assert_object(agate_client.post("/runs", json={"graph_id": graph_id}), "create run")
-        terminal_run = wait_for_terminal_run(
-            agate_client,
-            str(run["id"]),
-            timeout_s=POLL_TIMEOUT_SECONDS,
-            interval_s=POLL_INTERVAL_SECONDS,
-        )
-        if terminal_run.get("status") != "succeeded":
-            raise RuntimeError(
-                "Smoke run failed: "
-                f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
+            run = assert_object(
+                agate_client.post("/runs", json={"graph_id": graph_id}),
+                "create run",
             )
-        stylebook_output = _assert_golden_run_result(terminal_run.get("result"))
-        _assert_stylebook_persistence_visible(
-            article_id=int(stylebook_output["article_id"]),
-            project_slug=ctx.project_slug,
-            stylebook_headers=cookie_header,
-        )
+            run_id = str(run["id"])
+            terminal_run = wait_for_terminal_run(
+                agate_client,
+                run_id,
+                timeout_s=POLL_TIMEOUT_SECONDS,
+                interval_s=POLL_INTERVAL_SECONDS,
+            )
+            if terminal_run.get("status") != "succeeded":
+                raise RuntimeError(
+                    "Smoke run failed: "
+                    f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
+                )
+            stylebook_output = _assert_golden_run_result(terminal_run.get("result"))
+            _assert_stylebook_persistence_visible(
+                article_id=int(stylebook_output["article_id"]),
+                project_slug=ctx.project_slug,
+                stylebook_headers=cookie_header,
+            )
 
-        log("Smoke agate-stylebook-handoff passed (session).")
-        log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
-        log(f"Graph: {graph_id} ({graph_name})")
-        log(f"Run: {terminal_run['id']}")
-        return 0
+            log("Smoke agate-stylebook-handoff passed (session).")
+            log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
+            log(f"Graph: {graph_id} ({graph_name})")
+            log(f"Run: {terminal_run['id']}")
+            return 0
+        finally:
+            _cleanup_handoff_artifacts(
+                project_id=project_id,
+                before_snapshot=before_snapshot,
+                run_id=run_id,
+            )
 
 
 def main() -> int:

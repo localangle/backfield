@@ -13,6 +13,7 @@ from _helpers import (
     assert_object,
     ensure_health,
     http_error_detail,
+    keep_smoke_data,
     log,
     login_session_context,
     session_cookie_headers,
@@ -104,7 +105,7 @@ def main() -> int:
                 interval_s=SMOKE_POLL_INTERVAL_SECONDS,
             )
         finally:
-            if graph_id:
+            if graph_id and not keep_smoke_data():
                 with suppress(Exception):
                     agate.delete(f"/graphs/{graph_id}").raise_for_status()
 

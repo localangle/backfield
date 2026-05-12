@@ -8,7 +8,23 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from sqlmodel import Session
+from backfield_db import (
+    AgateProcessedItem,
+    AgateRun,
+    BackfieldAiCallRecord,
+    StylebookConnection,
+    StylebookLocationAlias,
+    StylebookLocationCanonical,
+    StylebookLocationMeta,
+    SubstrateArticle,
+    SubstrateImage,
+    SubstrateLocation,
+    SubstrateLocationCache,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
+)
+from sqlalchemy import delete
+from sqlmodel import Session, select
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5433/backfield"
@@ -148,6 +164,22 @@ class SessionContext:
         return slug
 
 
+@dataclass(frozen=True)
+class SmokeDataSnapshot:
+    article_ids: frozenset[int]
+    image_ids: frozenset[int]
+    location_ids: frozenset[int]
+    mention_ids: frozenset[int]
+    occurrence_ids: frozenset[int]
+    cache_ids: frozenset[int]
+    canonical_ids: frozenset[str]
+
+
+def keep_smoke_data() -> bool:
+    raw = os.environ.get("SMOKE_KEEP_DATA", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def login_session_context(
     *,
     core_base: str,
@@ -239,6 +271,197 @@ def default_stylebook_for_org(
     if stylebook_row is None:
         raise RuntimeError(f"No stylebooks found for organization {organization_id}")
     return stylebook_row
+
+
+def capture_smoke_snapshot(
+    session: Session,
+    *,
+    project_id: int,
+    stylebook_id: int | None = None,
+) -> SmokeDataSnapshot:
+    article_ids = frozenset(
+        int(row)
+        for row in session.exec(
+            select(SubstrateArticle.id).where(SubstrateArticle.project_id == project_id)
+        ).all()
+        if row is not None
+    )
+    image_ids = frozenset(
+        int(row)
+        for row in session.exec(
+            select(SubstrateImage.id)
+            .join(SubstrateArticle, SubstrateArticle.id == SubstrateImage.article_id)
+            .where(SubstrateArticle.project_id == project_id)
+        ).all()
+        if row is not None
+    )
+    location_ids = frozenset(
+        int(row)
+        for row in session.exec(
+            select(SubstrateLocation.id).where(SubstrateLocation.project_id == project_id)
+        ).all()
+        if row is not None
+    )
+    mention_ids = frozenset(
+        int(row)
+        for row in session.exec(
+            select(SubstrateLocationMention.id)
+            .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
+            .where(SubstrateArticle.project_id == project_id)
+        ).all()
+        if row is not None
+    )
+    occurrence_ids = frozenset(
+        int(row)
+        for row in session.exec(
+            select(SubstrateLocationMentionOccurrence.id)
+            .join(
+                SubstrateLocationMention,
+                SubstrateLocationMention.id
+                == SubstrateLocationMentionOccurrence.location_mention_id,
+            )
+            .join(SubstrateArticle, SubstrateArticle.id == SubstrateLocationMention.article_id)
+            .where(SubstrateArticle.project_id == project_id)
+        ).all()
+        if row is not None
+    )
+    cache_ids = frozenset(
+        int(row)
+        for row in session.exec(
+            select(SubstrateLocationCache.id).where(SubstrateLocationCache.project_id == project_id)
+        ).all()
+        if row is not None
+    )
+    canonical_ids = frozenset(
+        str(row)
+        for row in (
+            session.exec(
+                select(StylebookLocationCanonical.id).where(
+                    StylebookLocationCanonical.stylebook_id == stylebook_id
+                )
+            ).all()
+            if stylebook_id is not None
+            else []
+        )
+        if row is not None
+    )
+    return SmokeDataSnapshot(
+        article_ids=article_ids,
+        image_ids=image_ids,
+        location_ids=location_ids,
+        mention_ids=mention_ids,
+        occurrence_ids=occurrence_ids,
+        cache_ids=cache_ids,
+        canonical_ids=canonical_ids,
+    )
+
+
+def delete_smoke_run(session: Session, *, run_id: str) -> None:
+    session.exec(delete(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id == run_id))
+    session.exec(delete(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id))
+    session.exec(delete(AgateRun).where(AgateRun.id == run_id))
+
+
+def delete_smoke_substrate_rows(
+    session: Session,
+    *,
+    article_ids: set[int] | frozenset[int] = frozenset(),
+    location_ids: set[int] | frozenset[int] = frozenset(),
+) -> None:
+    if article_ids:
+        article_id_list = sorted(article_ids)
+        mention_rows = list(
+            session.exec(
+                select(SubstrateLocationMention).where(
+                    SubstrateLocationMention.article_id.in_(article_id_list)
+                )
+            ).all()
+        )
+        mention_ids = [int(row.id) for row in mention_rows if row.id is not None]
+        if mention_ids:
+            session.exec(
+                delete(SubstrateLocationMentionOccurrence).where(
+                    SubstrateLocationMentionOccurrence.location_mention_id.in_(mention_ids)
+                )
+            )
+        session.exec(delete(SubstrateLocationMention).where(SubstrateLocationMention.article_id.in_(article_id_list)))
+        session.exec(delete(SubstrateImage).where(SubstrateImage.article_id.in_(article_id_list)))
+        session.exec(delete(SubstrateArticle).where(SubstrateArticle.id.in_(article_id_list)))
+
+    if location_ids:
+        session.exec(delete(SubstrateLocation).where(SubstrateLocation.id.in_(sorted(location_ids))))
+
+
+def delete_smoke_canonical(
+    session: Session,
+    *,
+    canonical_id: str,
+    allowed_linked_location_ids: set[int] | frozenset[int] = frozenset(),
+) -> bool:
+    linked_ids = {
+        int(row)
+        for row in session.exec(
+            select(SubstrateLocation.id).where(
+                SubstrateLocation.stylebook_location_canonical_id == canonical_id
+            )
+        ).all()
+        if row is not None
+    }
+    if linked_ids - set(allowed_linked_location_ids):
+        return False
+
+    session.exec(
+        delete(StylebookLocationAlias).where(
+            StylebookLocationAlias.location_canonical_id == canonical_id
+        )
+    )
+    session.exec(
+        delete(StylebookLocationMeta).where(
+            StylebookLocationMeta.stylebook_location_canonical_id == canonical_id
+        )
+    )
+    session.exec(
+        delete(StylebookConnection).where(
+            StylebookConnection.from_entity_type == "location",
+            StylebookConnection.from_entity_id == canonical_id,
+        )
+    )
+    session.exec(
+        delete(StylebookConnection).where(
+            StylebookConnection.to_entity_type == "location",
+            StylebookConnection.to_entity_id == canonical_id,
+        )
+    )
+    session.exec(
+        delete(StylebookLocationCanonical).where(StylebookLocationCanonical.id == canonical_id)
+    )
+    return True
+
+
+def cleanup_snapshot_delta(
+    session: Session,
+    *,
+    before: SmokeDataSnapshot,
+    after: SmokeDataSnapshot,
+) -> None:
+    new_article_ids = set(after.article_ids - before.article_ids)
+    new_location_ids = set(after.location_ids - before.location_ids)
+
+    delete_smoke_substrate_rows(
+        session,
+        article_ids=new_article_ids,
+        location_ids=new_location_ids,
+    )
+
+    for cache_id in sorted(after.cache_ids - before.cache_ids):
+        session.exec(delete(SubstrateLocationCache).where(SubstrateLocationCache.id == cache_id))
+
+    for canonical_id in sorted(after.canonical_ids - before.canonical_ids):
+        delete_smoke_canonical(
+            session,
+            canonical_id=canonical_id,
+            allowed_linked_location_ids=new_location_ids,
+        )
 
 
 def get_database_url() -> str:

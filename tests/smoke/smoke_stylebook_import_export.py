@@ -11,11 +11,14 @@ import httpx
 from _helpers import (
     assert_object,
     default_stylebook_for_org,
+    delete_smoke_canonical,
     ensure_health,
     http_error_detail,
+    keep_smoke_data,
     log,
     login_session_context,
     session_cookie_headers,
+    smoke_db_session,
 )
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
@@ -56,6 +59,7 @@ def main() -> int:
     )
     stylebook_slug = str(stylebook["slug"])
     label = f"Smoke Import {uuid.uuid4().hex[:8]}"
+    canonical_id: str | None = None
     geojson = {
         "type": "FeatureCollection",
         "features": [
@@ -71,53 +75,62 @@ def main() -> int:
         ],
     }
 
-    with httpx.Client(base_url=STYLEBOOK_API_BASE, timeout=20.0, headers=headers) as client:
-        analyzed = assert_object(
-            client.post(
-                f"/v1/stylebooks/{stylebook_slug}/import/geojson/analyze",
-                json={"geojson": geojson},
-            ),
-            "analyze geojson",
-        )
-        imported = assert_object(
-            client.post(
-                f"/v1/stylebooks/{stylebook_slug}/import/geojson",
-                json={
-                    "geojson": geojson,
-                    "mappings": {
-                        "label_property": "name",
-                        "location_type_property": "type",
-                        "formatted_address_property": "formatted_address",
+    try:
+        with httpx.Client(base_url=STYLEBOOK_API_BASE, timeout=20.0, headers=headers) as client:
+            analyzed = assert_object(
+                client.post(
+                    f"/v1/stylebooks/{stylebook_slug}/import/geojson/analyze",
+                    json={"geojson": geojson},
+                ),
+                "analyze geojson",
+            )
+            imported = assert_object(
+                client.post(
+                    f"/v1/stylebooks/{stylebook_slug}/import/geojson",
+                    json={
+                        "geojson": geojson,
+                        "mappings": {
+                            "label_property": "name",
+                            "location_type_property": "type",
+                            "formatted_address_property": "formatted_address",
+                        },
                     },
-                },
-            ),
-            "import geojson",
-        )
+                ),
+                "import geojson",
+            )
 
-        created = imported.get("created")
-        if not isinstance(created, list) or len(created) != 1:
-            raise RuntimeError(f"Expected one created canonical row: {imported}")
-        canonical_id = str(created[0]["canonical_id"])
+            created = imported.get("created")
+            if not isinstance(created, list) or len(created) != 1:
+                raise RuntimeError(f"Expected one created canonical row: {imported}")
+            canonical_id = str(created[0]["canonical_id"])
 
-        fetched = assert_object(
-            client.get(
-                f"/v1/stylebooks/{stylebook_slug}/canonical-locations/{canonical_id}",
-                params={"project": ctx.project_slug},
-            ),
-            "get imported canonical",
-        )
+            fetched = assert_object(
+                client.get(
+                    f"/v1/stylebooks/{stylebook_slug}/canonical-locations/{canonical_id}",
+                    params={"project": ctx.project_slug},
+                ),
+                "get imported canonical",
+            )
 
-    if int(analyzed.get("feature_count", -1)) != 1:
-        raise RuntimeError(f"Unexpected analyze payload: {analyzed}")
-    if int(imported.get("created_count", -1)) != 1 or int(imported.get("failed_count", -1)) != 0:
-        raise RuntimeError(f"Unexpected import payload: {imported}")
-    if fetched.get("label") != label:
-        raise RuntimeError(f"Imported canonical label mismatch: {fetched}")
+        if int(analyzed.get("feature_count", -1)) != 1:
+            raise RuntimeError(f"Unexpected analyze payload: {analyzed}")
+        if (
+            int(imported.get("created_count", -1)) != 1
+            or int(imported.get("failed_count", -1)) != 0
+        ):
+            raise RuntimeError(f"Unexpected import payload: {imported}")
+        if fetched.get("label") != label:
+            raise RuntimeError(f"Imported canonical label mismatch: {fetched}")
 
-    log("Smoke stylebook import passed.")
-    log(f"Stylebook: {stylebook_slug!r}")
-    log(f"Canonical: {canonical_id}")
-    return 0
+        log("Smoke stylebook import passed.")
+        log(f"Stylebook: {stylebook_slug!r}")
+        log(f"Canonical: {canonical_id}")
+        return 0
+    finally:
+        if canonical_id and not keep_smoke_data():
+            with smoke_db_session() as session:
+                delete_smoke_canonical(session, canonical_id=canonical_id)
+                session.commit()
 
 
 if __name__ == "__main__":
