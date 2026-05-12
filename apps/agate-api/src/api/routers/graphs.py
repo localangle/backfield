@@ -8,14 +8,21 @@ from typing import Any
 from agate_runtime import GraphSpec
 from api.deps import get_auth, get_session
 from backfield_auth.gate import require_project_access, visible_project_ids
-from backfield_db import AgateGraph, AgateRun, BackfieldProject
+from backfield_db import (
+    AgateGraph,
+    AgateProcessedItem,
+    AgateRun,
+    BackfieldAiCallRecord,
+    BackfieldProject,
+    SubstrateArticle,
+)
 from backfield_stylebook.graph_stylebook_refs import (
     StylebookGraphRefsError,
     validate_stylebook_refs_for_organization,
 )
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import desc
+from sqlalchemy import delete, desc, update
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/graphs", tags=["graphs"])
@@ -159,8 +166,22 @@ def delete_graph(
     if not g:
         raise HTTPException(404, "Graph not found")
     require_project_access(session, auth, int(g.project_id))
-    for run in session.exec(select(AgateRun).where(AgateRun.graph_id == graph_id)).all():
-        session.delete(run)
+    run_ids = [
+        str(run_id)
+        for run_id in session.exec(select(AgateRun.id).where(AgateRun.graph_id == graph_id)).all()
+        if run_id is not None
+    ]
+    if run_ids:
+        # Preserve durable substrate content while removing execution provenance
+        # tied to deleted runs.
+        session.exec(
+            update(SubstrateArticle)
+            .where(SubstrateArticle.source_run_id.in_(run_ids))
+            .values(source_run_id=None, source_item_id=None)
+        )
+        session.exec(delete(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id.in_(run_ids)))
+        session.exec(delete(AgateProcessedItem).where(AgateProcessedItem.run_id.in_(run_ids)))
+        session.exec(delete(AgateRun).where(AgateRun.id.in_(run_ids)))
     session.delete(g)
     session.commit()
     return None
