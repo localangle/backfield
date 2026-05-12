@@ -43,7 +43,9 @@ make up                # Docker Compose (foreground; Ctrl+C stops all services)
 make lint
 make test
 make stylebook-ui-build   # when apps/stylebook-ui changes
-make smoke   # live stack; see docs/TESTING.md (session vs service-token modes)
+make smoke-fast   # auth + deterministic Agate/Stylebook smoke lanes
+make smoke        # live-stack Agate -> Stylebook handoff lane
+make smoke-runtime   # handoff + worker lifecycle bundle
 make smoke-place-geocode   # optional: PlaceExtract + GeocodeAgent corpus (docs/TESTING.md)
 ```
 
@@ -72,6 +74,7 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 | `make docker-trim-full` | `docker-trim` then `docker volume prune -f` for aggressive reclaim |
 | `make test` | All tests |
 | `make lint` / `make format` | Ruff |
+| `make smoke-fast` / `make smoke` / `make smoke-runtime` / `make smoke-slower` | Smoke bundles by cadence (see [docs/TESTING.md](docs/TESTING.md)) |
 
 ## Docs
 

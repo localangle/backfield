@@ -1,65 +1,37 @@
 #!/usr/bin/env python3
-"""Golden-path smoke for a live Backfield stack.
+"""Agate-to-Stylebook handoff smoke for a live Backfield stack.
 
 Two modes (pick automatically):
 
-1. **Session (UI-shaped)** — when ``SMOKE_EMAIL`` and ``SMOKE_PASSWORD`` are set: log in to
-   Core API, load workspaces like the home page, resolve the General project from that view,
-   then call Agate with the same ``session`` cookie to list graphs and enqueue a run.
-
-2. **Service Bearer** — otherwise: same as the historical smoke (``Authorization: Bearer``),
-   for automation that does not provision Core credentials (e.g. CI without Core login).
-
-Values are read from the process environment. The repo-root ``.env`` (if present) is loaded
-first with **python-dotenv**; variables already set in the shell take precedence.
-
-Environment (common):
-
-- ``AGATE_API_BASE`` (default ``http://localhost:8000``)
-- ``STYLEBOOK_API_BASE`` (default ``http://localhost:8003``)
-- ``CORE_API_BASE`` (default ``http://localhost:8004``) — session mode only
-- ``SMOKE_POLL_TIMEOUT_SECONDS`` (default ``180``),
-  ``SMOKE_POLL_INTERVAL_SECONDS`` (default ``1.5``)
-
-Session mode:
-
-- ``SMOKE_EMAIL``, ``SMOKE_PASSWORD`` — required
-- ``SMOKE_WORKSPACE_SLUG`` (default ``default``) — workspace to open
-- ``SMOKE_PROJECT_SLUG`` (default ``general``)
-- Optional: ``SMOKE_BOOTSTRAP=1`` to POST ``/v1/bootstrap/first-user`` first (empty DB only)
-
-Service Bearer mode:
-
-- ``SMOKE_AGATE_BEARER`` or ``SERVICE_API_TOKEN`` (default ``backfield-dev``)
+1. **Session (UI-shaped)** — when ``SMOKE_EMAIL`` and ``SMOKE_PASSWORD`` are set.
+2. **Service Bearer** — otherwise, use ``SMOKE_AGATE_BEARER`` / ``SERVICE_API_TOKEN``.
 """
 
 from __future__ import annotations
 
 import os
 import sys
-import time
-from pathlib import Path
 from typing import Any
 
 import httpx
+from _helpers import (
+    assert_list,
+    assert_object,
+    ensure_health,
+    http_error_detail,
+    log,
+    login_session_context,
+    session_cookie_headers,
+    smoke_db_session,
+    wait_for_terminal_run,
+)
 from agate_runtime import (
     STARTER_FLOW_GRAPH_DISPLAY_NAME,
     GraphSpec,
     starter_geocode_flow_graph_spec,
 )
-
-
-def _load_repo_dotenv() -> None:
-    """Load repo-root ``.env`` so ``make smoke`` picks up ``SMOKE_*`` without manual ``export``."""
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
-        return
-    env_path = Path(__file__).resolve().parents[2] / ".env"
-    load_dotenv(env_path, override=False)
-
-
-_load_repo_dotenv()
+from backfield_db import SubstrateArticle, SubstrateLocation, SubstrateLocationMention
+from sqlmodel import select
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
 STYLEBOOK_API_BASE = os.environ.get("STYLEBOOK_API_BASE", "http://localhost:8003")
@@ -74,50 +46,6 @@ SMOKE_EMAIL = os.environ.get("SMOKE_EMAIL", "").strip()
 SMOKE_PASSWORD = os.environ.get("SMOKE_PASSWORD", "")
 SMOKE_WORKSPACE_SLUG = os.environ.get("SMOKE_WORKSPACE_SLUG", "default").strip()
 SMOKE_PROJECT_SLUG = os.environ.get("SMOKE_PROJECT_SLUG", "general").strip()
-
-
-def _log(msg: str) -> None:
-    print(msg, flush=True)
-
-
-def _http_error_detail(exc: httpx.HTTPError) -> str:
-    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
-        r = exc.response
-        body = (r.text or "")[:4000]
-        return f"{r.status_code} {r.request.method} {r.request.url!s}\n{body}"
-    return str(exc)
-
-
-def _assert_ok(response: httpx.Response, context: str) -> dict[str, Any]:
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"{context} returned a non-object payload: {payload!r}")
-    return payload
-
-
-def _wait_for_terminal_run(client: httpx.Client, run_id: str) -> dict[str, Any]:
-    deadline = time.time() + POLL_TIMEOUT_SECONDS
-    while time.time() < deadline:
-        payload = _assert_ok(client.get(f"/runs/{run_id}"), f"run {run_id}")
-        status = payload.get("status")
-        if status in {"succeeded", "failed"}:
-            return payload
-        time.sleep(POLL_INTERVAL_SECONDS)
-    raise RuntimeError(f"Timed out waiting for run {run_id} to finish")
-
-
-def _health_checks(agate_client: httpx.Client) -> None:
-    stylebook_client = httpx.Client(base_url=STYLEBOOK_API_BASE, timeout=10.0)
-    try:
-        agate_health = _assert_ok(agate_client.get("/health"), "Agate health")
-        stylebook_health = _assert_ok(stylebook_client.get("/health"), "Stylebook health")
-        if agate_health.get("ok") is not True:
-            raise RuntimeError(f"Agate health failed: {agate_health}")
-        if stylebook_health.get("ok") is not True:
-            raise RuntimeError(f"Stylebook health failed: {stylebook_health}")
-    finally:
-        stylebook_client.close()
 
 
 def _edge_signature(e: Any) -> tuple[str | None, str | None, str | None, str | None]:
@@ -176,7 +104,7 @@ def _assert_starter_graph_matches_bootstrap(starter: dict[str, Any]) -> None:
         raise RuntimeError("Starter flow must include a DBOutput (Stylebook Output) node.")
 
 
-def _assert_golden_run_result(result: object) -> None:
+def _assert_golden_run_result(result: object) -> dict[str, Any]:
     """Run JSON must match slug-key executor output and include DBOutput persistence."""
     if not isinstance(result, dict):
         raise RuntimeError(f"Run result: expected object, got {type(result).__name__}")
@@ -196,16 +124,19 @@ def _assert_golden_run_result(result: object) -> None:
         raise RuntimeError("stylebook_output must be an object")
     if so.get("success") is not True:
         raise RuntimeError(f"stylebook_output.success expected True, got {so.get('success')!r}")
+    article_id = so.get("article_id")
+    if not isinstance(article_id, int) or article_id <= 0:
+        raise RuntimeError(
+            "stylebook_output.article_id must be a positive integer, "
+            f"got {article_id!r}"
+        )
+    return so
 
 
 def _find_starter_graph(
     agate_client: httpx.Client, project_id: int
 ) -> tuple[str, str, dict[str, Any]]:
-    graphs = agate_client.get("/graphs")
-    graphs.raise_for_status()
-    glist = graphs.json()
-    if not isinstance(glist, list):
-        raise RuntimeError(f"list graphs: expected list, got {type(glist)}")
+    glist = assert_list(agate_client.get("/graphs"), "list graphs")
     starter = next(
         (
             g
@@ -228,21 +159,101 @@ def _find_starter_graph(
     return str(starter["id"]), STARTER_FLOW_GRAPH_DISPLAY_NAME, starter
 
 
+def _assert_stylebook_persistence_visible(
+    *,
+    article_id: int,
+    project_slug: str,
+    stylebook_headers: dict[str, str],
+) -> None:
+    with smoke_db_session() as session:
+        article = session.get(SubstrateArticle, article_id)
+        if article is None:
+            raise RuntimeError(f"Persisted article {article_id} was not found in substrate_article")
+
+        pairs = list(
+            session.exec(
+                select(SubstrateLocationMention, SubstrateLocation)
+                .join(
+                    SubstrateLocation,
+                    SubstrateLocation.id == SubstrateLocationMention.location_id,
+                )
+                .where(
+                    SubstrateLocationMention.article_id == article_id,
+                    SubstrateLocationMention.deleted == False,  # noqa: E712
+                )
+            ).all()
+        )
+        linked_location = next(
+            (
+                location
+                for _mention, location in pairs
+                if location.id is not None and location.stylebook_location_canonical_id is not None
+            ),
+            None,
+        )
+        if linked_location is None or linked_location.id is None:
+            raise RuntimeError(
+                f"No linked substrate location found for persisted article {article_id}"
+            )
+        location_id = int(linked_location.id)
+        canonical_id = str(linked_location.stylebook_location_canonical_id)
+
+    with httpx.Client(
+        base_url=STYLEBOOK_API_BASE,
+        timeout=10.0,
+        headers=stylebook_headers,
+    ) as stylebook:
+        linked_substrates = assert_object(
+            stylebook.get(
+                f"/v1/canonical-locations/{canonical_id}/linked-substrates",
+                params={"project_slug": project_slug},
+            ),
+            "linked substrates",
+        )
+        substrates = linked_substrates.get("substrates")
+        if not isinstance(substrates, list) or not any(
+            isinstance(row, dict) and int(row.get("id", -1)) == location_id for row in substrates
+        ):
+            raise RuntimeError(
+                "Canonical "
+                f"{canonical_id} did not expose linked substrate {location_id} "
+                "through Stylebook"
+            )
+
+        mentions = assert_object(
+            stylebook.get(
+                f"/v1/canonical-locations/{canonical_id}/mentions",
+                params={"project_slug": project_slug},
+            ),
+            "canonical mentions",
+        )
+        mention_rows = mentions.get("mentions")
+        if not isinstance(mention_rows, list) or not any(
+            isinstance(row, dict) and int(row.get("article_id", -1)) == article_id
+            for row in mention_rows
+        ):
+            raise RuntimeError(
+                "Canonical "
+                f"{canonical_id} did not expose article {article_id} "
+                "through Stylebook mentions"
+            )
+
+
 def run_service_bearer_flow() -> int:
-    _log(
-        "Smoke (service bearer): "
+    log(
+        "Smoke agate-stylebook-handoff (service bearer): "
         f"AGATE_API_BASE={AGATE_API_BASE} STYLEBOOK_API_BASE={STYLEBOOK_API_BASE} "
         f"(Agate Bearer: {'set' if SMOKE_AGATE_BEARER else 'missing'})"
     )
     agate_headers = {"Authorization": f"Bearer {SMOKE_AGATE_BEARER}"} if SMOKE_AGATE_BEARER else {}
+    ensure_health(
+        agate_base=AGATE_API_BASE,
+        stylebook_base=STYLEBOOK_API_BASE,
+        agate_headers=agate_headers,
+        stylebook_headers=agate_headers,
+    )
     with httpx.Client(base_url=AGATE_API_BASE, timeout=10.0, headers=agate_headers) as agate_client:
-        _health_checks(agate_client)
-
-        projects = agate_client.get("/projects")
-        projects.raise_for_status()
-        plist = projects.json()
-        if not isinstance(plist, list):
-            raise RuntimeError(f"list projects: expected list, got {type(plist)}")
+        plist = assert_list(agate_client.get("/projects"), "list projects")
         general = next((p for p in plist if p.get("slug") == SMOKE_PROJECT_SLUG), None)
         if general is None:
             raise RuntimeError(
@@ -253,19 +264,29 @@ def run_service_bearer_flow() -> int:
 
         graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
 
-        run = _assert_ok(agate_client.post("/runs", json={"graph_id": graph_id}), "create run")
-        terminal_run = _wait_for_terminal_run(agate_client, str(run["id"]))
+        run = assert_object(agate_client.post("/runs", json={"graph_id": graph_id}), "create run")
+        terminal_run = wait_for_terminal_run(
+            agate_client,
+            str(run["id"]),
+            timeout_s=POLL_TIMEOUT_SECONDS,
+            interval_s=POLL_INTERVAL_SECONDS,
+        )
         if terminal_run.get("status") != "succeeded":
             raise RuntimeError(
                 "Smoke run failed: "
                 f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
             )
-        _assert_golden_run_result(terminal_run.get("result"))
+        stylebook_output = _assert_golden_run_result(terminal_run.get("result"))
+        _assert_stylebook_persistence_visible(
+            article_id=int(stylebook_output["article_id"]),
+            project_slug=SMOKE_PROJECT_SLUG,
+            stylebook_headers=agate_headers,
+        )
 
-        _log("Smoke passed (service bearer).")
-        _log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
-        _log(f"Graph: {graph_id} ({graph_name})")
-        _log(f"Run: {terminal_run['id']}")
+        log("Smoke agate-stylebook-handoff passed (service bearer).")
+        log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
+        log(f"Graph: {graph_id} ({graph_name})")
+        log(f"Run: {terminal_run['id']}")
         return 0
 
 
@@ -276,103 +297,64 @@ def run_session_flow() -> int:
             "(and CORE_API_BASE if not using default)."
         )
 
-    _log(
-        f"Smoke (session): CORE_API_BASE={CORE_API_BASE} AGATE_API_BASE={AGATE_API_BASE} "
-        f"STYLEBOOK_API_BASE={STYLEBOOK_API_BASE} workspace={SMOKE_WORKSPACE_SLUG!r} "
-        f"project={SMOKE_PROJECT_SLUG!r}"
+    log(
+        f"Smoke agate-stylebook-handoff (session): CORE_API_BASE={CORE_API_BASE} "
+        f"AGATE_API_BASE={AGATE_API_BASE} STYLEBOOK_API_BASE={STYLEBOOK_API_BASE} "
+        f"workspace={SMOKE_WORKSPACE_SLUG!r} project={SMOKE_PROJECT_SLUG!r}"
     )
-
-    with httpx.Client(base_url=CORE_API_BASE, timeout=30.0) as core:
-        core_health = _assert_ok(core.get("/health"), "Core health")
-        if core_health.get("ok") is not True:
-            raise RuntimeError(f"Core health failed: {core_health}")
-
-        if os.environ.get("SMOKE_BOOTSTRAP", "").lower() in ("1", "true", "yes"):
-            boot = core.post(
-                "/v1/bootstrap/first-user",
-                json={"email": SMOKE_EMAIL, "password": SMOKE_PASSWORD},
-            )
-            if boot.status_code not in (200, 400):
-                boot.raise_for_status()
-            _log(
-                "Smoke: bootstrap first-user "
-                + ("ok" if boot.status_code == 200 else "skipped (users already exist)")
-            )
-
-        login = core.post(
-            "/v1/auth/login",
-            json={"email": SMOKE_EMAIL, "password": SMOKE_PASSWORD},
-        )
-        login.raise_for_status()
-        _log("Smoke: logged in (Core API).")
-
-        session_token = core.cookies.get("session")
-        if not session_token:
-            raise RuntimeError("Login did not set session cookie; cannot continue session smoke.")
-
-        ws_resp = core.get("/v1/me/workspaces")
-        ws_resp.raise_for_status()
-        ws_payload = ws_resp.json()
-        if not isinstance(ws_payload, list):
-            raise RuntimeError(
-                f"me/workspaces: expected list, got {type(ws_payload).__name__}: {ws_payload!r}"
-            )
-        workspace = next((w for w in ws_payload if w.get("slug") == SMOKE_WORKSPACE_SLUG), None)
-        if workspace is None:
-            slugs = [w.get("slug") for w in ws_payload]
-            raise RuntimeError(
-                f"Workspace slug {SMOKE_WORKSPACE_SLUG!r} not in /v1/me/workspaces; have {slugs!r}"
-            )
-        _log(f"Smoke: opened workspace {workspace.get('name')!r} (slug={SMOKE_WORKSPACE_SLUG!r}).")
-
-        projects_in_ws = workspace.get("projects")
-        if not isinstance(projects_in_ws, list):
-            raise RuntimeError("workspace.projects: expected list")
-        proj_meta = next((p for p in projects_in_ws if p.get("slug") == SMOKE_PROJECT_SLUG), None)
-        if proj_meta is None:
-            raise RuntimeError(
-                f"Project slug {SMOKE_PROJECT_SLUG!r} not listed under workspace "
-                f"{SMOKE_WORKSPACE_SLUG!r}"
-            )
-        project_id = int(proj_meta["id"])
-        _log(
-            "Smoke: selected project "
-            f"{proj_meta.get('name')!r} (slug={SMOKE_PROJECT_SLUG!r}, id={project_id})."
-        )
-
-    cookie_header = {"Cookie": f"session={session_token}"}
+    ctx = login_session_context(
+        core_base=CORE_API_BASE,
+        email=SMOKE_EMAIL,
+        password=SMOKE_PASSWORD,
+        workspace_slug=SMOKE_WORKSPACE_SLUG,
+        project_slug=SMOKE_PROJECT_SLUG,
+        bootstrap_first_user=os.environ.get("SMOKE_BOOTSTRAP", "").lower() in ("1", "true", "yes"),
+    )
+    project_id = ctx.project_id
+    cookie_header = session_cookie_headers(ctx.session_token)
+    ensure_health(
+        agate_base=AGATE_API_BASE,
+        stylebook_base=STYLEBOOK_API_BASE,
+        core_base=CORE_API_BASE,
+        agate_headers=cookie_header,
+        stylebook_headers=cookie_header,
+    )
     with httpx.Client(base_url=AGATE_API_BASE, timeout=10.0, headers=cookie_header) as agate_client:
-        _health_checks(agate_client)
-
-        projects = agate_client.get("/projects")
-        projects.raise_for_status()
-        plist = projects.json()
-        if not isinstance(plist, list):
-            raise RuntimeError(f"list projects: expected list, got {type(plist)}")
+        plist = assert_list(agate_client.get("/projects"), "list projects")
         match = next((p for p in plist if p.get("slug") == SMOKE_PROJECT_SLUG), None)
         if match is None or int(match["id"]) != project_id:
             raise RuntimeError(
                 "Agate /projects view does not include the same "
                 f"{SMOKE_PROJECT_SLUG!r} project as Core workspaces response."
             )
-        _log("Smoke: Agate project list matches session scope.")
+        log("Smoke: Agate project list matches session scope.")
 
         graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
-        _log(f"Smoke: selected graph {graph_name!r} (id={graph_id}).")
+        log(f"Smoke: selected graph {graph_name!r} (id={graph_id}).")
 
-        run = _assert_ok(agate_client.post("/runs", json={"graph_id": graph_id}), "create run")
-        terminal_run = _wait_for_terminal_run(agate_client, str(run["id"]))
+        run = assert_object(agate_client.post("/runs", json={"graph_id": graph_id}), "create run")
+        terminal_run = wait_for_terminal_run(
+            agate_client,
+            str(run["id"]),
+            timeout_s=POLL_TIMEOUT_SECONDS,
+            interval_s=POLL_INTERVAL_SECONDS,
+        )
         if terminal_run.get("status") != "succeeded":
             raise RuntimeError(
                 "Smoke run failed: "
                 f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
             )
-        _assert_golden_run_result(terminal_run.get("result"))
+        stylebook_output = _assert_golden_run_result(terminal_run.get("result"))
+        _assert_stylebook_persistence_visible(
+            article_id=int(stylebook_output["article_id"]),
+            project_slug=ctx.project_slug,
+            stylebook_headers=cookie_header,
+        )
 
-        _log("Smoke passed (session).")
-        _log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
-        _log(f"Graph: {graph_id} ({graph_name})")
-        _log(f"Run: {terminal_run['id']}")
+        log("Smoke agate-stylebook-handoff passed (session).")
+        log(f"Project: {project_id} ({SMOKE_PROJECT_SLUG})")
+        log(f"Graph: {graph_id} ({graph_name})")
+        log(f"Run: {terminal_run['id']}")
         return 0
 
 
@@ -386,7 +368,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except httpx.HTTPError as exc:
-        print(f"HTTP smoke failure: {_http_error_detail(exc)}", file=sys.stderr, flush=True)
+        print(f"HTTP smoke failure: {http_error_detail(exc)}", file=sys.stderr, flush=True)
         raise SystemExit(1) from exc
     except Exception as exc:
         print(f"Smoke failure: {exc}", file=sys.stderr, flush=True)

@@ -2,7 +2,7 @@
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE)
 
-.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-place-geocode smoke-place-geocode-stack stylebook-ui-build
+.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack stylebook-ui-build
 
 help:
 	@echo "Backfield"
@@ -23,7 +23,10 @@ help:
 	@echo "  make lint        - Ruff check"
 	@echo "  make format      - Ruff format"
 	@echo "  make bootstrap   - uv sync (root) for local tooling"
-	@echo "  make smoke       - Golden-path smoke against a live stack"
+	@echo "  make smoke       - Agate-to-Stylebook handoff smoke against a live stack"
+	@echo "  make smoke-fast  - Auth + basic Agate + basic Stylebook smoke bundle"
+	@echo "  make smoke-runtime - Handoff + worker lifecycle smoke bundle"
+	@echo "  make smoke-slower - Editorial + import + S3 batch smoke bundle"
 	@echo "  make smoke-place-geocode - In-process PlaceExtract + GeocodeAgent corpus (not CI)"
 	@echo "  make smoke-place-geocode-stack - Same script --via-agate-api (enqueue one graph run)"
 	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
@@ -88,8 +91,37 @@ lint:
 format:
 	uv run ruff format packages apps tests
 
-smoke:
+smoke: smoke-agate-stylebook-handoff
+
+smoke-auth:
+	uv run python -u tests/smoke/smoke_auth.py
+
+smoke-agate-basic:
+	uv run python -u tests/smoke/smoke_agate_basic.py
+
+smoke-stylebook-basic:
+	uv run python -u tests/smoke/smoke_stylebook_basic.py
+
+smoke-agate-stylebook-handoff:
 	uv run python -u tests/smoke/golden_path_stack.py
+
+smoke-worker-async:
+	uv run python -u tests/smoke/smoke_worker_async.py
+
+smoke-stylebook-editorial:
+	uv run python -u tests/smoke/smoke_stylebook_editorial.py
+
+smoke-s3-batch:
+	uv run python -u tests/smoke/smoke_s3_batch.py
+
+smoke-stylebook-import-export:
+	uv run python -u tests/smoke/smoke_stylebook_import_export.py
+
+smoke-fast: smoke-auth smoke-agate-basic smoke-stylebook-basic
+
+smoke-runtime: smoke-agate-stylebook-handoff smoke-worker-async
+
+smoke-slower: smoke-stylebook-editorial smoke-stylebook-import-export smoke-s3-batch
 
 smoke-place-geocode:
 	uv run python -u tests/smoke/place_geocode_smoke.py
