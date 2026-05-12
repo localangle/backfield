@@ -9,7 +9,7 @@ dependencies = [
     "pytest>=8.0",
     "python-dotenv>=1.0.0",
     "ruff>=0.6.0",
-    "backfield-agate",
+    "agate-runtime",
 ]
 
 [tool.uv.workspace]
@@ -28,7 +28,7 @@ members = [
 [tool.uv.sources]
 backfield-ai = { workspace = true }
 backfield-auth = { workspace = true }
-backfield-agate = { workspace = true }
+agate-runtime = { workspace = true }
 backfield-db = { workspace = true }
 backfield-stylebook = { workspace = true }
 core-api = { workspace = true }
@@ -56,8 +56,8 @@ extend-exclude = [
     "packages/backfield-agate/src/agate_nodes/geocode_agent",
     "packages/backfield-agate/src/agate_nodes/place_extract",
     "packages/backfield-agate/src/agate_utils",
-    "packages/backfield-agate/src/backfield_agate/output_node.py",
-    "packages/backfield-agate/src/backfield_agate/runners.py",
+    "packages/backfield-agate/src/agate_runtime/output_node.py",
+    "packages/backfield-agate/src/agate_runtime/runners.py",
 ]
 
 [tool.ruff.lint]

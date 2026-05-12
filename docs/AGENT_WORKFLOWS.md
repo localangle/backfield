@@ -2,7 +2,7 @@
 
 Use this file to decide what to read and which checks to run for common task types.
 
-For a short overview of how agentic work is organized in this repo (entry points, Cursor rules/skills, branch habits), see [`docs/AGENTIC.md`](AGENTIC.md).
+For a short overview of how agentic work is organized in this repo (entry points, Cursor rules/skills, branch habits), see `[docs/AGENTIC.md](AGENTIC.md)`.
 
 ## agate-ai-platform parity
 
@@ -12,7 +12,7 @@ Backfield is a refactor of **agate-ai-platform** (`/Users/cjdd3b/apps/agate-ai-p
 
 - **Default:** when you start writing code, check out a **fresh branch** from the task base (typically `main`) unless the instructions explicitly say to use or extend an existing branch.
 - Create a **new branch** for each distinct task. Large or unrelated work (new packages, migrations, multi-app changes) should not ride on an unrelated existing branch.
-- Name branches so the intent is obvious (for example `feat/backfield-agate-port`, `fix/worker-timeout`).
+- Name branches so the intent is obvious (for example `feat/agate-runtime-port`, `fix/worker-timeout`).
 - See `AGENTS.md` → **Git workflow** for the full convention.
 
 ## Docs-only changes
@@ -50,7 +50,7 @@ Backfield is a refactor of **agate-ai-platform** (`/Users/cjdd3b/apps/agate-ai-p
 
 ## Review workflow
 
-- Before creating a PR, run both [`pre-pr-code-review`](../.cursor/skills/pre-pr-code-review/SKILL.md) and [`pre-pr-architecture-review`](../.cursor/skills/pre-pr-architecture-review/SKILL.md).
+- Before creating a PR, run both `[pre-pr-code-review](../.cursor/skills/pre-pr-code-review/SKILL.md)` and `[pre-pr-architecture-review](../.cursor/skills/pre-pr-architecture-review/SKILL.md)`.
 - Confirm the diff is scoped to the task.
 - Check docs when behavior changed.
 - Check tests and smoke coverage for meaningful runtime changes.

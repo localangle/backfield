@@ -1,5 +1,5 @@
 [project]
-name = "backfield-agate"
+name = "agate-runtime"
 version = "0.1.0"
 description = "Agate graph types, executor, node definitions, and runtime"
 requires-python = ">=3.11"
@@ -27,7 +27,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "src/backfield_agate",
+    "src/agate_runtime",
     "src/agate_utils",
     "src/agate_nodes",
 ]

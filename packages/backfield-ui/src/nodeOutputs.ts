@@ -3,7 +3,7 @@
  * (e.g. `geocode_agent`, `json_output`, `stylebook_output`), matching `execute_graph`.
  * Legacy payloads may still include `__outputKeysByNodeId` plus human-readable keys.
  *
- * Canonical copy for Agate UI and backfield-agate node sources
+ * Canonical copy for Agate UI and agate-runtime node sources
  * (via `@/lib/nodeOutputs` re-export in synced panels).
  */
 
@@ -64,7 +64,7 @@ function topoOrder(
   return order
 }
 
-/** Match `execute_graph` / `_public_node_output_keys` in `backfield_agate.executor`. */
+/** Match `execute_graph` / `_public_node_output_keys` in `agate_runtime.executor`. */
 export function buildNodeIdToPublicOutputKey(spec: NodeOutputLookupSpec): Record<string, string> {
   const byId = new Map(spec.nodes.map((n) => [n.id, n]))
   const order = topoOrder(

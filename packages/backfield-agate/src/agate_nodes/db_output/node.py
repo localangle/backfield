@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from backfield_agate.output_node import consolidated_body_from_dboutput
+from agate_runtime.output_node import consolidated_body_from_dboutput
 
 
 def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:

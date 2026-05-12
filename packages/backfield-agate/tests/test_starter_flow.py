@@ -1,6 +1,6 @@
 """Starter flow graph spec sanity checks."""
 
-from backfield_agate import GraphSpec, starter_geocode_flow_graph_spec
+from agate_runtime import GraphSpec, starter_geocode_flow_graph_spec
 
 
 def test_starter_geocode_flow_graph_spec_round_trip() -> None:

@@ -36,6 +36,6 @@ Check that the change still fits the repo's intended shape: package boundaries, 
 ## Interactive questions
 
 Ask focused questions when a design choice is unresolved. Good examples:
-- Should this live in `backfield-agate`, or is it really app-specific behavior?
+- Should this live in `agate-runtime`, or is it really app-specific behavior?
 - Is this a one-off env var, or should it be part of a documented operational contract?
 - Are we intentionally diverging from agate-ai-platform here, and if so where should that be recorded?

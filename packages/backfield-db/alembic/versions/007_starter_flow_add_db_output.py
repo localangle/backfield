@@ -35,7 +35,7 @@ def _needs_rewrite(spec: dict[str, Any]) -> bool:
 
 def upgrade() -> None:
     # Import inside migration to avoid import-order surprises for offline environments.
-    from backfield_agate import starter_geocode_flow_graph_spec
+    from agate_runtime import starter_geocode_flow_graph_spec
 
     canonical = starter_geocode_flow_graph_spec().model_dump(mode="json")
     canonical_json = json.dumps(canonical)

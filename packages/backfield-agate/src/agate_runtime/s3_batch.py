@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from backfield_agate.nodes.json_input import resolve_document_body_text
+from agate_runtime.nodes.json_input import resolve_document_body_text
 
 
 def list_json_keys_under_prefix(s3_client: Any, *, bucket: str, prefix: str) -> list[str]:

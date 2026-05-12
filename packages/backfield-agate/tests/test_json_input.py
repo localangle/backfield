@@ -1,6 +1,6 @@
 """JSONInput and shared document normalization."""
 
-from backfield_agate.nodes.json_input import (
+from agate_runtime.nodes.json_input import (
     json_input_output_from_dict,
     resolve_document_body_text,
     run_json_input,

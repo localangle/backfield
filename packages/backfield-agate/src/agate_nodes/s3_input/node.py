@@ -6,7 +6,7 @@ import os
 from typing import Any
 
 import boto3
-from backfield_agate.s3_batch import list_json_keys_under_prefix, parse_s3_text_json_document
+from agate_runtime.s3_batch import list_json_keys_under_prefix, parse_s3_text_json_document
 
 from agate_nodes.json_input.node import json_input_output_from_dict
 

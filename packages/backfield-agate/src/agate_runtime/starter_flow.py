@@ -5,7 +5,7 @@ Topology: TextInput → PlaceExtract → GeocodeAgent → Stylebook Output (DBOu
 
 from __future__ import annotations
 
-from backfield_agate.types import Edge, GraphSpec, NodeConfig
+from agate_runtime.types import Edge, GraphSpec, NodeConfig
 
 # Stored graph name in agate_graph.name (UI + smoke lookup).
 STARTER_FLOW_GRAPH_DISPLAY_NAME = "Starter flow"

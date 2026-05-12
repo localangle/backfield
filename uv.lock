@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 members = [
     "agate-api",
     "agate-worker",
-    "backfield-agate",
+    "agate-runtime",
     "backfield-ai",
     "backfield-auth",
     "backfield-db",
@@ -21,7 +21,7 @@ name = "agate-api"
 version = "0.1.0"
 source = { editable = "apps/agate-api" }
 dependencies = [
-    { name = "backfield-agate" },
+    { name = "agate-runtime" },
     { name = "backfield-auth" },
     { name = "backfield-db" },
     { name = "backfield-stylebook" },
@@ -34,7 +34,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "backfield-agate", editable = "packages/backfield-agate" },
+    { name = "agate-runtime", editable = "packages/backfield-agate" },
     { name = "backfield-auth", editable = "packages/backfield-auth" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },
@@ -50,7 +50,7 @@ name = "agate-worker"
 version = "0.1.0"
 source = { editable = "apps/worker" }
 dependencies = [
-    { name = "backfield-agate" },
+    { name = "agate-runtime" },
     { name = "backfield-ai" },
     { name = "backfield-db" },
     { name = "backfield-stylebook" },
@@ -61,7 +61,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "backfield-agate", editable = "packages/backfield-agate" },
+    { name = "agate-runtime", editable = "packages/backfield-agate" },
     { name = "backfield-ai", editable = "packages/backfield-ai" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },
@@ -289,7 +289,7 @@ wheels = [
 ]
 
 [[package]]
-name = "backfield-agate"
+name = "agate-runtime"
 version = "0.1.0"
 source = { editable = "packages/backfield-agate" }
 dependencies = [
@@ -410,7 +410,7 @@ name = "backfield-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "backfield-agate" },
+    { name = "agate-runtime" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "python-dotenv" },
@@ -419,7 +419,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "backfield-agate", editable = "packages/backfield-agate" },
+    { name = "agate-runtime", editable = "packages/backfield-agate" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },

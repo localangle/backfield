@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from backfield_agate.context import AgateEnvContext
-from backfield_agate.output_node import OutputConsolidator
+from agate_runtime.context import AgateEnvContext
+from agate_runtime.output_node import OutputConsolidator
 from agate_nodes.geocode_agent.node import (
     GeocodeAgent,
     GeocodeAgentInput,

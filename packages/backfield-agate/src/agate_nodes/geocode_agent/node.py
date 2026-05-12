@@ -7,7 +7,7 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
-from backfield_agate.context import AgateEnvContext
+from agate_runtime.context import AgateEnvContext
 
 from .agent import run_advanced_geocoding_agent
 

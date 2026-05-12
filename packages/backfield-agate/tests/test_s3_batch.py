@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from backfield_agate.s3_batch import (
+from agate_runtime.s3_batch import (
     graph_spec_json_contains_s3_input,
     parse_s3_text_json_document,
     s3_max_files_from_params,

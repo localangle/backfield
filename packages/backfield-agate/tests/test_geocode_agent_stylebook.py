@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-from backfield_agate.nodes.geocode_agent import run_geocode_agent
+from agate_runtime.nodes.geocode_agent import run_geocode_agent
 
 
 def test_geocode_raises_when_cached_catalog_missing(monkeypatch: pytest.MonkeyPatch) -> None:

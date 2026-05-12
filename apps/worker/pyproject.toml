@@ -7,7 +7,7 @@ dependencies = [
     "celery>=5.3.0",
     "redis>=5.0.0",
     "geoalchemy2>=0.14.0",
-    "backfield-agate",
+    "agate-runtime",
     "backfield-db",
     "backfield-stylebook",
 ]

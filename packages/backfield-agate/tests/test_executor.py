@@ -5,8 +5,8 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-from backfield_agate import Edge, GraphSpec, NodeConfig, execute_graph
-from backfield_agate.executor import GraphExecutionError
+from agate_runtime import Edge, GraphSpec, NodeConfig, execute_graph
+from agate_runtime.executor import GraphExecutionError
 
 
 def _mock_place_extract_json(city: str, state_name: str, state_abbr: str) -> str:
@@ -69,7 +69,7 @@ def test_unknown_node_type():
 
 
 def test_json_input_requires_dict_and_text():
-    from backfield_agate.nodes.json_input import run_json_input
+    from agate_runtime.nodes.json_input import run_json_input
 
     with pytest.raises(ValueError, match="JSON object"):
         run_json_input("not-a-dict", {})  # type: ignore[arg-type]
@@ -80,7 +80,7 @@ def test_json_input_requires_dict_and_text():
 
 
 def test_json_input_pass_through_strips_on_change():
-    from backfield_agate.nodes.json_input import run_json_input
+    from agate_runtime.nodes.json_input import run_json_input
 
     out = run_json_input(
         {
@@ -128,7 +128,7 @@ def test_json_input_to_place_extract():
 
 
 def test_s3_input_requires_bucket():
-    from backfield_agate.nodes.s3_input import run_s3_input
+    from agate_runtime.nodes.s3_input import run_s3_input
 
     with pytest.raises(ValueError, match="bucket"):
         run_s3_input({"bucket": "", "folder_path": ""}, {})
@@ -136,7 +136,7 @@ def test_s3_input_requires_bucket():
 
 def test_s3_input_first_valid_json_file():
     """First JSON key with non-empty text wins; earlier invalid keys are skipped."""
-    from backfield_agate.nodes.s3_input import run_s3_input
+    from agate_runtime.nodes.s3_input import run_s3_input
 
     class _Body:
         def __init__(self, payload: bytes) -> None:

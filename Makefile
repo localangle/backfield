@@ -18,7 +18,7 @@ help:
 	@echo "  make docker-trim          - docker system prune -f only (safe for Postgres/compose volumes across down/up)"
 	@echo "  make docker-trim-full     - docker-trim then docker-prune-volumes (aggressive disk reclaim)"
 	@echo "  make test        - Unit + integration tests"
-	@echo "  make test-unit   - Python unit tests (backfield-agate)"
+	@echo "  make test-unit   - Python unit tests (agate-runtime)"
 	@echo "  make test-integration - API smoke tests"
 	@echo "  make lint        - Ruff check"
 	@echo "  make format      - Ruff format"

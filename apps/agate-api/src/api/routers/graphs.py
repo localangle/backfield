@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from agate_runtime import GraphSpec
 from api.deps import get_auth, get_session
-from backfield_agate import GraphSpec
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import AgateGraph, AgateRun, BackfieldProject
 from backfield_stylebook.graph_stylebook_refs import (

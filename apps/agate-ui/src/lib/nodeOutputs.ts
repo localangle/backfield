@@ -1,6 +1,6 @@
 /**
  * Re-export canonical node-output key helpers from `@backfield/ui`
- * (single source; matches `execute_graph` in `backfield_agate.executor`).
+ * (single source; matches `execute_graph` in `agate_runtime.executor`).
  */
 export {
   NODE_OUTPUT_KEY_INDEX,

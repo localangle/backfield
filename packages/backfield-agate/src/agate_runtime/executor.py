@@ -7,8 +7,8 @@ from collections import defaultdict, deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from backfield_agate.nodes import NODE_RUNNERS
-from backfield_agate.types import Edge, GraphSpec, NodeConfig
+from agate_runtime.nodes import NODE_RUNNERS
+from agate_runtime.types import Edge, GraphSpec, NodeConfig
 
 NodeRunner = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 

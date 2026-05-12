@@ -109,7 +109,7 @@ def _run_in_process_scenario(
     ctx: Any,
     geocode_params: dict[str, Any],
 ) -> dict[str, Any]:
-    from backfield_agate.runners import (
+    from agate_runtime.runners import (
         run_geocode_agent_runtime,
         run_place_extract_runtime,
     )
@@ -219,7 +219,7 @@ def run_in_process(corpus_path: Path, history_path: Path) -> int:
     if str(agate_src) not in sys.path:
         sys.path.insert(0, str(agate_src))
 
-    from backfield_agate.context import AgateEnvContext
+    from agate_runtime.context import AgateEnvContext
 
     rows = _load_corpus(corpus_path)
     ctx = AgateEnvContext()
@@ -316,7 +316,7 @@ def run_via_agate_api() -> int:
             graphs = _assert_ok(agate.get("/graphs"), "list graphs")
             if not isinstance(graphs, list):
                 raise RuntimeError("graphs response must be a list")
-            from backfield_agate import STARTER_FLOW_GRAPH_DISPLAY_NAME
+            from agate_runtime import STARTER_FLOW_GRAPH_DISPLAY_NAME
 
             starter = next(
                 (
