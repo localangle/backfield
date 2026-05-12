@@ -49,59 +49,56 @@ export default function OutputPanel({
   running,
   currentRun,
   editMode,
-  setNodes
+  setNodes,
 }: OutputPanelProps) {
-  // Convert array to comma-separated string for display
   const arrayToString = (arr: string[] | undefined): string => {
     if (!arr || arr.length === 0) return ''
     return arr.join(', ')
   }
 
-  // Convert comma-separated string to array
   const stringToArray = (str: string): string[] => {
     if (!str || str.trim() === '') return []
-    return str.split(',').map(s => s.trim()).filter(s => s.length > 0)
+    return str
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
   }
 
   const handleExcludeChange = (value: string) => {
     if (!setNodes) return
-    // Store both raw string (for editing) and array (for backend)
-    // This allows commas to be typed freely
     const excludeArray = stringToArray(value)
     setNodes((nds: any[]) =>
       nds.map((n: any) =>
         n.id === node.id
-          ? { 
-              ...n, 
-              data: { 
-                ...n.data, 
-                exclude_raw: value, // Keep raw for editing
-                exclude: excludeArray.length > 0 ? excludeArray : undefined // Converted array for backend
-              } 
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                exclude_raw: value,
+                exclude: excludeArray.length > 0 ? excludeArray : undefined,
+              },
             }
-          : n
-      )
+          : n,
+      ),
     )
   }
 
   const handleIncludeChange = (value: string) => {
     if (!setNodes) return
-    // Store both raw string (for editing) and array (for backend)
-    // This allows commas to be typed freely
     const includeArray = stringToArray(value)
     setNodes((nds: any[]) =>
       nds.map((n: any) =>
         n.id === node.id
-          ? { 
-              ...n, 
-              data: { 
-                ...n.data, 
-                include_raw: value, // Keep raw for editing
-                include: includeArray.length > 0 ? includeArray : undefined // Converted array for backend
-              } 
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                include_raw: value,
+                include: includeArray.length > 0 ? includeArray : undefined,
+              },
             }
-          : n
-      )
+          : n,
+      ),
     )
   }
 
@@ -111,7 +108,9 @@ export default function OutputPanel({
         <div>
           <Label className="text-sm font-medium">Description</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            This node consolidates data from all upstream nodes into a single output. It accepts any number of inputs, merges all fields into one object, waits for all upstream nodes to complete, and returns a consolidated data structure.
+            This node consolidates data from all upstream nodes into a single output. It accepts
+            any number of inputs, merges all fields into one object, waits for all upstream nodes
+            to complete, and returns a consolidated data structure.
           </p>
         </div>
       </div>
@@ -120,7 +119,7 @@ export default function OutputPanel({
         <div>
           <Label className="text-sm font-medium">Parameters</Label>
         </div>
-        
+
         <div className="space-y-3 mt-2">
           <div>
             <Label htmlFor="exclude" className="text-xs text-muted-foreground">
@@ -136,9 +135,7 @@ export default function OutputPanel({
               />
             ) : (
               <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs">
-                  {arrayToString(node.data?.exclude) || 'None'}
-                </span>
+                <span className="text-xs">{arrayToString(node.data?.exclude) || 'None'}</span>
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
@@ -160,13 +157,12 @@ export default function OutputPanel({
               />
             ) : (
               <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs">
-                  {arrayToString(node.data?.include) || 'All keys'}
-                </span>
+                <span className="text-xs">{arrayToString(node.data?.include) || 'All keys'}</span>
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              If specified, only these keys will be included in the output (whitelist). Leave empty to include all keys (except excluded ones).
+              If specified, only these keys will be included in the output (whitelist). Leave
+              empty to include all keys (except excluded ones).
             </p>
           </div>
         </div>

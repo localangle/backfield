@@ -11,14 +11,17 @@ from api.main import app
 from api.routers import runs
 from backfield_auth import create_session_token
 from backfield_db import (
+    AgateGraph,
     AgateProcessedItem,
     AgateRun,
+    BackfieldAiCallRecord,
     BackfieldOrganization,
     BackfieldOrganizationMembership,
     BackfieldProject,
     BackfieldUser,
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
+    SubstrateArticle,
 )
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from cryptography.fernet import Fernet
@@ -157,6 +160,106 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     list_response = client.get("/graphs")
     assert list_response.status_code == 200
     assert len(list_response.json()) == 1
+
+
+def test_delete_graph_cleans_up_run_dependencies(monkeypatch, tmp_path):
+    database_path = tmp_path / "agate-delete-graph.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project = tc.post("/projects", json={"name": "Delete Graph", "slug": "delete-graph"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Graph with runs",
+                "project_id": project["id"],
+                "spec": {
+                    "name": "delete_graph_flow",
+                    "nodes": [
+                        {
+                            "id": "n1",
+                            "type": "TextInput",
+                            "params": {"text": "Hello"},
+                            "position": {"x": 0, "y": 0},
+                        }
+                    ],
+                    "edges": [],
+                },
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+        run_id = run["id"]
+
+        with Session(engine) as s:
+            item = AgateProcessedItem(
+                run_id=run_id,
+                source_file="a.json",
+                input_json='{"text":"hello"}',
+                status="succeeded",
+                result_json='{"ok":true}',
+            )
+            s.add(item)
+            s.flush()
+            assert item.id is not None
+
+            call = BackfieldAiCallRecord(
+                project_id=project["id"],
+                run_id=run_id,
+                processed_item_id=item.id,
+                provider="openai",
+                provider_model_id="gpt-5-nano",
+                status="succeeded",
+            )
+            s.add(call)
+
+            article = SubstrateArticle(
+                project_id=project["id"],
+                headline="Delete graph smoke article",
+                text="Delete graph smoke body",
+                source_run_id=run_id,
+                source_item_id=item.id,
+            )
+            s.add(article)
+            s.commit()
+            s.refresh(call)
+            s.refresh(article)
+            call_id = call.id
+            article_id = article.id
+            item_id = item.id
+
+        resp = tc.delete(f"/graphs/{graph['id']}")
+        assert resp.status_code == 204
+
+        with Session(engine) as s:
+            assert s.get(AgateGraph, graph["id"]) is None
+            assert s.get(AgateRun, run_id) is None
+            assert s.get(AgateProcessedItem, item_id) is None
+            assert s.get(BackfieldAiCallRecord, call_id) is None
+            article_row = s.get(SubstrateArticle, article_id)
+            assert article_row is not None
+            assert article_row.source_run_id is None
+            assert article_row.source_item_id is None
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_s3_graph_run_enqueues_batch_setup(monkeypatch, client: TestClient):

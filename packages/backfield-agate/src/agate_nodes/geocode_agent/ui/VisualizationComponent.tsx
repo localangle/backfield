@@ -1,8 +1,12 @@
-import React from 'react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import MapboxMap from '@/components/visualizations/MapboxMap'
-import type { MapPointFeature, MapBoundingBoxFeature, VisualizationProps, VisualizationDescriptor } from '@/lib/visualizations'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { LeafletMap, LayerFilterPopover, layersFromFeatures, defaultVisibility } from '@backfield/ui'
+import type {
+  MapBoundingBoxFeature,
+  MapPointFeature,
+  VisualizationDescriptor,
+  VisualizationProps,
+} from '@/lib/visualizations'
 
 /**
  * Build visualization descriptor for GeocodeAgent node output.
@@ -11,7 +15,7 @@ import type { MapPointFeature, MapBoundingBoxFeature, VisualizationProps, Visual
 export function buildVisualization(
   nodeId: string,
   nodeLabel: string,
-  output: any
+  output: any,
 ): VisualizationDescriptor | null {
   if (!output || typeof output !== 'object') {
     return null
@@ -22,7 +26,6 @@ export function buildVisualization(
     return null
   }
 
-  // Helper functions to extract geometry data
   function toNumber(value: unknown): number | null {
     if (typeof value === 'number') return value
     if (typeof value === 'string') {
@@ -37,7 +40,7 @@ export function buildVisualization(
     fallbackId: string,
     idx: number,
     group: string,
-    polygons: Array<{ 
+    polygons: Array<{
       id: string
       bbox: [number, number, number, number]
       label?: string
@@ -53,39 +56,29 @@ export function buildVisualization(
     const record = entry as Record<string, any>
     const geometry = record?.geocode?.result?.geometry
     if (!geometry) return
-    
+
     const geometryType = geometry.type
     const coords = geometry.coordinates
-    
+
     if (!geometryType || !coords) return
-    
-    // Check if it's a polygon type
     if (geometryType !== 'Polygon' && geometryType !== 'MultiPolygon') return
-    
-    // Handle MultiPolygon: [[[[lon, lat], ...], [[lon, lat], ...], ...]]
+
     if (geometryType === 'MultiPolygon') {
       if (!Array.isArray(coords) || coords.length === 0) {
-        console.warn(`GeocodeAgent: MultiPolygon coordinates is not a valid array`, { coords, geometryType })
         return
       }
-      
+
       let minLon = Infinity
       let maxLon = -Infinity
       let minLat = Infinity
       let maxLat = -Infinity
-      
-      // Iterate through all polygons in the MultiPolygon
-      // MultiPolygon format: [[[[lon, lat], ...], [[lon, lat], ...], ...]
-      // Each element of coords is a polygon: [[[lon, lat], ...], [[lon, lat], ...]]
+
       for (const polygon of coords) {
         if (!Array.isArray(polygon) || polygon.length === 0) {
-          console.warn(`GeocodeAgent: Invalid polygon in MultiPolygon`, { polygon })
           continue
         }
-        // First ring is the exterior ring
         const exteriorRing = polygon[0]
         if (!Array.isArray(exteriorRing)) {
-          console.warn(`GeocodeAgent: Invalid exterior ring in MultiPolygon`, { exteriorRing })
           continue
         }
 
@@ -118,22 +111,26 @@ export function buildVisualization(
             type: 'MultiPolygon',
             coordinates: coords as number[][][][],
           },
-          label: (record.location as string | undefined) ?? record.geocode?.result?.formatted_address ?? undefined,
-          description: (record.description as string | undefined) ?? (record.original_text as string | undefined) ?? undefined,
+          label:
+            (record.location as string | undefined) ??
+            record.geocode?.result?.formatted_address ??
+            undefined,
+          description:
+            (record.description as string | undefined) ??
+            (record.original_text as string | undefined) ??
+            undefined,
           group,
         })
       }
       return
     }
 
-    // Handle Polygon: [[[lon, lat], ...]] or bbox [west, south, east, north]
     let minLon = Infinity
     let maxLon = -Infinity
     let minLat = Infinity
     let maxLat = -Infinity
-    
+
     if (Array.isArray(coords)) {
-      // Check if it's bbox format: [west, south, east, north]
       if (coords.length === 4 && typeof coords[0] === 'number') {
         const west = toNumber(coords[0])
         const south = toNumber(coords[1])
@@ -150,15 +147,20 @@ export function buildVisualization(
           polygons.push({
             id: (record.id as string | undefined) ?? `${fallbackId}-polygon-${idx}`,
             bbox: [west, south, east, north],
-            label: (record.location as string | undefined) ?? record.geocode?.result?.formatted_address ?? undefined,
-            description: (record.description as string | undefined) ?? (record.original_text as string | undefined) ?? undefined,
+            label:
+              (record.location as string | undefined) ??
+              record.geocode?.result?.formatted_address ??
+              undefined,
+            description:
+              (record.description as string | undefined) ??
+              (record.original_text as string | undefined) ??
+              undefined,
             group,
           })
         }
         return
       }
-      
-      // Full GeoJSON Polygon format: [[[lon, lat], ...]]
+
       if (Array.isArray(coords[0]) && Array.isArray(coords[0][0])) {
         const ring = coords[0] as number[][]
         for (const coord of ring) {
@@ -173,7 +175,7 @@ export function buildVisualization(
             }
           }
         }
-        
+
         if (
           minLon !== Infinity &&
           maxLon !== -Infinity &&
@@ -189,8 +191,14 @@ export function buildVisualization(
               type: 'Polygon',
               coordinates: coords as number[][][],
             },
-            label: (record.location as string | undefined) ?? record.geocode?.result?.formatted_address ?? undefined,
-            description: (record.description as string | undefined) ?? (record.original_text as string | undefined) ?? undefined,
+            label:
+              (record.location as string | undefined) ??
+              record.geocode?.result?.formatted_address ??
+              undefined,
+            description:
+              (record.description as string | undefined) ??
+              (record.original_text as string | undefined) ??
+              undefined,
             group,
           })
         }
@@ -203,7 +211,13 @@ export function buildVisualization(
     fallbackId: string,
     idx: number,
     group: string,
-    points: Array<{ id: string; coordinates: [number, number]; label?: string; description?: string; group?: string }>,
+    points: Array<{
+      id: string
+      coordinates: [number, number]
+      label?: string
+      description?: string
+      group?: string
+    }>,
   ): void {
     if (!entry || typeof entry !== 'object') return
     const record = entry as Record<string, any>
@@ -220,8 +234,14 @@ export function buildVisualization(
     points.push({
       id: (record.id as string | undefined) ?? `${fallbackId}-point-${idx}`,
       coordinates: [lon, lat],
-      label: (record.location as string | undefined) ?? record.geocode?.result?.formatted_address ?? undefined,
-      description: (record.description as string | undefined) ?? (record.original_text as string | undefined) ?? undefined,
+      label:
+        (record.location as string | undefined) ??
+        record.geocode?.result?.formatted_address ??
+        undefined,
+      description:
+        (record.description as string | undefined) ??
+        (record.original_text as string | undefined) ??
+        undefined,
       group,
     })
   }
@@ -229,7 +249,6 @@ export function buildVisualization(
   const polygons: MapBoundingBoxFeature[] = []
   const points: MapPointFeature[] = []
 
-  // Collect polygons from area groups
   const areaGroups = places.areas as Record<string, unknown[] | undefined> | undefined
   if (areaGroups && typeof areaGroups === 'object') {
     Object.entries(areaGroups).forEach(([groupName, entries]) => {
@@ -243,16 +262,14 @@ export function buildVisualization(
     })
   }
 
-  // Collect point results
   if (Array.isArray(places.points)) {
     places.points.forEach((entry: unknown, idx: number) =>
       addPoint(entry, `${nodeId}-point`, idx, 'points', points),
     )
   }
 
-  // Some geocode nodes may emit point-like data in "other" buckets
-  if (Array.isArray(places.other)) {
-    places.other.forEach((entry: unknown, idx: number) =>
+  if (Array.isArray((places as { other?: unknown[] }).other)) {
+    ;(places as { other?: unknown[] }).other?.forEach((entry: unknown, idx: number) =>
       addPoint(entry, `${nodeId}-other`, idx, 'other', points),
     )
   }
@@ -261,32 +278,106 @@ export function buildVisualization(
     return null
   }
 
-  // Visualization component
-  const GeocodeVisualization: React.FC<VisualizationProps> = ({ mapboxToken, data }) => {
+  const displayNodeLabel =
+    nodeLabel !== nodeId ? nodeLabel.replace(/\s*\(n\d+\)\s*$/, '') : null
+
+  const GeocodeVisualization: React.FC<VisualizationProps> = ({ data }) => {
     if (!data) return null
-    
+
+    function pointsToGeoJSON(features: MapPointFeature[]) {
+      return {
+        type: 'FeatureCollection' as const,
+        features: features.map((p) => ({
+          type: 'Feature' as const,
+          properties: {
+            id: p.id,
+            label: p.label ?? '',
+            description: p.description ?? '',
+            group: p.group ?? 'points',
+          },
+          geometry: { type: 'Point' as const, coordinates: p.coordinates },
+        })),
+      }
+    }
+
+    function polygonsToGeoJSON(features: MapBoundingBoxFeature[]) {
+      const ringFromBbox = (bbox: [number, number, number, number]) => {
+        const [w, s, e, n] = bbox
+        return [
+          [w, s],
+          [e, s],
+          [e, n],
+          [w, n],
+          [w, s],
+        ] as [number, number][]
+      }
+      return {
+        type: 'FeatureCollection' as const,
+        features: features.map((p) => ({
+          type: 'Feature' as const,
+          properties: {
+            id: p.id,
+            label: p.label ?? '',
+            description: p.description ?? '',
+            group: p.group ?? 'areas',
+          },
+          geometry: (
+            p.geometry
+              ? p.geometry
+              : { type: 'Polygon' as const, coordinates: [ringFromBbox(p.bbox)] }
+          ) as any,
+        })),
+      }
+    }
+
+    const layers = useMemo(() => {
+      return layersFromFeatures([
+        ...data.points.map((p: { group?: string }) => ({ group: p.group ?? 'points' })),
+        ...data.polygons.map((p: { group?: string }) => ({ group: p.group ?? 'areas' })),
+      ])
+    }, [data.points, data.polygons])
+
+    const [visibility, setVisibility] = useState(() => defaultVisibility(layers))
+    useEffect(() => {
+      setVisibility((prev) => {
+        const next = { ...prev }
+        for (const layer of layers) {
+          if (!(layer.id in next)) next[layer.id] = true
+        }
+        return next
+      })
+    }, [layers])
+
+    const filteredPoints = useMemo(() => {
+      return data.points.filter((p: { group?: string }) => visibility[p.group ?? 'points'] ?? true)
+    }, [data.points, visibility])
+
+    const filteredPolygons = useMemo(() => {
+      return data.polygons.filter((p: { group?: string }) => visibility[p.group ?? 'areas'] ?? true)
+    }, [data.polygons, visibility])
+
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>Locations</CardTitle>
-          {nodeLabel !== nodeId && (
-            <CardDescription>{nodeLabel}</CardDescription>
-          )}
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <CardTitle className="flex items-baseline gap-3">
+            <span>Locations</span>
+            {displayNodeLabel && (
+              <span className="text-sm font-normal text-muted-foreground">{displayNodeLabel}</span>
+            )}
+          </CardTitle>
+
+          <LayerFilterPopover
+            layers={layers}
+            visibility={visibility}
+            onChange={setVisibility}
+            buttonLabel="Layers"
+          />
         </CardHeader>
         <CardContent>
-          {mapboxToken ? (
-            <MapboxMap
-              accessToken={mapboxToken}
-              points={data.points}
-              polygons={data.polygons}
-            />
-          ) : (
-            <Alert>
-              <AlertDescription>
-                A Mapbox API token is required to view this map. Add a <code>MAPBOX_API_TOKEN</code> in the project settings to enable map visualizations.
-              </AlertDescription>
-            </Alert>
-          )}
+          <LeafletMap
+            points={pointsToGeoJSON(filteredPoints) as any}
+            polygons={polygonsToGeoJSON(filteredPolygons) as any}
+          />
         </CardContent>
       </Card>
     )
@@ -298,11 +389,10 @@ export function buildVisualization(
     title: 'Locations',
     description: nodeLabel !== nodeId ? nodeLabel : undefined,
     component: GeocodeVisualization,
-    requiresMapboxToken: true,
+    requiresMapboxToken: false,
     data: {
       points,
       polygons,
     },
   }
 }
-

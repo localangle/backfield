@@ -1,13 +1,16 @@
 [project]
-name = "backfield-agate"
+name = "agate-runtime"
 version = "0.1.0"
-description = "Vendored Agate flowbuilder node runtime (LLM PlaceExtract, LangGraph GeocodeAgent, utilities)"
+description = "Agate graph types, executor, node definitions, and runtime"
 requires-python = ">=3.11"
 dependencies = [
     "backfield-ai",
+    "backfield-db",
+    "backfield-stylebook",
     "pydantic>=2.0.0",
     "anthropic>=0.18.0",
     "openai>=1.12.0",
+    "boto3>=1.34.0",
     "duckduckgo-search>=7.0.0",
     "geopy>=2.4.0",
     "h3>=4.3.1",
@@ -24,7 +27,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "src/backfield_agate",
+    "src/agate_runtime",
     "src/agate_utils",
     "src/agate_nodes",
 ]

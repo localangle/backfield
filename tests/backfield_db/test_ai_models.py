@@ -164,7 +164,7 @@ import sys
 import backfield_ai
 
 assert backfield_ai.DEFAULT_AI_CURRENCY == "USD"
-for name in ("backfield_core", "backfield_agate", "worker.tasks"):
+for name in ("agate_runtime", "worker.tasks"):
     assert name not in sys.modules, name
 """
     result = subprocess.run(

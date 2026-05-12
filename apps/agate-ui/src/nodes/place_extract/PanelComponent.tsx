@@ -175,29 +175,23 @@ export default function PlaceExtractPanel({
     }
   }, [projectId, graphContext?.fetchProjectAiModels])
 
-  const modelSelectOptions = useMemo(
-    () => catalogToSelectOptions(catalogRows),
-    [catalogRows],
-  )
+  const modelSelectOptions = useMemo(() => catalogToSelectOptions(catalogRows), [catalogRows])
 
   const resolvedUnderlying = resolvedModelSelectValue(paramsRecord, catalogRows)
   const selectionValid =
-    resolvedUnderlying !== '' &&
-    modelSelectOptions.some((o) => o.selectValue === resolvedUnderlying)
+    resolvedUnderlying !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedUnderlying)
 
   const showInvalidPersisted =
     Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
     hasExplicitModelChoice((node.data || {}) as Record<string, unknown>) &&
     !selectionValid
 
-  /** When the saved selection is unavailable, Radix Select needs a value that matches a SelectItem. */
   const radixSelectValue = selectionValid
     ? resolvedUnderlying
     : showInvalidPersisted
       ? INVALID_SELECTION_VALUE
       : undefined
 
-  /** First effective model when the node has no explicit choice yet. */
   useEffect(() => {
     if (!editMode || !setNodes || catalogLoading || catalogRows.length === 0) return
     const data = (node.data || {}) as Record<string, unknown>
@@ -296,14 +290,16 @@ export default function PlaceExtractPanel({
               <code className="bg-muted px-1 rounded">url</code> field
             </li>
             <li>
-              <code className="bg-muted px-1 rounded">{'{results.images}'}</code> — nested paths (e.g.{' '}
-              <code className="bg-muted px-1 rounded">results.images</code>)
+              <code className="bg-muted px-1 rounded">{'{results.images}'}</code> — nested paths
+              (e.g. <code className="bg-muted px-1 rounded">results.images</code>)
             </li>
             <li>
-              <code className="bg-muted px-1 rounded">{'{results.caption}'}</code> — one field from each item in an array
+              <code className="bg-muted px-1 rounded">{'{results.caption}'}</code> — one field from
+              each item in an array
             </li>
             <li>
-              <code className="bg-muted px-1 rounded">{'{results.caption, id}'}</code> — multiple fields per array element
+              <code className="bg-muted px-1 rounded">{'{results.caption, id}'}</code> — multiple
+              fields per array element
             </li>
             <li>
               <code className="bg-muted px-1 rounded">{'{raw}'}</code> — entire input object as JSON
@@ -324,7 +320,8 @@ export default function PlaceExtractPanel({
               <>
                 {(projectId == null || graphContext?.fetchProjectAiModels == null) && (
                   <p className="text-xs text-muted-foreground">
-                    Save this flow under a project to choose models your organization enabled for this project.
+                    Save this flow under a project to choose models your organization enabled for
+                    this project.
                   </p>
                 )}
                 {projectId != null && catalogLoading && (
@@ -334,15 +331,16 @@ export default function PlaceExtractPanel({
                   <p className="text-xs text-destructive">{catalogError}</p>
                 ) : null}
                 {!catalogLoading &&
-                !catalogError &&
-                projectId != null &&
-                graphContext?.fetchProjectAiModels != null &&
-                modelSelectOptions.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    No models available for this project yet. Ask an administrator to enable models for your organization,
-                    then turn them on for this project in project settings if needed.
-                  </p>
-                )}
+                  !catalogError &&
+                  projectId != null &&
+                  graphContext?.fetchProjectAiModels != null &&
+                  modelSelectOptions.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No models available for this project yet. Ask an administrator to enable
+                      models for your organization, then turn them on for this project in project
+                      settings if needed.
+                    </p>
+                  )}
                 {showInvalidPersisted && (
                   <p className="text-xs text-muted-foreground">
                     The saved model is no longer available. Choose another model below.
@@ -387,9 +385,7 @@ export default function PlaceExtractPanel({
               onChange={(e) => {
                 setNodes((nds: any[]) =>
                   nds.map((n: any) =>
-                    n.id === node.id
-                      ? { ...n, data: { ...n.data, prompt: e.target.value } }
-                      : n,
+                    n.id === node.id ? { ...n, data: { ...n.data, prompt: e.target.value } } : n,
                   ),
                 )
               }}

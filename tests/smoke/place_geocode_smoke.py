@@ -32,27 +32,19 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from _helpers import (
+    assert_list,
+    assert_object,
+    ensure_health,
+    http_error_detail,
+    log,
+    wait_for_terminal_run,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SMOKE_DIR = Path(__file__).resolve().parent
 _DEFAULT_CORPUS = _SMOKE_DIR / "fixtures" / "place_geocode_corpus.json"
 _DEFAULT_HISTORY = _SMOKE_DIR / "artifacts" / "place_geocode_smoke_history.jsonl"
-
-
-def _load_repo_dotenv() -> None:
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
-        return
-    env_path = _REPO_ROOT / ".env"
-    load_dotenv(env_path, override=False)
-
-
-_load_repo_dotenv()
-
-
-def _log(msg: str) -> None:
-    print(msg, flush=True)
 
 
 def _load_corpus(path: Path) -> list[dict[str, Any]]:
@@ -109,7 +101,7 @@ def _run_in_process_scenario(
     ctx: Any,
     geocode_params: dict[str, Any],
 ) -> dict[str, Any]:
-    from backfield_agate.runners import (
+    from agate_runtime.runners import (
         run_geocode_agent_runtime,
         run_place_extract_runtime,
     )
@@ -190,8 +182,8 @@ def _print_table(rows: list[dict[str, Any]]) -> None:
         ("types", 40),
     ]
     header = " ".join(f"{n:{w}}" for n, w in cols)
-    _log(header)
-    _log("-" * len(header))
+    log(header)
+    log("-" * len(header))
     for r in rows:
         types = ",".join(r.get("types_found") or [])[: cols[-1][1]]
         line = (
@@ -205,11 +197,11 @@ def _print_table(rows: list[dict[str, Any]]) -> None:
             f" {'Y' if r['geocode_ok'] else ('P' if r.get('geocode_partial') else 'N'):5s}"
             f" {types}"
         )
-        _log(line)
+        log(line)
         if r.get("extract_note"):
-            _log(f"  └ extract: {r['extract_note']}")
+            log(f"  └ extract: {r['extract_note']}")
         if r.get("error"):
-            _log(f"  └ error: {r['error']}")
+            log(f"  └ error: {r['error']}")
 
 
 def run_in_process(corpus_path: Path, history_path: Path) -> int:
@@ -219,7 +211,7 @@ def run_in_process(corpus_path: Path, history_path: Path) -> int:
     if str(agate_src) not in sys.path:
         sys.path.insert(0, str(agate_src))
 
-    from backfield_agate.context import AgateEnvContext
+    from agate_runtime.context import AgateEnvContext
 
     rows = _load_corpus(corpus_path)
     ctx = AgateEnvContext()
@@ -233,7 +225,7 @@ def run_in_process(corpus_path: Path, history_path: Path) -> int:
     }
 
     if not ctx.get_api_key("OPENAI_API_KEY"):
-        _log("ERROR: OPENAI_API_KEY is not set (required for PlaceExtract + GeocodeAgent).")
+        log("ERROR: OPENAI_API_KEY is not set (required for PlaceExtract + GeocodeAgent).")
         return 2
 
     results: list[dict[str, Any]] = []
@@ -245,41 +237,20 @@ def run_in_process(corpus_path: Path, history_path: Path) -> int:
         results.append(rec)
         _append_history(history_path, rec)
 
-    _log("")
-    _log(f"Corpus: {corpus_path}")
-    _log(f"History: {history_path}")
-    _log("")
+    log("")
+    log(f"Corpus: {corpus_path}")
+    log(f"History: {history_path}")
+    log("")
     _print_table(results)
 
     ok_all = all(r["extract_ok"] and r["geocode_ok"] for r in results)
-    _log("")
+    log("")
     if ok_all:
-        _log("Summary: all scenarios passed extract + geocode gates.")
+        log("Summary: all scenarios passed extract + geocode gates.")
         return 0
     failed = [r["scenario_id"] for r in results if not (r["extract_ok"] and r["geocode_ok"])]
-    _log(f"Summary: {len(failed)} scenario(s) need attention: {', '.join(failed)}")
+    log(f"Summary: {len(failed)} scenario(s) need attention: {', '.join(failed)}")
     return 1
-
-
-def _assert_ok(response: httpx.Response, context: str) -> dict[str, Any]:
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"{context} returned non-object: {payload!r}")
-    return payload
-
-
-def _wait_for_terminal_run(
-    client: httpx.Client, run_id: str, *, timeout_s: float, interval_s: float
-) -> dict[str, Any]:
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        payload = _assert_ok(client.get(f"/runs/{run_id}"), f"run {run_id}")
-        status = payload.get("status")
-        if status in {"succeeded", "failed"}:
-            return payload
-        time.sleep(interval_s)
-    raise RuntimeError(f"Timed out waiting for run {run_id}")
 
 
 def run_via_agate_api() -> int:
@@ -294,14 +265,14 @@ def run_via_agate_api() -> int:
     graph_id_env = os.environ.get("SMOKE_PLACE_GEOCODE_STACK_GRAPH_ID", "").strip()
 
     headers = {"Authorization": f"Bearer {bearer}"} if bearer else {}
+    ensure_health(
+        agate_base=agate_base,
+        stylebook_base=stylebook_base,
+        agate_headers=headers,
+        stylebook_headers=headers,
+    )
     with httpx.Client(base_url=agate_base, timeout=15.0, headers=headers) as agate:
-        _assert_ok(agate.get("/health"), "Agate health")
-        with httpx.Client(base_url=stylebook_base, timeout=10.0) as sb:
-            _assert_ok(sb.get("/health"), "Stylebook health")
-
-        projects = _assert_ok(agate.get("/projects"), "list projects")
-        if not isinstance(projects, list):
-            raise RuntimeError("projects response must be a list")
+        projects = assert_list(agate.get("/projects"), "list projects")
         project = next(
             (p for p in projects if isinstance(p, dict) and p.get("slug") == project_slug),
             None,
@@ -313,10 +284,8 @@ def run_via_agate_api() -> int:
         graph_id = graph_id_env
         graph_name = "(env)"
         if not graph_id:
-            graphs = _assert_ok(agate.get("/graphs"), "list graphs")
-            if not isinstance(graphs, list):
-                raise RuntimeError("graphs response must be a list")
-            from backfield_core import STARTER_FLOW_GRAPH_DISPLAY_NAME
+            graphs = assert_list(agate.get("/graphs"), "list graphs")
+            from agate_runtime import STARTER_FLOW_GRAPH_DISPLAY_NAME
 
             starter = next(
                 (
@@ -337,8 +306,8 @@ def run_via_agate_api() -> int:
             graph_name = str(starter.get("name", ""))
 
         t0 = time.perf_counter()
-        run = _assert_ok(agate.post("/runs", json={"graph_id": graph_id}), "create run")
-        terminal = _wait_for_terminal_run(
+        run = assert_object(agate.post("/runs", json={"graph_id": graph_id}), "create run")
+        terminal = wait_for_terminal_run(
             agate, str(run["id"]), timeout_s=poll_timeout, interval_s=poll_interval
         )
         elapsed = time.perf_counter() - t0
@@ -351,14 +320,14 @@ def run_via_agate_api() -> int:
         if not isinstance(result, dict):
             raise RuntimeError("Run result must be an object")
 
-        _log(
+        log(
             f"Stack smoke OK in {elapsed:.1f}s "
             f"(graph {graph_name!r} id={graph_id} run={terminal.get('id')})."
         )
         if graph_id_env:
-            _log("Used SMOKE_PLACE_GEOCODE_STACK_GRAPH_ID.")
+            log("Used SMOKE_PLACE_GEOCODE_STACK_GRAPH_ID.")
         else:
-            _log(
+            log(
                 "Used Starter flow graph (GeocodeAgent). "
                 "To use a different graph, set SMOKE_PLACE_GEOCODE_STACK_GRAPH_ID."
             )
@@ -393,11 +362,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except httpx.HTTPError as exc:
-        resp = getattr(exc, "response", None)
-        detail = ""
-        if resp is not None:
-            detail = f"{resp.status_code} {resp.text[:2000]!r}"
-        print(f"HTTP failure: {exc!r} {detail}", file=sys.stderr, flush=True)
+        print(f"HTTP failure: {http_error_detail(exc)}", file=sys.stderr, flush=True)
         raise SystemExit(1) from exc
     except Exception as exc:
         print(f"Smoke failure: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

@@ -21,10 +21,9 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - `apps/stylebook-api`: Companion FastAPI service for geocode and future Stylebook entities.
 - `apps/stylebook-ui`: Minimal Stylebook shell UI.
 - `apps/core-api`: Core domain HTTP API (article import and shared endpoints later); auth/session testing today.
-- `packages/backfield-core`: Graph types, executor, thin node runners, node metadata, and node UI sources.
+- `packages/backfield-agate`: Agate graph types, executor, node definitions, vendored PlaceExtract/GeocodeAgent runtime, and geocoding/LLM utilities (ported from agate-ai-platform).
 - `packages/backfield-ui`: Shared shell components and `@backfield/ui/nodeOutputs` (executor output-key helpers for TS panels).
 - `packages/backfield-auth`: Shared session cookies and service Bearer token dependencies for FastAPI apps.
-- `packages/backfield-agate`: Vendored LLM PlaceExtract, LangGraph GeocodeAgent, and geocoding/LLM utilities (ported from agate-ai-platform).
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
 - `packages/backfield-stylebook`: Stylebook domain helpers (default Stylebook per org, `stylebook_id` resolution from project/workspace, canonical/alias sync) shared by worker, core-api, and agate-api bootstrap.
 - `infra/docker-compose.yml`: Local multi-service stack.

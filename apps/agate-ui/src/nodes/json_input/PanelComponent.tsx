@@ -19,7 +19,7 @@ const nodeMetadata = {
   }
 };
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
@@ -78,9 +78,7 @@ export default function JSONInputPanel({
       setJsonError('')
 
       if (setNodes) {
-        setNodes((nds: any[]) =>
-          nds.map((n: any) => (n.id === node.id ? { ...n, data: parsed } : n)),
-        )
+        setNodes((nds: any[]) => nds.map((n: any) => (n.id === node.id ? { ...n, data: parsed } : n)))
       }
     } catch {
       setJsonError('Invalid JSON syntax')
@@ -146,9 +144,7 @@ export default function JSONInputPanel({
         <div className="pt-4 border-t">
           <Label className="text-sm font-medium">Latest run</Label>
           <div className="mt-2 space-y-2">
-            <div className="text-xs text-muted-foreground">
-              Fields in output: {Object.keys(slice).length}
-            </div>
+            <div className="text-xs text-muted-foreground">Fields in output: {Object.keys(slice).length}</div>
             <div>
               <Label className="text-xs font-medium">Output preview</Label>
               <div className="text-xs font-mono p-2 bg-muted rounded mt-1 max-h-48 overflow-y-auto">

@@ -87,12 +87,80 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"email":"smoke-ci@local.test","password":"smoke-ci-pass-change-in-prod"}' \
             || true
-      # Session-shaped golden path (login → workspaces → project → run). Same script as make smoke.
-      - name: Golden-path smoke
+      - name: Fast smoke lanes
         env:
           SMOKE_EMAIL: smoke-ci@local.test
           SMOKE_PASSWORD: smoke-ci-pass-change-in-prod
-        run: uv run python -u tests/smoke/golden_path_stack.py
+        run: |
+          make smoke-auth
+          make smoke-agate-basic
+          make smoke-stylebook-basic
+      - name: Agate to Stylebook handoff smoke
+        env:
+          SMOKE_EMAIL: smoke-ci@local.test
+          SMOKE_PASSWORD: smoke-ci-pass-change-in-prod
+        run: make smoke
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v --remove-orphans
+
+  smoke-extended:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - test
+      - smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v4
+      - name: Install workspace dependencies
+        run: uv sync --all-packages
+      - name: Start runtime services
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MAPBOX_API_TOKEN: ${{ secrets.MAPBOX_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          : > .env
+          [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
+          [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
+          [ -n "${MAPBOX_API_TOKEN:-}" ] && printf 'MAPBOX_API_TOKEN=%s\n' "$MAPBOX_API_TOKEN" >> .env
+          docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api core-api agate-api worker
+      - name: Wait for API health
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/health >/dev/null \
+              && curl -fsS http://localhost:8003/health >/dev/null \
+              && curl -fsS http://localhost:8004/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f infra/docker-compose.yml logs
+          exit 1
+      - name: Bootstrap smoke user (fresh DB)
+        run: |
+          curl -fsS -X POST http://localhost:8004/v1/bootstrap/first-user \
+            -H "Content-Type: application/json" \
+            -d '{"email":"smoke-ci@local.test","password":"smoke-ci-pass-change-in-prod"}' \
+            || true
+      - name: Extended smoke lanes
+        env:
+          SMOKE_EMAIL: smoke-ci@local.test
+          SMOKE_PASSWORD: smoke-ci-pass-change-in-prod
+        run: |
+          make smoke-worker-async
+          make smoke-stylebook-editorial
+          make smoke-stylebook-import-export
+          make smoke-s3-batch
       - name: Dump compose logs on failure
         if: failure()
         run: docker compose -f infra/docker-compose.yml logs

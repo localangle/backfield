@@ -5,7 +5,7 @@ Revises: 002_backfield_identity
 Create Date: 2026-04-13
 
 React Flow uses top-left positions. The previous 220px step overlapped TextInput
-(w-[280px]) with PlaceExtract. Positions match backfield_core.starter_flow.
+(w-[280px]) with PlaceExtract. Positions match agate_runtime.starter_flow.
 """
 
 from __future__ import annotations

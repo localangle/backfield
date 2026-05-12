@@ -75,7 +75,6 @@ const DEFAULTS = {
   adjudication_ai_model_config_id: null as string | null,
 }
 
-/** Sentinel value for Radix Select (workspace default Stylebook). */
 const WORKSPACE_DEFAULT_SELECT = '__workspace_default__'
 
 type UnifiedAiModelOption = {
@@ -121,7 +120,6 @@ function hasExplicitAdjudicationChoice(data: Record<string, unknown>): boolean {
   return typeof m === 'string' && m.trim() !== ''
 }
 
-/** Prefer canonical ``stylebook_id``; legacy persisted ``stylebookId`` is still read once. */
 function resolvedStylebookId(data: Record<string, unknown> | undefined): number | null {
   const d = data || {}
   const snake = d.stylebook_id
@@ -222,18 +220,13 @@ export default function DBOutputPanel({
     if (!setNodes) return
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
-        n.id === node.id
-          ? { ...n, data: mergeData({ ...(n.data || {}), ...partial }) }
-          : n,
+        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), ...partial }) } : n,
       ),
     )
   }
 
   const paramsRecord = merged as Record<string, unknown>
-  const modelSelectOptions = useMemo(
-    () => catalogToSelectOptions(catalogRows),
-    [catalogRows],
-  )
+  const modelSelectOptions = useMemo(() => catalogToSelectOptions(catalogRows), [catalogRows])
 
   const resolvedAdj = resolvedAdjudicationSelectValue(paramsRecord, catalogRows)
   const adjSelectionValid =
@@ -252,7 +245,6 @@ export default function DBOutputPanel({
       ? INVALID_SELECTION_VALUE
       : undefined
 
-  /** Fill adjudication pick when catalog loads and node has no explicit choice (new placement). */
   useEffect(() => {
     if (!editMode || !setNodes || catalogLoading || catalogRows.length === 0) return
     const data = nodeDataFlat
@@ -286,9 +278,7 @@ export default function DBOutputPanel({
     })
   }
 
-  /** Saved id not yet present in the fetched list (loading or removed from org). */
-  const missingFromList =
-    paramStylebookId != null && !stylebooks.some((s) => s.id === paramStylebookId)
+  const missingFromList = paramStylebookId != null && !stylebooks.some((s) => s.id === paramStylebookId)
 
   const stylebookSelectValue =
     paramStylebookId != null ? String(paramStylebookId) : WORKSPACE_DEFAULT_SELECT
@@ -298,9 +288,7 @@ export default function DBOutputPanel({
     const nextId = value === WORKSPACE_DEFAULT_SELECT ? null : Number(value)
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
-        n.id === node.id
-          ? { ...n, data: mergeData({ ...(n.data || {}), stylebook_id: nextId }) }
-          : n,
+        n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), stylebook_id: nextId }) } : n,
       ),
     )
   }
@@ -326,8 +314,8 @@ export default function DBOutputPanel({
     graphContext?.fetchProjectAiModels != null &&
     modelSelectOptions.length === 0 ? (
       <p className="text-xs text-muted-foreground">
-        No models available for this project yet. Ask an administrator to enable models for your organization, then turn
-        them on for this project in project settings if needed.
+        No models available for this project yet. Ask an administrator to enable models for your
+        organization, then turn them on for this project in project settings if needed.
       </p>
     ) : null
 
@@ -372,8 +360,8 @@ export default function DBOutputPanel({
         </Select>
         {orgId == null && (
           <p className="text-xs text-muted-foreground">
-            Save the flow to a project (or open an existing project flow) to choose a catalog for your
-            organization.
+            Save the flow to a project (or open an existing project flow) to choose a catalog for
+            your organization.
           </p>
         )}
         {orgId != null && stylebooks.length === 0 && !stylebooksError && (
@@ -381,8 +369,9 @@ export default function DBOutputPanel({
         )}
         {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
         <p className="text-xs text-muted-foreground">
-          When set, canonicalization targets this Stylebook (must belong to the project organization).
-          Workspace default uses the catalog configured for this flow&apos;s workspace.
+          When set, canonicalization targets this Stylebook (must belong to the project
+          organization). Workspace default uses the catalog configured for this flow&apos;s
+          workspace.
         </p>
       </div>
 
@@ -439,8 +428,8 @@ export default function DBOutputPanel({
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Used when AI-assisted canonicalization needs to judge ambiguous catalog matches. Options come from this
-          project&apos;s enabled models.
+          Used when AI-assisted canonicalization needs to judge ambiguous catalog matches. Options
+          come from this project&apos;s enabled models.
         </p>
       </div>
 

@@ -78,11 +78,11 @@ function PlaceExtractNode({ data, selected }: NodeProps<PlaceExtractData>) {
               <Label className="text-muted-foreground">Depends on:</Label>
               <div className="flex flex-wrap gap-2">
                 {requiredUpstreamNodes.map((nodeType: string) => {
-                  const icon = getNodeIcon(nodeType, 'h-3 w-3')
+                  const depIcon = getNodeIcon(nodeType, 'h-3 w-3')
                   const label = getNodeLabel(nodeType)
                   return (
                     <div key={nodeType} className="flex items-center gap-1">
-                      {icon}
+                      {depIcon}
                       <span className="text-xs">{label}</span>
                     </div>
                   )
@@ -90,9 +90,7 @@ function PlaceExtractNode({ data, selected }: NodeProps<PlaceExtractData>) {
               </div>
             </div>
           )}
-          {dependencyHelperText && (
-            <p className="text-xs text-muted-foreground mt-1">{dependencyHelperText}</p>
-          )}
+          {dependencyHelperText && <p className="text-xs text-muted-foreground mt-1">{dependencyHelperText}</p>}
         </div>
         <Handle
           type="source"

@@ -267,10 +267,7 @@ export default function GeocodeAgentPanel({
 
   const paramsRecord = params as Record<string, unknown>
 
-  const modelSelectOptions = useMemo(
-    () => catalogToSelectOptions(catalogRows),
-    [catalogRows],
-  )
+  const modelSelectOptions = useMemo(() => catalogToSelectOptions(catalogRows), [catalogRows])
 
   const resolvedEval = resolvedEvaluationSelectValue(paramsRecord, catalogRows)
   const resolvedRouter = resolvedRouterSelectValue(paramsRecord, catalogRows)
