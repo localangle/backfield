@@ -205,6 +205,9 @@ const ProjectAccessKeysPanel = forwardRef<
   return (
     <div className="w-full min-w-0 space-y-4 mb-10">
       <div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Manage keys to enable API access to this project.
+        </p>
         <h4 className="text-base font-semibold">API access keys</h4>
         <p className="text-sm text-muted-foreground mt-1">
           Use as <code className="text-xs bg-muted px-1 rounded">Authorization: Bearer &lt;key&gt;</code>{" "}

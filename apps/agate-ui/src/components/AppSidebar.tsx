@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { matchPath, NavLink, useLocation } from 'react-router-dom'
 import {
   BookOpen,
-  FolderKanban,
   HelpCircle,
   Newspaper,
   Settings,
@@ -131,16 +130,6 @@ export default function AppSidebar() {
       ? decodeURIComponent(workspaceRouteMatch.params.workspaceSlug)
       : null
 
-  const activeProjectName = useMemo(() => {
-    if (!activeProjectSlug) return null
-    for (const ws of workspaceRows) {
-      const p = ws.projects.find((x) => x.slug === activeProjectSlug)
-      if (p) return p.name
-    }
-    const ap = apiProjects.find((x) => x.slug === activeProjectSlug)
-    return ap?.name ?? activeProjectSlug
-  }, [activeProjectSlug, workspaceRows, apiProjects])
-
   const sortedStylebooks = useMemo(() => {
     return [...stylebooks].sort(
       (a, b) =>
@@ -156,7 +145,6 @@ export default function AppSidebar() {
 
   const workspaceAccess = hasWorkspaceAccess(workspaceRows, isOrgAdmin)
 
-  const headerTitle = activeProjectName ?? 'Backfield'
   const headerTo =
     activeProjectSlug != null
       ? `/project/${encodeURIComponent(activeProjectSlug)}`
@@ -191,23 +179,15 @@ export default function AppSidebar() {
         headerLeading={
           <NavLink
             to={headerTo}
-            title={headerTitle}
-            aria-label={
-              activeProjectName
-                ? `Active project: ${activeProjectName}`
-                : 'Backfield'
-            }
+            title="Backfield"
+            aria-label="Backfield"
             className={cn(
-              'flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1',
+              'flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1',
               'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
           >
-            <FolderKanban
-              className="h-4 w-4 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
             <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-              {headerTitle}
+              Backfield
             </span>
           </NavLink>
         }

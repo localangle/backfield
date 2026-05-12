@@ -134,6 +134,11 @@ class RunOut(BaseModel):
     mapbox_api_token: str | None = None
     created_at: datetime
     updated_at: datetime
+    total_items: int = 0
+    pending_items: int = 0
+    running_items: int = 0
+    succeeded_items: int = 0
+    failed_items: int = 0
     processed_items: list[ProcessedItemOut] = []
     #: Sum of ``BackfieldAiCallRecord`` rows with ``processed_item_id IS NULL`` (single-graph runs).
     whole_run_ai_cost_estimate: Decimal = Decimal("0")
@@ -285,6 +290,75 @@ def _processed_items_for_run(
     return out
 
 
+def _count_processed_items(
+    processed_items: list[ProcessedItemOut],
+) -> tuple[int, int, int, int, int]:
+    total = len(processed_items)
+    pending = 0
+    running = 0
+    succeeded = 0
+    failed = 0
+    for item in processed_items:
+        if item.status == "pending":
+            pending += 1
+        elif item.status == "running":
+            running += 1
+        elif item.status == "succeeded":
+            succeeded += 1
+        elif item.status in ("failed", "timed_out"):
+            failed += 1
+    return total, pending, running, succeeded, failed
+
+
+def _synthetic_whole_run_counts(session: Session, run: AgateRun) -> tuple[int, int, int, int, int]:
+    graph = session.get(AgateGraph, run.graph_id)
+    if graph is None or graph_spec_json_contains_s3_input(graph.spec_json):
+        return 0, 0, 0, 0, 0
+    if run.status == "pending":
+        return 1, 1, 0, 0, 0
+    if run.status == "running":
+        return 1, 0, 1, 0, 0
+    if run.status == "succeeded":
+        return 1, 0, 0, 1, 0
+    if run.status == "failed":
+        return 1, 0, 0, 0, 1
+    return 0, 0, 0, 0, 0
+
+
+def _run_item_counts(
+    session: Session,
+    run: AgateRun,
+    processed_items: list[ProcessedItemOut],
+) -> tuple[int, int, int, int, int]:
+    if processed_items:
+        return _count_processed_items(processed_items)
+    return _synthetic_whole_run_counts(session, run)
+
+
+def _processed_item_counts_for_run_ids(
+    session: Session,
+    run_ids: list[str],
+) -> dict[str, tuple[int, int, int, int, int]]:
+    if not run_ids:
+        return {}
+    rows = list(
+        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id.in_(run_ids))).all()
+    )
+    counts: dict[str, list[int]] = {}
+    for row in rows:
+        bucket = counts.setdefault(row.run_id, [0, 0, 0, 0, 0])
+        bucket[0] += 1
+        if row.status == "pending":
+            bucket[1] += 1
+        elif row.status == "running":
+            bucket[2] += 1
+        elif row.status == "succeeded":
+            bucket[3] += 1
+        elif row.status in ("failed", "timed_out"):
+            bucket[4] += 1
+    return {run_id: tuple(bucket) for run_id, bucket in counts.items()}
+
+
 @router.post("", response_model=RunOut)
 def create_run(
     body: RunCreate,
@@ -309,6 +383,11 @@ def create_run(
         args=[run.id],
         queue=_celery_queue(),
     )
+    total_items, pending_items, running_items, succeeded_items, failed_items = (
+        (0, 0, 0, 0, 0)
+        if graph_spec_json_contains_s3_input(g.spec_json)
+        else (1, 1, 0, 0, 0)
+    )
     return RunOut(
         id=run.id,
         graph_id=run.graph_id,
@@ -317,6 +396,11 @@ def create_run(
         mapbox_api_token=_mapbox_api_token_for_project(session, g.project_id),
         created_at=run.created_at,
         updated_at=run.updated_at,
+        total_items=total_items,
+        pending_items=pending_items,
+        running_items=running_items,
+        succeeded_items=succeeded_items,
+        failed_items=failed_items,
     )
 
 
@@ -340,6 +424,7 @@ def list_runs(
         allowed = set(visible)
         rows = [r for r in rows if _graph_project_id(session, r.graph_id) in allowed]
     cost_map = _rollup_ai_cost_totals_for_run_ids(session, [r.id for r in rows])
+    item_count_map = _processed_item_counts_for_run_ids(session, [r.id for r in rows])
     out: list[RunOut] = []
     for r in rows:
         result = None
@@ -352,6 +437,9 @@ def list_runs(
         total_est, total_inc, cur = cost_map.get(
             r.id, (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY)
         )
+        total_items, pending_items, running_items, succeeded_items, failed_items = (
+            item_count_map.get(r.id) or _synthetic_whole_run_counts(session, r)
+        )
         out.append(
             RunOut(
                 id=r.id,
@@ -363,6 +451,11 @@ def list_runs(
                 mapbox_api_token=_mapbox_api_token_for_project(session, pid),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
+                total_items=total_items,
+                pending_items=pending_items,
+                running_items=running_items,
+                succeeded_items=succeeded_items,
+                failed_items=failed_items,
                 whole_run_ai_cost_currency=cur,
                 estimated_ai_cost_total=total_est,
                 estimated_ai_cost_total_incomplete=total_inc,
@@ -573,6 +666,9 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         session, r.id, cost_by_item=by_item, currency=wr_currency
     )
     total_est, total_inc = _total_ai_cost_from_rollup(by_item, null_b)
+    total_items, pending_items, running_items, succeeded_items, failed_items = _run_item_counts(
+        session, r, processed
+    )
     return RunOut(
         id=r.id,
         graph_id=r.graph_id,
@@ -583,6 +679,11 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         mapbox_api_token=_mapbox_api_token_for_project(session, pid),
         created_at=r.created_at,
         updated_at=r.updated_at,
+        total_items=total_items,
+        pending_items=pending_items,
+        running_items=running_items,
+        succeeded_items=succeeded_items,
+        failed_items=failed_items,
         processed_items=processed,
         whole_run_ai_cost_estimate=null_cost,
         whole_run_ai_cost_incomplete=null_incomplete,

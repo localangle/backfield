@@ -43,6 +43,12 @@ class ProjectEstimatedAiCostOut(BaseModel):
     estimated_total: Decimal
     incomplete_estimate: bool
     attempt_count: int
+    model_breakdown: list[AiCostModelBreakdown] = Field(default_factory=list)
+
+
+class AiCostModelBreakdown(BaseModel):
+    provider_model_id: str
+    estimated_total: Decimal
 
 
 def _settings_dict(project: BackfieldProject) -> dict:
@@ -211,13 +217,37 @@ def _accumulate_ai_cost_rows(rows: list[BackfieldAiCallRecord]) -> tuple[Decimal
     return total, incomplete, currency, len(rows)
 
 
-def _rollup_project_ai_cost(session: Session, project_id: int) -> tuple[Decimal, bool, str, int]:
-    rows = list(
+def _project_ai_cost_rows(
+    session: Session,
+    project_id: int,
+) -> list[BackfieldAiCallRecord]:
+    return list(
         session.exec(
             select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.project_id == project_id)
         ).all()
     )
-    return _accumulate_ai_cost_rows(rows)
+
+
+def _model_breakdown_from_ai_cost_rows(
+    rows: list[BackfieldAiCallRecord],
+) -> list[AiCostModelBreakdown]:
+    by_model: dict[str, Decimal] = {}
+    for row in rows:
+        provider_model_id = row.provider_model_id
+        by_model[provider_model_id] = by_model.get(provider_model_id, Decimal("0")) + (
+            row.estimated_cost or Decimal("0")
+        )
+    return [
+        AiCostModelBreakdown(provider_model_id=model_id, estimated_total=estimated_total)
+        for model_id, estimated_total in sorted(
+            by_model.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
+
+
+def _rollup_project_ai_cost(session: Session, project_id: int) -> tuple[Decimal, bool, str, int]:
+    return _accumulate_ai_cost_rows(_project_ai_cost_rows(session, project_id))
 
 
 def _avg_terminal_processed_item_duration_ms(
@@ -559,7 +589,8 @@ def get_project_estimated_ai_cost(
     if not p:
         raise HTTPException(404, "Project not found")
 
-    total, incomplete, currency, attempt_count = _rollup_project_ai_cost(session, project_id)
+    rows = _project_ai_cost_rows(session, project_id)
+    total, incomplete, currency, attempt_count = _accumulate_ai_cost_rows(rows)
 
     return ProjectEstimatedAiCostOut(
         project_id=project_id,
@@ -567,4 +598,5 @@ def get_project_estimated_ai_cost(
         estimated_total=total,
         incomplete_estimate=incomplete,
         attempt_count=attempt_count,
+        model_breakdown=_model_breakdown_from_ai_cost_rows(rows),
     )

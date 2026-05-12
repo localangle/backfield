@@ -22,7 +22,27 @@ import {
 } from '@/lib/api'
 import { formatDurationMs } from '@/lib/formatDuration'
 import { useAuth } from '@/lib/auth'
-import { Edit, Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
+import { Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
+
+function formatCurrencySummary(
+  value: string | number | null | undefined,
+  currency: string,
+): string {
+  const amount = Number(value)
+  const formatter = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+  if (!Number.isFinite(amount)) return '—'
+  if (amount <= 0) return formatter.format(0)
+  if (amount < 0.01) return `< ${formatter.format(0.01)}`
+
+  const truncated = Math.trunc(amount * 100) / 100
+  return formatter.format(truncated)
+}
 
 export default function ProjectDetailPage() {
   const navigate = useNavigate()
@@ -40,7 +60,6 @@ export default function ProjectDetailPage() {
   const [workspaceTab, setWorkspaceTab] = useState('flows')
   const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
-  const systemSettingsRef = useRef<ProjectSettingsHandle>(null)
   const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
   const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
   const reload = useCallback(async () => {
@@ -234,11 +253,66 @@ export default function ProjectDetailPage() {
                 <span className="text-2xl font-semibold tabular-nums">{stats.runs_failed}</span>
               </div>
               <p className="text-xs text-muted-foreground pt-1 border-t border-border">
-                Stopped includes runs that ended with an error or were cancelled. Total:{' '}
-                {stats.total_runs}
+                Stopped includes runs that ended with an error or were cancelled.
               </p>
             </CardContent>
           </Card>
+          {aiCost ? (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total estimated AI usage cost
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {aiCost.attempt_count === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No tracked model usage for this project yet.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-3xl font-semibold tabular-nums">
+                      {formatCurrencySummary(aiCost.estimated_total, aiCost.currency || 'USD')}
+                      {aiCost.incomplete_estimate ? (
+                        <span
+                          className="text-amber-700 dark:text-amber-400 ml-1"
+                          title="Some usage data was missing"
+                        >
+                          *
+                        </span>
+                      ) : null}
+                    </p>
+                    {aiCost.model_breakdown.length > 0 ? (
+                      <div className="mt-4 border-t border-border pt-3">
+                        <p className="text-xs text-muted-foreground">Top models</p>
+                        <div className="mt-2 space-y-2">
+                          {aiCost.model_breakdown.slice(0, 3).map((model) => (
+                            <div
+                              key={model.provider_model_id}
+                              className="flex items-center justify-between gap-3 text-sm"
+                            >
+                              <span
+                                className="min-w-0 truncate text-muted-foreground"
+                                title={model.provider_model_id}
+                              >
+                                {model.provider_model_id}
+                              </span>
+                              <span className="shrink-0 font-medium tabular-nums">
+                                {formatCurrencySummary(
+                                  model.estimated_total,
+                                  aiCost.currency || 'USD',
+                                )}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -251,12 +325,10 @@ export default function ProjectDetailPage() {
               stats.avg_estimated_ai_cost_currency ? (
                 <>
                   <p className="text-3xl font-semibold tabular-nums">
-                    {Number(stats.avg_estimated_ai_cost_per_run).toLocaleString(undefined, {
-                      style: 'currency',
-                      currency: stats.avg_estimated_ai_cost_currency || 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}
+                    {formatCurrencySummary(
+                      stats.avg_estimated_ai_cost_per_run,
+                      stats.avg_estimated_ai_cost_currency || 'USD',
+                    )}
                     {stats.avg_estimated_ai_cost_incomplete ? (
                       <span
                         className="text-amber-700 dark:text-amber-400 ml-1"
@@ -291,54 +363,7 @@ export default function ProjectDetailPage() {
               </p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average time per item
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold tabular-nums">
-                {formatDurationMs(stats.avg_duration_ms_per_item)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Mean duration per processed item (completed runs)
-              </p>
-            </CardContent>
-          </Card>
         </div>
-        {aiCost ? (
-          <Card className="mt-4">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total estimated AI usage cost
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {aiCost.attempt_count === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No tracked model usage for this project yet.
-                </p>
-              ) : (
-                <>
-                  <p className="text-2xl font-semibold tabular-nums">
-                    {Number(aiCost.estimated_total).toLocaleString(undefined, {
-                      style: 'currency',
-                      currency: aiCost.currency || 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}
-                  </p>
-                  {aiCost.incomplete_estimate ? (
-                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
-                      Some usage data was missing, so this total may be incomplete.
-                    </p>
-                  ) : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
 
       <div className="w-full min-w-0">
@@ -346,7 +371,7 @@ export default function ProjectDetailPage() {
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">Project workspace</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Flows, runs, defaults, outside integrations, and API keys for this project.
+              Flows, runs, integrations and API keys for this project.
             </p>
           </div>
           <div className="flex flex-shrink-0 flex-wrap items-center gap-2 sm:justify-end">
@@ -382,17 +407,6 @@ export default function ProjectDetailPage() {
                   className={`mr-2 h-4 w-4 ${runsRefreshBusy ? 'animate-spin' : ''}`}
                 />
                 Refresh
-              </Button>
-            ) : null}
-            {workspaceTab === 'settings' ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => systemSettingsRef.current?.openSystemPromptEdit?.()}
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                Edit system prompt
               </Button>
             ) : null}
             {workspaceTab === 'keys' ? (
@@ -459,7 +473,6 @@ export default function ProjectDetailPage() {
           </TabsContent>
           <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
             <ProjectSettings
-              ref={systemSettingsRef}
               project={project}
               open={true}
               onOpenChange={() => {}}

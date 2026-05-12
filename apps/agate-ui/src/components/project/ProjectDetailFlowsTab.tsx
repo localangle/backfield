@@ -11,24 +11,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  listProjects,
   listGraphs,
   deleteGraph,
-  updateGraph,
   createGraph,
-  type Project,
   type Graph,
   type GraphCreate,
 } from '@/lib/api'
 import { formatDateCentral } from '@/lib/utils'
 import { Loader2, Copy, Trash2 } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
 interface ProjectDetailFlowsTabProps {
   projectId: number
@@ -41,7 +31,6 @@ export default function ProjectDetailFlowsTab({
   projectSlug,
   onDataChanged,
 }: ProjectDetailFlowsTabProps) {
-  const [projects, setProjects] = useState<Project[]>([])
   const [graphs, setGraphs] = useState<Graph[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -51,8 +40,7 @@ export default function ProjectDetailFlowsTab({
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [projectsData, graphsData] = await Promise.all([listProjects(), listGraphs()])
-      setProjects(projectsData)
+      const graphsData = await listGraphs()
       setGraphs(graphsData.filter((g) => g.project_id === projectId))
     } catch (error) {
       console.error('Failed to load flows:', error)
@@ -99,25 +87,6 @@ export default function ProjectDetailFlowsTab({
     }
   }
 
-  const handleProjectChange = async (graph: Graph, newProjectId: number) => {
-    try {
-      const updateData: GraphCreate = {
-        name: graph.name,
-        project_id: newProjectId,
-        spec: graph.spec,
-      }
-      const updated = await updateGraph(graph.id, updateData)
-      if (newProjectId !== projectId) {
-        setGraphs((prev) => prev.filter((g) => g.id !== graph.id))
-      } else {
-        setGraphs((prev) => prev.map((g) => (g.id === graph.id ? updated : g)))
-      }
-      onDataChanged?.()
-    } catch (error) {
-      console.error('Failed to update flow project:', error)
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -148,8 +117,6 @@ export default function ProjectDetailFlowsTab({
                 <thead className="border-b bg-muted/50">
                   <tr>
                     <th className="text-left p-3 sm:p-4 font-medium">Name</th>
-                    <th className="text-left p-3 sm:p-4 font-medium">Project</th>
-                    <th className="text-left p-3 sm:p-4 font-medium">Nodes</th>
                     <th className="text-left p-3 sm:p-4 font-medium hidden sm:table-cell">Created</th>
                     <th className="text-right p-3 sm:p-4 font-medium">Actions</th>
                   </tr>
@@ -165,43 +132,6 @@ export default function ProjectDetailFlowsTab({
                         onClick={() => navigate(`/flow/${graph.id}/edit`)}
                       >
                         <div className="font-medium">{graph.name}</div>
-                      </td>
-                      <td
-                        className="p-3 sm:p-4 align-top"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Select
-                          value={graph.project_id.toString()}
-                          onValueChange={(value) =>
-                            handleProjectChange(graph, parseInt(value, 10))
-                          }
-                        >
-                          <SelectTrigger className="w-[min(100%,12rem)]">
-                            <SelectValue placeholder="Select project" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {projects.map((project) => (
-                              <SelectItem key={project.id} value={project.id.toString()}>
-                                {project.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td
-                        className="p-3 sm:p-4 cursor-pointer align-top max-w-[200px] sm:max-w-md"
-                        onClick={() => navigate(`/flow/${graph.id}/edit`)}
-                      >
-                        <div className="flex flex-wrap gap-1">
-                          {graph.spec.nodes.map((node) => (
-                            <span
-                              key={node.id}
-                              className="text-xs px-2 py-0.5 bg-secondary rounded-md"
-                            >
-                              {node.type}
-                            </span>
-                          ))}
-                        </div>
                       </td>
                       <td
                         className="p-3 sm:p-4 text-muted-foreground cursor-pointer align-top hidden sm:table-cell whitespace-nowrap"

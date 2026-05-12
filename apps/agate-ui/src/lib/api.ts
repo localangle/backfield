@@ -210,6 +210,11 @@ interface RawRun {
   mapbox_api_token?: string | null
   created_at: string
   updated_at: string
+  total_items?: number
+  pending_items?: number
+  running_items?: number
+  succeeded_items?: number
+  failed_items?: number
   processed_items?: RawProcessedItem[] | null
   whole_run_ai_cost_estimate?: string | number | null
   whole_run_ai_cost_incomplete?: boolean
@@ -346,6 +351,12 @@ function normalizeRun(raw: RawRun): Run {
   const failed = items.filter((i) => i.status === 'failed' || i.status === 'timed_out').length
   const pending_items = items.filter((i) => i.status === 'pending').length
   const running_items = items.filter((i) => i.status === 'running').length
+  const hasServerItemCounts =
+    typeof raw.total_items === 'number' &&
+    typeof raw.pending_items === 'number' &&
+    typeof raw.running_items === 'number' &&
+    typeof raw.succeeded_items === 'number' &&
+    typeof raw.failed_items === 'number'
 
   const hasTotalAggregate =
     raw.estimated_ai_cost_total !== undefined && raw.estimated_ai_cost_total !== null
@@ -357,11 +368,11 @@ function normalizeRun(raw: RawRun): Run {
     status: st,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
-    total_items: items.length,
-    pending_items,
-    running_items,
-    succeeded_items: succeeded,
-    failed_items: failed,
+    total_items: hasServerItemCounts ? raw.total_items : items.length,
+    pending_items: hasServerItemCounts ? raw.pending_items : pending_items,
+    running_items: hasServerItemCounts ? raw.running_items : running_items,
+    succeeded_items: hasServerItemCounts ? raw.succeeded_items : succeeded,
+    failed_items: hasServerItemCounts ? raw.failed_items : failed,
     items,
     node_outputs: outputs,
     mapbox_api_token: raw.mapbox_api_token ?? null,
@@ -478,6 +489,7 @@ export interface ProjectEstimatedAiCost {
   estimated_total: string
   incomplete_estimate: boolean
   attempt_count: number
+  model_breakdown: Array<{ provider_model_id: string; estimated_total: string }>
 }
 
 export async function getProjectEstimatedAiCost(

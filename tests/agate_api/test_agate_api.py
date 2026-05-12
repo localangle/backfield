@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Generator
+from decimal import Decimal
 
 import pytest
 from api.deps import get_session
@@ -60,6 +61,92 @@ def test_health(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+
+def test_project_estimated_ai_cost_includes_model_breakdown(tmp_path):
+    database_path = tmp_path / "agate-project-ai-cost.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        client = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project = client.post(
+            "/projects",
+            json={"name": "AI Cost Project", "slug": "ai-cost-project"},
+        ).json()
+
+        with Session(engine) as s:
+            s.add_all(
+                [
+                    BackfieldAiCallRecord(
+                        project_id=project["id"],
+                        provider="openai",
+                        provider_model_id="gpt-5-mini",
+                        status="succeeded",
+                        estimated_cost=Decimal("1.20"),
+                        currency="USD",
+                    ),
+                    BackfieldAiCallRecord(
+                        project_id=project["id"],
+                        provider="openai",
+                        provider_model_id="gpt-5-mini",
+                        status="succeeded",
+                        estimated_cost=Decimal("0.30"),
+                        currency="USD",
+                    ),
+                    BackfieldAiCallRecord(
+                        project_id=project["id"],
+                        provider="anthropic",
+                        provider_model_id="claude-3-7-sonnet",
+                        status="succeeded",
+                        estimated_cost=Decimal("0.90"),
+                        currency="USD",
+                        cost_estimate_incomplete=True,
+                    ),
+                    BackfieldAiCallRecord(
+                        project_id=project["id"],
+                        provider="openai",
+                        provider_model_id="gpt-5-nano",
+                        status="succeeded",
+                        estimated_cost=Decimal("0.05"),
+                        currency="USD",
+                    ),
+                ]
+            )
+            s.commit()
+
+        response = client.get(f"/projects/{project['id']}/estimated-ai-cost")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "project_id": project["id"],
+            "currency": "USD",
+            "estimated_total": "2.450000000000",
+            "incomplete_estimate": True,
+            "attempt_count": 4,
+            "model_breakdown": [
+                {"provider_model_id": "gpt-5-mini", "estimated_total": "1.500000000000"},
+                {"provider_model_id": "claude-3-7-sonnet", "estimated_total": "0.900000000000"},
+                {"provider_model_id": "gpt-5-nano", "estimated_total": "0.050000000000"},
+            ],
+        }
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_projects_require_auth(tmp_path):
@@ -151,6 +238,11 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     assert run_response.status_code == 200
     run = run_response.json()
     assert run["status"] == "pending"
+    assert run["total_items"] == 1
+    assert run["pending_items"] == 1
+    assert run["running_items"] == 0
+    assert run["succeeded_items"] == 0
+    assert run["failed_items"] == 0
     assert sent_task == {
         "name": "worker.tasks.execute_agate_run",
         "args": [run["id"]],
@@ -160,6 +252,85 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     list_response = client.get("/graphs")
     assert list_response.status_code == 200
     assert len(list_response.json()) == 1
+
+
+def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
+    database_path = tmp_path / "agate-run-list-counts.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project = tc.post("/projects", json={"name": "Run Counts", "slug": "run-counts"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch flow",
+                "project_id": project["id"],
+                "spec": {
+                    "name": "batch",
+                    "nodes": [],
+                    "edges": [],
+                },
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+
+        with Session(engine) as s:
+            row = s.get(AgateRun, run["id"])
+            assert row is not None
+            row.status = "succeeded"
+            s.add(row)
+            s.add(
+                AgateProcessedItem(
+                    run_id=run["id"],
+                    source_file="a.json",
+                    input_json='{"text":"hello"}',
+                    status="succeeded",
+                    result_json='{"ok":true}',
+                )
+            )
+            s.add(
+                AgateProcessedItem(
+                    run_id=run["id"],
+                    source_file="b.json",
+                    input_json='{"text":"world"}',
+                    status="failed",
+                    error_message="boom",
+                )
+            )
+            s.commit()
+
+        response = tc.get("/runs")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body) == 1
+        assert body[0]["id"] == run["id"]
+        assert body[0]["total_items"] == 2
+        assert body[0]["pending_items"] == 0
+        assert body[0]["running_items"] == 0
+        assert body[0]["succeeded_items"] == 1
+        assert body[0]["failed_items"] == 1
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_delete_graph_cleans_up_run_dependencies(monkeypatch, tmp_path):
