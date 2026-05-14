@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
+import { ProcessedItemVerificationSection } from '@/components/ProcessedItemVerificationSection'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -446,6 +447,15 @@ export default function ProcessedItemDetail() {
           )}
         </div>
       </div>
+
+      {!item.synthetic && (
+        <ProcessedItemVerificationSection
+          runId={runId!}
+          item={item}
+          graph={graph}
+          onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
+        />
+      )}
 
       {/* Item Metadata */}
       <Card>
