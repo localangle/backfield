@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { ProcessedItemVerificationSection } from '@/components/ProcessedItemVerificationSection'
@@ -15,9 +15,10 @@ import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangl
 import JsonView from '@uiw/react-json-view'
 
 export default function ProcessedItemDetail() {
-  const { showError } = useAppMessage()
+  const { showError, showConfirm } = useAppMessage()
   const { runId, itemId } = useParams<{ runId: string; itemId: string }>()
   const navigate = useNavigate()
+  const verificationDirtyRef = useRef(false)
   const [run, setRun] = useState<Run | null>(null)
   const [graph, setGraph] = useState<Graph | null>(null)
   const [item, setItem] = useState<ProcessedItem | null>(null)
@@ -29,6 +30,29 @@ export default function ProcessedItemDetail() {
     if (!graph?.spec?.nodes?.length) return null
     return nodeOutputLookupFromGraphSpec(graph.spec)
   }, [graph])
+
+  const handleVerificationDirtyChange = useCallback((dirty: boolean) => {
+    verificationDirtyRef.current = dirty
+  }, [])
+
+  const navigateFromItem = useCallback(
+    async (to: string) => {
+      if (verificationDirtyRef.current) {
+        const leave = await showConfirm(
+          'Save your changes before leaving, or stay on this page to keep editing.',
+          {
+            title: 'Unsaved changes',
+            confirmLabel: 'Leave without saving',
+            cancelLabel: 'Stay',
+            destructive: true,
+          },
+        )
+        if (!leave) return
+      }
+      navigate(to)
+    },
+    [navigate, showConfirm],
+  )
 
   useEffect(() => {
     if (runId && itemId) {
@@ -342,7 +366,7 @@ export default function ProcessedItemDetail() {
           <p className="text-muted-foreground mb-4">
             The processed item you're looking for doesn't exist or has been deleted.
           </p>
-          <Button onClick={() => navigate(`/runs/${runId}`)}>
+          <Button onClick={() => void navigateFromItem(`/runs/${runId}`)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Run
           </Button>
@@ -392,7 +416,7 @@ export default function ProcessedItemDetail() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => navigate(`/runs/${runId}`)}>
+          <Button variant="ghost" onClick={() => void navigateFromItem(`/runs/${runId}`)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Run
           </Button>
@@ -454,6 +478,7 @@ export default function ProcessedItemDetail() {
           item={item}
           graph={graph}
           onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
+          onVerificationDirtyChange={handleVerificationDirtyChange}
         />
       )}
 

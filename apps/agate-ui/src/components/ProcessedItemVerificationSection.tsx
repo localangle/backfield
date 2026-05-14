@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useBlocker } from 'react-router-dom'
+import { LeafletMap } from '@backfield/ui/LeafletMap'
 import { useAppMessage } from '@/components/AppMessageProvider'
+import { ProcessedItemVerificationLeafletMap } from '@/components/ProcessedItemVerificationLeafletMap'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import type { Graph, ProcessedItem } from '@/lib/api'
 import { getProcessedItem, patchProcessedItemOverlay } from '@/lib/api'
+import {
+  applyAnchorPatchFragment,
+  appendUserPlacePoint,
+  buildGeocodePatchForGeometry,
+  buildVerificationLeafletCollections,
+  extractGeometryFromPlace,
+  isApiOverlayGeometryError,
+  iterBaselinePlacesFromOutput,
+  shallowMergePlacePatch,
+  validateGeometryObject,
+} from '@/lib/processedItemPlaceGeometry'
 import {
   applyDescriptionPatch,
   getLocationDescription,
@@ -17,7 +29,7 @@ import {
   normalizeOverlay,
   overlaysStructurallyEqual,
 } from '@/lib/processedItemVerificationOverlay'
-import { Loader2, MapPin } from 'lucide-react'
+import { Loader2, MapPin, MousePointer, Square } from 'lucide-react'
 
 function nodeLabelForId(graph: Graph | null, nodeId: string): string {
   const n = graph?.spec?.nodes?.find((x) => x.id === nodeId)
@@ -32,6 +44,8 @@ export interface ProcessedItemVerificationSectionProps {
   item: ProcessedItem
   graph: Graph | null
   onItemUpdated: (item: ProcessedItem) => void
+  /** Fires when overlay draft dirty state changes (for navigation guard with ``BrowserRouter``). */
+  onVerificationDirtyChange?: (dirty: boolean) => void
 }
 
 export function ProcessedItemVerificationSection({
@@ -39,6 +53,7 @@ export function ProcessedItemVerificationSection({
   item,
   graph,
   onItemUpdated,
+  onVerificationDirtyChange,
 }: ProcessedItemVerificationSectionProps) {
   const { showError, showConfirm, showMessage } = useAppMessage()
   const [baselineOverlay, setBaselineOverlay] = useState<Record<string, unknown>>(() =>
@@ -50,10 +65,18 @@ export function ProcessedItemVerificationSection({
   const [saving, setSaving] = useState(false)
   const lastItemSyncKeyRef = useRef<string>('')
 
+  const [mapEditing, setMapEditing] = useState(false)
+  const [selectedAnchor, setSelectedAnchor] = useState<string | null>(null)
+  const [geometryAddMode, setGeometryAddMode] = useState<'point' | 'rectangle' | null>(null)
+
   const dirty = useMemo(
     () => !overlaysStructurallyEqual(baselineOverlay, draftOverlay),
     [baselineOverlay, draftOverlay],
   )
+
+  useEffect(() => {
+    onVerificationDirtyChange?.(dirty)
+  }, [dirty, onVerificationDirtyChange])
 
   const syncKey = `${runId}:${item.id}:${item.overlay_version}`
 
@@ -72,42 +95,6 @@ export function ProcessedItemVerificationSection({
     }
   }, [item.overlay, item.overlay_version, item.id, runId, syncKey, dirty])
 
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      dirty &&
-      (currentLocation.pathname !== nextLocation.pathname ||
-        currentLocation.search !== nextLocation.search),
-  )
-
-  const blockerConfirmOpenRef = useRef(false)
-
-  useEffect(() => {
-    if (blocker.state !== 'blocked') {
-      blockerConfirmOpenRef.current = false
-      return
-    }
-    if (blockerConfirmOpenRef.current) {
-      return
-    }
-    blockerConfirmOpenRef.current = true
-    void showConfirm(
-      'Save your changes before leaving, or stay on this page to keep editing.',
-      {
-        title: 'Unsaved changes',
-        confirmLabel: 'Leave without saving',
-        cancelLabel: 'Stay',
-        destructive: true,
-      },
-    ).then((leave) => {
-      if (leave) {
-        blocker.proceed()
-      } else {
-        blocker.reset()
-      }
-      blockerConfirmOpenRef.current = false
-    })
-  }, [blocker, showConfirm])
-
   useEffect(() => {
     if (!dirty) {
       return
@@ -123,6 +110,83 @@ export function ProcessedItemVerificationSection({
   const mergedRows = item.merged_locations ?? []
   const staleEntries = item.stale_overlay_entries ?? []
   const article = item.article_context
+
+  const baselineByAnchor = useMemo(() => {
+    const m = new Map<string, Record<string, unknown>>()
+    const out = (item.output ?? null) as Record<string, unknown> | null
+    for (const row of iterBaselinePlacesFromOutput(out)) {
+      m.set(row.anchor, row.location)
+    }
+    return m
+  }, [item.output])
+
+  const previewMergedRows = useMemo(() => {
+    const by = ((draftOverlay.locations as Record<string, unknown> | undefined)?.by_anchor ?? {}) as Record<
+      string,
+      unknown
+    >
+    return mergedRows.map((row) => {
+      const anchor = getMergedRowAnchor(row)
+      const patch = by[anchor] as Record<string, unknown> | undefined
+      const loc = row.location as Record<string, unknown> | undefined
+      if (!loc || !patch) return row
+      return {
+        ...row,
+        location: shallowMergePlacePatch(loc, patch),
+      }
+    })
+  }, [mergedRows, draftOverlay])
+
+  const mapCollections = useMemo(
+    () =>
+      buildVerificationLeafletCollections({
+        mergedRows: previewMergedRows,
+        baselineByAnchor,
+        selectedAnchor,
+      }),
+    [previewMergedRows, baselineByAnchor, selectedAnchor],
+  )
+
+  const editPointFeatureId = useMemo(() => {
+    if (!selectedAnchor) return null
+    const pts = mapCollections.points.features as Array<{ properties?: { id?: string } }>
+    const draftId = `${selectedAnchor}__draft`
+    if (pts.some((f) => f.properties?.id === draftId)) return draftId
+    if (pts.some((f) => f.properties?.id === selectedAnchor)) return selectedAnchor
+    return null
+  }, [mapCollections.points.features, selectedAnchor])
+
+  const mapDraftGeometry = useMemo(() => {
+    if (!selectedAnchor) return null
+    const row = previewMergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
+    const loc = row?.location as Record<string, unknown> | undefined
+    return extractGeometryFromPlace(loc ?? null)
+  }, [previewMergedRows, selectedAnchor])
+
+  const handleMapGeometryChange = useCallback(
+    (g: Record<string, unknown> | null) => {
+      if (!selectedAnchor || !g) return
+      const err = validateGeometryObject(g)
+      if (err) {
+        showError(err, { title: 'Map' })
+        return
+      }
+      setDraftOverlay((prev) => {
+        const next = normalizeOverlay(prev)
+        const row = mergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
+        const base = (row?.location as Record<string, unknown> | undefined) ?? {}
+        const by = ((prev.locations as Record<string, unknown> | undefined)?.by_anchor ?? {}) as Record<
+          string,
+          unknown
+        >
+        const mergedBase = shallowMergePlacePatch(base, by[selectedAnchor] as Record<string, unknown> | undefined)
+        const fragment = buildGeocodePatchForGeometry(mergedBase, g)
+        applyAnchorPatchFragment(next, selectedAnchor, fragment)
+        return next
+      })
+    },
+    [selectedAnchor, mergedRows, showError],
+  )
 
   const handleDescriptionChange = useCallback((anchor: string, value: string) => {
     setDraftOverlay((prev) => {
@@ -163,6 +227,11 @@ export function ProcessedItemVerificationSection({
             title: 'Reload failed',
           })
         }
+      } else if (isApiOverlayGeometryError(e)) {
+        showError(
+          'The map shape could not be saved. Try simplifying the area or moving the pin slightly, then save again.',
+          { title: 'Could not save map' },
+        )
       } else {
         showError('We could not save your changes. Check your connection and try again.', {
           title: 'Save failed',
@@ -202,6 +271,28 @@ export function ProcessedItemVerificationSection({
       { title: 'Catalog' },
     )
   }, [dirty, showConfirm, showMessage])
+
+  const handleAddNewPointMode = useCallback(() => {
+    setGeometryAddMode('point')
+    setSelectedAnchor(null)
+    setMapEditing(true)
+  }, [])
+
+  const handleMapClickForNewPlace = useCallback(
+    ({ latlng }: { latlng: { lat: number; lng: number } }) => {
+      if (geometryAddMode !== 'point' || selectedAnchor !== null) return
+      setDraftOverlay((prev) => {
+        const next = normalizeOverlay(prev)
+        const id = appendUserPlacePoint(next, latlng.lng, latlng.lat, 'New place')
+        requestAnimationFrame(() => {
+          setSelectedAnchor(id)
+          setGeometryAddMode(null)
+        })
+        return next
+      })
+    },
+    [geometryAddMode, selectedAnchor],
+  )
 
   return (
     <Card className="border-primary/30">
@@ -309,13 +400,26 @@ export function ProcessedItemVerificationSection({
                             Needs review
                           </Badge>
                         ) : null}
+                        <Button
+                          type="button"
+                          variant={selectedAnchor === anchor ? 'default' : 'outline'}
+                          size="sm"
+                          className="ml-auto"
+                          onClick={() => {
+                            setSelectedAnchor(anchor)
+                            setMapEditing(true)
+                            setGeometryAddMode(null)
+                          }}
+                        >
+                          On map
+                        </Button>
                       </div>
                       {linked ? (
                         <>
                           <p className="text-sm text-foreground">{displayDescription || '—'}</p>
                           <p className="text-xs text-muted-foreground">
-                            This place is linked to your catalog. Edit the catalog entry there if the
-                            official name or details need to change.
+                            This place is linked to your catalog. Map edits here stay with this run as
+                            drafts until you promote them in your catalog.
                           </p>
                           <Button
                             type="button"
@@ -349,15 +453,99 @@ export function ProcessedItemVerificationSection({
           </div>
         </div>
 
-        <Alert>
-          <AlertDescription className="flex items-start gap-2">
-            <MapPin className="h-4 w-4 shrink-0 mt-0.5" aria-hidden />
-            <span>
-              Map view and sentence highlights will appear here in a later update. Place descriptions can
-              still be saved above.
-            </span>
-          </AlertDescription>
-        </Alert>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold inline-flex items-center gap-2">
+              <MapPin className="h-4 w-4" aria-hidden />
+              Map
+            </h3>
+            <Button
+              type="button"
+              variant={mapEditing ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setMapEditing((v) => !v)
+                if (mapEditing) {
+                  setGeometryAddMode(null)
+                }
+              }}
+            >
+              {mapEditing ? 'Done editing map' : 'Edit map'}
+            </Button>
+            {mapEditing ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={geometryAddMode === 'rectangle'}
+                  onClick={() => {
+                    setGeometryAddMode('point')
+                  }}
+                >
+                  <MousePointer className="mr-2 h-4 w-4" />
+                  Add point
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={geometryAddMode === 'point'}
+                  onClick={() => {
+                    setGeometryAddMode('rectangle')
+                  }}
+                >
+                  <Square className="mr-2 h-4 w-4" />
+                  Add rectangle
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void handleAddNewPointMode()
+                  }}
+                >
+                  New place (point)
+                </Button>
+              </>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Same map tools as catalog location pages: pick a place with On map, then drag the pin or
+            draw a rectangle. Save when you are ready; changes are not shared until you save.
+          </p>
+          {geometryAddMode === 'point' && selectedAnchor === null ? (
+            <LeafletMap
+              points={mapCollections.points as any}
+              polygons={mapCollections.polygons as any}
+              geocoder
+              showPopups={false}
+              fitToData={false}
+              initialCenter={[39.8283, -98.5795]}
+              initialZoom={3}
+              interactiveWhenEmpty
+              tileUrl="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              tileAttribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              onMapClick={(e) => handleMapClickForNewPlace(e)}
+            />
+          ) : (
+            <ProcessedItemVerificationLeafletMap
+              collections={mapCollections}
+              mapEditing={mapEditing}
+              geometryAddMode={geometryAddMode}
+              onGeometryAddModeChange={setGeometryAddMode}
+              editPointFeatureId={editPointFeatureId}
+              draftGeometry={mapDraftGeometry}
+              onDraftGeometryChange={handleMapGeometryChange}
+              onFeatureSelect={(anchor) => {
+                setSelectedAnchor(anchor)
+                setMapEditing(true)
+                setGeometryAddMode(null)
+              }}
+            />
+          )}
+        </div>
       </CardContent>
     </Card>
   )

@@ -123,6 +123,16 @@ Review overlay JSON is stored on **`agate_processed_item.overlay_json`** and upd
 - **`locations.by_anchor`**: object mapping **anchor** string → shallow patch dict. Patches are merged into the matching model place object at the **top level** of that object (same keys as PlaceExtract output: `description`, `original_text`, nested `location`, etc.). Anchor resolution for each model row matches, in order: string **`id`**, else string **`mention_id`**, else **`{node_id}:{index}`** where `node_id` is the **`output`** key and `index` is the row’s position in that node’s **`locations`** array. Only dict values whose **`locations`** value is an array (or `{ "locations": [ … ] }`) contribute to the baseline lane.
 - **`locations.user_added`**: array of user-authored rows. Each row **must** have string **`id`** with prefix **`user_place:`** (stable UUID suffix). Prefer a nested **`location`** object (place-shaped dict); otherwise non-`id` top-level keys are treated as the place payload.
 
+**Geometry (map edits, v1)**
+
+Geometry follows **GeoJSON** types **`Point`**, **`Polygon`**, and **`MultiPolygon`** with **`coordinates`** in **`[lng, lat]`** order (same as **`@backfield/ui/LeafletMap`** and Stylebook canonical pages). The Agate verification UI should reuse that **Leaflet** map stack—not a second, incompatible map model.
+
+- **Where geometry lives on a place row:** Geocode-shaped rows typically store map geometry at **`geocode.result.geometry`**. Some payloads may also include a top-level **`geometry`**; both are validated on save when present.
+- **`locations.by_anchor` patches:** Patches are still **shallow-merged** into the frozen model place dict (see merge service). Because **`geocode`** is usually a single top-level object, a geometry-only correction from the UI should send a patch whose **`geocode`** value is the **full merged `geocode` object** with **`result.geometry`** updated (not a deep partial that omits sibling keys the model relied on). Other top-level keys (`description`, etc.) may appear in the same patch object.
+- **Linked catalog rows:** Map edits remain **run-scoped overlay only**; they must **not** imply Stylebook canonical mutation until an explicit handoff flow (see PRD). The UI may show **model baseline** geometry vs **draft overlay** using separate map layers (same pattern as canonical detail: baseline vs draft).
+- **`locations.user_added`:** Each row’s **`location`** (or place-shaped payload) may include the same **`geocode.result.geometry`** shape. **`user_place:`** ids must remain stable across saves.
+- **Validation:** **`PATCH …/items/{item_id}`** returns **400** with `{"error": "overlay_geometry_invalid", "message": "<reason>"}` when any geometry is missing a supported **`type`**, has non-finite coordinates, coordinates outside geographic bounds, malformed rings, or exceeds a server-side coordinate budget (currently **4000** numeric positions counted recursively across all geometries in the overlay).
+
 **GET processed item — additive response fields**
 
 - **`merged_locations`**: array of `{ "anchor", "source": "model"|"user", "node_id", "index_in_node", "stale", "location" }`. **`stale`** is always **`false`** for rows included here; the lane lists current model rows (with patches applied) plus valid **`user_place:*`** rows.

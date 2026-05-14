@@ -926,6 +926,81 @@ def test_patch_processed_item_overlay_success_and_409(tmp_path, monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_patch_processed_item_overlay_geometry_400(tmp_path, monkeypatch):
+    database_path = tmp_path / "agate-overlay-geom.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Geom API", "slug": "geom-api"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch",
+                "project_id": project["id"],
+                "spec": {"name": "b", "nodes": [], "edges": []},
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+        rid = run["id"]
+        with Session(engine) as s:
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "succeeded"
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="a.json",
+                input_json="{}",
+                status="succeeded",
+                result_json=json.dumps({"ok": True}),
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+
+        bad = tc.patch(
+            f"/runs/{rid}/items/{iid}",
+            json={
+                "overlay": {
+                    "locations": {
+                        "by_anchor": {
+                            "x": {
+                                "geocode": {
+                                    "result": {
+                                        "geometry": {"type": "Point", "coordinates": [999, 0]},
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            headers={"If-Match": '"0"'},
+        )
+        assert bad.status_code == 400
+        detail = bad.json()["detail"]
+        assert detail["error"] == "overlay_geometry_invalid"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_patch_processed_item_overlay_requires_if_match(tmp_path, monkeypatch):
     database_path = tmp_path / "agate-overlay-ifmatch.db"
     engine = create_engine(

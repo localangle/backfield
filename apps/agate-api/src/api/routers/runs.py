@@ -12,6 +12,10 @@ from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
 from api.deps import get_auth, get_session
 from api.processed_item_article_context import build_processed_item_article_context
 from api.processed_item_locations_merge import build_merged_locations_lane
+from api.processed_item_overlay_validate import (
+    OverlayGeometryValidationError,
+    validate_processed_item_overlay_geometry,
+)
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
     AgateGraph,
@@ -753,6 +757,17 @@ def patch_run_processed_item_overlay(
 
     expected_version = _parse_if_match_overlay_version(if_match)
     overlay_payload = body.overlay
+
+    try:
+        validate_processed_item_overlay_geometry(overlay_payload)
+    except OverlayGeometryValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "overlay_geometry_invalid",
+                "message": str(exc),
+            },
+        ) from exc
 
     stmt = (
         update(AgateProcessedItem)
