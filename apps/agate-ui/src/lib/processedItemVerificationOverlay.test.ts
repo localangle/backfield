@@ -4,6 +4,7 @@ import {
   deepSortKeys,
   emptyOverlay,
   getLocationDescription,
+  getStylebookCanonicalHandoffId,
   isApiConflictError,
   isLocationLinkedToStylebookCanonical,
   normalizeOverlay,
@@ -73,6 +74,24 @@ describe('isLocationLinkedToStylebookCanonical', () => {
         geocode: { result: { formatted_address: 'Minneapolis, MN' } },
       }),
     ).toBe(false)
+  })
+})
+
+describe('getStylebookCanonicalHandoffId', () => {
+  it('prefers stylebook_location_canonical_id string', () => {
+    expect(getStylebookCanonicalHandoffId({ stylebook_location_canonical_id: '  uuid-1  ' })).toBe('uuid-1')
+  })
+
+  it('reads canonical_id from geocode result', () => {
+    expect(
+      getStylebookCanonicalHandoffId({
+        geocode: { result: { canonical_id: 'uuid-2' } },
+      }),
+    ).toBe('uuid-2')
+  })
+
+  it('returns null when absent', () => {
+    expect(getStylebookCanonicalHandoffId({ description: 'x' })).toBe(null)
   })
 })
 

@@ -20,6 +20,8 @@ export interface Project {
   workspace_id?: number | null
   workspace_stylebook_id?: number | null
   workspace_stylebook_name?: string | null
+  /** Stable catalog slug for Stylebook UI routes when the workspace resolves a Stylebook. */
+  workspace_stylebook_slug?: string | null
 }
 
 export interface ProjectStats {

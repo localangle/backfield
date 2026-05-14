@@ -39,6 +39,8 @@
 
    **Processed item — story text and places (Issue 6):** open a completed run item that has **story text** and **model places** with `original_text` (or span hints) present in the saved output. Click each place row: the story pane should **scroll to a highlighted passage** when a match exists, and show a short **no matching passage** note when it does not—without highlighting arbitrary text. Hover a row briefly to confirm highlight follows the pointer, then move away and confirm the **selected** row still drives the highlight. Rows with **`needs_review: true`** on the frozen model place should show **Flagged by the model** (not the stale-overlay wording). For parity with the legacy dashboard, spot-check the same item in **agate-ai-platform** `dashboard-ui` if you have a comparable article view.
 
+   **Processed item — catalog handoff (Issue 7):** With unsaved map or description edits on the Review card, choose **Open catalog**: you should be prompted to **save first** (no new tab until save succeeds). After save (or when already clean), Stylebook should open in a new tab with the right **catalog slug** and **project** query when the project’s workspace has a linked catalog. With a **linked** place selected, confirm the tab targets that place’s **canonical detail** when an id is present; otherwise confirm the **canonical list** opens with a reasonable search hint.
+
 ## Conventions
 
 - Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → Stylebook Output / `DBOutput`, no JSON Output node) as the canonical regression story; add tests when changing execution or handles.

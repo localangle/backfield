@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getNodeOutputById, nodeOutputLookupFromGraphSpec, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
-import { getRun, getGraph, getProcessedItem, rerunProcessedItem, type Run, type Graph, type ProcessedItem } from '@/lib/api'
+import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { formatDateCentral } from '@/lib/utils'
 import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
@@ -25,6 +25,7 @@ export default function ProcessedItemDetail() {
   const [loading, setLoading] = useState(true)
   const [rerunning, setRerunning] = useState(false)
   const [visualizations, setVisualizations] = useState<VisualizationDescriptor[]>([])
+  const [catalogProject, setCatalogProject] = useState<Project | null>(null)
 
   const nodeOutputLookup = useMemo((): NodeOutputLookupSpec | null => {
     if (!graph?.spec?.nodes?.length) return null
@@ -59,6 +60,24 @@ export default function ProcessedItemDetail() {
       loadItemData()
     }
   }, [runId, itemId])
+
+  useEffect(() => {
+    if (!run?.project_id) {
+      setCatalogProject(null)
+      return
+    }
+    let cancelled = false
+    void getProject(run.project_id)
+      .then((p) => {
+        if (!cancelled) setCatalogProject(p)
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogProject(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [run?.project_id])
 
   // Auto-refresh for pending or running items (but only update if data changed)
   useEffect(() => {
@@ -479,6 +498,8 @@ export default function ProcessedItemDetail() {
           graph={graph}
           onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
           onVerificationDirtyChange={handleVerificationDirtyChange}
+          catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
+          catalogProjectSlug={catalogProject?.slug ?? null}
         />
       )}
 

@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import type { Graph, ProcessedItem } from '@/lib/api'
 import { getProcessedItem, patchProcessedItemOverlay } from '@/lib/api'
+import { stylebookCanonicalDetailHref, stylebookCanonicalListHref } from '@/lib/platformUrls'
 import {
   applyAnchorPatchFragment,
   appendUserPlacePoint,
@@ -26,6 +27,7 @@ import {
   applyDescriptionPatch,
   getLocationDescription,
   getMergedRowAnchor,
+  getStylebookCanonicalHandoffId,
   isApiConflictError,
   isLocationLinkedToStylebookCanonical,
   normalizeOverlay,
@@ -48,6 +50,10 @@ export interface ProcessedItemVerificationSectionProps {
   onItemUpdated: (item: ProcessedItem) => void
   /** Fires when overlay draft dirty state changes (for navigation guard with ``BrowserRouter``). */
   onVerificationDirtyChange?: (dirty: boolean) => void
+  /** Catalog slug from the run's project workspace (for opening Stylebook). */
+  catalogStylebookSlug?: string | null
+  /** Agate project slug for Stylebook ``?project=`` context. */
+  catalogProjectSlug?: string | null
 }
 
 export function ProcessedItemVerificationSection({
@@ -56,6 +62,8 @@ export function ProcessedItemVerificationSection({
   graph,
   onItemUpdated,
   onVerificationDirtyChange,
+  catalogStylebookSlug = null,
+  catalogProjectSlug = null,
 }: ProcessedItemVerificationSectionProps) {
   const { showError, showConfirm, showMessage } = useAppMessage()
   const [baselineOverlay, setBaselineOverlay] = useState<Record<string, unknown>>(() =>
@@ -228,8 +236,13 @@ export function ProcessedItemVerificationSection({
     })
   }, [])
 
-  const handleSave = useCallback(async () => {
-    if (!dirty || saving) return
+  const persistOverlayDraft = useCallback(async (): Promise<boolean> => {
+    if (!dirty) {
+      return true
+    }
+    if (saving) {
+      return false
+    }
     setSaving(true)
     try {
       const updated = await patchProcessedItemOverlay(
@@ -242,6 +255,7 @@ export function ProcessedItemVerificationSection({
       const n = normalizeOverlay(updated.overlay)
       setBaselineOverlay(n)
       setDraftOverlay(n)
+      return true
     } catch (e) {
       if (isApiConflictError(e)) {
         showError(
@@ -269,6 +283,7 @@ export function ProcessedItemVerificationSection({
           title: 'Save failed',
         })
       }
+      return false
     } finally {
       setSaving(false)
     }
@@ -283,26 +298,61 @@ export function ProcessedItemVerificationSection({
     showError,
   ])
 
+  const handleSave = useCallback(async () => {
+    if (!dirty || saving) {
+      return
+    }
+    await persistOverlayDraft()
+  }, [dirty, saving, persistOverlayDraft])
+
   const handleStylebookHandoff = useCallback(async () => {
+    const slug = typeof catalogStylebookSlug === 'string' && catalogStylebookSlug.trim() ? catalogStylebookSlug.trim() : ''
+    if (!slug) {
+      showMessage(
+        'This project’s workspace does not have a catalog linked yet. An administrator can link a catalog to the workspace so you can open it from here.',
+        { title: 'Catalog' },
+      )
+      return
+    }
     if (dirty) {
-      const leave = await showConfirm(
-        'Save your changes before opening the catalog, or stay here to keep editing.',
+      const saveAndOpen = await showConfirm(
+        'Save your review changes first. After they are saved, your catalog opens in a new browser tab.',
         {
-          title: 'Unsaved changes',
-          confirmLabel: 'Continue without saving',
+          title: 'Save before opening catalog',
+          confirmLabel: 'Save and open catalog',
           cancelLabel: 'Stay',
-          destructive: true,
+          destructive: false,
         },
       )
-      if (!leave) {
+      if (!saveAndOpen) {
+        return
+      }
+      const saved = await persistOverlayDraft()
+      if (!saved) {
         return
       }
     }
-    showMessage(
-      'Opening your catalog from this screen will arrive in a later update. For now, use your catalog workspace in another tab if you need to edit the linked entry.',
-      { title: 'Catalog' },
-    )
-  }, [dirty, showConfirm, showMessage])
+    const proj = typeof catalogProjectSlug === 'string' && catalogProjectSlug.trim() ? catalogProjectSlug.trim() : null
+    const row = selectedAnchor
+      ? previewMergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
+      : undefined
+    const loc = row?.location as Record<string, unknown> | undefined
+    const canonicalId = getStylebookCanonicalHandoffId(loc)
+    const searchHint = getLocationDescription(loc).trim().slice(0, 200)
+    const url = canonicalId
+      ? stylebookCanonicalDetailHref(slug, canonicalId, proj)
+      : stylebookCanonicalListHref(slug, { projectSlug: proj, searchQuery: searchHint || null })
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }, [
+    catalogProjectSlug,
+    catalogStylebookSlug,
+    dirty,
+    persistOverlayDraft,
+    previewMergedRows,
+    selectedAnchor,
+    showConfirm,
+    showMessage,
+  ])
 
   const handleAddNewPointMode = useCallback(() => {
     setGeometryAddMode('point')

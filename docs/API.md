@@ -156,6 +156,12 @@ Geometry follows **GeoJSON** types **`Point`**, **`Polygon`**, and **`MultiPolyg
 
 **Transport note (Backfield v1):** **`agate-api`** reads **`substrate_article`** in-process from the shared Postgres session after normal project access checks. A future **core-api** HTTP read proxy may replace the transport without changing this JSON shape.
 
+## Processed item → Stylebook handoff (interim, Issue 7)
+
+- **Save before navigation:** Agate UI must **`PATCH`** the processed item overlay (or confirm the user stays) before opening Stylebook when there are unsaved overlay edits. There is no server-side “handoff” mutation in this slice.
+- **Project context for URLs:** **`GET /projects`**, **`GET /projects/{id}`**, and **`GET /projects/by-slug/{slug}`** include **`workspace_stylebook_id`**, **`workspace_stylebook_name`**, and **`workspace_stylebook_slug`** when the project’s **`workspace_id`** resolves to a **`backfield_workspace`** row whose **`stylebook_id`** points at a **`stylebook`** row. Otherwise those three fields are **`null`**.
+- **Client deep links (MVP):** The verification screen opens Stylebook in a **new tab** using **`VITE_STYLEBOOK_UI_ORIGIN`** (see `apps/agate-ui` **`platformUrls`**). When the selected place row carries a catalog canonical id (**`stylebook_location_canonical_id`** or **`geocode.result.canonical_id`**), the UI navigates to **`/stylebook/<slug>/locations/canonical/<id>?project=<project_slug>`**. Otherwise it opens the canonical **list** with optional **`q`** prefilled from the place description. **Promote / create canonical from overlay** remains a follow-on once PRD Open Question #4 is settled (no dedicated POST in this slice).
+
 ## API change checklist
 
 - Update route models and handlers together.

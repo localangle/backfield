@@ -23,6 +23,7 @@ from backfield_db import (
     BackfieldProject,
     BackfieldProjectSecret,
     BackfieldWorkspace,
+    Stylebook,
 )
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import APIRouter, Depends, HTTPException
@@ -90,25 +91,40 @@ class ProjectOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     workspace_id: int | None = None
+    workspace_stylebook_id: int | None = None
+    workspace_stylebook_name: str | None = None
+    workspace_stylebook_slug: str | None = None
 
-    @classmethod
-    def from_row(
-        cls,
-        p: BackfieldProject,
-        *,
-        workspace_id: int | None = None,
-    ) -> ProjectOut:
-        d = _settings_dict(p)
-        return cls(
-            id=p.id,
-            name=p.name,
-            slug=p.slug,
-            organization_id=int(p.organization_id),
-            system_prompt=d.get("system_prompt"),
-            created_at=p.created_at,
-            updated_at=p.updated_at,
-            workspace_id=workspace_id,
-        )
+
+def _project_to_out(session: Session, p: BackfieldProject) -> ProjectOut:
+    wid = int(p.workspace_id) if p.workspace_id is not None else None
+    sid: int | None = None
+    sname: str | None = None
+    sslug: str | None = None
+    if wid is not None:
+        ws = session.get(BackfieldWorkspace, wid)
+        if ws is not None and ws.stylebook_id is not None:
+            sb = session.get(Stylebook, int(ws.stylebook_id))
+            if sb is not None and sb.id is not None:
+                sid = int(sb.id)
+                sname = str(sb.name)
+                sslug = str(sb.slug)
+    d = _settings_dict(p)
+    if p.id is None:
+        raise HTTPException(500, "Project row missing id")
+    return ProjectOut(
+        id=int(p.id),
+        name=p.name,
+        slug=p.slug,
+        organization_id=int(p.organization_id),
+        system_prompt=d.get("system_prompt"),
+        created_at=p.created_at,
+        updated_at=p.updated_at,
+        workspace_id=wid,
+        workspace_stylebook_id=sid,
+        workspace_stylebook_name=sname,
+        workspace_stylebook_slug=sslug,
+    )
 
 
 def _slugify(name: str) -> str:
@@ -130,14 +146,7 @@ def list_projects(
             return []
         q = q.where(BackfieldProject.id.in_(visible))
     rows = session.exec(q).all()
-    return [
-        ProjectOut.from_row(
-            r,
-            workspace_id=int(r.workspace_id) if r.workspace_id is not None else None,
-        )
-        for r in rows
-        if r.id is not None
-    ]
+    return [_project_to_out(session, r) for r in rows if r.id is not None]
 
 
 @router.post("", response_model=ProjectOut)
@@ -183,10 +192,7 @@ def create_project(
     session.refresh(p)
     if p.id is None:
         raise HTTPException(500, "Project persist failed")
-    return ProjectOut.from_row(
-        p,
-        workspace_id=int(p.workspace_id) if p.workspace_id is not None else None,
-    )
+    return _project_to_out(session, p)
 
 
 class ProjectStatsOut(BaseModel):
@@ -383,10 +389,7 @@ def get_project_by_slug(
     if not p:
         raise HTTPException(404, "Project not found")
     require_project_access(session, auth, int(p.id))
-    return ProjectOut.from_row(
-        p,
-        workspace_id=int(p.workspace_id) if p.workspace_id is not None else None,
-    )
+    return _project_to_out(session, p)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -399,10 +402,7 @@ def get_project(
     p = session.get(BackfieldProject, project_id)
     if not p:
         raise HTTPException(404, "Project not found")
-    return ProjectOut.from_row(
-        p,
-        workspace_id=int(p.workspace_id) if p.workspace_id is not None else None,
-    )
+    return _project_to_out(session, p)
 
 
 @router.get("/{project_id}/stats", response_model=ProjectStatsOut)
@@ -447,10 +447,7 @@ def update_project(
     session.add(p)
     session.commit()
     session.refresh(p)
-    return ProjectOut.from_row(
-        p,
-        workspace_id=int(p.workspace_id) if p.workspace_id is not None else None,
-    )
+    return _project_to_out(session, p)
 
 
 @router.delete("/{project_id}", status_code=204)

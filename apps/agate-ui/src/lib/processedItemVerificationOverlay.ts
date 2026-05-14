@@ -3,9 +3,6 @@
  * Aligns with ``docs/API.md`` → processed item location overlay (v1).
  */
 
-/** Placeholder route segment Issue 7 replaces with a real catalog handoff URL. */
-export const STYLEBOOK_HANDOFF_PATH = '/stylebook'
-
 export function emptyOverlay(): Record<string, unknown> {
   return {
     locations: {
@@ -109,6 +106,34 @@ export function isLocationLinkedToStylebookCanonical(location: unknown): boolean
     }
   }
   return false
+}
+
+/**
+ * Catalog canonical id for opening Stylebook from a linked place row (UUID string when present).
+ */
+export function getStylebookCanonicalHandoffId(location: unknown): string | null {
+  if (!location || typeof location !== 'object' || Array.isArray(location)) {
+    return null
+  }
+  const loc = location as Record<string, unknown>
+  const sid = loc.stylebook_location_canonical_id
+  if (typeof sid === 'string' && sid.trim().length > 0) {
+    return sid.trim()
+  }
+  if (typeof sid === 'number' && !Number.isNaN(sid)) {
+    return String(Math.trunc(sid))
+  }
+  const geocode = loc.geocode
+  if (geocode && typeof geocode === 'object' && !Array.isArray(geocode)) {
+    const res = (geocode as Record<string, unknown>).result
+    if (res && typeof res === 'object' && !Array.isArray(res)) {
+      const cid = (res as Record<string, unknown>).canonical_id
+      if (typeof cid === 'string' && cid.trim().length > 0) {
+        return cid.trim()
+      }
+    }
+  }
+  return null
 }
 
 export function getMergedRowAnchor(row: Record<string, unknown>): string {
