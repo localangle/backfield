@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LeafletMap } from '@backfield/ui/LeafletMap'
 import { useAppMessage } from '@/components/AppMessageProvider'
+import { ProcessedItemArticleBody } from '@/components/ProcessedItemArticleBody'
 import { ProcessedItemVerificationLeafletMap } from '@/components/ProcessedItemVerificationLeafletMap'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,7 @@ import {
   shallowMergePlacePatch,
   validateGeometryObject,
 } from '@/lib/processedItemPlaceGeometry'
+import { resolveEvidenceSpanInArticle } from '@/lib/processedItemEvidenceSpan'
 import {
   applyDescriptionPatch,
   getLocationDescription,
@@ -67,6 +69,7 @@ export function ProcessedItemVerificationSection({
 
   const [mapEditing, setMapEditing] = useState(false)
   const [selectedAnchor, setSelectedAnchor] = useState<string | null>(null)
+  const [hoveredAnchor, setHoveredAnchor] = useState<string | null>(null)
   const [geometryAddMode, setGeometryAddMode] = useState<'point' | 'rectangle' | null>(null)
 
   const dirty = useMemo(
@@ -109,6 +112,14 @@ export function ProcessedItemVerificationSection({
 
   const mergedRows = item.merged_locations ?? []
   const staleEntries = item.stale_overlay_entries ?? []
+  const staleAnchorSet = useMemo(() => {
+    const s = new Set<string>()
+    for (const e of staleEntries) {
+      const a = typeof (e as { anchor?: unknown }).anchor === 'string' ? (e as { anchor: string }).anchor : ''
+      if (a) s.add(a)
+    }
+    return s
+  }, [staleEntries])
   const article = item.article_context
 
   const baselineByAnchor = useMemo(() => {
@@ -136,6 +147,27 @@ export function ProcessedItemVerificationSection({
       }
     })
   }, [mergedRows, draftOverlay])
+
+  const storyHighlightAnchor = hoveredAnchor ?? selectedAnchor
+
+  const storyHighlightResult = useMemo(() => {
+    const body = typeof article?.body === 'string' ? article.body : ''
+    if (!storyHighlightAnchor) {
+      return resolveEvidenceSpanInArticle(body, undefined)
+    }
+    const row = mergedRows.find((r) => getMergedRowAnchor(r) === storyHighlightAnchor)
+    if (!row) {
+      return resolveEvidenceSpanInArticle(body, undefined)
+    }
+    const loc =
+      row.source === 'model'
+        ? (baselineByAnchor.get(storyHighlightAnchor) ?? null)
+        : ((previewMergedRows.find((r) => getMergedRowAnchor(r) === storyHighlightAnchor)?.location ??
+            null) as Record<string, unknown> | null)
+    return resolveEvidenceSpanInArticle(body, loc ?? undefined)
+  }, [article?.body, storyHighlightAnchor, mergedRows, previewMergedRows, baselineByAnchor])
+
+  const storyHighlightRange = storyHighlightResult.kind === 'range' ? storyHighlightResult : null
 
   const mapCollections = useMemo(
     () =>
@@ -345,11 +377,24 @@ export function ProcessedItemVerificationSection({
               </p>
             ) : (
               <div className="rounded-md border bg-muted/30 p-3 max-h-[min(70vh,36rem)] overflow-y-auto">
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-                  {article?.body?.trim()
-                    ? article.body
-                    : 'No story text is available for this item yet.'}
-                </pre>
+                {article?.body?.trim() ? (
+                  <>
+                    <ProcessedItemArticleBody
+                      body={article.body}
+                      highlight={storyHighlightRange}
+                      scrollWhenKey={selectedAnchor}
+                    />
+                    {storyHighlightAnchor &&
+                    storyHighlightResult.kind === 'none' &&
+                    article.body.trim().length > 0 ? (
+                      <p className="mt-2 text-xs text-muted-foreground border-t border-border/60 pt-2">
+                        No matching passage was found in this story for this place.
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No story text is available for this item yet.</p>
+                )}
               </div>
             )}
             {article?.resolution === 'inline_fallback' ? (
@@ -368,6 +413,15 @@ export function ProcessedItemVerificationSection({
                 {mergedRows.map((row, idx) => {
                   const anchor = getMergedRowAnchor(row)
                   const loc = row.location as Record<string, unknown> | undefined
+                  const baselineLoc =
+                    row.source === 'model' && anchor ? baselineByAnchor.get(anchor) : undefined
+                  const modelFlaggedReview =
+                    row.source === 'model' &&
+                    baselineLoc !== undefined &&
+                    typeof baselineLoc === 'object' &&
+                    baselineLoc !== null &&
+                    (baselineLoc as { needs_review?: unknown }).needs_review === true
+                  const rowStale = row.stale === true || (anchor ? staleAnchorSet.has(anchor) : false)
                   const linked = isLocationLinkedToStylebookCanonical(loc)
                   const source = row.source === 'user' ? 'Added by you' : 'From model'
                   const nodeId = typeof row.node_id === 'string' ? row.node_id : ''
@@ -386,7 +440,20 @@ export function ProcessedItemVerificationSection({
                   return (
                     <li
                       key={anchor || `row-${idx}`}
-                      className="rounded-md border p-3 space-y-2 bg-card"
+                      className="rounded-md border p-3 space-y-2 bg-card cursor-pointer"
+                      onMouseEnter={() => {
+                        if (anchor) setHoveredAnchor(anchor)
+                      }}
+                      onMouseLeave={() => {
+                        setHoveredAnchor((h) => (h === anchor ? null : h))
+                      }}
+                      onClick={(e) => {
+                        const t = e.target as HTMLElement
+                        if (t.closest('button, input, textarea, a, label')) return
+                        if (!anchor) return
+                        setSelectedAnchor(anchor)
+                        setGeometryAddMode(null)
+                      }}
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="secondary">{source}</Badge>
@@ -395,9 +462,14 @@ export function ProcessedItemVerificationSection({
                             {nodeLabel}
                           </span>
                         ) : null}
-                        {row.stale === true ? (
+                        {modelFlaggedReview ? (
+                          <Badge variant="outline" className="border-amber-300 text-amber-900 dark:text-amber-100">
+                            Flagged by the model
+                          </Badge>
+                        ) : null}
+                        {rowStale ? (
                           <Badge variant="outline" className="text-amber-800 border-amber-300">
-                            Needs review
+                            Saved edit may not apply
                           </Badge>
                         ) : null}
                         <Button
@@ -405,7 +477,8 @@ export function ProcessedItemVerificationSection({
                           variant={selectedAnchor === anchor ? 'default' : 'outline'}
                           size="sm"
                           className="ml-auto"
-                          onClick={() => {
+                          onClick={(ev) => {
+                            ev.stopPropagation()
                             setSelectedAnchor(anchor)
                             setMapEditing(true)
                             setGeometryAddMode(null)

@@ -35,7 +35,9 @@
   - `make smoke-slower`: `make smoke-stylebook-editorial`, `make smoke-stylebook-import-export`, `make smoke-s3-batch`
   Shared knobs: `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_WORKSPACE_SLUG`, `SMOKE_PROJECT_SLUG`, `SMOKE_POLL_TIMEOUT_SECONDS`, `SMOKE_POLL_INTERVAL_SECONDS`. DB-writing live lanes clean up their temporary graphs, runs, canonicals, and substrate rows by default; set `SMOKE_KEEP_DATA=1` when you want to inspect the artifacts after a smoke run. `SMOKE_BOOTSTRAP=1` still creates the first Core user for empty local DBs before the handoff smoke logs in.
 4. **Manual UI pass**
-  Use the Agate UI when the task changes browser-facing behavior or flowbuilder interactions.
+   Use the Agate UI when the task changes browser-facing behavior or flowbuilder interactions.
+
+   **Processed item — story text and places (Issue 6):** open a completed run item that has **story text** and **model places** with `original_text` (or span hints) present in the saved output. Click each place row: the story pane should **scroll to a highlighted passage** when a match exists, and show a short **no matching passage** note when it does not—without highlighting arbitrary text. Hover a row briefly to confirm highlight follows the pointer, then move away and confirm the **selected** row still drives the highlight. Rows with **`needs_review: true`** on the frozen model place should show **Flagged by the model** (not the stale-overlay wording). For parity with the legacy dashboard, spot-check the same item in **agate-ai-platform** `dashboard-ui` if you have a comparable article view.
 
 ## Conventions
 
