@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { PageBreadcrumbs } from "@/components/PageBreadcrumbs"
 import ProjectDialog from "@/components/ProjectDialog"
 import { useAuth } from "@/lib/auth"
 import { createProject, type ProjectCreate } from "@/lib/api"
@@ -236,7 +237,8 @@ export default function WorkspaceDetailPage() {
 
   return (
     <div className="space-y-8">
-      <div>
+      <div className="space-y-2">
+        <PageBreadcrumbs items={[{ label: "Workspaces", to: "/" }, { label: workspace.name }]} />
         <WorkspaceTitleRow
           workspace={workspace}
           organizationId={organizationId}

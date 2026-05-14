@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ProjectSettings, { type ProjectSettingsHandle } from '@/components/ProjectSettings'
 import ProjectDetailFlowsTab from '@/components/project/ProjectDetailFlowsTab'
@@ -22,6 +23,7 @@ import {
 } from '@/lib/api'
 import { formatDurationMs } from '@/lib/formatDuration'
 import { useAuth } from '@/lib/auth'
+import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
 
 function formatCurrencySummary(
@@ -62,6 +64,7 @@ export default function ProjectDetailPage() {
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
   const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
   const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
+  const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const reload = useCallback(async () => {
     if (!slug) return
     try {
@@ -118,6 +121,26 @@ export default function ProjectDetailPage() {
   }, [project?.id])
 
   useEffect(() => {
+    if (project?.workspace_id == null) {
+      setProjectWorkspace(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await listMyWorkspaces()
+        if (cancelled) return
+        setProjectWorkspace(rows.find((row) => row.id === project.workspace_id) ?? null)
+      } catch {
+        if (!cancelled) setProjectWorkspace(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [project?.workspace_id])
+
+  useEffect(() => {
     if (editingName) inputRef.current?.focus()
   }, [editingName])
 
@@ -164,63 +187,79 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="w-full max-w-none min-w-0 space-y-10">
-      <div className="min-h-[2.5rem]">
-        {editingName ? (
-          <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
-            <Input
-              ref={inputRef}
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void saveName()
-                if (e.key === 'Escape') cancelNameEdit()
-              }}
-              disabled={savingName}
-              className="min-w-0 flex-1 max-w-xl text-3xl font-bold h-auto py-2 px-3"
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="default"
-              className="shrink-0"
-              disabled={savingName || !nameDraft.trim()}
-              onClick={() => void saveName()}
-              aria-label="Save name"
-            >
-              <Check className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              className="shrink-0"
-              disabled={savingName}
-              onClick={cancelNameEdit}
-              aria-label="Cancel"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : (
-          <div className="inline-flex max-w-full items-center gap-2">
-            <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-3xl font-bold">
-              {project.name}
-            </h1>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                setNameDraft(project.name)
-                setEditingName(true)
-              }}
-              aria-label="Edit project name"
-            >
-              <Pencil className="h-5 w-5" />
-            </Button>
-          </div>
-        )}
+      <div className="space-y-2">
+        <PageBreadcrumbs
+          items={[
+            { label: 'Workspaces', to: '/' },
+            ...(projectWorkspace
+              ? [
+                  {
+                    label: projectWorkspace.name,
+                    to: `/workspace/${encodeURIComponent(projectWorkspace.slug)}`,
+                  },
+                ]
+              : []),
+            { label: project.name },
+          ]}
+        />
+        <div className="min-h-[2.5rem]">
+          {editingName ? (
+            <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
+              <Input
+                ref={inputRef}
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void saveName()
+                  if (e.key === 'Escape') cancelNameEdit()
+                }}
+                disabled={savingName}
+                className="min-w-0 flex-1 max-w-xl text-3xl font-bold h-auto py-2 px-3"
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="default"
+                className="shrink-0"
+                disabled={savingName || !nameDraft.trim()}
+                onClick={() => void saveName()}
+                aria-label="Save name"
+              >
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="shrink-0"
+                disabled={savingName}
+                onClick={cancelNameEdit}
+                aria-label="Cancel"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div className="inline-flex max-w-full items-center gap-2">
+              <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-3xl font-bold">
+                {project.name}
+              </h1>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setNameDraft(project.name)
+                  setEditingName(true)
+                }}
+                aria-label="Edit project name"
+              >
+                <Pencil className="h-5 w-5" />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="w-full min-w-0">
@@ -412,7 +451,6 @@ export default function ProjectDetailPage() {
             {workspaceTab === 'keys' ? (
               <Button
                 type="button"
-                variant="outline"
                 size="sm"
                 onClick={() => keysSettingsRef.current?.openAccessKeyCreate?.()}
               >

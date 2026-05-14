@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Generator
 from decimal import Decimal
@@ -16,6 +17,7 @@ from backfield_db import (
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
+    BackfieldApiCredential,
     BackfieldOrganization,
     BackfieldOrganizationMembership,
     BackfieldProject,
@@ -254,6 +256,67 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     assert len(list_response.json()) == 1
 
 
+def test_project_api_key_scopes_agate_api_access(tmp_path):
+    database_path = tmp_path / "agate-project-key-scope.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        tc = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project_one = tc.post(
+            "/projects",
+            json={"name": "Project One", "slug": "project-one"},
+        ).json()
+        project_two = tc.post(
+            "/projects",
+            json={"name": "Project Two", "slug": "project-two"},
+        ).json()
+
+        raw_key = "bfk_project_scope_test_key_1234567890abcdef"
+        with Session(engine) as s:
+            s.add(
+                BackfieldApiCredential(
+                    project_id=project_one["id"],
+                    credential_type="service",
+                    key_prefix=raw_key[:22],
+                    key_hash=hashlib.sha256(raw_key.encode("utf-8")).hexdigest(),
+                    label="scope-test",
+                )
+            )
+            s.commit()
+
+        headers = {"Authorization": f"Bearer {raw_key}"}
+
+        listed = tc.get("/projects", headers=headers)
+        assert listed.status_code == 200
+        assert [row["id"] for row in listed.json()] == [project_one["id"]]
+
+        own = tc.get(f"/projects/{project_one['id']}", headers=headers)
+        assert own.status_code == 200
+        assert own.json()["id"] == project_one["id"]
+
+        other = tc.get(f"/projects/{project_two['id']}", headers=headers)
+        assert other.status_code == 403
+        assert "project" in other.json().get("detail", "").lower()
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
     database_path = tmp_path / "agate-run-list-counts.db"
     engine = create_engine(
@@ -302,7 +365,7 @@ def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
                 AgateProcessedItem(
                     run_id=run["id"],
                     source_file="a.json",
-                    input_json='{"text":"hello"}',
+                    input_json='{"text":"hello from a very long manual input payload"}',
                     status="succeeded",
                     result_json='{"ok":true}',
                 )
@@ -329,6 +392,12 @@ def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
         assert body[0]["running_items"] == 0
         assert body[0]["succeeded_items"] == 1
         assert body[0]["failed_items"] == 1
+
+        detail = tc.get(f"/runs/{run['id']}")
+        assert detail.status_code == 200
+        processed = detail.json()["processed_items"]
+        assert processed[0]["input_preview"] == "hello from a very long manual…"
+        assert processed[1]["input_preview"] == "world"
     finally:
         app.dependency_overrides.clear()
 
@@ -581,6 +650,13 @@ def test_get_run_processed_item_synthetic_whole_run_pending(monkeypatch, client:
     assert body["status"] == "pending"
     assert body["input"] == {}
     assert body.get("output") is None
+    assert body.get("overlay") is None
+    assert body.get("overlay_version") == 0
+    assert body.get("merged_locations") == []
+    assert body.get("stale_overlay_entries") == []
+    ac = body["article_context"]
+    assert ac["resolution"] == "none"
+    assert ac["reason"] == "no_input_article_id"
 
 
 def test_get_run_processed_item_synthetic_second_item_404(monkeypatch, client: TestClient):
@@ -746,7 +822,431 @@ def test_get_run_processed_item_synthetic_with_run_result_json(tmp_path, monkeyp
 
         resp = client.get(f"/runs/{rid}/items/1")
         assert resp.status_code == 200
-        assert resp.json()["node_outputs"]["node_a"]["x"] == 1
+        j = resp.json()
+        assert j["node_outputs"]["node_a"]["x"] == 1
+        assert j.get("overlay") is None
+        assert j.get("overlay_version") == 0
+        assert j.get("merged_locations") == []
+        assert j.get("stale_overlay_entries") == []
+        ac = j["article_context"]
+        assert ac["resolution"] == "none"
+        assert ac["reason"] == "no_input_article_id"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_processed_item_overlay_success_and_409(tmp_path, monkeypatch):
+    database_path = tmp_path / "agate-overlay.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Overlay API", "slug": "overlay-api"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch",
+                "project_id": project["id"],
+                "spec": {"name": "b", "nodes": [], "edges": []},
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+        rid = run["id"]
+        with Session(engine) as s:
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "succeeded"
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="a.json",
+                input_json='{"text":"hello"}',
+                status="succeeded",
+                result_json=json.dumps({"ok": True}),
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+        assert iid is not None
+
+        first = tc.get(f"/runs/{rid}/items/{iid}")
+        assert first.status_code == 200
+        assert first.json().get("overlay") is None
+        assert first.json().get("overlay_version") == 0
+
+        ok = tc.patch(
+            f"/runs/{rid}/items/{iid}",
+            json={"overlay": {"notes": "a"}},
+            headers={"If-Match": '"0"'},
+        )
+        assert ok.status_code == 200
+        body = ok.json()
+        assert body["overlay_version"] == 1
+        assert body["overlay"]["notes"] == "a"
+        assert body["output"]["ok"] is True
+        ac = body["article_context"]
+        assert ac["resolution"] == "inline_fallback"
+        assert ac["body"] == "hello"
+
+        conflict = tc.patch(
+            f"/runs/{rid}/items/{iid}",
+            json={"overlay": {"notes": "b"}},
+            headers={"If-Match": '"0"'},
+        )
+        assert conflict.status_code == 409
+        detail = conflict.json()["detail"]
+        assert detail["error"] == "overlay_version_conflict"
+        assert detail["current_version"] == 1
+
+        ok2 = tc.patch(
+            f"/runs/{rid}/items/{iid}",
+            json={"overlay": {"notes": "c"}},
+            headers={"If-Match": '"1"'},
+        )
+        assert ok2.status_code == 200
+        assert ok2.json()["overlay_version"] == 2
+        assert ok2.json()["overlay"]["notes"] == "c"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_processed_item_overlay_requires_if_match(tmp_path, monkeypatch):
+    database_path = tmp_path / "agate-overlay-ifmatch.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "IfMatch", "slug": "ifmatch"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch",
+                "project_id": project["id"],
+                "spec": {"name": "b", "nodes": [], "edges": []},
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+        rid = run["id"]
+        with Session(engine) as s:
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "succeeded"
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="x.json",
+                input_json="{}",
+                status="succeeded",
+                result_json="{}",
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+        assert iid is not None
+
+        bad = tc.patch(f"/runs/{rid}/items/{iid}", json={"overlay": {}})
+        assert bad.status_code == 400
+        assert "If-Match" in bad.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_processed_item_overlay_synthetic_404(monkeypatch, client: TestClient):
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    project = client.post("/projects", json={"name": "Synth PATCH", "slug": "synth-patch"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "t",
+            "project_id": project["id"],
+            "spec": {"name": "t", "nodes": [], "edges": []},
+        },
+    ).json()
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    r = client.patch(
+        f"/runs/{run['id']}/items/1",
+        json={"overlay": {}},
+        headers={"If-Match": '"0"'},
+    )
+    assert r.status_code == 404
+
+
+def test_get_run_processed_item_merged_locations_and_stale(tmp_path, monkeypatch):
+    database_path = tmp_path / "agate-merged-lane.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Merge lane", "slug": "merge-lane"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch",
+                "project_id": project["id"],
+                "spec": {"name": "b", "nodes": [], "edges": []},
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+        rid = run["id"]
+        result = {
+            "place_node": {
+                "text": "story",
+                "locations": [
+                    {
+                        "id": "L1",
+                        "description": "model",
+                        "original_text": "ot",
+                        "location": {"full": "A", "type": "city", "components": {}},
+                    },
+                ],
+            }
+        }
+        overlay = {
+            "locations": {
+                "by_anchor": {
+                    "L1": {"description": "patched"},
+                    "orphan": {"description": "gone"},
+                },
+                "user_added": [
+                    {
+                        "id": "user_place:11111111-1111-1111-1111-111111111111",
+                        "location": {
+                            "description": "user row",
+                            "original_text": "u",
+                            "location": {"full": "B", "type": "city", "components": {}},
+                        },
+                    }
+                ],
+            }
+        }
+        with Session(engine) as s:
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "succeeded"
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="x.json",
+                input_json="{}",
+                status="succeeded",
+                result_json=json.dumps(result),
+                overlay_json=json.dumps(overlay),
+                overlay_version=1,
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+        assert iid is not None
+
+        resp = tc.get(f"/runs/{rid}/items/{iid}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["overlay_version"] == 1
+        assert len(body["merged_locations"]) == 2
+        by_anchor = {r["anchor"]: r for r in body["merged_locations"]}
+        assert by_anchor["L1"]["source"] == "model"
+        assert by_anchor["L1"]["location"]["description"] == "patched"
+        uid = "user_place:11111111-1111-1111-1111-111111111111"
+        assert by_anchor[uid]["source"] == "user"
+        assert by_anchor[uid]["location"]["description"] == "user row"
+        assert len(body["stale_overlay_entries"]) == 1
+        assert body["stale_overlay_entries"][0]["anchor"] == "orphan"
+        assert body["stale_overlay_entries"][0]["reason"] == "anchor_missing_from_model_output"
+        ac = body["article_context"]
+        assert ac["resolution"] in ("none", "inline_fallback")
+        assert "body" in ac
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_run_processed_item_article_context_substrate(tmp_path, monkeypatch):
+    database_path = tmp_path / "agate-article-ctx.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Art Ctx", "slug": "art-ctx-sub"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "G",
+                "project_id": project["id"],
+                "spec": {"name": "b", "nodes": [], "edges": []},
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+        rid = run["id"]
+        pid = int(project["id"])
+        with Session(engine) as s:
+            art = SubstrateArticle(
+                project_id=pid,
+                headline="Story HL",
+                text="Full article from substrate.",
+                url=f"https://example.com/substrate-article-{pid}",
+            )
+            s.add(art)
+            s.commit()
+            s.refresh(art)
+            aid = int(art.id)
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "succeeded"
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="doc.json",
+                input_json=json.dumps(
+                    {
+                        "input_article_id": aid,
+                        "text": (
+                            "shorter inline should not replace substrate body"
+                        ),
+                    }
+                ),
+                status="succeeded",
+                result_json=json.dumps({"n": {"locations": []}}),
+                overlay_version=0,
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+        assert iid is not None
+
+        resp = tc.get(f"/runs/{rid}/items/{iid}")
+        assert resp.status_code == 200
+        ac = resp.json()["article_context"]
+        assert ac["resolution"] == "substrate"
+        assert ac["article_id"] == aid
+        assert ac["body"] == "Full article from substrate."
+        assert ac["headline"] == "Story HL"
+        assert ac["reason"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_run_processed_item_article_context_inline_only(tmp_path, monkeypatch):
+    database_path = tmp_path / "agate-article-inline.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Art Inline", "slug": "art-inline"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "G2",
+                "project_id": project["id"],
+                "spec": {"name": "b", "nodes": [], "edges": []},
+            },
+        ).json()
+        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
+        rid = run["id"]
+        with Session(engine) as s:
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "succeeded"
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="doc.json",
+                input_json=json.dumps(
+                    {"headline": "Inline title", "article_text": "longer body text", "text": "x"}
+                ),
+                status="succeeded",
+                result_json="{}",
+                overlay_version=0,
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+        resp = tc.get(f"/runs/{rid}/items/{iid}")
+        assert resp.status_code == 200
+        ac = resp.json()["article_context"]
+        assert ac["resolution"] == "inline_fallback"
+        assert ac["reason"] == "no_input_article_id"
+        assert ac["body"] == "longer body text"
+        assert ac["headline"] == "Inline title"
     finally:
         app.dependency_overrides.clear()
 

@@ -6,10 +6,12 @@ import json
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
 from api.deps import get_auth, get_session
+from api.processed_item_article_context import build_processed_item_article_context
+from api.processed_item_locations_merge import build_merged_locations_lane
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
     AgateGraph,
@@ -20,9 +22,9 @@ from backfield_db import (
 )
 from backfield_db.crypto import decrypt_secret
 from celery import Celery
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import asc, desc
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy import asc, desc, update
 from sqlmodel import Session, select
 
 DEFAULT_AI_COST_CURRENCY = "USD"
@@ -87,6 +89,7 @@ class ProcessedItemOut(BaseModel):
     id: int
     run_id: str
     source_file: str | None = None
+    input_preview: str | None = None
     status: str
     error_message: str | None = None
     created_at: datetime
@@ -94,6 +97,16 @@ class ProcessedItemOut(BaseModel):
     estimated_ai_cost: Decimal = Decimal("0")
     estimated_ai_cost_incomplete: bool = False
     estimated_ai_cost_currency: str = DEFAULT_AI_COST_CURRENCY
+
+
+class ArticleContextOut(BaseModel):
+    """Article text for verification UI (substrate-backed or inline fallback)."""
+
+    article_id: int | None = None
+    headline: str | None = None
+    body: str = ""
+    resolution: Literal["substrate", "inline_fallback", "none"]
+    reason: str | None = None
 
 
 class ProcessedItemDetailOut(BaseModel):
@@ -113,6 +126,21 @@ class ProcessedItemDetailOut(BaseModel):
     estimated_ai_cost: Decimal = Decimal("0")
     estimated_ai_cost_incomplete: bool = False
     estimated_ai_cost_currency: str = DEFAULT_AI_COST_CURRENCY
+    #: Human review overlay (mutable); model output stays in ``output`` / ``node_outputs``.
+    overlay: dict[str, Any] | None = None
+    overlay_version: int = 0
+    #: Single merged lane: model + user places with provenance (see ``docs/API.md``).
+    merged_locations: list[dict[str, Any]] = Field(default_factory=list)
+    #: Overlay patches whose anchor no longer exists in current model output.
+    stale_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
+    #: Resolved article body/headline for the item (see ``docs/API.md``).
+    article_context: ArticleContextOut
+
+
+class ProcessedItemOverlayPatchIn(BaseModel):
+    """Body for ``PATCH …/items/{item_id}`` — replaces stored overlay JSON."""
+
+    overlay: dict[str, Any]
 
 
 class RerunItemResponse(BaseModel):
@@ -253,6 +281,34 @@ def _any_agate_processed_items(session: Session, run_id: str) -> bool:
     )
 
 
+def _preview_text(value: Any, *, max_words: int = 6) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split()).strip()
+    if not normalized:
+        return None
+    words = normalized.split(" ")
+    if len(words) <= max_words:
+        return normalized
+    return f"{' '.join(words[:max_words])}…"
+
+
+def _processed_item_input_preview(input_json: str | None) -> str | None:
+    if not input_json:
+        return None
+    try:
+        parsed = json.loads(input_json)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    for key in ("text", "body", "content", "article_text", "input_text", "headline", "title"):
+        preview = _preview_text(parsed.get(key))
+        if preview:
+            return preview
+    return None
+
+
 def _processed_items_for_run(
     session: Session,
     run_id: str,
@@ -278,6 +334,7 @@ def _processed_items_for_run(
                 id=iid,
                 run_id=row.run_id,
                 source_file=row.source_file,
+                input_preview=_processed_item_input_preview(row.input_json),
                 status=row.status,
                 error_message=row.error_message,
                 created_at=row.created_at,
@@ -467,6 +524,8 @@ def list_runs(
 def _detail_from_agate_processed_row(
     row: AgateProcessedItem,
     *,
+    session: Session,
+    project_id: int,
     estimated_ai_cost: Decimal,
     estimated_ai_cost_incomplete: bool,
     estimated_ai_cost_currency: str,
@@ -489,6 +548,25 @@ def _detail_from_agate_processed_row(
         except json.JSONDecodeError:
             output_obj = None
 
+    overlay_obj: dict[str, Any] | None = None
+    if row.overlay_json:
+        try:
+            parsed_o = json.loads(row.overlay_json)
+            if isinstance(parsed_o, dict):
+                overlay_obj = parsed_o
+        except json.JSONDecodeError:
+            overlay_obj = None
+
+    merged_locations, stale_overlay_entries = build_merged_locations_lane(
+        output=output_obj, overlay=overlay_obj
+    )
+
+    article_ctx = ArticleContextOut.model_validate(
+        build_processed_item_article_context(
+            session, project_id=project_id, input_obj=input_obj
+        )
+    )
+
     rid = row.id
     if rid is None:
         raise HTTPException(404, "Processed item not found")
@@ -507,6 +585,11 @@ def _detail_from_agate_processed_row(
         estimated_ai_cost=estimated_ai_cost,
         estimated_ai_cost_incomplete=estimated_ai_cost_incomplete,
         estimated_ai_cost_currency=estimated_ai_cost_currency,
+        overlay=overlay_obj,
+        overlay_version=int(row.overlay_version),
+        merged_locations=merged_locations,
+        stale_overlay_entries=stale_overlay_entries,
+        article_context=article_ctx,
     )
 
 
@@ -543,6 +626,15 @@ def _maybe_detail_whole_graph_run(
 
     err: str | None = run.error_message if st == "failed" else None
 
+    merged_locations, stale_overlay_entries = build_merged_locations_lane(
+        output=output_obj, overlay=None
+    )
+
+    project_id = _graph_project_id(session, run.graph_id)
+    article_ctx = ArticleContextOut.model_validate(
+        build_processed_item_article_context(session, project_id=project_id, input_obj={})
+    )
+
     return ProcessedItemDetailOut(
         id=1,
         run_id=run.id,
@@ -558,6 +650,11 @@ def _maybe_detail_whole_graph_run(
         estimated_ai_cost=null_cost,
         estimated_ai_cost_incomplete=null_incomplete,
         estimated_ai_cost_currency=currency,
+        overlay=None,
+        overlay_version=0,
+        merged_locations=merged_locations,
+        stale_overlay_entries=stale_overlay_entries,
+        article_context=article_ctx,
     )
 
 
@@ -584,6 +681,8 @@ def get_run_processed_item(
         est, inc = by_item.get(iid, (Decimal("0"), False))
         return _detail_from_agate_processed_row(
             row,
+            session=session,
+            project_id=pid,
             estimated_ai_cost=est,
             estimated_ai_cost_incomplete=inc,
             estimated_ai_cost_currency=currency,
@@ -596,6 +695,104 @@ def get_run_processed_item(
         return synthetic
 
     raise HTTPException(404, "Processed item not found")
+
+
+def _parse_if_match_overlay_version(if_match: str | None) -> int:
+    """Parse ``If-Match`` as the integer ``overlay_version`` the client believes it is updating."""
+    if if_match is None or not str(if_match).strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="If-Match header is required for overlay updates",
+        )
+    raw = if_match.strip()
+    if "," in raw:
+        raw = raw.split(",", 1)[0].strip()
+    if raw.upper().startswith("W/"):
+        raw = raw[2:].lstrip()
+    if len(raw) >= 2 and ((raw[0] == '"' and raw[-1] == '"') or (raw[0] == "'" and raw[-1] == "'")):
+        raw = raw[1:-1].strip()
+    try:
+        version = int(raw, 10)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="If-Match must be the integer overlay version",
+        )
+    if version < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="If-Match overlay version must be non-negative",
+        )
+    return version
+
+
+@router.patch("/{run_id}/items/{item_id}", response_model=ProcessedItemDetailOut)
+def patch_run_processed_item_overlay(
+    run_id: str,
+    item_id: int,
+    body: ProcessedItemOverlayPatchIn,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    """Replace review overlay JSON with optimistic concurrency (``If-Match`` = ``overlay_version``).
+
+    Returns **409** when ``If-Match`` does not match the stored version. Synthetic ``items/1``
+    whole-graph rows are not backed by ``agate_processed_item`` and return **404**.
+    """
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+
+    item = session.get(AgateProcessedItem, item_id)
+    if item is None or item.run_id != run_id:
+        raise HTTPException(404, "Processed item not found")
+
+    expected_version = _parse_if_match_overlay_version(if_match)
+    overlay_payload = body.overlay
+
+    stmt = (
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.id == item_id,
+            AgateProcessedItem.run_id == run_id,
+            AgateProcessedItem.overlay_version == expected_version,
+        )
+        .values(
+            overlay_json=json.dumps(overlay_payload, ensure_ascii=False),
+            overlay_version=AgateProcessedItem.overlay_version + 1,
+            updated_at=datetime.now(UTC),
+        )
+    )
+    result = session.execute(stmt)
+    if result.rowcount != 1:
+        session.rollback()
+        session.refresh(item)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "overlay_version_conflict",
+                "current_version": int(item.overlay_version),
+            },
+        )
+    session.commit()
+    session.refresh(item)
+
+    by_item, null_b, currency = _rollup_ai_costs_for_run(session, run_id)
+    rid = item.id
+    iid = int(rid) if rid is not None else 0
+    est, inc = by_item.get(iid, (Decimal("0"), False))
+    return _detail_from_agate_processed_row(
+        item,
+        session=session,
+        project_id=pid,
+        estimated_ai_cost=est,
+        estimated_ai_cost_incomplete=inc,
+        estimated_ai_cost_currency=currency,
+    )
 
 
 @router.post("/{run_id}/items/{item_id}/rerun", response_model=RerunItemResponse)

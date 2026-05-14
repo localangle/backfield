@@ -1,6 +1,6 @@
 import type { Run } from '@/lib/api'
 
-function formatCurrencySummary(value: number, currency: string): string {
+export function formatCurrencySummary(value: number, currency: string): string {
   const formatter = new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency,

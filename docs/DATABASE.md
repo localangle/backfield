@@ -56,7 +56,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 
 - `agate_graph` — stored graph spec (JSON), FK to `backfield_project`.
 - `agate_run` — execution record, status, result/error JSON.
-- `agate_processed_item` — per-S3-object work unit for **S3Input** batch runs: FK to `agate_run.id`, optional `source_file` (S3 key), optional `input_json` (full valid document), `status` (`pending` / `running` / `succeeded` / `failed` / `skipped`), optional `error_message` / `result_json`, timestamps. Indexed on `run_id`.
+- `agate_processed_item` — per-S3-object work unit for **S3Input** batch runs: FK to `agate_run.id`, optional `source_file` (S3 key), optional `input_json` (full valid document), `status` (`pending` / `running` / `succeeded` / `failed` / `skipped`), optional `error_message` / `result_json` (immutable model output), optional **`overlay_json`** (human review overlay) and integer **`overlay_version`** (optimistic concurrency for overlay PATCH; default `0`), timestamps. Indexed on `run_id`.
 - `agate_template` — curated template flows (`spec_json`); instantiated as new `agate_graph` rows.
 
 Schema revisions start at `001_agate_baseline` (initial `agate_*` tables and seed rows). Revision **`002_backfield_identity`** adds identity tables, renames `agate_project` → `backfield_project` (adds `organization_id`, optional `workspace_id`), and renames `agate_project_secret` → `backfield_project_secret`. Revision **`002_starter_flow_layout`** (runs next) is a **data migration** that rewrites stored `spec_json` for graphs named `Starter flow` (and the seeded **Geocode pipeline** template) so node positions match the UI card widths—run `make migrate` so existing databases pick up the layout fix.
@@ -94,6 +94,8 @@ Revision **`022_sb_canon_district`** adds nullable **`district_kind`**, **`distr
 Revision **`023_sb_name_unique_redirect`** adds unique **`(organization_id, name)`** on **`stylebook`** and creates **`stylebook_slug_redirect`** for rename redirect history.
 
 Revision **`016_agate_processed_item`** creates **`agate_processed_item`** with FK to **`agate_run.id`** (`ON DELETE CASCADE`) and index **`ix_agate_processed_item_run_id`**.
+
+Revision **`033_agate_processed_item_overlay`** adds nullable **`overlay_json`** and non-null **`overlay_version`** (default `0`) for run-scoped review overlay storage and optimistic concurrency.
 
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 

@@ -16,6 +16,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Index,
+    Integer,
     Numeric,
     Text,
     UniqueConstraint,
@@ -1099,6 +1100,12 @@ class AgateProcessedItem(SQLModel, table=True):
     )
     error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     result_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    #: Human review overlay (JSON text); immutable model output stays in ``result_json``.
+    overlay_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    overlay_version: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default=text("0")),
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

@@ -94,6 +94,14 @@ const ProjectAccessKeysPanel = forwardRef<
     return row.user_id === userId
   }
 
+  const nextRotatedLabel = (row: ProjectAccessCredential): string => {
+    const label = row.label?.trim()
+    if (label) {
+      return label.startsWith("Rotated ") ? label : `Rotated (${label})`
+    }
+    return `Rotated ${row.key_prefix.slice(0, 8)}…`
+  }
+
   const handleCreate = async () => {
     setSaving(true)
     setError(null)
@@ -154,7 +162,7 @@ const ProjectAccessKeysPanel = forwardRef<
     try {
       const created = await createProjectAccessKey(projectId, {
         credential_type: row.credential_type as "user" | "service",
-        label: row.label ? `Rotated (${row.label})` : `Rotated ${row.key_prefix.slice(0, 8)}…`,
+        label: nextRotatedLabel(row),
       })
       setRotateRevokeId(row.id)
       setRawKeyPayload(created)

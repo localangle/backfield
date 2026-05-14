@@ -74,6 +74,7 @@ export interface ProcessedItemSummary {
   /** True when this row is UI-only (no ``agate_processed_item`` row); run output lives on the run. */
   synthetic?: boolean
   source_file: string | null
+  input_preview?: string | null
   status: 'pending' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'skipped'
   error: string | null
   created_at: string
@@ -88,6 +89,15 @@ export interface ProcessedItemSummary {
   estimated_ai_cost?: number
   estimated_ai_cost_incomplete?: boolean
   estimated_ai_cost_currency?: string
+}
+
+/** Resolved article text for processed item verification (see API docs). */
+export interface ArticleContext {
+  article_id?: number | null
+  headline?: string | null
+  body: string
+  resolution: 'substrate' | 'inline_fallback' | 'none'
+  reason?: string | null
 }
 
 export interface ProcessedItem {
@@ -106,6 +116,15 @@ export interface ProcessedItem {
   estimated_ai_cost?: number
   estimated_ai_cost_incomplete?: boolean
   estimated_ai_cost_currency?: string
+  /** Human review overlay (mutable); model output stays in ``output`` / ``node_outputs``. */
+  overlay?: Record<string, unknown> | null
+  /** Optimistic concurrency for ``patchProcessedItemOverlay`` (``If-Match``). */
+  overlay_version?: number
+  /** Merged model + overlay location lane (see API docs). */
+  merged_locations?: Array<Record<string, unknown>>
+  /** Overlay patches whose anchor no longer exists in model output. */
+  stale_overlay_entries?: Array<Record<string, unknown>>
+  article_context?: ArticleContext
 }
 
 export interface Run {
@@ -191,6 +210,7 @@ interface RawProcessedItem {
   id: number
   run_id: string
   source_file: string | null
+  input_preview?: string | null
   status: string
   error_message: string | null
   created_at: string
@@ -271,6 +291,7 @@ function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
     id: row.id,
     run_id: row.run_id,
     source_file: row.source_file,
+    input_preview: row.input_preview ?? null,
     status: uiStatus,
     error: row.error_message ?? null,
     created_at: row.created_at,
@@ -284,6 +305,41 @@ function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
     estimated_ai_cost: _parseCostAmount(row.estimated_ai_cost),
     estimated_ai_cost_incomplete: Boolean(row.estimated_ai_cost_incomplete),
     estimated_ai_cost_currency: cur,
+  }
+}
+
+function _syntheticWholeRunItem(
+  raw: RawRun,
+  status: ProcessedItemSummary['status'],
+  {
+    estimated_ai_cost,
+    estimated_ai_cost_incomplete,
+    estimated_ai_cost_currency,
+  }: {
+    estimated_ai_cost: number
+    estimated_ai_cost_incomplete: boolean
+    estimated_ai_cost_currency: string
+  },
+): ProcessedItemSummary {
+  return {
+    id: 1,
+    run_id: raw.id,
+    synthetic: true,
+    source_file: null,
+    input_preview: null,
+    status,
+    error: status === 'failed' ? raw.error_message || 'failed' : null,
+    created_at: raw.created_at,
+    updated_at: raw.created_at,
+    output_s3_bucket: null,
+    output_s3_key: null,
+    input_article_id: null,
+    input_headline: null,
+    current_node_types: null,
+    is_array_splitter_item: false,
+    estimated_ai_cost,
+    estimated_ai_cost_incomplete,
+    estimated_ai_cost_currency,
   }
 }
 
@@ -301,49 +357,37 @@ function normalizeRun(raw: RawRun): Run {
   let items: ProcessedItemSummary[] = []
   if (raw.processed_items && raw.processed_items.length > 0) {
     items = raw.processed_items.map(_mapDbProcessedItem)
-  } else if (st === 'completed' && outputs) {
+  } else if (st === 'pending') {
     items = [
-      {
-        id: 1,
-        run_id: raw.id,
-        synthetic: true,
-        source_file: null,
-        status: 'succeeded',
-        error: null,
-        created_at: raw.created_at,
-        updated_at: raw.created_at,
-        output_s3_bucket: null,
-        output_s3_key: null,
-        input_article_id: null,
-        input_headline: null,
-        current_node_types: null,
-        is_array_splitter_item: false,
+      _syntheticWholeRunItem(raw, 'pending', {
         estimated_ai_cost: wrEst,
         estimated_ai_cost_incomplete: wrInc,
         estimated_ai_cost_currency: wrCur,
-      },
+      }),
+    ]
+  } else if (st === 'running') {
+    items = [
+      _syntheticWholeRunItem(raw, 'running', {
+        estimated_ai_cost: wrEst,
+        estimated_ai_cost_incomplete: wrInc,
+        estimated_ai_cost_currency: wrCur,
+      }),
+    ]
+  } else if (st === 'completed' && outputs) {
+    items = [
+      _syntheticWholeRunItem(raw, 'succeeded', {
+        estimated_ai_cost: wrEst,
+        estimated_ai_cost_incomplete: wrInc,
+        estimated_ai_cost_currency: wrCur,
+      }),
     ]
   } else if (st === 'completed_with_errors') {
     items = [
-      {
-        id: 1,
-        run_id: raw.id,
-        synthetic: true,
-        source_file: null,
-        status: 'failed',
-        error: raw.error_message || 'failed',
-        created_at: raw.created_at,
-        updated_at: raw.created_at,
-        output_s3_bucket: null,
-        output_s3_key: null,
-        input_article_id: null,
-        input_headline: null,
-        current_node_types: null,
-        is_array_splitter_item: false,
+      _syntheticWholeRunItem(raw, 'failed', {
         estimated_ai_cost: wrEst,
         estimated_ai_cost_incomplete: wrInc,
         estimated_ai_cost_currency: wrCur,
-      },
+      }),
     ]
   }
 
@@ -513,6 +557,47 @@ interface RawProcessedItemDetail {
   estimated_ai_cost?: string | number | null
   estimated_ai_cost_incomplete?: boolean
   estimated_ai_cost_currency?: string | null
+  overlay?: Record<string, unknown> | null
+  overlay_version?: number
+  merged_locations?: Array<Record<string, unknown>>
+  stale_overlay_entries?: Array<Record<string, unknown>>
+  article_context?: unknown
+}
+
+function _normalizeArticleContext(raw: unknown): ArticleContext {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      article_id: null,
+      headline: null,
+      body: '',
+      resolution: 'none',
+      reason: null,
+    }
+  }
+  const o = raw as Record<string, unknown>
+  const res = o.resolution
+  const resolution: ArticleContext['resolution'] =
+    res === 'substrate' || res === 'inline_fallback' || res === 'none' ? res : 'none'
+  const aid = o.article_id
+  const articleId =
+    typeof aid === 'number' && !Number.isNaN(aid)
+      ? aid
+      : typeof aid === 'string'
+        ? Number.parseInt(aid, 10) || null
+        : null
+  const hl = o.headline
+  const headline = typeof hl === 'string' ? hl : null
+  const bodyRaw = o.body
+  const body = typeof bodyRaw === 'string' ? bodyRaw : ''
+  const reasonRaw = o.reason
+  const reason = typeof reasonRaw === 'string' ? reasonRaw : null
+  return {
+    article_id: articleId,
+    headline,
+    body,
+    resolution,
+    reason,
+  }
 }
 
 function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedItem {
@@ -528,6 +613,12 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
         ? st
         : 'pending'
   const cur = _currencyFromRaw(raw.estimated_ai_cost_currency, 'USD')
+  const overlayVersion =
+    typeof raw.overlay_version === 'number' && !Number.isNaN(raw.overlay_version)
+      ? raw.overlay_version
+      : typeof raw.overlay_version === 'string'
+        ? Number.parseInt(raw.overlay_version, 10) || 0
+        : 0
   return {
     id: raw.id,
     run_id: raw.run_id,
@@ -543,6 +634,13 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
     estimated_ai_cost: _parseCostAmount(raw.estimated_ai_cost),
     estimated_ai_cost_incomplete: Boolean(raw.estimated_ai_cost_incomplete),
     estimated_ai_cost_currency: cur,
+    overlay: raw.overlay ?? null,
+    overlay_version: overlayVersion,
+    merged_locations: Array.isArray(raw.merged_locations) ? raw.merged_locations : [],
+    stale_overlay_entries: Array.isArray(raw.stale_overlay_entries)
+      ? raw.stale_overlay_entries
+      : [],
+    article_context: _normalizeArticleContext(raw.article_context),
   }
 }
 
@@ -551,6 +649,22 @@ export async function getProcessedItem(
   itemId: number
 ): Promise<ProcessedItem> {
   const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}`)) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
+}
+
+export async function patchProcessedItemOverlay(
+  runId: string | number,
+  itemId: number,
+  overlay: Record<string, unknown>,
+  ifMatchVersion: number
+): Promise<ProcessedItem> {
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}`, {
+    method: 'PATCH',
+    headers: {
+      'If-Match': `"${ifMatchVersion}"`,
+    },
+    body: JSON.stringify({ overlay }),
+  })) as RawProcessedItemDetail
   return normalizeProcessedItemDetail(raw)
 }
 

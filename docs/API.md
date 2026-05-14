@@ -92,7 +92,7 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 - `routers/templates.py`
   - List templates and instantiate them into project graphs.
 - `routers/runs.py`
-  - Create, list, fetch, and cancel runs; enqueue `**worker.tasks.execute_s3_batch_setup`** when the graph spec includes an **S3Input** node, otherwise `**worker.tasks.execute_agate_run`**. `**POST /runs/{id}/cancel**` stops a `**pending**` or `**running**` run (marks the run `**failed**` with a fixed cancellation message, fails in-flight batch `**agate_processed_item**` rows). `**POST /runs/{id}/items/{item_id}/rerun**` resets one batch `**agate_processed_item**` row to `**pending**`, clears `**result_json**` / `**error_message**`, sets the parent run back to `**running**` when needed, and enqueues `**worker.tasks.execute_processed_item**` on the `**agate**` Celery queue (same as `**CELERY_QUEUE**`). `**GET /runs**` (list) includes aggregated item counts (`**total_items**`, `**pending_items**`, `**running_items**`, `**succeeded_items**`, `**failed_items**`) plus `**estimated_ai_cost_total**` / `**estimated_ai_cost_total_incomplete**` (sum of all `**backfield_ai_call_record**` rows for each run, batched in one query). `**GET /runs/{id}**` includes the same aggregated item counts, `**processed_items**` (`agate_processed_item` rows), each with `**estimated_ai_cost**` / `**estimated_ai_cost_incomplete**` / `**estimated_ai_cost_currency**` rolled up from `**backfield_ai_call_record**`, plus `**whole_run_ai_cost_***` for LLM rows not tied to a batch item (single-graph runs); detail responses also include `**estimated_ai_cost_total**` matching the sum of those rollups. `**GET /runs/{id}/items/{item_id}**` returns one item’s parsed `**input**` / `**output**` (child graph `**result_json**`) and the same cost rollup fields.
+  - Create, list, fetch, and cancel runs; enqueue `**worker.tasks.execute_s3_batch_setup`** when the graph spec includes an **S3Input** node, otherwise `**worker.tasks.execute_agate_run`**. `**POST /runs/{id}/cancel**` stops a `**pending**` or `**running**` run (marks the run `**failed**` with a fixed cancellation message, fails in-flight batch `**agate_processed_item**` rows). `**POST /runs/{id}/items/{item_id}/rerun**` resets one batch `**agate_processed_item**` row to `**pending**`, clears `**result_json**` / `**error_message**`, sets the parent run back to `**running**` when needed, and enqueues `**worker.tasks.execute_processed_item**` on the `**agate**` Celery queue (same as `**CELERY_QUEUE**`). `**GET /runs**` (list) includes aggregated item counts (`**total_items**`, `**pending_items**`, `**running_items**`, `**succeeded_items**`, `**failed_items**`) plus `**estimated_ai_cost_total**` / `**estimated_ai_cost_total_incomplete**` (sum of all `**backfield_ai_call_record**` rows for each run, batched in one query). `**GET /runs/{id}**` includes the same aggregated item counts, `**processed_items**` (`agate_processed_item` rows), each with `**input_preview**` (short text snippet from common input fields when available) and `**estimated_ai_cost**` / `**estimated_ai_cost_incomplete**` / `**estimated_ai_cost_currency**` rolled up from `**backfield_ai_call_record**`, plus `**whole_run_ai_cost_***` for LLM rows not tied to a batch item (single-graph runs); detail responses also include `**estimated_ai_cost_total**` matching the sum of those rollups. `**GET /runs/{id}/items/{item_id}**` returns one item’s parsed `**input**` / `**output**` (child graph `**result_json**`), additive `**overlay**` (parsed `**overlay_json**`, or `null`) and integer `**overlay_version**` (`0` when never saved), plus `**merged_locations**` and `**stale_overlay_entries**` (location merge lane; see **Processed item location overlay (v1)** below), **`article_context`** (article pane payload; see **Processed item article context (v1)** below), and the same cost rollup fields. `**PATCH /runs/{id}/items/{item_id}**` replaces the review overlay JSON; callers must send header `**If-Match**` set to the current integer `**overlay_version**` (RFC-style quoted value allowed, e.g. `**"0"**`); on success the version increments and the response body matches `**GET**` for that item. Mismatched `**If-Match**` returns **409** with `**detail.current_version**`. Synthetic whole-graph `**items/1**` rows (no `**agate_processed_item**` backing) return **404** for `**PATCH**`.
 - `routers/nodes.py`
   - Surface node metadata derived from `agate-runtime`.
 
@@ -113,6 +113,38 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 5. Client may call `**POST /runs/{id}/cancel**` while the run is `**pending**` or `**running**` to stop it; the worker cooperates by not overwriting a cancelled run when it finishes.
 6. Client polls `GET /runs/{id}` until the run reaches a terminal state (refresh `**processed_items**` for per-file batch progress). For S3 batch rows, `**POST /runs/{id}/items/{item_id}/rerun**` re-queues a single file without starting a new run.
 7. `POST /runs`, `GET /runs`, and `GET /runs/{id}` include `mapbox_api_token` when the run’s project has a stored `MAPBOX_API_TOKEN` secret (decrypted server-side for browser map visualizations). Otherwise the field is `null`.
+
+## Processed item location overlay (v1)
+
+Review overlay JSON is stored on **`agate_processed_item.overlay_json`** and updated with **`PATCH /runs/{id}/items/{item_id}`** (see runs router). The merge service reads **immutable** model output from **`output`** / **`node_outputs`** (parsed **`result_json`**) and combines it with the overlay for **`GET …/items/{item_id}`** additive fields.
+
+**Overlay shape — `locations` subsection**
+
+- **`locations.by_anchor`**: object mapping **anchor** string → shallow patch dict. Patches are merged into the matching model place object at the **top level** of that object (same keys as PlaceExtract output: `description`, `original_text`, nested `location`, etc.). Anchor resolution for each model row matches, in order: string **`id`**, else string **`mention_id`**, else **`{node_id}:{index}`** where `node_id` is the **`output`** key and `index` is the row’s position in that node’s **`locations`** array. Only dict values whose **`locations`** value is an array (or `{ "locations": [ … ] }`) contribute to the baseline lane.
+- **`locations.user_added`**: array of user-authored rows. Each row **must** have string **`id`** with prefix **`user_place:`** (stable UUID suffix). Prefer a nested **`location`** object (place-shaped dict); otherwise non-`id` top-level keys are treated as the place payload.
+
+**GET processed item — additive response fields**
+
+- **`merged_locations`**: array of `{ "anchor", "source": "model"|"user", "node_id", "index_in_node", "stale", "location" }`. **`stale`** is always **`false`** for rows included here; the lane lists current model rows (with patches applied) plus valid **`user_place:*`** rows.
+- **`stale_overlay_entries`**: array of `{ "anchor", "reason": "anchor_missing_from_model_output", "patch" }` for **`by_anchor`** keys that no longer match any model row (for example after a rerun changed or removed that id).
+
+**Immutability:** **`output`** and **`node_outputs`** are not modified by merge; they remain the worker/model truth. **`overlay`** continues to echo the stored overlay blob.
+
+## Processed item article context (v1)
+
+**`GET /runs/{id}/items/{item_id}`** includes an **`article_context`** object for the verification UI:
+
+- **`article_id`**: substrate row id when **`resolution`** is **`substrate`**, otherwise the requested id when one was parsed but not applied, or **`null`** when none.
+- **`headline`**: display headline when known (substrate row or inline fields such as **`headline`**, **`title`**, **`input_headline`** on the item **`input`**).
+- **`body`**: text suitable for the article pane (substrate **`text`** when **`substrate`**, else best-effort inline body).
+- **`resolution`**: **`substrate`** — row loaded from **`substrate_article`** scoped to the run’s graph **`project_id`**; **`inline_fallback`** — no usable substrate row, but inline text was derived from **`input`**; **`none`** — no article id and no non-empty inline body.
+- **`reason`**: optional machine string for UI branching, including **`no_input_article_id`**, **`no_project_scope_for_article_fetch`** (graph not project-scoped), **`article_not_found`**, **`article_deleted`**, **`article_project_mismatch`** (id points at another project’s row).
+
+**Article id on input:** Parsed from **`input_article_id`**, then **`article_id`**, then **`substrate_article_id`** on the processed item **`input`** object (from **`input_json`**).
+
+**Inline body:** Uses the same longest-field heuristic as JSON ingest (**`resolve_document_body_text`** in **`agate-runtime`**): among **`article_text`**, **`articleBody`**, **`article_body`**, **`richTextBody`**, **`rich_text`**, **`body`**, **`content`**, **`story`**, **`full_text`**, **`html`**, **`text`**.
+
+**Transport note (Backfield v1):** **`agate-api`** reads **`substrate_article`** in-process from the shared Postgres session after normal project access checks. A future **core-api** HTTP read proxy may replace the transport without changing this JSON shape.
 
 ## API change checklist
 
