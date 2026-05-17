@@ -7,7 +7,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import type { Graph, ProcessedItem } from '@/lib/api'
 import { getProcessedItem, patchProcessedItemOverlay } from '@/lib/api'
 import { stylebookCanonicalDetailHref, stylebookCanonicalListHref } from '@/lib/platformUrls'
@@ -17,30 +16,29 @@ import {
   buildGeocodePatchForGeometry,
   buildVerificationLeafletCollections,
   extractGeometryFromPlace,
+  getGeocodedPlaceDisplay,
   isApiOverlayGeometryError,
+  isGeocodedPlace,
   iterBaselinePlacesFromOutput,
+  leafletBoundsFromGeometry,
   shallowMergePlacePatch,
   validateGeometryObject,
 } from '@/lib/processedItemPlaceGeometry'
 import { resolveEvidenceSpanInArticle } from '@/lib/processedItemEvidenceSpan'
 import {
-  applyDescriptionPatch,
   getLocationDescription,
   getMergedRowAnchor,
   getStylebookCanonicalHandoffId,
   isApiConflictError,
-  isLocationLinkedToStylebookCanonical,
   normalizeOverlay,
   overlaysStructurallyEqual,
 } from '@/lib/processedItemVerificationOverlay'
 import { Loader2, MapPin, MousePointer, Square } from 'lucide-react'
 
-function nodeLabelForId(graph: Graph | null, nodeId: string): string {
-  const n = graph?.spec?.nodes?.find((x) => x.id === nodeId)
-  if (!n) return nodeId
-  const p = n.params as Record<string, unknown> | undefined
-  const name = p?.name ?? p?.label
-  return typeof name === 'string' && name.trim() ? name : n.type
+function formatPlaceFieldLabel(raw: string): string {
+  const t = raw.trim()
+  if (!t) return '—'
+  return t.replace(/_/g, ' ')
 }
 
 export interface ProcessedItemVerificationSectionProps {
@@ -77,8 +75,8 @@ export function ProcessedItemVerificationSection({
 
   const [mapEditing, setMapEditing] = useState(false)
   const [selectedAnchor, setSelectedAnchor] = useState<string | null>(null)
-  const [hoveredAnchor, setHoveredAnchor] = useState<string | null>(null)
   const [geometryAddMode, setGeometryAddMode] = useState<'point' | 'rectangle' | null>(null)
+  const [mapFocusBoundsKey, setMapFocusBoundsKey] = useState(0)
 
   const dirty = useMemo(
     () => !overlaysStructurallyEqual(baselineOverlay, draftOverlay),
@@ -156,24 +154,39 @@ export function ProcessedItemVerificationSection({
     })
   }, [mergedRows, draftOverlay])
 
-  const storyHighlightAnchor = hoveredAnchor ?? selectedAnchor
+  const storyHighlightAnchor = selectedAnchor
+
+  const geocodedPlaceRows = useMemo(
+    () =>
+      previewMergedRows.filter((row) => {
+        const loc = row.location as Record<string, unknown> | undefined
+        return isGeocodedPlace(loc)
+      }),
+    [previewMergedRows],
+  )
+
+  const mapFocusBounds = useMemo(() => {
+    if (!selectedAnchor) return null
+    const row = previewMergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
+    const loc = row?.location as Record<string, unknown> | undefined
+    return leafletBoundsFromGeometry(extractGeometryFromPlace(loc ?? null))
+  }, [previewMergedRows, selectedAnchor])
+
+  const selectPlaceAnchor = useCallback((anchor: string) => {
+    setSelectedAnchor(anchor)
+    setMapFocusBoundsKey((k) => k + 1)
+    setGeometryAddMode(null)
+  }, [])
 
   const storyHighlightResult = useMemo(() => {
     const body = typeof article?.body === 'string' ? article.body : ''
     if (!storyHighlightAnchor) {
       return resolveEvidenceSpanInArticle(body, undefined)
     }
-    const row = mergedRows.find((r) => getMergedRowAnchor(r) === storyHighlightAnchor)
-    if (!row) {
-      return resolveEvidenceSpanInArticle(body, undefined)
-    }
-    const loc =
-      row.source === 'model'
-        ? (baselineByAnchor.get(storyHighlightAnchor) ?? null)
-        : ((previewMergedRows.find((r) => getMergedRowAnchor(r) === storyHighlightAnchor)?.location ??
-            null) as Record<string, unknown> | null)
+    const row = previewMergedRows.find((r) => getMergedRowAnchor(r) === storyHighlightAnchor)
+    const loc = (row?.location ?? null) as Record<string, unknown> | null
     return resolveEvidenceSpanInArticle(body, loc ?? undefined)
-  }, [article?.body, storyHighlightAnchor, mergedRows, previewMergedRows, baselineByAnchor])
+  }, [article?.body, storyHighlightAnchor, previewMergedRows])
 
   const storyHighlightRange = storyHighlightResult.kind === 'range' ? storyHighlightResult : null
 
@@ -227,14 +240,6 @@ export function ProcessedItemVerificationSection({
     },
     [selectedAnchor, mergedRows, showError],
   )
-
-  const handleDescriptionChange = useCallback((anchor: string, value: string) => {
-    setDraftOverlay((prev) => {
-      const next = normalizeOverlay(prev)
-      applyDescriptionPatch(next, anchor, value)
-      return next
-    })
-  }, [])
 
   const persistOverlayDraft = useCallback(async (): Promise<boolean> => {
     if (!dirty) {
@@ -382,8 +387,8 @@ export function ProcessedItemVerificationSection({
         <div>
           <CardTitle>Review</CardTitle>
           <CardDescription>
-            Compare the story text with extracted places. Linked catalog entries can only be edited in
-            your catalog.
+            Read the story beside the map. Pick a geocoded place below to highlight it in the story
+            and zoom the map. Use Edit map to adjust locations, then save when you are ready.
           </CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -415,8 +420,8 @@ export function ProcessedItemVerificationSection({
           </Alert>
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-2 min-h-[12rem]">
+        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+          <div className="flex min-h-0 flex-col space-y-2 lg:min-h-[min(70vh,40rem)]">
             <h3 className="text-sm font-semibold">Story text</h3>
             {article?.headline ? (
               <p className="text-sm font-medium text-foreground">{article.headline}</p>
@@ -426,7 +431,7 @@ export function ProcessedItemVerificationSection({
                 No article text is available for this item yet.
               </p>
             ) : (
-              <div className="rounded-md border bg-muted/30 p-3 max-h-[min(70vh,36rem)] overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-md border bg-muted/30 p-3">
                 {article?.body?.trim() ? (
                   <>
                     <ProcessedItemArticleBody
@@ -454,220 +459,167 @@ export function ProcessedItemVerificationSection({
             ) : null}
           </div>
 
-          <div className="space-y-2 min-h-[12rem]">
-            <h3 className="text-sm font-semibold">Places</h3>
-            {mergedRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No extracted places are listed for this item.</p>
-            ) : (
-              <ul className="space-y-3 max-h-[min(70vh,36rem)] overflow-y-auto pr-1">
-                {mergedRows.map((row, idx) => {
-                  const anchor = getMergedRowAnchor(row)
-                  const loc = row.location as Record<string, unknown> | undefined
-                  const baselineLoc =
-                    row.source === 'model' && anchor ? baselineByAnchor.get(anchor) : undefined
-                  const modelFlaggedReview =
-                    row.source === 'model' &&
-                    baselineLoc !== undefined &&
-                    typeof baselineLoc === 'object' &&
-                    baselineLoc !== null &&
-                    (baselineLoc as { needs_review?: unknown }).needs_review === true
-                  const rowStale = row.stale === true || (anchor ? staleAnchorSet.has(anchor) : false)
-                  const linked = isLocationLinkedToStylebookCanonical(loc)
-                  const source = row.source === 'user' ? 'Added by you' : 'From model'
-                  const nodeId = typeof row.node_id === 'string' ? row.node_id : ''
-                  const nodeLabel = nodeId ? nodeLabelForId(graph, nodeId) : ''
-                  const description = getLocationDescription(loc)
-                  const displayDescription =
-                    typeof description === 'string' && description.length > 0 ? description : ''
+          <div
+            className={
+              mapEditing
+                ? 'flex min-h-0 flex-col gap-3 rounded-lg border border-primary/30 bg-primary/[0.06] p-3 ring-2 ring-primary/20 dark:bg-primary/10'
+                : 'flex min-h-0 flex-col gap-3 rounded-lg border bg-card p-3'
+            }
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold inline-flex items-center gap-2">
+                <MapPin className="h-4 w-4" aria-hidden />
+                Locations map
+              </h3>
+              <Button
+                type="button"
+                variant={mapEditing ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setMapEditing((v) => !v)
+                  if (mapEditing) {
+                    setGeometryAddMode(null)
+                  }
+                }}
+              >
+                {mapEditing ? 'Done editing map' : 'Edit map'}
+              </Button>
+              {mapEditing ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={geometryAddMode === 'rectangle'}
+                    onClick={() => {
+                      setGeometryAddMode('point')
+                    }}
+                  >
+                    <MousePointer className="mr-2 h-4 w-4" />
+                    Add point
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={geometryAddMode === 'point'}
+                    onClick={() => {
+                      setGeometryAddMode('rectangle')
+                    }}
+                  >
+                    <Square className="mr-2 h-4 w-4" />
+                    Add rectangle
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void handleAddNewPointMode()
+                    }}
+                  >
+                    New place (point)
+                  </Button>
+                </>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Same map tools as catalog location pages: pick a place with On map, then drag the pin or
+              draw a rectangle. Save when you are ready; changes are not shared until you save.
+            </p>
+            <div className="min-h-[min(45vh,22rem)] w-full shrink-0 lg:min-h-[560px]">
+              {geometryAddMode === 'point' && selectedAnchor === null ? (
+                <LeafletMap
+                  points={mapCollections.points as any}
+                  polygons={mapCollections.polygons as any}
+                  geocoder
+                  showPopups={false}
+                  fitToData={false}
+                  height={600}
+                  initialCenter={[39.8283, -98.5795]}
+                  initialZoom={3}
+                  interactiveWhenEmpty
+                  tileUrl="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                  tileAttribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                  onMapClick={(e) => handleMapClickForNewPlace(e)}
+                />
+              ) : (
+                <ProcessedItemVerificationLeafletMap
+                  collections={mapCollections}
+                  mapEditing={mapEditing}
+                  geometryAddMode={geometryAddMode}
+                  onGeometryAddModeChange={setGeometryAddMode}
+                  editPointFeatureId={editPointFeatureId}
+                  draftGeometry={mapDraftGeometry}
+                  onDraftGeometryChange={handleMapGeometryChange}
+                  mapHeightPx={600}
+                  focusBounds={mapFocusBounds}
+                  focusBoundsKey={mapFocusBoundsKey}
+                  onFeatureSelect={(anchor) => {
+                    selectPlaceAnchor(anchor)
+                  }}
+                />
+              )}
+            </div>
 
-                  const by = (draftOverlay.locations as Record<string, unknown> | undefined)?.by_anchor as
-                    | Record<string, unknown>
-                    | undefined
-                  const patch = by?.[anchor] as Record<string, unknown> | undefined
-                  const inputValue =
-                    patch && typeof patch.description === 'string' ? patch.description : displayDescription
+            <div className="min-h-0 space-y-2 border-t border-border pt-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Geocoded places
+              </h4>
+              {geocodedPlaceRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No geocoded places are listed for this item yet.</p>
+              ) : (
+                <ul className="max-h-[min(38vh,20rem)] space-y-2 overflow-y-auto pr-1">
+                  {geocodedPlaceRows.map((row, idx) => {
+                    const anchor = getMergedRowAnchor(row)
+                    const loc = row.location as Record<string, unknown> | undefined
+                    const display = getGeocodedPlaceDisplay(loc)
+                    const selected = selectedAnchor === anchor
+                    const rowStale = row.stale === true || (anchor ? staleAnchorSet.has(anchor) : false)
 
-                  return (
-                    <li
-                      key={anchor || `row-${idx}`}
-                      className="rounded-md border p-3 space-y-2 bg-card cursor-pointer"
-                      onMouseEnter={() => {
-                        if (anchor) setHoveredAnchor(anchor)
-                      }}
-                      onMouseLeave={() => {
-                        setHoveredAnchor((h) => (h === anchor ? null : h))
-                      }}
-                      onClick={(e) => {
-                        const t = e.target as HTMLElement
-                        if (t.closest('button, input, textarea, a, label')) return
-                        if (!anchor) return
-                        setSelectedAnchor(anchor)
-                        setGeometryAddMode(null)
-                      }}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary">{source}</Badge>
-                        {nodeLabel ? (
-                          <span className="text-xs text-muted-foreground truncate max-w-[12rem]">
-                            {nodeLabel}
-                          </span>
-                        ) : null}
-                        {modelFlaggedReview ? (
-                          <Badge variant="outline" className="border-amber-300 text-amber-900 dark:text-amber-100">
-                            Flagged by the model
-                          </Badge>
-                        ) : null}
+                    return (
+                      <li
+                        key={anchor || `geo-${idx}`}
+                        role="button"
+                        tabIndex={0}
+                        className={
+                          selected
+                            ? 'cursor-pointer space-y-1.5 rounded-md border border-primary bg-primary/5 p-2.5 ring-1 ring-primary/30'
+                            : 'cursor-pointer space-y-1.5 rounded-md border bg-background p-2.5 hover:bg-muted/40'
+                        }
+                        onClick={() => {
+                          if (anchor) selectPlaceAnchor(anchor)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            if (anchor) selectPlaceAnchor(anchor)
+                          }
+                        }}
+                      >
+                        <p className="text-sm font-medium leading-snug text-foreground">
+                          {display.name || '—'}
+                        </p>
+                        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                          <dt className="font-medium text-foreground/80">Type</dt>
+                          <dd>{formatPlaceFieldLabel(display.type)}</dd>
+                          <dt className="font-medium text-foreground/80">Address</dt>
+                          <dd className="text-foreground/90">{display.formattedAddress || '—'}</dd>
+                          <dt className="font-medium text-foreground/80">Role</dt>
+                          <dd>{formatPlaceFieldLabel(display.role)}</dd>
+                        </dl>
                         {rowStale ? (
-                          <Badge variant="outline" className="text-amber-800 border-amber-300">
+                          <Badge variant="outline" className="mt-1 border-amber-300 text-amber-800">
                             Saved edit may not apply
                           </Badge>
                         ) : null}
-                        <Button
-                          type="button"
-                          variant={selectedAnchor === anchor ? 'default' : 'outline'}
-                          size="sm"
-                          className="ml-auto"
-                          onClick={(ev) => {
-                            ev.stopPropagation()
-                            setSelectedAnchor(anchor)
-                            setMapEditing(true)
-                            setGeometryAddMode(null)
-                          }}
-                        >
-                          On map
-                        </Button>
-                      </div>
-                      {linked ? (
-                        <>
-                          <p className="text-sm text-foreground">{displayDescription || '—'}</p>
-                          <p className="text-xs text-muted-foreground">
-                            This place is linked to your catalog. Map edits here stay with this run as
-                            drafts until you promote them in your catalog.
-                          </p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="w-full sm:w-auto"
-                            disabled
-                            title="Coming soon"
-                          >
-                            Edit in catalog
-                          </Button>
-                        </>
-                      ) : (
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-muted-foreground" htmlFor={`desc-${anchor}`}>
-                            Description
-                          </label>
-                          <Input
-                            id={`desc-${anchor}`}
-                            value={inputValue}
-                            onChange={(ev) => handleDescriptionChange(anchor, ev.target.value)}
-                            disabled={!anchor}
-                          />
-                        </div>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
           </div>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold inline-flex items-center gap-2">
-              <MapPin className="h-4 w-4" aria-hidden />
-              Map
-            </h3>
-            <Button
-              type="button"
-              variant={mapEditing ? 'secondary' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setMapEditing((v) => !v)
-                if (mapEditing) {
-                  setGeometryAddMode(null)
-                }
-              }}
-            >
-              {mapEditing ? 'Done editing map' : 'Edit map'}
-            </Button>
-            {mapEditing ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={geometryAddMode === 'rectangle'}
-                  onClick={() => {
-                    setGeometryAddMode('point')
-                  }}
-                >
-                  <MousePointer className="mr-2 h-4 w-4" />
-                  Add point
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={geometryAddMode === 'point'}
-                  onClick={() => {
-                    setGeometryAddMode('rectangle')
-                  }}
-                >
-                  <Square className="mr-2 h-4 w-4" />
-                  Add rectangle
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    void handleAddNewPointMode()
-                  }}
-                >
-                  New place (point)
-                </Button>
-              </>
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Same map tools as catalog location pages: pick a place with On map, then drag the pin or
-            draw a rectangle. Save when you are ready; changes are not shared until you save.
-          </p>
-          {geometryAddMode === 'point' && selectedAnchor === null ? (
-            <LeafletMap
-              points={mapCollections.points as any}
-              polygons={mapCollections.polygons as any}
-              geocoder
-              showPopups={false}
-              fitToData={false}
-              initialCenter={[39.8283, -98.5795]}
-              initialZoom={3}
-              interactiveWhenEmpty
-              tileUrl="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-              tileAttribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              onMapClick={(e) => handleMapClickForNewPlace(e)}
-            />
-          ) : (
-            <ProcessedItemVerificationLeafletMap
-              collections={mapCollections}
-              mapEditing={mapEditing}
-              geometryAddMode={geometryAddMode}
-              onGeometryAddModeChange={setGeometryAddMode}
-              editPointFeatureId={editPointFeatureId}
-              draftGeometry={mapDraftGeometry}
-              onDraftGeometryChange={handleMapGeometryChange}
-              onFeatureSelect={(anchor) => {
-                setSelectedAnchor(anchor)
-                setMapEditing(true)
-                setGeometryAddMode(null)
-              }}
-            />
-          )}
         </div>
       </CardContent>
     </Card>

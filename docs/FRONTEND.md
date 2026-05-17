@@ -28,6 +28,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 - Own browser-facing API access through `src/lib/api.ts`.
 - Consume generated node registry output from `src/nodes/registry.ts`.
 - Keep page and component code readable, explicit, and easy to scan.
+- **Processed item Review (run item):** On wide viewports the **Review** card uses a **two-column band**—**story text** on the left and a **tall locations map** on the right (same hierarchy as the legacy dashboard article geography tab). **Geocoded places** (name, type, formatted address, editorial role from `nature`) are a **scrollable list under the map**; selecting a row highlights the story and zooms the map. The map and merge lane use **geocoded** place rows when present (see `docs/API.md` → merged baseline); the **Visualizations** tab does **not** repeat a second locations map for Geocode nodes.
 
 ## Auth and API bases (Agate UI)
 

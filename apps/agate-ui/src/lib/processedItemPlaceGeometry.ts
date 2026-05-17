@@ -97,11 +97,16 @@ export function validateGeometryObject(geometry: Record<string, unknown> | null)
   return null
 }
 
-export function iterBaselinePlacesFromOutput(
-  output: Record<string, unknown> | null | undefined,
+function anchorForPlaceDict(place: Record<string, unknown>, nodeId: string, index: number): string {
+  let aid = place.id
+  if (aid === undefined || aid === '') aid = place.mention_id
+  return aid !== undefined && aid !== null && String(aid) !== '' ? String(aid) : `${nodeId}:${index}`
+}
+
+function iterRowsFromLocations(
+  output: Record<string, unknown>,
 ): Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> {
   const rows: Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> = []
-  if (!output || typeof output !== 'object') return rows
   for (const [nodeId, payload] of Object.entries(output)) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue
     const p = payload as Record<string, unknown>
@@ -114,14 +119,179 @@ export function iterBaselinePlacesFromOutput(
     rawLocs.forEach((loc, i) => {
       if (!loc || typeof loc !== 'object' || Array.isArray(loc)) return
       const place = loc as Record<string, unknown>
-      let aid = place.id
-      if (aid === undefined || aid === '') aid = place.mention_id
-      const anchor =
-        aid !== undefined && aid !== null && String(aid) !== '' ? String(aid) : `${nodeId}:${i}`
-      rows.push({ anchor, nodeId, index: i, location: place })
+      rows.push({ anchor: anchorForPlaceDict(place, nodeId, i), nodeId, index: i, location: place })
     })
   }
   return rows
+}
+
+function iterRowsFromPlaces(
+  output: Record<string, unknown>,
+): Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> {
+  const rows: Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> = []
+  for (const [nodeId, payload] of Object.entries(output)) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue
+    const places = (payload as Record<string, unknown>).places
+    if (!places || typeof places !== 'object' || Array.isArray(places)) continue
+    const pl = places as Record<string, unknown>
+    let idx = 0
+    const areas = pl.areas
+    if (areas && typeof areas === 'object' && !Array.isArray(areas)) {
+      const ar = areas as Record<string, unknown>
+      for (const bucket of ['states', 'counties', 'cities', 'neighborhoods', 'regions', 'other'] as const) {
+        const items = ar[bucket]
+        if (!Array.isArray(items)) continue
+        for (const loc of items) {
+          if (!loc || typeof loc !== 'object' || Array.isArray(loc)) continue
+          const place = loc as Record<string, unknown>
+          rows.push({ anchor: anchorForPlaceDict(place, nodeId, idx), nodeId, index: idx, location: place })
+          idx += 1
+        }
+      }
+    }
+    for (const bucket of ['points', 'needs_review', 'other'] as const) {
+      const items = pl[bucket]
+      if (!Array.isArray(items)) continue
+      for (const loc of items) {
+        if (!loc || typeof loc !== 'object' || Array.isArray(loc)) continue
+        const place = loc as Record<string, unknown>
+        rows.push({ anchor: anchorForPlaceDict(place, nodeId, idx), nodeId, index: idx, location: place })
+        idx += 1
+      }
+    }
+  }
+  return rows
+}
+
+/** Baseline place rows for overlay math: ``locations`` arrays plus Geocode ``places`` (same anchor → geocode wins). */
+export function iterBaselinePlacesFromOutput(
+  output: Record<string, unknown> | null | undefined,
+): Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> {
+  if (!output || typeof output !== 'object') return []
+  const byAnchor = new Map<
+    string,
+    { anchor: string; nodeId: string; index: number; location: Record<string, unknown> }
+  >()
+  const order: string[] = []
+  const upsert = (row: { anchor: string; nodeId: string; index: number; location: Record<string, unknown> }) => {
+    if (!byAnchor.has(row.anchor)) order.push(row.anchor)
+    byAnchor.set(row.anchor, row)
+  }
+  for (const row of iterRowsFromLocations(output)) upsert(row)
+  for (const row of iterRowsFromPlaces(output)) upsert(row)
+  return order.map((a) => byAnchor.get(a)!)
+}
+
+export type GeocodedPlaceDisplay = {
+  name: string
+  type: string
+  formattedAddress: string
+  role: string
+}
+
+/** Leaflet ``fitBounds`` corners: ``[[southLat, westLng], [northLat, eastLng]]``. */
+export type LeafletFitBounds = [[number, number], [number, number]]
+
+function readGeocodeResult(place: Record<string, unknown>): Record<string, unknown> | null {
+  const gc = place.geocode
+  if (!gc || typeof gc !== 'object' || Array.isArray(gc)) return null
+  const res = (gc as Record<string, unknown>).result
+  if (!res || typeof res !== 'object' || Array.isArray(res)) return null
+  return res as Record<string, unknown>
+}
+
+/** True when the place row has geocoder output (geometry or a formatted line). */
+export function isGeocodedPlace(place: Record<string, unknown> | null | undefined): boolean {
+  if (!place || typeof place !== 'object') return false
+  if (extractGeometryFromPlace(place)) return true
+  const res = readGeocodeResult(place)
+  if (!res) return false
+  const fa = res.formatted_address ?? res.processed_str
+  return typeof fa === 'string' && fa.trim().length > 0
+}
+
+/** Display fields for the review geocoded-places list (``role`` maps from extractor ``nature``). */
+export function getGeocodedPlaceDisplay(place: Record<string, unknown> | null | undefined): GeocodedPlaceDisplay {
+  if (!place || typeof place !== 'object') {
+    return { name: '', type: '', formattedAddress: '', role: '' }
+  }
+  const res = readGeocodeResult(place)
+
+  let name = ''
+  const loc = place.location
+  if (typeof loc === 'string' && loc.trim()) {
+    name = loc.trim()
+  } else if (loc && typeof loc === 'object' && !Array.isArray(loc)) {
+    const full = (loc as Record<string, unknown>).full
+    if (typeof full === 'string' && full.trim()) name = full.trim()
+  }
+  if (!name && typeof place.description === 'string' && place.description.trim()) {
+    name = place.description.trim()
+  }
+
+  const type = typeof place.type === 'string' ? place.type.trim() : ''
+  const formattedAddress =
+    (res && typeof res.formatted_address === 'string' ? res.formatted_address.trim() : '') ||
+    (res && typeof res.processed_str === 'string' ? res.processed_str.trim() : '')
+  const role = typeof place.nature === 'string' ? place.nature.trim() : ''
+
+  return { name, type, formattedAddress, role }
+}
+
+/** Bounds for zooming the verification map to a single place geometry. */
+export function leafletBoundsFromGeometry(geometry: Record<string, unknown> | null | undefined): LeafletFitBounds | null {
+  if (!geometry || typeof geometry !== 'object') return null
+  const t = geometry.type
+  let minLng = Infinity
+  let minLat = Infinity
+  let maxLng = -Infinity
+  let maxLat = -Infinity
+  let has = false
+
+  const bump = (lng: unknown, lat: unknown) => {
+    const lo = Number(lng)
+    const la = Number(lat)
+    if (!Number.isFinite(lo) || !Number.isFinite(la)) return
+    minLng = Math.min(minLng, lo)
+    minLat = Math.min(minLat, la)
+    maxLng = Math.max(maxLng, lo)
+    maxLat = Math.max(maxLat, la)
+    has = true
+  }
+
+  const coords = geometry.coordinates
+  if (t === 'Point' && Array.isArray(coords) && coords.length >= 2) {
+    bump(coords[0], coords[1])
+    if (!has) return null
+    const pad = 0.02
+    return [
+      [minLat - pad, minLng - pad],
+      [maxLat + pad, maxLng + pad],
+    ]
+  }
+  if (t === 'Polygon' && Array.isArray(coords)) {
+    for (const ring of coords) {
+      if (!Array.isArray(ring)) continue
+      for (const pt of ring) {
+        if (Array.isArray(pt) && pt.length >= 2) bump(pt[0], pt[1])
+      }
+    }
+  } else if (t === 'MultiPolygon' && Array.isArray(coords)) {
+    for (const poly of coords) {
+      if (!Array.isArray(poly)) continue
+      for (const ring of poly) {
+        if (!Array.isArray(ring)) continue
+        for (const pt of ring) {
+          if (Array.isArray(pt) && pt.length >= 2) bump(pt[0], pt[1])
+        }
+      }
+    }
+  }
+  if (!has || minLng >= maxLng || minLat >= maxLat) return null
+  return [
+    [minLat, minLng],
+    [maxLat, maxLng],
+  ]
 }
 
 export function extractGeometryFromPlace(place: Record<string, unknown> | null | undefined): Record<

@@ -8,6 +8,8 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+BaselineRow = tuple[str, str, int, dict[str, Any]]
+
 
 def _shallow_merge_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
     out = copy.deepcopy(base)
@@ -16,11 +18,19 @@ def _shallow_merge_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str
     return out
 
 
-def _iter_baseline_place_rows(
-    output: dict[str, Any] | None,
-) -> list[tuple[str, str, int, dict[str, Any]]]:
-    """Return ``(anchor, node_id, index, place_dict)`` for each model location row."""
-    rows: list[tuple[str, str, int, dict[str, Any]]] = []
+def _anchor_for_place_dict(loc: dict[str, Any], node_id: str, index: int) -> str:
+    """Match review anchor rules: ``id``, else ``mention_id``, else ``{node_id}:{index}``."""
+    aid = loc.get("id")
+    if aid is None or aid == "":
+        aid = loc.get("mention_id")
+    if aid is None or aid == "":
+        return f"{node_id}:{index}"
+    return str(aid)
+
+
+def _iter_rows_from_locations(output: dict[str, Any] | None) -> list[BaselineRow]:
+    """``(anchor, node_id, index, place_dict)`` from each node's ``locations`` array."""
+    rows: list[BaselineRow] = []
     if not output or not isinstance(output, dict):
         return rows
     for node_id, payload in output.items():
@@ -36,15 +46,63 @@ def _iter_baseline_place_rows(
         for i, loc in enumerate(raw_locs):
             if not isinstance(loc, dict):
                 continue
-            aid = loc.get("id")
-            if aid is None or aid == "":
-                aid = loc.get("mention_id")
-            if aid is None or aid == "":
-                anchor = f"{node_id}:{i}"
-            else:
-                anchor = str(aid)
+            anchor = _anchor_for_place_dict(loc, str(node_id), i)
             rows.append((anchor, str(node_id), i, loc))
     return rows
+
+
+def _iter_rows_from_places(output: dict[str, Any] | None) -> list[BaselineRow]:
+    """``(anchor, node_id, index, place_dict)`` from GeocodeAgent-style ``places`` buckets."""
+    rows: list[BaselineRow] = []
+    if not output or not isinstance(output, dict):
+        return rows
+    for node_id, payload in output.items():
+        if not isinstance(payload, dict):
+            continue
+        places = payload.get("places")
+        if not isinstance(places, dict):
+            continue
+        idx = 0
+        areas = places.get("areas")
+        if isinstance(areas, dict):
+            for bucket in ("states", "counties", "cities", "neighborhoods", "regions", "other"):
+                items = areas.get(bucket)
+                if not isinstance(items, list):
+                    continue
+                for loc in items:
+                    if not isinstance(loc, dict):
+                        continue
+                    anchor = _anchor_for_place_dict(loc, str(node_id), idx)
+                    rows.append((anchor, str(node_id), idx, loc))
+                    idx += 1
+        for bucket in ("points", "needs_review", "other"):
+            items = places.get(bucket)
+            if not isinstance(items, list):
+                continue
+            for loc in items:
+                if not isinstance(loc, dict):
+                    continue
+                anchor = _anchor_for_place_dict(loc, str(node_id), idx)
+                rows.append((anchor, str(node_id), idx, loc))
+                idx += 1
+    return rows
+
+
+def _merge_baseline_place_rows(output: dict[str, Any] | None) -> list[BaselineRow]:
+    """Union ``locations`` and Geocode ``places`` rows; same anchor keeps the last row."""
+    merged_by_anchor: dict[str, BaselineRow] = {}
+    order: list[str] = []
+    for row in _iter_rows_from_locations(output):
+        anchor = row[0]
+        if anchor not in merged_by_anchor:
+            order.append(anchor)
+        merged_by_anchor[anchor] = row
+    for row in _iter_rows_from_places(output):
+        anchor = row[0]
+        if anchor not in merged_by_anchor:
+            order.append(anchor)
+        merged_by_anchor[anchor] = row
+    return [merged_by_anchor[a] for a in order]
 
 
 def _normalize_locations_overlay(
@@ -80,7 +138,7 @@ def build_merged_locations_lane(
 
     Returns ``(merged_locations, stale_overlay_entries)``.
     """
-    baseline = _iter_baseline_place_rows(output)
+    baseline = _merge_baseline_place_rows(output)
     patches, user_added = _normalize_locations_overlay(overlay)
 
     merged: list[dict[str, Any]] = []

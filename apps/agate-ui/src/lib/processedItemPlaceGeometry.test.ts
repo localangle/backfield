@@ -3,7 +3,10 @@ import {
   appendUserPlacePoint,
   buildGeocodePatchForGeometry,
   extractGeometryFromPlace,
+  getGeocodedPlaceDisplay,
+  isGeocodedPlace,
   iterBaselinePlacesFromOutput,
+  leafletBoundsFromGeometry,
   shallowMergePlacePatch,
   validateGeometryObject,
 } from './processedItemPlaceGeometry'
@@ -15,6 +18,69 @@ describe('iterBaselinePlacesFromOutput', () => {
     })
     expect(rows).toHaveLength(1)
     expect(rows[0].anchor).toBe('a1')
+  })
+
+  it('prefers Geocode places row over locations when anchor matches', () => {
+    const rows = iterBaselinePlacesFromOutput({
+      extract: {
+        locations: [{ id: 'L1', description: 'raw' }],
+      },
+      geo: {
+        places: {
+          points: [
+            {
+              id: 'L1',
+              description: 'geocoded',
+              geocode: { result: { geometry: { type: 'Point', coordinates: [-90, 44] } } },
+            },
+          ],
+        },
+      },
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].nodeId).toBe('geo')
+    expect((rows[0].location as { description?: string }).description).toBe('geocoded')
+  })
+})
+
+describe('isGeocodedPlace', () => {
+  it('is true when geocode result has geometry', () => {
+    expect(
+      isGeocodedPlace({
+        geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } },
+      }),
+    ).toBe(true)
+  })
+
+  it('is false for place extract only', () => {
+    expect(isGeocodedPlace({ description: 'x', location: { full: 'A' } })).toBe(false)
+  })
+})
+
+describe('getGeocodedPlaceDisplay', () => {
+  it('reads name, type, address, and nature as role', () => {
+    expect(
+      getGeocodedPlaceDisplay({
+        location: 'Dublin, Ireland',
+        type: 'city',
+        nature: 'primary',
+        geocode: { result: { formatted_address: 'Dublin, County Dublin, Ireland' } },
+      }),
+    ).toEqual({
+      name: 'Dublin, Ireland',
+      type: 'city',
+      formattedAddress: 'Dublin, County Dublin, Ireland',
+      role: 'primary',
+    })
+  })
+})
+
+describe('leafletBoundsFromGeometry', () => {
+  it('pads a point', () => {
+    const b = leafletBoundsFromGeometry({ type: 'Point', coordinates: [-93, 45] })
+    expect(b).not.toBeNull()
+    expect(b![0][0]).toBeLessThan(45)
+    expect(b![1][0]).toBeGreaterThan(45)
   })
 })
 

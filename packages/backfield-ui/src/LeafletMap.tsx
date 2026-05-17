@@ -75,6 +75,12 @@ export type LeafletMapProps = {
    * Intended for edit sessions: pans or fits bounds to the chosen result.
    */
   geocoder?: boolean
+  /**
+   * When set, fit the map to these bounds (south-west and north-east ``[lat, lng]`` pairs).
+   * Bump ``focusBoundsKey`` to re-run when the same place is selected again.
+   */
+  focusBounds?: [[number, number], [number, number]] | null
+  focusBoundsKey?: number
 }
 
 const DEFAULT_CENTER: LatLng = [39.8283, -98.5795] // continental US
@@ -230,6 +236,28 @@ function FitToData({ bounds }: { bounds: [LatLng, LatLng] | null }) {
       // Defensive: never let fit bounds crash the page.
     }
   }, [map, bounds])
+  return null
+}
+
+function FocusMapBounds({
+  bounds,
+  boundsKey,
+}: {
+  bounds: [[number, number], [number, number]] | null
+  boundsKey: number
+}) {
+  const map = useMap()
+  useEffect(() => {
+    if (!bounds || boundsKey < 1) return
+    try {
+      map.fitBounds(L.latLngBounds(bounds[0] as L.LatLngExpression, bounds[1] as L.LatLngExpression), {
+        padding: [48, 48],
+        maxZoom: 14,
+      })
+    } catch {
+      // Defensive: never let fit bounds crash the page.
+    }
+  }, [map, bounds, boundsKey])
   return null
 }
 
@@ -1076,6 +1104,8 @@ export function LeafletMap({
   tileUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
   tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   geocoder = false,
+  focusBounds = null,
+  focusBoundsKey = 0,
 }: LeafletMapProps) {
   const [error, setError] = useState<string | null>(null)
   const clickHandlerRef = useRef(onFeatureClick)
@@ -1241,6 +1271,7 @@ export function LeafletMap({
           />
         ) : null}
         {fitToData ? <FitToData bounds={bounds} /> : null}
+        {focusBounds ? <FocusMapBounds bounds={focusBounds} boundsKey={focusBoundsKey} /> : null}
         {polygonPaths.map((feature, idx) => {
           const coords = feature.geometry.coordinates?.[0]
           if (!Array.isArray(coords) || coords.length === 0) return null

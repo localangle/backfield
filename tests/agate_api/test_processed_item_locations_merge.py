@@ -101,3 +101,64 @@ def test_mention_id_anchor() -> None:
         overlay={"locations": {"by_anchor": {"mention-1": {"description": "z"}}}},
     )
     assert merged[0]["location"]["description"] == "z"
+
+
+def test_places_bucket_supersedes_locations_same_anchor() -> None:
+    """Geocode ``places`` rows share anchors with PlaceExtract and carry geometry for review."""
+    output = {
+        "extract": {
+            "locations": [
+                _place(
+                    "pre-geocode",
+                    id="L1",
+                    geocode=None,
+                ),
+            ],
+        },
+        "geo": {
+            "places": {
+                "points": [
+                    {
+                        "id": "L1",
+                        "description": "geocoded",
+                        "original_text": "t",
+                        "geocode": {
+                            "geocode_type": "pelias",
+                            "result": {
+                                "geometry": {"type": "Point", "coordinates": [-93.0, 45.0]},
+                            },
+                        },
+                    },
+                ],
+            },
+        },
+    }
+    merged, stale = build_merged_locations_lane(output=output, overlay=None)
+    assert stale == []
+    assert len(merged) == 1
+    assert merged[0]["anchor"] == "L1"
+    assert merged[0]["node_id"] == "geo"
+    geom = merged[0]["location"]["geocode"]["result"]["geometry"]
+    assert geom["type"] == "Point"
+    assert geom["coordinates"] == [-93.0, 45.0]
+
+
+def test_places_only_geocode_output() -> None:
+    output = {
+        "geo": {
+            "places": {
+                "points": [
+                    {
+                        "id": "p1",
+                        "geocode": {
+                            "result": {"geometry": {"type": "Point", "coordinates": [1.0, 2.0]}},
+                        },
+                    },
+                ],
+            },
+        },
+    }
+    merged, stale = build_merged_locations_lane(output=output, overlay=None)
+    assert stale == []
+    assert len(merged) == 1
+    assert merged[0]["anchor"] == "p1"

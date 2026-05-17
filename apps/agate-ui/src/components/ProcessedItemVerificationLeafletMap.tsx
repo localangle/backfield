@@ -34,6 +34,12 @@ export interface ProcessedItemVerificationLeafletMapProps {
   draftGeometry: Record<string, unknown> | null
   onDraftGeometryChange: (g: Record<string, unknown> | null) => void
   onFeatureSelect?: (anchor: string) => void
+  /** Map height in pixels (default 600 for verification layout). */
+  mapHeightPx?: number
+  /** When set, zoom the map to these bounds (see ``leafletBoundsFromGeometry``). */
+  focusBounds?: [[number, number], [number, number]] | null
+  /** Bump to re-fit when the same place is selected again. */
+  focusBoundsKey?: number
 }
 
 export function ProcessedItemVerificationLeafletMap({
@@ -45,6 +51,9 @@ export function ProcessedItemVerificationLeafletMap({
   draftGeometry,
   onDraftGeometryChange,
   onFeatureSelect,
+  mapHeightPx = 600,
+  focusBounds = null,
+  focusBoundsKey = 0,
 }: ProcessedItemVerificationLeafletMapProps) {
   const [rectanglePreview, setRectanglePreview] = useState<{
     southWest: { lat: number; lng: number }
@@ -55,17 +64,16 @@ export function ProcessedItemVerificationLeafletMap({
   const leafletPolygons = useMemo(() => collections.polygons as any, [collections.polygons])
 
   return (
-    <div
-      className={
-        mapEditing ? 'rounded-md overflow-hidden bg-white ring-1 ring-foreground/25 border border-foreground/30' : 'rounded-md overflow-hidden'
-      }
-    >
+    <div className="h-full min-h-0 w-full overflow-hidden rounded-md bg-background">
       <LeafletMap
+        height={mapHeightPx}
         points={leafletPoints}
         polygons={leafletPolygons}
         geocoder={mapEditing}
         showPopups={false}
-        fitToData={!mapEditing}
+        fitToData={!mapEditing && !focusBounds}
+        focusBounds={focusBounds}
+        focusBoundsKey={focusBoundsKey}
         initialCenter={
           mapEditing && !draftGeometry && (geometryAddMode === 'point' || geometryAddMode === 'rectangle')
             ? ADD_GEOMETRY_MAP_CENTER
