@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 import { Loader2 } from "lucide-react"
 
 function canonicalToSuggestedRow(c: CanonicalLocation): SuggestedCanonicalItem {
@@ -58,6 +59,7 @@ export function CanonicalLinkModal(props: {
 }) {
   const { open, onOpenChange, projectSlug, substrateLocationId, onDone, title, initialCanonicalId } =
     props
+  const stylebookLabel = useSelectedStylebookLabel()
   const [suggestions, setSuggestions] = useState<SuggestedCanonicalItem[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const [searchQ, setSearchQ] = useState("")
@@ -240,12 +242,17 @@ export function CanonicalLinkModal(props: {
     searchHits,
   ])
 
+  const searchActive = searchQ.trim().length > 0
+  const tableRows = searchActive ? searchRows : suggestionRows
+  const tableLoading = searchActive ? searchLoading : loadingSuggestions
+
   async function linkToCanonical(canonicalId: string) {
     if (substrateLocationId == null || !projectSlug) return
     setLinkingCanonicalId(canonicalId)
     setError(null)
     try {
       const pickedLabel =
+        tableRows.find((r) => String(r.rowKey) === String(canonicalId))?.location ??
         mergedSuggestions.find((s) => String(s.canonical_id) === String(canonicalId))?.label ??
         searchHits.find((s) => String(s.id) === String(canonicalId))?.label ??
         (initialCanonExtra?.id === canonicalId ? initialCanonExtra.label : canonicalId)
@@ -265,32 +272,13 @@ export function CanonicalLinkModal(props: {
       <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col">
         <DialogHeader>
           <DialogTitle>{title ?? "Link to canonical"}</DialogTitle>
-          <DialogDescription>Search for existing canonicals below</DialogDescription>
+          <DialogDescription>
+            Search for existing canonicals in{" "}
+            <span className="font-semibold text-foreground">{stylebookLabel}</span>
+          </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1 py-2 sm:px-2">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Suggestions</div>
-            {loadingSuggestions ? (
-              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                Loading…
-              </div>
-            ) : suggestionRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">No ranked suggestions for this row.</p>
-            ) : (
-              <div className="max-h-[min(40vh,320px)] overflow-y-auto pr-1">
-                <LinkPickTable
-                  rows={suggestionRows}
-                  includeAddress={false}
-                  busyKey={linkingCanonicalId}
-                  linkDisabled={substrateLocationId == null}
-                  onLink={(key) => void linkToCanonical(String(key))}
-                  linkActionLabel="Link to this canonical"
-                />
-              </div>
-            )}
-          </div>
           <div className="space-y-2">
             <Label htmlFor="canon-search">Search catalog</Label>
             <Input
@@ -299,16 +287,24 @@ export function CanonicalLinkModal(props: {
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
             />
-            {searchLoading ? (
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                Searching…
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-medium">{searchActive ? "Search results" : "Suggestions"}</div>
+            {tableLoading ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                {searchActive ? "Searching…" : "Loading…"}
+              </div>
+            ) : tableRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">
+                {searchActive
+                  ? "No canonicals match your search."
+                  : "No ranked suggestions for this row."}
               </p>
-            ) : null}
-            {searchRows.length > 0 ? (
-              <div className="max-h-[min(36vh,280px)] overflow-y-auto pr-1">
+            ) : (
+              <div className="max-h-[min(50vh,360px)] overflow-y-auto pr-1">
                 <LinkPickTable
-                  rows={searchRows}
+                  rows={tableRows}
                   includeAddress={false}
                   busyKey={linkingCanonicalId}
                   linkDisabled={substrateLocationId == null}
@@ -316,7 +312,7 @@ export function CanonicalLinkModal(props: {
                   linkActionLabel="Link to this canonical"
                 />
               </div>
-            ) : null}
+            )}
           </div>
         </div>
         <DialogFooter>

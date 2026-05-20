@@ -46,6 +46,12 @@ function projectSearchSuffix(searchParams: URLSearchParams): string {
   return s ? `?${s}` : ""
 }
 
+/** Default Agate project for catalog workflow when the URL omits scope (sidebar + dashboard stats). */
+function defaultWorkflowProjectSlug(projects: Project[]): string {
+  const preferred = projects.find((p) => p.slug === "general")
+  return preferred?.slug ?? projects[0]?.slug ?? ""
+}
+
 interface LayoutProps {
   children: ReactNode
   headerContent?: ReactNode
@@ -168,23 +174,17 @@ export default function Layout({ children, headerContent }: LayoutProps) {
       .catch((err) => console.error("Failed to fetch stylebooks:", err))
   }, [orgId])
 
+  /** Every stylebook catalog URL keeps workflow project scope in the query (``project_scope=``). */
   useEffect(() => {
-    const needsProjectScope =
-      location.pathname.includes("/locations/candidates") ||
-      location.pathname.includes("/people/") ||
-      location.pathname.includes("/organizations/") ||
-      location.pathname.includes("/works/") ||
-      location.pathname.includes("/agents/")
-
-    if (!needsProjectScope) return
-    if (projects.length > 0 && !workflowProjectSlug) {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev)
-        next.set("project", projects[0].slug)
-        return next
-      })
-    }
-  }, [projects, workflowProjectSlug, setSearchParams, location.pathname])
+    if (!routeSlug || projects.length === 0 || workflowProjectSlug) return
+    const slug = defaultWorkflowProjectSlug(projects)
+    if (!slug) return
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set("project_scope", slug)
+      return next
+    })
+  }, [routeSlug, projects, workflowProjectSlug, setSearchParams])
 
   /** Drop legacy ``?stylebook=`` when the slug already lives in the path. */
   useEffect(() => {
