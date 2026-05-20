@@ -56,6 +56,7 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 - Avoid internal product names for infrastructure (services, ports, proxies, cookies, paths) unless the user must act on them—and even then, prefer plain language or hide details behind help links.
 - Technical detail belongs in developer docs (this file’s other sections, `docs/API.md`, `docs/OPERATIONS.md`), not in labels, descriptions, or empty states shown to typical users.
 - In Agate **Review** and cross-app handoff strings, prefer **Stylebook** (not “catalog”) for the organization’s canonical place library.
+- **Review — mentions in story:** the place details editor shows a **Mentions in story** list (not a single “mention text” field). Use **Add mention**, **Remove mention**, and reorder controls; each row is one verbatim snippet. Clicking a mention selects it and highlights that span in the article. Say **mention** in UI copy, not “occurrence.”
 
 ## In-app messages (no browser `alert` / `confirm`)
 

@@ -8,6 +8,11 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from api.processed_item_mention_occurrences import (
+    build_mention_occurrences_for_row,
+    sync_original_text_from_occurrences,
+)
+
 BaselineRow = tuple[str, str, int, dict[str, Any]]
 
 
@@ -157,8 +162,15 @@ def build_merged_locations_lane(
             continue
         loc_out = copy.deepcopy(loc)
         patch = patches.get(anchor)
-        if isinstance(patch, dict) and patch:
-            loc_out = _shallow_merge_dict(loc_out, patch)
+        patch_dict = patch if isinstance(patch, dict) else None
+        if patch_dict:
+            loc_out = _shallow_merge_dict(loc_out, patch_dict)
+        mention_occurrences = build_mention_occurrences_for_row(
+            place=loc_out,
+            overlay_patch=patch_dict,
+            db_rows=None,
+        )
+        sync_original_text_from_occurrences(loc_out, mention_occurrences)
         merged.append(
             {
                 "anchor": anchor,
@@ -167,6 +179,7 @@ def build_merged_locations_lane(
                 "index_in_node": idx,
                 "stale": False,
                 "location": loc_out,
+                "mention_occurrences": mention_occurrences,
             }
         )
 
@@ -190,6 +203,12 @@ def build_merged_locations_lane(
         else:
             rest = {k: v for k, v in row.items() if k not in ("id", "location")}
             loc_out = rest if rest else {}
+        mention_occurrences = build_mention_occurrences_for_row(
+            place=loc_out,
+            overlay_patch=None,
+            db_rows=None,
+        )
+        sync_original_text_from_occurrences(loc_out, mention_occurrences)
         merged.append(
             {
                 "anchor": rid,
@@ -198,6 +217,7 @@ def build_merged_locations_lane(
                 "index_in_node": None,
                 "stale": False,
                 "location": loc_out,
+                "mention_occurrences": mention_occurrences,
             }
         )
 

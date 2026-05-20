@@ -23,6 +23,8 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 from agate_runtime.context import AgateEnvContext
 from agate_utils.llm import call_llm
 
+from agate_nodes.place_extract.mentions import normalize_location_mentions
+
 logger = logging.getLogger(__name__)
 
 # Get Celery timeout limits from environment (defaults match worker/tasks.py)
@@ -124,9 +126,19 @@ class LocationInfo(BaseModel):
     components: LocationComponents = Field(description="Detailed components of the location")
 
 
+class PlaceMention(BaseModel):
+    """One verbatim story mention of a location."""
+
+    text: str = Field(description="Verbatim text from the story for this mention")
+
+
 class Place(BaseModel):
     """A place extracted from text."""
     original_text: str = Field(description="The original text from which this location was extracted")
+    mentions: List[PlaceMention] = Field(
+        default_factory=list,
+        description="Every verbatim story mention of this same real-world place",
+    )
     description: str = Field(description="Brief description of the location and its relevance")
     geocode_hints: str = Field(
         default="",
@@ -564,18 +576,23 @@ class PlaceExtractNode:
                     components=location_components
                 )
                 
+                normalized = normalize_location_mentions(location_data)
+
                 # Create Place object - preserve all fields from location_data (including 'mural' and any other custom fields)
                 place_data = {
-                    'original_text': location_data['original_text'],
-                    'description': location_data['description'],
-                    'location': location_info_obj
+                    'original_text': normalized['original_text'],
+                    'description': normalized['description'],
+                    'location': location_info_obj,
+                    'mentions': [
+                        PlaceMention(**m) for m in normalized.get('mentions', []) if isinstance(m, dict)
+                    ],
                 }
-                
+
                 # Preserve any additional fields from the LLM response (like 'mural')
-                for key, value in location_data.items():
-                    if key not in ['original_text', 'description', 'location', 'type', 'components']:
+                for key, value in normalized.items():
+                    if key not in ['original_text', 'description', 'location', 'type', 'components', 'mentions']:
                         place_data[key] = value
-                
+
                 locations.append(Place(**place_data))
 
         except (ValueError, TypeError) as e:

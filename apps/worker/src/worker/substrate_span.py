@@ -98,25 +98,32 @@ def _longest_needle_substring_span(
     return best
 
 
-def _find_mention_span(*, haystack: str, needle: str) -> tuple[int, int] | None:
+def _find_mention_span(
+    *, haystack: str, needle: str, search_from: int = 0
+) -> tuple[int, int] | None:
     if not needle:
+        return None
+    if search_from < 0:
+        search_from = 0
+    if search_from >= len(haystack):
         return None
 
     for candidate in _mention_text_span_variants(needle):
         if not candidate:
             continue
-        idx = haystack.find(candidate)
+        idx = haystack.find(candidate, search_from)
         if idx >= 0:
             return idx, idx + len(candidate)
 
     hay_q = _normalize_quotes_for_span_match(haystack)
+    hay_q_slice = hay_q[search_from:]
     for candidate in _mention_text_span_variants(needle):
         if not candidate:
             continue
         cand_q = _normalize_quotes_for_span_match(candidate)
-        idx = hay_q.find(cand_q)
+        idx = hay_q_slice.find(cand_q)
         if idx >= 0:
-            return idx, idx + len(candidate)
+            return search_from + idx, search_from + idx + len(candidate)
 
     collapsed_hay = _WS_RE.sub(" ", haystack).strip()
     for candidate in _mention_text_span_variants(needle):

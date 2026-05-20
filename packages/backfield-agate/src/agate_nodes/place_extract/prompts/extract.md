@@ -19,7 +19,7 @@ Extract **editorially relevant, literal, physical locations** from the following
 - **Synecdoche, metaphor, idiom, cliché, hyperbole, allegory**, or **historical/cultural** uses where the place is not the physical setting.
 - **Generic or ambiguous** sites when a specific location cannot be identified (e.g. "Target, Minneapolis, MN" without a specific store; unnamed "bank" or "gas station" unless the story pins down a distinct site).
 - **Countries and continents** as standalone items when they are too broad to geocode usefully (e.g. "United States," "North America") unless the story truly hinges on that geography at country scale.
-- **Duplicates**: each distinct real-world location should appear **once** in the output. If the same place appears at multiple levels of detail, keep the **most detailed** instance and omit redundant broader or narrower duplicates that repeat the same site.
+- **One object per place**: each distinct real-world location should appear **once** in the output as a single location object. If the same place is mentioned in multiple sentences or paragraphs, include **every** verbatim snippet in that object’s **`mentions`** array (see below)—do not omit later mentions. If the same place appears at multiple levels of detail (e.g. a city inside an intersection), keep the **most detailed** instance and omit redundant broader or narrower duplicates that repeat the same site.
 - **Streets as components**: if a street is already represented inside an **intersection** or **span**, do not also emit it as a separate **street_road** object for the same coverage.
 - **Events, proceedings, and activities with place-like names** — Do **not** output a location when the mention is really **what happened** or **what kind of gathering** it is, not a **mappable site**. Examples: **government or court proceedings** named after a body ("U.S. Senate Judiciary Committee Hearing," "House Ways and Means markup"), **generic program phases** ("training camp," "minicamp," "OTAs," "organized team activities") when the story means the **period or activity**, not a **specific named facility**; **ceremonies or sessions** without a named room, building, campus, park, or address. If the article **does** anchor the event at a **named venue, campus, arena, courthouse wing, or street address**, extract **that** geography (and any city/state/dateline already implied)—**not** the hearing or camp **title** as a **`place`**.
 
@@ -145,9 +145,31 @@ Optionally include **`nature_secondary_tags`**: an array of zero or more **addit
 
 `description` remains the human-readable sentence; **`nature`** is the controlled vocabulary for filtering and analytics.
 
+## Mentions in the story (`mentions`)
+
+Every location object must include a **`mentions`** array. Each element is a JSON object with exactly one key:
+
+- **`text`**: string — verbatim text from the story for that mention (sentence or clause; do not combine unrelated sentences).
+
+**Rules:**
+
+1. Include **every** editorial mention of that same real-world place in the article, even when the wording repeats (e.g. "Ohio" in the lede and again near the end → two separate mention objects).
+2. Do **not** use plain strings in the array; always use objects with **`text`**.
+3. Set **`original_text`** to the **first** mention’s `text` (same string as `mentions[0].text`) for backward compatibility.
+
+Example (brace characters shown doubled so they are literal in the prompt template):
+
+```json
+"mentions": [
+  {{ "text": "Ohio lawmakers advanced the bill Tuesday." }},
+  {{ "text": "Back in Ohio, the governor said he would sign it." }}
+],
+"original_text": "Ohio lawmakers advanced the bill Tuesday."
+```
+
 ## Required Fields
 
-Return the paragraph from which the location was extracted and return it as "original_text." Ensure these are copied verbatim from the story.
+Return the paragraph from which the location was extracted and return it as "original_text" (must match `mentions[0].text` when `mentions` is present). Ensure these are copied verbatim from the story.
 
 Return a brief description of the nature of the location and its importance in the story under a "description" attribute.
 

@@ -35,6 +35,7 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.mention_occurrences import replace_mention_occurrences_for_article
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
 router = APIRouter(prefix="/v1", tags=["locations"])
@@ -1271,6 +1272,82 @@ def get_mention_geometry(
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
     raise HTTPException(status_code=404, detail="Mention not found")
+
+
+class MentionOccurrenceIn(BaseModel):
+    id: int | None = None
+    client_id: str | None = None
+    mention_text: str = Field(min_length=1)
+    start_char: int | None = None
+    end_char: int | None = None
+    occurrence_order: int | None = None
+    suppressed: bool = False
+
+
+class MentionOccurrenceOut(BaseModel):
+    id: int
+    mention_text: str
+    start_char: int | None = None
+    end_char: int | None = None
+    occurrence_order: int | None = None
+    suppressed: bool
+    source_kind: str
+
+
+class ReplaceMentionOccurrencesIn(BaseModel):
+    occurrences: list[MentionOccurrenceIn] = Field(default_factory=list, max_length=50)
+
+
+class ReplaceMentionOccurrencesResponse(BaseModel):
+    occurrences: list[MentionOccurrenceOut]
+
+
+@router.put(
+    "/locations/{location_id}/mention-occurrences",
+    response_model=ReplaceMentionOccurrencesResponse,
+)
+def replace_location_mention_occurrences(
+    location_id: int,
+    body: ReplaceMentionOccurrencesIn,
+    project_slug: str = Query(...),
+    article_id: int = Query(..., ge=1),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> ReplaceMentionOccurrencesResponse:
+    """Replace all active mention occurrences for one article+location (Agate Review)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    loc = session.get(SubstrateLocation, location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Location not found")
+    article = session.get(SubstrateArticle, article_id)
+    if article is None or int(article.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    payload = [o.model_dump() for o in body.occurrences]
+    created = replace_mention_occurrences_for_article(
+        session,
+        article_id=article_id,
+        location_id=location_id,
+        occurrences_in=payload,
+    )
+    session.commit()
+    out: list[MentionOccurrenceOut] = []
+    for row in created:
+        if row.id is None:
+            continue
+        out.append(
+            MentionOccurrenceOut(
+                id=int(row.id),
+                mention_text=str(row.mention_text),
+                start_char=row.start_char,
+                end_char=row.end_char,
+                occurrence_order=row.occurrence_order,
+                suppressed=bool(row.suppressed),
+                source_kind=str(row.source_kind),
+            )
+        )
+    return ReplaceMentionOccurrencesResponse(occurrences=out)
 
 
 def _not_implemented() -> None:

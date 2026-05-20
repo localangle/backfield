@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from agate_nodes.place_extract.mentions import mention_texts_for_persist
 from backfield_db import SubstrateLocationMention, SubstrateLocationMentionOccurrence
 from sqlmodel import Session, col, select
 
@@ -22,6 +23,8 @@ _NATURE_PRIMARY_SYNONYMS: dict[str, str] = {
     "scene": "primary",
     "dateline": "primary",
 }
+
+_USER_OCCURRENCE_SOURCE_KINDS = frozenset({"user_edit", "user_review"})
 
 
 def _normalize_nature_primary(entry: dict[str, Any]) -> str | None:
@@ -56,16 +59,16 @@ def _parse_nature_secondary_tags(entry: dict[str, Any]) -> list[str]:
             uniq.append(t)
     return uniq
 
-def _suppress_prior_system_occurrences(
+
+def _suppress_prior_system_occurrences_for_mention(
     session: Session,
     *,
     mention_id: int,
-    mention_text: str,
 ) -> None:
+    """Soft-delete all prior system extraction occurrences before re-ingesting a fresh set."""
     rows = session.exec(
         select(SubstrateLocationMentionOccurrence).where(
             col(SubstrateLocationMentionOccurrence.location_mention_id) == mention_id,
-            col(SubstrateLocationMentionOccurrence.mention_text) == mention_text,
             col(SubstrateLocationMentionOccurrence.suppressed).is_(False),
             col(SubstrateLocationMentionOccurrence.source_kind) == "system_extraction",
         )
@@ -78,6 +81,26 @@ def _suppress_prior_system_occurrences(
     session.flush()
 
 
+def _spans_for_mention_texts(
+    *,
+    article_text: str,
+    mention_texts: list[str],
+) -> list[tuple[str, tuple[int, int] | None]]:
+    """Map each mention text to a span, advancing search for repeated identical strings."""
+    results: list[tuple[str, tuple[int, int] | None]] = []
+    search_from = 0
+    for mention_text in mention_texts:
+        span = _find_mention_span(
+            haystack=article_text,
+            needle=mention_text,
+            search_from=search_from,
+        )
+        results.append((mention_text, span))
+        if span is not None:
+            search_from = max(search_from, span[1])
+    return results
+
+
 def _upsert_mention_and_occurrence(
     session: Session,
     *,
@@ -88,12 +111,12 @@ def _upsert_mention_and_occurrence(
     run_id: str,
     graph_id: str,
     bucket: str,
-    occurrence_order: int,
 ) -> None:
-    original_text = entry.get("original_text")
-    mention_text = str(original_text).strip() if isinstance(original_text, str) else ""
-    if not mention_text:
-        mention_text = _display_name_for_place_entry(entry)
+    mention_texts = mention_texts_for_persist(entry)
+    if not mention_texts:
+        fallback = _display_name_for_place_entry(entry)
+        if fallback:
+            mention_texts = [fallback]
 
     description = entry.get("description")
     description_str = str(description).strip() if isinstance(description, str) else None
@@ -109,11 +132,6 @@ def _upsert_mention_and_occurrence(
 
     nature_str = _normalize_nature_primary(entry)
     secondary_tags = _parse_nature_secondary_tags(entry)
-
-    # `description` is editorial "why this place matters" context.
-    # `role_in_story` is a compact label when PlaceExtract provides it.
-
-    span = _find_mention_span(haystack=article_text, needle=mention_text)
 
     mention = session.exec(
         select(SubstrateLocationMention).where(
@@ -159,23 +177,27 @@ def _upsert_mention_and_occurrence(
         session.add(mention)
         session.flush()
 
-    _suppress_prior_system_occurrences(
+    _suppress_prior_system_occurrences_for_mention(
         session,
         mention_id=int(mention.id),
-        mention_text=mention_text,
     )
 
-    occurrence = SubstrateLocationMentionOccurrence(
-        location_mention_id=int(mention.id),
-        source_kind="system_extraction",
-        source_details_json={"run_id": run_id, "graph_id": graph_id, "places_bucket": bucket},
-        mention_text=mention_text,
-        quote_text=None,
-        start_char=span[0] if span else None,
-        end_char=span[1] if span else None,
-        occurrence_order=occurrence_order,
-        labels_json=[],
-        suppressed=False,
-    )
-    session.add(occurrence)
+    source_details = {"run_id": run_id, "graph_id": graph_id, "places_bucket": bucket}
+    for order, (mention_text, span) in enumerate(_spans_for_mention_texts(
+        article_text=article_text,
+        mention_texts=mention_texts,
+    )):
+        occurrence = SubstrateLocationMentionOccurrence(
+            location_mention_id=int(mention.id),
+            source_kind="system_extraction",
+            source_details_json=source_details,
+            mention_text=mention_text,
+            quote_text=None,
+            start_char=span[0] if span else None,
+            end_char=span[1] if span else None,
+            occurrence_order=order,
+            labels_json=[],
+            suppressed=False,
+        )
+        session.add(occurrence)
     session.flush()

@@ -216,7 +216,7 @@ const GEOCODE_TYPE_USER_LABELS: Record<string, string> = {
   overpass: 'Street intersection',
   stylebook: 'Stylebook',
   cache: 'Saved geocode',
-  manual: 'Manual edit',
+  manual: 'Manual',
   region_llm: 'Estimated area',
   natural_llm_estimate: 'Estimated area',
   span: 'Road segment',
@@ -253,6 +253,9 @@ export function getGeocodingSourceLabel(
   const geocodeType = typeof rawType === 'string' ? rawType.trim().toLowerCase() : ''
   const confidenceSource = readGeocodeConfidenceSource(place)
 
+  if (geocodeType === 'manual') {
+    return GEOCODE_TYPE_USER_LABELS.manual
+  }
   if (confidenceSource === 'canonical_db') {
     return 'Stylebook'
   }
@@ -303,6 +306,19 @@ function parseNatureSecondaryTags(place: Record<string, unknown>): string[] {
   return out
 }
 
+/** Read ``role_in_story`` from a place row, falling back to PlaceExtract ``description``. */
+export function readRoleInStoryFromPlace(place: Record<string, unknown>): string {
+  const roleRaw = place.role_in_story
+  if (typeof roleRaw === 'string' && roleRaw.trim()) {
+    return roleRaw.trim()
+  }
+  const desc = place.description
+  if (typeof desc === 'string' && desc.trim()) {
+    return desc.trim()
+  }
+  return ''
+}
+
 /** Editorial context for expanded geocoded-place rows (PlaceExtract / mention fields). */
 export function getPlaceEditorialDetail(
   place: Record<string, unknown> | null | undefined,
@@ -310,13 +326,7 @@ export function getPlaceEditorialDetail(
   if (!place || typeof place !== 'object') {
     return { roleInStory: '', nature: '', natureSecondaryTags: [] }
   }
-  const roleRaw = place.role_in_story
-  let roleInStory =
-    typeof roleRaw === 'string' && roleRaw.trim() ? roleRaw.trim() : ''
-  if (!roleInStory) {
-    const desc = place.description
-    if (typeof desc === 'string' && desc.trim()) roleInStory = desc.trim()
-  }
+  const roleInStory = readRoleInStoryFromPlace(place)
   const nature = typeof place.nature === 'string' ? place.nature.trim().toLowerCase() : ''
   return {
     roleInStory,
@@ -443,6 +453,25 @@ function cloneJson<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T
 }
 
+/** Mark geocode metadata as a manual map edit (review draw, drag, or delete). */
+export function markGeocodeAsManualEdit(geocode: Record<string, unknown>): void {
+  geocode.geocode_type = 'manual'
+  const prevResult = geocode.result
+  const result =
+    prevResult && typeof prevResult === 'object' && !Array.isArray(prevResult)
+      ? (cloneJson(prevResult) as Record<string, unknown>)
+      : ({} as Record<string, unknown>)
+  const conf = result.confidence
+  if (conf && typeof conf === 'object' && !Array.isArray(conf)) {
+    const next = { ...(conf as Record<string, unknown>), source: 'manual' }
+    delete next.canonical_id
+    result.confidence = next
+  } else {
+    result.confidence = { source: 'manual' }
+  }
+  geocode.result = result
+}
+
 /**
  * Build a shallow patch fragment with a full ``geocode`` object whose ``result.geometry`` is updated.
  */
@@ -459,6 +488,32 @@ export function buildGeocodePatchForGeometry(
     ? (cloneJson(geocode.result) as Record<string, unknown>)
     : {}
   result.geometry = cloneJson(geometry)
+  geocode.result = result
+  markGeocodeAsManualEdit(geocode)
+  return { geocode }
+}
+
+/** Overlay patch that updates formatted address only (no ``result.geometry``). */
+export function buildGeocodePatchForFormattedAddress(
+  mergedPlaceLocation: Record<string, unknown>,
+  formattedAddress: string,
+): Record<string, unknown> {
+  const prevGeocode = mergedPlaceLocation.geocode
+  const geocode: Record<string, unknown> =
+    prevGeocode && typeof prevGeocode === 'object' && !Array.isArray(prevGeocode)
+      ? {
+          geocode_type:
+            typeof (prevGeocode as Record<string, unknown>).geocode_type === 'string'
+              ? (prevGeocode as Record<string, unknown>).geocode_type
+              : 'manual',
+        }
+      : { geocode_type: 'manual' }
+  const trimmed = formattedAddress.trim()
+  const result: Record<string, unknown> = {}
+  if (trimmed) {
+    result.formatted_address = trimmed
+    result.processed_str = trimmed
+  }
   geocode.result = result
   return { geocode }
 }
@@ -477,6 +532,7 @@ export function buildGeocodePatchForClearGeometry(
     : {}
   result.geometry = null
   geocode.result = result
+  markGeocodeAsManualEdit(geocode)
   return { geocode }
 }
 
@@ -496,8 +552,43 @@ export function applyGeometryToPlaceRow(
       : ({} as Record<string, unknown>)
   result.geometry = geometry === null ? null : cloneJson(geometry)
   geocode.result = result
+  markGeocodeAsManualEdit(geocode)
   out.geocode = geocode
   return out
+}
+
+function mergeOverlayGeocodePatch(
+  existing: unknown,
+  patchGeocode: Record<string, unknown>,
+): Record<string, unknown> {
+  const prev =
+    existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? (cloneJson(existing) as Record<string, unknown>)
+      : { geocode_type: 'manual', result: {} as Record<string, unknown> }
+  const patchResult = patchGeocode.result
+  if (!patchResult || typeof patchResult !== 'object' || Array.isArray(patchResult)) {
+    return patchGeocode
+  }
+  const prevResult =
+    prev.result && typeof prev.result === 'object' && !Array.isArray(prev.result)
+      ? (cloneJson(prev.result) as Record<string, unknown>)
+      : ({} as Record<string, unknown>)
+  const mergedResult = { ...prevResult }
+  for (const [key, value] of Object.entries(patchResult as Record<string, unknown>)) {
+    if (key === 'geometry') continue
+    mergedResult[key] = value
+  }
+  if ('geometry' in (patchResult as Record<string, unknown>)) {
+    mergedResult.geometry = (patchResult as Record<string, unknown>).geometry
+  }
+  return {
+    ...prev,
+    geocode_type:
+      typeof patchGeocode.geocode_type === 'string'
+        ? patchGeocode.geocode_type
+        : (prev.geocode_type as string | undefined) ?? 'manual',
+    result: mergedResult,
+  }
 }
 
 export function applyAnchorPatchFragment(
@@ -512,6 +603,19 @@ export function applyAnchorPatchFragment(
   const merged: Record<string, unknown> =
     cur && typeof cur === 'object' && !Array.isArray(cur) ? { ...(cur as Record<string, unknown>) } : {}
   for (const [k, v] of Object.entries(fragment)) {
+    if (k === 'geocode' && v && typeof v === 'object' && !Array.isArray(v)) {
+      const patchGeo = v as Record<string, unknown>
+      const patchResult = patchGeo.result
+      const patchHasGeometry =
+        patchResult &&
+        typeof patchResult === 'object' &&
+        !Array.isArray(patchResult) &&
+        'geometry' in (patchResult as Record<string, unknown>)
+      merged.geocode = patchHasGeometry
+        ? patchGeo
+        : mergeOverlayGeocodePatch(merged.geocode, patchGeo)
+      continue
+    }
     merged[k] = v
   }
   by[anchor] = merged
@@ -634,15 +738,42 @@ function pushGeometryFeatures(
   }
 }
 
+/** True when overlay ``by_anchor`` geometry for ``anchor`` differs between draft and saved baseline. */
+export function overlayAnchorGeometryChanged(
+  draftOverlay: Record<string, unknown>,
+  baselineOverlay: Record<string, unknown>,
+  anchor: string,
+): boolean {
+  const dLoc = normalizeOverlay(draftOverlay).locations as Record<string, unknown>
+  const bLoc = normalizeOverlay(baselineOverlay).locations as Record<string, unknown>
+  const dBy = (dLoc.by_anchor as Record<string, unknown>) ?? {}
+  const bBy = (bLoc.by_anchor as Record<string, unknown>) ?? {}
+  const dPatch = dBy[anchor]
+  const bPatch = bBy[anchor]
+  const gDraft =
+    dPatch && typeof dPatch === 'object' && !Array.isArray(dPatch)
+      ? extractGeometryFromPlace(dPatch as Record<string, unknown>)
+      : null
+  const gBaseline =
+    bPatch && typeof bPatch === 'object' && !Array.isArray(bPatch)
+      ? extractGeometryFromPlace(bPatch as Record<string, unknown>)
+      : null
+  return JSON.stringify(gDraft) !== JSON.stringify(gBaseline)
+}
+
 /**
  * Build Leaflet feature collections for merged rows. When ``selectedAnchor`` is set, only that
- * place is drawn. Linked rows with draft geometry differing from model baseline emit two
- * features (baseline + draft groups).
+ * place is drawn. Linked rows may show model baseline under merged geometry only while geometry
+ * is actively being edited or the overlay still has unsaved geometry for that anchor.
  */
 export function buildVerificationLeafletCollections(params: {
   mergedRows: Array<Record<string, unknown>>
   baselineByAnchor: Map<string, Record<string, unknown>>
   selectedAnchor: string | null
+  /** When true, the selected place shows only the in-progress draft (no baseline underlay). */
+  geometryEditing?: boolean
+  /** When true, linked rows with differing overlay geometry show model baseline + draft layers. */
+  unsavedGeometryOverlay?: boolean
 }): LeafletFeatureCollections {
   const out = emptyFeatureCollections()
   for (const row of params.mergedRows) {
@@ -658,7 +789,15 @@ export function buildVerificationLeafletCollections(params: {
     const base = params.baselineByAnchor.get(anchor)
     const gBase = base ? extractGeometryFromPlace(base) : null
     const linked = isLocationLinkedToStylebookCanonical(loc)
-    if (linked && gBase && gMerged && JSON.stringify(gBase) !== JSON.stringify(gMerged)) {
+    const editingThisPlace = params.geometryEditing === true && params.selectedAnchor === anchor
+    if (
+      linked &&
+      !editingThisPlace &&
+      params.unsavedGeometryOverlay === true &&
+      gBase &&
+      gMerged &&
+      JSON.stringify(gBase) !== JSON.stringify(gMerged)
+    ) {
       pushGeometryFeatures(out, `${anchor}__baseline`, gBase, 'verification-baseline', `${label} (saved map)`)
       pushGeometryFeatures(out, `${anchor}__draft`, gMerged, 'verification-draft', `${label} (your edits)`)
     } else {

@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { MentionOccurrenceListEditor } from '@/components/MentionOccurrenceListEditor'
 import type { PlaceEditFields } from '@/lib/processedItemPlaceEditFields'
 import {
   PLACE_EXTRACT_LOCATION_TYPES,
@@ -24,6 +25,8 @@ export interface GeocodedPlaceEditFormProps {
   disabled?: boolean
   /** When true, omits top border (used inside edit tabs). */
   embeddedInTab?: boolean
+  selectedOccurrenceClientId?: string | null
+  onSelectOccurrence?: (clientId: string) => void
 }
 
 export function GeocodedPlaceEditForm({
@@ -31,6 +34,8 @@ export function GeocodedPlaceEditForm({
   onChange,
   disabled = false,
   embeddedInTab = false,
+  selectedOccurrenceClientId = null,
+  onSelectOccurrence,
 }: GeocodedPlaceEditFormProps) {
   const typeOptions = useMemo(() => {
     const base = sortPlaceExtractTypeOptions([...PLACE_EXTRACT_LOCATION_TYPES])
@@ -97,16 +102,19 @@ export function GeocodedPlaceEditForm({
             placeholder="Geocoded address line"
           />
         </div>
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="place-edit-mention">Mention text</Label>
-          <Input
-            id="place-edit-mention"
-            value={fields.mentionText}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...fields, mentionText: e.target.value })}
-            placeholder="Text as it appears in the story"
-          />
-        </div>
+        <MentionOccurrenceListEditor
+          occurrences={fields.occurrences}
+          disabled={disabled}
+          selectedClientId={selectedOccurrenceClientId}
+          onSelectOccurrence={onSelectOccurrence}
+          onChange={(occurrences) =>
+            onChange({
+              ...fields,
+              occurrences,
+              mentionText: occurrences.find((o) => !o.suppressed)?.mentionText.trim() ?? '',
+            })
+          }
+        />
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="place-edit-role">Role in story</Label>
           <Textarea

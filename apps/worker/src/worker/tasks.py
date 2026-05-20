@@ -437,27 +437,52 @@ def execute_processed_item(item_id: int) -> None:
 
         input_json = item.input_json or "{}"
         source_file = item.source_file
-
-        def s3_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-            del params, inputs
-            doc = json.loads(input_json)
-            if not isinstance(doc, dict):
-                raise ValueError("S3 batch item JSON must be a JSON object.")
-            base = json_input_output_from_dict(doc)
-            total = int(batch_meta.get("total_json_objects", 1))
-            sk = int(batch_meta.get("skipped_invalid", 0)) + int(batch_meta.get("skipped_cap", 0))
-            out = dict(base)
-            out["total_files"] = total
-            out["processed_files"] = 1
-            out["skipped_files"] = sk
-            out["source_file"] = source_file
-            out["runs_created"] = []
-            return out
+        doc = json.loads(input_json)
+        if not isinstance(doc, dict):
+            raise ValueError("Processed item input_json must be a JSON object.")
 
         overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
         node_runners = dict(NODE_RUNNERS)
-        node_runners["S3Input"] = s3_input_shim
         node_runners["DBOutput"] = run_db_output
+        ingress_types = {node.type for node in spec.nodes}
+        if "S3Input" in ingress_types:
+
+            def s3_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+                del params, inputs
+                base = json_input_output_from_dict(doc)
+                total = int(batch_meta.get("total_json_objects", 1))
+                sk = int(batch_meta.get("skipped_invalid", 0)) + int(
+                    batch_meta.get("skipped_cap", 0)
+                )
+                out = dict(base)
+                out["total_files"] = total
+                out["processed_files"] = 1
+                out["skipped_files"] = sk
+                out["source_file"] = source_file
+                out["runs_created"] = []
+                return out
+
+            node_runners["S3Input"] = s3_input_shim
+        if "TextInput" in ingress_types:
+
+            def text_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+                del params, inputs
+                text = doc.get("text") or ""
+                if not str(text).strip():
+                    raise ValueError(
+                        "TextInput requires non-empty text. "
+                        "Please add text to the TextInput node before running the flow."
+                    )
+                return {"text": str(text)}
+
+            node_runners["TextInput"] = text_input_shim
+        if "JSONInput" in ingress_types:
+
+            def json_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+                del params, inputs
+                return json_input_output_from_dict(doc)
+
+            node_runners["JSONInput"] = json_input_shim
 
         try:
             track_tok = attach_llm_tracking_context(
@@ -493,6 +518,7 @@ def execute_processed_item(item_id: int) -> None:
         item.updated_at = datetime.now(UTC)
         session.add(item)
         session.commit()
+        _finalize_s3_parent_run(session, item.run_id)
 
 
 @celery_app.task(name="worker.tasks.finalize_s3_parent_run")

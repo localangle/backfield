@@ -68,7 +68,7 @@ describe('buildMentionSpanHits', () => {
       { anchor: 'a1', location: { original_text: 'Chicago' } },
       { anchor: 'a2', location: { original_text: 'Chicago' } },
     ])
-    expect(hits).toEqual([{ start: 11, end: 18, anchors: ['a1', 'a2'] }])
+    expect(hits).toEqual([{ start: 10, end: 17, anchors: ['a1', 'a2'] }])
   })
 
   it('keeps separate ranges for separate occurrences', () => {

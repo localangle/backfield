@@ -24,12 +24,14 @@ import {
   isGeocodedPlace,
   iterBaselinePlacesFromOutput,
   leafletBoundsFromGeometry,
+  overlayAnchorGeometryChanged,
   shallowMergePlacePatch,
   validateGeometryObject,
 } from '@/lib/processedItemPlaceGeometry'
 import {
   applyPlaceEditFields,
   buildPlaceEditOverlayPatch,
+  buildPlaceFieldsOnlyOverlayPatch,
   placeEditFieldsEqual,
   readPlaceEditFields,
   type PlaceEditFields,
@@ -43,13 +45,19 @@ import {
   resolveStylebookSlugForLinkedRow,
 } from '@/lib/processedItemReviewRow'
 import {
+  buildOccurrencesOverlayPayload,
+  recomputeOccurrenceSpans,
+  readMentionOccurrencesFromRow,
+} from '@/lib/processedItemMentionOccurrences'
+import {
   deleteSavedPlace,
+  replaceSavedPlaceMentionOccurrences,
   updateSavedPlace,
   updateSavedPlaceGeometry,
   updateStylebookCanonicalGeometry,
 } from '@/lib/stylebookLocationsApi'
 import {
-  buildMentionSpanHits,
+  buildOccurrenceSpanHits,
   findAllMentionOccurrencesInArticle,
   resolveEvidenceSpansInArticle,
 } from '@/lib/processedItemEvidenceSpan'
@@ -113,6 +121,7 @@ export function ProcessedItemVerificationSection({
   const [geometrySaving, setGeometrySaving] = useState(false)
   const [editPaneTab, setEditPaneTab] = useState<'map' | 'details'>('map')
   const [selectedAnchor, setSelectedAnchor] = useState<string | null>(null)
+  const [selectedOccurrenceClientId, setSelectedOccurrenceClientId] = useState<string | null>(null)
   const [geometryAddMode, setGeometryAddMode] = useState<'point' | 'rectangle' | null>(null)
   const [mapFocusBoundsKey, setMapFocusBoundsKey] = useState(0)
   const dirty = useMemo(
@@ -261,6 +270,7 @@ export function ProcessedItemVerificationSection({
     setGeometryBaseline(undefined)
     setPlaceFieldsDraft(undefined)
     setPlaceFieldsBaseline(undefined)
+    setSelectedOccurrenceClientId(null)
     setGeometryAddMode(null)
     setEditPaneTab('map')
   }, [])
@@ -271,6 +281,7 @@ export function ProcessedItemVerificationSection({
         cancelGeometryEdit()
       }
       setSelectedAnchor(anchor)
+      setSelectedOccurrenceClientId(null)
       setMapFocusBoundsKey((k) => k + 1)
       setGeometryAddMode(null)
     },
@@ -283,9 +294,46 @@ export function ProcessedItemVerificationSection({
       return resolveEvidenceSpansInArticle(body, undefined)
     }
     const row = displayMergedRows.find((r) => getMergedRowAnchor(r) === storyHighlightAnchor)
+    if (!row) {
+      return resolveEvidenceSpansInArticle(body, undefined)
+    }
+    const occurrences =
+      geometryEditing && placeFieldsDraft
+        ? placeFieldsDraft.occurrences
+        : readMentionOccurrencesFromRow(row as { location?: Record<string, unknown>; mention_occurrences?: unknown })
+    const selected =
+      selectedOccurrenceClientId != null
+        ? occurrences.find((o) => o.clientId === selectedOccurrenceClientId && !o.suppressed)
+        : null
+    if (selected && body) {
+      const withSpans = recomputeOccurrenceSpans(body, [selected])
+      const hit = withSpans[0]
+      if (hit && hit.startChar !== null && hit.endChar !== null) {
+        return {
+          kind: 'ranges' as const,
+          ranges: [{ start: hit.startChar, end: hit.endChar }],
+        }
+      }
+    }
+    const active = occurrences.filter((o) => !o.suppressed && o.mentionText.trim())
+    if (active.length > 0 && body) {
+      const ranges = buildOccurrenceSpanHits(body, [
+        { anchor: storyHighlightAnchor, occurrences: recomputeOccurrenceSpans(body, active) },
+      ]).map(({ start, end }) => ({ start, end }))
+      if (ranges.length > 0) {
+        return { kind: 'ranges' as const, ranges }
+      }
+    }
     const loc = (row?.location ?? null) as Record<string, unknown> | null
     return resolveEvidenceSpansInArticle(body, loc ?? undefined)
-  }, [article?.body, storyHighlightAnchor, displayMergedRows])
+  }, [
+    article?.body,
+    storyHighlightAnchor,
+    displayMergedRows,
+    geometryEditing,
+    placeFieldsDraft,
+    selectedOccurrenceClientId,
+  ])
 
   const storyHighlightRanges =
     storyHighlightResult.kind === 'ranges' ? storyHighlightResult.ranges : []
@@ -294,15 +342,18 @@ export function ProcessedItemVerificationSection({
     const seen = new Set<string>()
     const texts: string[] = []
     for (const row of geocodedPlaceRows) {
-      const loc = row.location as Record<string, unknown> | undefined
-      const ot = loc?.original_text
-      if (typeof ot !== 'string') continue
-      const trimmed = ot.trim()
-      if (!trimmed) continue
-      const key = trimmed.toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      texts.push(trimmed)
+      const occs = readMentionOccurrencesFromRow(
+        row as { location?: Record<string, unknown>; mention_occurrences?: unknown },
+      )
+      for (const occ of occs) {
+        if (occ.suppressed) continue
+        const trimmed = occ.mentionText.trim()
+        if (!trimmed) continue
+        const key = trimmed.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        texts.push(trimmed)
+      }
     }
     return texts
   }, [geocodedPlaceRows])
@@ -316,16 +367,21 @@ export function ProcessedItemVerificationSection({
   const mentionSpanHits = useMemo(() => {
     const body = typeof article?.body === 'string' ? article.body : ''
     if (!body) return []
-    return buildMentionSpanHits(
+    return buildOccurrenceSpanHits(
       body,
       geocodedPlaceRows
         .map((row) => {
           const anchor = getMergedRowAnchor(row)
-          const loc = row.location
-          if (!anchor || !loc || typeof loc !== 'object') return null
-          return { anchor, location: loc as Record<string, unknown> }
+          if (!anchor) return null
+          const occs = readMentionOccurrencesFromRow(
+            row as { location?: Record<string, unknown>; mention_occurrences?: unknown },
+          )
+          return {
+            anchor,
+            occurrences: recomputeOccurrenceSpans(body, occs),
+          }
         })
-        .filter((p): p is { anchor: string; location: Record<string, unknown> } => p !== null),
+        .filter((p): p is { anchor: string; occurrences: ReturnType<typeof recomputeOccurrenceSpans> } => p !== null),
     )
   }, [article?.body, geocodedPlaceRows])
 
@@ -347,14 +403,21 @@ export function ProcessedItemVerificationSection({
     rowEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [selectedAnchor])
 
+  const unsavedGeometryOverlay = useMemo(() => {
+    if (!selectedAnchor) return false
+    return overlayAnchorGeometryChanged(draftOverlay, baselineOverlay, selectedAnchor)
+  }, [draftOverlay, baselineOverlay, selectedAnchor])
+
   const mapCollections = useMemo(
     () =>
       buildVerificationLeafletCollections({
         mergedRows: displayMergedRows,
         baselineByAnchor,
         selectedAnchor,
+        geometryEditing,
+        unsavedGeometryOverlay,
       }),
-    [displayMergedRows, baselineByAnchor, selectedAnchor],
+    [displayMergedRows, baselineByAnchor, selectedAnchor, geometryEditing, unsavedGeometryOverlay],
   )
 
   const editPointFeatureId = useMemo(() => {
@@ -402,7 +465,7 @@ export function ProcessedItemVerificationSection({
     setGeometryAddMode(null)
     setEditPaneTab('map')
     setMapFocusBoundsKey((k) => k + 1)
-  }, [selectedAnchor, selectedRow])
+  }, [selectedAnchor, selectedRow, article?.body])
 
   const saveGeometryForSelected = useCallback(async (): Promise<boolean> => {
     if (
@@ -414,7 +477,7 @@ export function ProcessedItemVerificationSection({
     ) {
       return false
     }
-    if (geometryDraft !== null) {
+    if (geometryDirty && geometryDraft !== null) {
       const err = validateGeometryObject(geometryDraft)
       if (err) {
         showError(err, { title: 'Map' })
@@ -438,7 +501,14 @@ export function ProcessedItemVerificationSection({
         base,
         by[selectedAnchor] as Record<string, unknown> | undefined,
       )
-      const fragment = buildPlaceEditOverlayPatch(mergedBase, placeFieldsDraft, geometryDraft)
+      const body = typeof article?.body === 'string' ? article.body : ''
+      const occurrencesWithSpans = body
+        ? recomputeOccurrenceSpans(body, placeFieldsDraft.occurrences)
+        : placeFieldsDraft.occurrences
+      const fieldsForSave = { ...placeFieldsDraft, occurrences: occurrencesWithSpans }
+      const fragment = geometryDirty
+        ? buildPlaceEditOverlayPatch(mergedBase, fieldsForSave, geometryDraft)
+        : buildPlaceFieldsOnlyOverlayPatch(mergedBase, fieldsForSave)
 
       if (persistedId !== null) {
         if (!projectSlug) {
@@ -447,12 +517,26 @@ export function ProcessedItemVerificationSection({
           })
           return false
         }
-        await updateSavedPlaceGeometry(persistedId, projectSlug, geometryDraft)
+        const articleId =
+          typeof article?.article_id === 'number' && article.article_id > 0
+            ? article.article_id
+            : null
+        if (geometryDirty) {
+          await updateSavedPlaceGeometry(persistedId, projectSlug, geometryDraft)
+        }
         await updateSavedPlace(persistedId, projectSlug, {
-          name: placeFieldsDraft.label.trim() || null,
-          location_type: placeFieldsDraft.type.trim() || null,
-          formatted_address: placeFieldsDraft.formattedAddress.trim() || null,
+          name: fieldsForSave.label.trim() || null,
+          location_type: fieldsForSave.type.trim() || null,
+          formatted_address: fieldsForSave.formattedAddress.trim() || null,
         })
+        if (articleId !== null) {
+          await replaceSavedPlaceMentionOccurrences(
+            persistedId,
+            projectSlug,
+            articleId,
+            buildOccurrencesOverlayPayload(occurrencesWithSpans),
+          )
+        }
         const next = normalizeOverlay(draftOverlay)
         applyAnchorPatchFragment(next, selectedAnchor, fragment)
         const updated = await patchProcessedItemOverlay(
@@ -495,9 +579,11 @@ export function ProcessedItemVerificationSection({
     selectedAnchor,
     selectedRow,
     geometryDraft,
+    geometryDirty,
     placeFieldsDraft,
     geometrySaving,
     catalogProjectSlug,
+    article,
     runId,
     item.id,
     item.overlay_version,
@@ -1091,6 +1177,8 @@ export function ProcessedItemVerificationSection({
                         embeddedInTab
                         fields={placeFieldsDraft}
                         disabled={geometrySaving}
+                        selectedOccurrenceClientId={selectedOccurrenceClientId}
+                        onSelectOccurrence={setSelectedOccurrenceClientId}
                         onChange={setPlaceFieldsDraft}
                       />
                     ) : null}

@@ -547,6 +547,7 @@ export async function getProjectEstimatedAiCost(
 interface RawProcessedItemDetail {
   id: number
   run_id: string
+  synthetic?: boolean
   source_file: string | null
   input: Record<string, unknown>
   output: Record<string, unknown> | null
@@ -624,6 +625,7 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
   return {
     id: raw.id,
     run_id: raw.run_id,
+    synthetic: Boolean(raw.synthetic),
     source_file: raw.source_file,
     input: raw.input,
     output: raw.output,

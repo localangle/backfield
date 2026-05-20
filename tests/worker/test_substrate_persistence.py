@@ -7,6 +7,8 @@ from backfield_db import (
     BackfieldWorkspace,
     StylebookLocationAlias,
     StylebookLocationCanonical,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from backfield_stylebook import assert_canonical_link_invariant
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
@@ -504,6 +506,162 @@ def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
         assert len(occ) == 2
         assert sum(1 for row in occ if row.suppressed) == 1
         assert sum(1 for row in occ if not row.suppressed) == 1
+
+
+def test_persist_writes_multiple_mentions_from_entry() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    body = "Ohio lawmakers advanced the bill. Later, Back in Ohio, the governor signed it."
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-oh", project_slug="proj-oh")
+        session.add(AgateRun(id="run-oh", graph_id="graph-oh", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": body,
+            "places": {
+                "areas": {
+                    "states": [
+                        {
+                            "id": "state:oh",
+                            "original_text": "Ohio lawmakers advanced the bill.",
+                            "mentions": [
+                                {"text": "Ohio lawmakers advanced the bill."},
+                                {"text": "Back in Ohio, the governor signed it."},
+                            ],
+                            "location": "Ohio",
+                            "type": "state",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:oh",
+                                    "formatted_address": "Ohio, USA",
+                                    "geometry": {"type": "Point", "coordinates": [-82.9, 40.4]},
+                                },
+                            },
+                        }
+                    ],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-oh",
+            run_id="run-oh",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        occ = session.exec(
+            select(SubstrateLocationMentionOccurrence).where(
+                SubstrateLocationMentionOccurrence.suppressed == False  # noqa: E712
+            )
+        ).all()
+        assert len(occ) == 2
+        assert occ[0].occurrence_order == 0
+        assert occ[1].occurrence_order == 1
+        assert occ[0].start_char == body.find("Ohio")
+        assert occ[1].start_char == body.find("Back in Ohio")
+
+
+def test_persist_reingest_preserves_user_edit_occurrence() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-u", project_slug="proj-u")
+        session.add(AgateRun(id="run-u1", graph_id="graph-u", status="pending"))
+        session.add(AgateRun(id="run-u2", graph_id="graph-u", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Hello Chicago.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:1",
+                            "original_text": "Chicago",
+                            "mentions": [{"text": "Chicago"}],
+                            "location": "Chicago, IL",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:abc",
+                                    "formatted_address": "Chicago, IL, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-u",
+            run_id="run-u1",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        mention = session.exec(select(SubstrateLocationMention)).first()
+        assert mention is not None
+        user_occ = SubstrateLocationMentionOccurrence(
+            location_mention_id=int(mention.id),
+            source_kind="user_edit",
+            mention_text="User-added mention text",
+            occurrence_order=99,
+            suppressed=False,
+        )
+        session.add(user_occ)
+        session.commit()
+
+    with Session(engine) as session:
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-u",
+            run_id="run-u2",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        occ = session.exec(select(SubstrateLocationMentionOccurrence)).all()
+        active = [o for o in occ if not o.suppressed]
+        assert any(o.source_kind == "user_edit" for o in active)
+        system_active = [o for o in active if o.source_kind == "system_extraction"]
+        assert len(system_active) == 1
+        assert system_active[0].mention_text == "Chicago"
+
+
+def test_find_mention_span_after_prior_match() -> None:
+    body = "Ohio first. Then Ohio again."
+    first = _find_mention_span(haystack=body, needle="Ohio")
+    assert first == (0, 4)
+    second = _find_mention_span(haystack=body, needle="Ohio", search_from=first[1] if first else 0)
+    assert second == (17, 21)
 
 
 def test_persist_defers_address_type_without_materializing_canonical() -> None:

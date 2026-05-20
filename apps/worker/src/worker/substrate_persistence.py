@@ -53,7 +53,6 @@ def persist_from_consolidated(
     _sync_images(session, article_id=int(article.id), consolidated=consolidated)
 
     article_text = str(consolidated.get("text") or "")
-    order = 0
     settings = DbOutputCanonicalSettings.from_node_params(db_output_params)
     try:
         stylebook_id = resolve_effective_stylebook_id(
@@ -135,8 +134,6 @@ def persist_from_consolidated(
             run_id=run_id,
             graph_id=graph_id,
             bucket=bucket,
-            occurrence_order=order,
         )
-        order += 1
 
     return int(article.id)

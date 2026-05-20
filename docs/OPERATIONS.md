@@ -45,7 +45,8 @@ Docker builds use the repo root as context; [.dockerignore](../.dockerignore) ex
 
 - Agate worker queue: `agate`
 - Worker task names:
-  - `worker.tasks.execute_agate_run` — default graph execution (single Celery task runs `execute_graph`).
+  - `worker.tasks.execute_agate_run` — legacy whole-graph execution when no `agate_processed_item` rows exist (stores output on `agate_run` only).
+  - Single **TextInput** / **JSONInput** runs — `POST /runs` creates one `agate_processed_item` and enqueues `execute_processed_item` (same per-item path as S3 batch children).
   - `worker.tasks.execute_s3_batch_setup` — lists/validates S3 JSON under the S3Input prefix, inserts **`agate_processed_item`** rows, then queues a **`chord`** of **`execute_processed_item`** tasks.
   - `worker.tasks.execute_processed_item` — one Celery task per queued item; runs `execute_graph` with an S3Input shim (parent **`agate_run.id`** remains **`BACKFIELD_RUN_ID`** for DBOutput / substrate).
   - `worker.tasks.finalize_s3_parent_run` — chord callback that aggregates parent **`agate_run`** status after all items finish.

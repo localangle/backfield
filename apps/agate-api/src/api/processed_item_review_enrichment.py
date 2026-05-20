@@ -6,11 +6,16 @@ import copy
 import json
 from typing import Any
 
+from api.processed_item_mention_occurrences import (
+    build_mention_occurrences_for_row,
+    sync_original_text_from_occurrences,
+)
 from backfield_db import (
     Stylebook,
     StylebookLocationCanonical,
     SubstrateLocation,
     SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED
 from sqlmodel import Session, col, select
@@ -54,6 +59,63 @@ def _identity_keys(location: Any, anchor: Any) -> set[str]:
             continue
         keys.add(str(raw))
     return keys
+
+
+def _apply_mention_editorial_to_place(
+    place: dict[str, Any],
+    mention: SubstrateLocationMention,
+) -> dict[str, Any]:
+    """Merge substrate mention editorial fields onto the review place payload."""
+    out = copy.deepcopy(place)
+    role = mention.role_in_story
+    if isinstance(role, str) and role.strip():
+        out["role_in_story"] = role.strip()
+    nature = mention.nature
+    if isinstance(nature, str) and nature.strip():
+        out["nature"] = nature.strip()
+    tags = mention.nature_secondary_tags_json
+    if isinstance(tags, list) and tags:
+        out["nature_secondary_tags"] = copy.deepcopy(tags)
+    return out
+
+
+def _load_occurrences_by_mention_id(
+    session: Session,
+    *,
+    mention_ids: list[int],
+) -> dict[int, list[SubstrateLocationMentionOccurrence]]:
+    if not mention_ids:
+        return {}
+    rows = session.exec(
+        select(SubstrateLocationMentionOccurrence)
+        .where(col(SubstrateLocationMentionOccurrence.location_mention_id).in_(mention_ids))
+        .order_by(
+            col(SubstrateLocationMentionOccurrence.location_mention_id),
+            col(SubstrateLocationMentionOccurrence.occurrence_order).asc().nulls_last(),
+            col(SubstrateLocationMentionOccurrence.id),
+        )
+    ).all()
+    out: dict[int, list[SubstrateLocationMentionOccurrence]] = {}
+    for row in rows:
+        mid = int(row.location_mention_id)
+        out.setdefault(mid, []).append(row)
+    return out
+
+
+def _load_mentions_by_location_for_article(
+    session: Session,
+    *,
+    article_id: int | None,
+) -> dict[int, SubstrateLocationMention]:
+    if article_id is None:
+        return {}
+    rows = session.exec(
+        select(SubstrateLocationMention).where(
+            SubstrateLocationMention.article_id == article_id,
+            col(SubstrateLocationMention.deleted).is_(False),
+        )
+    ).all()
+    return {int(m.location_id): m for m in rows}
 
 
 def _apply_persisted_geometry_to_place(
@@ -183,6 +245,15 @@ def enrich_merged_locations_for_review(
     by_key = _load_substrate_locations_for_review(
         session, project_id=project_id, run_id=run_id, article_id=article_id
     )
+    mentions_by_location = _load_mentions_by_location_for_article(
+        session, article_id=article_id
+    )
+    mention_ids = [
+        int(m.id) for m in mentions_by_location.values() if m.id is not None
+    ]
+    occurrences_by_mention_id = _load_occurrences_by_mention_id(
+        session, mention_ids=mention_ids
+    )
     if not by_key:
         return merged_locations
 
@@ -228,9 +299,24 @@ def enrich_merged_locations_for_review(
                     "geometry_differs": geometry_differs_from_canonical(saved_geom, canon_geom),
                 }
 
-        if isinstance(loc_payload, dict) and isinstance(substrate.geometry_json, dict):
-            out["location"] = _apply_persisted_geometry_to_place(
-                loc_payload, substrate.geometry_json
+        if isinstance(loc_payload, dict):
+            mention = mentions_by_location.get(int(substrate.id))
+            if mention is not None:
+                loc_payload = _apply_mention_editorial_to_place(loc_payload, mention)
+            if isinstance(substrate.geometry_json, dict):
+                loc_payload = _apply_persisted_geometry_to_place(
+                    loc_payload, substrate.geometry_json
+                )
+            db_rows: list[SubstrateLocationMentionOccurrence] | None = None
+            if mention is not None and mention.id is not None:
+                db_rows = occurrences_by_mention_id.get(int(mention.id))
+            mention_occurrences = build_mention_occurrences_for_row(
+                place=loc_payload,
+                overlay_patch=None,
+                db_rows=db_rows,
             )
+            sync_original_text_from_occurrences(loc_payload, mention_occurrences)
+            out["location"] = loc_payload
+            out["mention_occurrences"] = mention_occurrences
         enriched.append(out)
     return enriched

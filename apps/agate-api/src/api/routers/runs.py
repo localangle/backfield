@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
+from agate_runtime.single_item import build_single_item_input_from_graph_spec_json
 from api.deps import get_auth, get_session
 from api.processed_item_article_context import build_processed_item_article_context
 from api.processed_item_locations_merge import build_merged_locations_lane
@@ -119,6 +120,8 @@ class ProcessedItemDetailOut(BaseModel):
 
     id: int
     run_id: str
+    #: True for UI-only ``items/1`` when the run has no ``agate_processed_item`` rows.
+    synthetic: bool = False
     source_file: str | None = None
     input: dict[str, Any]
     output: dict[str, Any] | None = None
@@ -286,6 +289,15 @@ def _any_agate_processed_items(session: Session, run_id: str) -> bool:
     )
 
 
+def _is_synthetic_whole_graph_item_view(
+    session: Session,
+    run_id: str,
+    item_id: int,
+) -> bool:
+    """``items/1`` with no batch rows — whole-graph result on ``agate_run`` only."""
+    return item_id == 1 and not _any_agate_processed_items(session, run_id)
+
+
 def _preview_text(value: Any, *, max_words: int = 6) -> str | None:
     if not isinstance(value, str):
         return None
@@ -431,25 +443,76 @@ def create_run(
     if not g:
         raise HTTPException(404, "Graph not found")
     require_project_access(session, auth, int(g.project_id))
+    is_s3_batch = graph_spec_json_contains_s3_input(g.spec_json)
     run = AgateRun(graph_id=g.id, status="pending")
     session.add(run)
     session.commit()
     session.refresh(run)
-    task_name = (
-        "worker.tasks.execute_s3_batch_setup"
-        if graph_spec_json_contains_s3_input(g.spec_json)
-        else "worker.tasks.execute_agate_run"
-    )
-    celery_app.send_task(
-        task_name,
-        args=[run.id],
-        queue=_celery_queue(),
-    )
-    total_items, pending_items, running_items, succeeded_items, failed_items = (
-        (0, 0, 0, 0, 0)
-        if graph_spec_json_contains_s3_input(g.spec_json)
-        else (1, 1, 0, 0, 0)
-    )
+
+    processed_items_out: list[ProcessedItemOut] = []
+    if is_s3_batch:
+        celery_app.send_task(
+            "worker.tasks.execute_s3_batch_setup",
+            args=[run.id],
+            queue=_celery_queue(),
+        )
+        total_items, pending_items, running_items, succeeded_items, failed_items = (
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    else:
+        try:
+            input_doc, source_file = build_single_item_input_from_graph_spec_json(g.spec_json)
+        except ValueError as exc:
+            session.delete(run)
+            session.commit()
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        item = AgateProcessedItem(
+            run_id=run.id,
+            source_file=source_file,
+            input_json=json.dumps(input_doc),
+            status="pending",
+        )
+        session.add(item)
+        run.status = "running"
+        run.updated_at = datetime.now(UTC)
+        session.add(run)
+        session.commit()
+        session.refresh(item)
+        session.refresh(run)
+
+        iid = item.id
+        if iid is None:
+            raise HTTPException(500, "Processed item id missing after save")
+        celery_app.send_task(
+            "worker.tasks.execute_processed_item",
+            args=[int(iid)],
+            queue=_celery_queue(),
+        )
+        processed_items_out = [
+            ProcessedItemOut(
+                id=int(iid),
+                run_id=run.id,
+                source_file=item.source_file,
+                input_preview=_processed_item_input_preview(item.input_json),
+                status=item.status,
+                error_message=item.error_message,
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+            )
+        ]
+        total_items, pending_items, running_items, succeeded_items, failed_items = (
+            1,
+            1,
+            0,
+            0,
+            0,
+        )
+
     return RunOut(
         id=run.id,
         graph_id=run.graph_id,
@@ -463,6 +526,7 @@ def create_run(
         running_items=running_items,
         succeeded_items=succeeded_items,
         failed_items=failed_items,
+        processed_items=processed_items_out,
     )
 
 
@@ -585,6 +649,7 @@ def _detail_from_agate_processed_row(
     return ProcessedItemDetailOut(
         id=int(rid),
         run_id=row.run_id,
+        synthetic=False,
         source_file=row.source_file,
         input=input_obj,
         output=output_obj,
@@ -659,6 +724,7 @@ def _maybe_detail_whole_graph_run(
     return ProcessedItemDetailOut(
         id=1,
         run_id=run.id,
+        synthetic=True,
         source_file=None,
         input={},
         output=output_obj,
@@ -834,9 +900,11 @@ def rerun_run_processed_item(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> RerunItemResponse:
-    """Reset one ``agate_processed_item`` row to pending and enqueue ``execute_processed_item``.
+    """Re-queue processing for one item or a whole-graph run.
 
-    Applies only to real batch rows (not the synthetic whole-graph ``items/1`` view).
+    Batch rows reset ``agate_processed_item`` and enqueue ``execute_processed_item``.
+    Synthetic ``items/1`` (no batch rows) resets ``agate_run`` and enqueues
+    ``execute_agate_run``.
     """
     r = session.get(AgateRun, run_id)
     if not r:
@@ -844,6 +912,26 @@ def rerun_run_processed_item(
     pid = _graph_project_id(session, r.graph_id)
     if pid:
         require_project_access(session, auth, pid)
+
+    if _is_synthetic_whole_graph_item_view(session, run_id, item_id):
+        r.status = "pending"
+        r.result_json = None
+        r.error_message = None
+        r.updated_at = datetime.now(UTC)
+        session.add(r)
+        session.commit()
+        session.refresh(r)
+        celery_app.send_task(
+            "worker.tasks.execute_agate_run",
+            args=[r.id],
+            queue=_celery_queue(),
+        )
+        return RerunItemResponse(
+            item_id=1,
+            run_id=r.id,
+            status=r.status,
+            message="Run reset to pending and re-queued for processing",
+        )
 
     item = session.get(AgateProcessedItem, item_id)
     if item is None or item.run_id != run_id:

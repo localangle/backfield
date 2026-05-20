@@ -5,16 +5,27 @@
 import {
   applyGeometryToPlaceRow,
   buildGeocodePatchForClearGeometry,
+  buildGeocodePatchForFormattedAddress,
   buildGeocodePatchForGeometry,
   getGeocodedPlaceDisplay,
+  readRoleInStoryFromPlace,
 } from './processedItemPlaceGeometry'
+import type { MentionOccurrenceDraft } from './processedItemMentionOccurrences'
+import {
+  buildOccurrencesOverlayPayload,
+  mentionOccurrencesEqual,
+  primaryMentionText,
+  readMentionOccurrencesFromRow,
+} from './processedItemMentionOccurrences'
 
 export type PlaceEditFields = {
   label: string
   type: string
   formattedAddress: string
   roleInStory: string
+  /** @deprecated Use ``occurrences``; kept for tests that only set mention text. */
   mentionText: string
+  occurrences: MentionOccurrenceDraft[]
 }
 
 function cloneJson<T>(v: T): T {
@@ -22,15 +33,17 @@ function cloneJson<T>(v: T): T {
 }
 
 /** Read editable fields from a merged place row ``location`` object. */
-export function readPlaceEditFields(place: Record<string, unknown> | null | undefined): PlaceEditFields {
+export function readPlaceEditFields(
+  place: Record<string, unknown> | null | undefined,
+  row?: { mention_occurrences?: unknown; location?: Record<string, unknown> },
+): PlaceEditFields {
   if (!place || typeof place !== 'object') {
-    return { label: '', type: '', formattedAddress: '', roleInStory: '', mentionText: '' }
+    return { label: '', type: '', formattedAddress: '', roleInStory: '', mentionText: '', occurrences: [] }
   }
   const display = getGeocodedPlaceDisplay(place)
-  const roleRaw = place.role_in_story
-  const roleInStory = typeof roleRaw === 'string' ? roleRaw.trim() : ''
-  const ot = place.original_text
-  const mentionText = typeof ot === 'string' ? ot.trim() : ''
+  const roleInStory = readRoleInStoryFromPlace(place)
+  const occurrences = readMentionOccurrencesFromRow({ location: place, mention_occurrences: row?.mention_occurrences })
+  const mentionText = primaryMentionText(occurrences) || (typeof place.original_text === 'string' ? place.original_text.trim() : '')
   const typeRaw = place.type
   const type = typeof typeRaw === 'string' ? typeRaw.trim() : ''
   return {
@@ -39,6 +52,7 @@ export function readPlaceEditFields(place: Record<string, unknown> | null | unde
     formattedAddress: display.formattedAddress.trim(),
     roleInStory,
     mentionText,
+    occurrences,
   }
 }
 
@@ -48,7 +62,8 @@ export function placeEditFieldsEqual(a: PlaceEditFields, b: PlaceEditFields): bo
     a.type === b.type &&
     a.formattedAddress === b.formattedAddress &&
     a.roleInStory === b.roleInStory &&
-    a.mentionText === b.mentionText
+    a.mentionText === b.mentionText &&
+    mentionOccurrencesEqual(a.occurrences, b.occurrences)
   )
 }
 
@@ -104,8 +119,49 @@ export function applyPlaceEditFields(
   }
   writeFormattedAddress(out, fields.formattedAddress)
   out.role_in_story = fields.roleInStory.trim()
-  out.original_text = fields.mentionText.trim()
+  const primary = primaryMentionText(fields.occurrences) || fields.mentionText.trim()
+  out.original_text = primary
+  out.mentions = fields.occurrences
+    .filter((o) => !o.suppressed && o.mentionText.trim())
+    .map((o) => ({ text: o.mentionText.trim() }))
   return out
+}
+
+/**
+ * Shallow overlay patch for place fields only (no ``geocode`` / geometry).
+ * Use when geometry is unchanged so complex shapes are not re-validated or re-sent.
+ */
+export function buildPlaceFieldsOnlyOverlayPatch(
+  mergedPlace: Record<string, unknown>,
+  fields: PlaceEditFields,
+): Record<string, unknown> {
+  const withFields = applyPlaceEditFields(mergedPlace, fields)
+  const patch: Record<string, unknown> = {}
+
+  const loc = mergedPlace.location
+  if (loc && typeof loc === 'object' && !Array.isArray(loc)) {
+    patch.location = withFields.location
+  } else if (typeof loc === 'string' || loc === undefined) {
+    patch.location = withFields.location
+  } else {
+    patch.description = withFields.description
+  }
+
+  if (withFields.type !== undefined) {
+    patch.type = withFields.type
+  }
+  patch.role_in_story = withFields.role_in_story
+  patch.original_text = withFields.original_text
+  patch.occurrences = buildOccurrencesOverlayPayload(fields.occurrences)
+
+  const baseline = readPlaceEditFields(mergedPlace)
+  if (fields.formattedAddress.trim() !== baseline.formattedAddress) {
+    return {
+      ...patch,
+      ...buildGeocodePatchForFormattedAddress(mergedPlace, fields.formattedAddress),
+    }
+  }
+  return patch
 }
 
 /** Shallow overlay patch for ``locations.by_anchor`` (includes full ``geocode`` when geometry set). */
@@ -132,6 +188,7 @@ export function buildPlaceEditOverlayPatch(
   }
   patch.role_in_story = withGeometry.role_in_story
   patch.original_text = withGeometry.original_text
+  patch.occurrences = buildOccurrencesOverlayPayload(fields.occurrences)
 
   if (geometry === null) {
     return { ...patch, ...buildGeocodePatchForClearGeometry(withFields) }

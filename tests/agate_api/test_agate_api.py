@@ -32,6 +32,37 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
 
+def _minimal_text_input_spec(
+    *,
+    name: str = "test_flow",
+    text: str = "Test article body for API tests.",
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "nodes": [
+            {"id": "n1", "type": "TextInput", "params": {"text": text}},
+            {"id": "out", "type": "Output", "params": {}},
+        ],
+        "edges": [
+            {
+                "source": "n1",
+                "target": "out",
+                "sourceHandle": "text",
+                "targetHandle": "data",
+            },
+        ],
+    }
+
+
+def _insert_pending_run(session: Session, graph_id: str) -> AgateRun:
+    """Insert a run without ``POST /runs`` (no auto single-item row)."""
+    run = AgateRun(graph_id=graph_id, status="pending")
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
 @pytest.fixture
 def client(tmp_path) -> Generator[TestClient, None, None]:
     database_path = tmp_path / "agate-api-test.db"
@@ -175,6 +206,25 @@ def test_projects_require_auth(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_create_run_rejects_graph_without_ingress(client: TestClient):
+    project = client.post("/projects", json={"name": "No ingress", "slug": "no-ingress"}).json()
+    graph = client.post(
+        "/graphs",
+        json={
+            "name": "Output only",
+            "project_id": project["id"],
+            "spec": {
+                "name": "empty",
+                "nodes": [{"id": "out", "type": "Output", "params": {}}],
+                "edges": [],
+            },
+        },
+    ).json()
+    resp = client.post("/runs", json={"graph_id": graph["id"]})
+    assert resp.status_code == 400
+    assert "TextInput or JSONInput" in resp.json().get("detail", "")
+
+
 def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     sent_task: dict[str, object] = {}
 
@@ -239,17 +289,29 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     run_response = client.post("/runs", json={"graph_id": graph["id"]})
     assert run_response.status_code == 200
     run = run_response.json()
-    assert run["status"] == "pending"
+    assert run["status"] == "running"
     assert run["total_items"] == 1
     assert run["pending_items"] == 1
     assert run["running_items"] == 0
     assert run["succeeded_items"] == 0
     assert run["failed_items"] == 0
-    assert sent_task == {
-        "name": "worker.tasks.execute_agate_run",
-        "args": [run["id"]],
-        "queue": "agate",
-    }
+    assert sent_task["name"] == "worker.tasks.execute_processed_item"
+    assert sent_task["queue"] == "agate"
+    assert isinstance(sent_task["args"], list)
+    assert len(sent_task["args"]) == 1
+    item_id = sent_task["args"][0]
+    assert len(run["processed_items"]) == 1
+    summary = run["processed_items"][0]
+    assert summary["id"] == item_id
+    assert summary["run_id"] == run["id"]
+    assert summary["source_file"] == "inline:text"
+    assert summary["input_preview"] == "Austin, TX"
+    assert summary["status"] == "pending"
+
+    detail = client.get(f"/runs/{run['id']}/items/{item_id}")
+    assert detail.status_code == 200
+    assert detail.json().get("synthetic") is False
+    assert detail.json()["input"]["text"] == "Austin, TX"
 
     list_response = client.get("/graphs")
     assert list_response.status_code == 200
@@ -347,17 +409,13 @@ def test_list_runs_includes_processed_item_counts(monkeypatch, tmp_path):
             json={
                 "name": "Batch flow",
                 "project_id": project["id"],
-                "spec": {
-                    "name": "batch",
-                    "nodes": [],
-                    "edges": [],
-                },
+                "spec": {"name": "batch", "nodes": [], "edges": []},
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
 
         with Session(engine) as s:
-            row = s.get(AgateRun, run["id"])
+            row = _insert_pending_run(s, graph["id"])
+            run = {"id": row.id}
             assert row is not None
             row.status = "succeeded"
             s.add(row)
@@ -446,10 +504,9 @@ def test_delete_graph_cleans_up_run_dependencies(monkeypatch, tmp_path):
                 },
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
-        run_id = run["id"]
-
         with Session(engine) as s:
+            row = _insert_pending_run(s, graph["id"])
+            run_id = row.id
             item = AgateProcessedItem(
                 run_id=run_id,
                 source_file="a.json",
@@ -584,7 +641,8 @@ def test_get_run_includes_processed_items_array(monkeypatch, client: TestClient)
     detail = client.get(f"/runs/{run['id']}")
     assert detail.status_code == 200
     body = detail.json()
-    assert body.get("processed_items") == []
+    assert len(body.get("processed_items") or []) == 1
+    assert body["processed_items"][0]["status"] == "pending"
 
 
 def test_get_run_processed_item_not_found(monkeypatch, client: TestClient):
@@ -617,46 +675,58 @@ def test_get_run_processed_item_not_found(monkeypatch, client: TestClient):
     assert client.get(f"/runs/{run['id']}/items/99999").status_code == 404
 
 
-def test_get_run_processed_item_synthetic_whole_run_pending(monkeypatch, client: TestClient):
-    """No DB processed-item rows for non-S3 runs; UI still uses route ``/items/1``."""
+def test_get_run_processed_item_synthetic_whole_run_pending(monkeypatch, tmp_path):
+    """Legacy runs with no ``agate_processed_item`` rows still expose synthetic ``/items/1``."""
+    database_path = tmp_path / "agate-synth-pending.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
     monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
 
-    project = client.post("/projects", json={"name": "Synth Item", "slug": "synth-item"}).json()
-    graph = client.post(
-        "/graphs",
-        json={
-            "name": "Text flow",
-            "project_id": project["id"],
-            "spec": {
-                "name": "t",
-                "nodes": [
-                    {
-                        "id": "n1",
-                        "type": "TextInput",
-                        "params": {"text": "Hi"},
-                        "position": {"x": 0, "y": 0},
-                    },
-                ],
-                "edges": [],
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Synth Item", "slug": "synth-item"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Text flow",
+                "project_id": project["id"],
+                "spec": _minimal_text_input_spec(name="t", text="Hi"),
             },
-        },
-    ).json()
-    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
-    resp = client.get(f"/runs/{run['id']}/items/1")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["id"] == 1
-    assert body["run_id"] == run["id"]
-    assert body["status"] == "pending"
-    assert body["input"] == {}
-    assert body.get("output") is None
-    assert body.get("overlay") is None
-    assert body.get("overlay_version") == 0
-    assert body.get("merged_locations") == []
-    assert body.get("stale_overlay_entries") == []
-    ac = body["article_context"]
-    assert ac["resolution"] == "none"
-    assert ac["reason"] == "no_input_article_id"
+        ).json()
+        with Session(engine) as s:
+            run_row = _insert_pending_run(s, graph["id"])
+            run = {"id": run_row.id}
+        resp = tc.get(f"/runs/{run['id']}/items/1")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == 1
+        assert body["run_id"] == run["id"]
+        assert body["synthetic"] is True
+        assert body["status"] == "pending"
+        assert body["input"] == {}
+        assert body.get("output") is None
+        assert body.get("overlay") is None
+        assert body.get("overlay_version") == 0
+        assert body.get("merged_locations") == []
+        assert body.get("stale_overlay_entries") == []
+        ac = body["article_context"]
+        assert ac["resolution"] == "none"
+        assert ac["reason"] == "no_input_article_id"
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_get_run_processed_item_synthetic_second_item_404(monkeypatch, client: TestClient):
@@ -668,7 +738,7 @@ def test_get_run_processed_item_synthetic_second_item_404(monkeypatch, client: T
         json={
             "name": "Text flow",
             "project_id": project["id"],
-            "spec": {"name": "t", "nodes": [], "edges": []},
+            "spec": _minimal_text_input_spec(name="t", text="Hi"),
         },
     ).json()
     run = client.post("/runs", json={"graph_id": graph["id"]}).json()
@@ -713,14 +783,12 @@ def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path
             json={
                 "name": "Batch",
                 "project_id": project["id"],
-                "spec": {"name": "b", "nodes": [], "edges": []},
+                "spec": _minimal_text_input_spec(name="b"),
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
-        rid = run["id"]
         with Session(engine) as s:
-            row = s.get(AgateRun, rid)
-            assert row is not None
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
             row.status = "succeeded"
             s.add(row)
             item = AgateProcessedItem(
@@ -761,6 +829,80 @@ def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path
         app.dependency_overrides.clear()
 
 
+def test_rerun_synthetic_whole_graph_run_resets_run_and_enqueues_task(
+    monkeypatch, tmp_path
+):
+    """Whole-graph ``items/1`` reruns via ``execute_agate_run`` when there are no batch rows."""
+    database_path = tmp_path / "agate-rerun-synthetic.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    captured: dict[str, object] = {}
+
+    def capture_send_task(name: str, args: list[str] | None = None, **kwargs: object) -> None:
+        captured["name"] = name
+        captured["args"] = args
+        captured["queue"] = kwargs.get("queue")
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", capture_send_task)
+
+    try:
+        tc = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project = tc.post(
+            "/projects", json={"name": "Rerun Synth", "slug": "rerun-synth"}
+        ).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Single",
+                "project_id": project["id"],
+                "spec": _minimal_text_input_spec(name="s"),
+            },
+        ).json()
+        with Session(engine) as s:
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
+            row.status = "succeeded"
+            row.result_json = json.dumps({"node_a": {"x": 1}})
+            s.add(row)
+            s.commit()
+
+        resp = tc.post(f"/runs/{rid}/items/1/rerun")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["item_id"] == 1
+        assert body["run_id"] == rid
+        assert body["status"] == "pending"
+
+        with Session(engine) as s:
+            again = s.get(AgateRun, rid)
+            assert again is not None
+            assert again.status == "pending"
+            assert again.result_json is None
+            assert again.error_message is None
+
+        assert captured["name"] == "worker.tasks.execute_agate_run"
+        assert captured["args"] == [rid]
+        assert captured["queue"] == "agate"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_rerun_processed_item_404_when_no_such_row(monkeypatch, client: TestClient):
     monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
 
@@ -770,7 +912,7 @@ def test_rerun_processed_item_404_when_no_such_row(monkeypatch, client: TestClie
         json={
             "name": "t",
             "project_id": project["id"],
-            "spec": {"name": "t", "nodes": [], "edges": []},
+            "spec": _minimal_text_input_spec(name="t"),
         },
     ).json()
     run = client.post("/runs", json={"graph_id": graph["id"]}).json()
@@ -807,14 +949,12 @@ def test_get_run_processed_item_synthetic_with_run_result_json(tmp_path, monkeyp
             json={
                 "name": "JSON flow",
                 "project_id": project["id"],
-                "spec": {"name": "j", "nodes": [], "edges": []},
+                "spec": _minimal_text_input_spec(name="j"),
             },
         ).json()
-        run = client.post("/runs", json={"graph_id": graph["id"]}).json()
-        rid = run["id"]
         with Session(engine) as s:
-            row = s.get(AgateRun, rid)
-            assert row is not None
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
             row.status = "succeeded"
             row.result_json = json.dumps({"node_a": {"x": 1}})
             s.add(row)
@@ -823,6 +963,7 @@ def test_get_run_processed_item_synthetic_with_run_result_json(tmp_path, monkeyp
         resp = client.get(f"/runs/{rid}/items/1")
         assert resp.status_code == 200
         j = resp.json()
+        assert j["synthetic"] is True
         assert j["node_outputs"]["node_a"]["x"] == 1
         assert j.get("overlay") is None
         assert j.get("overlay_version") == 0
@@ -862,14 +1003,12 @@ def test_patch_processed_item_overlay_success_and_409(tmp_path, monkeypatch):
             json={
                 "name": "Batch",
                 "project_id": project["id"],
-                "spec": {"name": "b", "nodes": [], "edges": []},
+                "spec": _minimal_text_input_spec(name="b"),
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
-        rid = run["id"]
         with Session(engine) as s:
-            row = s.get(AgateRun, rid)
-            assert row is not None
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
             row.status = "succeeded"
             s.add(row)
             item = AgateProcessedItem(
@@ -953,14 +1092,12 @@ def test_patch_processed_item_overlay_geometry_400(tmp_path, monkeypatch):
             json={
                 "name": "Batch",
                 "project_id": project["id"],
-                "spec": {"name": "b", "nodes": [], "edges": []},
+                "spec": _minimal_text_input_spec(name="b"),
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
-        rid = run["id"]
         with Session(engine) as s:
-            row = s.get(AgateRun, rid)
-            assert row is not None
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
             row.status = "succeeded"
             s.add(row)
             item = AgateProcessedItem(
@@ -1028,14 +1165,12 @@ def test_patch_processed_item_overlay_requires_if_match(tmp_path, monkeypatch):
             json={
                 "name": "Batch",
                 "project_id": project["id"],
-                "spec": {"name": "b", "nodes": [], "edges": []},
+                "spec": _minimal_text_input_spec(name="b"),
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
-        rid = run["id"]
         with Session(engine) as s:
-            row = s.get(AgateRun, rid)
-            assert row is not None
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
             row.status = "succeeded"
             s.add(row)
             item = AgateProcessedItem(
@@ -1058,25 +1193,46 @@ def test_patch_processed_item_overlay_requires_if_match(tmp_path, monkeypatch):
         app.dependency_overrides.clear()
 
 
-def test_patch_processed_item_overlay_synthetic_404(monkeypatch, client: TestClient):
+def test_patch_processed_item_overlay_synthetic_404(monkeypatch, tmp_path):
     monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
-
-    project = client.post("/projects", json={"name": "Synth PATCH", "slug": "synth-patch"}).json()
-    graph = client.post(
-        "/graphs",
-        json={
-            "name": "t",
-            "project_id": project["id"],
-            "spec": {"name": "t", "nodes": [], "edges": []},
-        },
-    ).json()
-    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
-    r = client.patch(
-        f"/runs/{run['id']}/items/1",
-        json={"overlay": {}},
-        headers={"If-Match": '"0"'},
+    database_path = tmp_path / "agate-synth-patch.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
     )
-    assert r.status_code == 404
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Synth PATCH", "slug": "synth-patch"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "t",
+                "project_id": project["id"],
+                "spec": _minimal_text_input_spec(name="t"),
+            },
+        ).json()
+        with Session(engine) as s:
+            run_row = _insert_pending_run(s, graph["id"])
+            rid = run_row.id
+        r = tc.patch(
+            f"/runs/{rid}/items/1",
+            json={"overlay": {}},
+            headers={"If-Match": '"0"'},
+        )
+        assert r.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_get_run_processed_item_merged_locations_and_stale(tmp_path, monkeypatch):
@@ -1106,11 +1262,12 @@ def test_get_run_processed_item_merged_locations_and_stale(tmp_path, monkeypatch
             json={
                 "name": "Batch",
                 "project_id": project["id"],
-                "spec": {"name": "b", "nodes": [], "edges": []},
+                "spec": _minimal_text_input_spec(name="b"),
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
-        rid = run["id"]
+        with Session(engine) as s:
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
         result = {
             "place_node": {
                 "text": "story",
@@ -1210,11 +1367,12 @@ def test_get_run_processed_item_article_context_substrate(tmp_path, monkeypatch)
             json={
                 "name": "G",
                 "project_id": project["id"],
-                "spec": {"name": "b", "nodes": [], "edges": []},
+                "spec": _minimal_text_input_spec(name="b"),
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
-        rid = run["id"]
+        with Session(engine) as s:
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
         pid = int(project["id"])
         with Session(engine) as s:
             art = SubstrateArticle(
@@ -1291,14 +1449,12 @@ def test_get_run_processed_item_article_context_inline_only(tmp_path, monkeypatc
             json={
                 "name": "G2",
                 "project_id": project["id"],
-                "spec": {"name": "b", "nodes": [], "edges": []},
+                "spec": _minimal_text_input_spec(name="b"),
             },
         ).json()
-        run = tc.post("/runs", json={"graph_id": graph["id"]}).json()
-        rid = run["id"]
         with Session(engine) as s:
-            row = s.get(AgateRun, rid)
-            assert row is not None
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
             row.status = "succeeded"
             s.add(row)
             item = AgateProcessedItem(
@@ -1346,7 +1502,7 @@ def test_run_includes_mapbox_api_token_from_project_secrets(monkeypatch, client:
         json={
             "name": "Empty",
             "project_id": project["id"],
-            "spec": {"name": "empty", "nodes": [], "edges": []},
+            "spec": _minimal_text_input_spec(name="empty"),
         },
     ).json()
     run = client.post("/runs", json={"graph_id": graph["id"]}).json()

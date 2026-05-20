@@ -105,6 +105,8 @@ def test_enrich_merged_locations_attaches_persisted_and_stylebook_link() -> None
             SubstrateLocationMention(
                 article_id=int(article.id),
                 location_id=int(loc.id),
+                role_in_story="Scene of the council vote",
+                nature="primary",
             )
         )
         session.commit()
@@ -141,6 +143,8 @@ def test_enrich_merged_locations_attaches_persisted_and_stylebook_link() -> None
         assert link["geometry_differs"] is True
         geom = out[0]["location"]["geocode"]["result"]["geometry"]
         assert geom["coordinates"] == [-93.1, 45.1]
+        assert out[0]["location"]["role_in_story"] == "Scene of the council vote"
+        assert out[0]["location"]["nature"] == "primary"
 
 
 def test_enrich_skips_unlinked_canonical() -> None:

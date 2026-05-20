@@ -149,7 +149,18 @@ describe('getGeocodingSourceLabel', () => {
       getGeocodingSourceLabel({
         geocode: { geocode_type: 'manual', result: {} },
       }),
-    ).toBe('Manual edit')
+    ).toBe('Manual')
+  })
+
+  it('prefers manual over Stylebook confidence after map edit', () => {
+    expect(
+      getGeocodingSourceLabel({
+        geocode: {
+          geocode_type: 'manual',
+          result: { confidence: { source: 'canonical_db', canonical_id: 'x' } },
+        },
+      }),
+    ).toBe('Manual')
   })
 
   it('uses confidence.source when geocode_type is missing', () => {
@@ -166,16 +177,27 @@ describe('getGeocodingSourceLabel', () => {
 })
 
 describe('buildGeocodePatchForGeometry', () => {
-  it('preserves geocode_type when present', () => {
+  it('marks geocode as manual when geometry is edited on the map', () => {
     const merged = {
-      geocode: { geocode_type: 'pelias', result: { formatted_address: 'X', geometry: { type: 'Point', coordinates: [0, 0] } } },
+      geocode: {
+        geocode_type: 'stylebook',
+        result: {
+          formatted_address: 'X',
+          geometry: { type: 'Point', coordinates: [0, 0] },
+          confidence: { source: 'canonical_db', canonical_id: 'c1' },
+        },
+      },
     }
     const patch = buildGeocodePatchForGeometry(merged as Record<string, unknown>, {
       type: 'Point',
       coordinates: [3, 4],
     })
-    expect((patch.geocode as Record<string, unknown>).geocode_type).toBe('pelias')
-    expect(((patch.geocode as Record<string, unknown>).result as Record<string, unknown>).geometry).toEqual({
+    const gc = patch.geocode as Record<string, unknown>
+    expect(gc.geocode_type).toBe('manual')
+    expect(((gc.result as Record<string, unknown>).confidence as Record<string, unknown>).source).toBe(
+      'manual',
+    )
+    expect(((gc.result as Record<string, unknown>).geometry as Record<string, unknown>)).toEqual({
       type: 'Point',
       coordinates: [3, 4],
     })
@@ -224,6 +246,63 @@ describe('buildVerificationLeafletCollections', () => {
     })
     expect(collections.points.features).toHaveLength(1)
     expect(collections.points.features[0]?.id).toBe('a2')
+  })
+
+  it('shows only draft geometry while editing a linked place', () => {
+    const anchor = 'illinois'
+    const baseline = {
+      description: anchor,
+      stylebook_location_canonical_id: 'canon-1',
+      geocode: {
+        result: {
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]],
+          },
+        },
+      },
+    }
+    const merged = {
+      anchor,
+      location: {
+        ...baseline,
+        geocode: {
+          result: {
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[[10, 10], [12, 10], [12, 12], [10, 12], [10, 10]]],
+            },
+          },
+        },
+      },
+    }
+    const viewUnsaved = buildVerificationLeafletCollections({
+      mergedRows: [merged],
+      baselineByAnchor: new Map([[anchor, baseline]]),
+      selectedAnchor: anchor,
+      geometryEditing: false,
+      unsavedGeometryOverlay: true,
+    })
+    expect(viewUnsaved.polygons.features).toHaveLength(2)
+
+    const viewSaved = buildVerificationLeafletCollections({
+      mergedRows: [merged],
+      baselineByAnchor: new Map([[anchor, baseline]]),
+      selectedAnchor: anchor,
+      geometryEditing: false,
+      unsavedGeometryOverlay: false,
+    })
+    expect(viewSaved.polygons.features).toHaveLength(1)
+    expect(viewSaved.polygons.features[0]?.id).toBe(anchor)
+
+    const editing = buildVerificationLeafletCollections({
+      mergedRows: [merged],
+      baselineByAnchor: new Map([[anchor, baseline]]),
+      selectedAnchor: anchor,
+      geometryEditing: true,
+    })
+    expect(editing.polygons.features).toHaveLength(1)
+    expect(editing.polygons.features[0]?.id).toBe(anchor)
   })
 })
 

@@ -113,6 +113,9 @@ def _walk_place_dict_for_geometry(d: dict[str, Any]) -> None:
 
 def _walk_patch_dict(patch: dict[str, Any]) -> None:
     _walk_place_dict_for_geometry(patch)
+    from api.processed_item_mention_occurrences import validate_overlay_occurrences
+
+    validate_overlay_occurrences(patch, article_body_length=None)
 
 
 def _walk_user_added_row(row: dict[str, Any]) -> None:

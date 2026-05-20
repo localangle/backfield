@@ -107,6 +107,35 @@ export async function updateSavedPlaceGeometry(
   )
 }
 
+export type MentionOccurrencePayload = {
+  id?: number
+  client_id?: string
+  mention_text: string
+  start_char?: number | null
+  end_char?: number | null
+  occurrence_order?: number
+  suppressed?: boolean
+}
+
+export async function replaceSavedPlaceMentionOccurrences(
+  locationId: number,
+  projectSlug: string,
+  articleId: number,
+  occurrences: MentionOccurrencePayload[],
+): Promise<{ occurrences: Array<{ id: number; mention_text: string }> }> {
+  const params = new URLSearchParams({
+    project_slug: projectSlug,
+    article_id: String(Math.trunc(articleId)),
+  })
+  return stylebookJsonFetch(
+    `/v1/locations/${locationId}/mention-occurrences?${params.toString()}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ occurrences }),
+    },
+  )
+}
+
 export async function updateStylebookCanonicalGeometry(
   canonicalId: string,
   stylebookSlug: string,

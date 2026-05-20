@@ -5,6 +5,9 @@
       "type": "address_intersection",
       "address_place_kind": "unknown",
       "original_text": "The car crash occurred on the 100 block of Fake St.",
+      "mentions": [
+        { "text": "The car crash occurred on the 100 block of Fake St." }
+      ],
       "description": "A car crash happened at the 100 block of Fake St.",
       "nature": "primary",
       "nature_secondary_tags": [],
@@ -172,6 +175,36 @@
         "state": {
           "name": "Minnesota",
           "abbr": "MN"
+        },
+        "country": {
+          "name": "United States",
+          "abbr": "US"
+        }
+      }
+    },
+    {
+      "location": "Ohio",
+      "type": "state",
+      "original_text": "Ohio lawmakers advanced the bill Tuesday.",
+      "mentions": [
+        { "text": "Ohio lawmakers advanced the bill Tuesday." },
+        { "text": "Back in Ohio, the governor said he would sign it." }
+      ],
+      "description": "Ohio is central to the legislative story in the lede and again near the close.",
+      "nature": "primary",
+      "nature_secondary_tags": [],
+      "geocode_hints": "",
+      "components": {
+        "place": {},
+        "street_road": {},
+        "span": {},
+        "address": "",
+        "neighborhood": "",
+        "city": "",
+        "county": "",
+        "state": {
+          "name": "Ohio",
+          "abbr": "OH"
         },
         "country": {
           "name": "United States",

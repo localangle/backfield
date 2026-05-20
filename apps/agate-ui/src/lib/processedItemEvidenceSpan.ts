@@ -12,6 +12,9 @@ export type TieredHighlightRange = EvidenceSpanRange & { tier: 'ambient' | 'sele
 /** Character range in the article with one or more geocoded place anchors. */
 export type MentionSpanHit = EvidenceSpanRange & { anchors: string[] }
 
+/** Mention range tied to a specific occurrence (for per-mention selection). */
+export type OccurrenceSpanHit = MentionSpanHit & { occurrenceKey: string }
+
 export type EvidenceSpansResult =
   | { kind: 'ranges'; ranges: EvidenceSpanRange[] }
   | { kind: 'none'; reason: EvidenceSpanReason }
@@ -169,6 +172,58 @@ function mentionSpanKey(start: number, end: number): string {
 /**
  * Map each resolved mention range to the geocoded place anchors that claim it.
  */
+export type OccurrenceSpanInput = {
+  clientId: string
+  mentionText: string
+  startChar: number | null
+  endChar: number | null
+  suppressed: boolean
+}
+
+function spanFromOccurrence(
+  articleBody: string,
+  occurrence: OccurrenceSpanInput,
+): EvidenceSpanRange | null {
+  if (occurrence.suppressed || !occurrence.mentionText.trim()) {
+    return null
+  }
+  if (
+    occurrence.startChar !== null &&
+    occurrence.endChar !== null &&
+    occurrence.endChar > occurrence.startChar &&
+    occurrence.startChar >= 0 &&
+    occurrence.endChar <= articleBody.length
+  ) {
+    return { start: occurrence.startChar, end: occurrence.endChar }
+  }
+  const ranges = findAllOriginalTextRanges(articleBody, occurrence.mentionText)
+  return ranges[0] ?? null
+}
+
+/** Build span hits from explicit mention occurrences (preferred over ``original_text`` scan). */
+export function buildOccurrenceSpanHits(
+  articleBody: string,
+  places: Array<{ anchor: string; occurrences: OccurrenceSpanInput[] }>,
+): OccurrenceSpanHit[] {
+  if (typeof articleBody !== 'string' || articleBody.length === 0) {
+    return []
+  }
+  const hits: OccurrenceSpanHit[] = []
+  for (const { anchor, occurrences } of places) {
+    if (!anchor) continue
+    for (const occ of occurrences) {
+      const range = spanFromOccurrence(articleBody, occ)
+      if (!range) continue
+      hits.push({
+        ...range,
+        anchors: [anchor],
+        occurrenceKey: `${anchor}:${occ.clientId}`,
+      })
+    }
+  }
+  return hits.sort((a, b) => a.start - b.start)
+}
+
 export function buildMentionSpanHits(
   articleBody: string,
   places: Array<{ anchor: string; location: Record<string, unknown> }>,

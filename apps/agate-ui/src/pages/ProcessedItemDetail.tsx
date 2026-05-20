@@ -131,7 +131,7 @@ export default function ProcessedItemDetail() {
 
       try {
         const itemData = await getProcessedItem(runId, parsedItemId)
-        setItem({ ...itemData, synthetic: false })
+        setItem(itemData)
       } catch {
         const syn = runData.items?.find((i) => i.id === parsedItemId && i.synthetic)
         if (syn) {
@@ -474,7 +474,15 @@ export default function ProcessedItemDetail() {
                   await loadItemData()
                 } catch (e) {
                   console.error('Failed to rerun item:', e)
-                  showError('Failed to rerun item. Please try again.')
+                  const detail =
+                    e instanceof Error && e.message.startsWith('API error:')
+                      ? e.message.replace(/^API error: \d+ - /, '').trim()
+                      : null
+                  showError(
+                    detail && detail.length < 200
+                      ? detail
+                      : 'Failed to rerun item. Please try again.',
+                  )
                 } finally {
                   setRerunning(false)
                 }
