@@ -123,6 +123,7 @@ class ProcessedItemDetailOut(BaseModel):
     #: True for UI-only ``items/1`` when the run has no ``agate_processed_item`` rows.
     synthetic: bool = False
     source_file: str | None = None
+    input_preview: str | None = None
     input: dict[str, Any]
     output: dict[str, Any] | None = None
     node_outputs: dict[str, Any] | None = None
@@ -651,6 +652,7 @@ def _detail_from_agate_processed_row(
         run_id=row.run_id,
         synthetic=False,
         source_file=row.source_file,
+        input_preview=_processed_item_input_preview(row.input_json),
         input=input_obj,
         output=output_obj,
         node_outputs=output_obj,
@@ -726,6 +728,7 @@ def _maybe_detail_whole_graph_run(
         run_id=run.id,
         synthetic=True,
         source_file=None,
+        input_preview=None,
         input={},
         output=output_obj,
         node_outputs=output_obj,

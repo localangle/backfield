@@ -11,6 +11,7 @@ import { getNodeOutputById, nodeOutputLookupFromGraphSpec, type NodeOutputLookup
 import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { formatDateCentral } from '@/lib/utils'
+import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
 import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 
@@ -521,10 +522,12 @@ export default function ProcessedItemDetail() {
               <span className="ml-1 capitalize">{item.status}</span>
             </Badge>
           </CardTitle>
-          {item.source_file && (
-            <CardDescription className="font-mono text-xs">
+          {(isBatchFileSource(item.source_file) || processedItemSourceLabel(item)) && (
+            <CardDescription
+              className={`text-xs ${isBatchFileSource(item.source_file) ? 'font-mono' : ''}`}
+            >
               <FileText className="inline h-3 w-3 mr-1" />
-              {item.source_file}
+              {processedItemSourceLabel(item) ?? item.source_file}
             </CardDescription>
           )}
         </CardHeader>

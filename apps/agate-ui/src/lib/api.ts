@@ -107,6 +107,7 @@ export interface ProcessedItem {
   run_id: string
   synthetic?: boolean
   source_file: string | null
+  input_preview?: string | null
   input: Record<string, unknown>
   output: Record<string, unknown> | null
   node_outputs: Record<string, unknown> | null
@@ -549,6 +550,7 @@ interface RawProcessedItemDetail {
   run_id: string
   synthetic?: boolean
   source_file: string | null
+  input_preview?: string | null
   input: Record<string, unknown>
   output: Record<string, unknown> | null
   node_outputs: Record<string, unknown> | null
@@ -627,6 +629,7 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
     run_id: raw.run_id,
     synthetic: Boolean(raw.synthetic),
     source_file: raw.source_file,
+    input_preview: raw.input_preview ?? null,
     input: raw.input,
     output: raw.output,
     node_outputs: raw.node_outputs,

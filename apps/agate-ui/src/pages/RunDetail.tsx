@@ -23,6 +23,7 @@ import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { formatDateCentral } from '@/lib/utils'
 import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
+import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
 import { ArrowLeft, ArrowRight, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -630,11 +631,11 @@ export default function RunDetail() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">#{item.id}</TableCell>
                     <TableCell className="text-sm max-w-[250px]">
-                      {item.source_file ? (
+                      {isBatchFileSource(item.source_file) ? (
                         <div className="flex items-center gap-2 max-w-full">
                           <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <span className="font-mono text-xs truncate" title={item.source_file}>
-                            {item.source_file.split('/').pop()}
+                          <span className="font-mono text-xs truncate" title={item.source_file!}>
+                            {processedItemSourceLabel(item)}
                           </span>
                         </div>
                       ) : item.input_article_id ? (
@@ -655,7 +656,9 @@ export default function RunDetail() {
                       ) : (
                         <div className="flex flex-col gap-1 max-w-full">
                           {(() => {
-                            const preview = item.input_preview || (item.synthetic ? syntheticInputPreview : null)
+                            const preview =
+                              processedItemSourceLabel(item) ||
+                              (item.synthetic ? syntheticInputPreview : null)
                             return (
                               <span
                                 className={`text-xs font-medium leading-snug ${
