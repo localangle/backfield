@@ -229,8 +229,8 @@ export function GeocodedPlacesTable({
                           variant="outline"
                           size="icon"
                           className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
-                          aria-label="Delete place"
-                          title="Delete place"
+                          aria-label="Remove place from story"
+                          title="Remove from story"
                           disabled={deleteDisabled}
                           onClick={() => onDeletePlace(row)}
                         >

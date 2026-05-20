@@ -1269,17 +1269,28 @@ def test_get_run_processed_item_merged_locations_and_stale(tmp_path, monkeypatch
             row = _insert_pending_run(s, graph["id"])
             rid = row.id
         result = {
-            "place_node": {
+            "geocode_agent": {
                 "text": "story",
-                "locations": [
-                    {
-                        "id": "L1",
-                        "description": "model",
-                        "original_text": "ot",
-                        "location": {"full": "A", "type": "city", "components": {}},
+                "places": {
+                    "areas": {
+                        "states": [],
+                        "counties": [],
+                        "cities": [
+                            {
+                                "id": "L1",
+                                "description": "model",
+                                "original_text": "ot",
+                                "location": {"full": "A", "type": "city", "components": {}},
+                            },
+                        ],
+                        "neighborhoods": [],
+                        "regions": [],
+                        "other": [],
                     },
-                ],
-            }
+                    "points": [],
+                    "needs_review": [],
+                },
+            },
         }
         overlay = {
             "locations": {

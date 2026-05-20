@@ -82,7 +82,12 @@ export async function deleteSavedPlace(
   locationId: number,
   projectSlug: string,
   articleId?: number | null,
-): Promise<{ message: string; mentions_removed: number; location_deleted: boolean }> {
+): Promise<{
+  message: string
+  mentions_removed: number
+  location_deleted: boolean
+  candidates_created?: number
+}> {
   const params = new URLSearchParams({ project_slug: projectSlug })
   if (articleId != null && Number.isFinite(articleId) && articleId > 0) {
     params.set('article_id', String(Math.trunc(articleId)))

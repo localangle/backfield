@@ -27,7 +27,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
     from backfield_db.session import get_engine
 
     with Session(get_engine()) as session:
-        article_id = persist_from_consolidated(
+        article_id, retired_mentions = persist_from_consolidated(
             session,
             project_id=project_id,
             graph_id=graph_id,
@@ -37,9 +37,16 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         )
         session.commit()
 
+    message = "Persisted flow output to substrate_* tables"
+    if retired_mentions:
+        message += (
+            f"; retired {retired_mentions} superseded place link(s) from a prior run"
+        )
+
     return {
         **body,
         "success": True,
         "article_id": article_id,
-        "message": "Persisted flow output to substrate_* tables",
+        "retired_mention_count": retired_mentions,
+        "message": message,
     }

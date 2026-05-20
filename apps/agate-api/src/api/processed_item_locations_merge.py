@@ -15,6 +15,60 @@ from api.processed_item_mention_occurrences import (
 
 BaselineRow = tuple[str, str, int, dict[str, Any]]
 
+# When multiple pipeline nodes emit ``places``, use one canonical bucket for review.
+_GEOCODED_PLACES_NODE_PRIORITY: tuple[str, ...] = (
+    "stylebook_output",
+    "stylebook-output",
+    "DBOutput",
+    "db_output",
+    "GeocodeAgent",
+    "geocode_agent",
+    "Geocode",
+)
+
+# PlaceExtract output is never a review or persistence baseline (geocode / DBOutput only).
+_PLACE_EXTRACT_NODE_IDS: frozenset[str] = frozenset(
+    {"place_extract", "PlaceExtract"},
+)
+
+
+def _node_ids_with_places(output: dict[str, Any] | None) -> frozenset[str]:
+    """Node output keys whose payload includes a GeocodeAgent ``places`` bucket."""
+    ids: set[str] = set()
+    if not output or not isinstance(output, dict):
+        return frozenset()
+    for node_id, payload in output.items():
+        if isinstance(payload, dict) and isinstance(payload.get("places"), dict):
+            ids.add(str(node_id))
+    return frozenset(ids)
+
+
+def _geocoded_places_node_candidates(output: dict[str, Any] | None) -> frozenset[str]:
+    """Node keys with ``places`` that may feed review (excludes PlaceExtract)."""
+    excluded_lower = {n.lower() for n in _PLACE_EXTRACT_NODE_IDS}
+    return frozenset(
+        n
+        for n in _node_ids_with_places(output)
+        if n not in _PLACE_EXTRACT_NODE_IDS and n.lower() not in excluded_lower
+    )
+
+
+def _select_geocoded_places_node_id(output: dict[str, Any] | None) -> str | None:
+    """Pick one node output for geocoded ``places`` when several carry the same bucket."""
+    places_nodes = _geocoded_places_node_candidates(output)
+    if not places_nodes:
+        return None
+    node_set = {str(n) for n in places_nodes}
+    for pref in _GEOCODED_PLACES_NODE_PRIORITY:
+        if pref in node_set:
+            return pref
+    lower_map = {n.lower(): n for n in node_set}
+    for pref in _GEOCODED_PLACES_NODE_PRIORITY:
+        hit = lower_map.get(pref.lower())
+        if hit:
+            return hit
+    return sorted(node_set)[0]
+
 
 def _shallow_merge_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
     out = copy.deepcopy(base)
@@ -24,85 +78,82 @@ def _shallow_merge_dict(base: dict[str, Any], patch: dict[str, Any]) -> dict[str
 
 
 def _anchor_for_place_dict(loc: dict[str, Any], node_id: str, index: int) -> str:
-    """Match review anchor rules: ``id``, else ``mention_id``, else ``{node_id}:{index}``."""
-    aid = loc.get("id")
-    if aid is None or aid == "":
-        aid = loc.get("mention_id")
-    if aid is None or aid == "":
-        return f"{node_id}:{index}"
-    return str(aid)
+    """Review overlay anchor: stable ``id`` / ``mention_id``, never a shared H3 cell alone.
+
+    GeocodeAgent sets point ``id`` to ``h3:<cell>`` for colocation at one address. Multiple
+    distinct extractions at the same coordinates must not collapse in ``merged_locations``.
+    """
+    for key in ("id", "mention_id"):
+        raw = loc.get(key)
+        if raw is None:
+            continue
+        s = str(raw).strip()
+        if not s or s.startswith("h3:"):
+            continue
+        return s
+    return f"{node_id}:{index}"
 
 
-def _iter_rows_from_locations(output: dict[str, Any] | None) -> list[BaselineRow]:
-    """``(anchor, node_id, index, place_dict)`` from each node's ``locations`` array."""
+def _iter_rows_from_places_node(
+    output: dict[str, Any],
+    node_id: str,
+) -> list[BaselineRow]:
+    """``places`` rows for a single node output key."""
     rows: list[BaselineRow] = []
-    if not output or not isinstance(output, dict):
+    payload = output.get(node_id)
+    if not isinstance(payload, dict):
         return rows
-    for node_id, payload in output.items():
-        if not isinstance(payload, dict):
-            continue
-        raw_locs = payload.get("locations")
-        if raw_locs is None:
-            continue
-        if isinstance(raw_locs, dict) and "locations" in raw_locs:
-            raw_locs = raw_locs.get("locations")
-        if not isinstance(raw_locs, list):
-            continue
-        for i, loc in enumerate(raw_locs):
-            if not isinstance(loc, dict):
-                continue
-            anchor = _anchor_for_place_dict(loc, str(node_id), i)
-            rows.append((anchor, str(node_id), i, loc))
-    return rows
-
-
-def _iter_rows_from_places(output: dict[str, Any] | None) -> list[BaselineRow]:
-    """``(anchor, node_id, index, place_dict)`` from GeocodeAgent-style ``places`` buckets."""
-    rows: list[BaselineRow] = []
-    if not output or not isinstance(output, dict):
+    places = payload.get("places")
+    if not isinstance(places, dict):
         return rows
-    for node_id, payload in output.items():
-        if not isinstance(payload, dict):
-            continue
-        places = payload.get("places")
-        if not isinstance(places, dict):
-            continue
-        idx = 0
-        areas = places.get("areas")
-        if isinstance(areas, dict):
-            for bucket in ("states", "counties", "cities", "neighborhoods", "regions", "other"):
-                items = areas.get(bucket)
-                if not isinstance(items, list):
-                    continue
-                for loc in items:
-                    if not isinstance(loc, dict):
-                        continue
-                    anchor = _anchor_for_place_dict(loc, str(node_id), idx)
-                    rows.append((anchor, str(node_id), idx, loc))
-                    idx += 1
-        for bucket in ("points", "needs_review", "other"):
-            items = places.get(bucket)
+    idx = 0
+    areas = places.get("areas")
+    if isinstance(areas, dict):
+        for bucket in ("states", "counties", "cities", "neighborhoods", "regions", "other"):
+            items = areas.get(bucket)
             if not isinstance(items, list):
                 continue
             for loc in items:
                 if not isinstance(loc, dict):
                     continue
-                anchor = _anchor_for_place_dict(loc, str(node_id), idx)
-                rows.append((anchor, str(node_id), idx, loc))
+                anchor = _anchor_for_place_dict(loc, node_id, idx)
+                rows.append((anchor, node_id, idx, loc))
                 idx += 1
+    for bucket in ("points", "needs_review", "other"):
+        items = places.get(bucket)
+        if not isinstance(items, list):
+            continue
+        for loc in items:
+            if not isinstance(loc, dict):
+                continue
+            anchor = _anchor_for_place_dict(loc, node_id, idx)
+            rows.append((anchor, node_id, idx, loc))
+            idx += 1
     return rows
 
 
+def _iter_rows_from_places(output: dict[str, Any] | None) -> list[BaselineRow]:
+    """``places`` rows from the canonical geocoded node only (if any)."""
+    if not output or not isinstance(output, dict):
+        return []
+    node_id = _select_geocoded_places_node_id(output)
+    if not node_id:
+        return []
+    return _iter_rows_from_places_node(output, node_id)
+
+
 def _merge_baseline_place_rows(output: dict[str, Any] | None) -> list[BaselineRow]:
-    """Union ``locations`` and Geocode ``places`` rows; same anchor keeps the last row."""
+    """Build review baseline from geocoded ``places`` only (points, areas, needs_review).
+
+    PlaceExtract ``locations`` are never merged into review. When no geocoded node has
+    ``places``, the baseline is empty (user-added overlay rows may still appear).
+    """
+    geocoded_node = _select_geocoded_places_node_id(output)
+    if not geocoded_node:
+        return []
     merged_by_anchor: dict[str, BaselineRow] = {}
     order: list[str] = []
-    for row in _iter_rows_from_locations(output):
-        anchor = row[0]
-        if anchor not in merged_by_anchor:
-            order.append(anchor)
-        merged_by_anchor[anchor] = row
-    for row in _iter_rows_from_places(output):
+    for row in _iter_rows_from_places_node(output, geocoded_node):
         anchor = row[0]
         if anchor not in merged_by_anchor:
             order.append(anchor)

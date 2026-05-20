@@ -97,60 +97,83 @@ export function validateGeometryObject(geometry: Record<string, unknown> | null)
   return null
 }
 
+/** Keep in sync with ``processed_item_locations_merge._anchor_for_place_dict`` (Python). */
 function anchorForPlaceDict(place: Record<string, unknown>, nodeId: string, index: number): string {
-  let aid = place.id
-  if (aid === undefined || aid === '') aid = place.mention_id
-  return aid !== undefined && aid !== null && String(aid) !== '' ? String(aid) : `${nodeId}:${index}`
-}
-
-function iterRowsFromLocations(
-  output: Record<string, unknown>,
-): Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> {
-  const rows: Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> = []
-  for (const [nodeId, payload] of Object.entries(output)) {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue
-    const p = payload as Record<string, unknown>
-    let rawLocs = p.locations
-    if (rawLocs !== undefined && rawLocs !== null && typeof rawLocs === 'object' && !Array.isArray(rawLocs)) {
-      const inner = (rawLocs as Record<string, unknown>).locations
-      if (Array.isArray(inner)) rawLocs = inner
-    }
-    if (!Array.isArray(rawLocs)) continue
-    rawLocs.forEach((loc, i) => {
-      if (!loc || typeof loc !== 'object' || Array.isArray(loc)) return
-      const place = loc as Record<string, unknown>
-      rows.push({ anchor: anchorForPlaceDict(place, nodeId, i), nodeId, index: i, location: place })
-    })
+  for (const key of ['id', 'mention_id'] as const) {
+    const raw = place[key]
+    if (raw === undefined || raw === null) continue
+    const s = String(raw).trim()
+    if (!s || s.startsWith('h3:')) continue
+    return s
   }
-  return rows
+  return `${nodeId}:${index}`
 }
 
-function iterRowsFromPlaces(
-  output: Record<string, unknown>,
-): Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> {
-  const rows: Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> = []
+/** Keep in sync with ``processed_item_locations_merge`` (Python). */
+const GEOCODED_PLACES_NODE_PRIORITY = [
+  'stylebook_output',
+  'stylebook-output',
+  'DBOutput',
+  'db_output',
+  'GeocodeAgent',
+  'geocode_agent',
+  'Geocode',
+] as const
+
+const PLACE_EXTRACT_NODE_IDS = new Set(['place_extract', 'PlaceExtract'])
+
+function nodeIdsWithPlaces(output: Record<string, unknown>): Set<string> {
+  const ids = new Set<string>()
   for (const [nodeId, payload] of Object.entries(output)) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue
-    const places = (payload as Record<string, unknown>).places
-    if (!places || typeof places !== 'object' || Array.isArray(places)) continue
-    const pl = places as Record<string, unknown>
-    let idx = 0
-    const areas = pl.areas
-    if (areas && typeof areas === 'object' && !Array.isArray(areas)) {
-      const ar = areas as Record<string, unknown>
-      for (const bucket of ['states', 'counties', 'cities', 'neighborhoods', 'regions', 'other'] as const) {
-        const items = ar[bucket]
-        if (!Array.isArray(items)) continue
-        for (const loc of items) {
-          if (!loc || typeof loc !== 'object' || Array.isArray(loc)) continue
-          const place = loc as Record<string, unknown>
-          rows.push({ anchor: anchorForPlaceDict(place, nodeId, idx), nodeId, index: idx, location: place })
-          idx += 1
-        }
-      }
+    if (typeof (payload as Record<string, unknown>).places === 'object' && (payload as Record<string, unknown>).places !== null) {
+      ids.add(nodeId)
     }
-    for (const bucket of ['points', 'needs_review', 'other'] as const) {
-      const items = pl[bucket]
+  }
+  return ids
+}
+
+function geocodedPlacesNodeCandidates(output: Record<string, unknown>): Set<string> {
+  const excludedLower = new Set([...PLACE_EXTRACT_NODE_IDS].map((n) => n.toLowerCase()))
+  return new Set(
+    [...nodeIdsWithPlaces(output)].filter(
+      (n) => !PLACE_EXTRACT_NODE_IDS.has(n) && !excludedLower.has(n.toLowerCase()),
+    ),
+  )
+}
+
+function selectGeocodedPlacesNodeId(output: Record<string, unknown>): string | null {
+  const placesNodes = geocodedPlacesNodeCandidates(output)
+  if (placesNodes.size === 0) return null
+  const nodeSet = new Set(placesNodes)
+  for (const pref of GEOCODED_PLACES_NODE_PRIORITY) {
+    if (nodeSet.has(pref)) return pref
+  }
+  const lowerMap = new Map<string, string>()
+  for (const n of nodeSet) lowerMap.set(n.toLowerCase(), n)
+  for (const pref of GEOCODED_PLACES_NODE_PRIORITY) {
+    const hit = lowerMap.get(pref.toLowerCase())
+    if (hit) return hit
+  }
+  return [...nodeSet].sort()[0] ?? null
+}
+
+function iterRowsFromPlacesNode(
+  output: Record<string, unknown>,
+  nodeId: string,
+): Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> {
+  const rows: Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> = []
+  const payload = output[nodeId]
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return rows
+  const places = (payload as Record<string, unknown>).places
+  if (!places || typeof places !== 'object' || Array.isArray(places)) return rows
+  const pl = places as Record<string, unknown>
+  let idx = 0
+  const areas = pl.areas
+  if (areas && typeof areas === 'object' && !Array.isArray(areas)) {
+    const ar = areas as Record<string, unknown>
+    for (const bucket of ['states', 'counties', 'cities', 'neighborhoods', 'regions', 'other'] as const) {
+      const items = ar[bucket]
       if (!Array.isArray(items)) continue
       for (const loc of items) {
         if (!loc || typeof loc !== 'object' || Array.isArray(loc)) continue
@@ -160,26 +183,27 @@ function iterRowsFromPlaces(
       }
     }
   }
+  for (const bucket of ['points', 'needs_review', 'other'] as const) {
+    const items = pl[bucket]
+    if (!Array.isArray(items)) continue
+    for (const loc of items) {
+      if (!loc || typeof loc !== 'object' || Array.isArray(loc)) continue
+      const place = loc as Record<string, unknown>
+      rows.push({ anchor: anchorForPlaceDict(place, nodeId, idx), nodeId, index: idx, location: place })
+      idx += 1
+    }
+  }
   return rows
 }
 
-/** Baseline place rows for overlay math: ``locations`` arrays plus Geocode ``places`` (same anchor → geocode wins). */
+/** Baseline place rows for overlay math: geocoded ``places`` only (never PlaceExtract ``locations``). */
 export function iterBaselinePlacesFromOutput(
   output: Record<string, unknown> | null | undefined,
 ): Array<{ anchor: string; nodeId: string; index: number; location: Record<string, unknown> }> {
   if (!output || typeof output !== 'object') return []
-  const byAnchor = new Map<
-    string,
-    { anchor: string; nodeId: string; index: number; location: Record<string, unknown> }
-  >()
-  const order: string[] = []
-  const upsert = (row: { anchor: string; nodeId: string; index: number; location: Record<string, unknown> }) => {
-    if (!byAnchor.has(row.anchor)) order.push(row.anchor)
-    byAnchor.set(row.anchor, row)
-  }
-  for (const row of iterRowsFromLocations(output)) upsert(row)
-  for (const row of iterRowsFromPlaces(output)) upsert(row)
-  return order.map((a) => byAnchor.get(a)!)
+  const geocodedNode = selectGeocodedPlacesNodeId(output)
+  if (!geocodedNode) return []
+  return iterRowsFromPlacesNode(output, geocodedNode)
 }
 
 export type GeocodedPlaceDisplay = {
@@ -784,8 +808,12 @@ export function buildVerificationLeafletCollections(params: {
     }
     const loc = row.location as Record<string, unknown> | undefined
     if (!loc) continue
+    if (loc.geocode_region_mismatch === true || loc.geocode_qa_code === 'geocode_region_mismatch') {
+      continue
+    }
     const label = typeof loc.description === 'string' ? loc.description : anchor
     const gMerged = extractGeometryFromPlace(loc)
+    if (!gMerged) continue
     const base = params.baselineByAnchor.get(anchor)
     const gBase = base ? extractGeometryFromPlace(base) : null
     const linked = isLocationLinkedToStylebookCanonical(loc)

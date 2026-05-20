@@ -55,6 +55,13 @@ _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
         frozenset({"city", "region_state"}),
         frozenset({"town", "region_state"}),
         frozenset({"village", "region_state"}),
+        frozenset({"address", "neighborhood"}),
+        # Street-level extracts must not collapse onto municipality or macro admin canonicals.
+        frozenset({"address", "city"}),
+        frozenset({"address", "town"}),
+        frozenset({"address", "village"}),
+        frozenset({"address", "county"}),
+        frozenset({"address", "state"}),
         frozenset({"city", "neighborhood"}),
         frozenset({"town", "neighborhood"}),
         frozenset({"village", "neighborhood"}),

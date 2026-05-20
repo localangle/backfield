@@ -508,6 +508,120 @@ def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
         assert sum(1 for row in occ if not row.suppressed) == 1
 
 
+def test_rerun_retires_stale_article_mentions_when_geocode_identity_changes() -> None:
+    """Re-run with new geocode ids must not leave duplicate active mentions on the article."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-rerun", project_slug="proj-rerun")
+        session.add(AgateRun(id="run-a", graph_id="graph-r", status="pending"))
+        session.add(AgateRun(id="run-b", graph_id="graph-r", status="pending"))
+        session.commit()
+
+        run1_places = {
+            "areas": {
+                "states": [],
+                "counties": [],
+                "cities": [],
+                "neighborhoods": [],
+                "regions": [],
+                "other": [],
+            },
+            "points": [
+                {
+                    "id": "franklin",
+                    "original_text": "500 N Franklin",
+                    "location": "500 N Franklin St, Chicago, IL",
+                    "type": "address",
+                    "geocode": {
+                        "geocode_type": "pelias",
+                        "result": {
+                            "id": "pelias:franklin",
+                            "formatted_address": "500 N Franklin, Chicago, IL",
+                            "geometry": CHICAGO_POINT,
+                        },
+                    },
+                },
+                {
+                    "id": "midway",
+                    "original_text": "Midway Airport",
+                    "location": "Midway Airport, Chicago, IL",
+                    "type": "place",
+                    "geocode": {
+                        "geocode_type": "pelias",
+                        "result": {
+                            "id": "pelias:midway-old",
+                            "formatted_address": "5700 S Cicero Ave, Chicago, IL",
+                            "geometry": CHICAGO_POINT,
+                        },
+                    },
+                },
+            ],
+            "needs_review": [],
+        }
+        run2_places = {
+            **run1_places,
+            "points": [
+                run1_places["points"][0],
+                {
+                    "id": "midway",
+                    "original_text": "Midway Airport",
+                    "location": "Midway Airport, Chicago, IL",
+                    "type": "place",
+                    "geocode": {
+                        "geocode_type": "pelias",
+                        "result": {
+                            "id": "pelias:midway-new",
+                            "formatted_address": "5700 South Cicero Avenue, Chicago, IL",
+                            "geometry": CHICAGO_POINT,
+                        },
+                    },
+                },
+            ],
+        }
+        text = "Story at 500 N Franklin in Chicago."
+        _, retired0 = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-r",
+            run_id="run-a",
+            consolidated={"text": text, "places": run1_places},
+        )
+        assert retired0 == 0
+        _, retired1 = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-r",
+            run_id="run-b",
+            consolidated={"text": text, "places": run2_places},
+        )
+        assert retired1 == 1
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation, SubstrateLocationMention
+
+        active = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(False),
+            )
+        ).all()
+        assert len(active) == 2
+        retired = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(True),
+            )
+        ).all()
+        assert len(retired) == 1
+        old_loc_ids = {int(m.location_id) for m in retired}
+        old_locs = session.exec(
+            select(SubstrateLocation).where(col(SubstrateLocation.id).in_(list(old_loc_ids)))
+        ).all()
+        assert len(old_locs) == 1
+        assert old_locs[0].external_id == "pelias:midway-old"
+
+
 def test_persist_writes_multiple_mentions_from_entry() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

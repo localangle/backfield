@@ -16,34 +16,105 @@ import {
 } from './processedItemPlaceGeometry'
 
 describe('iterBaselinePlacesFromOutput', () => {
-  it('iterates node locations with anchors', () => {
+  it('returns empty when output has only PlaceExtract locations', () => {
     const rows = iterBaselinePlacesFromOutput({
-      n1: { locations: [{ id: 'a1', description: 'x' }] },
+      place_extract: { locations: [{ id: 'a1', description: 'x' }] },
+    })
+    expect(rows).toHaveLength(0)
+  })
+
+  it('iterates geocoded places with anchors', () => {
+    const rows = iterBaselinePlacesFromOutput({
+      geocode_agent: {
+        places: {
+          areas: { states: [], counties: [], cities: [{ id: 'a1', description: 'x' }], neighborhoods: [], regions: [], other: [] },
+          points: [],
+        },
+      },
     })
     expect(rows).toHaveLength(1)
     expect(rows[0].anchor).toBe('a1')
   })
 
-  it('prefers Geocode places row over locations when anchor matches', () => {
+  it('ignores PlaceExtract locations when a sibling node has geocoded places', () => {
     const rows = iterBaselinePlacesFromOutput({
-      extract: {
-        locations: [{ id: 'L1', description: 'raw' }],
+      place_extract: {
+        locations: [{ id: 'extract:2', description: 'pre-geocode hospital' }],
       },
-      geo: {
+      geocode_agent: {
         places: {
           points: [
             {
-              id: 'L1',
-              description: 'geocoded',
-              geocode: { result: { geometry: { type: 'Point', coordinates: [-90, 44] } } },
+              id: 'h3:hospital',
+              description: 'Presence St. Francis Hospital',
+              geocode: { result: { geometry: { type: 'Point', coordinates: [-87.68, 42.02] } } } },
             },
           ],
         },
       },
     })
     expect(rows).toHaveLength(1)
-    expect(rows[0].nodeId).toBe('geo')
-    expect((rows[0].location as { description?: string }).description).toBe('geocoded')
+    expect(rows[0].nodeId).toBe('geocode_agent')
+    expect((rows[0].location as { description?: string }).description).toBe('Presence St. Francis Hospital')
+  })
+
+  it('prefers stylebook_output places over geocode_agent', () => {
+    const rows = iterBaselinePlacesFromOutput({
+      geocode_agent: {
+        places: { points: [{ id: 'geo', description: 'from geocode' }] },
+      },
+      stylebook_output: {
+        places: { points: [{ id: 'sb', description: 'from stylebook' }] },
+      },
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].nodeId).toBe('stylebook_output')
+    expect((rows[0].location as { description?: string }).description).toBe('from stylebook')
+  })
+
+  it('skips locations array when the same node has places', () => {
+    const rows = iterBaselinePlacesFromOutput({
+      geocode_agent: {
+        locations: [
+          { id: 'extract-only', description: 'pre-geocode' },
+        ],
+        places: {
+          points: [
+            {
+              id: 'h3:cell',
+              description: 'geocoded',
+              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } } },
+            },
+          ],
+        },
+      },
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].anchor).toBe('geocode_agent:0')
+    expect(rows.some((r) => r.anchor === 'extract-only')).toBe(false)
+  })
+
+  it('does not collapse colocated points that share an h3 id', () => {
+    const h3 = 'h3:8c2664cacb6ddff'
+    const rows = iterBaselinePlacesFromOutput({
+      geo: {
+        places: {
+          points: [
+            {
+              id: h3,
+              description: 'Salt Shed',
+              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } } },
+            },
+            {
+              id: h3,
+              description: 'Oddball Market',
+              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } } },
+            },
+          ],
+        },
+      },
+    })
+    expect(rows.map((r) => r.anchor).sort()).toEqual(['geo:0', 'geo:1'])
   })
 })
 
@@ -221,6 +292,27 @@ describe('validateGeometryObject', () => {
 })
 
 describe('buildVerificationLeafletCollections', () => {
+  it('skips region-mismatch needs_review rows on the map', () => {
+    const collections = buildVerificationLeafletCollections({
+      mergedRows: [
+        {
+          anchor: 'bad',
+          location: {
+            description: 'Republic Steel',
+            geocode_qa_code: 'geocode_region_mismatch',
+            geocode: {
+              result: {
+                geometry: { type: 'Point', coordinates: [105, 35] },
+              },
+            },
+          },
+        },
+      ],
+      baselineByAnchor: new Map(),
+      selectedAnchor: null,
+    })
+    expect(collections.places.features).toHaveLength(0)
+  })
   const pointRow = (anchor: string, lng: number, lat: number) => ({
     anchor,
     location: {

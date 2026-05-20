@@ -5,7 +5,12 @@ from __future__ import annotations
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, col, func, select
 
-from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_stylebook.canonical_link import (
+    CANONICAL_LINK_LINKED,
+    CANONICAL_LINK_PENDING,
+    CANONICAL_LINK_UNLINKED,
+    CANONICAL_LINK_WAIVED,
+)
 from backfield_stylebook.canonical_link_matrix import link_pair_allowed
 from backfield_stylebook.canonical_policy import (
     find_existing_canonical_id_by_alias,
@@ -126,6 +131,42 @@ def unlink_substrate_from_canonical(
         }
     ]
     session.add(location)
+
+
+def requeue_substrate_after_story_remove(
+    session: Session,
+    *,
+    stylebook_id: int,
+    location: SubstrateLocation,
+    provenance: str = "agate_review_delete",
+) -> bool:
+    """Unlink or reset status so the substrate appears in the open candidate queue.
+
+    Returns True when the row was linked (and is now unlinked) or was moved from
+    ``waived`` / ``unlinked`` to ``pending``. Rows already ``pending`` with no
+    canonical FK return False (already in the open queue).
+    """
+    if location.id is None:
+        raise ValueError("location must be persisted")
+    st = str(location.canonical_link_status or "")
+    if st == CANONICAL_LINK_LINKED and location.stylebook_location_canonical_id is not None:
+        unlink_substrate_from_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            location=location,
+            provenance=provenance,
+        )
+        return True
+    if st in (CANONICAL_LINK_WAIVED, CANONICAL_LINK_UNLINKED):
+        location.canonical_link_status = CANONICAL_LINK_PENDING
+        location.stylebook_location_canonical_id = None
+        session.add(location)
+        return True
+    if st == CANONICAL_LINK_PENDING and location.stylebook_location_canonical_id is not None:
+        location.stylebook_location_canonical_id = None
+        session.add(location)
+        return True
+    return False
 
 
 def link_substrate_to_canonical_atomic(

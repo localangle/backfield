@@ -673,10 +673,10 @@ export function ProcessedItemVerificationSection({
       const display = getGeocodedPlaceDisplay(row.location as Record<string, unknown> | undefined)
       const label = display.name?.trim() || 'this place'
       const ok = await showConfirm(
-        `Remove “${label}” from this story? This deletes the saved place data for this article.`,
+        `Remove “${label}” from this story? Mentions for this article will be removed. If it was linked in your catalog, it will return to Stylebook candidates for you to link again.`,
         {
-          title: 'Delete place',
-          confirmLabel: 'Delete place',
+          title: 'Remove place from story',
+          confirmLabel: 'Remove from story',
           cancelLabel: 'Cancel',
           destructive: true,
         },
@@ -717,11 +717,14 @@ export function ProcessedItemVerificationSection({
         if (selectedAnchor === anchor) {
           setSelectedAnchor(null)
         }
-        showMessage('The place was removed from this story.', { title: 'Place deleted' })
+        showMessage(
+          'The place was removed from this story. If it was linked in your catalog, check Stylebook candidates to link it again.',
+          { title: 'Place removed' },
+        )
       } catch (e) {
         showError(
           e instanceof Error ? e.message : 'We could not delete this place. Try again.',
-          { title: 'Delete place' },
+          { title: 'Remove place' },
         )
       } finally {
         setSaving(false)

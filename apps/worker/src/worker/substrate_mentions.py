@@ -60,6 +60,43 @@ def _parse_nature_secondary_tags(entry: dict[str, Any]) -> list[str]:
     return uniq
 
 
+def retire_stale_article_mentions_for_rerun(
+    session: Session,
+    *,
+    article_id: int,
+    touched_location_ids: set[int],
+) -> int:
+    """Soft-delete pipeline mentions for this article superseded by a newer run.
+
+    Keeps mentions for ``touched_location_ids`` (current ingest) and user-edited rows.
+    Returns the number of mentions retired.
+    """
+    mentions = session.exec(
+        select(SubstrateLocationMention).where(
+            col(SubstrateLocationMention.article_id) == article_id,
+            col(SubstrateLocationMention.deleted).is_(False),
+        )
+    ).all()
+    retired = 0
+    now = _utcnow()
+    for mention in mentions:
+        lid = int(mention.location_id)
+        if lid in touched_location_ids:
+            continue
+        if mention.edited:
+            continue
+        sk = str(mention.source_kind or "").strip()
+        if sk and sk != "agate_geocode":
+            continue
+        mention.deleted = True
+        mention.updated_at = now
+        session.add(mention)
+        retired += 1
+    if retired:
+        session.flush()
+    return retired
+
+
 def _suppress_prior_system_occurrences_for_mention(
     session: Session,
     *,
@@ -160,7 +197,7 @@ def _upsert_mention_and_occurrence(
             review_data_json=review_data,
             source_kind="agate_geocode",
             source_details_json={"run_id": run_id, "graph_id": graph_id},
-            edited=True,
+            edited=False,
         )
         session.add(mention)
         session.flush()
@@ -173,7 +210,6 @@ def _upsert_mention_and_occurrence(
         mention.source_kind = "agate_geocode"
         mention.source_details_json = {"run_id": run_id, "graph_id": graph_id}
         mention.updated_at = now
-        mention.edited = True
         session.add(mention)
         session.flush()
 

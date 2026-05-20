@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from backfield_stylebook.canonical_link import CANONICAL_LINK_UNLINKED
@@ -23,8 +24,13 @@ from sqlmodel import Session
 from worker.canonical_adjudication import adjudicate_ambiguous_plan_with_llm
 from worker.substrate_article import _sync_images, _upsert_article
 from worker.substrate_location import _iter_place_entries, _upsert_location
-from worker.substrate_mentions import _upsert_mention_and_occurrence
+from worker.substrate_mentions import (
+    _upsert_mention_and_occurrence,
+    retire_stale_article_mentions_for_rerun,
+)
 from worker.substrate_span import _find_mention_span
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["persist_from_consolidated", "_find_mention_span"]
 
@@ -37,7 +43,7 @@ def persist_from_consolidated(
     run_id: str,
     consolidated: dict[str, Any],
     db_output_params: dict[str, Any] | None = None,
-) -> int:
+) -> tuple[int, int]:
     places = consolidated.get("places")
     if not isinstance(places, dict):
         raise RuntimeError(
@@ -65,6 +71,8 @@ def persist_from_consolidated(
     except ValueError as exc:
         raise RuntimeError(f"DBOutput stylebook resolution failed: {exc}") from exc
 
+    touched_location_ids: set[int] = set()
+
     for bucket, entry in _iter_place_entries(places):
         loc = _upsert_location(
             session,
@@ -76,6 +84,8 @@ def persist_from_consolidated(
         )
         if loc is None or article.id is None:
             continue
+        if loc.id is not None:
+            touched_location_ids.add(int(loc.id))
         if stylebook_id is not None and loc.stylebook_location_canonical_id is not None:
             refresh_aliases_for_linked_location(
                 session,
@@ -136,4 +146,19 @@ def persist_from_consolidated(
             bucket=bucket,
         )
 
-    return int(article.id)
+    retired_mentions = 0
+    if article.id is not None and touched_location_ids:
+        retired_mentions = retire_stale_article_mentions_for_rerun(
+            session,
+            article_id=int(article.id),
+            touched_location_ids=touched_location_ids,
+        )
+        if retired_mentions:
+            logger.warning(
+                "Re-run retired %s superseded place link(s) for article_id=%s run_id=%s",
+                retired_mentions,
+                article.id,
+                run_id,
+            )
+
+    return int(article.id), retired_mentions

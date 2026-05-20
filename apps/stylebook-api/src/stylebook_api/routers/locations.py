@@ -24,6 +24,7 @@ from backfield_stylebook.resolve import (
 )
 from backfield_stylebook.substrate_canonical_link_actions import (
     link_substrate_to_canonical_atomic,
+    requeue_substrate_after_story_remove,
     unlink_substrate_from_canonical,
 )
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -1104,8 +1105,9 @@ def delete_location(
     article_id: int | None = Query(
         None,
         description=(
-            "When set, soft-delete mentions for this article only; delete the saved "
-            "place when no active mentions remain."
+            "When set, soft-delete mentions for this article only, unlink from any "
+            "canonical, and return the saved place to the open candidate queue instead "
+            "of deleting the substrate row."
         ),
     ),
     session: Session = Depends(get_session),
@@ -1143,7 +1145,16 @@ def delete_location(
     )
 
     location_deleted = False
-    if remaining == 0:
+    candidates_created = 0
+    if article_id is not None:
+        stylebook_id = _require_stylebook_id(session, proj, None)
+        if requeue_substrate_after_story_remove(
+            session,
+            stylebook_id=stylebook_id,
+            location=loc,
+        ):
+            candidates_created = 1
+    elif remaining == 0:
         try:
             session.delete(loc)
             location_deleted = True
@@ -1158,7 +1169,7 @@ def delete_location(
         "message": "deleted",
         "mentions_removed": len(mentions),
         "location_deleted": location_deleted,
-        "candidates_created": 0,
+        "candidates_created": candidates_created,
         "links_deactivated": 0,
     }
 

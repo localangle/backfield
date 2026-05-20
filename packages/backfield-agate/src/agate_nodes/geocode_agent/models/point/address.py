@@ -120,6 +120,13 @@ class Address(Point):
 
         return candidates[selected_index - 1]
 
+    def _pelias_search_bias_kwargs(self) -> Dict[str, str]:
+        """Bias Pelias free-text search toward the extract's country (e.g. US metro stories)."""
+        cc = (self.country or "").strip().upper()
+        if len(cc) == 2:
+            return {"boundary.country": cc.lower()}
+        return {}
+
     def _prep(self) -> Dict[str, Any]:
         """Prepare address data for geocoding."""
         parts = [self.name]
@@ -159,6 +166,7 @@ class Address(Point):
             return None
 
         full_address = prep_data["full_address"]
+        pelias_bias = self._pelias_search_bias_kwargs()
 
         # Pelias structured (best accuracy when address components present)
         if pelias_api_key:
@@ -179,6 +187,7 @@ class Address(Point):
                     text=full_address,
                     api_key=pelias_api_key,
                     size=5,
+                    **pelias_bias,
                 )
                 if len(candidates) > 1:
                     picked = self._pick_pelias_candidate_with_llm(
@@ -199,7 +208,11 @@ class Address(Point):
 
         if pelias_api_key:
             try:
-                result = await pelias_search(text=full_address, api_key=pelias_api_key)
+                result = await pelias_search(
+                    text=full_address,
+                    api_key=pelias_api_key,
+                    **pelias_bias,
+                )
                 if result and self._is_good_point_result(result):
                     logger.info("Pelias search success for %s", self.name)
                     self.geocoding_result = result

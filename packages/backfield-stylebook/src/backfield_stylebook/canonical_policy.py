@@ -144,7 +144,8 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
 # Backwards-compatible name for :func:`link_pair_allowed` (type deny-list + product gates).
 types_are_autolink_compatible = link_pair_allowed
 
-# Gate E neighborhood container distance uses 50 km; align address→neighborhood autolink geometry.
+# Recall demotion when an address point is far from a neighborhood polygon (pair is denied for
+# autolink via :func:`link_pair_allowed`; this gate only affects comparable scoring paths).
 ADDRESS_NEIGHBORHOOD_AUTOLINK_MAX_KM = 50.0
 
 

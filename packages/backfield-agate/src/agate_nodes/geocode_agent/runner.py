@@ -66,6 +66,8 @@ def _build_geocode_cache_bundle(
     def materialize_canonical(
         canonical_id: str,
         substrate_location_type: str | None = None,
+        location_text: str | None = None,
+        components: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         with Session(get_engine()) as session:
             return materialize_canonical_match_dict(
@@ -73,6 +75,8 @@ def _build_geocode_cache_bundle(
                 stylebook_id=stylebook_id,
                 canonical_id=str(canonical_id).strip(),
                 substrate_location_type=substrate_location_type,
+                location_text=location_text,
+                components=components if isinstance(components, dict) else None,
             )
 
     return {

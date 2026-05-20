@@ -17,6 +17,7 @@ from backfield_stylebook.canonical_retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
+from backfield_stylebook.geocode_cache_sanity import cache_hit_sane_for_substrate
 from backfield_stylebook.substrate_location_cache_fingerprint import (
     normalize_substrate_cache_query,
     substrate_location_cache_query_fingerprint,
@@ -72,6 +73,8 @@ def _canonical_to_stylebook_match_dict(canon: StylebookLocationCanonical) -> dic
         "boundaries": boundaries,
         "type": gt,
         "bbox": None,
+        "canonical_location_type": canon.location_type,
+        "formatted_address": canon.formatted_address,
         "confidence": {"source": "canonical_db", "canonical_id": cid},
     }
 
@@ -89,6 +92,8 @@ def _substrate_cache_row_to_cache_match_dict(row: SubstrateLocationCache) -> dic
         "boundaries": boundaries,
         "type": gt,
         "bbox": None,
+        "canonical_location_type": row.location_type,
+        "formatted_address": row.formatted_address,
         "confidence": {"source": "location_cache", "cache_id": rid},
     }
 
@@ -167,6 +172,42 @@ def _strict_type_pair_allowed(substrate_lt: str | None, canonical_lt: str | None
     return True
 
 
+def _canonical_winner_passes_content_sanity(
+    winner: StylebookLocationCanonical,
+    *,
+    substrate_lt: str | None,
+    location_text: str,
+    components: dict[str, Any] | None,
+) -> bool:
+    return cache_hit_sane_for_substrate(
+        substrate_location_type=substrate_lt,
+        location_text=location_text,
+        components=components,
+        match_label=str(winner.label),
+        match_formatted_address=winner.formatted_address,
+        match_location_type=winner.location_type,
+        match_geometry_type=winner.geometry_type,
+    )
+
+
+def _substrate_cache_row_passes_content_sanity(
+    row: SubstrateLocationCache,
+    *,
+    substrate_lt: str | None,
+    location_text: str,
+    components: dict[str, Any] | None,
+) -> bool:
+    return cache_hit_sane_for_substrate(
+        substrate_location_type=substrate_lt,
+        location_text=location_text,
+        components=components,
+        match_label=str(row.location_name or ""),
+        match_formatted_address=row.formatted_address,
+        match_location_type=row.location_type,
+        match_geometry_type=row.geometry_type,
+    )
+
+
 def _substrate_cache_passes_component_sanity(
     row: SubstrateLocationCache,
     *,
@@ -231,12 +272,20 @@ def resolve_geocode_cache_strict_with_outcome(
             geom_ok
             and _strict_type_pair_allowed(substrate_lt, canon_lt)
             and not slice_bad
+            and _canonical_winner_passes_content_sanity(
+                winner,
+                substrate_lt=substrate_lt,
+                location_text=location_text,
+                components=components,
+            )
         ):
             return GeocodeCacheStrictOutcome(
                 _canonical_to_stylebook_match_dict(winner),
                 False,
                 False,
             )
+        if geom_ok and _strict_type_pair_allowed(substrate_lt, canon_lt) and not slice_bad:
+            return GeocodeCacheStrictOutcome(None, False, True)
 
     fingerprint = substrate_location_cache_query_fingerprint(
         project_id=project_id,
@@ -263,6 +312,13 @@ def resolve_geocode_cache_strict_with_outcome(
         if not sane:
             return GeocodeCacheStrictOutcome(None, False, True)
     if _substrate_cache_row_is_sub_municipal_for_municipality_query(row, substrate_lt):
+        return GeocodeCacheStrictOutcome(None, False, True)
+    if not _substrate_cache_row_passes_content_sanity(
+        row,
+        substrate_lt=substrate_lt,
+        location_text=location_text,
+        components=components,
+    ):
         return GeocodeCacheStrictOutcome(None, False, True)
     return GeocodeCacheStrictOutcome(_substrate_cache_row_to_cache_match_dict(row), False, False)
 
@@ -306,6 +362,8 @@ def materialize_canonical_match_dict(
     stylebook_id: int,
     canonical_id: str,
     substrate_location_type: str | None = None,
+    location_text: str | None = None,
+    components: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Load active canonical geometry into converter match dict shape, or ``None``."""
     canon = session.get(StylebookLocationCanonical, canonical_id)
@@ -320,6 +378,20 @@ def materialize_canonical_match_dict(
     lt = (substrate_location_type or "").strip().lower() or None
     if _canonical_is_sub_municipal_slice_for_municipality_query(canon, lt):
         return None
+    canon_lt = (canon.location_type or "").strip().lower() or None
+    if not _strict_type_pair_allowed(lt, canon_lt):
+        return None
+    query_text = (location_text or "").strip() or str(canon.label)
+    if not cache_hit_sane_for_substrate(
+        substrate_location_type=lt,
+        location_text=query_text,
+        components=components if isinstance(components, dict) else None,
+        match_label=str(canon.label),
+        match_formatted_address=canon.formatted_address,
+        match_location_type=canon.location_type,
+        match_geometry_type=canon.geometry_type,
+    ):
+        return None
     return _canonical_to_stylebook_match_dict(canon)
 
 
@@ -332,12 +404,13 @@ def build_geocode_cache_adjudication_candidates(
     components: dict[str, Any] | None = None,
     limit: int = _DEFAULT_ADJUDICATION_CANDIDATE_LIMIT,
 ) -> list[dict[str, Any]]:
-    """Permissive canonical recall for LLM adjudication (no substrate-type filtering).
+    """Canonical recall for LLM adjudication after strict cache miss or sanity failure.
 
     Prefers tier-1 ambiguous exact winners first, then merges trigram alias recall with
-    ``substrate_location_type=None``.
+    ``substrate_location_type=None``. Candidates that fail type or content sanity for this
+    extract row are dropped.
     """
-    _ = components
+    comps = components if isinstance(components, dict) else None
     normalized = normalize_substrate_cache_query(location_text)
     if not normalized:
         return []
@@ -384,6 +457,19 @@ def build_geocode_cache_adjudication_candidates(
             continue
         canon, alias_tuple = tup
         if _canonical_is_sub_municipal_slice_for_municipality_query(canon, substrate_lt):
+            continue
+        canon_lt = (canon.location_type or "").strip().lower() or None
+        if not _strict_type_pair_allowed(substrate_lt, canon_lt):
+            continue
+        if not cache_hit_sane_for_substrate(
+            substrate_location_type=substrate_lt,
+            location_text=location_text,
+            components=comps,
+            match_label=str(canon.label),
+            match_formatted_address=canon.formatted_address,
+            match_location_type=canon.location_type,
+            match_geometry_type=canon.geometry_type,
+        ):
             continue
         aliases = list(alias_tuple)[:8]
         out.append(
