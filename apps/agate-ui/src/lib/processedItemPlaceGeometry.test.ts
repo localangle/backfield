@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   appendUserPlacePoint,
   buildGeocodePatchForGeometry,
+  buildVerificationLeafletCollections,
   extractGeometryFromPlace,
   getGeocodedPlaceDisplay,
+  getGeocodingSourceLabel,
+  getPlaceEditorialDetail,
+  placeEditorialDetailHasContent,
   isGeocodedPlace,
   iterBaselinePlacesFromOutput,
   leafletBoundsFromGeometry,
@@ -57,6 +61,42 @@ describe('isGeocodedPlace', () => {
   })
 })
 
+describe('getPlaceEditorialDetail', () => {
+  it('prefers role_in_story over description', () => {
+    expect(
+      getPlaceEditorialDetail({
+        role_in_story: 'Scene of the crash',
+        description: 'Longer editorial sentence',
+        nature: 'primary',
+        nature_secondary_tags: ['context'],
+      }),
+    ).toEqual({
+      roleInStory: 'Scene of the crash',
+      nature: 'primary',
+      natureSecondaryTags: ['context'],
+    })
+  })
+
+  it('falls back to description when role_in_story is missing', () => {
+    expect(
+      getPlaceEditorialDetail({
+        description: 'Where the parade happened',
+        nature: 'subject',
+      }),
+    ).toEqual({
+      roleInStory: 'Where the parade happened',
+      nature: 'subject',
+      natureSecondaryTags: [],
+    })
+  })
+})
+
+describe('placeEditorialDetailHasContent', () => {
+  it('is false when all fields empty', () => {
+    expect(placeEditorialDetailHasContent(getPlaceEditorialDetail(null))).toBe(false)
+  })
+})
+
 describe('getGeocodedPlaceDisplay', () => {
   it('reads name, type, address, and nature as role', () => {
     expect(
@@ -93,6 +133,38 @@ describe('extractGeometryFromPlace', () => {
   })
 })
 
+describe('getGeocodingSourceLabel', () => {
+  it('maps geocode_type to user-facing labels', () => {
+    expect(
+      getGeocodingSourceLabel({
+        geocode: { geocode_type: 'pelias_search', result: { formatted_address: 'X' } },
+      }),
+    ).toBe('Address search')
+    expect(
+      getGeocodingSourceLabel({
+        geocode: { geocode_type: 'geocodio_structured', result: {} },
+      }),
+    ).toBe('Geocodio')
+    expect(
+      getGeocodingSourceLabel({
+        geocode: { geocode_type: 'manual', result: {} },
+      }),
+    ).toBe('Manual edit')
+  })
+
+  it('uses confidence.source when geocode_type is missing', () => {
+    expect(
+      getGeocodingSourceLabel({
+        geocode: { result: { confidence: { source: 'location_cache' } } },
+      }),
+    ).toBe('Saved geocode')
+  })
+
+  it('returns null when no geocode metadata', () => {
+    expect(getGeocodingSourceLabel({ description: 'Nowhere' })).toBeNull()
+  })
+})
+
 describe('buildGeocodePatchForGeometry', () => {
   it('preserves geocode_type when present', () => {
     const merged = {
@@ -123,6 +195,35 @@ describe('validateGeometryObject', () => {
 
   it('accepts valid point', () => {
     expect(validateGeometryObject({ type: 'Point', coordinates: [-90, 44] })).toBeNull()
+  })
+})
+
+describe('buildVerificationLeafletCollections', () => {
+  const pointRow = (anchor: string, lng: number, lat: number) => ({
+    anchor,
+    location: {
+      description: anchor,
+      geocode: { result: { geometry: { type: 'Point', coordinates: [lng, lat] } } },
+    },
+  })
+
+  it('includes all places when nothing is selected', () => {
+    const collections = buildVerificationLeafletCollections({
+      mergedRows: [pointRow('a1', -93, 45), pointRow('a2', -90, 44)],
+      baselineByAnchor: new Map(),
+      selectedAnchor: null,
+    })
+    expect(collections.points.features).toHaveLength(2)
+  })
+
+  it('includes only the selected place when one is selected', () => {
+    const collections = buildVerificationLeafletCollections({
+      mergedRows: [pointRow('a1', -93, 45), pointRow('a2', -90, 44)],
+      baselineByAnchor: new Map(),
+      selectedAnchor: 'a2',
+    })
+    expect(collections.points.features).toHaveLength(1)
+    expect(collections.points.features[0]?.id).toBe('a2')
   })
 })
 

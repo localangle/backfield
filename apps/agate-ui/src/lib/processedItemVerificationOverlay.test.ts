@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyDescriptionPatch,
+  buildRemovePlaceOverlayPatch,
   deepSortKeys,
   emptyOverlay,
   getLocationDescription,
@@ -14,7 +15,7 @@ import {
 describe('normalizeOverlay', () => {
   it('fills missing locations shape', () => {
     const o = normalizeOverlay(null)
-    expect(o.locations).toEqual({ by_anchor: {}, user_added: [] })
+    expect(o.locations).toEqual({ by_anchor: {}, user_added: [], removed_anchors: [] })
   })
 
   it('preserves by_anchor and user_added', () => {
@@ -117,7 +118,34 @@ describe('deepSortKeys', () => {
 describe('emptyOverlay', () => {
   it('returns stable shape', () => {
     expect(emptyOverlay()).toEqual({
-      locations: { by_anchor: {}, user_added: [] },
+      locations: { by_anchor: {}, user_added: [], removed_anchors: [] },
     })
+  })
+})
+
+describe('buildRemovePlaceOverlayPatch', () => {
+  it('adds removed_anchors for model rows', () => {
+    const draft = normalizeOverlay({
+      locations: { by_anchor: { a1: { description: 'x' } }, user_added: [] },
+    })
+    const next = buildRemovePlaceOverlayPatch(draft, 'a1', 'model')
+    const loc = next.locations as {
+      removed_anchors: string[]
+      by_anchor: Record<string, unknown>
+    }
+    expect(loc.removed_anchors).toEqual(['a1'])
+    expect(loc.by_anchor.a1).toBeUndefined()
+  })
+
+  it('drops user_added row by id', () => {
+    const draft = normalizeOverlay({
+      locations: {
+        by_anchor: {},
+        user_added: [{ id: 'user_place:u1', location: { description: 'y' } }],
+      },
+    })
+    const next = buildRemovePlaceOverlayPatch(draft, 'user_place:u1', 'user')
+    const loc = next.locations as { user_added: unknown[] }
+    expect(loc.user_added).toEqual([])
   })
 })

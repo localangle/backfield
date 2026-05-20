@@ -143,6 +143,15 @@ def test_places_bucket_supersedes_locations_same_anchor() -> None:
     assert geom["coordinates"] == [-93.0, 45.0]
 
 
+def test_removed_anchors_hides_model_row() -> None:
+    output = {"n1": {"locations": [_place("gone", id="rm1"), _place("stay", id="keep")]}}
+    overlay = {"locations": {"removed_anchors": ["rm1"]}}
+    merged, stale = build_merged_locations_lane(output=output, overlay=overlay)
+    assert stale == []
+    anchors = {r["anchor"] for r in merged}
+    assert anchors == {"keep"}
+
+
 def test_places_only_geocode_output() -> None:
     output = {
         "geo": {

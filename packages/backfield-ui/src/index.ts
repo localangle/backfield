@@ -14,6 +14,10 @@ export {
   type LeafletMapFeatureClick,
 } from "./LeafletMap"
 export {
+  GeometryEditLeafletMap,
+  type GeometryEditLeafletMapProps,
+} from "./GeometryEditLeafletMap"
+export {
   normalizeLngLat,
   polygonFromAxisAlignedBounds,
   boundsFromPolygonGeometry,

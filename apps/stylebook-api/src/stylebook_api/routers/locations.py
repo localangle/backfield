@@ -167,7 +167,9 @@ class PatchLocationBody(BaseModel):
 
 
 class PatchGeometryBody(BaseModel):
-    geometry_json: dict[str, Any]
+    """Set GeoJSON geometry, or null to clear the saved place pin/footprint."""
+
+    geometry_json: dict[str, Any] | None  # required field; use explicit JSON null to clear
 
 
 class PatchCanonicalGeometryBody(BaseModel):
@@ -1063,6 +1065,7 @@ def patch_location_geometry(
         raise HTTPException(status_code=404, detail="Location not found")
     loc.geometry_json = body.geometry_json
     loc.geometry_type = body.geometry_json.get("type") if body.geometry_json else None
+    loc.geometry = None
     session.add(loc)
     session.commit()
     session.refresh(loc)
@@ -1097,6 +1100,13 @@ def patch_canonical_location_geometry(
 def delete_location(
     location_id: int,
     project_slug: str = Query(...),
+    article_id: int | None = Query(
+        None,
+        description=(
+            "When set, soft-delete mentions for this article only; delete the saved "
+            "place when no active mentions remain."
+        ),
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, Any]:
@@ -1105,16 +1115,51 @@ def delete_location(
     loc = session.get(SubstrateLocation, location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
-    try:
-        session.delete(loc)
-        session.commit()
-    except IntegrityError:
-        session.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Location still has linked mentions or references; cannot delete.",
-        ) from None
-    return {"message": "deleted", "candidates_created": 0, "links_deactivated": 0}
+
+    mention_filters: list[ColumnElement[bool]] = [
+        SubstrateLocationMention.location_id == location_id,
+        SubstrateLocationMention.deleted == False,  # noqa: E712
+    ]
+    if article_id is not None:
+        mention_filters.append(SubstrateLocationMention.article_id == article_id)
+
+    mentions = session.exec(select(SubstrateLocationMention).where(*mention_filters)).all()
+    for mention in mentions:
+        mention.deleted = True
+        session.add(mention)
+    session.flush()
+
+    remaining = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstrateLocationMention)
+            .where(
+                SubstrateLocationMention.location_id == location_id,
+                SubstrateLocationMention.deleted == False,  # noqa: E712
+            )
+        )
+        or 0
+    )
+
+    location_deleted = False
+    if remaining == 0:
+        try:
+            session.delete(loc)
+            location_deleted = True
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Location still has linked mentions or references; cannot delete.",
+            ) from None
+    session.commit()
+    return {
+        "message": "deleted",
+        "mentions_removed": len(mentions),
+        "location_deleted": location_deleted,
+        "candidates_created": 0,
+        "links_deactivated": 0,
+    }
 
 
 @router.get("/locations/{location_id}/mentions", response_model=LocationMentionsResponse)

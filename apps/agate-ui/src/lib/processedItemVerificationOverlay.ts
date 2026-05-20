@@ -8,6 +8,7 @@ export function emptyOverlay(): Record<string, unknown> {
     locations: {
       by_anchor: {} as Record<string, unknown>,
       user_added: [] as unknown[],
+      removed_anchors: [] as string[],
     },
   }
 }
@@ -59,6 +60,10 @@ export function normalizeOverlay(
       : {}
   const ua = loc.user_added
   loc.user_added = Array.isArray(ua) ? [...ua] : []
+  const removed = loc.removed_anchors
+  loc.removed_anchors = Array.isArray(removed)
+    ? removed.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
+    : []
   out.locations = loc
   return out
 }
@@ -74,7 +79,35 @@ function ensureLocations(draft: Record<string, unknown>): Record<string, unknown
   if (!Array.isArray(loc.user_added)) {
     loc.user_added = []
   }
+  if (!Array.isArray(loc.removed_anchors)) {
+    loc.removed_anchors = []
+  }
   return loc
+}
+
+/** Overlay patch that removes a place from review (model row hidden; user row dropped). */
+export function buildRemovePlaceOverlayPatch(
+  draft: Record<string, unknown>,
+  anchor: string,
+  source: 'model' | 'user',
+): Record<string, unknown> {
+  const next = cloneJson(draft) as Record<string, unknown>
+  const loc = ensureLocations(next)
+  if (source === 'user') {
+    const ua = loc.user_added as unknown[]
+    loc.user_added = ua.filter((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return true
+      return (row as { id?: unknown }).id !== anchor
+    })
+  } else {
+    const removed = loc.removed_anchors as string[]
+    if (!removed.includes(anchor)) {
+      removed.push(anchor)
+    }
+    const by = loc.by_anchor as Record<string, unknown>
+    delete by[anchor]
+  }
+  return next
 }
 
 /**

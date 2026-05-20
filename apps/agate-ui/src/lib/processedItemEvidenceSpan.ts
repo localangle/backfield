@@ -1,10 +1,22 @@
 /**
- * Map a place/location record from model output to a character range in the article body
+ * Map a place/location record from model output to character range(s) in the article body
  * for in-article verification highlights (Issue 6).
  */
 
 export type EvidenceSpanReason = 'empty_body' | 'no_evidence' | 'not_in_story' | 'invalid_offsets'
 
+export type EvidenceSpanRange = { start: number; end: number }
+
+export type TieredHighlightRange = EvidenceSpanRange & { tier: 'ambient' | 'selected' }
+
+/** Character range in the article with one or more geocoded place anchors. */
+export type MentionSpanHit = EvidenceSpanRange & { anchors: string[] }
+
+export type EvidenceSpansResult =
+  | { kind: 'ranges'; ranges: EvidenceSpanRange[] }
+  | { kind: 'none'; reason: EvidenceSpanReason }
+
+/** @deprecated Prefer ``EvidenceSpansResult``; kept for callers that need a single range. */
 export type EvidenceSpanResult =
   | { kind: 'range'; start: number; end: number }
   | { kind: 'none'; reason: EvidenceSpanReason }
@@ -43,31 +55,179 @@ function readSpanOffsetsFromLocation(loc: Record<string, unknown>): { start: num
   return { start, end }
 }
 
-function tryOriginalTextRange(articleBody: string, location: Record<string, unknown>): EvidenceSpanResult | null {
-  const ot = location.original_text
-  if (typeof ot !== 'string') {
-    return null
+function isValidRange(body: string, start: number, end: number): boolean {
+  return start >= 0 && end <= body.length && end > start
+}
+
+/** Every non-overlapping occurrence of ``needle`` in ``articleBody`` (case-insensitive, UTF-16 indices). */
+function findAllOriginalTextRanges(articleBody: string, needle: string): EvidenceSpanRange[] {
+  const trimmed = needle.trim()
+  if (!trimmed) {
+    return []
   }
-  const needle = ot.trim()
-  if (!needle) {
-    return null
+  const lowerBody = articleBody.toLowerCase()
+  const lowerNeedle = trimmed.toLowerCase()
+  const ranges: EvidenceSpanRange[] = []
+  let searchFrom = 0
+  while (searchFrom < articleBody.length) {
+    const idx = lowerBody.indexOf(lowerNeedle, searchFrom)
+    if (idx === -1) {
+      break
+    }
+    const end = idx + trimmed.length
+    ranges.push({ start: idx, end })
+    searchFrom = end
   }
-  const idx = articleBody.indexOf(needle)
-  if (idx === -1) {
-    return { kind: 'none', reason: 'not_in_story' }
-  }
-  return { kind: 'range', start: idx, end: idx + needle.length }
+  return ranges
 }
 
 /**
- * Resolve a UTF-16 code unit range in ``articleBody`` for evidence highlighting.
- * Prefer explicit ``components.span`` when valid for the body; otherwise first exact match of trimmed ``original_text``.
- * If span hints are present but out of range, ``original_text`` is still tried when it matches the story.
+ * All non-overlapping ``original_text`` occurrences for every needle (longest needles win overlaps).
  */
-export function resolveEvidenceSpanInArticle(
+export function findAllMentionOccurrencesInArticle(
+  articleBody: string,
+  needles: string[],
+): EvidenceSpanRange[] {
+  if (typeof articleBody !== 'string' || articleBody.length === 0) {
+    return []
+  }
+  const sortedNeedles = [...needles]
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0)
+    .sort((a, b) => b.length - a.length)
+
+  const matches: EvidenceSpanRange[] = []
+  for (const needle of sortedNeedles) {
+    for (const range of findAllOriginalTextRanges(articleBody, needle)) {
+      const overlaps = matches.findIndex((e) => range.start < e.end && range.end > e.start)
+      if (overlaps >= 0) {
+        const existing = matches[overlaps]!
+        if (range.end - range.start > existing.end - existing.start) {
+          matches[overlaps] = range
+        }
+      } else {
+        matches.push(range)
+      }
+    }
+  }
+  return matches.sort((a, b) => a.start - b.start)
+}
+
+/** Merge ambient + selected spans; selected wins where both apply. */
+export function mergeTieredHighlightRanges(
+  ambient: EvidenceSpanRange[],
+  selected: EvidenceSpanRange[],
+): TieredHighlightRange[] {
+  type Ev = { pos: number; dSel: number; dAmb: number }
+  const events: Ev[] = []
+  for (const r of ambient) {
+    if (r.start < 0 || r.end <= r.start) continue
+    events.push({ pos: r.start, dSel: 0, dAmb: 1 })
+    events.push({ pos: r.end, dSel: 0, dAmb: -1 })
+  }
+  for (const r of selected) {
+    if (r.start < 0 || r.end <= r.start) continue
+    events.push({ pos: r.start, dSel: 1, dAmb: 0 })
+    events.push({ pos: r.end, dSel: -1, dAmb: 0 })
+  }
+  events.sort((a, b) => {
+    if (a.pos !== b.pos) return a.pos - b.pos
+    const aEnd = a.dSel < 0 || a.dAmb < 0
+    const bEnd = b.dSel < 0 || b.dAmb < 0
+    if (aEnd !== bEnd) return aEnd ? -1 : 1
+    return 0
+  })
+
+  const out: TieredHighlightRange[] = []
+  let sel = 0
+  let amb = 0
+  let cursor = 0
+
+  const tierAt = (): 'ambient' | 'selected' | null => {
+    if (sel > 0) return 'selected'
+    if (amb > 0) return 'ambient'
+    return null
+  }
+
+  for (const e of events) {
+    const t = tierAt()
+    if (t && e.pos > cursor) {
+      out.push({ start: cursor, end: e.pos, tier: t })
+    }
+    cursor = e.pos
+    sel += e.dSel
+    amb += e.dAmb
+  }
+
+  return out
+}
+
+function mentionSpanKey(start: number, end: number): string {
+  return `${start}:${end}`
+}
+
+/**
+ * Map each resolved mention range to the geocoded place anchors that claim it.
+ */
+export function buildMentionSpanHits(
+  articleBody: string,
+  places: Array<{ anchor: string; location: Record<string, unknown> }>,
+): MentionSpanHit[] {
+  if (typeof articleBody !== 'string' || articleBody.length === 0) {
+    return []
+  }
+  const byKey = new Map<string, Set<string>>()
+  for (const { anchor, location } of places) {
+    if (!anchor) continue
+    const resolved = resolveEvidenceSpansInArticle(articleBody, location)
+    if (resolved.kind !== 'ranges') continue
+    for (const { start, end } of resolved.ranges) {
+      const key = mentionSpanKey(start, end)
+      let anchors = byKey.get(key)
+      if (!anchors) {
+        anchors = new Set()
+        byKey.set(key, anchors)
+      }
+      anchors.add(anchor)
+    }
+  }
+  return [...byKey.entries()]
+    .map(([key, anchors]) => {
+      const [startStr, endStr] = key.split(':')
+      return {
+        start: Number(startStr),
+        end: Number(endStr),
+        anchors: [...anchors].sort(),
+      }
+    })
+    .sort((a, b) => a.start - b.start)
+}
+
+/** Anchors for geocoded places whose mention range overlaps ``[start, end)``. */
+export function collectAnchorsForRange(
+  hits: MentionSpanHit[],
+  start: number,
+  end: number,
+): string[] {
+  const set = new Set<string>()
+  for (const hit of hits) {
+    if (hit.start < end && hit.end > start) {
+      for (const anchor of hit.anchors) {
+        set.add(anchor)
+      }
+    }
+  }
+  return [...set].sort()
+}
+
+/**
+ * Resolve UTF-16 highlight ranges in ``articleBody`` for a place row.
+ * Uses explicit ``components.span`` when valid (single range); otherwise all matches of trimmed ``original_text``.
+ */
+export function resolveEvidenceSpansInArticle(
   articleBody: string,
   location: Record<string, unknown> | null | undefined,
-): EvidenceSpanResult {
+): EvidenceSpansResult {
   if (typeof articleBody !== 'string' || articleBody.length === 0) {
     return { kind: 'none', reason: 'empty_body' }
   }
@@ -78,19 +238,41 @@ export function resolveEvidenceSpanInArticle(
   const explicit = readSpanOffsetsFromLocation(location)
   if (explicit) {
     const { start, end } = explicit
-    if (start >= 0 && end <= articleBody.length && end > start) {
-      return { kind: 'range', start, end }
+    if (isValidRange(articleBody, start, end)) {
+      return { kind: 'ranges', ranges: [{ start, end }] }
     }
-    const fallback = tryOriginalTextRange(articleBody, location)
-    if (fallback && fallback.kind === 'range') {
-      return fallback
+    const fromText = findAllOriginalTextRanges(
+      articleBody,
+      typeof location.original_text === 'string' ? location.original_text : '',
+    )
+    if (fromText.length > 0) {
+      return { kind: 'ranges', ranges: fromText }
     }
     return { kind: 'none', reason: 'invalid_offsets' }
   }
 
-  const fromText = tryOriginalTextRange(articleBody, location)
-  if (fromText) {
-    return fromText
+  const ot = location.original_text
+  if (typeof ot !== 'string' || !ot.trim()) {
+    return { kind: 'none', reason: 'no_evidence' }
   }
-  return { kind: 'none', reason: 'no_evidence' }
+  const ranges = findAllOriginalTextRanges(articleBody, ot)
+  if (ranges.length === 0) {
+    return { kind: 'none', reason: 'not_in_story' }
+  }
+  return { kind: 'ranges', ranges }
+}
+
+/**
+ * First highlight range only (legacy helper).
+ */
+export function resolveEvidenceSpanInArticle(
+  articleBody: string,
+  location: Record<string, unknown> | null | undefined,
+): EvidenceSpanResult {
+  const multi = resolveEvidenceSpansInArticle(articleBody, location)
+  if (multi.kind === 'ranges' && multi.ranges.length > 0) {
+    const first = multi.ranges[0]!
+    return { kind: 'range', start: first.start, end: first.end }
+  }
+  return { kind: 'none', reason: multi.reason }
 }

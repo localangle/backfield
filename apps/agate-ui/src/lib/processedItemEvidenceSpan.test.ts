@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { resolveEvidenceSpanInArticle } from './processedItemEvidenceSpan'
+import {
+  buildMentionSpanHits,
+  collectAnchorsForRange,
+  findAllMentionOccurrencesInArticle,
+  mergeTieredHighlightRanges,
+  resolveEvidenceSpanInArticle,
+  resolveEvidenceSpansInArticle,
+} from './processedItemEvidenceSpan'
 
 describe('resolveEvidenceSpanInArticle', () => {
   it('returns none for empty body', () => {
@@ -18,7 +25,89 @@ describe('resolveEvidenceSpanInArticle', () => {
     const r = resolveEvidenceSpanInArticle(body, { original_text: 'Chicago' })
     expect(r).toEqual({ kind: 'range', start: 10, end: 17 })
   })
+})
 
+describe('resolveEvidenceSpansInArticle', () => {
+  it('returns all original_text occurrences', () => {
+    const body = 'We met in Chicago before returning to Chicago.'
+    expect(resolveEvidenceSpansInArticle(body, { original_text: 'Chicago' })).toEqual({
+      kind: 'ranges',
+      ranges: [
+        { start: 10, end: 17 },
+        { start: 38, end: 45 },
+      ],
+    })
+  })
+
+  it('returns single range for valid components.span', () => {
+    const body = 'abcdefghij'
+    expect(
+      resolveEvidenceSpansInArticle(body, {
+        original_text: 'Chicago',
+        components: { span: { start: 2, end: 5 } },
+      }),
+    ).toEqual({ kind: 'ranges', ranges: [{ start: 2, end: 5 }] })
+  })
+})
+
+describe('findAllMentionOccurrencesInArticle', () => {
+  it('collects occurrences for multiple needles', () => {
+    const body = 'Alpha in Chicago and beta in Chicago.'
+    expect(findAllMentionOccurrencesInArticle(body, ['Chicago', 'Alpha'])).toEqual([
+      { start: 0, end: 5 },
+      { start: 9, end: 16 },
+      { start: 29, end: 36 },
+    ])
+  })
+})
+
+describe('buildMentionSpanHits', () => {
+  it('merges anchors that share the same original_text range', () => {
+    const body = 'Events in Chicago drew crowds.'
+    const hits = buildMentionSpanHits(body, [
+      { anchor: 'a1', location: { original_text: 'Chicago' } },
+      { anchor: 'a2', location: { original_text: 'Chicago' } },
+    ])
+    expect(hits).toEqual([{ start: 11, end: 18, anchors: ['a1', 'a2'] }])
+  })
+
+  it('keeps separate ranges for separate occurrences', () => {
+    const body = 'Chicago to Chicago.'
+    const hits = buildMentionSpanHits(body, [{ anchor: 'a1', location: { original_text: 'Chicago' } }])
+    expect(hits).toEqual([
+      { start: 0, end: 7, anchors: ['a1'] },
+      { start: 11, end: 18, anchors: ['a1'] },
+    ])
+  })
+})
+
+describe('collectAnchorsForRange', () => {
+  it('returns anchors whose hits overlap the query range', () => {
+    const hits = buildMentionSpanHits('Alpha in Chicago.', [
+      { anchor: 'a1', location: { original_text: 'Alpha' } },
+      { anchor: 'a2', location: { original_text: 'Chicago' } },
+    ])
+    expect(collectAnchorsForRange(hits, 0, 5)).toEqual(['a1'])
+    expect(collectAnchorsForRange(hits, 9, 16)).toEqual(['a2'])
+  })
+})
+
+describe('mergeTieredHighlightRanges', () => {
+  it('prefers selected tier over ambient overlap', () => {
+    expect(
+      mergeTieredHighlightRanges(
+        [{ start: 10, end: 20 }],
+        [{ start: 12, end: 18 }],
+      ),
+    ).toEqual([
+      { start: 10, end: 12, tier: 'ambient' },
+      { start: 12, end: 18, tier: 'selected' },
+      { start: 18, end: 20, tier: 'ambient' },
+    ])
+  })
+})
+
+describe('resolveEvidenceSpanInArticle (continued)', () => {
   it('trims original_text for matching', () => {
     const body = 'Hello world'
     expect(resolveEvidenceSpanInArticle(body, { original_text: '  world  ' })).toEqual({

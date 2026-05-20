@@ -37,11 +37,11 @@ import {
 import SimpleGeoJsonGeometry from "@/components/SimpleGeoJsonGeometry"
 import LocationMetaTab from "@/components/LocationMetaTab"
 import ConnectionsSection from "@/components/ConnectionsSection"
+import { GeometryEditLeafletMap } from "@backfield/ui/GeometryEditLeafletMap"
 import { LeafletMap } from "@backfield/ui/LeafletMap"
 import {
   boundsFromPolygonGeometry,
   isAxisAlignedRectanglePolygon,
-  polygonFromAxisAlignedBounds,
 } from "@backfield/ui/axisAlignedRectangle"
 import {
   Dialog,
@@ -841,106 +841,19 @@ export default function LocationDetail() {
               geometryEditing && "bg-white ring-1 ring-foreground/25 border border-foreground/30",
             )}
           >
-            <LeafletMap
+            <GeometryEditLeafletMap
               points={leafletCollections.points as any}
               polygons={leafletCollections.polygons as any}
-              geocoder={allowGeometryMapEditing}
+              geometryEditing={allowGeometryMapEditing}
+              geometryDraft={geometryDraft}
+              onGeometryDraftChange={setGeometryDraft}
+              geometryAddMode={geometryAddMode}
+              onGeometryAddModeChange={setGeometryAddMode}
+              editPointFeatureId="canonical"
+              initialCenter={leafletInitialCenter}
+              rectanglePreview={rectanglePreview}
+              onRectanglePreviewChange={setRectanglePreview}
               showPopups={false}
-              // While editing, geometry updates constantly (drag/resize). Auto fitBounds would fight manual zoom.
-              fitToData={!allowGeometryMapEditing}
-              initialCenter={
-                allowGeometryMapEditing &&
-                !geometryDraft &&
-                (geometryAddMode === "point" || geometryAddMode === "rectangle")
-                  ? ADD_GEOMETRY_MAP_CENTER
-                  : leafletInitialCenter
-              }
-              initialZoom={
-                allowGeometryMapEditing &&
-                !geometryDraft &&
-                (geometryAddMode === "point" || geometryAddMode === "rectangle")
-                  ? ADD_GEOMETRY_MAP_ZOOM
-                  : null
-              }
-              interactiveWhenEmpty={
-                allowGeometryMapEditing && geometryAddMode === "point" && !geometryDraft
-              }
-              tileUrl={
-                allowGeometryMapEditing
-                  ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                  : undefined
-              }
-              tileAttribution={
-                allowGeometryMapEditing
-                  ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                  : undefined
-              }
-              onMapClick={
-                allowGeometryMapEditing &&
-                geometryAddMode === "point" &&
-                (!geometryDraft || isPointGeometry(geometryDraft))
-                  ? ({ latlng }) => {
-                      setGeometryDraft({ type: "Point", coordinates: [latlng.lng, latlng.lat] })
-                      setGeometryAddMode(null)
-                    }
-                  : undefined
-              }
-              editablePoint={
-                allowGeometryMapEditing &&
-                isPointGeometry(geometryDraft) &&
-                geometryAddMode !== "rectangle"
-                  ? {
-                      featureId: "canonical",
-                      onChange: ({ lng, lat }) =>
-                        setGeometryDraft({ type: "Point", coordinates: [lng, lat] }),
-                    }
-                  : null
-              }
-              rectanglePreview={allowGeometryMapEditing ? rectanglePreview : null}
-              editableRectangle={
-                allowGeometryMapEditing &&
-                axisAlignedRectangleDraft(geometryDraft) &&
-                geometryAddMode !== "rectangle" &&
-                boundsFromPolygonGeometry(geometryDraft as any)
-                  ? (() => {
-                      const b = boundsFromPolygonGeometry(geometryDraft as any)!
-                      return {
-                        southWest: { lat: b.south, lng: b.west },
-                        northEast: { lat: b.north, lng: b.east },
-                        onChange: (next) => {
-                          setGeometryDraft(
-                            polygonFromAxisAlignedBounds({
-                              west: next.southWest.lng,
-                              south: next.southWest.lat,
-                              east: next.northEast.lng,
-                              north: next.northEast.lat,
-                            }) as any,
-                          )
-                        },
-                      }
-                    })()
-                  : null
-              }
-              rectangleDraw={
-                allowGeometryMapEditing && geometryAddMode === "rectangle"
-                  ? {
-                      enabled: true,
-                      onPreview: setRectanglePreview,
-                      onCommit: (bounds) => {
-                        setGeometryDraft(
-                          polygonFromAxisAlignedBounds({
-                            west: bounds.southWest.lng,
-                            south: bounds.southWest.lat,
-                            east: bounds.northEast.lng,
-                            north: bounds.northEast.lat,
-                          }) as any,
-                        )
-                        setRectanglePreview(null)
-                        setGeometryAddMode(null)
-                      },
-                    }
-                  : null
-              }
             />
           </div>
           {geometryEditing && !geometryDraftIsMultiPolygon ? (

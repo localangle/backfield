@@ -1405,6 +1405,45 @@ def test_accept_candidate_create_new_inherits_substrate_geometry(
         assert canon.geometry_type == "Point"
 
 
+def test_patch_saved_place_geometry_clear_with_null(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    """``PATCH …/locations/{id}/geometry`` accepts explicit ``geometry_json: null`` to clear."""
+    engine = stylebook_test_engine
+    gj: dict = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="ClearGeom",
+            normalized_name="cleargeom",
+            location_type="address",
+            geometry_json=gj,
+            geometry_type="Point",
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r = client.patch(
+        f"/v1/locations/{sid}/geometry?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"geometry_json": None},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["geometry_json"] is None
+    assert body["geometry_type"] is None
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.geometry_json is None
+        assert row.geometry_type is None
+
+
 def test_accept_candidate_create_new_location_type_override(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:

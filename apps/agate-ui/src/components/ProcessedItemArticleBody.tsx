@@ -1,59 +1,252 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  collectAnchorsForRange,
+  mergeTieredHighlightRanges,
+  type EvidenceSpanRange,
+  type MentionSpanHit,
+} from '@/lib/processedItemEvidenceSpan'
+import { cn } from '@/lib/utils'
 
 export interface ProcessedItemArticleBodyProps {
   body: string
-  /** When set, that UTF-16 range is visually emphasized. */
-  highlight: { start: number; end: number } | null
+  /** Subtle highlights for every geocoded mention (``original_text``) before / besides selection. */
+  ambientHighlights?: EvidenceSpanRange[]
+  /** Stronger highlights for the selected place. */
+  highlights: EvidenceSpanRange[]
   /**
-   * Changes to this value (e.g. selected place id) scroll the highlight into view when
-   * ``highlight`` is a valid range.
+   * Changes to this value (e.g. selected place id) scroll the first selected highlight into view when
+   * ``highlights`` is non-empty.
    */
   scrollWhenKey: string | null
+  /** Per-place mention ranges with anchor ids (for click / disambiguation). */
+  mentionSpanHits?: MentionSpanHit[]
+  /** Display labels keyed by place anchor (popup when one span maps to several places). */
+  placeLabels?: Record<string, string>
+  /** Select a geocoded place from a story mention click. */
+  onSelectPlace?: (anchor: string) => void
+}
+
+type DisambiguationMenuState = {
+  anchors: string[]
+  x: number
+  y: number
+}
+
+function MentionDisambiguationMenu({
+  anchors,
+  labels,
+  position,
+  onSelect,
+  onClose,
+}: {
+  anchors: string[]
+  labels: Record<string, string>
+  position: { x: number; y: number }
+  onSelect: (anchor: string) => void
+  onClose: () => void
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target
+      if (!(target instanceof Node)) return
+      if (menuRef.current?.contains(target)) return
+      onClose()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label="Choose place"
+      className="fixed z-[200] min-w-[11rem] max-w-[16rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+      style={{ left: position.x, top: position.y }}
+    >
+      <p className="px-2 py-1 text-[11px] font-medium text-muted-foreground">Which place?</p>
+      {anchors.map((anchor) => (
+        <button
+          key={anchor}
+          type="button"
+          role="menuitem"
+          className="flex w-full cursor-pointer rounded-sm px-2 py-1.5 text-left text-sm outline-none hover:bg-accent focus:bg-accent"
+          onClick={() => {
+            onSelect(anchor)
+            onClose()
+          }}
+        >
+          {labels[anchor]?.trim() || anchor}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  )
+}
+
+function StoryMentionMark({
+  tier,
+  anchors,
+  onSelectPlace,
+  onOpenDisambiguation,
+  markRef,
+  children,
+}: {
+  tier: 'ambient' | 'selected'
+  anchors: string[]
+  onSelectPlace?: (anchor: string) => void
+  onOpenDisambiguation: (anchors: string[], clientX: number, clientY: number) => void
+  markRef?: RefObject<HTMLElement | null>
+  children: ReactNode
+}) {
+  const interactive = Boolean(onSelectPlace) && anchors.length > 0
+
+  const handleClick = (e: React.MouseEvent<HTMLElement>) => {
+    if (!interactive || !onSelectPlace) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (anchors.length === 1) {
+      onSelectPlace(anchors[0]!)
+      return
+    }
+    onOpenDisambiguation(anchors, e.clientX, e.clientY)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (!interactive) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      if (anchors.length === 1) {
+        onSelectPlace?.(anchors[0]!)
+        return
+      }
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      onOpenDisambiguation(anchors, rect.left, rect.bottom + 4)
+    }
+  }
+
+  return (
+    <mark
+      ref={markRef}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      className={cn(
+        'rounded-sm px-0.5 text-foreground transition-colors',
+        tier === 'selected'
+          ? 'border border-transparent bg-amber-200/90 dark:bg-amber-500/40'
+          : 'border border-dotted border-yellow-300/70 bg-yellow-100/85 dark:border-yellow-600/45 dark:bg-yellow-500/28',
+        interactive && 'cursor-pointer',
+        interactive &&
+          tier === 'selected' &&
+          'hover:bg-amber-300/95 dark:hover:bg-amber-500/55',
+        interactive &&
+          tier === 'ambient' &&
+          'hover:border-yellow-400/80 hover:bg-yellow-200/90 dark:hover:border-yellow-500/55 dark:hover:bg-yellow-500/40',
+      )}
+    >
+      {children}
+    </mark>
+  )
 }
 
 /**
- * Renders article text with an optional single highlight range. Does not invent a highlight
- * when ``highlight`` is null.
+ * Renders article text with optional ambient + selected highlight ranges.
  */
-export function ProcessedItemArticleBody({ body, highlight, scrollWhenKey }: ProcessedItemArticleBodyProps) {
-  const markRef = useRef<HTMLElement | null>(null)
+export function ProcessedItemArticleBody({
+  body,
+  ambientHighlights = [],
+  highlights,
+  scrollWhenKey,
+  mentionSpanHits = [],
+  placeLabels = {},
+  onSelectPlace,
+}: ProcessedItemArticleBodyProps) {
+  const firstSelectedMarkRef = useRef<HTMLElement | null>(null)
+  const [disambiguation, setDisambiguation] = useState<DisambiguationMenuState | null>(null)
+
+  const tieredRanges = useMemo(
+    () => mergeTieredHighlightRanges(ambientHighlights, highlights),
+    [ambientHighlights, highlights],
+  )
 
   useEffect(() => {
-    if (!highlight || scrollWhenKey === null || scrollWhenKey === '') {
+    if (highlights.length === 0 || scrollWhenKey === null || scrollWhenKey === '') {
       return
     }
-    const el = markRef.current
+    const el = firstSelectedMarkRef.current
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-  }, [scrollWhenKey, highlight])
+  }, [scrollWhenKey, highlights])
 
-  if (!highlight) {
+  const openDisambiguation = (anchors: string[], clientX: number, clientY: number) => {
+    setDisambiguation({ anchors, x: clientX, y: clientY })
+  }
+
+  if (tieredRanges.length === 0) {
     return (
       <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{body}</div>
     )
   }
 
-  const { start, end } = highlight
-  if (start < 0 || end > body.length || end <= start) {
-    return (
-      <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{body}</div>
+  const segments: ReactNode[] = []
+  let cursor = 0
+  let selectedMarkIndex = 0
+
+  for (const { start, end, tier } of tieredRanges) {
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < cursor || end <= start || end > body.length) {
+      continue
+    }
+    if (start > cursor) {
+      segments.push(body.slice(cursor, start))
+    }
+    const isFirstSelected = tier === 'selected' && selectedMarkIndex === 0
+    const anchors = collectAnchorsForRange(mentionSpanHits, start, end)
+    segments.push(
+      <StoryMentionMark
+        key={`${tier}-${start}-${end}`}
+        tier={tier}
+        anchors={anchors}
+        onSelectPlace={onSelectPlace}
+        onOpenDisambiguation={openDisambiguation}
+        markRef={isFirstSelected ? firstSelectedMarkRef : undefined}
+      >
+        {body.slice(start, end)}
+      </StoryMentionMark>,
     )
+    if (tier === 'selected') {
+      selectedMarkIndex += 1
+    }
+    cursor = end
   }
 
-  const before = body.slice(0, start)
-  const mid = body.slice(start, end)
-  const after = body.slice(end)
+  if (cursor < body.length) {
+    segments.push(body.slice(cursor))
+  }
 
   return (
-    <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-      {before}
-      <mark
-        ref={markRef}
-        className="rounded-sm bg-amber-200/90 px-0.5 text-foreground dark:bg-amber-500/40"
-      >
-        {mid}
-      </mark>
-      {after}
-    </div>
+    <>
+      <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{segments}</div>
+      {disambiguation ? (
+        <MentionDisambiguationMenu
+          anchors={disambiguation.anchors}
+          labels={placeLabels}
+          position={{ x: disambiguation.x, y: disambiguation.y }}
+          onSelect={(anchor) => onSelectPlace?.(anchor)}
+          onClose={() => setDisambiguation(null)}
+        />
+      ) : null}
+    </>
   )
 }

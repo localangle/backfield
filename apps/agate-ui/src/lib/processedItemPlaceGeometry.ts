@@ -200,6 +200,77 @@ function readGeocodeResult(place: Record<string, unknown>): Record<string, unkno
   return res as Record<string, unknown>
 }
 
+/** Known ``geocode.geocode_type`` values from GeocodeAgent consolidate (user-facing labels). */
+const GEOCODE_TYPE_USER_LABELS: Record<string, string> = {
+  pelias: 'Address search',
+  pelias_structured: 'Address search',
+  pelias_search: 'Address search',
+  pelias_reverse: 'Address search',
+  geocodio_search: 'Geocodio',
+  geocodio_structured: 'Geocodio',
+  geocodio_reverse: 'Geocodio',
+  nominatim: 'OpenStreetMap',
+  nominatim_natural: 'OpenStreetMap',
+  nominatim_llm_raw: 'OpenStreetMap',
+  nominatim_raw_combined: 'OpenStreetMap',
+  overpass: 'Street intersection',
+  stylebook: 'Stylebook',
+  cache: 'Saved geocode',
+  manual: 'Manual edit',
+  region_llm: 'Estimated area',
+  natural_llm_estimate: 'Estimated area',
+  span: 'Road segment',
+  parent_stub: 'Parent place',
+  wof: 'Gazetteer',
+}
+
+function humanizeGeocodeTypeToken(raw: string): string {
+  const t = raw.trim().toLowerCase()
+  if (!t) return ''
+  return t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function readGeocodeConfidenceSource(place: Record<string, unknown>): string {
+  const res = readGeocodeResult(place)
+  if (!res) return ''
+  const conf = res.confidence
+  if (!conf || typeof conf !== 'object' || Array.isArray(conf)) return ''
+  const src = (conf as Record<string, unknown>).source
+  return typeof src === 'string' ? src.trim().toLowerCase() : ''
+}
+
+/**
+ * User-facing geocoding source from stored run output (``geocode.geocode_type`` and optional
+ * ``geocode.result.confidence.source`` when present). Does not add server fields.
+ */
+export function getGeocodingSourceLabel(
+  place: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!place || typeof place !== 'object') return null
+  const gc = place.geocode
+  if (!gc || typeof gc !== 'object' || Array.isArray(gc)) return null
+  const rawType = (gc as Record<string, unknown>).geocode_type
+  const geocodeType = typeof rawType === 'string' ? rawType.trim().toLowerCase() : ''
+  const confidenceSource = readGeocodeConfidenceSource(place)
+
+  if (confidenceSource === 'canonical_db') {
+    return 'Stylebook'
+  }
+  if (confidenceSource === 'location_cache' && !geocodeType) {
+    return 'Saved geocode'
+  }
+  if (!geocodeType) {
+    return null
+  }
+  if (geocodeType in GEOCODE_TYPE_USER_LABELS) {
+    return GEOCODE_TYPE_USER_LABELS[geocodeType]
+  }
+  if (geocodeType.startsWith('pelias')) return 'Address search'
+  if (geocodeType.startsWith('geocodio')) return 'Geocodio'
+  if (geocodeType.startsWith('nominatim')) return 'OpenStreetMap'
+  return humanizeGeocodeTypeToken(geocodeType) || null
+}
+
 /** True when the place row has geocoder output (geometry or a formatted line). */
 export function isGeocodedPlace(place: Record<string, unknown> | null | undefined): boolean {
   if (!place || typeof place !== 'object') return false
@@ -208,6 +279,58 @@ export function isGeocodedPlace(place: Record<string, unknown> | null | undefine
   if (!res) return false
   const fa = res.formatted_address ?? res.processed_str
   return typeof fa === 'string' && fa.trim().length > 0
+}
+
+export type PlaceEditorialDetail = {
+  roleInStory: string
+  nature: string
+  natureSecondaryTags: string[]
+}
+
+function parseNatureSecondaryTags(place: Record<string, unknown>): string[] {
+  let raw = place.nature_secondary_tags
+  if (raw === undefined) raw = place.nature_secondary
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const x of raw) {
+    if (typeof x !== 'string') continue
+    const t = x.trim().toLowerCase()
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    out.push(t)
+  }
+  return out
+}
+
+/** Editorial context for expanded geocoded-place rows (PlaceExtract / mention fields). */
+export function getPlaceEditorialDetail(
+  place: Record<string, unknown> | null | undefined,
+): PlaceEditorialDetail {
+  if (!place || typeof place !== 'object') {
+    return { roleInStory: '', nature: '', natureSecondaryTags: [] }
+  }
+  const roleRaw = place.role_in_story
+  let roleInStory =
+    typeof roleRaw === 'string' && roleRaw.trim() ? roleRaw.trim() : ''
+  if (!roleInStory) {
+    const desc = place.description
+    if (typeof desc === 'string' && desc.trim()) roleInStory = desc.trim()
+  }
+  const nature = typeof place.nature === 'string' ? place.nature.trim().toLowerCase() : ''
+  return {
+    roleInStory,
+    nature,
+    natureSecondaryTags: parseNatureSecondaryTags(place),
+  }
+}
+
+export function placeEditorialDetailHasContent(detail: PlaceEditorialDetail): boolean {
+  return (
+    detail.roleInStory.length > 0 ||
+    detail.nature.length > 0 ||
+    detail.natureSecondaryTags.length > 0
+  )
 }
 
 /** Display fields for the review geocoded-places list (``role`` maps from extractor ``nature``). */
@@ -338,6 +461,43 @@ export function buildGeocodePatchForGeometry(
   result.geometry = cloneJson(geometry)
   geocode.result = result
   return { geocode }
+}
+
+/** Overlay patch that clears ``geocode.result.geometry`` (review-only rows). */
+export function buildGeocodePatchForClearGeometry(
+  mergedPlaceLocation: Record<string, unknown>,
+): Record<string, unknown> {
+  const prevGeocode = mergedPlaceLocation.geocode
+  const geocode =
+    prevGeocode && typeof prevGeocode === 'object' && !Array.isArray(prevGeocode)
+      ? (cloneJson(prevGeocode) as Record<string, unknown>)
+      : { geocode_type: 'manual', result: {} as Record<string, unknown> }
+  const result = geocode.result && typeof geocode.result === 'object' && !Array.isArray(geocode.result)
+    ? (cloneJson(geocode.result) as Record<string, unknown>)
+    : {}
+  result.geometry = null
+  geocode.result = result
+  return { geocode }
+}
+
+export function applyGeometryToPlaceRow(
+  place: Record<string, unknown>,
+  geometry: Record<string, unknown> | null,
+): Record<string, unknown> {
+  const out = cloneJson(place) as Record<string, unknown>
+  const prevGeocode = out.geocode
+  const geocode =
+    prevGeocode && typeof prevGeocode === 'object' && !Array.isArray(prevGeocode)
+      ? (cloneJson(prevGeocode) as Record<string, unknown>)
+      : { geocode_type: 'manual', result: {} as Record<string, unknown> }
+  const result =
+    geocode.result && typeof geocode.result === 'object' && !Array.isArray(geocode.result)
+      ? (cloneJson(geocode.result) as Record<string, unknown>)
+      : ({} as Record<string, unknown>)
+  result.geometry = geometry === null ? null : cloneJson(geometry)
+  geocode.result = result
+  out.geocode = geocode
+  return out
 }
 
 export function applyAnchorPatchFragment(
@@ -475,8 +635,9 @@ function pushGeometryFeatures(
 }
 
 /**
- * Build Leaflet feature collections for all merged rows. Linked rows with draft geometry
- * differing from model baseline emit two features (baseline + draft groups).
+ * Build Leaflet feature collections for merged rows. When ``selectedAnchor`` is set, only that
+ * place is drawn. Linked rows with draft geometry differing from model baseline emit two
+ * features (baseline + draft groups).
  */
 export function buildVerificationLeafletCollections(params: {
   mergedRows: Array<Record<string, unknown>>
@@ -487,6 +648,9 @@ export function buildVerificationLeafletCollections(params: {
   for (const row of params.mergedRows) {
     const anchor = typeof row.anchor === 'string' ? row.anchor : ''
     if (!anchor) continue
+    if (params.selectedAnchor !== null && params.selectedAnchor !== anchor) {
+      continue
+    }
     const loc = row.location as Record<string, unknown> | undefined
     if (!loc) continue
     const label = typeof loc.description === 'string' ? loc.description : anchor

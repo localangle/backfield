@@ -108,12 +108,12 @@ def _merge_baseline_place_rows(output: dict[str, Any] | None) -> list[BaselineRo
 def _normalize_locations_overlay(
     overlay: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Return ``(by_anchor_patches, user_added_rows)`` from overlay v1."""
+    """Return ``(by_anchor_patches, user_added_rows, removed_anchors)`` from overlay v1."""
     if not overlay or not isinstance(overlay, dict):
-        return {}, []
+        return {}, [], set()
     loc_root = overlay.get("locations")
     if not isinstance(loc_root, dict):
-        return {}, []
+        return {}, [], set()
     patches_raw = loc_root.get("by_anchor")
     patches: dict[str, Any] = {}
     if isinstance(patches_raw, dict):
@@ -126,7 +126,13 @@ def _normalize_locations_overlay(
         for row in ua_raw:
             if isinstance(row, dict):
                 user_added.append(row)
-    return patches, user_added
+    removed: set[str] = set()
+    removed_raw = loc_root.get("removed_anchors")
+    if isinstance(removed_raw, list):
+        for anchor in removed_raw:
+            if isinstance(anchor, str) and anchor.strip():
+                removed.add(anchor.strip())
+    return patches, user_added, removed
 
 
 def build_merged_locations_lane(
@@ -139,7 +145,7 @@ def build_merged_locations_lane(
     Returns ``(merged_locations, stale_overlay_entries)``.
     """
     baseline = _merge_baseline_place_rows(output)
-    patches, user_added = _normalize_locations_overlay(overlay)
+    patches, user_added, removed_anchors = _normalize_locations_overlay(overlay)
 
     merged: list[dict[str, Any]] = []
     stale: list[dict[str, Any]] = []
@@ -147,6 +153,8 @@ def build_merged_locations_lane(
     anchors_in_model = {a for a, _nid, _i, _loc in baseline}
 
     for anchor, node_id, idx, loc in baseline:
+        if anchor in removed_anchors:
+            continue
         loc_out = copy.deepcopy(loc)
         patch = patches.get(anchor)
         if isinstance(patch, dict) and patch:

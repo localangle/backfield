@@ -42,6 +42,8 @@ export type LeafletMapProps = {
   points?: GeoJsonFeatureCollection | null
   polygons?: GeoJsonFeatureCollection | null
   height?: number
+  /** When true, the map fills the parent height (parent must define height). Omits fixed pixel height. */
+  fillHeight?: boolean
   emptyState?: ReactNode
   onFeatureClick?: (event: LeafletMapFeatureClick) => void
   fitToData?: boolean
@@ -132,6 +134,27 @@ function scheduleMapInvalidateSize(map: L.Map) {
       }
     })
   })
+}
+
+/** Re-fit tile layer after the map container resizes (e.g. flex layout in review edit mode). */
+function MapInvalidateSizeOnResize() {
+  const map = useMap()
+  useEffect(() => {
+    const container = map.getContainer()
+    const observe = container.parentElement ?? container
+    const run = () => scheduleMapInvalidateSize(map)
+    run()
+    const t1 = window.setTimeout(run, 0)
+    const t2 = window.setTimeout(run, 150)
+    const ro = new ResizeObserver(run)
+    ro.observe(observe)
+    return () => {
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      ro.disconnect()
+    }
+  }, [map])
+  return null
 }
 
 function normalizeFeatureCollection(input: unknown): GeoJsonFeatureCollection {
@@ -247,17 +270,22 @@ function FocusMapBounds({
   boundsKey: number
 }) {
   const map = useMap()
+  const boundsRef = useRef(bounds)
+  boundsRef.current = bounds
   useEffect(() => {
-    if (!bounds || boundsKey < 1) return
+    const b = boundsRef.current
+    if (!b || boundsKey < 1) return
     try {
-      map.fitBounds(L.latLngBounds(bounds[0] as L.LatLngExpression, bounds[1] as L.LatLngExpression), {
+      map.fitBounds(L.latLngBounds(b[0] as L.LatLngExpression, b[1] as L.LatLngExpression), {
         padding: [48, 48],
         maxZoom: 14,
       })
     } catch {
       // Defensive: never let fit bounds crash the page.
     }
-  }, [map, bounds, boundsKey])
+    // Intentionally omit `bounds` from deps: fit when selection changes (`boundsKey`), not on every
+    // geometry drag frame (bounds updates would fight the user's zoom/pan).
+  }, [map, boundsKey])
   return null
 }
 
@@ -1085,10 +1113,18 @@ function EditableAxisAlignedRectangle({ leafletBounds, onChange, rectangleDrawin
   )
 }
 
+function leafletMapOuterClassName(fillHeight: boolean): string {
+  if (fillHeight) {
+    return "h-full min-h-0 w-full overflow-hidden bg-background"
+  }
+  return "rounded-md overflow-hidden border border-border"
+}
+
 export function LeafletMap({
   points,
   polygons,
   height = 420,
+  fillHeight = false,
   emptyState,
   onFeatureClick,
   fitToData = true,
@@ -1232,20 +1268,28 @@ export function LeafletMap({
 
   if (!hasAny) {
     return (
-      <div style={{ height }} className="rounded-md border border-dashed border-muted flex items-center justify-center">
+      <div
+        style={fillHeight ? undefined : { height }}
+        className={
+          fillHeight
+            ? "flex h-full min-h-0 w-full items-center justify-center bg-background"
+            : "flex items-center justify-center rounded-md border border-dashed border-muted"
+        }
+      >
         {emptyState ?? <div className="text-sm text-muted-foreground">No geographic features.</div>}
       </div>
     )
   }
 
   return (
-    <div className="rounded-md overflow-hidden border border-border" style={{ height }}>
+    <div className={leafletMapOuterClassName(fillHeight)} style={fillHeight ? undefined : { height }}>
       {error ? <div className="p-3 text-sm text-destructive">{error}</div> : null}
       <MapContainer
         center={(initialCenter ?? DEFAULT_CENTER) as any}
         zoom={(initialZoom ?? DEFAULT_ZOOM) as any}
         style={{ height: "100%", width: "100%" }}
       >
+        {fillHeight ? <MapInvalidateSizeOnResize /> : null}
         <MapClickHandler onMapClick={onMapClick} rectangleDrawingRef={rectangleDrawingRef} />
         {rectangleDraw?.enabled ? (
           <RectangleDrawController rectangleDrawRef={rectangleDrawRef} rectangleDrawingRef={rectangleDrawingRef} />

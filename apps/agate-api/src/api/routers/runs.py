@@ -16,6 +16,7 @@ from api.processed_item_overlay_validate import (
     OverlayGeometryValidationError,
     validate_processed_item_overlay_geometry,
 )
+from api.processed_item_review_enrichment import enrich_merged_locations_for_review
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
     AgateGraph,
@@ -565,10 +566,17 @@ def _detail_from_agate_processed_row(
         output=output_obj, overlay=overlay_obj
     )
 
-    article_ctx = ArticleContextOut.model_validate(
-        build_processed_item_article_context(
-            session, project_id=project_id, input_obj=input_obj
-        )
+    article_ctx_dict = build_processed_item_article_context(
+        session, project_id=project_id, input_obj=input_obj
+    )
+    article_ctx = ArticleContextOut.model_validate(article_ctx_dict)
+
+    merged_locations = enrich_merged_locations_for_review(
+        session,
+        project_id=project_id,
+        run_id=row.run_id,
+        article_id=article_ctx_dict.get("article_id"),
+        merged_locations=merged_locations,
     )
 
     rid = row.id
@@ -635,8 +643,17 @@ def _maybe_detail_whole_graph_run(
     )
 
     project_id = _graph_project_id(session, run.graph_id)
-    article_ctx = ArticleContextOut.model_validate(
-        build_processed_item_article_context(session, project_id=project_id, input_obj={})
+    article_ctx_dict = build_processed_item_article_context(
+        session, project_id=project_id, input_obj={}
+    )
+    article_ctx = ArticleContextOut.model_validate(article_ctx_dict)
+
+    merged_locations = enrich_merged_locations_for_review(
+        session,
+        project_id=project_id,
+        run_id=run.id,
+        article_id=article_ctx_dict.get("article_id"),
+        merged_locations=merged_locations,
     )
 
     return ProcessedItemDetailOut(
