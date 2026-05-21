@@ -657,7 +657,7 @@ function GeocoderPanel({ map }: { map: L.Map }) {
             type="search"
             autoComplete="off"
             spellCheck={false}
-            placeholder="Search places or addresses…"
+            placeholder="Zoom to place or address"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => {

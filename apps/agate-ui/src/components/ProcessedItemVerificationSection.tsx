@@ -5,14 +5,14 @@ import { ProcessedItemArticleBody } from '@/components/ProcessedItemArticleBody'
 import { ProcessedItemVerificationLeafletMap } from '@/components/ProcessedItemVerificationLeafletMap'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { GeocodedPlaceEditForm } from '@/components/GeocodedPlaceEditForm'
 import { GeocodedPlacesTable } from '@/components/GeocodedPlacesTable'
 import { cn } from '@/lib/utils'
 import type { Graph, ProcessedItem } from '@/lib/api'
 import { getProcessedItem, patchProcessedItemOverlay } from '@/lib/api'
-import { stylebookCanonicalDetailHref, stylebookCanonicalListHref } from '@/lib/platformUrls'
+import { stylebookCanonicalDetailHref } from '@/lib/platformUrls'
 import {
   applyAnchorPatchFragment,
   applyGeometryToPlaceRow,
@@ -20,7 +20,6 @@ import {
   buildVerificationLeafletCollections,
   extractGeometryFromPlace,
   getGeocodedPlaceDisplay,
-  isApiOverlayGeometryError,
   isGeocodedPlace,
   iterBaselinePlacesFromOutput,
   leafletBoundsFromGeometry,
@@ -51,6 +50,11 @@ import {
   readMentionOccurrencesFromRow,
 } from '@/lib/processedItemMentionOccurrences'
 import {
+  buildOccurrenceSpanHits,
+  findAllMentionOccurrencesInArticle,
+  resolveEvidenceSpansInArticle,
+} from '@/lib/processedItemEvidenceSpan'
+import {
   deleteSavedPlace,
   replaceSavedPlaceMentionOccurrences,
   updateSavedPlace,
@@ -58,20 +62,12 @@ import {
   updateStylebookCanonicalGeometry,
 } from '@/lib/stylebookLocationsApi'
 import {
-  buildOccurrenceSpanHits,
-  findAllMentionOccurrencesInArticle,
-  resolveEvidenceSpansInArticle,
-} from '@/lib/processedItemEvidenceSpan'
-import {
-  getLocationDescription,
   getMergedRowAnchor,
-  getStylebookCanonicalHandoffId,
-  isApiConflictError,
   buildRemovePlaceOverlayPatch,
   normalizeOverlay,
   overlaysStructurallyEqual,
 } from '@/lib/processedItemVerificationOverlay'
-import { Loader2, MapPin, MousePointer, Square, Trash2 } from 'lucide-react'
+import { Loader2, MousePointer, Pencil, Square, Trash2 } from 'lucide-react'
 
 /** Map height in the review column; table below uses remaining flex space and scrolls. */
 const VERIFICATION_MAP_HEIGHT_PX = 300
@@ -773,124 +769,6 @@ export function ProcessedItemVerificationSection({
     [catalogProjectSlug, catalogStylebookSlug],
   )
 
-  const persistOverlayDraft = useCallback(async (): Promise<boolean> => {
-    if (!dirty) {
-      return true
-    }
-    if (saving) {
-      return false
-    }
-    setSaving(true)
-    try {
-      const updated = await patchProcessedItemOverlay(
-        runId,
-        item.id,
-        draftOverlay,
-        item.overlay_version ?? 0,
-      )
-      onItemUpdated(updated)
-      const n = normalizeOverlay(updated.overlay)
-      setBaselineOverlay(n)
-      setDraftOverlay(n)
-      return true
-    } catch (e) {
-      if (isApiConflictError(e)) {
-        showError(
-          'Someone else saved changes to this item while you were editing. This page has been refreshed with the latest version.',
-          { title: 'Could not save' },
-        )
-        try {
-          const fresh = await getProcessedItem(runId, item.id)
-          onItemUpdated(fresh)
-          const n = normalizeOverlay(fresh.overlay)
-          setBaselineOverlay(n)
-          setDraftOverlay(n)
-        } catch {
-          showError('We could not reload this item. Try opening it again from the run.', {
-            title: 'Reload failed',
-          })
-        }
-      } else if (isApiOverlayGeometryError(e)) {
-        showError(
-          'The map shape could not be saved. Try simplifying the area or moving the pin slightly, then save again.',
-          { title: 'Could not save map' },
-        )
-      } else {
-        showError('We could not save your changes. Check your connection and try again.', {
-          title: 'Save failed',
-        })
-      }
-      return false
-    } finally {
-      setSaving(false)
-    }
-  }, [
-    dirty,
-    saving,
-    runId,
-    item.id,
-    item.overlay_version,
-    draftOverlay,
-    onItemUpdated,
-    showError,
-  ])
-
-  const handleSave = useCallback(async () => {
-    if (!dirty || saving) {
-      return
-    }
-    await persistOverlayDraft()
-  }, [dirty, saving, persistOverlayDraft])
-
-  const handleStylebookHandoff = useCallback(async () => {
-    const slug = typeof catalogStylebookSlug === 'string' && catalogStylebookSlug.trim() ? catalogStylebookSlug.trim() : ''
-    if (!slug) {
-      showMessage(
-        'This project’s workspace does not have a Stylebook linked yet. An administrator can link a Stylebook to the workspace so you can open it from here.',
-        { title: 'Stylebook' },
-      )
-      return
-    }
-    if (dirty) {
-      const saveAndOpen = await showConfirm(
-        'Save your review changes first. After they are saved, Stylebook opens in a new browser tab.',
-        {
-          title: 'Save before opening Stylebook',
-          confirmLabel: 'Save and open Stylebook',
-          cancelLabel: 'Stay',
-          destructive: false,
-        },
-      )
-      if (!saveAndOpen) {
-        return
-      }
-      const saved = await persistOverlayDraft()
-      if (!saved) {
-        return
-      }
-    }
-    const proj = typeof catalogProjectSlug === 'string' && catalogProjectSlug.trim() ? catalogProjectSlug.trim() : null
-    const row = selectedAnchor
-      ? previewMergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
-      : undefined
-    const loc = row?.location as Record<string, unknown> | undefined
-    const canonicalId = getStylebookCanonicalHandoffId(loc)
-    const searchHint = getLocationDescription(loc).trim().slice(0, 200)
-    const url = canonicalId
-      ? stylebookCanonicalDetailHref(slug, canonicalId, proj)
-      : stylebookCanonicalListHref(slug, { projectSlug: proj, searchQuery: searchHint || null })
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }, [
-    catalogProjectSlug,
-    catalogStylebookSlug,
-    dirty,
-    persistOverlayDraft,
-    previewMergedRows,
-    selectedAnchor,
-    showConfirm,
-    showMessage,
-  ])
-
   const handleAddNewPointMode = useCallback(() => {
     setGeometryAddMode('point')
     setSelectedAnchor(null)
@@ -914,31 +792,7 @@ export function ProcessedItemVerificationSection({
 
   return (
     <Card className="isolate overflow-hidden border-primary/30">
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <CardTitle>Review</CardTitle>
-          <CardDescription>
-            Read the story beside the map. Pick a geocoded place below to highlight it in the story
-            and zoom the map. Use Edit map to adjust locations, then save when you are ready.
-          </CardDescription>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => void handleStylebookHandoff()}>
-            Open Stylebook
-          </Button>
-          <Button type="button" size="sm" disabled={!dirty || saving} onClick={() => void handleSave()}>
-            {saving ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving…
-              </>
-            ) : (
-              'Save changes'
-            )}
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 pt-6">
         {staleEntries.length > 0 ? (
           <Alert
             variant="default"
@@ -959,11 +813,13 @@ export function ProcessedItemVerificationSection({
               : 'h-[min(52rem,calc(100dvh-10rem))]',
           )}
         >
-          <div className="flex h-full min-h-0 flex-col gap-1.5">
-            <h3 className="shrink-0 text-sm font-semibold">Story text</h3>
-            {article?.headline ? (
-              <p className="shrink-0 text-sm font-medium text-foreground">{article.headline}</p>
-            ) : null}
+          <div className="flex h-full min-h-0 flex-col gap-2">
+            <div className="shrink-0 space-y-1">
+              <h2 className="text-lg font-semibold text-foreground">Review and edit places</h2>
+              <p className="text-sm text-muted-foreground">
+                Use the tools on this page to add, delete or edit places extracted from this text.
+              </p>
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto rounded-md border bg-muted/30 p-2.5 text-sm">
               {article?.resolution === 'none' && !article?.body?.trim() ? (
                 <p className="text-sm text-muted-foreground">
@@ -1001,72 +857,48 @@ export function ProcessedItemVerificationSection({
           </div>
 
           <div
-            className={
-              geometryEditing
-                ? 'flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border border-primary/40 bg-background p-2.5'
-                : 'flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border bg-card p-2.5'
-            }
+            className={cn(
+              'flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border bg-card p-2.5',
+              geometryEditing && 'border-primary/40 bg-background',
+            )}
           >
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold inline-flex items-center gap-2">
-                <MapPin className="h-4 w-4" aria-hidden />
-                Locations map
-              </h3>
+            <div className="flex w-full shrink-0 flex-wrap items-center gap-2">
               {selectedAnchor && !geometryEditing ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => startGeometryEdit()}>
-                  Edit geography
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-black text-white hover:bg-black/90"
+                  onClick={() => startGeometryEdit()}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit
                 </Button>
               ) : null}
-              {geometryEditing ? (
+              {geometryEditing && !mapDraftGeometry ? (
                 <>
-                  {!mapDraftGeometry ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={geometryAddMode === 'rectangle' || geometrySaving}
-                        onClick={() => setGeometryAddMode('point')}
-                      >
-                        <MousePointer className="mr-2 h-4 w-4" />
-                        Add point
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={geometryAddMode === 'point' || geometrySaving}
-                        onClick={() => setGeometryAddMode('rectangle')}
-                      >
-                        <Square className="mr-2 h-4 w-4" />
-                        Add rectangle
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      disabled={geometrySaving}
-                      onClick={() => {
-                        void (async () => {
-                          const ok = await showConfirm('Delete this geography?', {
-                            title: 'Delete geometry',
-                            confirmLabel: 'Delete',
-                            destructive: true,
-                          })
-                          if (!ok) return
-                          setGeometryDraft(null)
-                          setGeometryAddMode(null)
-                        })()
-                      }}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete geometry
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={geometryAddMode === 'rectangle' || geometrySaving}
+                    onClick={() => setGeometryAddMode('point')}
+                  >
+                    <MousePointer className="mr-2 h-4 w-4" />
+                    Add point
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={geometryAddMode === 'point' || geometrySaving}
+                    onClick={() => setGeometryAddMode('rectangle')}
+                  >
+                    <Square className="mr-2 h-4 w-4" />
+                    Add rectangle
+                  </Button>
                 </>
-              ) : (
+              ) : null}
+              {!geometryEditing ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -1077,7 +909,30 @@ export function ProcessedItemVerificationSection({
                 >
                   New place (point)
                 </Button>
-              )}
+              ) : null}
+              {geometryEditing && mapDraftGeometry ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={geometrySaving}
+                  onClick={() => {
+                    void (async () => {
+                      const ok = await showConfirm('Clear this geography from the map?', {
+                        title: 'Clear geometry',
+                        confirmLabel: 'Clear',
+                        destructive: true,
+                      })
+                      if (!ok) return
+                      setGeometryDraft(null)
+                      setGeometryAddMode(null)
+                    })()
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Clear geometry
+                </Button>
+              ) : null}
               {geometryEditing && selectedAnchor ? (
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                   <Button

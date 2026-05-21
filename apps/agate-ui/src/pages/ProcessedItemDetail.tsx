@@ -1,29 +1,49 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
+import { ProcessedItemInformationCard } from '@/components/ProcessedItemInformationCard'
 import { ProcessedItemVerificationSection } from '@/components/ProcessedItemVerificationSection'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { getNodeOutputById, nodeOutputLookupFromGraphSpec, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
-import { formatDateCentral } from '@/lib/utils'
-import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
+import { processedItemDisplayTitle } from '@/lib/processedItemDisplayTitle'
+import {
+  PROCESSED_ITEM_DETAIL_TABS,
+  isProcessedItemDetailTab,
+  parseProcessedItemDetailTab,
+  readProcessedItemTabFromLocation,
+  type ProcessedItemDetailTab,
+} from '@/lib/processedItemDetailTab'
 import {
   RERUN_GEOGRAPHY_WARNING_TITLE,
   rerunGeographyWarningBody,
 } from '@/lib/rerunGeographyWarning'
-import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle, XCircle, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
+
+const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
+  info: 'Info',
+  places: 'Places',
+  people: 'People',
+  organizations: 'Organizations',
+  events: 'Events',
+  works: 'Works',
+  images: 'Images',
+  meta: 'Meta',
+  json: 'JSON',
+}
 
 export default function ProcessedItemDetail() {
   const { showError, showConfirm } = useAppMessage()
   const { runId, itemId } = useParams<{ runId: string; itemId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const verificationDirtyRef = useRef(false)
+  const [reviewDirty, setReviewDirty] = useState(false)
   const [run, setRun] = useState<Run | null>(null)
   const [graph, setGraph] = useState<Graph | null>(null)
   const [item, setItem] = useState<ProcessedItem | null>(null)
@@ -32,14 +52,49 @@ export default function ProcessedItemDetail() {
   const [visualizations, setVisualizations] = useState<VisualizationDescriptor[]>([])
   const [catalogProject, setCatalogProject] = useState<Project | null>(null)
 
-  const nodeOutputLookup = useMemo((): NodeOutputLookupSpec | null => {
-    if (!graph?.spec?.nodes?.length) return null
-    return nodeOutputLookupFromGraphSpec(graph.spec)
-  }, [graph])
-
   const handleVerificationDirtyChange = useCallback((dirty: boolean) => {
     verificationDirtyRef.current = dirty
+    setReviewDirty(dirty)
   }, [])
+
+  const itemSynthetic = item?.synthetic ?? false
+  const activeTab = useMemo(
+    () =>
+      parseProcessedItemDetailTab(readProcessedItemTabFromLocation(searchParams), {
+        synthetic: itemSynthetic,
+      }),
+    [searchParams, itemSynthetic],
+  )
+
+  // Promote ``#tab`` links to ``?tab=`` so the URL stays shareable with one source of truth.
+  useEffect(() => {
+    const fromQuery = searchParams.get('tab')?.trim()
+    if (fromQuery) return
+    const hash = location.hash.replace(/^#/, '').trim()
+    if (!hash) return
+    const tab = parseProcessedItemDetailTab(hash, { synthetic: itemSynthetic })
+    navigate({ pathname: location.pathname, search: `?tab=${encodeURIComponent(tab)}` }, { replace: true })
+  }, [location.pathname, location.hash, searchParams, itemSynthetic, navigate])
+
+  const handleTabChange = useCallback(
+    async (next: string) => {
+      if (!isProcessedItemDetailTab(next) || next === activeTab) return
+      if (verificationDirtyRef.current) {
+        const leave = await showConfirm(
+          'Save your changes before leaving, or stay on this page to keep editing.',
+          {
+            title: 'Unsaved changes',
+            confirmLabel: 'Leave without saving',
+            cancelLabel: 'Stay',
+            destructive: true,
+          },
+        )
+        if (!leave) return
+      }
+      setSearchParams({ tab: next }, { replace: true })
+    },
+    [activeTab, setSearchParams, showConfirm],
+  )
 
   const navigateFromItem = useCallback(
     async (to: string) => {
@@ -174,36 +229,6 @@ export default function ProcessedItemDetail() {
       setItem(null)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'running':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      case 'succeeded':
-        return 'bg-green-100 text-green-800 border-green-200'
-      case 'failed':
-        return 'bg-red-100 text-red-800 border-red-200'
-      case 'timed_out':
-        return 'bg-orange-100 text-orange-800 border-orange-200'
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200'
-    }
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'running':
-        return <Loader2 className="h-4 w-4 animate-spin" />
-      case 'succeeded':
-        return <CheckCircle className="h-4 w-4" />
-      case 'failed':
-        return <XCircle className="h-4 w-4" />
-      case 'timed_out':
-        return <AlertTriangle className="h-4 w-4" />
-      default:
-        return <Clock className="h-4 w-4" />
     }
   }
 
@@ -399,33 +424,7 @@ export default function ProcessedItemDetail() {
     )
   }
 
-  const nodeOutputs = item.node_outputs ?? {}
-  const nodeLogs = item.node_logs ?? {}
-  const rawOutputs = nodeOutputs as Record<string, unknown>
-  const hasNodeOutput = (nodeId: string) =>
-    getNodeOutputById(rawOutputs, nodeId, nodeOutputLookup) !== undefined
-  const uniqueNodeIds = new Set<string>([...Object.keys(nodeLogs)])
-  if (graph?.spec?.nodes) {
-    for (const node of graph.spec.nodes) {
-      if (hasNodeOutput(node.id)) {
-        uniqueNodeIds.add(node.id)
-      }
-    }
-  } else {
-    for (const k of Object.keys(nodeOutputs)) {
-      if (k !== '__outputKeysByNodeId') uniqueNodeIds.add(k)
-    }
-  }
-  const orderedNodeIds: string[] = []
-  if (graph?.spec?.nodes) {
-    for (const node of graph.spec.nodes) {
-      if (uniqueNodeIds.has(node.id)) {
-        orderedNodeIds.push(node.id)
-        uniqueNodeIds.delete(node.id)
-      }
-    }
-  }
-  uniqueNodeIds.forEach((id) => orderedNodeIds.push(id))
+  const pageTitle = processedItemDisplayTitle(item)
 
   return (
     <div className="space-y-6">
@@ -445,9 +444,27 @@ export default function ProcessedItemDetail() {
             Back to Run
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">Processed Item #{item.id}</h1>
-            <p className="text-muted-foreground mt-1">
-              {graph?.name || `Flow ${run?.graph_id}`} • Run #{runId}
+            <h1 className="text-3xl font-bold">{pageTitle}</h1>
+            <p className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-1 gap-y-0">
+              {run?.graph_id ? (
+                <button
+                  type="button"
+                  className="text-sm text-primary hover:underline font-normal p-0 h-auto inline bg-transparent border-0 cursor-pointer"
+                  onClick={() => void navigateFromItem(`/flow/${run.graph_id}`)}
+                >
+                  {graph?.name || `Flow ${run.graph_id}`}
+                </button>
+              ) : (
+                <span>{graph?.name || 'Flow'}</span>
+              )}
+              <span aria-hidden="true">•</span>
+              <button
+                type="button"
+                className="text-sm text-primary hover:underline font-normal p-0 h-auto inline bg-transparent border-0 cursor-pointer"
+                onClick={() => void navigateFromItem(`/runs/${runId}`)}
+              >
+                Go to run
+              </button>
             </p>
           </div>
         </div>
@@ -459,12 +476,6 @@ export default function ProcessedItemDetail() {
             >
               <ExternalLink className="mr-2 h-4 w-4" />
               View on S3
-            </Button>
-          )}
-          {item.status === 'succeeded' && item.output && (
-            <Button onClick={handleDownloadOutput}>
-              <Download className="mr-2 h-4 w-4" />
-              Download Output
             </Button>
           )}
           {!item.synthetic && (
@@ -510,91 +521,22 @@ export default function ProcessedItemDetail() {
         </div>
       </div>
 
-      {!item.synthetic && (
-        <ProcessedItemVerificationSection
-          runId={runId!}
-          item={item}
-          graph={graph}
-          onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
-          onVerificationDirtyChange={handleVerificationDirtyChange}
-          catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
-          catalogProjectSlug={catalogProject?.slug ?? null}
-        />
-      )}
+      <Tabs value={activeTab} onValueChange={(v) => void handleTabChange(v)} className="space-y-4">
+        <TabsList className="w-full h-auto flex flex-wrap justify-start gap-1 p-1">
+          {PROCESSED_ITEM_DETAIL_TABS.map((tab) => (
+            <TabsTrigger key={tab} value={tab}>
+              {PROCESSED_ITEM_TAB_LABELS[tab]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      {/* Item Metadata */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Item Information
-            <Badge variant="outline" className={getStatusColor(item.status)}>
-              {getStatusIcon(item.status)}
-              <span className="ml-1 capitalize">{item.status}</span>
-            </Badge>
-          </CardTitle>
-          {(isBatchFileSource(item.source_file) || processedItemSourceLabel(item)) && (
-            <CardDescription
-              className={`text-xs ${isBatchFileSource(item.source_file) ? 'font-mono' : ''}`}
-            >
-              <FileText className="inline h-3 w-3 mr-1" />
-              {processedItemSourceLabel(item) ?? item.source_file}
-            </CardDescription>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Item ID</label>
-              <p className="text-lg font-mono">#{item.id}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Run ID</label>
-              <p className="text-lg font-mono">#{item.run_id}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Created</label>
-              <p className="text-sm">
-                {formatDateCentral(item.created_at)}
-              </p>
-            </div>
-            {item.status !== 'pending' && (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Completed</label>
-                <p className="text-sm">
-                  {formatDateCentral(item.updated_at)}
-                </p>
-              </div>
-            )}
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Estimated AI cost</label>
-              <p className="text-sm tabular-nums">
-                {item.estimated_ai_cost !== undefined && item.estimated_ai_cost !== null ? (
-                  <>
-                    {Number(item.estimated_ai_cost).toLocaleString(undefined, {
-                      style: 'currency',
-                      currency: item.estimated_ai_cost_currency || 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}
-                    {item.estimated_ai_cost_incomplete ? (
-                      <span className="text-amber-700 dark:text-amber-400 ml-1" title="Estimate may be incomplete">
-                        *
-                      </span>
-                    ) : null}
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </p>
-              {item.estimated_ai_cost_incomplete ? (
-                <p className="text-xs text-muted-foreground mt-1">
-                  The asterisk means part of this estimate may be missing.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        <TabsContent value="info" className="space-y-4">
+          <ProcessedItemInformationCard
+            runId={runId!}
+            item={item}
+            onItemUpdated={(next) => setItem({ ...next, synthetic: item.synthetic })}
+            reviewDirty={reviewDirty}
+          />
 
       {/* Error Display */}
       {item.error && (
@@ -612,104 +554,6 @@ export default function ProcessedItemDetail() {
           </CardContent>
         </Card>
       )}
-
-      <Tabs defaultValue="visuals" className="space-y-4">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="visuals">Visuals</TabsTrigger>
-          <TabsTrigger value="json">JSON</TabsTrigger>
-          <TabsTrigger value="debug">Debug</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="visuals" className="space-y-4">
-          {/* Top-line Text Attributes */}
-          {(() => {
-            if (!item.output) return null
-            
-            const output = item.output as any
-            const textAttributes = [
-              { key: 'publication', label: 'Publication' },
-              { key: 'headline', label: 'Headline' },
-              { key: 'url', label: 'URL', isLink: true },
-              { key: 'author', label: 'Author' },
-              { key: 'pub_date', label: 'Publication Date' },
-              { key: 'updated', label: 'Updated' },
-            ]
-            
-            const hasTextAttributes = textAttributes.some(attr => output[attr.key])
-            
-            if (!hasTextAttributes) return null
-            
-            return (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Article Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {textAttributes.map(({ key, label, isLink }) => {
-                      const value = output[key]
-                      if (!value) return null
-                      
-                      return (
-                        <div key={key} className="space-y-1">
-                          <label className="text-sm font-medium text-muted-foreground">{label}</label>
-                          {isLink ? (
-                            <div>
-                              <a
-                                href={value}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                              >
-                                {value}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </div>
-                          ) : (
-                            <p className="text-sm break-words">{String(value)}</p>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  
-                  {output.text && (
-                    <div className="space-y-1 pt-2 border-t">
-                      <label className="text-sm font-medium text-muted-foreground">Text</label>
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
-                        {String(output.text)}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {output.images && Array.isArray(output.images) && output.images.length > 0 && (
-                    <div className="space-y-1 pt-2 border-t">
-                      <label className="text-sm font-medium text-muted-foreground">Images ({output.images.length})</label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                        {output.images.slice(0, 8).map((img: any, idx: number) => {
-                          const imgUrl = img.url || img.base64
-                          if (!imgUrl) return null
-                          
-                          return (
-                            <div key={idx} className="relative aspect-video bg-muted rounded overflow-hidden">
-                              <img
-                                src={imgUrl}
-                                alt={img.caption || `Image ${idx + 1}`}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none'
-                                }}
-                              />
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })()}
 
           {/* Image Embeddings */}
           {(() => {
@@ -830,55 +674,6 @@ export default function ProcessedItemDetail() {
             )
           })()}
 
-          {/* Check if we have any content to show */}
-          {(() => {
-            if (!item.output) {
-              if (visualizations.length === 0) {
-                return (
-                  <Card>
-                    <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                      No visualizations are available for this processed item yet.
-                    </CardContent>
-                  </Card>
-                )
-              }
-              return null
-            }
-            
-            const output = item.output as any
-            
-            // Check for article information
-            const textAttributes = ['publication', 'headline', 'url', 'author', 'pub_date', 'updated']
-            const hasArticleInfo = textAttributes.some(attr => output[attr]) || output.text || (Array.isArray(output.images) && output.images.length > 0)
-            
-            // Check for image embeddings
-            const findImageEmbeddings = (obj: any): boolean => {
-              if (Array.isArray(obj)) {
-                return obj.length > 0 && obj.some((item: any) => 
-                  item && typeof item === 'object' && 'generated_text' in item && 'embedding_model' in item
-                )
-              }
-              if (obj && typeof obj === 'object') {
-                return Object.values(obj).some(value => findImageEmbeddings(value))
-              }
-              return false
-            }
-            const hasImageEmbeddings = findImageEmbeddings(output)
-
-            // Only show "No visualizations" if we have no visualizations AND no article info AND no image embeddings
-            if (visualizations.length === 0 && !hasArticleInfo && !hasImageEmbeddings) {
-              return (
-            <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                No visualizations are available for this processed item yet.
-              </CardContent>
-            </Card>
-              )
-            }
-            
-            return null
-          })()}
-
           {visualizations.length > 0 && visualizations.map((viz: VisualizationDescriptor, vizIndex: number) => {
               const VisualizationComponent = viz.component
               // Use node-specific output if available, otherwise fall back to item.output
@@ -897,11 +692,57 @@ export default function ProcessedItemDetail() {
             })}
         </TabsContent>
 
+        <TabsContent value="places" className="space-y-4">
+          {!item.synthetic ? (
+            <ProcessedItemVerificationSection
+              runId={runId!}
+              item={item}
+              graph={graph}
+              onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
+              onVerificationDirtyChange={handleVerificationDirtyChange}
+              catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
+              catalogProjectSlug={catalogProject?.slug ?? null}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Place review is available for batch stories. This run used a single input and has no
+                separate story item.
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {(
+          [
+            ['people', 'People'],
+            ['organizations', 'Organizations'],
+            ['events', 'Events'],
+            ['works', 'Works'],
+            ['images', 'Images'],
+            ['meta', 'Meta'],
+          ] as const
+        ).map(([value, label]) => (
+          <TabsContent key={value} value={value} className="space-y-4">
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                {label} review is not available yet.
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ))}
+
         <TabsContent value="json" className="space-y-4">
           {item.output && Object.keys(item.output).length > 0 ? (
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
                 <CardTitle>Output Data</CardTitle>
+                {item.status === 'succeeded' && item.output ? (
+                  <Button type="button" variant="outline" size="sm" onClick={handleDownloadOutput}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download
+                  </Button>
+                ) : null}
               </CardHeader>
               <CardContent>
                 <div className="rounded border overflow-auto max-h-[600px] [&_*]:break-words">
@@ -942,105 +783,6 @@ export default function ProcessedItemDetail() {
                 </div>
               </CardContent>
             </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="debug" className="space-y-4">
-          {item.input && Object.keys(item.input).length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Input Data</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded border overflow-auto max-h-[600px] [&_*]:break-words">
-                  <JsonView
-                    value={sanitizeForJsonView(item.input)}
-                    style={{
-                      backgroundColor: 'transparent',
-                      fontSize: '0.875rem',
-                    }}
-                    collapsed={false}
-                    displayDataTypes={false}
-                    displayObjectSize={false}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {orderedNodeIds.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-sm text-muted-foreground text-center">
-                No node execution details are available for this item.
-              </CardContent>
-            </Card>
-          ) : (
-            orderedNodeIds.map((nodeId) => {
-              const nodeConfig = graph?.spec.nodes.find(n => n.id === nodeId)
-              const nodeType = nodeConfig?.type || 'Unknown'
-              const friendlyName =
-                (nodeConfig?.params as any)?.name ||
-                (nodeConfig?.params as any)?.label ||
-                nodeType
-
-              const output = getNodeOutputById(rawOutputs, nodeId, nodeOutputLookup)
-              const logs = nodeLogs[nodeId] ?? []
-
-              return (
-                <Card key={nodeId}>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <span>{friendlyName}</span>
-                      <Badge variant="secondary" className="font-mono text-[10px]">
-                        {nodeId}
-                      </Badge>
-                      <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {nodeType}
-                      </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-3">
-                        <div className="text-sm font-semibold">Output</div>
-                        {output ? (
-                          <div className="rounded border overflow-auto max-h-64 [&_*]:break-words">
-                            <JsonView
-                              value={sanitizeForJsonView(output)}
-                              style={{
-                                backgroundColor: 'transparent',
-                                fontSize: '0.75rem',
-                              }}
-                              collapsed={false}
-                              displayDataTypes={false}
-                              displayObjectSize={false}
-                            />
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            This node did not produce any output.
-                          </p>
-                        )}
-                      </div>
-                      <div className="space-y-3">
-                        <div className="text-sm font-semibold">Logs</div>
-                        {logs.length > 0 ? (
-                          <div className="bg-muted rounded p-3 max-h-64 overflow-auto text-xs font-mono space-y-2">
-                            {logs.map((line, idx) => (
-                              <div key={idx}>{line}</div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            No logs were recorded for this node.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })
           )}
         </TabsContent>
       </Tabs>
