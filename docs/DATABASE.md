@@ -99,7 +99,7 @@ Revision **`033_agate_processed_item_overlay`** adds nullable **`overlay_json`**
 
 Revision **`034_replace_article_geography`** adds **`replace_article_geography_on_persist`** (boolean, default `false`) on **`agate_run`** and **`agate_processed_item`** for one-shot full geography replace on the next worker persist after a confirmed re-run or Run Again.
 
-Revision **`035_agate_processed_item_reviewed_output`** adds nullable **`reviewed_output_json`** for eager materialization of reviewed run output (see `docs/API.md` → *Reviewed output*).
+Revision **`035_reviewed_output_json`** adds nullable **`reviewed_output_json`** for eager materialization of reviewed run output (see `docs/API.md` → *Reviewed output*).
 
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 
