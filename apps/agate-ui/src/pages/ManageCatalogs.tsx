@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { Loader2 } from "lucide-react"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -325,35 +326,39 @@ export default function ManageCatalogsPage() {
       showError("Enter a name for the new stylebook.")
       return
     }
-    let progressDlg: ReturnType<typeof showMessage> | null = null
+    setImportBusy(true)
+    const progressDlg = showMessage("Preparing import…", {
+      title: "Import",
+      pending: true,
+    })
+    setImportOpen(false)
     try {
-      setImportBusy(true)
       const job = await createBundleImportJob(organizationId, {
         new_stylebook_name: name,
         project_mappings: {},
       })
+      progressDlg.update("Uploading stylebook file…", { pending: true })
       await uploadBundleZipViaApi(organizationId, job.id, importFile)
+      progressDlg.update("Finishing upload…", { pending: true })
       await finalizeBundleImportJob(organizationId, job.id)
-      progressDlg = showMessage("Import started. This may take a minute…", {
-        title: "Import",
-        pending: true,
-      })
+      progressDlg.update("Import started. This may take a minute…", { pending: true })
       const done = await pollBundleJob(organizationId, job.id)
       progressDlg.dismiss()
-      progressDlg = null
       if (done.status === "failed") {
         showError(done.error_message || "Import did not finish.")
         return
       }
-      setImportOpen(false)
       await reload()
       notifyWorkspaceRefresh()
       showMessage("Stylebook imported.", { title: "Done" })
     } catch (e) {
-      progressDlg?.dismiss()
+      progressDlg.dismiss()
       showError(e instanceof Error ? e.message : "Import failed.")
     } finally {
       setImportBusy(false)
+      setImportFile(null)
+      setImportPreview(null)
+      setImportName("")
     }
   }
 
@@ -472,10 +477,20 @@ export default function ManageCatalogsPage() {
       <Dialog
         open={importOpen}
         onOpenChange={(o) => {
-          if (!o) setImportOpen(false)
+          if (importBusy) return
+          setImportOpen(o)
         }}
       >
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="sm:max-w-lg max-h-[90vh] overflow-y-auto"
+          hideCloseButton={importBusy}
+          onPointerDownOutside={(e) => {
+            if (importBusy) e.preventDefault()
+          }}
+          onEscapeKeyDown={(e) => {
+            if (importBusy) e.preventDefault()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Import a stylebook copy</DialogTitle>
             <DialogDescription>
@@ -484,12 +499,24 @@ export default function ManageCatalogsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {importBusy ? (
+              <div
+                className="flex items-center gap-2 text-sm text-muted-foreground"
+                role="status"
+                aria-live="polite"
+                aria-busy
+              >
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                Preparing import…
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="import-bundle">File</Label>
               <Input
                 id="import-bundle"
                 type="file"
                 accept=".zip,application/zip"
+                disabled={importBusy}
                 onChange={(e) => {
                   const f = e.target.files?.[0] ?? null
                   onImportFileChange(f)
@@ -506,6 +533,7 @@ export default function ManageCatalogsPage() {
                   <Input
                     id="import-name"
                     value={importName}
+                    disabled={importBusy}
                     onChange={(e) => setImportName(e.target.value)}
                     placeholder="e.g. Metro (imported)"
                   />
@@ -514,7 +542,12 @@ export default function ManageCatalogsPage() {
             ) : null}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={importBusy}
+              onClick={() => setImportOpen(false)}
+            >
               Cancel
             </Button>
             <Button
