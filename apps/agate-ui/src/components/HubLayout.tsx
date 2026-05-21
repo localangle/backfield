@@ -18,6 +18,7 @@ export default function HubLayout({ children }: HubLayoutProps) {
         <div className="px-4 py-4 flex justify-between items-center">
           <ShellProductBrand
             to="/"
+            productMark="🏷️"
             productTitle="Agate"
             platformSubtitle="Backfield Platform"
           />

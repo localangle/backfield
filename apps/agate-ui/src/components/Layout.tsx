@@ -17,6 +17,7 @@ export default function Layout({ children }: LayoutProps) {
         <div className="px-4 py-4 flex justify-between items-center">
           <ShellProductBrand
             to="/"
+            productMark="🏷️"
             productTitle="Agate"
             platformSubtitle="Backfield Platform"
           />

@@ -6,13 +6,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom"
-import {
-  BookOpen,
-  FolderKanban,
-  HelpCircle,
-  Newspaper,
-  Settings,
-} from "lucide-react"
+import { HelpCircle, Settings } from "lucide-react"
 import {
   ShellProductBrand,
   ShellSidebar,
@@ -104,13 +98,6 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     if (!slugForHome) return `/stylebook/default${projectQs}`
     return `${stylebookCatalogBasePath(slugForHome)}${projectQs}`
   }, [routeSlug, effectiveStylebookSlug, projectQs])
-
-  const activeProjectName = useMemo(() => {
-    if (!workflowProjectSlug) return null
-    const p = projects.find((x) => x.slug === workflowProjectSlug)
-    return p?.name ?? workflowProjectSlug
-  }, [workflowProjectSlug, projects])
-  const activeProjectLabel = activeProjectName ?? "Backfield"
 
   const selectedStylebookLabel = useMemo(() => {
     if (!effectiveStylebookSlug) return "Stylebook"
@@ -251,6 +238,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
         <div className="px-4 py-4 flex justify-between items-center gap-3 flex-wrap">
           <ShellProductBrand
             to={indexPath}
+            productMark="📖"
             productTitle="Stylebook"
             platformSubtitle="Backfield Platform"
           />
@@ -290,24 +278,18 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           headerLeading={
             <NavLink
               to={indexPath}
-              end
-              title={activeProjectLabel}
-              aria-label={
-                activeProjectName
-                  ? `Active project: ${activeProjectName}`
-                  : "Backfield"
+              title="Backfield"
+              aria-label="Backfield"
+              className={({ isActive }) =>
+                cn(
+                  "flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1",
+                  "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  isActive && "bg-transparent",
+                )
               }
-              className={cn(
-                "flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1",
-                "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              )}
             >
-              <FolderKanban
-                className="h-4 w-4 shrink-0 text-muted-foreground"
-                aria-hidden
-              />
               <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-                {activeProjectLabel}
+                Backfield
               </span>
             </NavLink>
           }
@@ -317,7 +299,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
               <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
                 {expanded ? (
                   <div className={sectionTitleClass}>
-                    <Newspaper className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="shrink-0 text-base leading-none" aria-hidden>
+                      🏷️
+                    </span>
                     <span>Agate</span>
                   </div>
                 ) : (
@@ -325,12 +309,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     type="button"
                     title="Agate — workspaces"
                     className={cn(
-                      "inline-flex h-9 w-full items-center justify-center rounded-md",
+                      "inline-flex h-9 w-full items-center justify-center rounded-md text-lg",
                       "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     )}
                     onClick={() => expand()}
                   >
-                    <Newspaper className="h-5 w-5 text-muted-foreground" aria-hidden />
+                    <span aria-hidden>🏷️</span>
                   </button>
                 )}
 
@@ -356,7 +340,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     <div className="border-t border-border/50 my-1" />
                     {expanded ? (
                       <div className={sectionTitleClass}>
-                        <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+                        <span className="shrink-0 text-base leading-none" aria-hidden>
+                          📖
+                        </span>
                         <span>Stylebook</span>
                       </div>
                     ) : (
@@ -364,12 +350,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                         type="button"
                         title="Stylebook"
                         className={cn(
-                          "inline-flex h-9 w-full items-center justify-center rounded-md",
+                          "inline-flex h-9 w-full items-center justify-center rounded-md text-lg",
                           "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         )}
                         onClick={() => expand()}
                       >
-                        <BookOpen className="h-5 w-5 text-muted-foreground" aria-hidden />
+                        <span aria-hidden>📖</span>
                       </button>
                     )}
                     {(expanded ? sortedStylebooks : []).map((sb) => {

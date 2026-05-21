@@ -20,7 +20,7 @@ Components use Tailwind utility classes (`bg-popover`, `border-input`, …). Eac
 
 ## `ShellProductBrand`
 
-Hub-style product title + platform subtitle (`text-3xl` / muted `text-sm`), wrapped in a React Router `Link`. Pass `to`, `productTitle` (e.g. `Agate` or `Stylebook`), and `platformSubtitle` (typically `Backfield Platform`).
+Hub-style product title + platform subtitle (`text-3xl` / muted `text-sm`), wrapped in a React Router `Link`. Pass `to`, `productTitle` (e.g. `Agate` or `Stylebook`), optional `productMark` (emoji shown left of the title), and `platformSubtitle` (typically `Backfield Platform`).
 
 ## `UserAccountMenu`
 

@@ -20,7 +20,7 @@ import {
   type RunEstimatedAiCost,
 } from '@/lib/api'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
-import { formatDateCentral } from '@/lib/utils'
+import { formatDateCentral, formatRunTitleDate } from '@/lib/utils'
 import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
 import {
@@ -291,21 +291,6 @@ export default function RunDetail() {
     } catch {
       return String(data)
     }
-  }
-
-  const formatRunTitleDate = (dateString: string) => {
-    const utcDateString =
-      !dateString.endsWith('Z') && !dateString.includes('+') ? `${dateString}Z` : dateString
-    const date = new Date(utcDateString)
-    const timezone = import.meta.env.VITE_TIMEZONE || 'America/Chicago'
-    return date.toLocaleString('en-US', {
-      timeZone: timezone,
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
   }
 
   const summarizePreviewText = (value: unknown, maxWords = 6): string | null => {

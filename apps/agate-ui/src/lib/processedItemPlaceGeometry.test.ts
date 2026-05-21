@@ -4,6 +4,7 @@ import {
   buildGeocodePatchForGeometry,
   buildVerificationLeafletCollections,
   extractGeometryFromPlace,
+  stripSelectedVerificationPolygonsForEdit,
   getGeocodedPlaceDisplay,
   getGeocodingSourceLabel,
   getPlaceEditorialDetail,
@@ -395,6 +396,46 @@ describe('buildVerificationLeafletCollections', () => {
     })
     expect(editing.polygons.features).toHaveLength(1)
     expect(editing.polygons.features[0]?.id).toBe(anchor)
+  })
+})
+
+describe('stripSelectedVerificationPolygonsForEdit', () => {
+  it('removes selected place polygon layers but keeps points and baseline polygons', () => {
+    const collections = buildVerificationLeafletCollections({
+      mergedRows: [
+        {
+          anchor: 'a1',
+          location: {
+            description: 'a1',
+            geocode: { result: { geometry: { type: 'Point', coordinates: [-93, 45] } } },
+          },
+        },
+      ],
+      baselineByAnchor: new Map(),
+      selectedAnchor: 'a1',
+    })
+    collections.polygons.features.push({
+      type: 'Feature',
+      id: 'other',
+      properties: { id: 'other', label: 'other', group: 'verification-place' },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+      },
+    })
+    collections.polygons.features.push({
+      type: 'Feature',
+      id: 'a1__baseline',
+      properties: { id: 'a1__baseline', label: 'baseline', group: 'verification-baseline' },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]],
+      },
+    })
+
+    const stripped = stripSelectedVerificationPolygonsForEdit(collections, 'a1')
+    expect(stripped.points.features).toHaveLength(1)
+    expect(stripped.polygons.features.map((f) => (f as { id?: string }).id)).toEqual(['other', 'a1__baseline'])
   })
 })
 

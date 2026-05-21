@@ -729,6 +729,25 @@ export function emptyFeatureCollections(): LeafletFeatureCollections {
   }
 }
 
+/** Remove static polygon layers for the selected place so the draggable rectangle editor receives pointer events. */
+export function stripSelectedVerificationPolygonsForEdit(
+  collections: LeafletFeatureCollections,
+  selectedAnchor: string,
+): LeafletFeatureCollections {
+  const stripIds = new Set([selectedAnchor, `${selectedAnchor}__draft`])
+  return {
+    points: collections.points,
+    polygons: {
+      type: 'FeatureCollection',
+      features: collections.polygons.features.filter((f) => {
+        const feat = f as { id?: string; properties?: { id?: string } }
+        const id = feat.id ?? feat.properties?.id
+        return typeof id !== 'string' || !stripIds.has(id)
+      }),
+    },
+  }
+}
+
 function pushGeometryFeatures(
   collections: LeafletFeatureCollections,
   anchor: string,

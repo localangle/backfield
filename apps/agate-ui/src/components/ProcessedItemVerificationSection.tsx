@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { isAxisAlignedRectanglePolygon } from '@backfield/ui/axisAlignedRectangle'
 import { LeafletMap } from '@backfield/ui/LeafletMap'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { ProcessedItemArticleBody } from '@/components/ProcessedItemArticleBody'
@@ -19,6 +20,8 @@ import {
   appendUserPlacePoint,
   buildVerificationLeafletCollections,
   extractGeometryFromPlace,
+  isPolygonGeometry,
+  stripSelectedVerificationPolygonsForEdit,
   getGeocodedPlaceDisplay,
   isGeocodedPlace,
   iterBaselinePlacesFromOutput,
@@ -40,7 +43,6 @@ import {
   resolveProcessedItemArticleId,
   getMergedRowStylebookCanonicalId,
   getMergedRowStylebookLink,
-  isMergedRowLinkedToStylebook,
   isReviewOnlyMergedRow,
   resolveStylebookSlugForLinkedRow,
 } from '@/lib/processedItemReviewRow'
@@ -405,27 +407,6 @@ export function ProcessedItemVerificationSection({
     return overlayAnchorGeometryChanged(draftOverlay, baselineOverlay, selectedAnchor)
   }, [draftOverlay, baselineOverlay, selectedAnchor])
 
-  const mapCollections = useMemo(
-    () =>
-      buildVerificationLeafletCollections({
-        mergedRows: displayMergedRows,
-        baselineByAnchor,
-        selectedAnchor,
-        geometryEditing,
-        unsavedGeometryOverlay,
-      }),
-    [displayMergedRows, baselineByAnchor, selectedAnchor, geometryEditing, unsavedGeometryOverlay],
-  )
-
-  const editPointFeatureId = useMemo(() => {
-    if (!selectedAnchor) return null
-    const pts = mapCollections.points.features as Array<{ properties?: { id?: string } }>
-    const draftId = `${selectedAnchor}__draft`
-    if (pts.some((f) => f.properties?.id === draftId)) return draftId
-    if (pts.some((f) => f.properties?.id === selectedAnchor)) return selectedAnchor
-    return null
-  }, [mapCollections.points.features, selectedAnchor])
-
   const mapDraftGeometry = useMemo(() => {
     if (!selectedAnchor) return null
     if (geometryEditing && geometryDraft !== undefined) {
@@ -435,6 +416,41 @@ export function ProcessedItemVerificationSection({
     const loc = row?.location as Record<string, unknown> | undefined
     return extractGeometryFromPlace(loc ?? null)
   }, [displayMergedRows, selectedAnchor, geometryEditing, geometryDraft])
+
+  const hideSelectedPolygonForRectangleEdit = useMemo(() => {
+    if (!geometryEditing || !selectedAnchor) return false
+    if (geometryAddMode === 'rectangle') return true
+    if (!mapDraftGeometry || !isPolygonGeometry(mapDraftGeometry)) return false
+    return isAxisAlignedRectanglePolygon(mapDraftGeometry)
+  }, [geometryEditing, selectedAnchor, geometryAddMode, mapDraftGeometry])
+
+  const mapCollections = useMemo(() => {
+    const base = buildVerificationLeafletCollections({
+      mergedRows: displayMergedRows,
+      baselineByAnchor,
+      selectedAnchor,
+      geometryEditing,
+      unsavedGeometryOverlay,
+    })
+    if (!hideSelectedPolygonForRectangleEdit || !selectedAnchor) return base
+    return stripSelectedVerificationPolygonsForEdit(base, selectedAnchor)
+  }, [
+    displayMergedRows,
+    baselineByAnchor,
+    selectedAnchor,
+    geometryEditing,
+    unsavedGeometryOverlay,
+    hideSelectedPolygonForRectangleEdit,
+  ])
+
+  const editPointFeatureId = useMemo(() => {
+    if (!selectedAnchor) return null
+    const pts = mapCollections.points.features as Array<{ properties?: { id?: string } }>
+    const draftId = `${selectedAnchor}__draft`
+    if (pts.some((f) => f.properties?.id === draftId)) return draftId
+    if (pts.some((f) => f.properties?.id === selectedAnchor)) return selectedAnchor
+    return null
+  }, [mapCollections.points.features, selectedAnchor])
 
   const handleMapGeometryChange = useCallback(
     (g: Record<string, unknown> | null) => {
@@ -1022,13 +1038,11 @@ export function ProcessedItemVerificationSection({
                         />
                       )}
                     </div>
-                    {selectedRow && isMergedRowLinkedToStylebook(selectedRow) ? (
+                    {geometryAddMode === 'rectangle' ? (
                       <p className="shrink-0 text-xs text-muted-foreground">
-                        Editing this story&apos;s place. The Stylebook place will not change unless you
-                        choose Adopt for Stylebook.
+                        Hold Shift and drag on the map to draw an axis-aligned rectangle.
                       </p>
-                    ) : null}
-                    {selectedRow && isReviewOnlyMergedRow(selectedRow) ? (
+                    ) : selectedRow && isReviewOnlyMergedRow(selectedRow) ? (
                       <p className="shrink-0 text-xs text-muted-foreground">
                         These changes are saved with this review only until the place is persisted for this
                         story.

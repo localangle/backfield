@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { matchPath, NavLink, useLocation } from 'react-router-dom'
 import {
-  BookOpen,
   HelpCircle,
-  Newspaper,
   Settings,
 } from 'lucide-react'
 import { ShellSidebar } from '@backfield/ui'
@@ -197,7 +195,9 @@ export default function AppSidebar() {
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
               {expanded ? (
                 <div className={sectionTitleClass}>
-                  <Newspaper className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="shrink-0 text-base leading-none" aria-hidden>
+                    🏷️
+                  </span>
                   <span>Agate</span>
                 </div>
               ) : (
@@ -205,11 +205,11 @@ export default function AppSidebar() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="w-full h-9 shrink-0"
+                  className="w-full h-9 shrink-0 text-lg"
                   onClick={() => expand()}
                   title="Agate — workspaces"
                 >
-                  <Newspaper className="h-5 w-5" aria-hidden />
+                  <span aria-hidden>🏷️</span>
                 </Button>
               )}
 
@@ -262,7 +262,9 @@ export default function AppSidebar() {
                   <div className="border-t border-border/50 my-1" />
                   {expanded ? (
                     <div className={sectionTitleClass}>
-                      <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+                      <span className="shrink-0 text-base leading-none" aria-hidden>
+                        📖
+                      </span>
                       <span>Stylebook</span>
                     </div>
                   ) : (
@@ -270,11 +272,11 @@ export default function AppSidebar() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="w-full h-9 shrink-0"
+                      className="w-full h-9 shrink-0 text-lg"
                       onClick={() => expand()}
                       title="Stylebook"
                     >
-                      <BookOpen className="h-5 w-5" aria-hidden />
+                      <span aria-hidden>📖</span>
                     </Button>
                   )}
                   {(expanded ? sortedStylebooks : []).map((sb) => {
