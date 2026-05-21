@@ -797,6 +797,8 @@ def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path
                 input_json='{"text":"hello"}',
                 status="succeeded",
                 result_json='{"ok":true}',
+                overlay_json='{"places":{}}',
+                overlay_version=3,
             )
             s.add(item)
             s.commit()
@@ -818,6 +820,9 @@ def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path
             assert again.status == "pending"
             assert again.result_json is None
             assert again.error_message is None
+            assert again.replace_article_geography_on_persist is True
+            assert again.overlay_json is None
+            assert again.overlay_version == 0
             run_row = s.get(AgateRun, rid)
             assert run_row is not None
             assert run_row.status == "running"
@@ -895,10 +900,57 @@ def test_rerun_synthetic_whole_graph_run_resets_run_and_enqueues_task(
             assert again.status == "pending"
             assert again.result_json is None
             assert again.error_message is None
+            assert again.replace_article_geography_on_persist is True
 
         assert captured["name"] == "worker.tasks.execute_agate_run"
         assert captured["args"] == [rid]
         assert captured["queue"] == "agate"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_run_with_replace_article_geography_flag(monkeypatch, tmp_path):
+    database_path = tmp_path / "agate-replace-flag.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post(
+            "/projects", json={"name": "Replace flag", "slug": "replace-flag"}
+        ).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "t",
+                "project_id": project["id"],
+                "spec": _minimal_text_input_spec(name="t"),
+            },
+        ).json()
+        run = tc.post(
+            "/runs",
+            json={
+                "graph_id": graph["id"],
+                "replace_article_geography_on_persist": True,
+            },
+        ).json()
+        with Session(engine) as s:
+            row = s.get(AgateRun, run["id"])
+            assert row is not None
+            assert row.replace_article_geography_on_persist is True
     finally:
         app.dependency_overrides.clear()
 

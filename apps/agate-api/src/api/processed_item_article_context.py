@@ -9,6 +9,24 @@ from backfield_db import SubstrateArticle
 from sqlmodel import Session
 
 
+def parse_persisted_article_id_from_output(result_obj: dict[str, Any] | None) -> int | None:
+    """Article id written by DBOutput on ``stylebook_output`` / legacy keys."""
+    if not isinstance(result_obj, dict):
+        return None
+    for key in ("stylebook_output", "geocode_agent", "place_extract"):
+        block = result_obj.get(key)
+        if not isinstance(block, dict):
+            continue
+        raw = block.get("article_id")
+        if raw is None:
+            continue
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def _parse_input_article_id(input_obj: dict[str, Any]) -> int | None:
     for key in ("input_article_id", "article_id", "substrate_article_id"):
         raw = input_obj.get(key)
@@ -34,12 +52,15 @@ def build_processed_item_article_context(
     *,
     project_id: int,
     input_obj: dict[str, Any],
+    result_obj: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return a dict suitable for :class:`ArticleContextOut` on processed item detail."""
     fallback_body = resolve_document_body_text(input_obj) or ""
     fallback_headline = _fallback_headline(input_obj)
 
     aid = _parse_input_article_id(input_obj)
+    if aid is None:
+        aid = parse_persisted_article_id_from_output(result_obj)
     if aid is None:
         if fallback_body:
             return {

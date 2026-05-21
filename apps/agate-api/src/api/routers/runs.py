@@ -87,6 +87,7 @@ class RunEstimatedAiCostOut(BaseModel):
 
 class RunCreate(BaseModel):
     graph_id: str
+    replace_article_geography_on_persist: bool = False
 
 
 class ProcessedItemOut(BaseModel):
@@ -445,7 +446,11 @@ def create_run(
         raise HTTPException(404, "Graph not found")
     require_project_access(session, auth, int(g.project_id))
     is_s3_batch = graph_spec_json_contains_s3_input(g.spec_json)
-    run = AgateRun(graph_id=g.id, status="pending")
+    run = AgateRun(
+        graph_id=g.id,
+        status="pending",
+        replace_article_geography_on_persist=body.replace_article_geography_on_persist,
+    )
     session.add(run)
     session.commit()
     session.refresh(run)
@@ -632,7 +637,7 @@ def _detail_from_agate_processed_row(
     )
 
     article_ctx_dict = build_processed_item_article_context(
-        session, project_id=project_id, input_obj=input_obj
+        session, project_id=project_id, input_obj=input_obj, result_obj=output_obj
     )
     article_ctx = ArticleContextOut.model_validate(article_ctx_dict)
 
@@ -711,7 +716,7 @@ def _maybe_detail_whole_graph_run(
 
     project_id = _graph_project_id(session, run.graph_id)
     article_ctx_dict = build_processed_item_article_context(
-        session, project_id=project_id, input_obj={}
+        session, project_id=project_id, input_obj={}, result_obj=output_obj
     )
     article_ctx = ArticleContextOut.model_validate(article_ctx_dict)
 
@@ -920,6 +925,7 @@ def rerun_run_processed_item(
         r.status = "pending"
         r.result_json = None
         r.error_message = None
+        r.replace_article_geography_on_persist = True
         r.updated_at = datetime.now(UTC)
         session.add(r)
         session.commit()
@@ -948,6 +954,9 @@ def rerun_run_processed_item(
     item.status = "pending"
     item.result_json = None
     item.error_message = None
+    item.replace_article_geography_on_persist = True
+    item.overlay_json = None
+    item.overlay_version = 0
     item.updated_at = datetime.now(UTC)
     session.add(item)
     session.commit()

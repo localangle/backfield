@@ -23,6 +23,10 @@ import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { formatDateCentral } from '@/lib/utils'
 import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
+import {
+  RERUN_GEOGRAPHY_WARNING_TITLE,
+  rerunGeographyWarningBody,
+} from '@/lib/rerunGeographyWarning'
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
 import { ArrowLeft, ArrowRight, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -136,11 +140,17 @@ export default function RunDetail() {
   async function handleRunAgain() {
     if (!run || !graph) return
 
+    const ok = await showConfirm(rerunGeographyWarningBody(1), {
+      title: RERUN_GEOGRAPHY_WARNING_TITLE,
+      confirmLabel: 'Run again',
+      destructive: true,
+    })
+    if (!ok) return
+
     try {
       setRunningAgain(true)
-      // Create a new run with the same graph ID and empty input (input is part of graph spec)
       const newRun = await createRun(run.graph_id, {
-        input: {}
+        replace_article_geography_on_persist: true,
       })
       // Navigate to the new run detail page
       navigate(`/runs/${newRun.id}`)
@@ -213,9 +223,11 @@ export default function RunDetail() {
   async function handleBulkRerun() {
     if (!runId || selectedItems.size === 0) return
 
-    const ok = await showConfirm(`Are you sure you want to rerun ${selectedItems.size} item(s)?`, {
-      title: 'Rerun items',
-      confirmLabel: 'Rerun',
+    const count = selectedItems.size
+    const ok = await showConfirm(rerunGeographyWarningBody(count), {
+      title: RERUN_GEOGRAPHY_WARNING_TITLE,
+      confirmLabel: count === 1 ? 'Rerun' : `Rerun ${count} items`,
+      destructive: true,
     })
     if (!ok) return
 

@@ -100,8 +100,13 @@ def unlink_substrate_from_canonical(
     stylebook_id: int,
     location: SubstrateLocation,
     provenance: str = "stylebook_ui_unlink",
+    requeue_after_unlink: bool = True,
 ) -> None:
-    """Clear canonical FK; set pending; remove matching alias on old canonical when safe."""
+    """Clear canonical FK; remove matching alias on old canonical when safe.
+
+    When ``requeue_after_unlink`` is true (default), set ``pending`` for the open candidate
+    queue. When false, set ``unlinked`` so the row stays out of the queue (story-only remove).
+    """
     if location.id is None:
         raise ValueError("location must be persisted")
     if str(location.canonical_link_status) != CANONICAL_LINK_LINKED:
@@ -122,15 +127,83 @@ def unlink_substrate_from_canonical(
         exclude_substrate_location_id=lid,
     )
     location.stylebook_location_canonical_id = None
-    location.canonical_link_status = CANONICAL_LINK_PENDING
+    location.canonical_link_status = (
+        CANONICAL_LINK_PENDING if requeue_after_unlink else CANONICAL_LINK_UNLINKED
+    )
     location.canonical_review_reasons_json = [
         {
-            "code": "unlinked_from_canonical",
+            "code": "unlinked_from_canonical" if requeue_after_unlink else "removed_from_story",
             "previous_canonical_id": old,
             "provenance": provenance,
         }
     ]
     session.add(location)
+
+
+def dispose_orphan_substrate_without_requeue(
+    session: Session,
+    *,
+    location: SubstrateLocation,
+    provenance: str,
+) -> None:
+    """Unlink from catalog without entering the open queue, then delete the substrate row."""
+    if location.id is None:
+        raise ValueError("location must be persisted")
+
+    st = str(location.canonical_link_status or "")
+    if st == CANONICAL_LINK_LINKED and location.stylebook_location_canonical_id is not None:
+        cid = location.stylebook_location_canonical_id
+        canon = session.get(StylebookLocationCanonical, str(cid))
+        sb_id = int(canon.stylebook_id) if canon is not None else 0
+        if canon is not None and sb_id > 0:
+            unlink_substrate_from_canonical(
+                session,
+                stylebook_id=sb_id,
+                location=location,
+                provenance=provenance,
+                requeue_after_unlink=False,
+            )
+        else:
+            location.stylebook_location_canonical_id = None
+            location.canonical_link_status = CANONICAL_LINK_UNLINKED
+            location.canonical_review_reasons_json = [
+                {
+                    "code": "removed_from_story",
+                    "previous_canonical_id": str(cid),
+                    "provenance": provenance,
+                    "note": "canonical_row_missing",
+                }
+            ]
+            session.add(location)
+    elif st == CANONICAL_LINK_PENDING and location.stylebook_location_canonical_id is not None:
+        location.stylebook_location_canonical_id = None
+        session.add(location)
+
+    session.delete(location)
+
+
+def finalize_substrate_after_article_scoped_remove(
+    session: Session,
+    *,
+    location: SubstrateLocation,
+    remaining_active_mentions: int,
+    provenance: str = "agate_review_delete",
+) -> tuple[bool, int]:
+    """Finish substrate handling after soft-deleting mentions for one article.
+
+    Returns ``(location_deleted, candidates_created)``. When other stories still have
+    active mentions on this substrate, the row and catalog link are left unchanged.
+    When none remain, unlink without requeue (if linked) and delete the substrate row.
+    """
+    if remaining_active_mentions > 0:
+        return False, 0
+    if location.id is None:
+        return False, 0
+
+    dispose_orphan_substrate_without_requeue(
+        session, location=location, provenance=provenance
+    )
+    return True, 0
 
 
 def requeue_substrate_after_story_remove(
@@ -150,9 +223,25 @@ def requeue_substrate_after_story_remove(
         raise ValueError("location must be persisted")
     st = str(location.canonical_link_status or "")
     if st == CANONICAL_LINK_LINKED and location.stylebook_location_canonical_id is not None:
+        cid = location.stylebook_location_canonical_id
+        canon = session.get(StylebookLocationCanonical, str(cid))
+        if canon is None:
+            location.stylebook_location_canonical_id = None
+            location.canonical_link_status = CANONICAL_LINK_PENDING
+            location.canonical_review_reasons_json = [
+                {
+                    "code": "unlinked_from_canonical",
+                    "previous_canonical_id": str(cid),
+                    "provenance": provenance,
+                    "note": "canonical_row_missing",
+                }
+            ]
+            session.add(location)
+            return True
+        # Use the canonical row's stylebook (may differ from project default resolution).
         unlink_substrate_from_canonical(
             session,
-            stylebook_id=stylebook_id,
+            stylebook_id=int(canon.stylebook_id),
             location=location,
             provenance=provenance,
         )

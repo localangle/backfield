@@ -152,3 +152,30 @@ def test_article_context_project_mismatch() -> None:
         assert ctx["resolution"] == "inline_fallback"
         assert ctx["reason"] == "article_project_mismatch"
         assert ctx["body"] == "safe"
+
+
+def test_article_context_falls_back_to_persisted_output_article_id() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        _oid, pid = _org_and_project(session)
+        art = SubstrateArticle(
+            project_id=pid,
+            headline="From output",
+            text="Persisted body",
+            url=f"https://example.com/out-{pid}",
+        )
+        session.add(art)
+        session.commit()
+        session.refresh(art)
+        aid = int(art.id)
+
+        ctx = build_processed_item_article_context(
+            session,
+            project_id=pid,
+            input_obj={"text": "inline only"},
+            result_obj={"stylebook_output": {"article_id": aid}},
+        )
+        assert ctx["article_id"] == aid
+        assert ctx["resolution"] == "substrate"
+        assert ctx["body"] == "Persisted body"

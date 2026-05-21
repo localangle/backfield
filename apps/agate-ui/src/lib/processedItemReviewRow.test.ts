@@ -4,6 +4,7 @@ import {
   getMergedRowStylebookCanonicalId,
   isMergedRowLinkedToStylebook,
   isReviewOnlyMergedRow,
+  resolveProcessedItemArticleId,
   resolveStylebookSlugForLinkedRow,
   shouldShowAdoptForStylebook,
 } from './processedItemReviewRow'
@@ -46,6 +47,29 @@ describe('processedItemReviewRow', () => {
 
   it('treats missing persisted id as review-only', () => {
     expect(isReviewOnlyMergedRow({ anchor: 'a' })).toBe(true)
+  })
+
+  it('resolves article id from context then input keys', () => {
+    expect(
+      resolveProcessedItemArticleId(
+        { article_id: 9, body: '', resolution: 'substrate' },
+        { input_article_id: 3 },
+      ),
+    ).toBe(9)
+    expect(
+      resolveProcessedItemArticleId(
+        { article_id: null, body: 'x', resolution: 'inline_fallback' },
+        { substrate_article_id: '12' },
+      ),
+    ).toBe(12)
+    expect(resolveProcessedItemArticleId(undefined, {})).toBeNull()
+    expect(
+      resolveProcessedItemArticleId(
+        { article_id: null, body: 'x', resolution: 'inline_fallback' },
+        {},
+        { stylebook_output: { article_id: 77 } },
+      ),
+    ).toBe(77)
   })
 
   it('prefers row stylebook_slug over workspace slug for links', () => {

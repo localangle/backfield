@@ -1077,6 +1077,11 @@ class AgateRun(SQLModel, table=True):
     status: str = Field(default="pending", sa_column=Column(Text, nullable=False))
     result_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    #: When true, the next DBOutput persist for this run replaces pipeline geography per article.
+    replace_article_geography_on_persist: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
@@ -1105,6 +1110,11 @@ class AgateProcessedItem(SQLModel, table=True):
     overlay_version: int = Field(
         default=0,
         sa_column=Column(Integer, nullable=False, server_default=text("0")),
+    )
+    #: When true, next DBOutput persist replaces pipeline geography for this item's article.
+    replace_article_geography_on_persist: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
     )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -34,8 +34,13 @@ from celery import Celery, chord, group
 from sqlmodel import Session, select
 
 from worker.nodes.db_output import run_db_output
+from worker.replace_geography_flags import clear_replace_article_geography_flags
 
 logger = logging.getLogger(__name__)
+
+
+def _graph_has_db_output(spec: GraphSpec) -> bool:
+    return any(node.type == "DBOutput" for node in spec.nodes)
 
 # Must match ``apps/agate-api`` cancel handler so workers stop after ``POST /runs/{id}/cancel``.
 _RUN_CANCELLED_MESSAGE = "Run cancelled by user"
@@ -65,12 +70,23 @@ def _env_overlay(updates: dict[str, str]):
 
 
 @contextmanager
-def _run_execution_env(*, project_id: int, graph_id: str, run_id: str):
-    updates = {
+def _run_execution_env(
+    *,
+    project_id: int,
+    graph_id: str,
+    run_id: str,
+    replace_article_geography: bool = False,
+    processed_item_id: int | None = None,
+):
+    updates: dict[str, str] = {
         "BACKFIELD_PROJECT_ID": str(project_id),
         "BACKFIELD_GRAPH_ID": str(graph_id),
         "BACKFIELD_RUN_ID": str(run_id),
     }
+    if replace_article_geography:
+        updates["BACKFIELD_REPLACE_ARTICLE_GEOGRAPHY"] = "1"
+    if processed_item_id is not None:
+        updates["BACKFIELD_PROCESSED_ITEM_ID"] = str(int(processed_item_id))
     with _env_overlay(updates):
         yield
 
@@ -175,11 +191,13 @@ def execute_agate_run(run_id: str) -> None:
                     run_id=run.id,
                 )
             )
+            replace_geography = bool(run.replace_article_geography_on_persist)
             try:
                 with _env_overlay(overlay), _run_execution_env(
                     project_id=graph.project_id,
                     graph_id=graph.id,
                     run_id=run.id,
+                    replace_article_geography=replace_geography,
                 ):
                     outputs = execute_graph(
                         spec,
@@ -193,6 +211,8 @@ def execute_agate_run(run_id: str) -> None:
             run = session.get(AgateRun, run_id)
             if not run or run.status != "running":
                 return
+            if replace_geography and not _graph_has_db_output(spec) and run.id is not None:
+                clear_replace_article_geography_flags(session, run_id=str(run.id))
             run.status = "succeeded"
             run.result_json = json.dumps(outputs)
             run.error_message = None
@@ -484,6 +504,10 @@ def execute_processed_item(item_id: int) -> None:
 
             node_runners["JSONInput"] = json_input_shim
 
+        replace_geography = bool(
+            item.replace_article_geography_on_persist or run.replace_article_geography_on_persist
+        )
+        iid = int(item.id) if item.id is not None else None
         try:
             track_tok = attach_llm_tracking_context(
                 LlmAttemptTrackingContext(
@@ -498,6 +522,8 @@ def execute_processed_item(item_id: int) -> None:
                     project_id=graph.project_id,
                     graph_id=graph.id,
                     run_id=run.id,
+                    replace_article_geography=replace_geography,
+                    processed_item_id=iid,
                 ):
                     outputs = execute_graph(
                         spec,
@@ -515,6 +541,12 @@ def execute_processed_item(item_id: int) -> None:
             item.status = "failed"
             item.error_message = str(e)
             item.result_json = None
+        if replace_geography and not _graph_has_db_output(spec) and run.id is not None:
+            clear_replace_article_geography_flags(
+                session,
+                run_id=str(run.id),
+                processed_item_id=iid,
+            )
         item.updated_at = datetime.now(UTC)
         session.add(item)
         session.commit()

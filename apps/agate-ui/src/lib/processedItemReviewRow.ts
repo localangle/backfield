@@ -3,7 +3,54 @@
  * See ``docs/API.md`` → processed item review enrichment.
  */
 
+import type { ArticleContext } from './api'
 import { extractGeometryFromPlace } from './processedItemPlaceGeometry'
+
+const ARTICLE_ID_INPUT_KEYS = ['input_article_id', 'article_id', 'substrate_article_id'] as const
+
+const ARTICLE_ID_OUTPUT_KEYS = ['stylebook_output', 'geocode_agent', 'place_extract'] as const
+
+function parseArticleIdFromPersistedOutput(
+  output: Record<string, unknown> | undefined,
+): number | null {
+  if (!output || typeof output !== 'object') return null
+  for (const key of ARTICLE_ID_OUTPUT_KEYS) {
+    const block = output[key]
+    if (!block || typeof block !== 'object') continue
+    const hit = parsePositiveArticleId((block as Record<string, unknown>).article_id)
+    if (hit !== null) return hit
+  }
+  return null
+}
+
+function parsePositiveArticleId(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+    return Math.trunc(raw)
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return Math.trunc(n)
+  }
+  return null
+}
+
+/** Article id for story-scoped Stylebook calls (matches API ``build_processed_item_article_context``). */
+export function resolveProcessedItemArticleId(
+  articleContext: ArticleContext | undefined,
+  itemInput: Record<string, unknown> | undefined,
+  itemOutput?: Record<string, unknown> | undefined,
+): number | null {
+  const fromContext = parsePositiveArticleId(articleContext?.article_id)
+  if (fromContext !== null) return fromContext
+  if (!itemInput || typeof itemInput !== 'object') {
+    return parseArticleIdFromPersistedOutput(itemOutput)
+  }
+  for (const key of ARTICLE_ID_INPUT_KEYS) {
+    const hit = parsePositiveArticleId(itemInput[key])
+    if (hit !== null) return hit
+  }
+  return parseArticleIdFromPersistedOutput(itemOutput)
+}
 
 export interface MergedRowStylebookLink {
   label: string

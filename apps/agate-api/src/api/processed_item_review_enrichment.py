@@ -276,9 +276,16 @@ def enrich_merged_locations_for_review(
             enriched.append(out)
             continue
 
-        out["persisted_location_id"] = int(substrate.id)
+        mention = mentions_by_location.get(int(substrate.id))
+        has_active_story_mention = article_id is None or mention is not None
+        if has_active_story_mention:
+            out["persisted_location_id"] = int(substrate.id)
         cid = substrate.stylebook_location_canonical_id
-        if cid and str(substrate.canonical_link_status) == CANONICAL_LINK_LINKED:
+        if (
+            has_active_story_mention
+            and cid
+            and str(substrate.canonical_link_status) == CANONICAL_LINK_LINKED
+        ):
             canon = canons.get(str(cid))
             out["stylebook_location_canonical_id"] = str(cid)
             if canon is not None:
@@ -300,7 +307,8 @@ def enrich_merged_locations_for_review(
                 }
 
         if isinstance(loc_payload, dict):
-            mention = mentions_by_location.get(int(substrate.id))
+            if mention is None:
+                mention = mentions_by_location.get(int(substrate.id))
             if mention is not None:
                 loc_payload = _apply_mention_editorial_to_place(loc_payload, mention)
             if isinstance(substrate.geometry_json, dict):

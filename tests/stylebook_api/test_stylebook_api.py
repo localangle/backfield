@@ -1749,9 +1749,10 @@ def test_post_unlink_canonical_prunes_alias_when_sole_substrate(
         assert len(aliases_after) == 0
 
 
-def test_delete_location_article_scoped_requeues_linked_substrate(
+def test_delete_location_article_scoped_removes_orphan_linked_substrate_without_requeue(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:
+    """Sole mention removed: unlink from canonical and delete row; not open candidates."""
     engine = stylebook_test_engine
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -1815,14 +1816,11 @@ def test_delete_location_article_scoped_requeues_linked_substrate(
     assert r_del.status_code == 200
     body = r_del.json()
     assert body["mentions_removed"] == 1
-    assert body["location_deleted"] is False
-    assert body["candidates_created"] == 1
+    assert body["location_deleted"] is True
+    assert body["candidates_created"] == 0
 
     with Session(engine) as s:
-        row = s.get(SubstrateLocation, sid)
-        assert row is not None
-        assert row.stylebook_location_canonical_id is None
-        assert row.canonical_link_status == CANONICAL_LINK_PENDING
+        assert s.get(SubstrateLocation, sid) is None
         men = s.exec(
             select(SubstrateLocationMention).where(
                 SubstrateLocationMention.location_id == sid,
@@ -1833,6 +1831,276 @@ def test_delete_location_article_scoped_requeues_linked_substrate(
 
     r_cand = client.get(
         "/v1/candidates?project_slug=demo-proj&status=open&q=west+end",
+        headers=_service_headers(),
+    )
+    assert r_cand.status_code == 200
+    assert not any(c["id"] == sid for c in r_cand.json()["candidates"])
+
+
+def test_delete_location_article_scoped_keeps_link_when_other_stories_mention(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Shared place",
+            slug="shared-place",
+            location_type="place",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.flush()
+        cid = str(canon.id)
+        art_a = SubstrateArticle(
+            project_id=pid,
+            headline="Story A",
+            text="First story.",
+            url="https://example.com/a",
+            deleted=False,
+        )
+        art_b = SubstrateArticle(
+            project_id=pid,
+            headline="Story B",
+            text="Second story.",
+            url="https://example.com/b",
+            deleted=False,
+        )
+        s.add(art_a)
+        s.add(art_b)
+        s.flush()
+        aid_a = int(art_a.id)  # type: ignore[arg-type]
+        aid_b = int(art_b.id)  # type: ignore[arg-type]
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Shared Ave",
+            normalized_name="shared ave",
+            location_type="address",
+            identity_fingerprint="fp-shared",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.flush()
+        sid = int(loc.id)  # type: ignore[arg-type]
+        s.add(
+            SubstrateLocationMention(
+                article_id=aid_a,
+                location_id=sid,
+                needs_review=False,
+                deleted=False,
+            )
+        )
+        s.add(
+            SubstrateLocationMention(
+                article_id=aid_b,
+                location_id=sid,
+                needs_review=False,
+                deleted=False,
+            )
+        )
+        s.commit()
+
+    r_link = client.post(
+        f"/v1/locations/{sid}/link-canonical?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"stylebook_location_canonical_id": cid},
+    )
+    assert r_link.status_code == 200
+
+    r_del = client.delete(
+        f"/v1/locations/{sid}?project_slug=demo-proj&article_id={aid_a}",
+        headers=_service_headers(),
+    )
+    assert r_del.status_code == 200
+    body = r_del.json()
+    assert body["mentions_removed"] == 1
+    assert body["location_deleted"] is False
+    assert body["candidates_created"] == 0
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.stylebook_location_canonical_id == cid
+        assert row.canonical_link_status == CANONICAL_LINK_LINKED
+        active = s.exec(
+            select(SubstrateLocationMention).where(
+                SubstrateLocationMention.location_id == sid,
+                SubstrateLocationMention.deleted == False,  # noqa: E712
+            )
+        ).all()
+        assert len(active) == 1
+        assert int(active[0].article_id) == aid_b
+
+
+def test_delete_location_article_scoped_unlinks_when_canonical_in_non_default_stylebook(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    """Delete must unlink using the canonical's stylebook, not only the project default."""
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        org = s.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+        ).one()
+        oid = int(org.id)
+        default_sb = s.exec(
+            select(Stylebook).where(
+                Stylebook.organization_id == oid,
+                Stylebook.is_default.is_(True),
+            )
+        ).one()
+        other_sb = Stylebook(
+            organization_id=oid,
+            slug="regional",
+            name="Regional Stylebook",
+            is_default=False,
+        )
+        s.add(other_sb)
+        s.flush()
+        other_sb_id = int(other_sb.id)
+        assert int(default_sb.id) != other_sb_id
+
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=other_sb_id,
+            label="South Shore",
+            slug="south-shore-regional",
+            location_type="neighborhood",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.flush()
+        cid = str(canon.id)
+        art = SubstrateArticle(
+            project_id=pid,
+            headline="Story",
+            text="In South Shore.",
+            url="https://example.com/ss",
+            deleted=False,
+        )
+        s.add(art)
+        s.flush()
+        aid = int(art.id)  # type: ignore[arg-type]
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="South Shore",
+            normalized_name="south shore",
+            location_type="neighborhood",
+            identity_fingerprint="fp-south-shore",
+            stylebook_location_canonical_id=cid,
+            canonical_link_status=CANONICAL_LINK_LINKED,
+        )
+        s.add(loc)
+        s.flush()
+        sid = int(loc.id)  # type: ignore[arg-type]
+        s.add(
+            SubstrateLocationMention(
+                article_id=aid,
+                location_id=sid,
+                needs_review=False,
+                deleted=False,
+            )
+        )
+        s.commit()
+
+    r_del = client.delete(
+        f"/v1/locations/{sid}?project_slug=demo-proj"
+        f"&article_id={aid}&stylebook_slug=regional",
+        headers=_service_headers(),
+    )
+    assert r_del.status_code == 200, r_del.text
+    assert r_del.json()["location_deleted"] is True
+    assert r_del.json()["candidates_created"] == 0
+
+    with Session(engine) as s:
+        assert s.get(SubstrateLocation, sid) is None
+
+
+def test_delete_location_without_article_id_requeues_linked_substrate(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    """Agate review may omit article_id; linked rows must not be hard-deleted."""
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Loop",
+            slug="loop-place",
+            location_type="place",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.flush()
+        cid = str(canon.id)
+        art = SubstrateArticle(
+            project_id=pid,
+            headline="Loop story",
+            text="Near the Loop.",
+            url="https://example.com/loop",
+            deleted=False,
+        )
+        s.add(art)
+        s.flush()
+        aid = int(art.id)  # type: ignore[arg-type]
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Chicago Loop",
+            normalized_name="chicago loop",
+            location_type="neighborhood",
+            identity_fingerprint="fp-loop",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.flush()
+        sid = int(loc.id)  # type: ignore[arg-type]
+        s.add(
+            SubstrateLocationMention(
+                article_id=aid,
+                location_id=sid,
+                needs_review=False,
+                deleted=False,
+            )
+        )
+        s.commit()
+
+    r_link = client.post(
+        f"/v1/locations/{sid}/link-canonical?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"stylebook_location_canonical_id": cid},
+    )
+    assert r_link.status_code == 200
+
+    r_del = client.delete(
+        f"/v1/locations/{sid}?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r_del.status_code == 200
+    body = r_del.json()
+    assert body["mentions_removed"] == 1
+    assert body["location_deleted"] is False
+    assert body["candidates_created"] == 1
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.stylebook_location_canonical_id is None
+        assert row.canonical_link_status == CANONICAL_LINK_PENDING
+
+    r_cand = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open&q=loop",
         headers=_service_headers(),
     )
     assert r_cand.status_code == 200

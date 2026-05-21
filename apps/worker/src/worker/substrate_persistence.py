@@ -23,6 +23,10 @@ from sqlmodel import Session
 
 from worker.canonical_adjudication import adjudicate_ambiguous_plan_with_llm
 from worker.substrate_article import _sync_images, _upsert_article
+from worker.substrate_article_geography_reset import (
+    ArticleGeographyReplaceStats,
+    replace_machine_geography_for_article,
+)
 from worker.substrate_location import _iter_place_entries, _upsert_location
 from worker.substrate_mentions import (
     _upsert_mention_and_occurrence,
@@ -43,7 +47,8 @@ def persist_from_consolidated(
     run_id: str,
     consolidated: dict[str, Any],
     db_output_params: dict[str, Any] | None = None,
-) -> tuple[int, int]:
+    replace_machine_geography: bool = False,
+) -> tuple[int, int, ArticleGeographyReplaceStats | None]:
     places = consolidated.get("places")
     if not isinstance(places, dict):
         raise RuntimeError(
@@ -70,6 +75,23 @@ def persist_from_consolidated(
         stylebook_id = None
     except ValueError as exc:
         raise RuntimeError(f"DBOutput stylebook resolution failed: {exc}") from exc
+
+    replace_stats: ArticleGeographyReplaceStats | None = None
+    if replace_machine_geography and article.id is not None:
+        replace_stats = replace_machine_geography_for_article(
+            session,
+            project_id=int(project_id),
+            article_id=int(article.id),
+            stylebook_id=stylebook_id,
+        )
+        if replace_stats.mentions_cleared or replace_stats.substrates_disposed:
+            logger.warning(
+                "Replaced machine geography for article_id=%s before persist: "
+                "%s mention(s) cleared, %s orphan substrate(s) disposed",
+                article.id,
+                replace_stats.mentions_cleared,
+                replace_stats.substrates_disposed,
+            )
 
     touched_location_ids: set[int] = set()
 
@@ -147,7 +169,11 @@ def persist_from_consolidated(
         )
 
     retired_mentions = 0
-    if article.id is not None and touched_location_ids:
+    if (
+        not replace_machine_geography
+        and article.id is not None
+        and touched_location_ids
+    ):
         retired_mentions = retire_stale_article_mentions_for_rerun(
             session,
             article_id=int(article.id),
@@ -161,4 +187,4 @@ def persist_from_consolidated(
                 run_id,
             )
 
-    return int(article.id), retired_mentions
+    return int(article.id), retired_mentions, replace_stats

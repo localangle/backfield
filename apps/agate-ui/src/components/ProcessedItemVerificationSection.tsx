@@ -38,6 +38,7 @@ import {
 } from '@/lib/processedItemPlaceEditFields'
 import {
   getMergedRowPersistedLocationId,
+  resolveProcessedItemArticleId,
   getMergedRowStylebookCanonicalId,
   getMergedRowStylebookLink,
   isMergedRowLinkedToStylebook,
@@ -517,10 +518,11 @@ export function ProcessedItemVerificationSection({
           })
           return false
         }
-        const articleId =
-          typeof article?.article_id === 'number' && article.article_id > 0
-            ? article.article_id
-            : null
+        const articleId = resolveProcessedItemArticleId(
+          article,
+          item.input,
+          item.output ?? item.node_outputs,
+        )
         if (geometryDirty) {
           await updateSavedPlaceGeometry(persistedId, projectSlug, geometryDraft)
         }
@@ -584,6 +586,7 @@ export function ProcessedItemVerificationSection({
     geometrySaving,
     catalogProjectSlug,
     article,
+    item.input,
     runId,
     item.id,
     item.overlay_version,
@@ -673,7 +676,7 @@ export function ProcessedItemVerificationSection({
       const display = getGeocodedPlaceDisplay(row.location as Record<string, unknown> | undefined)
       const label = display.name?.trim() || 'this place'
       const ok = await showConfirm(
-        `Remove “${label}” from this story? Mentions for this article will be removed. If it was linked in your catalog, it will return to Stylebook candidates for you to link again.`,
+        `Remove “${label}” from this story? Mentions for this article will be removed. If no other stories use this saved place, it will be unlinked from your catalog and removed.`,
         {
           title: 'Remove place from story',
           confirmLabel: 'Remove from story',
@@ -694,15 +697,17 @@ export function ProcessedItemVerificationSection({
           ? catalogProjectSlug.trim()
           : ''
       const persistedId = getMergedRowPersistedLocationId(row)
-      const articleId =
-        typeof article?.article_id === 'number' && article.article_id > 0
-          ? article.article_id
-          : null
+      const stylebookSlug = resolveStylebookSlugForLinkedRow(row, catalogStylebookSlug)
+      const articleId = resolveProcessedItemArticleId(
+        article,
+        item.input,
+        item.output ?? item.node_outputs,
+      )
 
       setSaving(true)
       try {
         if (persistedId && projectSlug) {
-          await deleteSavedPlace(persistedId, projectSlug, articleId)
+          await deleteSavedPlace(persistedId, projectSlug, articleId, stylebookSlug)
         }
         const updated = await patchProcessedItemOverlay(
           runId,
@@ -731,12 +736,16 @@ export function ProcessedItemVerificationSection({
       }
     },
     [
-      article?.article_id,
+      article,
       cancelGeometryEdit,
       catalogProjectSlug,
+      catalogStylebookSlug,
       draftOverlay,
       geometryEditing,
       item.id,
+      item.input,
+      item.output,
+      item.node_outputs,
       item.overlay_version,
       onItemUpdated,
       runId,

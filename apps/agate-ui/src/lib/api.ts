@@ -186,7 +186,9 @@ export interface GraphCreate {
 }
 
 export interface RunCreate {
-  input: Record<string, unknown>
+  input?: Record<string, unknown>
+  /** When true (Run Again), the next persist replaces saved places for each story. */
+  replace_article_geography_on_persist?: boolean
 }
 
 export interface ProjectCreate {
@@ -499,10 +501,14 @@ export async function deleteGraph(id: string | number): Promise<void> {
   await fetchAPI(`/graphs/${id}`, { method: 'DELETE' })
 }
 
-export async function createRun(graphId: string | number, _data: RunCreate): Promise<Run> {
+export async function createRun(graphId: string | number, data: RunCreate = {}): Promise<Run> {
+  const body: Record<string, unknown> = { graph_id: String(graphId) }
+  if (data.replace_article_geography_on_persist) {
+    body.replace_article_geography_on_persist = true
+  }
   const raw = (await fetchAPI('/runs', {
     method: 'POST',
-    body: JSON.stringify({ graph_id: String(graphId) }),
+    body: JSON.stringify(body),
   })) as RawRun
   return normalizeRun(raw)
 }

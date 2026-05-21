@@ -12,6 +12,10 @@ import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, typ
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { formatDateCentral } from '@/lib/utils'
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
+import {
+  RERUN_GEOGRAPHY_WARNING_TITLE,
+  rerunGeographyWarningBody,
+} from '@/lib/rerunGeographyWarning'
 import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 
@@ -469,6 +473,12 @@ export default function ProcessedItemDetail() {
               disabled={rerunning || item.status === 'pending' || item.status === 'running'}
               onClick={async () => {
                 if (!runId || !itemId) return
+                const ok = await showConfirm(rerunGeographyWarningBody(1), {
+                  title: RERUN_GEOGRAPHY_WARNING_TITLE,
+                  confirmLabel: 'Rerun',
+                  destructive: true,
+                })
+                if (!ok) return
                 try {
                   setRerunning(true)
                   await rerunProcessedItem(runId, parseInt(itemId, 10))

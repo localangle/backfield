@@ -23,6 +23,7 @@ from backfield_stylebook.resolve import (
     resolve_effective_stylebook_id_for_project,
 )
 from backfield_stylebook.substrate_canonical_link_actions import (
+    finalize_substrate_after_article_scoped_remove,
     link_substrate_to_canonical_atomic,
     requeue_substrate_after_story_remove,
     unlink_substrate_from_canonical,
@@ -1102,12 +1103,13 @@ def patch_canonical_location_geometry(
 def delete_location(
     location_id: int,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
     article_id: int | None = Query(
         None,
         description=(
-            "When set, soft-delete mentions for this article only, unlink from any "
-            "canonical, and return the saved place to the open candidate queue instead "
-            "of deleting the substrate row."
+            "When set, soft-delete mentions for this article only. If no other active "
+            "mentions remain on this saved place, unlink from any canonical (without "
+            "re-queueing) and delete the substrate row; otherwise the catalog link is kept."
         ),
     ),
     session: Session = Depends(get_session),
@@ -1146,24 +1148,38 @@ def delete_location(
 
     location_deleted = False
     candidates_created = 0
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
     if article_id is not None:
-        stylebook_id = _require_stylebook_id(session, proj, None)
-        if requeue_substrate_after_story_remove(
-            session,
-            stylebook_id=stylebook_id,
-            location=loc,
-        ):
-            candidates_created = 1
-    elif remaining == 0:
         try:
-            session.delete(loc)
-            location_deleted = True
+            location_deleted, candidates_created = finalize_substrate_after_article_scoped_remove(
+                session,
+                location=loc,
+                remaining_active_mentions=remaining,
+            )
         except IntegrityError:
             session.rollback()
             raise HTTPException(
                 status_code=409,
                 detail="Location still has linked mentions or references; cannot delete.",
             ) from None
+    elif remaining == 0:
+        if requeue_substrate_after_story_remove(
+            session,
+            stylebook_id=stylebook_id,
+            location=loc,
+            provenance="stylebook_delete",
+        ):
+            candidates_created = 1
+        else:
+            try:
+                session.delete(loc)
+                location_deleted = True
+            except IntegrityError:
+                session.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="Location still has linked mentions or references; cannot delete.",
+                ) from None
     session.commit()
     return {
         "message": "deleted",

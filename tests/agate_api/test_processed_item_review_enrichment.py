@@ -206,3 +206,87 @@ def test_enrich_skips_unlinked_canonical() -> None:
         )
         assert out[0]["persisted_location_id"] == int(loc.id)
         assert "stylebook_link" not in out[0]
+
+
+def test_enrich_omits_stylebook_link_when_mention_deleted_for_article() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org3", slug="org-enrich-3")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+
+        stylebook = Stylebook(
+            organization_id=int(org.id),
+            name="SB3",
+            slug="sb-enrich-3",
+            is_default=True,
+        )
+        session.add(stylebook)
+        session.commit()
+        session.refresh(stylebook)
+
+        project = BackfieldProject(
+            organization_id=int(org.id),
+            name="Proj3",
+            slug="proj-enrich-3",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
+        article = SubstrateArticle(project_id=int(project.id), headline="H", text="B")
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),
+            label="South Shore",
+            slug="south-shore",
+            geometry_json={"type": "Point", "coordinates": [-87.6, 41.8]},
+            geometry_type="Point",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+
+        loc = SubstrateLocation(
+            project_id=int(project.id),
+            name="South Shore",
+            normalized_name="south shore",
+            stylebook_location_canonical_id=str(canon.id),
+            canonical_link_status=CANONICAL_LINK_LINKED,
+            source_details_json={"run_id": "run-3", "raw_entry_id": "ss1"},
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        session.add(
+            SubstrateLocationMention(
+                article_id=int(article.id),
+                location_id=int(loc.id),
+                deleted=True,
+            )
+        )
+        session.commit()
+
+        out = enrich_merged_locations_for_review(
+            session,
+            project_id=int(project.id),
+            run_id="run-3",
+            article_id=int(article.id),
+            merged_locations=[
+                {
+                    "anchor": "ss1",
+                    "location": {"id": "ss1", "description": "South Shore"},
+                }
+            ],
+        )
+        assert "stylebook_link" not in out[0]
+        assert "persisted_location_id" not in out[0]

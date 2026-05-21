@@ -202,6 +202,7 @@ def _upsert_mention_and_occurrence(
         session.add(mention)
         session.flush()
     else:
+        mention.deleted = False
         mention.role_in_story = role_str or mention.role_in_story
         mention.nature = nature_str or mention.nature
         mention.nature_secondary_tags_json = secondary_tags
