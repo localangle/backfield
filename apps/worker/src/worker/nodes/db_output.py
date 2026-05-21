@@ -35,7 +35,12 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
     from backfield_db.session import get_engine
 
     with Session(get_engine()) as session:
-        article_id, retired_mentions, replace_stats = persist_from_consolidated(
+        (
+            article_id,
+            retired_mentions,
+            substrates_disposed,
+            replace_stats,
+        ) = persist_from_consolidated(
             session,
             project_id=project_id,
             graph_id=graph_id,
@@ -59,15 +64,19 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
             f"; replaced geography ({replace_stats.mentions_cleared} mention(s) cleared, "
             f"{replace_stats.substrates_disposed} prior saved place(s) removed)"
         )
-    elif retired_mentions:
-        message += (
-            f"; retired {retired_mentions} superseded place link(s) from a prior run"
-        )
+    elif retired_mentions or substrates_disposed:
+        parts: list[str] = []
+        if retired_mentions:
+            parts.append(f"retired {retired_mentions} superseded place link(s)")
+        if substrates_disposed:
+            parts.append(f"removed {substrates_disposed} orphan saved place(s)")
+        message += f"; {', '.join(parts)} from a prior ingest of this story"
 
     return {
         **body,
         "success": True,
         "article_id": article_id,
         "retired_mention_count": retired_mentions,
+        "disposed_substrate_count": substrates_disposed,
         "message": message,
     }

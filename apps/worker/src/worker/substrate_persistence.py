@@ -30,6 +30,7 @@ from worker.substrate_article_geography_reset import (
 from worker.substrate_location import _iter_place_entries, _upsert_location
 from worker.substrate_mentions import (
     _upsert_mention_and_occurrence,
+    dispose_orphan_substrates_after_retired_mentions,
     retire_stale_article_mentions_for_rerun,
 )
 from worker.substrate_span import _find_mention_span
@@ -48,7 +49,7 @@ def persist_from_consolidated(
     consolidated: dict[str, Any],
     db_output_params: dict[str, Any] | None = None,
     replace_machine_geography: bool = False,
-) -> tuple[int, int, ArticleGeographyReplaceStats | None]:
+) -> tuple[int, int, int, ArticleGeographyReplaceStats | None]:
     places = consolidated.get("places")
     if not isinstance(places, dict):
         raise RuntimeError(
@@ -169,22 +170,31 @@ def persist_from_consolidated(
         )
 
     retired_mentions = 0
+    substrates_disposed = 0
     if (
         not replace_machine_geography
         and article.id is not None
         and touched_location_ids
     ):
-        retired_mentions = retire_stale_article_mentions_for_rerun(
+        retired_mentions, retired_location_ids = retire_stale_article_mentions_for_rerun(
             session,
             article_id=int(article.id),
             touched_location_ids=touched_location_ids,
         )
-        if retired_mentions:
+        if retired_location_ids:
+            substrates_disposed = dispose_orphan_substrates_after_retired_mentions(
+                session,
+                project_id=int(project_id),
+                location_ids=retired_location_ids,
+            )
+        if retired_mentions or substrates_disposed:
             logger.warning(
-                "Re-run retired %s superseded place link(s) for article_id=%s run_id=%s",
-                retired_mentions,
+                "Superseded ingest for article_id=%s run_id=%s: %s mention(s) retired, "
+                "%s orphan substrate(s) disposed",
                 article.id,
                 run_id,
+                retired_mentions,
+                substrates_disposed,
             )
 
-    return int(article.id), retired_mentions, replace_stats
+    return int(article.id), retired_mentions, substrates_disposed, replace_stats

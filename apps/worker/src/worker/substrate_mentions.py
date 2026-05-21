@@ -5,7 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from agate_nodes.place_extract.mentions import mention_texts_for_persist
-from backfield_db import SubstrateLocationMention, SubstrateLocationMentionOccurrence
+from backfield_db import (
+    SubstrateLocation,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
+)
+from backfield_stylebook.substrate_canonical_link_actions import (
+    dispose_orphan_substrate_without_requeue,
+)
+from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 from worker.substrate_common import _WS_RE, _utcnow
@@ -65,11 +73,11 @@ def retire_stale_article_mentions_for_rerun(
     *,
     article_id: int,
     touched_location_ids: set[int],
-) -> int:
-    """Soft-delete pipeline mentions for this article superseded by a newer run.
+) -> tuple[int, set[int]]:
+    """Soft-delete pipeline mentions for this article superseded by a newer ingest.
 
     Keeps mentions for ``touched_location_ids`` (current ingest) and user-edited rows.
-    Returns the number of mentions retired.
+    Returns ``(mentions_retired, location_ids_with_retired_mentions)``.
     """
     mentions = session.exec(
         select(SubstrateLocationMention).where(
@@ -78,6 +86,7 @@ def retire_stale_article_mentions_for_rerun(
         )
     ).all()
     retired = 0
+    retired_location_ids: set[int] = set()
     now = _utcnow()
     for mention in mentions:
         lid = int(mention.location_id)
@@ -92,9 +101,51 @@ def retire_stale_article_mentions_for_rerun(
         mention.updated_at = now
         session.add(mention)
         retired += 1
+        retired_location_ids.add(lid)
     if retired:
         session.flush()
-    return retired
+    return retired, retired_location_ids
+
+
+def dispose_orphan_substrates_after_retired_mentions(
+    session: Session,
+    *,
+    project_id: int,
+    location_ids: set[int],
+    provenance: str = "agate_superseded_ingest",
+) -> int:
+    """Unlink (without re-queue) and delete substrate rows with no active mentions left.
+
+    Used after :func:`retire_stale_article_mentions_for_rerun` so superseded geocode
+    identities do not remain linked on a canonical with an empty Mentions group.
+    """
+    if not location_ids:
+        return 0
+    disposed = 0
+    for lid in location_ids:
+        remaining = int(
+            session.scalar(
+                select(func.count())
+                .select_from(SubstrateLocationMention)
+                .where(
+                    SubstrateLocationMention.location_id == int(lid),
+                    SubstrateLocationMention.deleted == False,  # noqa: E712
+                )
+            )
+            or 0
+        )
+        if remaining > 0:
+            continue
+        loc = session.get(SubstrateLocation, int(lid))
+        if loc is None or int(loc.project_id) != int(project_id):
+            continue
+        dispose_orphan_substrate_without_requeue(
+            session,
+            location=loc,
+            provenance=provenance,
+        )
+        disposed += 1
+    return disposed
 
 
 def _suppress_prior_system_occurrences_for_mention(
