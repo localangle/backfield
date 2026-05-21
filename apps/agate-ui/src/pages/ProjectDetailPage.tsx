@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ProjectSettings, { type ProjectSettingsHandle } from '@/components/ProjectSettings'
 import ProjectDetailFlowsTab from '@/components/project/ProjectDetailFlowsTab'
 import ProjectDetailRunsTab, {
@@ -63,6 +63,7 @@ export default function ProjectDetailPage() {
   const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
   const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
+  const workspaceSectionRef = useRef<HTMLDivElement>(null)
   const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const reload = useCallback(async () => {
@@ -100,6 +101,35 @@ export default function ProjectDetailPage() {
       cancelled = true
     }
   }, [slug, reload])
+
+  /** After switching tabs, clamp main scroll so a tall tab (e.g. Models) cannot leave Integrations scrolled into empty space. */
+  useEffect(() => {
+    const section = workspaceSectionRef.current
+    if (!section) return
+    const scrollEl = section.closest('main')
+    if (!(scrollEl instanceof HTMLElement)) return
+
+    const clampScroll = () => {
+      const mainRect = scrollEl.getBoundingClientRect()
+      const sectionRect = section.getBoundingClientRect()
+      const delta = sectionRect.top - mainRect.top
+      if (Math.abs(delta) > 4) {
+        scrollEl.scrollTop += delta
+      }
+      const maxTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight)
+      scrollEl.scrollTop = Math.min(scrollEl.scrollTop, maxTop)
+    }
+    let outer = 0
+    let inner = 0
+    outer = requestAnimationFrame(() => {
+      clampScroll()
+      inner = requestAnimationFrame(clampScroll)
+    })
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+    }
+  }, [workspaceTab])
 
   useEffect(() => {
     if (!project?.id) {
@@ -405,7 +435,7 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      <div className="w-full min-w-0">
+      <div ref={workspaceSectionRef} className="w-full min-w-0">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">Project workspace</h2>
@@ -485,53 +515,55 @@ export default function ProjectDetailPage() {
               API
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="flows" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailFlowsTab
-              projectId={project.id}
-              projectSlug={slug}
-              onDataChanged={() => void reload()}
-            />
-          </TabsContent>
-          <TabsContent value="runs" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailRunsTab
-              ref={runsTabRef}
-              projectId={project.id}
-              onDataChanged={() => void reload()}
-            />
-          </TabsContent>
-          <TabsContent value="models" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailModelsTab projectId={project.id} />
-          </TabsContent>
-          <TabsContent value="integrations" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailIntegrationsTab
-              projectId={project.id}
-              organizationId={organizationId}
-              isOrgAdmin={isOrgAdmin}
-            />
-          </TabsContent>
-          <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectSettings
-              project={project}
-              open={true}
-              onOpenChange={() => {}}
-              variant="inline"
-              inlineScope="system"
-              primaryActionsInToolbar
-              onRemoteUpdated={reload}
-            />
-          </TabsContent>
-          <TabsContent value="keys" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectSettings
-              ref={keysSettingsRef}
-              project={project}
-              open={true}
-              onOpenChange={() => {}}
-              variant="inline"
-              inlineScope="keys"
-              primaryActionsInToolbar
-              onRemoteUpdated={reload}
-            />
-          </TabsContent>
+          <div className="mt-6 w-full min-w-0" role="tabpanel">
+            {workspaceTab === 'flows' ? (
+              <ProjectDetailFlowsTab
+                projectId={project.id}
+                projectSlug={slug}
+                onDataChanged={() => void reload()}
+              />
+            ) : null}
+            {workspaceTab === 'runs' ? (
+              <ProjectDetailRunsTab
+                ref={runsTabRef}
+                projectId={project.id}
+                onDataChanged={() => void reload()}
+              />
+            ) : null}
+            {workspaceTab === 'models' ? (
+              <ProjectDetailModelsTab projectId={project.id} />
+            ) : null}
+            {workspaceTab === 'integrations' ? (
+              <ProjectDetailIntegrationsTab
+                projectId={project.id}
+                organizationId={organizationId}
+                isOrgAdmin={isOrgAdmin}
+              />
+            ) : null}
+            {workspaceTab === 'settings' ? (
+              <ProjectSettings
+                project={project}
+                open={true}
+                onOpenChange={() => {}}
+                variant="inline"
+                inlineScope="system"
+                primaryActionsInToolbar
+                onRemoteUpdated={reload}
+              />
+            ) : null}
+            {workspaceTab === 'keys' ? (
+              <ProjectSettings
+                ref={keysSettingsRef}
+                project={project}
+                open={true}
+                onOpenChange={() => {}}
+                variant="inline"
+                inlineScope="keys"
+                primaryActionsInToolbar
+                onRemoteUpdated={reload}
+              />
+            ) : null}
+          </div>
         </Tabs>
       </div>
     </div>

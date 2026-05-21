@@ -416,7 +416,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
         </ShellSidebar>
         <StylebookScopeProvider selectedStylebookLabel={selectedStylebookLabel}>
           <StylebookEditProvider canEditStylebook={canEditStylebook}>
-            <main className="flex-1 min-w-0 overflow-auto">
+            <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-y-contain">
               <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">
                 {children}
               </div>
