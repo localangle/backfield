@@ -822,6 +822,7 @@ def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path
             assert again.error_message is None
             assert again.replace_article_geography_on_persist is True
             assert again.overlay_json is None
+            assert again.reviewed_output_json is None
             assert again.overlay_version == 0
             run_row = s.get(AgateRun, rid)
             assert run_row is not None
@@ -1113,6 +1114,100 @@ def test_patch_processed_item_overlay_success_and_409(tmp_path, monkeypatch):
         assert ok2.status_code == 200
         assert ok2.json()["overlay_version"] == 2
         assert ok2.json()["overlay"]["notes"] == "c"
+        assert ok2.json().get("reviewed_output") is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_processed_item_overlay_materializes_reviewed_output(tmp_path, monkeypatch):
+    database_path = tmp_path / "agate-reviewed-out.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    result = {
+        "geocode_agent": {
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "p1",
+                            "description": "orig",
+                            "original_text": "t",
+                            "location": {"full": "X", "type": "city", "components": {}},
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            }
+        }
+    }
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Reviewed Out", "slug": "reviewed-out"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch",
+                "project_id": project["id"],
+                "spec": _minimal_text_input_spec(name="b"),
+            },
+        ).json()
+        with Session(engine) as s:
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
+            row.status = "succeeded"
+            s.add(row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="a.json",
+                input_json='{"text":"hello"}',
+                status="succeeded",
+                result_json=json.dumps(result),
+            )
+            s.add(item)
+            s.commit()
+            s.refresh(item)
+            iid = item.id
+        assert iid is not None
+
+        ok = tc.patch(
+            f"/runs/{rid}/items/{iid}",
+            json={"overlay": {"locations": {"by_anchor": {"p1": {"description": "reviewed"}}}}},
+            headers={"If-Match": '"0"'},
+        )
+        assert ok.status_code == 200
+        body = ok.json()
+        assert body.get("reviewed_output") is not None
+        reviewed_places = body["reviewed_output"]["geocode_agent"]["places"]
+        assert reviewed_places["areas"]["cities"][0]["description"] == "reviewed"
+        model_places = body["output"]["geocode_agent"]["places"]
+        assert model_places["areas"]["cities"][0]["description"] == "orig"
+
+        with Session(engine) as s:
+            row_item = s.get(AgateProcessedItem, iid)
+            assert row_item is not None
+            assert row_item.reviewed_output_json is not None
     finally:
         app.dependency_overrides.clear()
 

@@ -1111,6 +1111,8 @@ class AgateProcessedItem(SQLModel, table=True):
         default=0,
         sa_column=Column(Integer, nullable=False, server_default=text("0")),
     )
+    #: Materialized model + overlay for JSON export; immutable output stays in ``result_json``.
+    reviewed_output_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     #: When true, next DBOutput persist replaces pipeline geography for this item's article.
     replace_article_geography_on_persist: bool = Field(
         default=False,

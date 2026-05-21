@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { processedItemDisplayTitle } from '@/lib/processedItemDisplayTitle'
+import { formatRunTitleDate } from '@/lib/utils'
 import {
   PROCESSED_ITEM_DETAIL_TABS,
   isProcessedItemDetailTab,
@@ -23,6 +24,8 @@ import {
 } from '@/lib/rerunGeographyWarning'
 import { ArrowLeft, Download, CheckCircle, XCircle, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
+
+type JsonOutputView = 'reviewed' | 'model'
 
 const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
   info: 'Info',
@@ -51,6 +54,21 @@ export default function ProcessedItemDetail() {
   const [rerunning, setRerunning] = useState(false)
   const [visualizations, setVisualizations] = useState<VisualizationDescriptor[]>([])
   const [catalogProject, setCatalogProject] = useState<Project | null>(null)
+  const [jsonOutputView, setJsonOutputView] = useState<JsonOutputView>('reviewed')
+
+  const hasReviewedOutput = Boolean(
+    item?.reviewed_output &&
+      typeof item.reviewed_output === 'object' &&
+      Object.keys(item.reviewed_output).length > 0,
+  )
+
+  useEffect(() => {
+    if (hasReviewedOutput) {
+      setJsonOutputView('reviewed')
+    } else {
+      setJsonOutputView('model')
+    }
+  }, [item?.id, item?.overlay_version, hasReviewedOutput])
 
   const handleVerificationDirtyChange = useCallback((dirty: boolean) => {
     verificationDirtyRef.current = dirty
@@ -232,20 +250,36 @@ export default function ProcessedItemDetail() {
     }
   }
 
-  const handleDownloadOutput = () => {
-    if (!item?.output) return
+  const jsonDisplayOutput = useMemo(() => {
+    if (!item?.output) return null
+    if (jsonOutputView === 'reviewed' && item.reviewed_output) {
+      return item.reviewed_output
+    }
+    return item.output
+  }, [item?.output, item?.reviewed_output, jsonOutputView])
 
-    const dataStr = JSON.stringify(item.output, null, 2)
-    const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    const url = URL.createObjectURL(dataBlob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `run-${runId}-item-${itemId}-output.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
+  const downloadJsonOutput = useCallback(
+    (view: JsonOutputView) => {
+      const payload =
+        view === 'reviewed' && item?.reviewed_output ? item.reviewed_output : item?.output
+      if (!payload) return
+
+      const dataStr = JSON.stringify(payload, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+      const url = URL.createObjectURL(dataBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download =
+        view === 'reviewed'
+          ? `run-${runId}-item-${itemId}-reviewed-output.json`
+          : `run-${runId}-item-${itemId}-output.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    },
+    [item?.output, item?.reviewed_output, runId, itemId],
+  )
 
   const formatJson = (data: any) => {
     try {
@@ -463,7 +497,9 @@ export default function ProcessedItemDetail() {
                 className="text-sm text-primary hover:underline font-normal p-0 h-auto inline bg-transparent border-0 cursor-pointer"
                 onClick={() => void navigateFromItem(`/runs/${runId}`)}
               >
-                Go to run
+                {run?.created_at
+                  ? `Run: ${formatRunTitleDate(run.created_at)}`
+                  : 'Run'}
               </button>
             </p>
           </div>
@@ -735,19 +771,65 @@ export default function ProcessedItemDetail() {
         <TabsContent value="json" className="space-y-4">
           {item.output && Object.keys(item.output).length > 0 ? (
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
-                <CardTitle>Output Data</CardTitle>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <CardTitle>Output Data</CardTitle>
+                  {hasReviewedOutput ? (
+                    <p className="text-sm text-muted-foreground">
+                      Reviewed output includes saved place and story edits. Model output is unchanged.
+                    </p>
+                  ) : null}
+                </div>
                 {item.status === 'succeeded' && item.output ? (
-                  <Button type="button" variant="outline" size="sm" onClick={handleDownloadOutput}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Download
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {hasReviewedOutput ? (
+                      <div className="flex rounded-md border p-0.5" role="group" aria-label="JSON output source">
+                        <Button
+                          type="button"
+                          variant={jsonOutputView === 'reviewed' ? 'default' : 'ghost'}
+                          size="sm"
+                          className="h-8"
+                          onClick={() => setJsonOutputView('reviewed')}
+                        >
+                          Reviewed
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={jsonOutputView === 'model' ? 'default' : 'ghost'}
+                          size="sm"
+                          className="h-8"
+                          onClick={() => setJsonOutputView('model')}
+                        >
+                          Model
+                        </Button>
+                      </div>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => downloadJsonOutput(jsonOutputView)}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download
+                    </Button>
+                    {hasReviewedOutput ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => downloadJsonOutput('model')}
+                      >
+                        Download model output
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : null}
               </CardHeader>
               <CardContent>
                 <div className="rounded border overflow-auto max-h-[600px] [&_*]:break-words">
                   <JsonView
-                    value={sanitizeForJsonView(item.output)}
+                    value={sanitizeForJsonView(jsonDisplayOutput ?? item.output)}
                     style={{
                       backgroundColor: 'transparent',
                       fontSize: '0.875rem',

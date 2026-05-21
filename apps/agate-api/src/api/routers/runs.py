@@ -18,6 +18,7 @@ from api.processed_item_overlay_validate import (
     validate_processed_item_overlay_geometry,
 )
 from api.processed_item_review_enrichment import enrich_merged_locations_for_review
+from api.processed_item_reviewed_output import build_reviewed_output
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
     AgateGraph,
@@ -139,6 +140,8 @@ class ProcessedItemDetailOut(BaseModel):
     #: Human review overlay (mutable); model output stays in ``output`` / ``node_outputs``.
     overlay: dict[str, Any] | None = None
     overlay_version: int = 0
+    #: Materialized model output + overlay for export; ``null`` when no review content saved.
+    reviewed_output: dict[str, Any] | None = None
     #: Single merged lane: model + user places with provenance (see ``docs/API.md``).
     merged_locations: list[dict[str, Any]] = Field(default_factory=list)
     #: Overlay patches whose anchor no longer exists in current model output.
@@ -632,6 +635,15 @@ def _detail_from_agate_processed_row(
         except json.JSONDecodeError:
             overlay_obj = None
 
+    reviewed_output_obj: dict[str, Any] | None = None
+    if row.reviewed_output_json:
+        try:
+            parsed_r = json.loads(row.reviewed_output_json)
+            if isinstance(parsed_r, dict):
+                reviewed_output_obj = parsed_r
+        except json.JSONDecodeError:
+            reviewed_output_obj = None
+
     merged_locations, stale_overlay_entries = build_merged_locations_lane(
         output=output_obj, overlay=overlay_obj
     )
@@ -671,10 +683,30 @@ def _detail_from_agate_processed_row(
         estimated_ai_cost_currency=estimated_ai_cost_currency,
         overlay=overlay_obj,
         overlay_version=int(row.overlay_version),
+        reviewed_output=reviewed_output_obj,
         merged_locations=merged_locations,
         stale_overlay_entries=stale_overlay_entries,
         article_context=article_ctx,
     )
+
+
+def _reviewed_output_json_for_storage(
+    result_json_text: str | None,
+    overlay_payload: dict[str, Any],
+) -> str | None:
+    """Serialize materialized reviewed output for ``reviewed_output_json``, or ``None``."""
+    if not result_json_text:
+        return None
+    try:
+        parsed = json.loads(result_json_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    reviewed = build_reviewed_output(parsed, overlay_payload)
+    if reviewed is None:
+        return None
+    return json.dumps(reviewed, ensure_ascii=False)
 
 
 def _maybe_detail_whole_graph_run(
@@ -747,6 +779,7 @@ def _maybe_detail_whole_graph_run(
         estimated_ai_cost_currency=currency,
         overlay=None,
         overlay_version=0,
+        reviewed_output=None,
         merged_locations=merged_locations,
         stale_overlay_entries=stale_overlay_entries,
         article_context=article_ctx,
@@ -860,6 +893,8 @@ def patch_run_processed_item_overlay(
             },
         ) from exc
 
+    reviewed_json = _reviewed_output_json_for_storage(item.result_json, overlay_payload)
+
     stmt = (
         update(AgateProcessedItem)
         .where(
@@ -869,6 +904,7 @@ def patch_run_processed_item_overlay(
         )
         .values(
             overlay_json=json.dumps(overlay_payload, ensure_ascii=False),
+            reviewed_output_json=reviewed_json,
             overlay_version=AgateProcessedItem.overlay_version + 1,
             updated_at=datetime.now(UTC),
         )
@@ -956,6 +992,7 @@ def rerun_run_processed_item(
     item.error_message = None
     item.replace_article_geography_on_persist = True
     item.overlay_json = None
+    item.reviewed_output_json = None
     item.overlay_version = 0
     item.updated_at = datetime.now(UTC)
     session.add(item)

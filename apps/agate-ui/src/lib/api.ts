@@ -127,6 +127,8 @@ export interface ProcessedItem {
   merged_locations?: Array<Record<string, unknown>>
   /** Overlay patches whose anchor no longer exists in model output. */
   stale_overlay_entries?: Array<Record<string, unknown>>
+  /** Materialized model output + overlay for JSON export; absent when no review saved. */
+  reviewed_output?: Record<string, unknown> | null
   article_context?: ArticleContext
 }
 
@@ -570,6 +572,7 @@ interface RawProcessedItemDetail {
   estimated_ai_cost_currency?: string | null
   overlay?: Record<string, unknown> | null
   overlay_version?: number
+  reviewed_output?: Record<string, unknown> | null
   merged_locations?: Array<Record<string, unknown>>
   stale_overlay_entries?: Array<Record<string, unknown>>
   article_context?: unknown
@@ -653,6 +656,10 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
     stale_overlay_entries: Array.isArray(raw.stale_overlay_entries)
       ? raw.stale_overlay_entries
       : [],
+    reviewed_output:
+      raw.reviewed_output && typeof raw.reviewed_output === 'object'
+        ? raw.reviewed_output
+        : null,
     article_context: _normalizeArticleContext(raw.article_context),
   }
 }
