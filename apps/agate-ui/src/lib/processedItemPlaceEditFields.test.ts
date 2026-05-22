@@ -118,6 +118,39 @@ describe('buildPlaceEditOverlayPatch', () => {
     const res = gc.result as Record<string, unknown>
     expect(res.geometry).toEqual({ type: 'Point', coordinates: [-97.7, 30.3] })
     expect(res.formatted_address).toBe('New addr')
+    expect(gc.geocode_type).toBe('manual')
+    expect(patch.geocoded).toBe(true)
+  })
+
+  it('assigns manual geocode and clears QA flags for needs-review failure rows', () => {
+    const base = {
+      id: 'non-geocoded:republic-steel',
+      geocoded: false,
+      reason: 'Geocoding produced no result',
+      original_text: 'Republic Steel',
+      location: 'Republic Steel plant',
+      type: 'place',
+      description: 'Republic Steel site',
+    }
+    const patch = buildPlaceEditOverlayPatch(
+      base,
+      {
+        label: 'Republic Steel',
+        type: 'place',
+        formattedAddress: '',
+        roleInStory: '',
+        mentionText: 'Republic Steel',
+        occurrences: [],
+      },
+      { type: 'Point', coordinates: [-87.6, 41.7] },
+    )
+    expect(patch.geocoded).toBe(true)
+    expect(patch.reason).toBeUndefined()
+    expect(patch.geocode_qa_code).toBeUndefined()
+    const gc = patch.geocode as Record<string, unknown>
+    expect(gc.geocode_type).toBe('manual')
+    const res = gc.result as Record<string, unknown>
+    expect(res.geometry).toEqual({ type: 'Point', coordinates: [-87.6, 41.7] })
   })
 })
 

@@ -442,6 +442,140 @@ def test_persist_stylebook_canonical_id_no_double_prefix() -> None:
         assert locs[0].external_id == already
 
 
+def test_persist_stylebook_canonical_splits_fine_grained_poi_by_display_name() -> None:
+    sb_uuid = "cdf548d6-7c91-461f-ba70-7897e0092985"
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    def _canonical_point(*, place_id: str, original_text: str) -> dict:
+        return {
+            "id": place_id,
+            "original_text": original_text,
+            "location": original_text,
+            "type": "point",
+            "geocode": {
+                "geocode_type": "canonical_db",
+                "result": {
+                    "id": f"stylebook:{sb_uuid}",
+                    "canonical_id": sb_uuid,
+                    "formatted_address": "Orland Park, IL, USA",
+                    "geometry": WGP_POINT,
+                },
+            },
+        }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org_poi", project_slug="proj_poi")
+        session.add(AgateRun(id="run-poi", graph_id="graph-poi", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Shoppers visited Carson's and Kohl's at the mall.",
+            "url": "https://example.com/mall-shoppers",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [
+                    _canonical_point(place_id="poi:carsons", original_text="Carson's"),
+                    _canonical_point(place_id="poi:kohls", original_text="Kohl's"),
+                ],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-poi",
+            run_id="run-poi",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 2
+        external_ids = {loc.external_id for loc in locs}
+        assert external_ids == {
+            f"stylebook:{sb_uuid}:carson-s",
+            f"stylebook:{sb_uuid}:kohl-s",
+        }
+
+        mentions = session.exec(select(SubstrateLocationMention)).all()
+        assert len(mentions) == 2
+
+
+def test_persist_stylebook_canonical_collapses_same_poi_display_name() -> None:
+    sb_uuid = "8f3b2c4a-1e2d-4f5a-9b8c-7d6e5f4a3b2c"
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    def _canonical_point(*, place_id: str) -> dict:
+        return {
+            "id": place_id,
+            "original_text": "Carson's",
+            "location": "Carson's",
+            "type": "point",
+            "geocode": {
+                "geocode_type": "canonical_db",
+                "result": {
+                    "canonical_id": sb_uuid,
+                    "formatted_address": "Orland Park, IL, USA",
+                    "geometry": WGP_POINT,
+                },
+            },
+        }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session, org_slug="org_poi_dup", project_slug="proj_poi_dup"
+        )
+        session.add(AgateRun(id="run-poi-dup", graph_id="graph-poi-dup", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Carson's appeared twice in the story.",
+            "url": "https://example.com/carsons-twice",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [
+                    _canonical_point(place_id="poi:carsons-a"),
+                    _canonical_point(place_id="poi:carsons-b"),
+                ],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-poi-dup",
+            run_id="run-poi-dup",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].external_id == f"stylebook:{sb_uuid}:carson-s"
+        mentions = session.exec(select(SubstrateLocationMention)).all()
+        assert len(mentions) == 1
+
+
 def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

@@ -60,6 +60,10 @@ def test_overlay_has_review_content_true_for_patch() -> None:
     )
 
 
+def test_overlay_has_review_content_true_for_article_key_even_when_empty() -> None:
+    assert overlay_has_review_content({"article": {"headline": ""}})
+
+
 def test_build_reviewed_output_none_without_review() -> None:
     output = _geocode_output(cities=[_place("a", id="p1")])
     assert build_reviewed_output(output, None) is None
@@ -173,3 +177,24 @@ def test_build_reviewed_output_article_on_consolidated() -> None:
     consolidated = reviewed["json_output"]["consolidated"]
     assert consolidated["headline"] == "Review headline"
     assert consolidated["publication"] == "Review pub"
+
+
+def test_build_reviewed_output_article_on_hoisted_stylebook_output() -> None:
+    output = {
+        "geocode_agent": {"places": {"areas": _empty_areas(), "points": [], "needs_review": []}},
+        "stylebook_output": {
+            "headline": "Model headline",
+            "publication": "Model pub",
+            "places": {"areas": _empty_areas(), "points": [], "needs_review": []},
+            "success": True,
+            "article_id": 42,
+        },
+    }
+    overlay = {"article": {"headline": "Review headline", "author": "Pat"}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    so = reviewed["stylebook_output"]
+    assert so["headline"] == "Review headline"
+    assert so["author"] == "Pat"
+    assert so["publication"] == "Model pub"
+    assert reviewed["geocode_agent"]["places"]["points"] == []

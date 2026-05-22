@@ -44,8 +44,7 @@ def overlay_has_review_content(overlay: dict[str, Any] | None) -> bool:
     article = overlay.get("article")
     if isinstance(article, dict):
         for key in ARTICLE_OVERLAY_KEYS:
-            value = article.get(key)
-            if isinstance(value, str) and value.strip():
+            if key in article:
                 return True
     return False
 
@@ -119,25 +118,51 @@ def _sync_consolidated_places_in_output(
             consolidated["places"] = copy.deepcopy(places_copy)
 
 
-def _apply_article_overlay_to_output(
-    output: dict[str, Any],
-    overlay: dict[str, Any],
-) -> None:
+def _article_patch_from_overlay(overlay: dict[str, Any]) -> dict[str, Any]:
     article_raw = overlay.get("article")
     if not isinstance(article_raw, dict):
-        return
+        return {}
     patch: dict[str, Any] = {}
     for key in ARTICLE_OVERLAY_KEYS:
         if key in article_raw:
             patch[key] = article_raw[key]
+    return patch
+
+
+def _payload_accepts_article_patch(payload: dict[str, Any]) -> bool:
+    """True for JSON Output ``consolidated`` shells and hoisted DBOutput-style payloads."""
+    if isinstance(payload.get("consolidated"), dict):
+        return True
+    if any(key in payload for key in ARTICLE_OVERLAY_KEYS):
+        return True
+    if "article_id" in payload or payload.get("success") is True:
+        return True
+    places = payload.get("places")
+    if isinstance(places, dict) and any(
+        key in payload for key in (*ARTICLE_OVERLAY_KEYS, "text", "article_id")
+    ):
+        return True
+    return False
+
+
+def _apply_article_overlay_to_output(
+    output: dict[str, Any],
+    overlay: dict[str, Any],
+) -> None:
+    patch = _article_patch_from_overlay(overlay)
     if not patch:
         return
+    patch_copy = copy.deepcopy(patch)
     for payload in output.values():
-        if not isinstance(payload, dict):
+        if not isinstance(payload, dict) or not _payload_accepts_article_patch(payload):
             continue
         consolidated = payload.get("consolidated")
         if isinstance(consolidated, dict):
-            consolidated.update(copy.deepcopy(patch))
+            consolidated.update(copy.deepcopy(patch_copy))
+            continue
+        for key, value in patch_copy.items():
+            if key in ARTICLE_OVERLAY_KEYS:
+                payload[key] = copy.deepcopy(value)
 
 
 def build_reviewed_output(

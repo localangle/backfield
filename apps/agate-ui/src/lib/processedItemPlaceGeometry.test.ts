@@ -48,7 +48,7 @@ describe('iterBaselinePlacesFromOutput', () => {
             {
               id: 'h3:hospital',
               description: 'Presence St. Francis Hospital',
-              geocode: { result: { geometry: { type: 'Point', coordinates: [-87.68, 42.02] } } } },
+              geocode: { result: { geometry: { type: 'Point', coordinates: [-87.68, 42.02] } } },
             },
           ],
         },
@@ -84,7 +84,7 @@ describe('iterBaselinePlacesFromOutput', () => {
             {
               id: 'h3:cell',
               description: 'geocoded',
-              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } } },
+              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } },
             },
           ],
         },
@@ -104,12 +104,12 @@ describe('iterBaselinePlacesFromOutput', () => {
             {
               id: h3,
               description: 'Salt Shed',
-              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } } },
+              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } },
             },
             {
               id: h3,
               description: 'Oddball Market',
-              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } } },
+              geocode: { result: { geometry: { type: 'Point', coordinates: [1, 2] } } },
             },
           ],
         },
@@ -206,20 +206,25 @@ describe('extractGeometryFromPlace', () => {
 })
 
 describe('getGeocodingSourceLabel', () => {
-  it('maps geocode_type to user-facing labels', () => {
+  const pointGeom = { type: 'Point' as const, coordinates: [-87.6, 41.8] as [number, number] }
+
+  it('maps geocode_type to user-facing labels when geometry is present', () => {
     expect(
       getGeocodingSourceLabel({
-        geocode: { geocode_type: 'pelias_search', result: { formatted_address: 'X' } },
+        geocode: {
+          geocode_type: 'pelias_search',
+          result: { formatted_address: 'X', geometry: pointGeom },
+        },
       }),
     ).toBe('Address search')
     expect(
       getGeocodingSourceLabel({
-        geocode: { geocode_type: 'geocodio_structured', result: {} },
+        geocode: { geocode_type: 'geocodio_structured', result: { geometry: pointGeom } },
       }),
     ).toBe('Geocodio')
     expect(
       getGeocodingSourceLabel({
-        geocode: { geocode_type: 'manual', result: {} },
+        geocode: { geocode_type: 'manual', result: { geometry: pointGeom } },
       }),
     ).toBe('Manual')
   })
@@ -229,7 +234,10 @@ describe('getGeocodingSourceLabel', () => {
       getGeocodingSourceLabel({
         geocode: {
           geocode_type: 'manual',
-          result: { confidence: { source: 'canonical_db', canonical_id: 'x' } },
+          result: {
+            geometry: pointGeom,
+            confidence: { source: 'canonical_db', canonical_id: 'x' },
+          },
         },
       }),
     ).toBe('Manual')
@@ -238,13 +246,43 @@ describe('getGeocodingSourceLabel', () => {
   it('uses confidence.source when geocode_type is missing', () => {
     expect(
       getGeocodingSourceLabel({
-        geocode: { result: { confidence: { source: 'location_cache' } } },
+        geocode: { result: { geometry: pointGeom, confidence: { source: 'location_cache' } } },
       }),
     ).toBe('Saved geocode')
   })
 
-  it('returns null when no geocode metadata', () => {
-    expect(getGeocodingSourceLabel({ description: 'Nowhere' })).toBeNull()
+  it('returns No geography when there is no drawable geometry', () => {
+    expect(getGeocodingSourceLabel({ description: 'Nowhere' })).toBe('No geography')
+    expect(
+      getGeocodingSourceLabel({
+        geocoded: false,
+        description: 'Failed place',
+        location: 'Somewhere vague',
+      }),
+    ).toBe('No geography')
+    expect(
+      getGeocodingSourceLabel({
+        geocode: {
+          geocode_type: 'pelias_search',
+          result: { formatted_address: 'China', processed_str: 'China' },
+        },
+        geocode_qa_code: 'geocode_region_mismatch',
+      }),
+    ).toBe('No geography')
+  })
+
+  it('returns geocoder label when geometry is present', () => {
+    expect(
+      getGeocodingSourceLabel({
+        geocode: {
+          geocode_type: 'pelias_search',
+          result: {
+            formatted_address: 'Chicago, IL',
+            geometry: { type: 'Point', coordinates: [-87.6, 41.8] },
+          },
+        },
+      }),
+    ).toBe('Address search')
   })
 })
 
@@ -312,7 +350,8 @@ describe('buildVerificationLeafletCollections', () => {
       baselineByAnchor: new Map(),
       selectedAnchor: null,
     })
-    expect(collections.places.features).toHaveLength(0)
+    expect(collections.points.features).toHaveLength(0)
+    expect(collections.polygons.features).toHaveLength(0)
   })
   const pointRow = (anchor: string, lng: number, lat: number) => ({
     anchor,

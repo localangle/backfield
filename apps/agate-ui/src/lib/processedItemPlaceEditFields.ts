@@ -4,6 +4,7 @@
 
 import {
   applyGeometryToPlaceRow,
+  applyOverlayPatchAfterGeometryAssignment,
   buildGeocodePatchForClearGeometry,
   buildGeocodePatchForFormattedAddress,
   buildGeocodePatchForGeometry,
@@ -193,5 +194,8 @@ export function buildPlaceEditOverlayPatch(
   if (geometry === null) {
     return { ...patch, ...buildGeocodePatchForClearGeometry(withFields) }
   }
-  return { ...patch, ...buildGeocodePatchForGeometry(withFields, geometry) }
+  return applyOverlayPatchAfterGeometryAssignment({
+    ...patch,
+    ...buildGeocodePatchForGeometry(withFields, geometry),
+  })
 }

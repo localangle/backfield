@@ -25,7 +25,7 @@ import {
 import { ArrowLeft, Download, CheckCircle, XCircle, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 
-type JsonOutputView = 'reviewed' | 'model'
+type JsonOutputView = 'reviewed' | 'original'
 
 const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
   info: 'Info',
@@ -66,7 +66,7 @@ export default function ProcessedItemDetail() {
     if (hasReviewedOutput) {
       setJsonOutputView('reviewed')
     } else {
-      setJsonOutputView('model')
+      setJsonOutputView('original')
     }
   }, [item?.id, item?.overlay_version, hasReviewedOutput])
 
@@ -776,14 +776,14 @@ export default function ProcessedItemDetail() {
                   <CardTitle>Output Data</CardTitle>
                   {hasReviewedOutput ? (
                     <p className="text-sm text-muted-foreground">
-                      Reviewed output includes saved place and story edits. Model output is unchanged.
+                      Reviewed output includes changes made through the review interface.
                     </p>
                   ) : null}
                 </div>
                 {item.status === 'succeeded' && item.output ? (
                   <div className="flex flex-wrap items-center gap-2">
                     {hasReviewedOutput ? (
-                      <div className="flex rounded-md border p-0.5" role="group" aria-label="JSON output source">
+                      <div className="flex rounded-md border p-0.5" role="group" aria-label="Output data version">
                         <Button
                           type="button"
                           variant={jsonOutputView === 'reviewed' ? 'default' : 'ghost'}
@@ -795,12 +795,12 @@ export default function ProcessedItemDetail() {
                         </Button>
                         <Button
                           type="button"
-                          variant={jsonOutputView === 'model' ? 'default' : 'ghost'}
+                          variant={jsonOutputView === 'original' ? 'default' : 'ghost'}
                           size="sm"
                           className="h-8"
-                          onClick={() => setJsonOutputView('model')}
+                          onClick={() => setJsonOutputView('original')}
                         >
-                          Model
+                          Original
                         </Button>
                       </div>
                     ) : null}
@@ -813,16 +813,6 @@ export default function ProcessedItemDetail() {
                       <Download className="mr-2 h-4 w-4" />
                       Download
                     </Button>
-                    {hasReviewedOutput ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => downloadJsonOutput('model')}
-                      >
-                        Download model output
-                      </Button>
-                    ) : null}
                   </div>
                 ) : null}
               </CardHeader>

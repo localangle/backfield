@@ -224,6 +224,17 @@ function readGeocodeResult(place: Record<string, unknown>): Record<string, unkno
   return res as Record<string, unknown>
 }
 
+/** Source pill when the place has no drawable map geography (needs review, cleared, etc.). */
+export const NO_GEOGRAPHY_SOURCE_LABEL = 'No geography'
+
+/** Model QA / failure flags cleared when a reviewer assigns geometry on the map. */
+export const PLACE_QA_REVIEW_FLAG_KEYS = [
+  'geocode_qa_code',
+  'geocode_region_mismatch',
+  'geocode_city_level_fallback',
+  'geocode_admin_level_mismatch',
+] as const
+
 /** Known ``geocode.geocode_type`` values from GeocodeAgent consolidate (user-facing labels). */
 const GEOCODE_TYPE_USER_LABELS: Record<string, string> = {
   pelias: 'Address search',
@@ -271,6 +282,9 @@ export function getGeocodingSourceLabel(
   place: Record<string, unknown> | null | undefined,
 ): string | null {
   if (!place || typeof place !== 'object') return null
+  if (!extractGeometryFromPlace(place)) {
+    return NO_GEOGRAPHY_SOURCE_LABEL
+  }
   const gc = place.geocode
   if (!gc || typeof gc !== 'object' || Array.isArray(gc)) return null
   const rawType = (gc as Record<string, unknown>).geocode_type
@@ -478,6 +492,19 @@ function cloneJson<T>(v: T): T {
 }
 
 /** Mark geocode metadata as a manual map edit (review draw, drag, or delete). */
+/** Drop model needs-review / QA flags from a shallow ``locations.by_anchor`` patch after geometry assign. */
+export function applyOverlayPatchAfterGeometryAssignment(
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out = { ...patch }
+  out.geocoded = true
+  for (const key of PLACE_QA_REVIEW_FLAG_KEYS) {
+    delete out[key]
+  }
+  delete out.reason
+  return out
+}
+
 export function markGeocodeAsManualEdit(geocode: Record<string, unknown>): void {
   geocode.geocode_type = 'manual'
   const prevResult = geocode.result

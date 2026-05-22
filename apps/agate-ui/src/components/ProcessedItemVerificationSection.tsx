@@ -23,7 +23,6 @@ import {
   isPolygonGeometry,
   stripSelectedVerificationPolygonsForEdit,
   getGeocodedPlaceDisplay,
-  isGeocodedPlace,
   iterBaselinePlacesFromOutput,
   leafletBoundsFromGeometry,
   overlayAnchorGeometryChanged,
@@ -247,14 +246,8 @@ export function ProcessedItemVerificationSection({
 
   const storyHighlightAnchor = selectedAnchor
 
-  const geocodedPlaceRows = useMemo(
-    () =>
-      displayMergedRows.filter((row) => {
-        const loc = row.location as Record<string, unknown> | undefined
-        return isGeocodedPlace(loc)
-      }),
-    [displayMergedRows],
-  )
+  /** All merged model and user-added places (including needs-review rows without geography). */
+  const geocodedPlaceRows = useMemo(() => displayMergedRows, [displayMergedRows])
 
   const mapFocusBounds = useMemo(() => {
     if (!selectedAnchor) return null
