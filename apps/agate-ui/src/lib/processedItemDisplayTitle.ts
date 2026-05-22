@@ -2,11 +2,21 @@ import type { ArticleContext } from '@/lib/api'
 
 const HEADLINE_KEYS = ['headline', 'title', 'input_headline'] as const
 
+/** Worker substrate default when consolidated JSON has no headline. */
+const GENERIC_HEADLINE_PLACEHOLDERS = new Set(['article'])
+
+function isGenericHeadline(value: string): boolean {
+  return GENERIC_HEADLINE_PLACEHOLDERS.has(value.trim().toLowerCase())
+}
+
 function pickHeadline(obj: Record<string, unknown> | null | undefined): string | null {
   if (!obj) return null
   for (const key of HEADLINE_KEYS) {
     const v = obj[key]
-    if (typeof v === 'string' && v.trim()) return v.trim()
+    if (typeof v === 'string' && v.trim()) {
+      const trimmed = v.trim()
+      if (!isGenericHeadline(trimmed)) return trimmed
+    }
   }
   return null
 }
@@ -25,11 +35,11 @@ export function processedItemDisplayTitle(item: {
     if (fromOverlay) return fromOverlay
   }
 
-  const fromArticle = item.article_context?.headline?.trim()
-  if (fromArticle) return fromArticle
-
   const fromInput = pickHeadline(item.input)
   if (fromInput) return fromInput
+
+  const fromArticle = item.article_context?.headline?.trim()
+  if (fromArticle && !isGenericHeadline(fromArticle)) return fromArticle
 
   const fromOutput = pickHeadline(item.output ?? undefined)
   if (fromOutput) return fromOutput

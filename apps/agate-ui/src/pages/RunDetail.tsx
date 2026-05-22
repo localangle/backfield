@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -24,10 +24,16 @@ import { formatDateCentral, formatRunTitleDate } from '@/lib/utils'
 import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
 import {
-  RERUN_GEOGRAPHY_WARNING_TITLE,
-  rerunGeographyWarningBody,
-} from '@/lib/rerunGeographyWarning'
+  RUN_AGAIN_WARNING_BODY,
+  RUN_AGAIN_WARNING_TITLE,
+  rerunWarningBody,
+  rerunWarningTitle,
+} from '@/lib/rerunWarning'
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
+import {
+  isRunPreparingItems,
+  PREPARING_ITEMS_SOURCE_LABEL,
+} from '@/lib/runPreparingItems'
 import { ArrowLeft, ArrowRight, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -140,8 +146,8 @@ export default function RunDetail() {
   async function handleRunAgain() {
     if (!run || !graph) return
 
-    const ok = await showConfirm(rerunGeographyWarningBody(1), {
-      title: RERUN_GEOGRAPHY_WARNING_TITLE,
+    const ok = await showConfirm(RUN_AGAIN_WARNING_BODY, {
+      title: RUN_AGAIN_WARNING_TITLE,
       confirmLabel: 'Run again',
       destructive: true,
     })
@@ -168,8 +174,8 @@ export default function RunDetail() {
     const ok = await showConfirm(
       'Are you sure you want to cancel this run? This will stop all pending and running items.',
       {
-        title: 'Cancel run',
-        confirmLabel: 'Cancel run',
+        title: 'Stop run',
+        confirmLabel: 'Stop run',
         destructive: true,
       },
     )
@@ -224,8 +230,8 @@ export default function RunDetail() {
     if (!runId || selectedItems.size === 0) return
 
     const count = selectedItems.size
-    const ok = await showConfirm(rerunGeographyWarningBody(count), {
-      title: RERUN_GEOGRAPHY_WARNING_TITLE,
+    const ok = await showConfirm(rerunWarningBody(count), {
+      title: rerunWarningTitle(count),
       confirmLabel: count === 1 ? 'Rerun' : `Rerun ${count} items`,
       destructive: true,
     })
@@ -358,6 +364,7 @@ export default function RunDetail() {
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedItems = run.items?.slice(startIndex, endIndex) || []
+  const preparingItems = isRunPreparingItems(run)
 
   return (
     <div className="space-y-6">
@@ -391,7 +398,13 @@ export default function RunDetail() {
               Run • {formatRunTitleDate(run.created_at)}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Flow: {flowName}
+              Flow:{' '}
+              <Link
+                to={`/flow/${encodeURIComponent(run.graph_id)}`}
+                className="font-medium text-primary hover:underline"
+              >
+                {flowName}
+              </Link>
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Run ID {shortRunId}
@@ -663,7 +676,12 @@ export default function RunDetail() {
                                 }`}
                                 title={preview ?? undefined}
                               >
-                                {preview || (item.is_array_splitter_item ? 'Array input' : 'Manual input')}
+                                {preview ||
+                                  (preparingItems
+                                    ? PREPARING_ITEMS_SOURCE_LABEL
+                                    : item.is_array_splitter_item
+                                      ? 'Array input'
+                                      : 'Manual input')}
                               </span>
                             )
                           })()}
@@ -768,7 +786,7 @@ export default function RunDetail() {
       )}
 
       {/* No Items Message */}
-      {run.total_items === 0 && (
+      {run.total_items === 0 && !preparingItems && (
         <Card>
           <CardContent className="py-12">
             <div className="text-center">

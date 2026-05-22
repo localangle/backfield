@@ -80,8 +80,8 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
   const handleCancelRun = async (runId: string, event: React.MouseEvent) => {
     event.stopPropagation()
     const ok = await showConfirm('Cancel this run? Pending and running work will stop.', {
-      title: 'Cancel run',
-      confirmLabel: 'Cancel run',
+      title: 'Stop run',
+      confirmLabel: 'Stop run',
       destructive: true,
     })
     if (!ok) return

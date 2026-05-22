@@ -47,6 +47,22 @@ def _fallback_headline(input_obj: dict[str, Any]) -> str | None:
     return None
 
 
+_GENERIC_SUBSTRATE_HEADLINES = frozenset({"article"})
+
+
+def _resolve_display_headline(
+    *,
+    input_obj: dict[str, Any],
+    substrate_headline: str | None,
+) -> str | None:
+    """Prefer a real story headline over the worker's generic ``Article`` placeholder."""
+    input_hl = _fallback_headline(input_obj)
+    sub_hl = substrate_headline.strip() if isinstance(substrate_headline, str) else ""
+    if sub_hl and sub_hl.lower() not in _GENERIC_SUBSTRATE_HEADLINES:
+        return sub_hl
+    return input_hl or (sub_hl or None)
+
+
 def build_processed_item_article_context(
     session: Session,
     *,
@@ -126,7 +142,7 @@ def build_processed_item_article_context(
     rid = art.id
     return {
         "article_id": int(rid) if rid is not None else aid,
-        "headline": art.headline,
+        "headline": _resolve_display_headline(input_obj=input_obj, substrate_headline=art.headline),
         "body": art.text,
         "resolution": "substrate",
         "reason": None,

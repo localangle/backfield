@@ -19,10 +19,20 @@ import {
   type ProcessedItemDetailTab,
 } from '@/lib/processedItemDetailTab'
 import {
-  RERUN_GEOGRAPHY_WARNING_TITLE,
-  rerunGeographyWarningBody,
-} from '@/lib/rerunGeographyWarning'
-import { ArrowLeft, Download, CheckCircle, XCircle, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
+  RERUN_WARNING_TITLE,
+  rerunWarningBody,
+} from '@/lib/rerunWarning'
+import {
+  ArrowLeft,
+  Download,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  AlertTriangle,
+  FileText,
+  ExternalLink,
+  RotateCcw,
+} from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 
 type JsonOutputView = 'reviewed' | 'original'
@@ -46,12 +56,16 @@ export default function ProcessedItemDetail() {
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const verificationDirtyRef = useRef(false)
+  /** Set once a rerun reaches pending/running; gates clearing ``rerunRequested``. */
+  const rerunSawInFlightRef = useRef(false)
   const [reviewDirty, setReviewDirty] = useState(false)
   const [run, setRun] = useState<Run | null>(null)
   const [graph, setGraph] = useState<Graph | null>(null)
   const [item, setItem] = useState<ProcessedItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [rerunning, setRerunning] = useState(false)
+  /** True after the user confirms rerun until the item leaves pending/running. */
+  const [rerunRequested, setRerunRequested] = useState(false)
   const [visualizations, setVisualizations] = useState<VisualizationDescriptor[]>([])
   const [catalogProject, setCatalogProject] = useState<Project | null>(null)
   const [jsonOutputView, setJsonOutputView] = useState<JsonOutputView>('reviewed')
@@ -189,6 +203,25 @@ export default function ProcessedItemDetail() {
     }
     return () => {}
   }, [item, run, runId, itemId])
+
+  useEffect(() => {
+    if (!rerunRequested || !item) return
+    if (item.status === 'pending' || item.status === 'running') {
+      rerunSawInFlightRef.current = true
+      return
+    }
+    const finished =
+      item.status === 'succeeded' ||
+      item.status === 'failed' ||
+      item.status === 'timed_out' ||
+      item.status === 'skipped'
+    if (finished && rerunSawInFlightRef.current) {
+      setRerunRequested(false)
+      rerunSawInFlightRef.current = false
+    }
+  }, [item?.status, item?.id, rerunRequested, item])
+
+  const rerunBusy = rerunning || rerunRequested
 
   async function loadItemData() {
     if (!runId || !itemId) return
@@ -517,20 +550,41 @@ export default function ProcessedItemDetail() {
           {!item.synthetic && (
             <Button
               variant="default"
-              disabled={rerunning || item.status === 'pending' || item.status === 'running'}
+              disabled={
+                rerunBusy || item.status === 'pending' || item.status === 'running'
+              }
               onClick={async () => {
                 if (!runId || !itemId) return
-                const ok = await showConfirm(rerunGeographyWarningBody(1), {
-                  title: RERUN_GEOGRAPHY_WARNING_TITLE,
+                const ok = await showConfirm(rerunWarningBody(1), {
+                  title: RERUN_WARNING_TITLE,
                   confirmLabel: 'Rerun',
                   destructive: true,
                 })
                 if (!ok) return
+                rerunSawInFlightRef.current = false
+                setRerunRequested(true)
                 try {
                   setRerunning(true)
-                  await rerunProcessedItem(runId, parseInt(itemId, 10))
+                  const rerunRes = await rerunProcessedItem(runId, parseInt(itemId, 10))
+                  if (rerunRes.status === 'pending' || rerunRes.status === 'running') {
+                    rerunSawInFlightRef.current = true
+                    setItem((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            status: rerunRes.status as ProcessedItem['status'],
+                            output: null,
+                            reviewed_output: null,
+                            overlay: null,
+                            error: null,
+                          }
+                        : prev,
+                    )
+                  }
                   await loadItemData()
                 } catch (e) {
+                  setRerunRequested(false)
+                  rerunSawInFlightRef.current = false
                   console.error('Failed to rerun item:', e)
                   const detail =
                     e instanceof Error && e.message.startsWith('API error:')
@@ -546,12 +600,12 @@ export default function ProcessedItemDetail() {
                 }
               }}
             >
-              {rerunning ? (
+              {rerunBusy ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <FileText className="mr-2 h-4 w-4" />
+                <RotateCcw className="mr-2 h-4 w-4" />
               )}
-              Rerun Item
+              {rerunBusy ? 'Rerunning...' : 'Rerun Item'}
             </Button>
           )}
         </div>

@@ -179,3 +179,28 @@ def test_article_context_falls_back_to_persisted_output_article_id() -> None:
         assert ctx["article_id"] == aid
         assert ctx["resolution"] == "substrate"
         assert ctx["body"] == "Persisted body"
+
+
+def test_article_context_prefers_input_headline_over_generic_substrate() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        _oid, pid = _org_and_project(session)
+        art = SubstrateArticle(
+            project_id=pid,
+            headline="Article",
+            text="Body",
+            url=f"https://example.com/generic-{pid}",
+        )
+        session.add(art)
+        session.commit()
+        session.refresh(art)
+        aid = int(art.id)
+
+        ctx = build_processed_item_article_context(
+            session,
+            project_id=pid,
+            input_obj={"input_article_id": aid, "headline": "Story from JSON input"},
+        )
+        assert ctx["resolution"] == "substrate"
+        assert ctx["headline"] == "Story from JSON input"

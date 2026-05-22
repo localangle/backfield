@@ -858,11 +858,6 @@ export function ProcessedItemVerificationSection({
                 <p className="text-sm text-muted-foreground">No story text is available for this item yet.</p>
               )}
             </div>
-            {article?.resolution === 'inline_fallback' ? (
-              <p className="shrink-0 text-xs text-muted-foreground">
-                Showing text saved with this run when a full article could not be loaded.
-              </p>
-            ) : null}
           </div>
 
           <div
