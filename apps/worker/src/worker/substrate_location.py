@@ -304,6 +304,24 @@ def _stylebook_location_external_id(
     return base
 
 
+def _geocoder_location_external_id(
+    raw_id: str,
+    *,
+    display_name: str,
+    location_type: str | None,
+) -> str:
+    """Disambiguate shared geocoder address/building ids for fine-grained POIs."""
+    base = str(raw_id).strip()
+    if not base:
+        return base
+    if not _stylebook_identity_disambiguates_by_name(location_type):
+        return base
+    suffix = _stylebook_place_name_identity_suffix(display_name)
+    if suffix:
+        return f"{base}:{suffix}"
+    return base
+
+
 def _external_identity_from_geocode_result(
     result: dict[str, Any],
     *,
@@ -326,7 +344,7 @@ def _external_identity_from_geocode_result(
     rid = result.get("id")
     if rid is None:
         return None, None
-    rid_str = str(rid)
+    rid_str = str(rid).strip()
     if rid_str.startswith("stylebook:"):
         return (
             "stylebook_location",
@@ -346,7 +364,14 @@ def _external_identity_from_geocode_result(
         # H3 cells are spatial buckets, not place identity. Distinct POIs in the same
         # building can share a cell and must remain separate substrate rows.
         return None, None
-    return "geocoder", rid_str
+    return (
+        "geocoder",
+        _geocoder_location_external_id(
+            rid_str,
+            display_name=display_name,
+            location_type=location_type,
+        ),
+    )
 
 
 def _raw_entry_id_for_source_details(entry: dict[str, Any], *, display_name: str) -> Any:

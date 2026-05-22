@@ -515,26 +515,28 @@ export default function ProcessedItemDetail() {
             <h1 className="text-3xl font-bold">{pageTitle}</h1>
             <p className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-1 gap-y-0">
               {run?.graph_id ? (
-                <button
-                  type="button"
+                <a
+                  href={`/flow/${run.graph_id}`}
+                  target="_blank"
+                  rel="noreferrer"
                   className="text-sm text-primary hover:underline font-normal p-0 h-auto inline bg-transparent border-0 cursor-pointer"
-                  onClick={() => void navigateFromItem(`/flow/${run.graph_id}`)}
                 >
                   {graph?.name || `Flow ${run.graph_id}`}
-                </button>
+                </a>
               ) : (
                 <span>{graph?.name || 'Flow'}</span>
               )}
               <span aria-hidden="true">•</span>
-              <button
-                type="button"
-                className="text-sm text-primary hover:underline font-normal p-0 h-auto inline bg-transparent border-0 cursor-pointer"
-                onClick={() => void navigateFromItem(`/runs/${runId}`)}
+              <a
+                href={`/runs/${runId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm text-primary hover:underline font-normal inline"
               >
                 {run?.created_at
                   ? `Run: ${formatRunTitleDate(run.created_at)}`
                   : 'Run'}
-              </button>
+              </a>
             </p>
           </div>
         </div>

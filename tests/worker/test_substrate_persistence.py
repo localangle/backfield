@@ -382,6 +382,93 @@ def test_h3_point_ids_do_not_collapse_distinct_pois() -> None:
         }
 
 
+def test_shared_geocoder_address_id_does_not_collapse_distinct_pois() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    shared_geocoder_id = "openaddresses:address:us/il/cook:96ada5d99403297d"
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-shared-geocoder",
+            project_slug="proj-shared-geocoder",
+        )
+        session.add(
+            AgateRun(id="run-shared-geocoder", graph_id="graph-shared-geocoder", status="pending")
+        )
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-shared-geocoder",
+            run_id="run-shared-geocoder",
+            consolidated={
+                "text": "Buying a new suit at Carsons. Buying polos at Kohl's.",
+                "places": {
+                    "areas": {
+                        "states": [],
+                        "counties": [],
+                        "cities": [],
+                        "neighborhoods": [],
+                        "regions": [],
+                        "other": [],
+                    },
+                    "points": [
+                        {
+                            "id": "h3:shared-cell",
+                            "original_text": "Buying a new suit at Carsons.",
+                            "location": "Carson's, Lincolnwood Town Center, Lincolnwood, IL",
+                            "type": "place",
+                            "geocode": {
+                                "geocode_type": "pelias_structured",
+                                "result": {
+                                    "id": shared_geocoder_id,
+                                    "formatted_address": "3333 West Touhy Avenue, Lincolnwood, IL",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        },
+                        {
+                            "id": "h3:shared-cell",
+                            "original_text": "Buying polos at Kohl's.",
+                            "location": "Kohl's, Lincolnwood Town Center, Lincolnwood, IL",
+                            "type": "place",
+                            "geocode": {
+                                "geocode_type": "pelias_structured",
+                                "result": {
+                                    "id": shared_geocoder_id,
+                                    "formatted_address": "3333 West Touhy Avenue, Lincolnwood, IL",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        },
+                    ],
+                    "needs_review": [],
+                },
+            },
+        )
+        session.commit()
+
+        locations = session.exec(select(SubstrateLocation)).all()
+        assert len(locations) == 2
+        assert {loc.name for loc in locations} == {
+            "Carson's, Lincolnwood Town Center, Lincolnwood, IL",
+            "Kohl's, Lincolnwood Town Center, Lincolnwood, IL",
+        }
+        assert {loc.external_source for loc in locations} == {"geocoder"}
+        assert {loc.external_id for loc in locations} == {
+            f"{shared_geocoder_id}:carson-s-lincolnwood-town-center-lincolnwood-il",
+            f"{shared_geocoder_id}:kohl-s-lincolnwood-town-center-lincolnwood-il",
+        }
+        active_mentions = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(False)
+            )
+        ).all()
+        assert len(active_mentions) == 2
+
+
 def test_add_only_does_not_remove_stale_saved_places() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
