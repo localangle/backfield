@@ -115,7 +115,7 @@ def test_cannot_delete_last_stylebook() -> None:
             raise AssertionError("expected StylebookLibraryError")
 
 
-def test_cannot_delete_when_workspace_references() -> None:
+def test_delete_reassigns_workspaces_to_org_default() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(name="O", slug="o-ws")
@@ -128,24 +128,27 @@ def test_cannot_delete_when_workspace_references() -> None:
         session.commit()
         session.refresh(a)
         session.refresh(b)
+        aid = int(a.id)  # type: ignore[arg-type]
         bid = int(b.id)  # type: ignore[arg-type]
 
-        session.add(
-            BackfieldWorkspace(
-                organization_id=oid,
-                stylebook_id=bid,
-                name="W",
-                slug="w-x",
-            )
+        ws = BackfieldWorkspace(
+            organization_id=oid,
+            stylebook_id=bid,
+            name="W",
+            slug="w-x",
         )
+        session.add(ws)
+        session.commit()
+        session.refresh(ws)
+        wid = int(ws.id)  # type: ignore[arg-type]
+
+        delete_stylebook(session, bid)
         session.commit()
 
-        try:
-            delete_stylebook(session, bid)
-        except StylebookLibraryError as e:
-            assert "workspace" in str(e).lower()
-        else:
-            raise AssertionError("expected StylebookLibraryError")
+        assert session.get(Stylebook, bid) is None
+        ws2 = session.get(BackfieldWorkspace, wid)
+        assert ws2 is not None
+        assert int(ws2.stylebook_id) == aid
 
 
 def test_delete_stylebook_removes_referencing_bundle_jobs() -> None:

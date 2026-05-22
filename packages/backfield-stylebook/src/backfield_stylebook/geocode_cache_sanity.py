@@ -33,6 +33,10 @@ _CONTAINER_CANONICAL_TYPES: frozenset[str] = frozenset(
         "country",
     }
 )
+_INTERSECTION_SUBSTRATE_TYPES: frozenset[str] = frozenset(
+    {"intersection_road", "intersection_highway"}
+)
+_POI_LIKE_CANONICAL_TYPES: frozenset[str] = frozenset({"place", "point", "neighborhood"})
 
 _HOUSE_NUMBER_RE = re.compile(r"\d")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
@@ -154,6 +158,15 @@ def cache_hit_sane_for_substrate(
         addr_line = address_line_from_components(components, location_text)
         if not address_requests_street_resolution(addr_line):
             return True
+        poi = _place_name_token(components)
+        if canon_lt in _POI_LIKE_CANONICAL_TYPES:
+            if len(poi) >= 2 and _label_contains_token(label_blob, poi):
+                return True
+            if not _address_fragment_in_labels(addr_line, labels=labels):
+                return False
+            if not _house_number_in_labels(addr_line, labels=labels):
+                return False
+            return True
         if not _address_fragment_in_labels(addr_line, labels=labels):
             return False
         if not _house_number_in_labels(addr_line, labels=labels):
@@ -163,11 +176,49 @@ def cache_hit_sane_for_substrate(
             return False
         return True
 
+    if substrate_lt in _INTERSECTION_SUBSTRATE_TYPES:
+        line = str(location_text or "").strip()
+        if len(line) < 8:
+            return True
+        if canon_lt in _CONTAINER_CANONICAL_TYPES | _POI_LIKE_CANONICAL_TYPES:
+            if not _address_fragment_in_labels(line, labels=labels):
+                return False
+        return True
+
     if substrate_lt in ("place", "point"):
         token = _place_name_token(components)
-        if len(token) >= 2 and canon_lt in ("city", "town", "village"):
+        if len(token) >= 2 and canon_lt in (
+            "city",
+            "town",
+            "village",
+            "place",
+            "point",
+            "neighborhood",
+        ):
             if not _label_contains_token(label_blob, token):
                 return False
         return True
 
     return True
+
+
+def substrate_canonical_link_blocked_by_content_sanity(
+    *,
+    substrate_location_type: str | None,
+    location_text: str,
+    components: dict[str, Any] | None,
+    match_label: str,
+    match_formatted_address: str | None = None,
+    match_location_type: str | None = None,
+    match_geometry_type: str | None = None,
+) -> bool:
+    """True when type policy allows a pair but label/content checks forbid linking."""
+    return not cache_hit_sane_for_substrate(
+        substrate_location_type=substrate_location_type,
+        location_text=location_text,
+        components=components,
+        match_label=match_label,
+        match_formatted_address=match_formatted_address,
+        match_location_type=match_location_type,
+        match_geometry_type=match_geometry_type,
+    )

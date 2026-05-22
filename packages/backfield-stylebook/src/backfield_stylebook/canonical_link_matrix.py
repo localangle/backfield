@@ -56,6 +56,11 @@ _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
         frozenset({"town", "region_state"}),
         frozenset({"village", "region_state"}),
         frozenset({"address", "neighborhood"}),
+        # Intersections must not collapse onto POI identity.
+        frozenset({"intersection_road", "place"}),
+        frozenset({"intersection_road", "point"}),
+        frozenset({"intersection_highway", "place"}),
+        frozenset({"intersection_highway", "point"}),
         # Street-level extracts must not collapse onto municipality or macro admin canonicals.
         frozenset({"address", "city"}),
         frozenset({"address", "town"}),
@@ -141,11 +146,13 @@ def autolink_container_to_fine_denied(substrate_lt: str | None, canonical_lt: st
     return s in _CONTAINER_SUBSTRATE_TYPES and c in _FINE_CANONICAL_TYPES
 
 
-def types_are_comparable(_substrate_lt: str | None, _canonical_lt: str | None) -> bool:
-    """Return True when a substrate/canonical pair should be *compared* for matching.
+def types_are_comparable(substrate_lt: str | None, canonical_lt: str | None) -> bool:
+    """Return True when a substrate/canonical pair may enter recall or scoring.
 
-    Recall scoring compares candidates broadly (cross-type recall is still allowed so
-    scoring can down-rank mismatches). Autolink and exact-alias paths additionally apply
-    :func:`link_pair_allowed` and :func:`autolink_container_to_fine_denied`.
+    Uses the same gates as autolink (``link_pair_allowed`` and
+    ``autolink_container_to_fine_denied``) so cross-type candidates such as
+    **neighborhood ↔ place** are not recalled or ranked for fuzzy linking.
     """
-    return True
+    return link_pair_allowed(substrate_lt, canonical_lt) and not autolink_container_to_fine_denied(
+        substrate_lt, canonical_lt
+    )

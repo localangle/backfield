@@ -51,3 +51,114 @@ def test_place_blocks_city_canonical_without_venue_name() -> None:
         )
         is False
     )
+
+
+def test_place_blocks_neighborhood_canonical_without_poi_name() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="DanDance Art Academy, Chicago, IL",
+            components={
+                "place": {"name": "DanDance Art Academy"},
+                "neighborhood": "Bridgeport",
+                "city": "Chicago",
+            },
+            match_label="Bridgeport, Chicago, IL",
+            match_formatted_address="Bridgeport, Chicago, IL",
+            match_location_type="neighborhood",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
+def test_place_blocks_place_canonical_when_label_is_only_neighborhood_name() -> None:
+    """POI rows must not cache-hit a place canonical named like a neighborhood."""
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="DanDance Art Academy, Chicago, IL",
+            components={"place": {"name": "DanDance Art Academy"}, "city": "Chicago"},
+            match_label="Bridgeport, Chicago, IL",
+            match_formatted_address="Bridgeport, Chicago, IL",
+            match_location_type="place",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
+def test_address_blocks_place_canonical_on_neighborhood_token_only() -> None:
+    """Street addresses must not cache-hit POI canonicals on embedded neighborhood names."""
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="address",
+            location_text="5400 W. West End Ave., Austin, Chicago, IL",
+            components={"address": "5400 W. West End Ave.", "city": "Chicago"},
+            match_label="Austin, Chicago, IL",
+            match_formatted_address="Austin, Chicago, IL",
+            match_location_type="place",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
+def test_address_allows_place_canonical_when_poi_name_matches() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="address",
+            location_text="XOCO, Chicago, IL",
+            components={"place": {"name": "XOCO"}, "address": "XOCO", "city": "Chicago"},
+            match_label="XOCO",
+            match_formatted_address="XOCO, Chicago, IL",
+            match_location_type="place",
+            match_geometry_type="Point",
+        )
+        is True
+    )
+
+
+def test_intersection_blocks_place_canonical_without_street_in_label() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="intersection_road",
+            location_text="Illinois St. and Clark St., Chicago, IL",
+            components={"city": "Chicago"},
+            match_label="Chicago, IL",
+            match_formatted_address="Chicago, IL",
+            match_location_type="place",
+            match_geometry_type="Point",
+        )
+        is False
+    )
+
+
+def test_intersection_blocks_neighborhood_canonical_without_street_in_label() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="intersection_road",
+            location_text="Illinois St. and Clark St., Chicago, IL",
+            components={"city": "Chicago"},
+            match_label="Bridgeport, Chicago, IL",
+            match_formatted_address="Bridgeport, Chicago, IL",
+            match_location_type="neighborhood",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
+def test_intersection_allows_label_with_street_fragment() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="intersection_road",
+            location_text="Illinois St. and Clark St., Chicago, IL",
+            components={"city": "Chicago"},
+            match_label="Illinois St & Clark St, Chicago, IL",
+            match_formatted_address="N Clark St and W Illinois St, Chicago, IL",
+            match_location_type="intersection_road",
+            match_geometry_type="Point",
+        )
+        is True
+    )

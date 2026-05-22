@@ -6,7 +6,9 @@ from agate_nodes.geocode_agent.nodes.emit_location_line import (
     _heuristic_emit_location,
     _story_context_snippets,
     apply_title_case_location_line,
+    clamp_admin_location_display_line,
     refine_location_display_line,
+    should_skip_location_display_polish,
 )
 
 
@@ -162,3 +164,56 @@ def test_story_context_snippets_truncates_geocode_hints() -> None:
     orig, hints = _story_context_snippets({"geocode_hints": long})
     assert orig == "(none)"
     assert hints == "y" * _HINTS_SNIPPET_MAX + "…"
+
+
+def test_should_skip_polish_for_city_and_address() -> None:
+    assert should_skip_location_display_polish("city") is True
+    assert should_skip_location_display_polish("county") is True
+    assert should_skip_location_display_polish("address") is False
+    assert should_skip_location_display_polish("place") is False
+
+
+def test_clamp_city_strips_neighborhood_from_polish_mistake() -> None:
+    """South Shore / Chicago Sun-Times: city row must stay Chicago, IL."""
+    comps = {
+        "city": "Chicago",
+        "state": {"name": "Illinois", "abbr": "IL"},
+    }
+    out = clamp_admin_location_display_line(
+        "city",
+        "Chicago, IL",
+        "Chicago, IL",
+        comps,
+        "South Shore, Chicago, IL",
+    )
+    assert out == "Chicago, IL"
+
+
+def test_clamp_city_leaves_correct_line_unchanged() -> None:
+    comps = {"city": "Chicago", "state": {"abbr": "IL"}}
+    out = clamp_admin_location_display_line(
+        "city",
+        "Chicago, IL",
+        "Chicago, IL",
+        comps,
+        "Chicago, IL",
+    )
+    assert out == "Chicago, IL"
+
+
+def test_clamp_does_not_strip_neighborhood_on_address_line() -> None:
+    comps = {
+        "address": "2700 East 75th St.",
+        "neighborhood": "South Shore",
+        "city": "Chicago",
+        "state": {"abbr": "IL"},
+    }
+    line = "2700 East 75th St., South Shore, Chicago, IL"
+    out = clamp_admin_location_display_line(
+        "address",
+        "2700 East 75th St., Chicago, IL",
+        line,
+        comps,
+        line,
+    )
+    assert out == line
