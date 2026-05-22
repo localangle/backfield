@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
+from backfield_db import SubstrateLocationMention
 from backfield_stylebook.canonical_link import CANONICAL_LINK_UNLINKED
 from backfield_stylebook.canonical_policy import (
     decide_canonical_persist_plan,
@@ -12,6 +14,7 @@ from backfield_stylebook.canonical_policy import (
 )
 from backfield_stylebook.db_output_settings import (
     DbOutputCanonicalSettings,
+    ReconciliationPolicy,
     resolve_effective_stylebook_id,
 )
 from backfield_stylebook.locations import (
@@ -19,7 +22,7 @@ from backfield_stylebook.locations import (
     apply_canonical_persist_plan_review_only,
     refresh_aliases_for_linked_location,
 )
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from worker.canonical_adjudication import adjudicate_ambiguous_plan_with_llm
 from worker.substrate_article import _sync_images, _upsert_article
@@ -40,6 +43,64 @@ logger = logging.getLogger(__name__)
 __all__ = ["persist_from_consolidated", "_find_mention_span"]
 
 
+@dataclass(frozen=True)
+class PlacesReconciliationSummary:
+    policy: ReconciliationPolicy
+    domain: str = "places"
+    added: int = 0
+    updated: int = 0
+    skipped: int = 0
+    removed: int = 0
+    preserved: int = 0
+    disposed: int = 0
+
+    def as_dict(self) -> dict[str, int | str]:
+        return {
+            "domain": self.domain,
+            "policy": self.policy,
+            "added": self.added,
+            "updated": self.updated,
+            "skipped": self.skipped,
+            "removed": self.removed,
+            "preserved": self.preserved,
+            "disposed": self.disposed,
+        }
+
+
+@dataclass(frozen=True)
+class PersistResult:
+    article_id: int
+    retired_mentions: int
+    disposed_substrates: int
+    replace_stats: ArticleGeographyReplaceStats | None
+    reconciliation_summary: PlacesReconciliationSummary
+
+    def __iter__(self):
+        yield self.article_id
+        yield self.retired_mentions
+        yield self.disposed_substrates
+        yield self.replace_stats
+
+
+def _active_mention_for_article_location(
+    session: Session,
+    *,
+    article_id: int,
+    location_id: int,
+) -> Any | None:
+    return session.exec(
+        select(SubstrateLocationMention).where(
+            SubstrateLocationMention.article_id == int(article_id),
+            SubstrateLocationMention.location_id == int(location_id),
+            col(SubstrateLocationMention.deleted).is_(False),
+        )
+    ).first()
+
+
+def _editor_touched_mention(mention: Any | None) -> bool:
+    return bool(mention is not None and (bool(mention.edited) or bool(mention.added)))
+
+
 def persist_from_consolidated(
     session: Session,
     *,
@@ -49,7 +110,7 @@ def persist_from_consolidated(
     consolidated: dict[str, Any],
     db_output_params: dict[str, Any] | None = None,
     replace_machine_geography: bool = False,
-) -> tuple[int, int, int, ArticleGeographyReplaceStats | None]:
+) -> PersistResult:
     places = consolidated.get("places")
     if not isinstance(places, dict):
         raise RuntimeError(
@@ -66,6 +127,12 @@ def persist_from_consolidated(
 
     article_text = str(consolidated.get("text") or "")
     settings = DbOutputCanonicalSettings.from_node_params(db_output_params)
+    policy: ReconciliationPolicy = settings.reconciliation_policy
+    if replace_machine_geography and not (
+        isinstance(db_output_params, dict) and "reconciliation_policy" in db_output_params
+    ):
+        # Compatibility for queued runs created before the policy moved onto DBOutput.
+        policy = "replace"
     try:
         stylebook_id = resolve_effective_stylebook_id(
             session,
@@ -78,7 +145,7 @@ def persist_from_consolidated(
         raise RuntimeError(f"DBOutput stylebook resolution failed: {exc}") from exc
 
     replace_stats: ArticleGeographyReplaceStats | None = None
-    if replace_machine_geography and article.id is not None:
+    if policy == "replace" and article.id is not None:
         replace_stats = replace_machine_geography_for_article(
             session,
             project_id=int(project_id),
@@ -95,18 +162,41 @@ def persist_from_consolidated(
             )
 
     touched_location_ids: set[int] = set()
+    added = 0
+    updated = 0
+    skipped = 0
+    preserved = 0
 
     for bucket, entry in _iter_place_entries(places):
-        loc = _upsert_location(
+        upserted = _upsert_location(
             session,
             project_id=project_id,
             bucket=bucket,
             entry=entry,
             run_id=run_id,
             graph_id=graph_id,
+            update_existing=policy != "add_only",
         )
-        if loc is None or article.id is None:
+        if upserted is None or article.id is None:
             continue
+        loc = upserted.location
+        active_mention = _active_mention_for_article_location(
+            session,
+            article_id=int(article.id),
+            location_id=int(loc.id),
+        )
+        if policy == "add_only" and active_mention is not None:
+            skipped += 1
+            touched_location_ids.add(int(loc.id))
+            continue
+        if policy == "smart_merge" and _editor_touched_mention(active_mention):
+            preserved += 1
+            touched_location_ids.add(int(loc.id))
+            continue
+        if active_mention is None or upserted.created:
+            added += 1
+        elif upserted.updated:
+            updated += 1
         if loc.id is not None:
             touched_location_ids.add(int(loc.id))
         if stylebook_id is not None and loc.stylebook_location_canonical_id is not None:
@@ -167,12 +257,13 @@ def persist_from_consolidated(
             run_id=run_id,
             graph_id=graph_id,
             bucket=bucket,
+            preserve_editor_changes=policy == "smart_merge",
         )
 
     retired_mentions = 0
     substrates_disposed = 0
     if (
-        not replace_machine_geography
+        policy == "smart_merge"
         and article.id is not None
         and touched_location_ids
     ):
@@ -197,4 +288,24 @@ def persist_from_consolidated(
                 substrates_disposed,
             )
 
-    return int(article.id), retired_mentions, substrates_disposed, replace_stats
+    removed = retired_mentions
+    disposed = substrates_disposed
+    if replace_stats is not None:
+        removed = replace_stats.mentions_cleared
+        disposed = replace_stats.substrates_disposed
+    summary = PlacesReconciliationSummary(
+        policy=policy,
+        added=added,
+        updated=updated,
+        skipped=skipped,
+        removed=removed,
+        preserved=preserved,
+        disposed=disposed,
+    )
+    return PersistResult(
+        article_id=int(article.id),
+        retired_mentions=retired_mentions,
+        disposed_substrates=substrates_disposed,
+        replace_stats=replace_stats,
+        reconciliation_summary=summary,
+    )

@@ -92,7 +92,7 @@ def retire_stale_article_mentions_for_rerun(
         lid = int(mention.location_id)
         if lid in touched_location_ids:
             continue
-        if mention.edited:
+        if mention.edited or mention.added:
             continue
         sk = str(mention.source_kind or "").strip()
         if sk and sk != "agate_geocode":
@@ -199,6 +199,7 @@ def _upsert_mention_and_occurrence(
     run_id: str,
     graph_id: str,
     bucket: str,
+    preserve_editor_changes: bool = False,
 ) -> None:
     mention_texts = mention_texts_for_persist(entry)
     if not mention_texts:
@@ -253,6 +254,10 @@ def _upsert_mention_and_occurrence(
         session.add(mention)
         session.flush()
     else:
+        if preserve_editor_changes and not bool(mention.deleted) and (
+            bool(mention.edited) or bool(mention.added)
+        ):
+            return
         mention.deleted = False
         mention.role_in_story = role_str or mention.role_in_story
         mention.nature = nature_str or mention.nature

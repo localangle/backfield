@@ -19,5 +19,11 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         **body,
         "success": True,
         "article_id": None,
+        "reconciliation": {
+            "policy": params.get("reconciliation_policy", "smart_merge")
+            if isinstance(params, dict)
+            else "smart_merge",
+            "domains": [],
+        },
         "message": "DBOutput persistence is a no-op outside the Agate worker",
     }

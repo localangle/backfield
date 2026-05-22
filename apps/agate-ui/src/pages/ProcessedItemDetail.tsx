@@ -20,6 +20,7 @@ import {
 } from '@/lib/processedItemDetailTab'
 import {
   RERUN_WARNING_TITLE,
+  reconciliationPolicyFromGraph,
   rerunWarningBody,
 } from '@/lib/rerunWarning'
 import {
@@ -555,10 +556,11 @@ export default function ProcessedItemDetail() {
               }
               onClick={async () => {
                 if (!runId || !itemId) return
-                const ok = await showConfirm(rerunWarningBody(1), {
+                const policy = reconciliationPolicyFromGraph(graph)
+                const ok = await showConfirm(rerunWarningBody(1, { flowName: graph?.name, policy }), {
                   title: RERUN_WARNING_TITLE,
                   confirmLabel: 'Rerun',
-                  destructive: true,
+                  destructive: policy === 'replace',
                 })
                 if (!ok) return
                 rerunSawInFlightRef.current = false

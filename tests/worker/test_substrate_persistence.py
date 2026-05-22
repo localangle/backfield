@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from backfield_db import (
     AgateRun,
     BackfieldOrganization,
@@ -98,6 +99,62 @@ def _bootstrap_project(session: Session, *, org_slug: str, project_slug: str) ->
     return int(proj.id)  # type: ignore[arg-type]
 
 
+def _city_places(
+    *,
+    entry_id: str = "city:1",
+    geocode_id: str = "pelias:chicago",
+    name: str = "Chicago, IL",
+    formatted_address: str = "Chicago, IL, USA",
+    geometry: dict = CHICAGO_POINT,
+) -> dict:
+    return {
+        "areas": {
+            "states": [],
+            "counties": [],
+            "cities": [
+                {
+                    "id": entry_id,
+                    "original_text": "Chicago",
+                    "description": "Mentioned as the setting for the story.",
+                    "role_in_story": "Setting",
+                    "nature": "primary",
+                    "nature_secondary_tags": ["context"],
+                    "location": name,
+                    "type": "city",
+                    "geocode": {
+                        "geocode_type": "pelias",
+                        "result": {
+                            "id": geocode_id,
+                            "formatted_address": formatted_address,
+                            "geometry": geometry,
+                        },
+                    },
+                }
+            ],
+            "neighborhoods": [],
+            "regions": [],
+            "other": [],
+        },
+        "points": [],
+        "needs_review": [],
+    }
+
+
+def _empty_places() -> dict:
+    return {
+        "areas": {
+            "states": [],
+            "counties": [],
+            "cities": [],
+            "neighborhoods": [],
+            "regions": [],
+            "other": [],
+        },
+        "points": [],
+        "needs_review": [],
+    }
+
+
 def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
@@ -194,6 +251,309 @@ def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> N
         assert occ[0].start_char == 6
         assert occ[0].end_char == 13
         assert occ[0].occurrence_order == 0
+
+
+def test_add_only_skips_existing_match_without_updating_or_removing() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-add", project_slug="proj-add")
+        session.add(AgateRun(id="run-add-1", graph_id="graph-add", status="pending"))
+        session.add(AgateRun(id="run-add-2", graph_id="graph-add", status="pending"))
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-add",
+            run_id="run-add-1",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/add",
+                "places": _city_places(),
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        session.commit()
+
+        first = session.exec(select(SubstrateLocation)).one()
+        first_updated_at = first.updated_at
+
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-add",
+            run_id="run-add-2",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/add",
+                "places": _city_places(formatted_address="Changed address"),
+            },
+            db_output_params={"reconciliation_policy": "add_only"},
+        )
+        session.commit()
+
+        loc = session.get(SubstrateLocation, int(first.id))
+        assert loc is not None
+        assert loc.formatted_address == "Chicago, IL, USA"
+        assert loc.updated_at == first_updated_at
+        assert result.reconciliation_summary.skipped == 1
+        assert result.reconciliation_summary.updated == 0
+
+
+def test_add_only_does_not_remove_stale_saved_places() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session, org_slug="org-add-stale", project_slug="proj-add-stale"
+        )
+        session.add(
+            AgateRun(id="run-add-stale-1", graph_id="graph-add-stale", status="pending")
+        )
+        session.add(
+            AgateRun(id="run-add-stale-2", graph_id="graph-add-stale", status="pending")
+        )
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-add-stale",
+            run_id="run-add-stale-1",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/add-stale",
+                "places": _city_places(),
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-add-stale",
+            run_id="run-add-stale-2",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/add-stale",
+                "places": _empty_places(),
+            },
+            db_output_params={"reconciliation_policy": "add_only"},
+        )
+        session.commit()
+
+        active = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(False)
+            )
+        ).all()
+        assert len(active) == 1
+        assert result.reconciliation_summary.removed == 0
+
+
+def test_smart_merge_preserves_editor_touched_stale_places() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session,
+            org_slug="org-smart-preserve",
+            project_slug="proj-smart-preserve",
+        )
+        session.add(
+            AgateRun(
+                id="run-smart-preserve-1",
+                graph_id="graph-smart-preserve",
+                status="pending",
+            )
+        )
+        session.add(
+            AgateRun(
+                id="run-smart-preserve-2",
+                graph_id="graph-smart-preserve",
+                status="pending",
+            )
+        )
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-smart-preserve",
+            run_id="run-smart-preserve-1",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/smart-preserve",
+                "places": _city_places(),
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        mention = session.exec(select(SubstrateLocationMention)).one()
+        mention.edited = True
+        session.add(mention)
+        session.commit()
+
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-smart-preserve",
+            run_id="run-smart-preserve-2",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/smart-preserve",
+                "places": _empty_places(),
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        session.commit()
+
+        active = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(False)
+            )
+        ).all()
+        assert len(active) == 1
+        assert active[0].edited is True
+        assert result.reconciliation_summary.removed == 0
+
+
+def test_replace_clears_editor_touched_places_and_allows_future_readd() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session, org_slug="org-replace", project_slug="proj-replace"
+        )
+        session.add(AgateRun(id="run-replace-1", graph_id="graph-replace", status="pending"))
+        session.add(AgateRun(id="run-replace-2", graph_id="graph-replace", status="pending"))
+        session.add(AgateRun(id="run-replace-3", graph_id="graph-replace", status="pending"))
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-replace",
+            run_id="run-replace-1",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/replace",
+                "places": _city_places(),
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        mention = session.exec(select(SubstrateLocationMention)).one()
+        mention.edited = True
+        session.add(mention)
+        session.commit()
+
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-replace",
+            run_id="run-replace-2",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/replace",
+                "places": _empty_places(),
+            },
+            db_output_params={"reconciliation_policy": "replace"},
+        )
+        session.commit()
+
+        assert result.reconciliation_summary.removed == 1
+        active = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(False)
+            )
+        ).all()
+        assert active == []
+        assert session.exec(select(SubstrateLocation)).all() == []
+
+        readd = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-replace",
+            run_id="run-replace-3",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/replace",
+                "places": _city_places(),
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        session.commit()
+        assert readd.reconciliation_summary.added == 1
+        assert len(session.exec(select(SubstrateLocationMention)).all()) == 1
+
+
+def test_reconciliation_failure_rolls_back_prior_saved_places(monkeypatch) -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-atomic", project_slug="proj-atomic")
+        session.add(AgateRun(id="run-atomic-1", graph_id="graph-atomic", status="pending"))
+        session.add(AgateRun(id="run-atomic-2", graph_id="graph-atomic", status="pending"))
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-atomic",
+            run_id="run-atomic-1",
+            consolidated={
+                "text": "Hello Chicago.",
+                "url": "https://e.test/atomic",
+                "places": _city_places(),
+            },
+            db_output_params={"reconciliation_policy": "smart_merge"},
+        )
+        session.commit()
+
+        original_mention = session.exec(select(SubstrateLocationMention)).one()
+        original_location = session.exec(select(SubstrateLocation)).one()
+        original_mention_id = int(original_mention.id)
+        original_location_id = int(original_location.id)
+
+        def fail_mention(*_args, **_kwargs) -> None:
+            raise RuntimeError("simulated mention failure")
+
+        monkeypatch.setattr(
+            "worker.substrate_persistence._upsert_mention_and_occurrence",
+            fail_mention,
+        )
+
+        with pytest.raises(RuntimeError, match="simulated mention failure"):
+            persist_from_consolidated(
+                session,
+                project_id=project_id,
+                graph_id="graph-atomic",
+                run_id="run-atomic-2",
+                consolidated={
+                    "text": "Hello Chicago.",
+                    "url": "https://e.test/atomic",
+                    "places": _city_places(geocode_id="pelias:atomic-new"),
+                },
+                db_output_params={"reconciliation_policy": "replace"},
+            )
+        session.rollback()
+
+        mention = session.get(SubstrateLocationMention, original_mention_id)
+        location = session.get(SubstrateLocation, original_location_id)
+        assert mention is not None
+        assert mention.deleted is False
+        assert location is not None
+        assert location.external_id == "pelias:chicago"
+        active_mentions = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(False)
+            )
+        ).all()
+        assert len(active_mentions) == 1
 
 
 def test_persist_geocodio_id_sets_external_source() -> None:

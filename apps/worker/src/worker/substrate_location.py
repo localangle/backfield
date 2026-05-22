@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstrateLocation, SubstrateLocationCache
@@ -30,6 +31,13 @@ _STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
         "street_road",
     }
 )
+
+
+@dataclass(frozen=True)
+class LocationUpsertResult:
+    location: SubstrateLocation
+    created: bool
+    updated: bool
 
 
 def _router_audit_from_place_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -516,7 +524,8 @@ def _upsert_location(
     entry: dict[str, Any],
     run_id: str,
     graph_id: str,
-) -> SubstrateLocation | None:
+    update_existing: bool = True,
+) -> LocationUpsertResult | None:
     display_name = _display_name_for_place_entry(entry)
     normalized = _normalize_name(display_name)
     if not normalized:
@@ -660,7 +669,10 @@ def _upsert_location(
             geometry_type_str=geometry_type_str,
             formatted_address=formatted_address,
         )
-        return loc
+        return LocationUpsertResult(location=loc, created=True, updated=False)
+
+    if not update_existing:
+        return LocationUpsertResult(location=loc, created=False, updated=False)
 
     _apply_substrate_location_merge(
         loc,
@@ -694,4 +706,4 @@ def _upsert_location(
         geometry_type_str=geometry_type_str,
         formatted_address=formatted_address,
     )
-    return loc
+    return LocationUpsertResult(location=loc, created=False, updated=True)

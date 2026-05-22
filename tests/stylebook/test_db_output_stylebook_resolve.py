@@ -8,7 +8,10 @@ from backfield_db import (
     BackfieldWorkspace,
     Stylebook,
 )
-from backfield_stylebook.db_output_settings import resolve_effective_stylebook_id
+from backfield_stylebook.db_output_settings import (
+    DbOutputCanonicalSettings,
+    resolve_effective_stylebook_id,
+)
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -27,6 +30,18 @@ def test_db_output_resolve_unknown_project() -> None:
             assert "not found" in str(e).lower()
         else:
             raise AssertionError("expected ValueError")
+
+
+def test_db_output_settings_default_to_smart_merge() -> None:
+    settings = DbOutputCanonicalSettings.from_node_params({})
+    assert settings.reconciliation_policy == "smart_merge"
+
+
+def test_db_output_settings_validate_reconciliation_policy() -> None:
+    settings = DbOutputCanonicalSettings.from_node_params(
+        {"reconciliation_policy": "add_only"}
+    )
+    assert settings.reconciliation_policy == "add_only"
 
 
 def test_db_output_delegates_override_to_shared_resolver() -> None:
