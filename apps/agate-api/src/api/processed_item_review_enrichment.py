@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from typing import Any
 
 from api.processed_item_mention_occurrences import (
@@ -19,6 +20,8 @@ from backfield_db import (
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED
 from sqlmodel import Session, col, select
+
+_WS_RE = re.compile(r"\s+")
 
 
 def _normalize_geometry_json(value: Any) -> Any:
@@ -57,8 +60,35 @@ def _identity_keys(location: Any, anchor: Any) -> set[str]:
         raw = location.get(field)
         if raw is None or raw == "":
             continue
-        keys.add(str(raw))
+        value = str(raw).strip()
+        if not value:
+            continue
+        if value.startswith("h3:"):
+            suffix = _location_display_key(location)
+            if suffix:
+                keys.add(f"{value}:{suffix}")
+            continue
+        keys.add(value)
     return keys
+
+
+def _location_display_key(location: dict[str, Any]) -> str:
+    loc = location.get("location")
+    if isinstance(loc, str) and loc.strip():
+        return _normalize_display_key(loc)
+    if isinstance(loc, dict):
+        full = loc.get("full")
+        if isinstance(full, str) and full.strip():
+            return _normalize_display_key(full)
+    for field in ("formatted_address", "original_text"):
+        raw = location.get(field)
+        if isinstance(raw, str) and raw.strip():
+            return _normalize_display_key(raw)
+    return ""
+
+
+def _normalize_display_key(value: str) -> str:
+    return _WS_RE.sub(" ", value.strip().lower())
 
 
 def _apply_mention_editorial_to_place(

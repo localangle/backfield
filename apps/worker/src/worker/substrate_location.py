@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstrateLocation, SubstrateLocationCache
@@ -30,6 +31,13 @@ _STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
         "street_road",
     }
 )
+
+
+@dataclass(frozen=True)
+class LocationUpsertResult:
+    location: SubstrateLocation
+    created: bool
+    updated: bool
 
 
 def _router_audit_from_place_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -296,6 +304,24 @@ def _stylebook_location_external_id(
     return base
 
 
+def _geocoder_location_external_id(
+    raw_id: str,
+    *,
+    display_name: str,
+    location_type: str | None,
+) -> str:
+    """Disambiguate shared geocoder address/building ids for fine-grained POIs."""
+    base = str(raw_id).strip()
+    if not base:
+        return base
+    if not _stylebook_identity_disambiguates_by_name(location_type):
+        return base
+    suffix = _stylebook_place_name_identity_suffix(display_name)
+    if suffix:
+        return f"{base}:{suffix}"
+    return base
+
+
 def _external_identity_from_geocode_result(
     result: dict[str, Any],
     *,
@@ -318,7 +344,7 @@ def _external_identity_from_geocode_result(
     rid = result.get("id")
     if rid is None:
         return None, None
-    rid_str = str(rid)
+    rid_str = str(rid).strip()
     if rid_str.startswith("stylebook:"):
         return (
             "stylebook_location",
@@ -335,8 +361,29 @@ def _external_identity_from_geocode_result(
     if rid_str.startswith("geocodio:"):
         return "geocodio", rid_str
     if rid_str.startswith("h3:"):
-        return "h3", rid_str
-    return "geocoder", rid_str
+        # H3 cells are spatial buckets, not place identity. Distinct POIs in the same
+        # building can share a cell and must remain separate substrate rows.
+        return None, None
+    return (
+        "geocoder",
+        _geocoder_location_external_id(
+            rid_str,
+            display_name=display_name,
+            location_type=location_type,
+        ),
+    )
+
+
+def _raw_entry_id_for_source_details(entry: dict[str, Any], *, display_name: str) -> Any:
+    raw = entry.get("id")
+    if not isinstance(raw, str):
+        return raw
+    value = raw.strip()
+    if value.startswith("h3:"):
+        suffix = _normalize_name(display_name)
+        if suffix:
+            return f"{value}:{suffix}"
+    return raw
 
 
 def _fingerprint_for_location(
@@ -516,7 +563,8 @@ def _upsert_location(
     entry: dict[str, Any],
     run_id: str,
     graph_id: str,
-) -> SubstrateLocation | None:
+    update_existing: bool = True,
+) -> LocationUpsertResult | None:
     display_name = _display_name_for_place_entry(entry)
     normalized = _normalize_name(display_name)
     if not normalized:
@@ -586,7 +634,7 @@ def _upsert_location(
         "graph_id": graph_id,
         "run_id": run_id,
         "places_bucket": bucket,
-        "raw_entry_id": entry.get("id"),
+        "raw_entry_id": _raw_entry_id_for_source_details(entry, display_name=display_name),
         **_place_extract_persist_fields_from_entry(entry),
     }
 
@@ -660,7 +708,10 @@ def _upsert_location(
             geometry_type_str=geometry_type_str,
             formatted_address=formatted_address,
         )
-        return loc
+        return LocationUpsertResult(location=loc, created=True, updated=False)
+
+    if not update_existing:
+        return LocationUpsertResult(location=loc, created=False, updated=False)
 
     _apply_substrate_location_merge(
         loc,
@@ -694,4 +745,4 @@ def _upsert_location(
         geometry_type_str=geometry_type_str,
         formatted_address=formatted_address,
     )
-    return loc
+    return LocationUpsertResult(location=loc, created=False, updated=True)

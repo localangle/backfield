@@ -35,12 +35,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
     from backfield_db.session import get_engine
 
     with Session(get_engine()) as session:
-        (
-            article_id,
-            retired_mentions,
-            substrates_disposed,
-            replace_stats,
-        ) = persist_from_consolidated(
+        persist_result = persist_from_consolidated(
             session,
             project_id=project_id,
             graph_id=graph_id,
@@ -49,6 +44,11 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
             db_output_params=params if isinstance(params, dict) else None,
             replace_machine_geography=replace_geography,
         )
+        article_id = persist_result.article_id
+        retired_mentions = persist_result.retired_mentions
+        substrates_disposed = persist_result.disposed_substrates
+        replace_stats = persist_result.replace_stats
+        reconciliation_summary = persist_result.reconciliation_summary.as_dict()
         clear_replace_article_geography_flags(
             session,
             run_id=run_id,
@@ -78,5 +78,9 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         "article_id": article_id,
         "retired_mention_count": retired_mentions,
         "disposed_substrate_count": substrates_disposed,
+        "reconciliation": {
+            "policy": reconciliation_summary["policy"],
+            "domains": [reconciliation_summary],
+        },
         "message": message,
     }

@@ -961,7 +961,6 @@ def rerun_run_processed_item(
         r.status = "pending"
         r.result_json = None
         r.error_message = None
-        r.replace_article_geography_on_persist = True
         r.updated_at = datetime.now(UTC)
         session.add(r)
         session.commit()
@@ -990,7 +989,6 @@ def rerun_run_processed_item(
     item.status = "pending"
     item.result_json = None
     item.error_message = None
-    item.replace_article_geography_on_persist = True
     item.overlay_json = None
     item.reviewed_output_json = None
     item.overlay_version = 0

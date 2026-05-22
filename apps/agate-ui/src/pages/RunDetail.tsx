@@ -24,8 +24,9 @@ import { formatDateCentral, formatRunTitleDate } from '@/lib/utils'
 import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
 import {
-  RUN_AGAIN_WARNING_BODY,
   RUN_AGAIN_WARNING_TITLE,
+  reconciliationPolicyFromGraph,
+  runAgainWarningBody,
   rerunWarningBody,
   rerunWarningTitle,
 } from '@/lib/rerunWarning'
@@ -146,18 +147,17 @@ export default function RunDetail() {
   async function handleRunAgain() {
     if (!run || !graph) return
 
-    const ok = await showConfirm(RUN_AGAIN_WARNING_BODY, {
+    const policy = reconciliationPolicyFromGraph(graph)
+    const ok = await showConfirm(runAgainWarningBody({ flowName: graph.name, policy }), {
       title: RUN_AGAIN_WARNING_TITLE,
       confirmLabel: 'Run again',
-      destructive: true,
+      destructive: policy === 'replace',
     })
     if (!ok) return
 
     try {
       setRunningAgain(true)
-      const newRun = await createRun(run.graph_id, {
-        replace_article_geography_on_persist: true,
-      })
+      const newRun = await createRun(run.graph_id)
       // Navigate to the new run detail page
       navigate(`/runs/${newRun.id}`)
     } catch (error) {
@@ -230,10 +230,11 @@ export default function RunDetail() {
     if (!runId || selectedItems.size === 0) return
 
     const count = selectedItems.size
-    const ok = await showConfirm(rerunWarningBody(count), {
+    const policy = reconciliationPolicyFromGraph(graph)
+    const ok = await showConfirm(rerunWarningBody(count, { flowName: graph?.name, policy }), {
       title: rerunWarningTitle(count),
       confirmLabel: count === 1 ? 'Rerun' : `Rerun ${count} items`,
-      destructive: true,
+      destructive: policy === 'replace',
     })
     if (!ok) return
 

@@ -11,6 +11,7 @@ from sqlmodel import Session
 from backfield_stylebook.resolve import resolve_effective_stylebook_id_for_project
 
 CanonicalizationMode = Literal["rules", "ai_assisted"]
+ReconciliationPolicy = Literal["add_only", "smart_merge", "replace"]
 
 
 class DbOutputCanonicalSettings(BaseModel):
@@ -22,6 +23,10 @@ class DbOutputCanonicalSettings(BaseModel):
         "When null, use the project's workspace default Stylebook.",
     )
     canonicalization_mode: CanonicalizationMode = "rules"
+    reconciliation_policy: ReconciliationPolicy = Field(
+        default="smart_merge",
+        description="How Stylebook Output reconciles saved data in domains produced by this flow.",
+    )
     auto_apply_canonicalization: bool = True
     adjudication_model: str = Field(
         default="gpt-5-nano",
@@ -40,6 +45,9 @@ class DbOutputCanonicalSettings(BaseModel):
         out = dict(data)
         if "stylebook_id" in out and out["stylebook_id"] == "":
             out["stylebook_id"] = None
+        policy = out.get("reconciliation_policy")
+        if isinstance(policy, str) and policy.strip() == "":
+            out.pop("reconciliation_policy", None)
         am = out.get("adjudication_model")
         if isinstance(am, str) and am.strip() == "":
             out.pop("adjudication_model", None)

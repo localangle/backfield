@@ -189,7 +189,7 @@ export interface GraphCreate {
 
 export interface RunCreate {
   input?: Record<string, unknown>
-  /** When true (Run Again), the next persist replaces saved places for each story. */
+  /** Legacy compatibility flag; saved-data policy now lives on Stylebook Output. */
   replace_article_geography_on_persist?: boolean
 }
 

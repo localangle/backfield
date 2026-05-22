@@ -36,6 +36,7 @@ const nodeMetadata = {
   "defaultParams": {
     "stylebook_id": null,
     "canonicalization_mode": "rules",
+    "reconciliation_policy": "smart_merge",
     "auto_apply_canonicalization": true,
     "adjudication_model": "",
     "adjudication_ai_model_config_id": null
@@ -70,6 +71,7 @@ const INVALID_SELECTION_VALUE = '__bf_model_invalid__'
 const DEFAULTS = {
   stylebook_id: null as number | null,
   canonicalization_mode: 'rules' as 'rules' | 'ai_assisted',
+  reconciliation_policy: 'smart_merge' as 'add_only' | 'smart_merge' | 'replace',
   auto_apply_canonicalization: true,
   adjudication_model: '',
   adjudication_ai_model_config_id: null as string | null,
@@ -372,6 +374,35 @@ export default function DBOutputPanel({
           When set, canonicalization targets this Stylebook (must belong to the project
           organization). Workspace default uses the catalog configured for this flow&apos;s
           workspace.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="dbout-reconciliation">Saved data</Label>
+        <Select
+          value={data.reconciliation_policy}
+          onValueChange={(value) =>
+            patch({
+              reconciliation_policy: value as 'add_only' | 'smart_merge' | 'replace',
+            })
+          }
+          disabled={disabled}
+        >
+          <SelectTrigger id="dbout-reconciliation" className="text-xs">
+            <SelectValue placeholder="Choose how saved data is updated" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="add_only">Add Only</SelectItem>
+            <SelectItem value="smart_merge">Smart Merge</SelectItem>
+            <SelectItem value="replace">Replace</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {data.reconciliation_policy === 'add_only'
+            ? 'Adds new data from this flow without changing existing saved data.'
+            : data.reconciliation_policy === 'replace'
+              ? 'Replaces existing saved data from this flow’s categories with this run’s results.'
+              : 'Updates data from this flow while preserving changes made by editors.'}
         </p>
       </div>
 

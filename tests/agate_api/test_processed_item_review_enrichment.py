@@ -208,6 +208,82 @@ def test_enrich_skips_unlinked_canonical() -> None:
         assert "stylebook_link" not in out[0]
 
 
+def test_enrich_matches_h3_rows_by_display_name_suffix() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org H3", slug="org-h3")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+
+        project = BackfieldProject(
+            organization_id=int(org.id),
+            name="Proj H3",
+            slug="proj-h3",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
+        article = SubstrateArticle(project_id=int(project.id), headline="H", text="B")
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+
+        locs: list[SubstrateLocation] = []
+        for raw_entry_id, name in (
+            ("h3:abc:carson's, lincolnwood town center", "Carson's, Lincolnwood Town Center"),
+            ("h3:abc:kohl's, lincolnwood town center", "Kohl's, Lincolnwood Town Center"),
+        ):
+            loc = SubstrateLocation(
+                project_id=int(project.id),
+                name=name,
+                normalized_name=name.lower(),
+                canonical_link_status=CANONICAL_LINK_PENDING,
+                source_details_json={"run_id": "run-h3", "raw_entry_id": raw_entry_id},
+            )
+            session.add(loc)
+            session.commit()
+            session.refresh(loc)
+            session.add(
+                SubstrateLocationMention(
+                    article_id=int(article.id),
+                    location_id=int(loc.id),
+                )
+            )
+            locs.append(loc)
+        session.commit()
+
+        out = enrich_merged_locations_for_review(
+            session,
+            project_id=int(project.id),
+            run_id="run-h3",
+            article_id=int(article.id),
+            merged_locations=[
+                {
+                    "anchor": "stylebook_output:0",
+                    "location": {
+                        "id": "h3:abc",
+                        "location": "Carson's, Lincolnwood Town Center",
+                    },
+                },
+                {
+                    "anchor": "stylebook_output:1",
+                    "location": {
+                        "id": "h3:abc",
+                        "location": "Kohl's, Lincolnwood Town Center",
+                    },
+                },
+            ],
+        )
+        assert out[0]["persisted_location_id"] == int(locs[0].id)
+        assert out[1]["persisted_location_id"] == int(locs[1].id)
+
+
 def test_enrich_omits_stylebook_link_when_mention_deleted_for_article() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     from sqlmodel import SQLModel

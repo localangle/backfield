@@ -36,6 +36,7 @@ const nodeMetadata = {
   "defaultParams": {
     "stylebook_id": null,
     "canonicalization_mode": "rules",
+    "reconciliation_policy": "smart_merge",
     "auto_apply_canonicalization": true,
     "adjudication_model": "",
     "adjudication_ai_model_config_id": null

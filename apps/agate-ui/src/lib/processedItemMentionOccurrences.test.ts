@@ -16,6 +16,41 @@ describe('readMentionOccurrencesFromRow', () => {
     expect(occs).toHaveLength(2)
     expect(occs[0]?.mentionText).toBe('Ohio in lede.')
   })
+
+  it('falls back to model mentions when system occurrences belong to another row', () => {
+    const occs = readMentionOccurrencesFromRow({
+      location: {
+        original_text: 'Buying a new suit at Carsons for an interview.',
+        mentions: [{ text: 'Buying a new suit at Carsons for an interview.' }],
+      },
+      mention_occurrences: [
+        {
+          mention_text: '"Buying polos at Kohl\'s. Sexy sexy." — Andy Green',
+          occurrence_order: 0,
+          source_kind: 'system_extraction',
+        },
+      ],
+    })
+    expect(occs).toHaveLength(1)
+    expect(occs[0]?.mentionText).toBe('Buying a new suit at Carsons for an interview.')
+  })
+
+  it('keeps user-reviewed occurrences even when they differ from model text', () => {
+    const occs = readMentionOccurrencesFromRow({
+      location: {
+        original_text: 'Model text',
+        mentions: [{ text: 'Model text' }],
+      },
+      mention_occurrences: [
+        {
+          mention_text: 'Reviewed text',
+          occurrence_order: 0,
+          source_kind: 'user_review',
+        },
+      ],
+    })
+    expect(occs[0]?.mentionText).toBe('Reviewed text')
+  })
 })
 
 describe('recomputeOccurrenceSpans', () => {

@@ -820,7 +820,7 @@ def test_rerun_processed_item_resets_row_and_enqueues_task(monkeypatch, tmp_path
             assert again.status == "pending"
             assert again.result_json is None
             assert again.error_message is None
-            assert again.replace_article_geography_on_persist is True
+            assert again.replace_article_geography_on_persist is False
             assert again.overlay_json is None
             assert again.reviewed_output_json is None
             assert again.overlay_version == 0
@@ -901,7 +901,7 @@ def test_rerun_synthetic_whole_graph_run_resets_run_and_enqueues_task(
             assert again.status == "pending"
             assert again.result_json is None
             assert again.error_message is None
-            assert again.replace_article_geography_on_persist is True
+            assert again.replace_article_geography_on_persist is False
 
         assert captured["name"] == "worker.tasks.execute_agate_run"
         assert captured["args"] == [rid]
