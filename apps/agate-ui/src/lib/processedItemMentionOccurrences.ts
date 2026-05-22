@@ -51,34 +51,23 @@ function normalizeApiOccurrence(raw: Record<string, unknown>, order: number): Me
   }
 }
 
-/** Read occurrences from merged row (API ``mention_occurrences`` or place ``mentions``). */
-export function readMentionOccurrencesFromRow(
-  row: MergedRowWithOccurrences | null | undefined,
-): MentionOccurrenceDraft[] {
-  if (!row) return []
-  const rawList = row.mention_occurrences
-  if (Array.isArray(rawList)) {
-    const out: MentionOccurrenceDraft[] = []
-    for (let i = 0; i < rawList.length; i++) {
-      const item = rawList[i]
-      if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const norm = normalizeApiOccurrence(item as Record<string, unknown>, i)
-        if (norm) out.push(norm)
-      }
-    }
-    if (out.length > 0) {
-      return out.sort((a, b) => a.occurrenceOrder - b.occurrenceOrder)
-    }
-  }
-  const place = row.location
-  if (!place || typeof place !== 'object') return []
+function occurrenceSourceKind(raw: Record<string, unknown>): string {
+  const source = raw.source_kind
+  return typeof source === 'string' ? source.trim() : ''
+}
+
+function modelOccurrencesFromPlace(place: Record<string, unknown>): MentionOccurrenceDraft[] {
   const mentions = place.mentions
   if (Array.isArray(mentions)) {
     const out: MentionOccurrenceDraft[] = []
     for (let i = 0; i < mentions.length; i++) {
       const item = mentions[i]
       if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const norm = normalizeApiOccurrence({ text: (item as Record<string, unknown>).text, mention_text: (item as Record<string, unknown>).text }, i)
+        const text = (item as Record<string, unknown>).text
+        const norm = normalizeApiOccurrence({ text, mention_text: text }, i)
+        if (norm) out.push(norm)
+      } else if (typeof item === 'string' && item.trim()) {
+        const norm = normalizeApiOccurrence({ text: item, mention_text: item }, i)
         if (norm) out.push(norm)
       }
     }
@@ -98,6 +87,52 @@ export function readMentionOccurrencesFromRow(
     ]
   }
   return []
+}
+
+function shouldPreferModelOccurrences(
+  apiRows: Record<string, unknown>[],
+  apiOccurrences: MentionOccurrenceDraft[],
+  modelOccurrences: MentionOccurrenceDraft[],
+): boolean {
+  if (apiOccurrences.length === 0 || modelOccurrences.length === 0) return false
+  const allSystem = apiRows.every((raw) => {
+    const source = occurrenceSourceKind(raw)
+    return source === '' || source === 'model' || source === 'system_extraction'
+  })
+  if (!allSystem) return false
+  const modelTexts = new Set(modelOccurrences.map((o) => o.mentionText.trim().toLowerCase()).filter(Boolean))
+  return apiOccurrences.every((occ) => !modelTexts.has(occ.mentionText.trim().toLowerCase()))
+}
+
+/** Read occurrences from merged row (API ``mention_occurrences`` or place ``mentions``). */
+export function readMentionOccurrencesFromRow(
+  row: MergedRowWithOccurrences | null | undefined,
+): MentionOccurrenceDraft[] {
+  if (!row) return []
+  const place = row.location
+  const modelOccurrences =
+    place && typeof place === 'object' ? modelOccurrencesFromPlace(place) : []
+  const rawList = row.mention_occurrences
+  if (Array.isArray(rawList)) {
+    const out: MentionOccurrenceDraft[] = []
+    const apiRows: Record<string, unknown>[] = []
+    for (let i = 0; i < rawList.length; i++) {
+      const item = rawList[i]
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const raw = item as Record<string, unknown>
+        apiRows.push(raw)
+        const norm = normalizeApiOccurrence(raw, i)
+        if (norm) out.push(norm)
+      }
+    }
+    if (out.length > 0) {
+      if (shouldPreferModelOccurrences(apiRows, out, modelOccurrences)) {
+        return modelOccurrences
+      }
+      return out.sort((a, b) => a.occurrenceOrder - b.occurrenceOrder)
+    }
+  }
+  return modelOccurrences
 }
 
 export function activeMentionOccurrences(occurrences: MentionOccurrenceDraft[]): MentionOccurrenceDraft[] {

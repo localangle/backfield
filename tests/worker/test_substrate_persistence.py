@@ -302,6 +302,86 @@ def test_add_only_skips_existing_match_without_updating_or_removing() -> None:
         assert result.reconciliation_summary.updated == 0
 
 
+def test_h3_point_ids_do_not_collapse_distinct_pois() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    shared_h3 = "h3:8c2664d837691ff"
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-h3", project_slug="proj-h3")
+        session.add(AgateRun(id="run-h3", graph_id="graph-h3", status="pending"))
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-h3",
+            run_id="run-h3",
+            consolidated={
+                "text": "Buying a new suit at Carsons. Buying polos at Kohl's.",
+                "places": {
+                    "areas": {
+                        "states": [],
+                        "counties": [],
+                        "cities": [],
+                        "neighborhoods": [],
+                        "regions": [],
+                        "other": [],
+                    },
+                    "points": [
+                        {
+                            "id": shared_h3,
+                            "original_text": "Buying a new suit at Carsons.",
+                            "location": "Carson's, Lincolnwood Town Center",
+                            "type": "place",
+                            "geocode": {
+                                "geocode_type": "h3",
+                                "result": {
+                                    "id": shared_h3,
+                                    "formatted_address": "Lincolnwood Town Center",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        },
+                        {
+                            "id": shared_h3,
+                            "original_text": "Buying polos at Kohl's.",
+                            "location": "Kohl's, Lincolnwood Town Center",
+                            "type": "place",
+                            "geocode": {
+                                "geocode_type": "h3",
+                                "result": {
+                                    "id": shared_h3,
+                                    "formatted_address": "Lincolnwood Town Center",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        },
+                    ],
+                    "needs_review": [],
+                },
+            },
+        )
+        session.commit()
+
+        locations = session.exec(select(SubstrateLocation)).all()
+        assert len(locations) == 2
+        assert {loc.name for loc in locations} == {
+            "Carson's, Lincolnwood Town Center",
+            "Kohl's, Lincolnwood Town Center",
+        }
+        assert {loc.external_source for loc in locations} == {None}
+        raw_ids = {
+            loc.source_details_json["raw_entry_id"]
+            for loc in locations
+            if isinstance(loc.source_details_json, dict)
+        }
+        assert raw_ids == {
+            "h3:8c2664d837691ff:carson's, lincolnwood town center",
+            "h3:8c2664d837691ff:kohl's, lincolnwood town center",
+        }
+
+
 def test_add_only_does_not_remove_stale_saved_places() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

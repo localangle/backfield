@@ -343,8 +343,22 @@ def _external_identity_from_geocode_result(
     if rid_str.startswith("geocodio:"):
         return "geocodio", rid_str
     if rid_str.startswith("h3:"):
-        return "h3", rid_str
+        # H3 cells are spatial buckets, not place identity. Distinct POIs in the same
+        # building can share a cell and must remain separate substrate rows.
+        return None, None
     return "geocoder", rid_str
+
+
+def _raw_entry_id_for_source_details(entry: dict[str, Any], *, display_name: str) -> Any:
+    raw = entry.get("id")
+    if not isinstance(raw, str):
+        return raw
+    value = raw.strip()
+    if value.startswith("h3:"):
+        suffix = _normalize_name(display_name)
+        if suffix:
+            return f"{value}:{suffix}"
+    return raw
 
 
 def _fingerprint_for_location(
@@ -595,7 +609,7 @@ def _upsert_location(
         "graph_id": graph_id,
         "run_id": run_id,
         "places_bucket": bucket,
-        "raw_entry_id": entry.get("id"),
+        "raw_entry_id": _raw_entry_id_for_source_details(entry, display_name=display_name),
         **_place_extract_persist_fields_from_entry(entry),
     }
 
