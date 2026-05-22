@@ -709,3 +709,105 @@ def test_try_resolve_substrate_cache_tier2() -> None:
     assert hit is not None
     assert hit["confidence"]["source"] == "location_cache"
     assert hit["label"] == "Rockford, IL"
+
+
+def test_address_tier2_rejects_city_only_poisoned_row() -> None:
+    """Tier-2 substrate cache must not return city geometry for a street address query."""
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        query = "500 N. Franklin St., Chicago, IL"
+        fp = substrate_location_cache_query_fingerprint(
+            project_id=pid,
+            normalized_query=normalize_substrate_cache_query(query),
+            location_type="address",
+        )
+        session.add(
+            SubstrateLocationCache(
+                project_id=pid,
+                query_text=query,
+                normalized_query=normalize_substrate_cache_query(query),
+                query_fingerprint=fp,
+                location_name="Chicago, IL",
+                location_type="city",
+                geocode_type="stylebook",
+                formatted_address="Chicago, IL",
+                geometry_json={
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [-87.94, 41.64],
+                            [-87.52, 41.64],
+                            [-87.52, 42.02],
+                            [-87.94, 42.02],
+                            [-87.94, 41.64],
+                        ]
+                    ],
+                },
+                geometry_type="Polygon",
+                response_payload_json={},
+            )
+        )
+        session.commit()
+
+        outcome = resolve_geocode_cache_strict_with_outcome(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text=query,
+            location_type="address",
+            components={
+                "address": "500 N. Franklin St.",
+                "city": "Chicago",
+                "state": {"abbr": "IL"},
+            },
+        )
+    assert outcome.match_dict is None
+    assert outcome.tier2_sanity_failed is True
+
+
+def test_address_tier1_blocks_city_canonical_even_with_exact_alias() -> None:
+    """Exact alias on a city canonical must not auto-hit for a street-address extract."""
+    gj = {
+        "type": "Polygon",
+        "coordinates": [
+            [[-88.0, 41.0], [-87.0, 41.0], [-87.0, 42.0], [-88.0, 42.0], [-88.0, 41.0]]
+        ],
+    }
+    engine = _engine()
+    with Session(engine) as session:
+        pid, sb_id, _ = _seed_org_sb_project(session)
+        c = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            slug="chicago-il",
+            location_type="city",
+            status="active",
+            geometry_json=gj,
+            geometry_type="Polygon",
+        )
+        session.add(c)
+        session.commit()
+        session.refresh(c)
+        cid = str(c.id)
+        poisoned_query = normalize_substrate_cache_query("500 N. Franklin St., Chicago, IL")
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="500 N. Franklin St., Chicago, IL",
+                normalized_alias=poisoned_query,
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        hit = try_resolve_geocode_cache(
+            session,
+            project_id=pid,
+            stylebook_id=sb_id,
+            location_text="500 N. Franklin St., Chicago, IL",
+            location_type="address",
+            components={"address": "500 N. Franklin St.", "state": {"abbr": "IL"}},
+        )
+    assert hit is None

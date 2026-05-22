@@ -7,11 +7,16 @@ from backfield_db import (
     BackfieldWorkspace,
     StylebookLocationAlias,
     StylebookLocationCanonical,
+    SubstrateArticle,
+    SubstrateLocation,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from backfield_stylebook import assert_canonical_link_invariant
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from sqlmodel import Session, SQLModel, col, create_engine, select
+from worker.substrate_article_geography_reset import replace_machine_geography_for_article
 from worker.substrate_persistence import _find_mention_span, persist_from_consolidated
 
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
@@ -437,6 +442,140 @@ def test_persist_stylebook_canonical_id_no_double_prefix() -> None:
         assert locs[0].external_id == already
 
 
+def test_persist_stylebook_canonical_splits_fine_grained_poi_by_display_name() -> None:
+    sb_uuid = "cdf548d6-7c91-461f-ba70-7897e0092985"
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    def _canonical_point(*, place_id: str, original_text: str) -> dict:
+        return {
+            "id": place_id,
+            "original_text": original_text,
+            "location": original_text,
+            "type": "point",
+            "geocode": {
+                "geocode_type": "canonical_db",
+                "result": {
+                    "id": f"stylebook:{sb_uuid}",
+                    "canonical_id": sb_uuid,
+                    "formatted_address": "Orland Park, IL, USA",
+                    "geometry": WGP_POINT,
+                },
+            },
+        }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org_poi", project_slug="proj_poi")
+        session.add(AgateRun(id="run-poi", graph_id="graph-poi", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Shoppers visited Carson's and Kohl's at the mall.",
+            "url": "https://example.com/mall-shoppers",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [
+                    _canonical_point(place_id="poi:carsons", original_text="Carson's"),
+                    _canonical_point(place_id="poi:kohls", original_text="Kohl's"),
+                ],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-poi",
+            run_id="run-poi",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 2
+        external_ids = {loc.external_id for loc in locs}
+        assert external_ids == {
+            f"stylebook:{sb_uuid}:carson-s",
+            f"stylebook:{sb_uuid}:kohl-s",
+        }
+
+        mentions = session.exec(select(SubstrateLocationMention)).all()
+        assert len(mentions) == 2
+
+
+def test_persist_stylebook_canonical_collapses_same_poi_display_name() -> None:
+    sb_uuid = "8f3b2c4a-1e2d-4f5a-9b8c-7d6e5f4a3b2c"
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    def _canonical_point(*, place_id: str) -> dict:
+        return {
+            "id": place_id,
+            "original_text": "Carson's",
+            "location": "Carson's",
+            "type": "point",
+            "geocode": {
+                "geocode_type": "canonical_db",
+                "result": {
+                    "canonical_id": sb_uuid,
+                    "formatted_address": "Orland Park, IL, USA",
+                    "geometry": WGP_POINT,
+                },
+            },
+        }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session, org_slug="org_poi_dup", project_slug="proj_poi_dup"
+        )
+        session.add(AgateRun(id="run-poi-dup", graph_id="graph-poi-dup", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Carson's appeared twice in the story.",
+            "url": "https://example.com/carsons-twice",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [
+                    _canonical_point(place_id="poi:carsons-a"),
+                    _canonical_point(place_id="poi:carsons-b"),
+                ],
+                "needs_review": [],
+            },
+        }
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-poi-dup",
+            run_id="run-poi-dup",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].external_id == f"stylebook:{sb_uuid}:carson-s"
+        mentions = session.exec(select(SubstrateLocationMention)).all()
+        assert len(mentions) == 1
+
+
 def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
@@ -504,6 +643,520 @@ def test_persist_graph_outputs_suppresses_prior_occurrences_on_repeat() -> None:
         assert len(occ) == 2
         assert sum(1 for row in occ if row.suppressed) == 1
         assert sum(1 for row in occ if not row.suppressed) == 1
+
+
+def test_rerun_retires_stale_article_mentions_when_geocode_identity_changes() -> None:
+    """Re-run with new geocode ids must not leave duplicate active mentions on the article."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-rerun", project_slug="proj-rerun")
+        session.add(AgateRun(id="run-a", graph_id="graph-r", status="pending"))
+        session.add(AgateRun(id="run-b", graph_id="graph-r", status="pending"))
+        session.commit()
+
+        run1_places = {
+            "areas": {
+                "states": [],
+                "counties": [],
+                "cities": [],
+                "neighborhoods": [],
+                "regions": [],
+                "other": [],
+            },
+            "points": [
+                {
+                    "id": "franklin",
+                    "original_text": "500 N Franklin",
+                    "location": "500 N Franklin St, Chicago, IL",
+                    "type": "address",
+                    "geocode": {
+                        "geocode_type": "pelias",
+                        "result": {
+                            "id": "pelias:franklin",
+                            "formatted_address": "500 N Franklin, Chicago, IL",
+                            "geometry": CHICAGO_POINT,
+                        },
+                    },
+                },
+                {
+                    "id": "midway",
+                    "original_text": "Midway Airport",
+                    "location": "Midway Airport, Chicago, IL",
+                    "type": "place",
+                    "geocode": {
+                        "geocode_type": "pelias",
+                        "result": {
+                            "id": "pelias:midway-old",
+                            "formatted_address": "5700 S Cicero Ave, Chicago, IL",
+                            "geometry": CHICAGO_POINT,
+                        },
+                    },
+                },
+            ],
+            "needs_review": [],
+        }
+        run2_places = {
+            **run1_places,
+            "points": [
+                run1_places["points"][0],
+                {
+                    "id": "midway",
+                    "original_text": "Midway Airport",
+                    "location": "Midway Airport, Chicago, IL",
+                    "type": "place",
+                    "geocode": {
+                        "geocode_type": "pelias",
+                        "result": {
+                            "id": "pelias:midway-new",
+                            "formatted_address": "5700 South Cicero Avenue, Chicago, IL",
+                            "geometry": CHICAGO_POINT,
+                        },
+                    },
+                },
+            ],
+        }
+        text = "Story at 500 N Franklin in Chicago."
+        _, retired0, disposed0, _ = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-r",
+            run_id="run-a",
+            consolidated={"text": text, "places": run1_places},
+        )
+        assert retired0 == 0
+        assert disposed0 == 0
+        _, retired1, disposed1, _ = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-r",
+            run_id="run-b",
+            consolidated={"text": text, "places": run2_places},
+        )
+        assert retired1 == 1
+        assert disposed1 == 1
+        session.commit()
+
+    with Session(engine) as session:
+        from backfield_db import SubstrateLocation, SubstrateLocationMention
+
+        active = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(False),
+            )
+        ).all()
+        assert len(active) == 2
+        retired = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(True),
+            )
+        ).all()
+        assert len(retired) == 1
+        old_loc_ids = {int(m.location_id) for m in retired}
+        old_locs = session.exec(
+            select(SubstrateLocation).where(col(SubstrateLocation.id).in_(list(old_loc_ids)))
+        ).all()
+        assert len(old_locs) == 0
+        midway_new = session.exec(
+            select(SubstrateLocation).where(
+                SubstrateLocation.external_id == "pelias:midway-new"
+            )
+        ).one()
+        assert midway_new.external_id == "pelias:midway-new"
+
+
+def test_superseded_ingest_disposes_linked_substrate_with_no_remaining_mentions() -> None:
+    """Mirrors batch re-feed: new geocode identity retires mention and removes orphan linked row."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    region_places = {
+        "areas": {
+            "states": [],
+            "counties": [],
+            "cities": [],
+            "neighborhoods": [],
+            "regions": [
+                {
+                    "id": "region:redline",
+                    "original_text": "At the other end of the Red Line",
+                    "description": "Transit line reference",
+                    "location": "Red Line, Chicago, IL",
+                    "type": "region_city",
+                    "geocode": {
+                        "geocode_type": "region_llm",
+                        "result": {
+                            "id": "region:redline-old",
+                            "processed_str": "Red Line, Chicago, IL (region estimate)",
+                            "geometry": CHICAGO_POINT,
+                        },
+                    },
+                }
+            ],
+            "other": [],
+        },
+        "points": [],
+        "needs_review": [],
+    }
+    cache_places = {
+        **region_places,
+        "areas": {
+            **region_places["areas"],
+            "regions": [
+                {
+                    **region_places["areas"]["regions"][0],
+                    "geocode": {
+                        "geocode_type": "stylebook",
+                        "result": {
+                            "id": "stylebook:placeholder",
+                            "formatted_address": "Red Line, Chicago, IL",
+                            "geometry": CHICAGO_POINT,
+                        },
+                    },
+                }
+            ],
+        },
+    }
+
+    with Session(engine) as session:
+        from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED
+
+        project_id = _bootstrap_project(session, org_slug="org-red", project_slug="proj-red")
+        proj = session.get(BackfieldProject, project_id)
+        assert proj is not None
+        ws = session.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+
+        session.add(AgateRun(id="run-red-a", graph_id="graph-red", status="pending"))
+        session.add(AgateRun(id="run-red-b", graph_id="graph-red", status="pending"))
+        session.commit()
+
+        url = "https://example.com/white-sox-red-line"
+        text = "At the other end of the Red Line, fans hoped for a meaningful summer."
+        _, retired0, disposed0, _ = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-red",
+            run_id="run-red-a",
+            consolidated={"text": text, "url": url, "places": region_places},
+            db_output_params={"auto_apply_canonicalization": True, "stylebook_id": sb_id},
+        )
+        assert retired0 == 0
+        assert disposed0 == 0
+        session.commit()
+
+        old_loc = session.exec(
+            select(SubstrateLocation).where(SubstrateLocation.external_id == "region:redline-old")
+        ).one()
+        old_lid = int(old_loc.id)
+        cid = str(old_loc.stylebook_location_canonical_id)
+        assert cid
+        assert old_loc.canonical_link_status == CANONICAL_LINK_LINKED
+
+        cache_places["areas"]["regions"][0]["geocode"]["result"]["id"] = f"stylebook:{cid}"
+        _, retired1, disposed1, _ = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-red",
+            run_id="run-red-b",
+            consolidated={"text": text, "url": url, "places": cache_places},
+            db_output_params={"auto_apply_canonicalization": True, "stylebook_id": sb_id},
+        )
+        assert retired1 == 1
+        assert disposed1 == 1
+        session.commit()
+
+    with Session(engine) as session:
+        assert session.get(SubstrateLocation, old_lid) is None
+        active = session.exec(
+            select(SubstrateLocationMention).where(
+                col(SubstrateLocationMention.deleted).is_(False),
+            )
+        ).all()
+        assert len(active) == 1
+        linked = session.exec(
+            select(SubstrateLocation).where(
+                SubstrateLocation.stylebook_location_canonical_id == cid
+            )
+        ).all()
+        assert len(linked) == 1
+        assert linked[0].external_id == f"stylebook:{cid}"
+
+
+def test_superseded_ingest_keeps_substrate_when_other_stories_still_mention() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    places_v1 = {
+        "areas": {
+            "states": [],
+            "counties": [],
+            "cities": [],
+            "neighborhoods": [],
+            "regions": [],
+            "other": [],
+        },
+        "points": [
+            {
+                "id": "shared",
+                "original_text": "Midway Airport",
+                "location": "Midway Airport, Chicago, IL",
+                "type": "place",
+                "geocode": {
+                    "geocode_type": "pelias",
+                    "result": {
+                        "id": "pelias:shared-old",
+                        "formatted_address": "5700 S Cicero Ave, Chicago, IL",
+                        "geometry": CHICAGO_POINT,
+                    },
+                },
+            }
+        ],
+        "needs_review": [],
+    }
+    places_v2 = {
+        **places_v1,
+        "points": [
+            {
+                **places_v1["points"][0],
+                "geocode": {
+                    "geocode_type": "pelias",
+                    "result": {
+                        "id": "pelias:shared-new",
+                        "formatted_address": "5700 South Cicero Avenue, Chicago, IL",
+                        "geometry": CHICAGO_POINT,
+                    },
+                },
+            }
+        ],
+    }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-keep", project_slug="proj-keep")
+        session.add(AgateRun(id="run-ka", graph_id="graph-k", status="pending"))
+        session.add(AgateRun(id="run-kb", graph_id="graph-k", status="pending"))
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-k",
+            run_id="run-ka",
+            consolidated={
+                "text": "Story A at Midway.",
+                "url": "https://example.com/story-a",
+                "places": places_v1,
+            },
+        )
+        session.commit()
+
+        old_loc = session.exec(
+            select(SubstrateLocation).where(SubstrateLocation.external_id == "pelias:shared-old")
+        ).one()
+        old_lid = int(old_loc.id)
+
+        art_b = SubstrateArticle(
+            project_id=project_id,
+            url="https://example.com/story-b",
+            headline="Story B",
+            text="Story B also cites Midway.",
+            external_source="test",
+            external_id="story-b",
+        )
+        session.add(art_b)
+        session.commit()
+        session.refresh(art_b)
+        session.add(
+            SubstrateLocationMention(
+                article_id=int(art_b.id),
+                location_id=old_lid,
+                deleted=False,
+                source_kind="agate_geocode",
+            )
+        )
+        session.commit()
+
+        _, retired, disposed, _ = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-k",
+            run_id="run-kb",
+            consolidated={
+                "text": "Story A at Midway again.",
+                "url": "https://example.com/story-a",
+                "places": places_v2,
+            },
+        )
+        assert retired == 1
+        assert disposed == 0
+        session.commit()
+
+    with Session(engine) as session:
+        assert session.get(SubstrateLocation, old_lid) is not None
+        remaining = session.exec(
+            select(SubstrateLocationMention).where(
+                SubstrateLocationMention.location_id == old_lid,
+                col(SubstrateLocationMention.deleted).is_(False),
+            )
+        ).all()
+        assert len(remaining) == 1
+
+
+def test_persist_writes_multiple_mentions_from_entry() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    body = "Ohio lawmakers advanced the bill. Later, Back in Ohio, the governor signed it."
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-oh", project_slug="proj-oh")
+        session.add(AgateRun(id="run-oh", graph_id="graph-oh", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": body,
+            "places": {
+                "areas": {
+                    "states": [
+                        {
+                            "id": "state:oh",
+                            "original_text": "Ohio lawmakers advanced the bill.",
+                            "mentions": [
+                                {"text": "Ohio lawmakers advanced the bill."},
+                                {"text": "Back in Ohio, the governor signed it."},
+                            ],
+                            "location": "Ohio",
+                            "type": "state",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:oh",
+                                    "formatted_address": "Ohio, USA",
+                                    "geometry": {"type": "Point", "coordinates": [-82.9, 40.4]},
+                                },
+                            },
+                        }
+                    ],
+                    "counties": [],
+                    "cities": [],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-oh",
+            run_id="run-oh",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        occ = session.exec(
+            select(SubstrateLocationMentionOccurrence).where(
+                SubstrateLocationMentionOccurrence.suppressed == False  # noqa: E712
+            )
+        ).all()
+        assert len(occ) == 2
+        assert occ[0].occurrence_order == 0
+        assert occ[1].occurrence_order == 1
+        assert occ[0].start_char == body.find("Ohio")
+        assert occ[1].start_char == body.find("Back in Ohio")
+
+
+def test_persist_reingest_preserves_user_edit_occurrence() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-u", project_slug="proj-u")
+        session.add(AgateRun(id="run-u1", graph_id="graph-u", status="pending"))
+        session.add(AgateRun(id="run-u2", graph_id="graph-u", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Hello Chicago.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:1",
+                            "original_text": "Chicago",
+                            "mentions": [{"text": "Chicago"}],
+                            "location": "Chicago, IL",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:abc",
+                                    "formatted_address": "Chicago, IL, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-u",
+            run_id="run-u1",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        mention = session.exec(select(SubstrateLocationMention)).first()
+        assert mention is not None
+        user_occ = SubstrateLocationMentionOccurrence(
+            location_mention_id=int(mention.id),
+            source_kind="user_edit",
+            mention_text="User-added mention text",
+            occurrence_order=99,
+            suppressed=False,
+        )
+        session.add(user_occ)
+        session.commit()
+
+    with Session(engine) as session:
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-u",
+            run_id="run-u2",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        occ = session.exec(select(SubstrateLocationMentionOccurrence)).all()
+        active = [o for o in occ if not o.suppressed]
+        assert any(o.source_kind == "user_edit" for o in active)
+        system_active = [o for o in active if o.source_kind == "system_extraction"]
+        assert len(system_active) == 1
+        assert system_active[0].mention_text == "Chicago"
+
+
+def test_find_mention_span_after_prior_match() -> None:
+    body = "Ohio first. Then Ohio again."
+    first = _find_mention_span(haystack=body, needle="Ohio")
+    assert first == (0, 4)
+    second = _find_mention_span(haystack=body, needle="Ohio", search_from=first[1] if first else 0)
+    assert second == (17, 21)
 
 
 def test_persist_defers_address_type_without_materializing_canonical() -> None:
@@ -1352,3 +2005,290 @@ def test_persist_auto_apply_false_exact_alias_leaves_pending_with_suggestion() -
         )
         assert sug.get("suggested_action") == "link_existing"
         assert sug.get("stylebook_location_canonical_id") == cid
+
+
+def test_replace_article_geography_disposes_orphan_linked_substrate_without_requeue() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-repl", project_slug="proj-repl")
+        proj = session.get(BackfieldProject, project_id)
+        assert proj is not None
+        ws = session.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+
+        art = SubstrateArticle(project_id=project_id, headline="H", text="Story in Chicago.")
+        session.add(art)
+        session.commit()
+        session.refresh(art)
+        aid = int(art.id)
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            slug="chicago-repl",
+            location_type="city",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        loc = SubstrateLocation(
+            project_id=project_id,
+            name="Chicago",
+            normalized_name="chicago",
+            stylebook_location_canonical_id=cid,
+            canonical_link_status=CANONICAL_LINK_LINKED,
+            source_details_json={"run_id": "run-old", "raw_entry_id": "city:1"},
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        lid = int(loc.id)
+
+        mention = SubstrateLocationMention(
+            article_id=aid,
+            location_id=lid,
+            deleted=False,
+        )
+        session.add(mention)
+        session.commit()
+        session.refresh(mention)
+        mid = int(mention.id)
+
+        stats = replace_machine_geography_for_article(
+            session,
+            project_id=project_id,
+            article_id=aid,
+            stylebook_id=sb_id,
+        )
+        session.commit()
+        assert stats.mentions_cleared == 1
+        assert stats.substrates_disposed == 1
+
+    with Session(engine) as session:
+        m = session.get(SubstrateLocationMention, mid)
+        assert m is not None
+        assert m.deleted is True
+        assert session.get(SubstrateLocation, lid) is None
+        canon = session.get(StylebookLocationCanonical, cid)
+        assert canon is not None
+
+
+def test_replace_article_geography_keeps_substrate_when_other_stories_mention() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-repl2", project_slug="proj-repl2")
+        art_a = SubstrateArticle(project_id=project_id, headline="A", text="Story A.")
+        art_b = SubstrateArticle(project_id=project_id, headline="B", text="Story B.")
+        session.add(art_a)
+        session.add(art_b)
+        session.commit()
+        session.refresh(art_a)
+        session.refresh(art_b)
+        aid_a = int(art_a.id)
+        aid_b = int(art_b.id)
+
+        loc = SubstrateLocation(
+            project_id=project_id,
+            name="Shared",
+            normalized_name="shared",
+            canonical_link_status=CANONICAL_LINK_LINKED,
+            stylebook_location_canonical_id=None,
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        lid = int(loc.id)
+        session.add(
+            SubstrateLocationMention(article_id=aid_a, location_id=lid, deleted=False)
+        )
+        session.add(
+            SubstrateLocationMention(article_id=aid_b, location_id=lid, deleted=False)
+        )
+        session.commit()
+
+        stats = replace_machine_geography_for_article(
+            session,
+            project_id=project_id,
+            article_id=aid_a,
+        )
+        session.commit()
+        assert stats.mentions_cleared == 1
+        assert stats.substrates_disposed == 0
+
+    with Session(engine) as session:
+        row = session.get(SubstrateLocation, lid)
+        assert row is not None
+        active = session.exec(
+            select(SubstrateLocationMention).where(
+                SubstrateLocationMention.location_id == lid,
+                SubstrateLocationMention.deleted == False,  # noqa: E712
+            )
+        ).all()
+        assert len(active) == 1
+        assert int(active[0].article_id) == aid_b
+
+
+def test_replace_then_persist_revives_active_mentions() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    consolidated = {
+        "text": "Hello Chicago.",
+        "places": {
+            "areas": {
+                "states": [],
+                "counties": [],
+                "cities": [
+                    {
+                        "id": "city:1",
+                        "original_text": "Chicago",
+                        "description": "Setting",
+                        "location": "Chicago, IL",
+                        "type": "city",
+                        "geocode": {
+                            "geocode_type": "pelias",
+                            "result": {
+                                "id": "pelias:repl",
+                                "formatted_address": "Chicago, IL, USA",
+                                "geometry": CHICAGO_POINT,
+                            },
+                        },
+                    }
+                ],
+                "neighborhoods": [],
+                "regions": [],
+                "other": [],
+            },
+            "points": [],
+            "needs_review": [],
+        },
+    }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-rev", project_slug="proj-rev")
+        session.add(AgateRun(id="run-rev", graph_id="graph-rev", status="pending"))
+        session.commit()
+
+        _, _, _, stats0 = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-rev",
+            run_id="run-rev",
+            consolidated=consolidated,
+        )
+        assert stats0 is None
+        session.commit()
+
+        art = session.exec(
+            select(SubstrateArticle).where(SubstrateArticle.project_id == project_id)
+        ).one()
+        aid = int(art.id)
+        mention = session.exec(
+            select(SubstrateLocationMention).where(SubstrateLocationMention.article_id == aid)
+        ).one()
+        mention.deleted = True
+        session.add(mention)
+        session.commit()
+        mid = int(mention.id)
+
+        _, _, _, stats1 = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-rev",
+            run_id="run-rev-2",
+            consolidated=consolidated,
+            replace_machine_geography=True,
+        )
+        assert stats1 is not None
+        assert stats1.mentions_cleared >= 0
+        session.commit()
+
+    with Session(engine) as session:
+        m = session.get(SubstrateLocationMention, mid)
+        assert m is not None
+        assert m.deleted is False
+
+
+def test_upsert_mention_undeletes_existing_row() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    consolidated = {
+        "text": "Hello Chicago.",
+        "places": {
+            "areas": {
+                "states": [],
+                "counties": [],
+                "cities": [
+                    {
+                        "id": "city:1",
+                        "original_text": "Chicago",
+                        "description": "Setting",
+                        "location": "Chicago, IL",
+                        "type": "city",
+                        "geocode": {
+                            "geocode_type": "pelias",
+                            "result": {
+                                "id": "pelias:undelete",
+                                "formatted_address": "Chicago, IL, USA",
+                                "geometry": CHICAGO_POINT,
+                            },
+                        },
+                    }
+                ],
+                "neighborhoods": [],
+                "regions": [],
+                "other": [],
+            },
+            "points": [],
+            "needs_review": [],
+        },
+    }
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-und", project_slug="proj-und")
+        session.add(AgateRun(id="run-und", graph_id="graph-und", status="pending"))
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-und",
+            run_id="run-und",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+        art = session.exec(
+            select(SubstrateArticle).where(SubstrateArticle.project_id == project_id)
+        ).one()
+        mention = session.exec(
+            select(SubstrateLocationMention).where(
+                SubstrateLocationMention.article_id == int(art.id)
+            )
+        ).one()
+        mention.deleted = True
+        session.add(mention)
+        session.commit()
+        mid = int(mention.id)
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-und",
+            run_id="run-und-2",
+            consolidated=consolidated,
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        m = session.get(SubstrateLocationMention, mid)
+        assert m is not None
+        assert m.deleted is False

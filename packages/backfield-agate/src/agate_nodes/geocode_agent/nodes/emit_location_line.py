@@ -8,6 +8,7 @@ import logging
 import re
 import string
 from pathlib import Path
+from typing import Any
 
 from agate_utils.llm import call_llm
 
@@ -461,6 +462,120 @@ def _story_context_snippets(state: AgentState) -> tuple[str, str]:
     return orig_snip, hints_snip
 
 
+# Municipality / admin rows: polish must not add neighborhoods from story context.
+_ADMIN_LOCATION_TYPES_SKIP_POLISH: frozenset[str] = frozenset(
+    {
+        "city",
+        "town",
+        "village",
+        "county",
+        "state",
+        "region_state",
+        "region_national",
+        "country",
+        "political_district",
+    }
+)
+_MUNICIPALITY_DISPLAY_TYPES: frozenset[str] = frozenset({"city", "town", "village"})
+
+
+def should_skip_location_display_polish(location_type: str | None) -> bool:
+    """True when the polish LLM must not run (admin geography uses emit + clamp only)."""
+    return (location_type or "").strip().lower() in _ADMIN_LOCATION_TYPES_SKIP_POLISH
+
+
+def _state_abbr_from_components(components: dict[str, Any]) -> str | None:
+    state = components.get("state")
+    if not isinstance(state, dict):
+        return None
+    abbr = state.get("abbr")
+    if isinstance(abbr, str) and abbr.strip():
+        return abbr.strip().upper()[:2]
+    return None
+
+
+def _municipal_display_baseline(
+    location_type: str,
+    location_text: str,
+    formatted_address: str,
+    components: dict[str, Any],
+) -> str | None:
+    """Target ``City, ST`` (or town/village) from structured components, not story neighborhoods."""
+    lt = (location_type or "").strip().lower()
+    if lt not in _MUNICIPALITY_DISPLAY_TYPES:
+        return None
+    city = str(components.get("city") or "").strip()
+    if not city:
+        base = (location_text or "").strip() or (formatted_address or "").strip()
+        return base or None
+    abbr = _state_abbr_from_components(components)
+    if abbr:
+        return f"{city}, {abbr}"
+    return city
+
+
+def _county_display_baseline(components: dict[str, Any]) -> str | None:
+    county = str(components.get("county") or "").strip()
+    if not county:
+        return None
+    abbr = _state_abbr_from_components(components)
+    if abbr:
+        return f"{county}, {abbr}"
+    return county
+
+
+def _state_display_baseline(components: dict[str, Any]) -> str | None:
+    state = components.get("state")
+    if isinstance(state, dict):
+        name = state.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return None
+
+
+def clamp_admin_location_display_line(
+    location_type: str,
+    location_text: str,
+    formatted_address: str,
+    components: dict[str, Any] | None,
+    line: str,
+) -> str:
+    """Reset display lines when polish/emit inserted child geography on an admin row."""
+    comps = components if isinstance(components, dict) else {}
+    lt = (location_type or "").strip().lower()
+    got = refine_location_display_line((line or "").strip())
+    if not got:
+        return got
+
+    want: str | None = None
+    if lt in _MUNICIPALITY_DISPLAY_TYPES:
+        want = _municipal_display_baseline(lt, location_text, formatted_address, comps)
+    elif lt == "county":
+        want = _county_display_baseline(comps) or (
+            (location_text or "").strip() or (formatted_address or "").strip() or None
+        )
+    elif lt == "state":
+        want = (
+            _state_display_baseline(comps)
+            or (location_text or "").strip()
+            or (formatted_address or "").strip()
+            or None
+        )
+
+    if not want:
+        return got
+    target = refine_location_display_line(want)
+    if got.casefold() == target.casefold():
+        return got
+    if lt in _MUNICIPALITY_DISPLAY_TYPES:
+        return target
+    if lt == "county" and len([p for p in got.split(",") if p.strip()]) > len(
+        [p for p in target.split(",") if p.strip()]
+    ):
+        return target
+    return got
+
+
 def _heuristic_emit_location(
     location_type: str,
     location_text: str,
@@ -482,6 +597,7 @@ async def _maybe_polish_with_llm(
     model: str,
     openai_key: str,
     *,
+    location_type: str = "",
     story_context: str = "(none)",
     geocode_hints: str = "(none)",
     model_config_id: str | None = None,
@@ -490,6 +606,8 @@ async def _maybe_polish_with_llm(
     cand = (candidate or "").strip()
     if not cand:
         return cand
+    if should_skip_location_display_polish(location_type):
+        return cand
     try:
         template = _POLISH_PROMPT_PATH.read_text(encoding="utf-8")
     except OSError as exc:
@@ -497,10 +615,12 @@ async def _maybe_polish_with_llm(
         return candidate
     sc = (story_context or "").strip() or "(none)"
     gh = (geocode_hints or "").strip() or "(none)"
+    lt = (location_type or "").strip() or "(unknown)"
     prompt = (
         template.replace("{candidate}", cand)
         .replace("{story_context}", sc)
         .replace("{geocode_hints}", gh)
+        .replace("{location_type}", lt)
     )
 
     def _sync() -> str:
@@ -557,16 +677,25 @@ async def compute_emit_location_line(
     components_json = json.dumps(components, default=str, ensure_ascii=False)[:2000]
     orig_snip, hints_snip = _story_context_snippets(state)
 
+    def _finalize(line: str) -> str:
+        return clamp_admin_location_display_line(
+            location_type,
+            location_text,
+            formatted_address,
+            components,
+            line,
+        )
+
     if not openai_key:
-        return _heuristic_emit_location(location_type, location_text, formatted_address)
+        return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))
     if not model:
-        return _heuristic_emit_location(location_type, location_text, formatted_address)
+        return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))
 
     try:
         rules = _PROMPT_PATH.read_text(encoding="utf-8")
     except OSError as exc:
         logger.warning("location_display_format prompt missing: %s", exc)
-        return _heuristic_emit_location(location_type, location_text, formatted_address)
+        return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))
 
     user_block = (
         f"type: {location_type}\n"
@@ -601,24 +730,26 @@ async def compute_emit_location_line(
         payload = json.loads(raw)
     except Exception as exc:
         logger.debug("emit_location_line LLM failed, using heuristic: %s", exc)
-        return _heuristic_emit_location(location_type, location_text, formatted_address)
+        return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))
 
     loc = payload.get("location") if isinstance(payload, dict) else None
     if not isinstance(loc, str):
-        return _heuristic_emit_location(location_type, location_text, formatted_address)
+        return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))
     loc = loc.strip()
     if not loc:
-        return _heuristic_emit_location(location_type, location_text, formatted_address)
+        return _finalize(_heuristic_emit_location(location_type, location_text, formatted_address))
 
     refined = refine_location_display_line(loc)
-    return await _maybe_polish_with_llm(
+    polished = await _maybe_polish_with_llm(
         refined,
         polish_model,
         openai_key,
+        location_type=location_type,
         story_context=orig_snip,
         geocode_hints=hints_snip,
         model_config_id=_evaluation_ai_model_config_id_for_emit(state),
     )
+    return _finalize(polished)
 
 
 async def _maybe_upgrade_to_named_place(

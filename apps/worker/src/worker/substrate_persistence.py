@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from backfield_stylebook.canonical_link import CANONICAL_LINK_UNLINKED
@@ -22,9 +23,19 @@ from sqlmodel import Session
 
 from worker.canonical_adjudication import adjudicate_ambiguous_plan_with_llm
 from worker.substrate_article import _sync_images, _upsert_article
+from worker.substrate_article_geography_reset import (
+    ArticleGeographyReplaceStats,
+    replace_machine_geography_for_article,
+)
 from worker.substrate_location import _iter_place_entries, _upsert_location
-from worker.substrate_mentions import _upsert_mention_and_occurrence
+from worker.substrate_mentions import (
+    _upsert_mention_and_occurrence,
+    dispose_orphan_substrates_after_retired_mentions,
+    retire_stale_article_mentions_for_rerun,
+)
 from worker.substrate_span import _find_mention_span
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["persist_from_consolidated", "_find_mention_span"]
 
@@ -37,7 +48,8 @@ def persist_from_consolidated(
     run_id: str,
     consolidated: dict[str, Any],
     db_output_params: dict[str, Any] | None = None,
-) -> int:
+    replace_machine_geography: bool = False,
+) -> tuple[int, int, int, ArticleGeographyReplaceStats | None]:
     places = consolidated.get("places")
     if not isinstance(places, dict):
         raise RuntimeError(
@@ -53,7 +65,6 @@ def persist_from_consolidated(
     _sync_images(session, article_id=int(article.id), consolidated=consolidated)
 
     article_text = str(consolidated.get("text") or "")
-    order = 0
     settings = DbOutputCanonicalSettings.from_node_params(db_output_params)
     try:
         stylebook_id = resolve_effective_stylebook_id(
@@ -66,6 +77,25 @@ def persist_from_consolidated(
     except ValueError as exc:
         raise RuntimeError(f"DBOutput stylebook resolution failed: {exc}") from exc
 
+    replace_stats: ArticleGeographyReplaceStats | None = None
+    if replace_machine_geography and article.id is not None:
+        replace_stats = replace_machine_geography_for_article(
+            session,
+            project_id=int(project_id),
+            article_id=int(article.id),
+            stylebook_id=stylebook_id,
+        )
+        if replace_stats.mentions_cleared or replace_stats.substrates_disposed:
+            logger.warning(
+                "Replaced machine geography for article_id=%s before persist: "
+                "%s mention(s) cleared, %s orphan substrate(s) disposed",
+                article.id,
+                replace_stats.mentions_cleared,
+                replace_stats.substrates_disposed,
+            )
+
+    touched_location_ids: set[int] = set()
+
     for bucket, entry in _iter_place_entries(places):
         loc = _upsert_location(
             session,
@@ -77,6 +107,8 @@ def persist_from_consolidated(
         )
         if loc is None or article.id is None:
             continue
+        if loc.id is not None:
+            touched_location_ids.add(int(loc.id))
         if stylebook_id is not None and loc.stylebook_location_canonical_id is not None:
             refresh_aliases_for_linked_location(
                 session,
@@ -135,8 +167,34 @@ def persist_from_consolidated(
             run_id=run_id,
             graph_id=graph_id,
             bucket=bucket,
-            occurrence_order=order,
         )
-        order += 1
 
-    return int(article.id)
+    retired_mentions = 0
+    substrates_disposed = 0
+    if (
+        not replace_machine_geography
+        and article.id is not None
+        and touched_location_ids
+    ):
+        retired_mentions, retired_location_ids = retire_stale_article_mentions_for_rerun(
+            session,
+            article_id=int(article.id),
+            touched_location_ids=touched_location_ids,
+        )
+        if retired_location_ids:
+            substrates_disposed = dispose_orphan_substrates_after_retired_mentions(
+                session,
+                project_id=int(project_id),
+                location_ids=retired_location_ids,
+            )
+        if retired_mentions or substrates_disposed:
+            logger.warning(
+                "Superseded ingest for article_id=%s run_id=%s: %s mention(s) retired, "
+                "%s orphan substrate(s) disposed",
+                article.id,
+                run_id,
+                retired_mentions,
+                substrates_disposed,
+            )
+
+    return int(article.id), retired_mentions, substrates_disposed, replace_stats

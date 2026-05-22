@@ -23,6 +23,9 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 from agate_runtime.context import AgateEnvContext
 from agate_utils.llm import call_llm
 
+from agate_nodes.place_extract.llm_location_parse import place_from_llm_location_entry
+from agate_nodes.place_extract.place_schemas import Place
+
 logger = logging.getLogger(__name__)
 
 # Get Celery timeout limits from environment (defaults match worker/tasks.py)
@@ -65,75 +68,6 @@ class PlaceExtractParams(BaseModel):
         if not (self.model or "").strip():
             return self.model_copy(update={"model": "gpt-4o-mini"})
         return self
-
-
-class StateInfo(BaseModel):
-    """State information."""
-    name: str = Field(description="Full name of the state")
-    abbr: str = Field(description="Postal abbreviation for the state")
-
-
-class CountryInfo(BaseModel):
-    """Country information."""
-    name: str = Field(description="Full name of the country")
-    abbr: str = Field(description="ISO 3166-1 country code")
-
-
-class StreetRoadInfo(BaseModel):
-    """Street/Road information for street_road types."""
-    name: str = Field(description="Name of the street")
-    boundary: str = Field(description="Geocodable boundary string for the street")
-
-
-class PlaceInfo(BaseModel):
-    """Place information for named places."""
-    name: str = Field(description="Name of the place")
-    addressable: bool = Field(default=False, description="Whether the place has a findable street address")
-    natural: bool = Field(default=False, description="Whether the place represents a natural location")
-
-
-class SpanEndpoint(BaseModel):
-    """Endpoint for a span of road."""
-    type: str = Field(description="The kind of endpoint (city or intersection)")
-    location: str = Field(description="Geocodable representation of the endpoint")
-
-
-class SpanInfo(BaseModel):
-    """Span information for span types."""
-    start: Optional[SpanEndpoint] = Field(default=None, description="Span starting point")
-    end: Optional[SpanEndpoint] = Field(default=None, description="Span ending point")
-
-
-class LocationComponents(BaseModel):
-    """Components of a location."""
-    place: Optional[PlaceInfo] = Field(default=None, description="Place information if applicable")
-    street_road: Optional[StreetRoadInfo] = Field(default=None, description="Street/road information if applicable")
-    span: Optional[SpanInfo] = Field(default=None, description="Span information for span types")
-    address: Optional[str] = Field(default="", description="Street address if applicable")
-    neighborhood: Optional[str] = Field(default="", description="Neighborhood name if applicable")
-    city: Optional[str] = Field(default="", description="City name if applicable")
-    county: Optional[str] = Field(default="", description="County name if applicable")
-    state: Optional[StateInfo] = Field(default=None, description="State information if applicable")
-    country: Optional[CountryInfo] = Field(default=None, description="Country information if applicable")
-
-
-class LocationInfo(BaseModel):
-    """Location information."""
-    full: str = Field(description="The full geocodable location string")
-    type: str = Field(description="The type of location (e.g., city, address, intersection_road)")
-    components: LocationComponents = Field(description="Detailed components of the location")
-
-
-class Place(BaseModel):
-    """A place extracted from text."""
-    original_text: str = Field(description="The original text from which this location was extracted")
-    description: str = Field(description="Brief description of the location and its relevance")
-    geocode_hints: str = Field(
-        default="",
-        description="Concise story context for downstream geocoding (disambiguation, vague areas, ties to other mentions)",
-    )
-    location: LocationInfo = Field(description="Location information with components")
-    model_config = ConfigDict(extra='allow')  # Allow additional fields like 'mural'
 
 
 class PlaceExtractOutput(BaseModel):
@@ -470,113 +404,26 @@ class PlaceExtractNode:
             if not isinstance(locations_data, list):
                 raise ValueError("Expected a list of locations")
 
-            # Convert to Place objects - handle new format from updated prompt
-            for location_data in locations_data:
-                # Validate required fields
-                required_fields = ['original_text', 'description', 'location', 'type', 'components']
-                for field in required_fields:
-                    if field not in location_data:
-                        raise ValueError(f"Missing required field '{field}' in location data")
-                
-                # Handle new format: location is a string, type and components are at top level
-                location_str = location_data['location']
-                location_type = location_data['type']
-                components_data = location_data['components']
-                
-                if not isinstance(location_str, str):
-                    raise ValueError("Location field must be a string")
-                if not isinstance(location_type, str):
-                    raise ValueError("Type field must be a string")
-                if not isinstance(components_data, dict):
-                    raise ValueError("Components field must be a dictionary")
-                
-                # Validate components structure
-                components = components_data
-                
-                # Handle optional place info
-                if 'place' in components and components['place']:
-                    place_data = components['place']
-                    if isinstance(place_data, dict) and place_data.get('name'):
-                        try:
-                            components['place'] = PlaceInfo(**place_data)
-                        except Exception:
-                            components['place'] = None
-                    else:
-                        components['place'] = None
-                else:
-                    components['place'] = None
-                
-                # Handle optional street_road info
-                if 'street_road' in components and components['street_road']:
-                    street_road_data = components['street_road']
-                    if isinstance(street_road_data, dict) and street_road_data.get('name') and street_road_data.get('boundary'):
-                        components['street_road'] = StreetRoadInfo(**street_road_data)
-                    else:
-                        components['street_road'] = None
-                else:
-                    components['street_road'] = None
+            parse_errors: list[str] = []
+            for raw_entry in locations_data:
+                if not isinstance(raw_entry, dict):
+                    parse_errors.append("location entry must be an object")
+                    continue
+                try:
+                    locations.append(place_from_llm_location_entry(raw_entry))
+                except (ValueError, TypeError) as entry_err:
+                    msg = str(entry_err)
+                    parse_errors.append(msg)
+                    logger.warning(
+                        "[PlaceExtract] skipping invalid LLM location entry: %s",
+                        msg,
+                    )
 
-                # Handle optional span info
-                if 'span' in components and components['span']:
-                    span_data = components['span']
-                    if isinstance(span_data, dict):
-                        try:
-                            start = span_data.get('start')
-                            end = span_data.get('end')
-                            components['span'] = SpanInfo(
-                                start=SpanEndpoint(**start) if isinstance(start, dict) and start.get('type') and start.get('location') else None,
-                                end=SpanEndpoint(**end) if isinstance(end, dict) and end.get('type') and end.get('location') else None,
-                            )
-                        except Exception:
-                            components['span'] = None
-                    else:
-                        components['span'] = None
-                else:
-                    components['span'] = None
-                
-                # Handle optional state info
-                if 'state' in components and components['state']:
-                    state_data = components['state']
-                    if isinstance(state_data, dict) and state_data.get('name') and state_data.get('abbr'):
-                        components['state'] = StateInfo(**state_data)
-                    else:
-                        components['state'] = None
-                else:
-                    components['state'] = None
-                
-                # Handle optional country info
-                if 'country' in components and components['country']:
-                    country_data = components['country']
-                    if isinstance(country_data, dict) and country_data.get('name') and country_data.get('abbr'):
-                        components['country'] = CountryInfo(**country_data)
-                    else:
-                        components['country'] = None
-                else:
-                    components['country'] = None
-                
-                # Create LocationComponents object
-                location_components = LocationComponents(**components)
-                
-                # Create LocationInfo object
-                location_info_obj = LocationInfo(
-                    full=location_str,
-                    type=location_type,
-                    components=location_components
+            if not locations and locations_data:
+                detail = parse_errors[0] if len(parse_errors) == 1 else "; ".join(parse_errors[:5])
+                raise ValueError(
+                    f"Failed to parse LLM response as location data: no valid locations. {detail}"
                 )
-                
-                # Create Place object - preserve all fields from location_data (including 'mural' and any other custom fields)
-                place_data = {
-                    'original_text': location_data['original_text'],
-                    'description': location_data['description'],
-                    'location': location_info_obj
-                }
-                
-                # Preserve any additional fields from the LLM response (like 'mural')
-                for key, value in location_data.items():
-                    if key not in ['original_text', 'description', 'location', 'type', 'components']:
-                        place_data[key] = value
-                
-                locations.append(Place(**place_data))
 
         except (ValueError, TypeError) as e:
             raise ValueError(f"Failed to parse LLM response as location data: {e}") from e

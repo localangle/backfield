@@ -367,19 +367,9 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
 
   const systemPromptSection = (
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground mb-4">Other settings for this project.</p>
+            <div className="mb-4">
               <h3 className="text-lg font-semibold">System Prompt</h3>
-              {!editingSystemPrompt &&
-                !(variant === 'inline' && inlineScope === 'system' && primaryActionsInToolbar) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingSystemPrompt(true)}
-                >
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
-              )}
             </div>
 
             {editingSystemPrompt ? (
@@ -423,8 +413,8 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
             ) : (
               <Card>
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
+                  <div className="space-y-4">
+                    <div>
                       {systemPrompt ? (
                         <div>
                           <h4 className="font-medium mb-2">Current System Prompt</h4>
@@ -440,6 +430,16 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
                           </p>
                         </div>
                       )}
+                    </div>
+                    <div className="flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingSystemPrompt(true)}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
                     </div>
                   </div>
                 </CardContent>

@@ -6,13 +6,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom"
-import {
-  BookOpen,
-  FolderKanban,
-  HelpCircle,
-  Newspaper,
-  Settings,
-} from "lucide-react"
+import { HelpCircle, Settings } from "lucide-react"
 import {
   ShellProductBrand,
   ShellSidebar,
@@ -44,6 +38,12 @@ function projectSearchSuffix(searchParams: URLSearchParams): string {
   if (filt) p.set("project", filt)
   const s = p.toString()
   return s ? `?${s}` : ""
+}
+
+/** Default Agate project for catalog workflow when the URL omits scope (sidebar + dashboard stats). */
+function defaultWorkflowProjectSlug(projects: Project[]): string {
+  const preferred = projects.find((p) => p.slug === "general")
+  return preferred?.slug ?? projects[0]?.slug ?? ""
 }
 
 interface LayoutProps {
@@ -98,13 +98,6 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     if (!slugForHome) return `/stylebook/default${projectQs}`
     return `${stylebookCatalogBasePath(slugForHome)}${projectQs}`
   }, [routeSlug, effectiveStylebookSlug, projectQs])
-
-  const activeProjectName = useMemo(() => {
-    if (!workflowProjectSlug) return null
-    const p = projects.find((x) => x.slug === workflowProjectSlug)
-    return p?.name ?? workflowProjectSlug
-  }, [workflowProjectSlug, projects])
-  const activeProjectLabel = activeProjectName ?? "Backfield"
 
   const selectedStylebookLabel = useMemo(() => {
     if (!effectiveStylebookSlug) return "Stylebook"
@@ -168,23 +161,17 @@ export default function Layout({ children, headerContent }: LayoutProps) {
       .catch((err) => console.error("Failed to fetch stylebooks:", err))
   }, [orgId])
 
+  /** Every stylebook catalog URL keeps workflow project scope in the query (``project_scope=``). */
   useEffect(() => {
-    const needsProjectScope =
-      location.pathname.includes("/locations/candidates") ||
-      location.pathname.includes("/people/") ||
-      location.pathname.includes("/organizations/") ||
-      location.pathname.includes("/works/") ||
-      location.pathname.includes("/agents/")
-
-    if (!needsProjectScope) return
-    if (projects.length > 0 && !workflowProjectSlug) {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev)
-        next.set("project", projects[0].slug)
-        return next
-      })
-    }
-  }, [projects, workflowProjectSlug, setSearchParams, location.pathname])
+    if (!routeSlug || projects.length === 0 || workflowProjectSlug) return
+    const slug = defaultWorkflowProjectSlug(projects)
+    if (!slug) return
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set("project_scope", slug)
+      return next
+    })
+  }, [routeSlug, projects, workflowProjectSlug, setSearchParams])
 
   /** Drop legacy ``?stylebook=`` when the slug already lives in the path. */
   useEffect(() => {
@@ -251,6 +238,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
         <div className="px-4 py-4 flex justify-between items-center gap-3 flex-wrap">
           <ShellProductBrand
             to={indexPath}
+            productMark="📖"
             productTitle="Stylebook"
             platformSubtitle="Backfield Platform"
           />
@@ -290,24 +278,18 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           headerLeading={
             <NavLink
               to={indexPath}
-              end
-              title={activeProjectLabel}
-              aria-label={
-                activeProjectName
-                  ? `Active project: ${activeProjectName}`
-                  : "Backfield"
+              title="Backfield"
+              aria-label="Backfield"
+              className={({ isActive }) =>
+                cn(
+                  "flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1",
+                  "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  isActive && "bg-transparent",
+                )
               }
-              className={cn(
-                "flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1",
-                "hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              )}
             >
-              <FolderKanban
-                className="h-4 w-4 shrink-0 text-muted-foreground"
-                aria-hidden
-              />
               <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-                {activeProjectLabel}
+                Backfield
               </span>
             </NavLink>
           }
@@ -317,7 +299,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
               <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
                 {expanded ? (
                   <div className={sectionTitleClass}>
-                    <Newspaper className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="shrink-0 text-base leading-none" aria-hidden>
+                      🏷️
+                    </span>
                     <span>Agate</span>
                   </div>
                 ) : (
@@ -325,12 +309,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     type="button"
                     title="Agate — workspaces"
                     className={cn(
-                      "inline-flex h-9 w-full items-center justify-center rounded-md",
+                      "inline-flex h-9 w-full items-center justify-center rounded-md text-lg",
                       "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     )}
                     onClick={() => expand()}
                   >
-                    <Newspaper className="h-5 w-5 text-muted-foreground" aria-hidden />
+                    <span aria-hidden>🏷️</span>
                   </button>
                 )}
 
@@ -356,7 +340,9 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     <div className="border-t border-border/50 my-1" />
                     {expanded ? (
                       <div className={sectionTitleClass}>
-                        <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+                        <span className="shrink-0 text-base leading-none" aria-hidden>
+                          📖
+                        </span>
                         <span>Stylebook</span>
                       </div>
                     ) : (
@@ -364,12 +350,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                         type="button"
                         title="Stylebook"
                         className={cn(
-                          "inline-flex h-9 w-full items-center justify-center rounded-md",
+                          "inline-flex h-9 w-full items-center justify-center rounded-md text-lg",
                           "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         )}
                         onClick={() => expand()}
                       >
-                        <BookOpen className="h-5 w-5 text-muted-foreground" aria-hidden />
+                        <span aria-hidden>📖</span>
                       </button>
                     )}
                     {(expanded ? sortedStylebooks : []).map((sb) => {
@@ -430,7 +416,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
         </ShellSidebar>
         <StylebookScopeProvider selectedStylebookLabel={selectedStylebookLabel}>
           <StylebookEditProvider canEditStylebook={canEditStylebook}>
-            <main className="flex-1 min-w-0 overflow-auto">
+            <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-y-contain">
               <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">
                 {children}
               </div>

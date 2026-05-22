@@ -1,25 +1,41 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
-import { Button } from '@/components/ui/button'
+import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   getRun,
   getGraph,
+  getProject,
   createRun,
   cancelRun,
   rerunProcessedItem,
   getRunEstimatedAiCost,
   type Run,
   type Graph,
+  type Project,
   type ProcessedItemSummary,
   type RunEstimatedAiCost,
 } from '@/lib/api'
-import { formatDateCentral } from '@/lib/utils'
+import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
+import { formatDateCentral, formatRunTitleDate } from '@/lib/utils'
 import { getNodeStepDisplayName } from '@/lib/nodeUtils'
-import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, ExternalLink, RotateCcw } from 'lucide-react'
+import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
+import {
+  RUN_AGAIN_WARNING_BODY,
+  RUN_AGAIN_WARNING_TITLE,
+  rerunWarningBody,
+  rerunWarningTitle,
+} from '@/lib/rerunWarning'
+import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
+import {
+  isRunPreparingItems,
+  PREPARING_ITEMS_SOURCE_LABEL,
+} from '@/lib/runPreparingItems'
+import { ArrowLeft, ArrowRight, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 
 export default function RunDetail() {
@@ -28,6 +44,8 @@ export default function RunDetail() {
   const navigate = useNavigate()
   const [run, setRun] = useState<Run | null>(null)
   const [graph, setGraph] = useState<Graph | null>(null)
+  const [project, setProject] = useState<Project | null>(null)
+  const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const [loading, setLoading] = useState(true)
   const [runningAgain, setRunningAgain] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -78,6 +96,26 @@ export default function RunDetail() {
     return () => {}
   }, [run?.status, runId]) // Only depend on run.status and runId, not the entire run/graph objects
 
+  useEffect(() => {
+    if (project?.workspace_id == null) {
+      setProjectWorkspace(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await listMyWorkspaces()
+        if (cancelled) return
+        setProjectWorkspace(rows.find((row) => row.id === project.workspace_id) ?? null)
+      } catch {
+        if (!cancelled) setProjectWorkspace(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [project?.workspace_id])
+
   async function loadRunData() {
     if (!runId) return
 
@@ -85,9 +123,13 @@ export default function RunDetail() {
       setLoading(true)
       // Only call getRun once, then use the result to get the graph
       const runData = await getRun(runId)
-      const graphData = await getGraph(runData.graph_id)
+      const [graphData, projectData] = await Promise.all([
+        getGraph(runData.graph_id),
+        getProject(runData.project_id).catch(() => null),
+      ])
       setRun(runData)
       setGraph(graphData)
+      setProject(projectData)
       try {
         const cost = await getRunEstimatedAiCost(runId)
         setAiCost(cost)
@@ -104,11 +146,17 @@ export default function RunDetail() {
   async function handleRunAgain() {
     if (!run || !graph) return
 
+    const ok = await showConfirm(RUN_AGAIN_WARNING_BODY, {
+      title: RUN_AGAIN_WARNING_TITLE,
+      confirmLabel: 'Run again',
+      destructive: true,
+    })
+    if (!ok) return
+
     try {
       setRunningAgain(true)
-      // Create a new run with the same graph ID and empty input (input is part of graph spec)
       const newRun = await createRun(run.graph_id, {
-        input: {}
+        replace_article_geography_on_persist: true,
       })
       // Navigate to the new run detail page
       navigate(`/runs/${newRun.id}`)
@@ -126,8 +174,8 @@ export default function RunDetail() {
     const ok = await showConfirm(
       'Are you sure you want to cancel this run? This will stop all pending and running items.',
       {
-        title: 'Cancel run',
-        confirmLabel: 'Cancel run',
+        title: 'Stop run',
+        confirmLabel: 'Stop run',
         destructive: true,
       },
     )
@@ -181,9 +229,11 @@ export default function RunDetail() {
   async function handleBulkRerun() {
     if (!runId || selectedItems.size === 0) return
 
-    const ok = await showConfirm(`Are you sure you want to rerun ${selectedItems.size} item(s)?`, {
-      title: 'Rerun items',
-      confirmLabel: 'Rerun',
+    const count = selectedItems.size
+    const ok = await showConfirm(rerunWarningBody(count), {
+      title: rerunWarningTitle(count),
+      confirmLabel: count === 1 ? 'Rerun' : `Rerun ${count} items`,
+      destructive: true,
     })
     if (!ok) return
 
@@ -241,13 +291,6 @@ export default function RunDetail() {
     }
   }
 
-  const getS3Url = (item: ProcessedItemSummary): string | null => {
-    if (item.output_s3_bucket && item.output_s3_key) {
-      return `https://${item.output_s3_bucket}.s3.amazonaws.com/${item.output_s3_key}`
-    }
-    return null
-  }
-
   const formatJson = (data: any) => {
     try {
       return JSON.stringify(data, null, 2)
@@ -255,6 +298,31 @@ export default function RunDetail() {
       return String(data)
     }
   }
+
+  const summarizePreviewText = (value: unknown, maxWords = 6): string | null => {
+    if (typeof value !== 'string') return null
+    const normalized = value.replace(/\s+/g, ' ').trim()
+    if (!normalized) return null
+    const words = normalized.split(' ')
+    if (words.length <= maxWords) return normalized
+    return `${words.slice(0, maxWords).join(' ')}…`
+  }
+
+  const syntheticInputPreview = (() => {
+    const nodes = graph?.spec?.nodes ?? []
+    for (const node of nodes) {
+      if (node.type !== 'TextInput' && node.type !== 'JSONInput') continue
+      const params =
+        node.params && typeof node.params === 'object'
+          ? (node.params as Record<string, unknown>)
+          : {}
+      for (const key of ['text', 'body', 'content', 'article_text', 'input_text', 'headline', 'title']) {
+        const preview = summarizePreviewText(params[key])
+        if (preview) return preview
+      }
+    }
+    return null
+  })()
 
   if (loading) {
     return (
@@ -282,6 +350,9 @@ export default function RunDetail() {
     )
   }
 
+  const shortRunId = run.id.split('-')[0]
+  const flowName = graph?.name || `Flow ${run.graph_id}`
+
   const hasRunningItems = run.pending_items > 0 || run.running_items > 0
 
   // Check if the flow has an APIInput node (API-triggered flows)
@@ -293,24 +364,54 @@ export default function RunDetail() {
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const paginatedItems = run.items?.slice(startIndex, endIndex) || []
+  const preparingItems = isRunPreparingItems(run)
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => navigate('/')}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">Run #{run.id}</h1>
-            <p className="text-muted-foreground mt-1">
-              {graph?.name || `Flow ${run.graph_id}`}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-3">
+          <PageBreadcrumbs
+            items={[
+              { label: 'Workspaces', to: '/' },
+              ...(projectWorkspace
+                ? [
+                    {
+                      label: projectWorkspace.name,
+                      to: `/workspace/${encodeURIComponent(projectWorkspace.slug)}`,
+                    },
+                  ]
+                : []),
+              ...(project
+                ? [
+                    {
+                      label: project.name,
+                      to: `/project/${encodeURIComponent(project.slug)}`,
+                    },
+                  ]
+                : []),
+              { label: 'Run' },
+            ]}
+          />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold leading-tight sm:text-3xl">
+              Run • {formatRunTitleDate(run.created_at)}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Flow:{' '}
+              <Link
+                to={`/flow/${encodeURIComponent(run.graph_id)}`}
+                className="font-medium text-primary hover:underline"
+              >
+                {flowName}
+              </Link>
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Run ID {shortRunId}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
           {(run.status === 'pending' || run.status === 'running') && (
             <Button 
               onClick={handleCancelRun} 
@@ -400,19 +501,14 @@ export default function RunDetail() {
       {aiCost && aiCost.attempt_count > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Total estimated AI usage cost</CardTitle>
+            <CardTitle>Estimated AI usage cost</CardTitle>
             <CardDescription>
               Based on tracked model calls for this run (totals are approximate).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="text-2xl font-semibold">
-              {Number(aiCost.estimated_total).toLocaleString(undefined, {
-                style: 'currency',
-                currency: aiCost.currency || 'USD',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 6,
-              })}
+              {formatCurrencySummary(Number(aiCost.estimated_total), aiCost.currency || 'USD')}
             </div>
             {aiCost.incomplete_estimate ? (
               <p className="text-sm text-amber-700 dark:text-amber-400">
@@ -427,12 +523,7 @@ export default function RunDetail() {
                     <li key={String(row.node_id)}>
                       {getNodeStepDisplayName(graph?.spec?.nodes, row.node_id)}
                       {': '}
-                      {Number(row.estimated_total).toLocaleString(undefined, {
-                        style: 'currency',
-                        currency: aiCost.currency || 'USD',
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 6,
-                      })}
+                      {formatCurrencySummary(Number(row.estimated_total), aiCost.currency || 'USD')}
                     </li>
                   ))}
                 </ul>
@@ -449,9 +540,6 @@ export default function RunDetail() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Processed Items</CardTitle>
-                <CardDescription>
-                  Individual items processed through the flow
-                </CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 {selectedItems.size > 0 && (
@@ -553,11 +641,11 @@ export default function RunDetail() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">#{item.id}</TableCell>
                     <TableCell className="text-sm max-w-[250px]">
-                      {item.source_file ? (
+                      {isBatchFileSource(item.source_file) ? (
                         <div className="flex items-center gap-2 max-w-full">
                           <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <span className="font-mono text-xs truncate" title={item.source_file}>
-                            {item.source_file.split('/').pop()}
+                          <span className="font-mono text-xs truncate" title={item.source_file!}>
+                            {processedItemSourceLabel(item)}
                           </span>
                         </div>
                       ) : item.input_article_id ? (
@@ -577,9 +665,26 @@ export default function RunDetail() {
                         </div>
                       ) : (
                         <div className="flex flex-col gap-1 max-w-full">
-                          <span className="text-xs font-medium text-muted-foreground">
-                            {item.is_array_splitter_item ? 'Array input' : 'Manual input'}
-                          </span>
+                          {(() => {
+                            const preview =
+                              processedItemSourceLabel(item) ||
+                              (item.synthetic ? syntheticInputPreview : null)
+                            return (
+                              <span
+                                className={`text-xs font-medium leading-snug ${
+                                  preview ? 'text-foreground' : 'text-muted-foreground'
+                                }`}
+                                title={preview ?? undefined}
+                              >
+                                {preview ||
+                                  (preparingItems
+                                    ? PREPARING_ITEMS_SOURCE_LABEL
+                                    : item.is_array_splitter_item
+                                      ? 'Array input'
+                                      : 'Manual input')}
+                              </span>
+                            )
+                          })()}
                           {item.input_headline && (
                             <span className="text-xs text-muted-foreground truncate" title={item.input_headline}>
                               {item.input_headline.length > 40 ? `${item.input_headline.substring(0, 40)}...` : item.input_headline}
@@ -606,12 +711,10 @@ export default function RunDetail() {
                         {(item.estimated_ai_cost !== undefined && item.estimated_ai_cost !== null) ||
                         item.estimated_ai_cost_incomplete ? (
                           <>
-                            {Number(item.estimated_ai_cost ?? 0).toLocaleString(undefined, {
-                              style: 'currency',
-                              currency: item.estimated_ai_cost_currency || 'USD',
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 6,
-                            })}
+                            {formatCurrencySummary(
+                              Number(item.estimated_ai_cost ?? 0),
+                              item.estimated_ai_cost_currency || 'USD',
+                            )}
                             {item.estimated_ai_cost_incomplete ? (
                               <span
                                 className="text-amber-700 dark:text-amber-400"
@@ -630,30 +733,18 @@ export default function RunDetail() {
                       {formatDateCentral(item.created_at)}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-2">
+                      <div className="flex justify-end">
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="ghost"
                           onClick={(e) => {
                             e.stopPropagation()
                             navigate(`/runs/${runId}/items/${item.id}`)
                           }}
                         >
-                          View Details
+                          View
+                          <ArrowRight className="ml-2 h-4 w-4" />
                         </Button>
-                        {item.output_s3_bucket && item.output_s3_key && item.status === 'succeeded' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              window.open(getS3Url(item)!, '_blank')
-                            }}
-                            title="View on S3"
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                          </Button>
-                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -695,7 +786,7 @@ export default function RunDetail() {
       )}
 
       {/* No Items Message */}
-      {run.total_items === 0 && (
+      {run.total_items === 0 && !preparingItems && (
         <Card>
           <CardContent className="py-12">
             <div className="text-center">

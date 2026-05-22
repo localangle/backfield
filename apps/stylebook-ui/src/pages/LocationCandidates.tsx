@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Link, useSearchParams } from "react-router-dom"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
+import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 import { fetchProjects, type Project } from "@/lib/api"
 import {
   acceptCandidate,
@@ -166,10 +167,16 @@ export default function LocationCandidates() {
     filterScopeSuffix,
   } = useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
+  const stylebookLabel = useSelectedStylebookLabel()
   const [searchParams, setSearchParams] = useSearchParams()
   const projectSlug = projectScopeSlug
   const [projects, setProjects] = useState<Project[]>([])
   const [projectsLoading, setProjectsLoading] = useState(true)
+  const projectDisplayName = useMemo(() => {
+    const row = projects.find((p) => p.slug === projectSlug)
+    const name = row?.name?.trim()
+    return name || projectSlug || "this project"
+  }, [projects, projectSlug])
   const [loading, setLoading] = useState(false)
   const [listTotal, setListTotal] = useState(0)
   const [listPage, setListPage] = useState(1)
@@ -800,6 +807,11 @@ export default function LocationCandidates() {
             ]}
           />
           <h1 className="text-3xl font-bold">Location candidates</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Link candidates from{" "}
+            <span className="font-semibold text-foreground">{projectDisplayName}</span> to Stylebook{" "}
+            <span className="font-semibold text-foreground">{stylebookLabel}</span>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="hidden sm:flex items-center gap-2">
@@ -809,8 +821,7 @@ export default function LocationCandidates() {
               onValueChange={(slug) => {
                 setSearchParams((prev) => {
                   const next = new URLSearchParams(prev)
-                  next.delete("project_scope")
-                  next.set("project", slug)
+                  next.set("project_scope", slug)
                   return next
                 })
               }}
@@ -1276,7 +1287,10 @@ export default function LocationCandidates() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Create new canonical</DialogTitle>
-            <DialogDescription>Change label or add context below.</DialogDescription>
+            <DialogDescription>
+              Create new canonical object in{" "}
+              <span className="font-semibold text-foreground">{stylebookLabel}</span>
+            </DialogDescription>
           </DialogHeader>
           {createLinkNudge ? (
             <Alert className="border-amber-500/40 bg-amber-500/5">

@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ProjectSettings, { type ProjectSettingsHandle } from '@/components/ProjectSettings'
 import ProjectDetailFlowsTab from '@/components/project/ProjectDetailFlowsTab'
 import ProjectDetailRunsTab, {
@@ -22,7 +23,28 @@ import {
 } from '@/lib/api'
 import { formatDurationMs } from '@/lib/formatDuration'
 import { useAuth } from '@/lib/auth'
-import { Edit, Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
+import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
+import { Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
+
+function formatCurrencySummary(
+  value: string | number | null | undefined,
+  currency: string,
+): string {
+  const amount = Number(value)
+  const formatter = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+  if (!Number.isFinite(amount)) return '—'
+  if (amount <= 0) return formatter.format(0)
+  if (amount < 0.01) return `< ${formatter.format(0.01)}`
+
+  const truncated = Math.trunc(amount * 100) / 100
+  return formatter.format(truncated)
+}
 
 export default function ProjectDetailPage() {
   const navigate = useNavigate()
@@ -40,9 +62,10 @@ export default function ProjectDetailPage() {
   const [workspaceTab, setWorkspaceTab] = useState('flows')
   const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
-  const systemSettingsRef = useRef<ProjectSettingsHandle>(null)
   const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
+  const workspaceSectionRef = useRef<HTMLDivElement>(null)
   const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
+  const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const reload = useCallback(async () => {
     if (!slug) return
     try {
@@ -79,6 +102,35 @@ export default function ProjectDetailPage() {
     }
   }, [slug, reload])
 
+  /** After switching tabs, clamp main scroll so a tall tab (e.g. Models) cannot leave Integrations scrolled into empty space. */
+  useEffect(() => {
+    const section = workspaceSectionRef.current
+    if (!section) return
+    const scrollEl = section.closest('main')
+    if (!(scrollEl instanceof HTMLElement)) return
+
+    const clampScroll = () => {
+      const mainRect = scrollEl.getBoundingClientRect()
+      const sectionRect = section.getBoundingClientRect()
+      const delta = sectionRect.top - mainRect.top
+      if (Math.abs(delta) > 4) {
+        scrollEl.scrollTop += delta
+      }
+      const maxTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight)
+      scrollEl.scrollTop = Math.min(scrollEl.scrollTop, maxTop)
+    }
+    let outer = 0
+    let inner = 0
+    outer = requestAnimationFrame(() => {
+      clampScroll()
+      inner = requestAnimationFrame(clampScroll)
+    })
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+    }
+  }, [workspaceTab])
+
   useEffect(() => {
     if (!project?.id) {
       setAiCost(null)
@@ -97,6 +149,26 @@ export default function ProjectDetailPage() {
       cancelled = true
     }
   }, [project?.id])
+
+  useEffect(() => {
+    if (project?.workspace_id == null) {
+      setProjectWorkspace(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await listMyWorkspaces()
+        if (cancelled) return
+        setProjectWorkspace(rows.find((row) => row.id === project.workspace_id) ?? null)
+      } catch {
+        if (!cancelled) setProjectWorkspace(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [project?.workspace_id])
 
   useEffect(() => {
     if (editingName) inputRef.current?.focus()
@@ -145,63 +217,79 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="w-full max-w-none min-w-0 space-y-10">
-      <div className="min-h-[2.5rem]">
-        {editingName ? (
-          <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
-            <Input
-              ref={inputRef}
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void saveName()
-                if (e.key === 'Escape') cancelNameEdit()
-              }}
-              disabled={savingName}
-              className="min-w-0 flex-1 max-w-xl text-3xl font-bold h-auto py-2 px-3"
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="default"
-              className="shrink-0"
-              disabled={savingName || !nameDraft.trim()}
-              onClick={() => void saveName()}
-              aria-label="Save name"
-            >
-              <Check className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              className="shrink-0"
-              disabled={savingName}
-              onClick={cancelNameEdit}
-              aria-label="Cancel"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        ) : (
-          <div className="inline-flex max-w-full items-center gap-2">
-            <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-3xl font-bold">
-              {project.name}
-            </h1>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                setNameDraft(project.name)
-                setEditingName(true)
-              }}
-              aria-label="Edit project name"
-            >
-              <Pencil className="h-5 w-5" />
-            </Button>
-          </div>
-        )}
+      <div className="space-y-2">
+        <PageBreadcrumbs
+          items={[
+            { label: 'Workspaces', to: '/' },
+            ...(projectWorkspace
+              ? [
+                  {
+                    label: projectWorkspace.name,
+                    to: `/workspace/${encodeURIComponent(projectWorkspace.slug)}`,
+                  },
+                ]
+              : []),
+            { label: project.name },
+          ]}
+        />
+        <div className="min-h-[2.5rem]">
+          {editingName ? (
+            <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
+              <Input
+                ref={inputRef}
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void saveName()
+                  if (e.key === 'Escape') cancelNameEdit()
+                }}
+                disabled={savingName}
+                className="min-w-0 flex-1 max-w-xl text-3xl font-bold h-auto py-2 px-3"
+              />
+              <Button
+                type="button"
+                size="icon"
+                variant="default"
+                className="shrink-0"
+                disabled={savingName || !nameDraft.trim()}
+                onClick={() => void saveName()}
+                aria-label="Save name"
+              >
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="shrink-0"
+                disabled={savingName}
+                onClick={cancelNameEdit}
+                aria-label="Cancel"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div className="inline-flex max-w-full items-center gap-2">
+              <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-3xl font-bold">
+                {project.name}
+              </h1>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setNameDraft(project.name)
+                  setEditingName(true)
+                }}
+                aria-label="Edit project name"
+              >
+                <Pencil className="h-5 w-5" />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="w-full min-w-0">
@@ -234,11 +322,66 @@ export default function ProjectDetailPage() {
                 <span className="text-2xl font-semibold tabular-nums">{stats.runs_failed}</span>
               </div>
               <p className="text-xs text-muted-foreground pt-1 border-t border-border">
-                Stopped includes runs that ended with an error or were cancelled. Total:{' '}
-                {stats.total_runs}
+                Stopped includes runs that ended with an error or were cancelled.
               </p>
             </CardContent>
           </Card>
+          {aiCost ? (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Total estimated AI usage cost
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {aiCost.attempt_count === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No tracked model usage for this project yet.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-3xl font-semibold tabular-nums">
+                      {formatCurrencySummary(aiCost.estimated_total, aiCost.currency || 'USD')}
+                      {aiCost.incomplete_estimate ? (
+                        <span
+                          className="text-amber-700 dark:text-amber-400 ml-1"
+                          title="Some usage data was missing"
+                        >
+                          *
+                        </span>
+                      ) : null}
+                    </p>
+                    {aiCost.model_breakdown.length > 0 ? (
+                      <div className="mt-4 border-t border-border pt-3">
+                        <p className="text-xs text-muted-foreground">Top models</p>
+                        <div className="mt-2 space-y-2">
+                          {aiCost.model_breakdown.slice(0, 3).map((model) => (
+                            <div
+                              key={model.provider_model_id}
+                              className="flex items-center justify-between gap-3 text-sm"
+                            >
+                              <span
+                                className="min-w-0 truncate text-muted-foreground"
+                                title={model.provider_model_id}
+                              >
+                                {model.provider_model_id}
+                              </span>
+                              <span className="shrink-0 font-medium tabular-nums">
+                                {formatCurrencySummary(
+                                  model.estimated_total,
+                                  aiCost.currency || 'USD',
+                                )}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -251,12 +394,10 @@ export default function ProjectDetailPage() {
               stats.avg_estimated_ai_cost_currency ? (
                 <>
                   <p className="text-3xl font-semibold tabular-nums">
-                    {Number(stats.avg_estimated_ai_cost_per_run).toLocaleString(undefined, {
-                      style: 'currency',
-                      currency: stats.avg_estimated_ai_cost_currency || 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}
+                    {formatCurrencySummary(
+                      stats.avg_estimated_ai_cost_per_run,
+                      stats.avg_estimated_ai_cost_currency || 'USD',
+                    )}
                     {stats.avg_estimated_ai_cost_incomplete ? (
                       <span
                         className="text-amber-700 dark:text-amber-400 ml-1"
@@ -291,62 +432,15 @@ export default function ProjectDetailPage() {
               </p>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average time per item
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold tabular-nums">
-                {formatDurationMs(stats.avg_duration_ms_per_item)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Mean duration per processed item (completed runs)
-              </p>
-            </CardContent>
-          </Card>
         </div>
-        {aiCost ? (
-          <Card className="mt-4">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total estimated AI usage cost
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {aiCost.attempt_count === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No tracked model usage for this project yet.
-                </p>
-              ) : (
-                <>
-                  <p className="text-2xl font-semibold tabular-nums">
-                    {Number(aiCost.estimated_total).toLocaleString(undefined, {
-                      style: 'currency',
-                      currency: aiCost.currency || 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}
-                  </p>
-                  {aiCost.incomplete_estimate ? (
-                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-2">
-                      Some usage data was missing, so this total may be incomplete.
-                    </p>
-                  ) : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
 
-      <div className="w-full min-w-0">
+      <div ref={workspaceSectionRef} className="w-full min-w-0">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold">Project workspace</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Flows, runs, defaults, outside integrations, and API keys for this project.
+              Flows, runs, integrations and API keys for this project.
             </p>
           </div>
           <div className="flex flex-shrink-0 flex-wrap items-center gap-2 sm:justify-end">
@@ -384,21 +478,9 @@ export default function ProjectDetailPage() {
                 Refresh
               </Button>
             ) : null}
-            {workspaceTab === 'settings' ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => systemSettingsRef.current?.openSystemPromptEdit?.()}
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                Edit system prompt
-              </Button>
-            ) : null}
             {workspaceTab === 'keys' ? (
               <Button
                 type="button"
-                variant="outline"
                 size="sm"
                 onClick={() => keysSettingsRef.current?.openAccessKeyCreate?.()}
               >
@@ -433,54 +515,55 @@ export default function ProjectDetailPage() {
               API
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="flows" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailFlowsTab
-              projectId={project.id}
-              projectSlug={slug}
-              onDataChanged={() => void reload()}
-            />
-          </TabsContent>
-          <TabsContent value="runs" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailRunsTab
-              ref={runsTabRef}
-              projectId={project.id}
-              onDataChanged={() => void reload()}
-            />
-          </TabsContent>
-          <TabsContent value="models" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailModelsTab projectId={project.id} />
-          </TabsContent>
-          <TabsContent value="integrations" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectDetailIntegrationsTab
-              projectId={project.id}
-              organizationId={organizationId}
-              isOrgAdmin={isOrgAdmin}
-            />
-          </TabsContent>
-          <TabsContent value="settings" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectSettings
-              ref={systemSettingsRef}
-              project={project}
-              open={true}
-              onOpenChange={() => {}}
-              variant="inline"
-              inlineScope="system"
-              primaryActionsInToolbar
-              onRemoteUpdated={reload}
-            />
-          </TabsContent>
-          <TabsContent value="keys" className="mt-6 w-full min-w-0 outline-none">
-            <ProjectSettings
-              ref={keysSettingsRef}
-              project={project}
-              open={true}
-              onOpenChange={() => {}}
-              variant="inline"
-              inlineScope="keys"
-              primaryActionsInToolbar
-              onRemoteUpdated={reload}
-            />
-          </TabsContent>
+          <div className="mt-6 w-full min-w-0" role="tabpanel">
+            {workspaceTab === 'flows' ? (
+              <ProjectDetailFlowsTab
+                projectId={project.id}
+                projectSlug={slug}
+                onDataChanged={() => void reload()}
+              />
+            ) : null}
+            {workspaceTab === 'runs' ? (
+              <ProjectDetailRunsTab
+                ref={runsTabRef}
+                projectId={project.id}
+                onDataChanged={() => void reload()}
+              />
+            ) : null}
+            {workspaceTab === 'models' ? (
+              <ProjectDetailModelsTab projectId={project.id} />
+            ) : null}
+            {workspaceTab === 'integrations' ? (
+              <ProjectDetailIntegrationsTab
+                projectId={project.id}
+                organizationId={organizationId}
+                isOrgAdmin={isOrgAdmin}
+              />
+            ) : null}
+            {workspaceTab === 'settings' ? (
+              <ProjectSettings
+                project={project}
+                open={true}
+                onOpenChange={() => {}}
+                variant="inline"
+                inlineScope="system"
+                primaryActionsInToolbar
+                onRemoteUpdated={reload}
+              />
+            ) : null}
+            {workspaceTab === 'keys' ? (
+              <ProjectSettings
+                ref={keysSettingsRef}
+                project={project}
+                open={true}
+                onOpenChange={() => {}}
+                variant="inline"
+                inlineScope="keys"
+                primaryActionsInToolbar
+                onRemoteUpdated={reload}
+              />
+            ) : null}
+          </div>
         </Tabs>
       </div>
     </div>

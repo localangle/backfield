@@ -1,5 +1,6 @@
 """LangGraph consolidate node for organizing geocoded results into structured format."""
 
+import copy
 import hashlib
 import logging
 from typing import Any
@@ -133,7 +134,8 @@ def _geocode_city_level_fallback_qa(
     lt = (location_type or "").strip().lower()
     if lt not in ("neighborhood", "district", "address", "place", "point"):
         return False
-    if _stylebook_or_canonical_hit(geocoding_result):
+    # Trust Stylebook for coarse admin rows only; street/POI extracts still need fallback QA.
+    if _stylebook_or_canonical_hit(geocoding_result) and lt not in ("address", "place", "point"):
         return False
 
     label = str(formatted_line or "")
@@ -207,6 +209,114 @@ def _geocode_city_level_fallback_qa(
         if acc in ("city", "county", "state") and not _label_contains_token(label_cf, token):
             return True
     return False
+
+
+# Rough WGS84 bounds (west, south, east, north) for post-geocode plausibility checks.
+_COUNTRY_BBOX: dict[str, tuple[float, float, float, float]] = {
+    "US": (-170.0, 17.0, -65.0, 72.0),
+    "CA": (-141.0, 41.0, -52.0, 84.0),
+    "MX": (-118.0, 14.0, -86.0, 33.5),
+    "FR": (-5.5, 41.0, 10.0, 51.5),
+    "GB": (-8.8, 49.5, 2.0, 61.0),
+    "CN": (73.0, 18.0, 135.0, 54.0),
+}
+
+_COUNTRY_LABEL_TO_ABBR: dict[str, str] = {
+    "china": "CN",
+    "france": "FR",
+    "united states": "US",
+    "united states of america": "US",
+    "usa": "US",
+    "canada": "CA",
+    "mexico": "MX",
+    "united kingdom": "GB",
+    "uk": "GB",
+}
+
+
+def _expected_country_abbr_from_components(components: dict[str, Any]) -> str | None:
+    country = components.get("country")
+    if not isinstance(country, dict):
+        return None
+    abbr = country.get("abbr")
+    if isinstance(abbr, str) and abbr.strip():
+        return abbr.strip().upper()
+    return None
+
+
+def _coordinates_in_country_bbox(lon: float, lat: float, country_abbr: str) -> bool:
+    box = _COUNTRY_BBOX.get(country_abbr.upper())
+    if box is None:
+        return True
+    west, south, east, north = box
+    return west <= lon <= east and south <= lat <= north
+
+
+def _point_coordinates_from_geocode(geocoding_result: Any) -> tuple[float, float] | None:
+    result = getattr(geocoding_result, "result", None)
+    geometry = getattr(result, "geometry", None) if result is not None else None
+    if geometry is None or getattr(geometry, "type", None) != "Point":
+        return None
+    coords = getattr(geometry, "coordinates", None)
+    if not isinstance(coords, (list, tuple)) or len(coords) < 2:
+        return None
+    try:
+        return float(coords[0]), float(coords[1])
+    except (TypeError, ValueError):
+        return None
+
+
+def _result_country_abbr_from_geocode(
+    geocoding_result: Any,
+    formatted_line: str,
+) -> str | None:
+    conf = _geocoding_confidence_dict(geocoding_result)
+    cc = conf.get("pelias_country_code")
+    if isinstance(cc, str) and cc.strip():
+        return cc.strip().upper()[:2]
+    label = formatted_line.strip().lower()
+    if label in _COUNTRY_LABEL_TO_ABBR:
+        return _COUNTRY_LABEL_TO_ABBR[label]
+    head = label.split(",")[0].strip()
+    if head in _COUNTRY_LABEL_TO_ABBR:
+        return _COUNTRY_LABEL_TO_ABBR[head]
+    return None
+
+
+def _geocode_region_mismatch_qa(
+    components: dict[str, Any],
+    formatted_line: str,
+    geocoding_result: Any,
+) -> bool:
+    """True when resolver country/centroid disagrees with PlaceExtract country context."""
+    expected = _expected_country_abbr_from_components(components)
+    if not expected:
+        return False
+    if _stylebook_or_canonical_hit(geocoding_result):
+        return False
+
+    resolved = _result_country_abbr_from_geocode(geocoding_result, formatted_line)
+    if resolved and resolved != expected:
+        return True
+
+    coords = _point_coordinates_from_geocode(geocoding_result)
+    if coords is not None and not _coordinates_in_country_bbox(coords[0], coords[1], expected):
+        return True
+
+    return False
+
+
+def _point_entry_without_geometry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Drop geocode geometry so review maps do not plot untrusted centroids."""
+    out = copy.deepcopy(entry)
+    geocode = out.get("geocode")
+    if not isinstance(geocode, dict):
+        return out
+    result = geocode.get("result")
+    if isinstance(result, dict):
+        geocode["result"] = {k: v for k, v in result.items() if k != "geometry"}
+        out["geocode"] = geocode
+    return out
 
 
 def _city_geocode_admin_level_mismatch(
@@ -480,13 +590,29 @@ async def consolidate_node(state: AgentState) -> AgentState:
 
         components_qa = state.get("location_components") or {}
         comps_dict = components_qa if isinstance(components_qa, dict) else {}
-        if location_type in ("address", "place", "point") and _geocode_city_level_fallback_qa(
+        region_mismatch = location_type in ("address", "place", "point") and _geocode_region_mismatch_qa(
+            comps_dict,
+            formatted_line,
+            geocoding_result,
+        )
+        city_fallback = location_type in ("address", "place", "point") and _geocode_city_level_fallback_qa(
             location_type,
             formatted_line,
             comps_dict,
             geocoding_result,
             location_text=location_text,
-        ):
+        )
+        if region_mismatch:
+            qa_point = _point_entry_without_geometry(
+                {
+                    **point_entry,
+                    "geocode_region_mismatch": True,
+                    "geocode_qa_code": "geocode_region_mismatch",
+                }
+            )
+            _attach_router_audit(qa_point, state)
+            consolidated["places"]["needs_review"].append(qa_point)
+        elif city_fallback:
             qa_point = {
                 **point_entry,
                 "geocode_city_level_fallback": True,

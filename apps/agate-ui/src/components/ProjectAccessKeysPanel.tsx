@@ -94,6 +94,14 @@ const ProjectAccessKeysPanel = forwardRef<
     return row.user_id === userId
   }
 
+  const nextRotatedLabel = (row: ProjectAccessCredential): string => {
+    const label = row.label?.trim()
+    if (label) {
+      return label.startsWith("Rotated ") ? label : `Rotated (${label})`
+    }
+    return `Rotated ${row.key_prefix.slice(0, 8)}…`
+  }
+
   const handleCreate = async () => {
     setSaving(true)
     setError(null)
@@ -154,7 +162,7 @@ const ProjectAccessKeysPanel = forwardRef<
     try {
       const created = await createProjectAccessKey(projectId, {
         credential_type: row.credential_type as "user" | "service",
-        label: row.label ? `Rotated (${row.label})` : `Rotated ${row.key_prefix.slice(0, 8)}…`,
+        label: nextRotatedLabel(row),
       })
       setRotateRevokeId(row.id)
       setRawKeyPayload(created)
@@ -205,6 +213,9 @@ const ProjectAccessKeysPanel = forwardRef<
   return (
     <div className="w-full min-w-0 space-y-4 mb-10">
       <div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Manage keys to enable API access to this project.
+        </p>
         <h4 className="text-base font-semibold">API access keys</h4>
         <p className="text-sm text-muted-foreground mt-1">
           Use as <code className="text-xs bg-muted px-1 rounded">Authorization: Bearer &lt;key&gt;</code>{" "}

@@ -1,5 +1,21 @@
 import type { Run } from '@/lib/api'
 
+export function formatCurrencySummary(value: number, currency: string): string {
+  const formatter = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+  if (!Number.isFinite(value)) return '—'
+  if (value <= 0) return formatter.format(0)
+  if (value < 0.01) return `< ${formatter.format(0.01)}`
+
+  const truncated = Math.trunc(value * 100) / 100
+  return formatter.format(truncated)
+}
+
 /** Show totals returned on ``Run`` from list/detail APIs (rollup of tracked LLM spend). */
 export function formatRunEstimatedAiCost(run: Run): {
   display: string
@@ -12,12 +28,7 @@ export function formatRunEstimatedAiCost(run: Run): {
     return { display: '—', incomplete: false }
   }
   return {
-    display: Number(t).toLocaleString(undefined, {
-      style: 'currency',
-      currency: cur,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 6,
-    }),
+    display: formatCurrencySummary(Number(t), cur),
     incomplete,
   }
 }

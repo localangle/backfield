@@ -23,7 +23,9 @@ from backfield_stylebook.resolve import (
     resolve_effective_stylebook_id_for_project,
 )
 from backfield_stylebook.substrate_canonical_link_actions import (
+    finalize_substrate_after_article_scoped_remove,
     link_substrate_to_canonical_atomic,
+    requeue_substrate_after_story_remove,
     unlink_substrate_from_canonical,
 )
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -35,6 +37,7 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.mention_occurrences import replace_mention_occurrences_for_article
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
 router = APIRouter(prefix="/v1", tags=["locations"])
@@ -167,7 +170,9 @@ class PatchLocationBody(BaseModel):
 
 
 class PatchGeometryBody(BaseModel):
-    geometry_json: dict[str, Any]
+    """Set GeoJSON geometry, or null to clear the saved place pin/footprint."""
+
+    geometry_json: dict[str, Any] | None  # required field; use explicit JSON null to clear
 
 
 class PatchCanonicalGeometryBody(BaseModel):
@@ -1063,6 +1068,7 @@ def patch_location_geometry(
         raise HTTPException(status_code=404, detail="Location not found")
     loc.geometry_json = body.geometry_json
     loc.geometry_type = body.geometry_json.get("type") if body.geometry_json else None
+    loc.geometry = None
     session.add(loc)
     session.commit()
     session.refresh(loc)
@@ -1097,6 +1103,15 @@ def patch_canonical_location_geometry(
 def delete_location(
     location_id: int,
     project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
+    article_id: int | None = Query(
+        None,
+        description=(
+            "When set, soft-delete mentions for this article only. If no other active "
+            "mentions remain on this saved place, unlink from any canonical (without "
+            "re-queueing) and delete the substrate row; otherwise the catalog link is kept."
+        ),
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> dict[str, Any]:
@@ -1105,16 +1120,74 @@ def delete_location(
     loc = session.get(SubstrateLocation, location_id)
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
-    try:
-        session.delete(loc)
-        session.commit()
-    except IntegrityError:
-        session.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Location still has linked mentions or references; cannot delete.",
-        ) from None
-    return {"message": "deleted", "candidates_created": 0, "links_deactivated": 0}
+
+    mention_filters: list[ColumnElement[bool]] = [
+        SubstrateLocationMention.location_id == location_id,
+        SubstrateLocationMention.deleted == False,  # noqa: E712
+    ]
+    if article_id is not None:
+        mention_filters.append(SubstrateLocationMention.article_id == article_id)
+
+    mentions = session.exec(select(SubstrateLocationMention).where(*mention_filters)).all()
+    for mention in mentions:
+        mention.deleted = True
+        session.add(mention)
+    session.flush()
+
+    remaining = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstrateLocationMention)
+            .where(
+                SubstrateLocationMention.location_id == location_id,
+                SubstrateLocationMention.deleted == False,  # noqa: E712
+            )
+        )
+        or 0
+    )
+
+    location_deleted = False
+    candidates_created = 0
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+    if article_id is not None:
+        try:
+            location_deleted, candidates_created = finalize_substrate_after_article_scoped_remove(
+                session,
+                location=loc,
+                remaining_active_mentions=remaining,
+            )
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Location still has linked mentions or references; cannot delete.",
+            ) from None
+    elif remaining == 0:
+        if requeue_substrate_after_story_remove(
+            session,
+            stylebook_id=stylebook_id,
+            location=loc,
+            provenance="stylebook_delete",
+        ):
+            candidates_created = 1
+        else:
+            try:
+                session.delete(loc)
+                location_deleted = True
+            except IntegrityError:
+                session.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="Location still has linked mentions or references; cannot delete.",
+                ) from None
+    session.commit()
+    return {
+        "message": "deleted",
+        "mentions_removed": len(mentions),
+        "location_deleted": location_deleted,
+        "candidates_created": candidates_created,
+        "links_deactivated": 0,
+    }
 
 
 @router.get("/locations/{location_id}/mentions", response_model=LocationMentionsResponse)
@@ -1226,6 +1299,82 @@ def get_mention_geometry(
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Location not found")
     raise HTTPException(status_code=404, detail="Mention not found")
+
+
+class MentionOccurrenceIn(BaseModel):
+    id: int | None = None
+    client_id: str | None = None
+    mention_text: str = Field(min_length=1)
+    start_char: int | None = None
+    end_char: int | None = None
+    occurrence_order: int | None = None
+    suppressed: bool = False
+
+
+class MentionOccurrenceOut(BaseModel):
+    id: int
+    mention_text: str
+    start_char: int | None = None
+    end_char: int | None = None
+    occurrence_order: int | None = None
+    suppressed: bool
+    source_kind: str
+
+
+class ReplaceMentionOccurrencesIn(BaseModel):
+    occurrences: list[MentionOccurrenceIn] = Field(default_factory=list, max_length=50)
+
+
+class ReplaceMentionOccurrencesResponse(BaseModel):
+    occurrences: list[MentionOccurrenceOut]
+
+
+@router.put(
+    "/locations/{location_id}/mention-occurrences",
+    response_model=ReplaceMentionOccurrencesResponse,
+)
+def replace_location_mention_occurrences(
+    location_id: int,
+    body: ReplaceMentionOccurrencesIn,
+    project_slug: str = Query(...),
+    article_id: int = Query(..., ge=1),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> ReplaceMentionOccurrencesResponse:
+    """Replace all active mention occurrences for one article+location (Agate Review)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    loc = session.get(SubstrateLocation, location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Location not found")
+    article = session.get(SubstrateArticle, article_id)
+    if article is None or int(article.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    payload = [o.model_dump() for o in body.occurrences]
+    created = replace_mention_occurrences_for_article(
+        session,
+        article_id=article_id,
+        location_id=location_id,
+        occurrences_in=payload,
+    )
+    session.commit()
+    out: list[MentionOccurrenceOut] = []
+    for row in created:
+        if row.id is None:
+            continue
+        out.append(
+            MentionOccurrenceOut(
+                id=int(row.id),
+                mention_text=str(row.mention_text),
+                start_char=row.start_char,
+                end_char=row.end_char,
+                occurrence_order=row.occurrence_order,
+                suppressed=bool(row.suppressed),
+                source_kind=str(row.source_kind),
+            )
+        )
+    return ReplaceMentionOccurrencesResponse(occurrences=out)
 
 
 def _not_implemented() -> None:

@@ -43,6 +43,9 @@ from backfield_stylebook.canonical_retrieval import (
     retrieve_candidate_canonical_ids,
 )
 from backfield_stylebook.geocode_cache_resolve import try_resolve_substrate_location_cache_geometry
+from backfield_stylebook.geocode_cache_sanity import (
+    substrate_canonical_link_blocked_by_content_sanity,
+)
 from backfield_stylebook.place_extract_location_types import (
     ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE,
     ADDRESS_PLACE_KIND_PUBLIC_NAMED,
@@ -144,7 +147,8 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
 # Backwards-compatible name for :func:`link_pair_allowed` (type deny-list + product gates).
 types_are_autolink_compatible = link_pair_allowed
 
-# Gate E neighborhood container distance uses 50 km; align address→neighborhood autolink geometry.
+# Recall demotion when an address point is far from a neighborhood polygon (pair is denied for
+# autolink via :func:`link_pair_allowed`; this gate only affects comparable scoring paths).
 ADDRESS_NEIGHBORHOOD_AUTOLINK_MAX_KM = 50.0
 
 
@@ -523,6 +527,16 @@ def rank_scored_canonical_recall_matches(
             location, canon, feat
         ):
             sc = min(sc, RECALL_MIN_SCORE - 0.001)
+        if strict_canonical_gates_enabled() and substrate_canonical_link_blocked_by_content_sanity(
+            substrate_location_type=location.location_type,
+            location_text=str(location.name),
+            components=comps,
+            match_label=str(canon.label),
+            match_formatted_address=canon.formatted_address,
+            match_location_type=canon.location_type,
+            match_geometry_type=canon.geometry_type,
+        ):
+            sc = min(sc, RECALL_MIN_SCORE - 0.001)
         rows.append((recall_index, str(canon_id), str(canon.label), sc))
     rows.sort(key=lambda r: (-r[3], -r[0]))
     return [(r[1], r[2], r[3], r[0]) for r in rows]
@@ -683,7 +697,18 @@ def decide_canonical_persist_plan(
         alias_pair_ok = link_pair_allowed(location.location_type, alias_canon_lt) and not (
             autolink_container_to_fine_denied(location.location_type, alias_canon_lt)
         )
-        if alias_pair_ok:
+        alias_content_ok = False
+        if alias_canon is not None:
+            alias_content_ok = not substrate_canonical_link_blocked_by_content_sanity(
+                substrate_location_type=location.location_type,
+                location_text=str(location.name),
+                components=place_extract_components_from_entry(location, entry),
+                match_label=str(alias_canon.label),
+                match_formatted_address=alias_canon.formatted_address,
+                match_location_type=alias_canon_lt,
+                match_geometry_type=alias_canon.geometry_type,
+            )
+        if alias_pair_ok and alias_content_ok:
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,
                 existing_canonical_id=cid,

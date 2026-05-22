@@ -11,6 +11,7 @@
     ".": "./src/index.ts",
     "./nodeOutputs": "./src/nodeOutputs.ts",
     "./LeafletMap": "./src/LeafletMap.tsx",
+    "./GeometryEditLeafletMap": "./src/GeometryEditLeafletMap.tsx",
     "./axisAlignedRectangle": "./src/axisAlignedRectangle.ts"
   },
   "scripts": {

@@ -133,8 +133,8 @@ export default function RunsList() {
     const ok = await showConfirm(
       'Are you sure you want to cancel this run? This will stop all pending and running items.',
       {
-        title: 'Cancel run',
-        confirmLabel: 'Cancel run',
+        title: 'Stop run',
+        confirmLabel: 'Stop run',
         destructive: true,
       },
     )

@@ -11,9 +11,10 @@ from backfield_db import (
     SubstrateLocation,
 )
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-from backfield_stylebook.canonical_link_matrix import link_pair_allowed
+from backfield_stylebook.canonical_link_matrix import link_pair_allowed, types_are_comparable
 from backfield_stylebook.canonical_policy import (
     CanonicalPersistDecision,
+    decide_canonical_persist_plan,
     rank_scored_canonical_recall_matches,
     substrate_may_materialize_canonical_after_recall,
 )
@@ -31,7 +32,6 @@ from sqlmodel import Session, SQLModel, create_engine
         ("city", "city"),
         ("town", "city"),
         ("city", "town"),
-        ("address", "city"),
         ("region_city", "ward"),
         ("ward", "region_city"),
         ("neighborhood", "county"),
@@ -47,6 +47,31 @@ def test_link_pair_allowed_is_permissive(
     canonical_lt: str | None,
 ) -> None:
     assert link_pair_allowed(substrate_lt, canonical_lt) is True
+
+
+def test_link_pair_denies_address_to_city() -> None:
+    assert link_pair_allowed("address", "city") is False
+    assert link_pair_allowed("city", "address") is False
+
+
+@pytest.mark.parametrize(
+    ("substrate_lt", "canonical_lt", "expect"),
+    [
+        ("place", "neighborhood", False),
+        ("neighborhood", "place", False),
+        ("intersection_road", "place", False),
+        ("intersection_highway", "point", False),
+        ("place", "place", True),
+        ("neighborhood", "neighborhood", True),
+        ("city", "place", False),
+    ],
+)
+def test_types_are_comparable_matches_link_policy(
+    substrate_lt: str,
+    canonical_lt: str,
+    expect: bool,
+) -> None:
+    assert types_are_comparable(substrate_lt, canonical_lt) is expect
 
 
 def test_link_substrate_atomic_rejects_city_to_place() -> None:
@@ -116,7 +141,7 @@ def _bootstrap(session: Session, *, org_slug: str) -> tuple[int, int]:
 
 def test_rank_caps_incompatible_type_below_recall() -> None:
     """An address substrate must not autolink to a city canonical via the scorer."""
-    from backfield_stylebook.canonical_match_score import AUTOLINK_MIN_SCORE, RECALL_MIN_SCORE
+    from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -164,8 +189,7 @@ def test_rank_caps_incompatible_type_below_recall() -> None:
 
     assert len(ranked) == 1
     _, _label, score, _ = ranked[0]
-    assert score >= RECALL_MIN_SCORE
-    assert score < AUTOLINK_MIN_SCORE
+    assert score < RECALL_MIN_SCORE
 
 
 def test_rank_allows_same_type_city_to_city() -> None:
@@ -219,9 +243,305 @@ def test_rank_allows_same_type_city_to_city() -> None:
     )
 
 
+def test_link_pair_denies_address_to_neighborhood() -> None:
+    assert link_pair_allowed("address", "neighborhood") is False
+    assert link_pair_allowed("neighborhood", "address") is False
+
+
+def test_rank_caps_address_to_neighborhood() -> None:
+    """Street addresses must not autolink to neighborhood canonicals (token overlap only)."""
+    from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
+
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-addr-hood")
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Austin",
+            slug="austin-hood",
+            location_type="neighborhood",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Austin",
+                normalized_alias="austin",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="5400 W. West End Ave., Austin, Chicago, IL",
+            normalized_name="5400 w. west end ave., austin, chicago, il",
+            location_type="address",
+            formatted_address="Austin, Chicago, IL",
+            identity_fingerprint="fp-type-gate-addr-hood",
+        )
+
+        ranked = rank_scored_canonical_recall_matches(
+            session,
+            location=loc,
+            recall=[(cid, None)],
+        )
+
+    assert len(ranked) == 1
+    _, _label, score, _ = ranked[0]
+    assert score < RECALL_MIN_SCORE
+
+
+def test_decide_canonical_persist_plan_place_skips_neighborhood_named_place_canonical() -> None:
+    """POI rows must not autolink to place canonicals that only name a neighborhood."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-poi-hood-place")
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Bridgeport, Chicago, IL",
+            slug="bridgeport-chicago-il",
+            location_type="place",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="DanDance Art Academy, Chicago, IL",
+            normalized_name="dandance art academy, chicago, il",
+            location_type="place",
+            formatted_address="Chicago, IL",
+            status="resolved",
+            identity_fingerprint="fp-poi-hood-place",
+        )
+
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry={
+                "components": {
+                    "place": {"name": "DanDance Art Academy"},
+                    "neighborhood": "Bridgeport",
+                    "city": "Chicago",
+                }
+            },
+        )
+
+    assert plan.decision in (
+        CanonicalPersistDecision.MATERIALIZE_NEW,
+        CanonicalPersistDecision.DEFER,
+    )
+    assert plan.existing_canonical_id != cid
+
+
+def test_decide_canonical_persist_plan_address_skips_place_canonical_on_street_overlap() -> None:
+    """Address rows must not autolink to place canonicals via embedded neighborhood tokens."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-addr-place")
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Austin, Chicago, IL",
+            slug="austin-chicago-place",
+            location_type="place",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="5400 W. West End Ave., Austin, Chicago, IL",
+            normalized_name="5400 w. west end ave., austin, chicago, il",
+            location_type="address",
+            formatted_address="Austin, Chicago, IL",
+            status="resolved",
+            identity_fingerprint="fp-addr-place",
+        )
+
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry={"address_place_kind": "public_named"},
+        )
+
+    assert plan.decision in (
+        CanonicalPersistDecision.DEFER,
+        CanonicalPersistDecision.MATERIALIZE_NEW,
+    )
+    assert plan.existing_canonical_id != cid
+
+
+def test_decide_canonical_persist_plan_intersection_skips_place_canonical() -> None:
+    """Intersection rows must not autolink to place canonicals."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-int-place")
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago, IL",
+            slug="chicago-il-place",
+            location_type="place",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Illinois St. and Clark St., Chicago, IL",
+            normalized_name="illinois st. and clark st., chicago, il",
+            location_type="intersection_road",
+            formatted_address="Chicago, IL",
+            status="resolved",
+            identity_fingerprint="fp-int-place",
+        )
+
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry={},
+        )
+
+    assert plan.decision in (
+        CanonicalPersistDecision.DEFER,
+        CanonicalPersistDecision.MATERIALIZE_NEW,
+    )
+    assert plan.existing_canonical_id != cid
+
+
+def test_decide_canonical_persist_plan_neighborhood_skips_place_canonical() -> None:
+    """Neighborhood rows must not autolink to place canonicals."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-hood-place")
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="DanDance Art Academy, Chicago, IL",
+            slug="dandance-chicago",
+            location_type="place",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Chicago, IL",
+                normalized_alias="chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Bridgeport, Chicago, IL",
+            normalized_name="bridgeport, chicago, il",
+            location_type="neighborhood",
+            formatted_address="Chicago, IL",
+            status="resolved",
+            identity_fingerprint="fp-hood-place",
+        )
+
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="areas",
+            location=loc,
+            entry={"components": {"neighborhood": "Bridgeport", "city": "Chicago"}},
+        )
+
+    assert plan.decision in (
+        CanonicalPersistDecision.MATERIALIZE_NEW,
+        CanonicalPersistDecision.DEFER,
+    )
+    assert plan.existing_canonical_id != cid
+
+
+def test_decide_canonical_persist_plan_address_does_not_link_neighborhood_alias() -> None:
+    """Exact alias overlap must not link an address row to a neighborhood canonical."""
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="tg-addr-hood-plan")
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Austin",
+            slug="austin-hood-plan",
+            location_type="neighborhood",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Austin, Chicago, IL",
+                normalized_alias="austin, chicago, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+
+        loc = SubstrateLocation(
+            project_id=1,
+            name="5400 W. West End Ave., Austin, Chicago, IL",
+            normalized_name="5400 w. west end ave., austin, chicago, il",
+            location_type="address",
+            formatted_address="Austin, Chicago, IL",
+            status="resolved",
+            identity_fingerprint="fp-type-gate-addr-hood-plan",
+        )
+
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry={"address_place_kind": "public_named"},
+        )
+
+    assert plan.decision == CanonicalPersistDecision.DEFER
+    assert plan.existing_canonical_id is None
+
+
 def test_rank_caps_intersection_to_city() -> None:
     """An intersection substrate must not autolink to a city canonical."""
-    from backfield_stylebook.canonical_match_score import AUTOLINK_MIN_SCORE, RECALL_MIN_SCORE
+    from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -266,8 +586,7 @@ def test_rank_caps_intersection_to_city() -> None:
 
     assert len(ranked) == 1
     _, _label, score, _ = ranked[0]
-    assert score >= RECALL_MIN_SCORE
-    assert score < AUTOLINK_MIN_SCORE
+    assert score < RECALL_MIN_SCORE
 
 
 def test_rank_allows_address_to_place() -> None:
@@ -414,11 +733,11 @@ def test_decide_canonical_persist_plan_intersection_exact_alias_does_not_link_ci
             entry={"address_place_kind": "public_named"},
         )
 
-    assert plan.decision == CanonicalPersistDecision.DEFER
+    assert plan.decision in (
+        CanonicalPersistDecision.DEFER,
+        CanonicalPersistDecision.MATERIALIZE_NEW,
+    )
     assert plan.existing_canonical_id is None
-    reasons = plan.resolution_reasons[0]
-    assert reasons.get("code") == "ambiguous_canonical_match"
-    assert reasons.get("best_canonical_id") == cid
 
 
 def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None:

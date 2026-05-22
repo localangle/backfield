@@ -35,7 +35,11 @@
   - `make smoke-slower`: `make smoke-stylebook-editorial`, `make smoke-stylebook-import-export`, `make smoke-s3-batch`
   Shared knobs: `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_WORKSPACE_SLUG`, `SMOKE_PROJECT_SLUG`, `SMOKE_POLL_TIMEOUT_SECONDS`, `SMOKE_POLL_INTERVAL_SECONDS`. DB-writing live lanes clean up their temporary graphs, runs, canonicals, and substrate rows by default; set `SMOKE_KEEP_DATA=1` when you want to inspect the artifacts after a smoke run. `SMOKE_BOOTSTRAP=1` still creates the first Core user for empty local DBs before the handoff smoke logs in.
 4. **Manual UI pass**
-  Use the Agate UI when the task changes browser-facing behavior or flowbuilder interactions.
+   Use the Agate UI when the task changes browser-facing behavior or flowbuilder interactions.
+
+   **Processed item — story text and places (Issue 6):** open a completed run item that has **story text** and **model places** with `original_text` (or span hints) present in the saved output. Click each place row: the story pane should **scroll to a highlighted passage** when a match exists, and show a short **no matching passage** note when it does not—without highlighting arbitrary text. Hover a row briefly to confirm highlight follows the pointer, then move away and confirm the **selected** row still drives the highlight. Rows in the model **`places.needs_review`** bucket (or with geometry cleared in review) should appear in the geocoded-places table with a **No geography** source pill; selecting one should offer **Edit** → **Add point** / **Add rectangle** like a cleared-geometry row, and after assigning geometry the pill should show **Manual**. For parity with the legacy dashboard, spot-check the same item in **agate-ai-platform** `dashboard-ui` if you have a comparable article view.
+
+   **Processed item — catalog handoff (Issue 7):** With unsaved map or description edits on the Review card, choose **Open catalog**: you should be prompted to **save first** (no new tab until save succeeds). After save (or when already clean), Stylebook should open in a new tab with the right **catalog slug** and **project** query when the project’s workspace has a linked catalog. With a **linked** place selected, confirm the tab targets that place’s **canonical detail** when an id is present; otherwise confirm the **canonical list** opens with a reasonable search hint.
 
 ## Conventions
 

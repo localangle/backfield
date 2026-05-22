@@ -34,8 +34,13 @@ from celery import Celery, chord, group
 from sqlmodel import Session, select
 
 from worker.nodes.db_output import run_db_output
+from worker.replace_geography_flags import clear_replace_article_geography_flags
 
 logger = logging.getLogger(__name__)
+
+
+def _graph_has_db_output(spec: GraphSpec) -> bool:
+    return any(node.type == "DBOutput" for node in spec.nodes)
 
 # Must match ``apps/agate-api`` cancel handler so workers stop after ``POST /runs/{id}/cancel``.
 _RUN_CANCELLED_MESSAGE = "Run cancelled by user"
@@ -65,12 +70,23 @@ def _env_overlay(updates: dict[str, str]):
 
 
 @contextmanager
-def _run_execution_env(*, project_id: int, graph_id: str, run_id: str):
-    updates = {
+def _run_execution_env(
+    *,
+    project_id: int,
+    graph_id: str,
+    run_id: str,
+    replace_article_geography: bool = False,
+    processed_item_id: int | None = None,
+):
+    updates: dict[str, str] = {
         "BACKFIELD_PROJECT_ID": str(project_id),
         "BACKFIELD_GRAPH_ID": str(graph_id),
         "BACKFIELD_RUN_ID": str(run_id),
     }
+    if replace_article_geography:
+        updates["BACKFIELD_REPLACE_ARTICLE_GEOGRAPHY"] = "1"
+    if processed_item_id is not None:
+        updates["BACKFIELD_PROCESSED_ITEM_ID"] = str(int(processed_item_id))
     with _env_overlay(updates):
         yield
 
@@ -175,11 +191,13 @@ def execute_agate_run(run_id: str) -> None:
                     run_id=run.id,
                 )
             )
+            replace_geography = bool(run.replace_article_geography_on_persist)
             try:
                 with _env_overlay(overlay), _run_execution_env(
                     project_id=graph.project_id,
                     graph_id=graph.id,
                     run_id=run.id,
+                    replace_article_geography=replace_geography,
                 ):
                     outputs = execute_graph(
                         spec,
@@ -193,6 +211,8 @@ def execute_agate_run(run_id: str) -> None:
             run = session.get(AgateRun, run_id)
             if not run or run.status != "running":
                 return
+            if replace_geography and not _graph_has_db_output(spec) and run.id is not None:
+                clear_replace_article_geography_flags(session, run_id=str(run.id))
             run.status = "succeeded"
             run.result_json = json.dumps(outputs)
             run.error_message = None
@@ -437,28 +457,57 @@ def execute_processed_item(item_id: int) -> None:
 
         input_json = item.input_json or "{}"
         source_file = item.source_file
-
-        def s3_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-            del params, inputs
-            doc = json.loads(input_json)
-            if not isinstance(doc, dict):
-                raise ValueError("S3 batch item JSON must be a JSON object.")
-            base = json_input_output_from_dict(doc)
-            total = int(batch_meta.get("total_json_objects", 1))
-            sk = int(batch_meta.get("skipped_invalid", 0)) + int(batch_meta.get("skipped_cap", 0))
-            out = dict(base)
-            out["total_files"] = total
-            out["processed_files"] = 1
-            out["skipped_files"] = sk
-            out["source_file"] = source_file
-            out["runs_created"] = []
-            return out
+        doc = json.loads(input_json)
+        if not isinstance(doc, dict):
+            raise ValueError("Processed item input_json must be a JSON object.")
 
         overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
         node_runners = dict(NODE_RUNNERS)
-        node_runners["S3Input"] = s3_input_shim
         node_runners["DBOutput"] = run_db_output
+        ingress_types = {node.type for node in spec.nodes}
+        if "S3Input" in ingress_types:
 
+            def s3_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+                del params, inputs
+                base = json_input_output_from_dict(doc)
+                total = int(batch_meta.get("total_json_objects", 1))
+                sk = int(batch_meta.get("skipped_invalid", 0)) + int(
+                    batch_meta.get("skipped_cap", 0)
+                )
+                out = dict(base)
+                out["total_files"] = total
+                out["processed_files"] = 1
+                out["skipped_files"] = sk
+                out["source_file"] = source_file
+                out["runs_created"] = []
+                return out
+
+            node_runners["S3Input"] = s3_input_shim
+        if "TextInput" in ingress_types:
+
+            def text_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+                del params, inputs
+                text = doc.get("text") or ""
+                if not str(text).strip():
+                    raise ValueError(
+                        "TextInput requires non-empty text. "
+                        "Please add text to the TextInput node before running the flow."
+                    )
+                return {"text": str(text)}
+
+            node_runners["TextInput"] = text_input_shim
+        if "JSONInput" in ingress_types:
+
+            def json_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+                del params, inputs
+                return json_input_output_from_dict(doc)
+
+            node_runners["JSONInput"] = json_input_shim
+
+        replace_geography = bool(
+            item.replace_article_geography_on_persist or run.replace_article_geography_on_persist
+        )
+        iid = int(item.id) if item.id is not None else None
         try:
             track_tok = attach_llm_tracking_context(
                 LlmAttemptTrackingContext(
@@ -473,6 +522,8 @@ def execute_processed_item(item_id: int) -> None:
                     project_id=graph.project_id,
                     graph_id=graph.id,
                     run_id=run.id,
+                    replace_article_geography=replace_geography,
+                    processed_item_id=iid,
                 ):
                     outputs = execute_graph(
                         spec,
@@ -490,9 +541,16 @@ def execute_processed_item(item_id: int) -> None:
             item.status = "failed"
             item.error_message = str(e)
             item.result_json = None
+        if replace_geography and not _graph_has_db_output(spec) and run.id is not None:
+            clear_replace_article_geography_flags(
+                session,
+                run_id=str(run.id),
+                processed_item_id=iid,
+            )
         item.updated_at = datetime.now(UTC)
         session.add(item)
         session.commit()
+        _finalize_s3_parent_run(session, item.run_id)
 
 
 @celery_app.task(name="worker.tasks.finalize_s3_parent_run")

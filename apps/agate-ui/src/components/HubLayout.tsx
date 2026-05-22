@@ -18,6 +18,7 @@ export default function HubLayout({ children }: HubLayoutProps) {
         <div className="px-4 py-4 flex justify-between items-center">
           <ShellProductBrand
             to="/"
+            productMark="🏷️"
             productTitle="Agate"
             platformSubtitle="Backfield Platform"
           />
@@ -35,7 +36,7 @@ export default function HubLayout({ children }: HubLayoutProps) {
       </header>
       <div className="flex flex-1 min-h-0">
         <AppSidebar />
-        <main className="flex-1 min-w-0 overflow-auto">
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overscroll-y-contain">
           <div className="w-full max-w-none px-4 sm:px-6 lg:px-8 py-8">{children}</div>
         </main>
       </div>

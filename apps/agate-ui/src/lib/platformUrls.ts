@@ -43,3 +43,33 @@ export function stylebookShellHref(
   const qs = q.toString()
   return `${base}${path}${qs ? `?${qs}` : ''}`
 }
+
+/**
+ * Stylebook catalog canonical list with optional search query (reads ``q`` on the Locations page).
+ */
+export function stylebookCanonicalListHref(
+  stylebookSlug: string,
+  opts: { projectSlug?: string | null; searchQuery?: string | null },
+): string {
+  const shell = stylebookShellHref(stylebookSlug, opts.projectSlug ?? undefined)
+  const url = new URL(shell)
+  const root = url.pathname.replace(/\/$/, '')
+  url.pathname = `${root}/locations/canonical`
+  if (opts.searchQuery && opts.searchQuery.trim()) {
+    url.searchParams.set('q', opts.searchQuery.trim().slice(0, 200))
+  }
+  return url.toString()
+}
+
+/** Open a specific catalog place (canonical UUID) in Stylebook. */
+export function stylebookCanonicalDetailHref(
+  stylebookSlug: string,
+  canonicalId: string,
+  projectSlug?: string | null,
+): string {
+  const shell = stylebookShellHref(stylebookSlug, projectSlug ?? undefined)
+  const url = new URL(shell)
+  const root = url.pathname.replace(/\/$/, '')
+  url.pathname = `${root}/locations/canonical/${encodeURIComponent(canonicalId)}`
+  return url.toString()
+}

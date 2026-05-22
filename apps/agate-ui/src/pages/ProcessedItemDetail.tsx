@@ -1,39 +1,175 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
+import { ProcessedItemInformationCard } from '@/components/ProcessedItemInformationCard'
+import { ProcessedItemVerificationSection } from '@/components/ProcessedItemVerificationSection'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { getNodeOutputById, nodeOutputLookupFromGraphSpec, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
-import { getRun, getGraph, getProcessedItem, rerunProcessedItem, type Run, type Graph, type ProcessedItem } from '@/lib/api'
+import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
-import { formatDateCentral } from '@/lib/utils'
-import { ArrowLeft, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, ExternalLink } from 'lucide-react'
+import { processedItemDisplayTitle } from '@/lib/processedItemDisplayTitle'
+import { formatRunTitleDate } from '@/lib/utils'
+import {
+  PROCESSED_ITEM_DETAIL_TABS,
+  isProcessedItemDetailTab,
+  parseProcessedItemDetailTab,
+  readProcessedItemTabFromLocation,
+  type ProcessedItemDetailTab,
+} from '@/lib/processedItemDetailTab'
+import {
+  RERUN_WARNING_TITLE,
+  rerunWarningBody,
+} from '@/lib/rerunWarning'
+import {
+  ArrowLeft,
+  Download,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  AlertTriangle,
+  FileText,
+  ExternalLink,
+  RotateCcw,
+} from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 
+type JsonOutputView = 'reviewed' | 'original'
+
+const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
+  info: 'Info',
+  places: 'Places',
+  people: 'People',
+  organizations: 'Organizations',
+  events: 'Events',
+  works: 'Works',
+  images: 'Images',
+  meta: 'Meta',
+  json: 'JSON',
+}
+
 export default function ProcessedItemDetail() {
-  const { showError } = useAppMessage()
+  const { showError, showConfirm } = useAppMessage()
   const { runId, itemId } = useParams<{ runId: string; itemId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const verificationDirtyRef = useRef(false)
+  /** Set once a rerun reaches pending/running; gates clearing ``rerunRequested``. */
+  const rerunSawInFlightRef = useRef(false)
+  const [reviewDirty, setReviewDirty] = useState(false)
   const [run, setRun] = useState<Run | null>(null)
   const [graph, setGraph] = useState<Graph | null>(null)
   const [item, setItem] = useState<ProcessedItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [rerunning, setRerunning] = useState(false)
+  /** True after the user confirms rerun until the item leaves pending/running. */
+  const [rerunRequested, setRerunRequested] = useState(false)
   const [visualizations, setVisualizations] = useState<VisualizationDescriptor[]>([])
+  const [catalogProject, setCatalogProject] = useState<Project | null>(null)
+  const [jsonOutputView, setJsonOutputView] = useState<JsonOutputView>('reviewed')
 
-  const nodeOutputLookup = useMemo((): NodeOutputLookupSpec | null => {
-    if (!graph?.spec?.nodes?.length) return null
-    return nodeOutputLookupFromGraphSpec(graph.spec)
-  }, [graph])
+  const hasReviewedOutput = Boolean(
+    item?.reviewed_output &&
+      typeof item.reviewed_output === 'object' &&
+      Object.keys(item.reviewed_output).length > 0,
+  )
+
+  useEffect(() => {
+    if (hasReviewedOutput) {
+      setJsonOutputView('reviewed')
+    } else {
+      setJsonOutputView('original')
+    }
+  }, [item?.id, item?.overlay_version, hasReviewedOutput])
+
+  const handleVerificationDirtyChange = useCallback((dirty: boolean) => {
+    verificationDirtyRef.current = dirty
+    setReviewDirty(dirty)
+  }, [])
+
+  const itemSynthetic = item?.synthetic ?? false
+  const activeTab = useMemo(
+    () =>
+      parseProcessedItemDetailTab(readProcessedItemTabFromLocation(searchParams), {
+        synthetic: itemSynthetic,
+      }),
+    [searchParams, itemSynthetic],
+  )
+
+  // Promote ``#tab`` links to ``?tab=`` so the URL stays shareable with one source of truth.
+  useEffect(() => {
+    const fromQuery = searchParams.get('tab')?.trim()
+    if (fromQuery) return
+    const hash = location.hash.replace(/^#/, '').trim()
+    if (!hash) return
+    const tab = parseProcessedItemDetailTab(hash, { synthetic: itemSynthetic })
+    navigate({ pathname: location.pathname, search: `?tab=${encodeURIComponent(tab)}` }, { replace: true })
+  }, [location.pathname, location.hash, searchParams, itemSynthetic, navigate])
+
+  const handleTabChange = useCallback(
+    async (next: string) => {
+      if (!isProcessedItemDetailTab(next) || next === activeTab) return
+      if (verificationDirtyRef.current) {
+        const leave = await showConfirm(
+          'Save your changes before leaving, or stay on this page to keep editing.',
+          {
+            title: 'Unsaved changes',
+            confirmLabel: 'Leave without saving',
+            cancelLabel: 'Stay',
+            destructive: true,
+          },
+        )
+        if (!leave) return
+      }
+      setSearchParams({ tab: next }, { replace: true })
+    },
+    [activeTab, setSearchParams, showConfirm],
+  )
+
+  const navigateFromItem = useCallback(
+    async (to: string) => {
+      if (verificationDirtyRef.current) {
+        const leave = await showConfirm(
+          'Save your changes before leaving, or stay on this page to keep editing.',
+          {
+            title: 'Unsaved changes',
+            confirmLabel: 'Leave without saving',
+            cancelLabel: 'Stay',
+            destructive: true,
+          },
+        )
+        if (!leave) return
+      }
+      navigate(to)
+    },
+    [navigate, showConfirm],
+  )
 
   useEffect(() => {
     if (runId && itemId) {
       loadItemData()
     }
   }, [runId, itemId])
+
+  useEffect(() => {
+    if (!run?.project_id) {
+      setCatalogProject(null)
+      return
+    }
+    let cancelled = false
+    void getProject(run.project_id)
+      .then((p) => {
+        if (!cancelled) setCatalogProject(p)
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogProject(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [run?.project_id])
 
   // Auto-refresh for pending or running items (but only update if data changed)
   useEffect(() => {
@@ -68,6 +204,25 @@ export default function ProcessedItemDetail() {
     return () => {}
   }, [item, run, runId, itemId])
 
+  useEffect(() => {
+    if (!rerunRequested || !item) return
+    if (item.status === 'pending' || item.status === 'running') {
+      rerunSawInFlightRef.current = true
+      return
+    }
+    const finished =
+      item.status === 'succeeded' ||
+      item.status === 'failed' ||
+      item.status === 'timed_out' ||
+      item.status === 'skipped'
+    if (finished && rerunSawInFlightRef.current) {
+      setRerunRequested(false)
+      rerunSawInFlightRef.current = false
+    }
+  }, [item?.status, item?.id, rerunRequested, item])
+
+  const rerunBusy = rerunning || rerunRequested
+
   async function loadItemData() {
     if (!runId || !itemId) return
 
@@ -87,7 +242,7 @@ export default function ProcessedItemDetail() {
 
       try {
         const itemData = await getProcessedItem(runId, parsedItemId)
-        setItem({ ...itemData, synthetic: false })
+        setItem(itemData)
       } catch {
         const syn = runData.items?.find((i) => i.id === parsedItemId && i.synthetic)
         if (syn) {
@@ -128,50 +283,36 @@ export default function ProcessedItemDetail() {
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'running':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      case 'succeeded':
-        return 'bg-green-100 text-green-800 border-green-200'
-      case 'failed':
-        return 'bg-red-100 text-red-800 border-red-200'
-      case 'timed_out':
-        return 'bg-orange-100 text-orange-800 border-orange-200'
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200'
+  const jsonDisplayOutput = useMemo(() => {
+    if (!item?.output) return null
+    if (jsonOutputView === 'reviewed' && item.reviewed_output) {
+      return item.reviewed_output
     }
-  }
+    return item.output
+  }, [item?.output, item?.reviewed_output, jsonOutputView])
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'running':
-        return <Loader2 className="h-4 w-4 animate-spin" />
-      case 'succeeded':
-        return <CheckCircle className="h-4 w-4" />
-      case 'failed':
-        return <XCircle className="h-4 w-4" />
-      case 'timed_out':
-        return <AlertTriangle className="h-4 w-4" />
-      default:
-        return <Clock className="h-4 w-4" />
-    }
-  }
+  const downloadJsonOutput = useCallback(
+    (view: JsonOutputView) => {
+      const payload =
+        view === 'reviewed' && item?.reviewed_output ? item.reviewed_output : item?.output
+      if (!payload) return
 
-  const handleDownloadOutput = () => {
-    if (!item?.output) return
-
-    const dataStr = JSON.stringify(item.output, null, 2)
-    const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    const url = URL.createObjectURL(dataBlob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `run-${runId}-item-${itemId}-output.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
+      const dataStr = JSON.stringify(payload, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+      const url = URL.createObjectURL(dataBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download =
+        view === 'reviewed'
+          ? `run-${runId}-item-${itemId}-reviewed-output.json`
+          : `run-${runId}-item-${itemId}-output.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    },
+    [item?.output, item?.reviewed_output, runId, itemId],
+  )
 
   const formatJson = (data: any) => {
     try {
@@ -341,7 +482,7 @@ export default function ProcessedItemDetail() {
           <p className="text-muted-foreground mb-4">
             The processed item you're looking for doesn't exist or has been deleted.
           </p>
-          <Button onClick={() => navigate(`/runs/${runId}`)}>
+          <Button onClick={() => void navigateFromItem(`/runs/${runId}`)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Run
           </Button>
@@ -350,33 +491,7 @@ export default function ProcessedItemDetail() {
     )
   }
 
-  const nodeOutputs = item.node_outputs ?? {}
-  const nodeLogs = item.node_logs ?? {}
-  const rawOutputs = nodeOutputs as Record<string, unknown>
-  const hasNodeOutput = (nodeId: string) =>
-    getNodeOutputById(rawOutputs, nodeId, nodeOutputLookup) !== undefined
-  const uniqueNodeIds = new Set<string>([...Object.keys(nodeLogs)])
-  if (graph?.spec?.nodes) {
-    for (const node of graph.spec.nodes) {
-      if (hasNodeOutput(node.id)) {
-        uniqueNodeIds.add(node.id)
-      }
-    }
-  } else {
-    for (const k of Object.keys(nodeOutputs)) {
-      if (k !== '__outputKeysByNodeId') uniqueNodeIds.add(k)
-    }
-  }
-  const orderedNodeIds: string[] = []
-  if (graph?.spec?.nodes) {
-    for (const node of graph.spec.nodes) {
-      if (uniqueNodeIds.has(node.id)) {
-        orderedNodeIds.push(node.id)
-        uniqueNodeIds.delete(node.id)
-      }
-    }
-  }
-  uniqueNodeIds.forEach((id) => orderedNodeIds.push(id))
+  const pageTitle = processedItemDisplayTitle(item)
 
   return (
     <div className="space-y-6">
@@ -391,14 +506,34 @@ export default function ProcessedItemDetail() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => navigate(`/runs/${runId}`)}>
+          <Button variant="ghost" onClick={() => void navigateFromItem(`/runs/${runId}`)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Run
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">Processed Item #{item.id}</h1>
-            <p className="text-muted-foreground mt-1">
-              {graph?.name || `Flow ${run?.graph_id}`} • Run #{runId}
+            <h1 className="text-3xl font-bold">{pageTitle}</h1>
+            <p className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-1 gap-y-0">
+              {run?.graph_id ? (
+                <button
+                  type="button"
+                  className="text-sm text-primary hover:underline font-normal p-0 h-auto inline bg-transparent border-0 cursor-pointer"
+                  onClick={() => void navigateFromItem(`/flow/${run.graph_id}`)}
+                >
+                  {graph?.name || `Flow ${run.graph_id}`}
+                </button>
+              ) : (
+                <span>{graph?.name || 'Flow'}</span>
+              )}
+              <span aria-hidden="true">•</span>
+              <button
+                type="button"
+                className="text-sm text-primary hover:underline font-normal p-0 h-auto inline bg-transparent border-0 cursor-pointer"
+                onClick={() => void navigateFromItem(`/runs/${runId}`)}
+              >
+                {run?.created_at
+                  ? `Run: ${formatRunTitleDate(run.created_at)}`
+                  : 'Run'}
+              </button>
             </p>
           </div>
         </div>
@@ -412,112 +547,86 @@ export default function ProcessedItemDetail() {
               View on S3
             </Button>
           )}
-          {item.status === 'succeeded' && item.output && (
-            <Button onClick={handleDownloadOutput}>
-              <Download className="mr-2 h-4 w-4" />
-              Download Output
-            </Button>
-          )}
           {!item.synthetic && (
             <Button
               variant="default"
-              disabled={rerunning || item.status === 'pending' || item.status === 'running'}
+              disabled={
+                rerunBusy || item.status === 'pending' || item.status === 'running'
+              }
               onClick={async () => {
                 if (!runId || !itemId) return
+                const ok = await showConfirm(rerunWarningBody(1), {
+                  title: RERUN_WARNING_TITLE,
+                  confirmLabel: 'Rerun',
+                  destructive: true,
+                })
+                if (!ok) return
+                rerunSawInFlightRef.current = false
+                setRerunRequested(true)
                 try {
                   setRerunning(true)
-                  await rerunProcessedItem(runId, parseInt(itemId, 10))
+                  const rerunRes = await rerunProcessedItem(runId, parseInt(itemId, 10))
+                  if (rerunRes.status === 'pending' || rerunRes.status === 'running') {
+                    rerunSawInFlightRef.current = true
+                    setItem((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            status: rerunRes.status as ProcessedItem['status'],
+                            output: null,
+                            reviewed_output: null,
+                            overlay: null,
+                            error: null,
+                          }
+                        : prev,
+                    )
+                  }
                   await loadItemData()
                 } catch (e) {
+                  setRerunRequested(false)
+                  rerunSawInFlightRef.current = false
                   console.error('Failed to rerun item:', e)
-                  showError('Failed to rerun item. Please try again.')
+                  const detail =
+                    e instanceof Error && e.message.startsWith('API error:')
+                      ? e.message.replace(/^API error: \d+ - /, '').trim()
+                      : null
+                  showError(
+                    detail && detail.length < 200
+                      ? detail
+                      : 'Failed to rerun item. Please try again.',
+                  )
                 } finally {
                   setRerunning(false)
                 }
               }}
             >
-              {rerunning ? (
+              {rerunBusy ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <FileText className="mr-2 h-4 w-4" />
+                <RotateCcw className="mr-2 h-4 w-4" />
               )}
-              Rerun Item
+              {rerunBusy ? 'Rerunning...' : 'Rerun Item'}
             </Button>
           )}
         </div>
       </div>
 
-      {/* Item Metadata */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Item Information
-            <Badge variant="outline" className={getStatusColor(item.status)}>
-              {getStatusIcon(item.status)}
-              <span className="ml-1 capitalize">{item.status}</span>
-            </Badge>
-          </CardTitle>
-          {item.source_file && (
-            <CardDescription className="font-mono text-xs">
-              <FileText className="inline h-3 w-3 mr-1" />
-              {item.source_file}
-            </CardDescription>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Item ID</label>
-              <p className="text-lg font-mono">#{item.id}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Run ID</label>
-              <p className="text-lg font-mono">#{item.run_id}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Created</label>
-              <p className="text-sm">
-                {formatDateCentral(item.created_at)}
-              </p>
-            </div>
-            {item.status !== 'pending' && (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Completed</label>
-                <p className="text-sm">
-                  {formatDateCentral(item.updated_at)}
-                </p>
-              </div>
-            )}
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Estimated AI cost</label>
-              <p className="text-sm tabular-nums">
-                {item.estimated_ai_cost !== undefined && item.estimated_ai_cost !== null ? (
-                  <>
-                    {Number(item.estimated_ai_cost).toLocaleString(undefined, {
-                      style: 'currency',
-                      currency: item.estimated_ai_cost_currency || 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}
-                    {item.estimated_ai_cost_incomplete ? (
-                      <span className="text-amber-700 dark:text-amber-400 ml-1" title="Estimate may be incomplete">
-                        *
-                      </span>
-                    ) : null}
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </p>
-              {item.estimated_ai_cost_incomplete ? (
-                <p className="text-xs text-muted-foreground mt-1">
-                  The asterisk means part of this estimate may be missing.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs value={activeTab} onValueChange={(v) => void handleTabChange(v)} className="space-y-4">
+        <TabsList className="w-full h-auto flex flex-wrap justify-start gap-1 p-1">
+          {PROCESSED_ITEM_DETAIL_TABS.map((tab) => (
+            <TabsTrigger key={tab} value={tab}>
+              {PROCESSED_ITEM_TAB_LABELS[tab]}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="info" className="space-y-4">
+          <ProcessedItemInformationCard
+            runId={runId!}
+            item={item}
+            onItemUpdated={(next) => setItem({ ...next, synthetic: item.synthetic })}
+            reviewDirty={reviewDirty}
+          />
 
       {/* Error Display */}
       {item.error && (
@@ -535,104 +644,6 @@ export default function ProcessedItemDetail() {
           </CardContent>
         </Card>
       )}
-
-      <Tabs defaultValue="visuals" className="space-y-4">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="visuals">Visuals</TabsTrigger>
-          <TabsTrigger value="json">JSON</TabsTrigger>
-          <TabsTrigger value="debug">Debug</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="visuals" className="space-y-4">
-          {/* Top-line Text Attributes */}
-          {(() => {
-            if (!item.output) return null
-            
-            const output = item.output as any
-            const textAttributes = [
-              { key: 'publication', label: 'Publication' },
-              { key: 'headline', label: 'Headline' },
-              { key: 'url', label: 'URL', isLink: true },
-              { key: 'author', label: 'Author' },
-              { key: 'pub_date', label: 'Publication Date' },
-              { key: 'updated', label: 'Updated' },
-            ]
-            
-            const hasTextAttributes = textAttributes.some(attr => output[attr.key])
-            
-            if (!hasTextAttributes) return null
-            
-            return (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Article Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {textAttributes.map(({ key, label, isLink }) => {
-                      const value = output[key]
-                      if (!value) return null
-                      
-                      return (
-                        <div key={key} className="space-y-1">
-                          <label className="text-sm font-medium text-muted-foreground">{label}</label>
-                          {isLink ? (
-                            <div>
-                              <a
-                                href={value}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                              >
-                                {value}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </div>
-                          ) : (
-                            <p className="text-sm break-words">{String(value)}</p>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  
-                  {output.text && (
-                    <div className="space-y-1 pt-2 border-t">
-                      <label className="text-sm font-medium text-muted-foreground">Text</label>
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
-                        {String(output.text)}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {output.images && Array.isArray(output.images) && output.images.length > 0 && (
-                    <div className="space-y-1 pt-2 border-t">
-                      <label className="text-sm font-medium text-muted-foreground">Images ({output.images.length})</label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                        {output.images.slice(0, 8).map((img: any, idx: number) => {
-                          const imgUrl = img.url || img.base64
-                          if (!imgUrl) return null
-                          
-                          return (
-                            <div key={idx} className="relative aspect-video bg-muted rounded overflow-hidden">
-                              <img
-                                src={imgUrl}
-                                alt={img.caption || `Image ${idx + 1}`}
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none'
-                                }}
-                              />
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })()}
 
           {/* Image Embeddings */}
           {(() => {
@@ -753,55 +764,6 @@ export default function ProcessedItemDetail() {
             )
           })()}
 
-          {/* Check if we have any content to show */}
-          {(() => {
-            if (!item.output) {
-              if (visualizations.length === 0) {
-                return (
-                  <Card>
-                    <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                      No visualizations are available for this processed item yet.
-                    </CardContent>
-                  </Card>
-                )
-              }
-              return null
-            }
-            
-            const output = item.output as any
-            
-            // Check for article information
-            const textAttributes = ['publication', 'headline', 'url', 'author', 'pub_date', 'updated']
-            const hasArticleInfo = textAttributes.some(attr => output[attr]) || output.text || (Array.isArray(output.images) && output.images.length > 0)
-            
-            // Check for image embeddings
-            const findImageEmbeddings = (obj: any): boolean => {
-              if (Array.isArray(obj)) {
-                return obj.length > 0 && obj.some((item: any) => 
-                  item && typeof item === 'object' && 'generated_text' in item && 'embedding_model' in item
-                )
-              }
-              if (obj && typeof obj === 'object') {
-                return Object.values(obj).some(value => findImageEmbeddings(value))
-              }
-              return false
-            }
-            const hasImageEmbeddings = findImageEmbeddings(output)
-
-            // Only show "No visualizations" if we have no visualizations AND no article info AND no image embeddings
-            if (visualizations.length === 0 && !hasArticleInfo && !hasImageEmbeddings) {
-              return (
-            <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                No visualizations are available for this processed item yet.
-              </CardContent>
-            </Card>
-              )
-            }
-            
-            return null
-          })()}
-
           {visualizations.length > 0 && visualizations.map((viz: VisualizationDescriptor, vizIndex: number) => {
               const VisualizationComponent = viz.component
               // Use node-specific output if available, otherwise fall back to item.output
@@ -820,16 +782,98 @@ export default function ProcessedItemDetail() {
             })}
         </TabsContent>
 
+        <TabsContent value="places" className="space-y-4">
+          {!item.synthetic ? (
+            <ProcessedItemVerificationSection
+              runId={runId!}
+              item={item}
+              graph={graph}
+              onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
+              onVerificationDirtyChange={handleVerificationDirtyChange}
+              catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
+              catalogProjectSlug={catalogProject?.slug ?? null}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Place review is available for batch stories. This run used a single input and has no
+                separate story item.
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {(
+          [
+            ['people', 'People'],
+            ['organizations', 'Organizations'],
+            ['events', 'Events'],
+            ['works', 'Works'],
+            ['images', 'Images'],
+            ['meta', 'Meta'],
+          ] as const
+        ).map(([value, label]) => (
+          <TabsContent key={value} value={value} className="space-y-4">
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                {label} review is not available yet.
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ))}
+
         <TabsContent value="json" className="space-y-4">
           {item.output && Object.keys(item.output).length > 0 ? (
             <Card>
-              <CardHeader>
-                <CardTitle>Output Data</CardTitle>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <CardTitle>Output Data</CardTitle>
+                  {hasReviewedOutput ? (
+                    <p className="text-sm text-muted-foreground">
+                      Reviewed output includes changes made through the review interface.
+                    </p>
+                  ) : null}
+                </div>
+                {item.status === 'succeeded' && item.output ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {hasReviewedOutput ? (
+                      <div className="flex rounded-md border p-0.5" role="group" aria-label="Output data version">
+                        <Button
+                          type="button"
+                          variant={jsonOutputView === 'reviewed' ? 'default' : 'ghost'}
+                          size="sm"
+                          className="h-8"
+                          onClick={() => setJsonOutputView('reviewed')}
+                        >
+                          Reviewed
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={jsonOutputView === 'original' ? 'default' : 'ghost'}
+                          size="sm"
+                          className="h-8"
+                          onClick={() => setJsonOutputView('original')}
+                        >
+                          Original
+                        </Button>
+                      </div>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => downloadJsonOutput(jsonOutputView)}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download
+                    </Button>
+                  </div>
+                ) : null}
               </CardHeader>
               <CardContent>
                 <div className="rounded border overflow-auto max-h-[600px] [&_*]:break-words">
                   <JsonView
-                    value={sanitizeForJsonView(item.output)}
+                    value={sanitizeForJsonView(jsonDisplayOutput ?? item.output)}
                     style={{
                       backgroundColor: 'transparent',
                       fontSize: '0.875rem',
@@ -865,105 +909,6 @@ export default function ProcessedItemDetail() {
                 </div>
               </CardContent>
             </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="debug" className="space-y-4">
-          {item.input && Object.keys(item.input).length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Input Data</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded border overflow-auto max-h-[600px] [&_*]:break-words">
-                  <JsonView
-                    value={sanitizeForJsonView(item.input)}
-                    style={{
-                      backgroundColor: 'transparent',
-                      fontSize: '0.875rem',
-                    }}
-                    collapsed={false}
-                    displayDataTypes={false}
-                    displayObjectSize={false}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {orderedNodeIds.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-sm text-muted-foreground text-center">
-                No node execution details are available for this item.
-              </CardContent>
-            </Card>
-          ) : (
-            orderedNodeIds.map((nodeId) => {
-              const nodeConfig = graph?.spec.nodes.find(n => n.id === nodeId)
-              const nodeType = nodeConfig?.type || 'Unknown'
-              const friendlyName =
-                (nodeConfig?.params as any)?.name ||
-                (nodeConfig?.params as any)?.label ||
-                nodeType
-
-              const output = getNodeOutputById(rawOutputs, nodeId, nodeOutputLookup)
-              const logs = nodeLogs[nodeId] ?? []
-
-              return (
-                <Card key={nodeId}>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <span>{friendlyName}</span>
-                      <Badge variant="secondary" className="font-mono text-[10px]">
-                        {nodeId}
-                      </Badge>
-                      <span className="text-xs uppercase tracking-wide text-muted-foreground">
-                        {nodeType}
-                      </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-3">
-                        <div className="text-sm font-semibold">Output</div>
-                        {output ? (
-                          <div className="rounded border overflow-auto max-h-64 [&_*]:break-words">
-                            <JsonView
-                              value={sanitizeForJsonView(output)}
-                              style={{
-                                backgroundColor: 'transparent',
-                                fontSize: '0.75rem',
-                              }}
-                              collapsed={false}
-                              displayDataTypes={false}
-                              displayObjectSize={false}
-                            />
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            This node did not produce any output.
-                          </p>
-                        )}
-                      </div>
-                      <div className="space-y-3">
-                        <div className="text-sm font-semibold">Logs</div>
-                        {logs.length > 0 ? (
-                          <div className="bg-muted rounded p-3 max-h-64 overflow-auto text-xs font-mono space-y-2">
-                            {logs.map((line, idx) => (
-                              <div key={idx}>{line}</div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            No logs were recorded for this node.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })
           )}
         </TabsContent>
       </Tabs>

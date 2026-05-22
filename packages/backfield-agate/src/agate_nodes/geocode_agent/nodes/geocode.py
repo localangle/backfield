@@ -3,6 +3,8 @@
 import os
 import asyncio
 import logging
+from typing import Any
+
 from ..models import (
     Area,
     State,
@@ -20,8 +22,41 @@ from ..models import (
 from ..types import AgentState, normalized_geocode_hints
 from agate_utils.geocoding.localize import match_canonical_location, get_location_cache
 from agate_utils.geocoding.geocoding_types import stylebook_match_to_geocoding_result, cache_match_to_geocoding_result
+from backfield_stylebook.geocode_cache_sanity import cache_hit_sane_for_substrate
 
 logger = logging.getLogger(__name__)
+
+
+def _db_cache_match_dict_sane(
+    *,
+    location_type: str,
+    location_text: str,
+    components: dict[str, Any],
+    match_dict: dict[str, Any],
+) -> bool:
+    """Reject poisoned tier-1/tier-2 cache payloads before skipping external geocode."""
+    return cache_hit_sane_for_substrate(
+        substrate_location_type=location_type,
+        location_text=location_text,
+        components=components,
+        match_label=str(match_dict.get("label") or match_dict.get("name") or ""),
+        match_formatted_address=match_dict.get("formatted_address"),
+        match_location_type=match_dict.get("canonical_location_type"),
+        match_geometry_type=match_dict.get("type"),
+    )
+
+
+def _reject_db_cache_hit(
+    state: AgentState,
+    *,
+    location_text: str,
+) -> None:
+    """Clear a cache hit and flag sanity failure so adjudication / external geocode can run."""
+    state["geocoding_result"] = None
+    outcome = state.get("cache_strict_outcome")
+    if isinstance(outcome, dict):
+        outcome["match_dict"] = None
+        outcome["tier2_sanity_failed"] = True
 
 
 def _advanced_quiet(state: AgentState) -> bool:
@@ -284,13 +319,28 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
                         )
                         geocoding_result = None
                     elif geocoding_result:
-                        _adv_info(
-                            state,
-                            "[CACHE HIT] DB cache for '%s' (source=%s, id=%s)",
-                            location_text,
-                            src,
-                            match_dict.get("id"),
-                        )
+                        comps = components if isinstance(components, dict) else {}
+                        if not _db_cache_match_dict_sane(
+                            location_type=location_type,
+                            location_text=location_text,
+                            components=comps,
+                            match_dict=match_dict,
+                        ):
+                            logger.warning(
+                                "DB cache match for '%s' failed content sanity; "
+                                "falling back to adjudication / external geocode",
+                                location_text,
+                            )
+                            geocoding_result = None
+                            _reject_db_cache_hit(state, location_text=location_text)
+                        else:
+                            _adv_info(
+                                state,
+                                "[CACHE HIT] DB cache for '%s' (source=%s, id=%s)",
+                                location_text,
+                                src,
+                                match_dict.get("id"),
+                            )
                 except Exception as e:
                     logger.warning("Error converting DB cache match for '%s': %s", location_text, e)
                     geocoding_result = None
@@ -322,13 +372,28 @@ async def resolve_cache_or_miss(state: AgentState) -> AgentState:
                         )
                         geocoding_result = None
                     elif geocoding_result:
-                        _adv_info(
-                            state,
-                            "[CACHE HIT] DB cache for '%s' (source=%s, id=%s)",
-                            location_text,
-                            src,
-                            match_dict.get("id"),
-                        )
+                        comps = components if isinstance(components, dict) else {}
+                        if not _db_cache_match_dict_sane(
+                            location_type=location_type,
+                            location_text=location_text,
+                            components=comps,
+                            match_dict=match_dict,
+                        ):
+                            logger.warning(
+                                "DB cache match for '%s' failed content sanity; "
+                                "falling back to adjudication / external geocode",
+                                location_text,
+                            )
+                            geocoding_result = None
+                            _reject_db_cache_hit(state, location_text=location_text)
+                        else:
+                            _adv_info(
+                                state,
+                                "[CACHE HIT] DB cache for '%s' (source=%s, id=%s)",
+                                location_text,
+                                src,
+                                match_dict.get("id"),
+                            )
                 except Exception as e:
                     logger.warning("Error converting DB cache match for '%s': %s", location_text, e)
                     geocoding_result = None

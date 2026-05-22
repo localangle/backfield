@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -17,6 +18,18 @@ from worker.substrate_common import _normalize_name, _sha256_hex, _utcnow
 
 # Consolidated place payload key from GeocodeAgent (ignored by geometry/canonical logic).
 _AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
+
+# Fine-grained POIs sharing one Stylebook canonical still get distinct substrate rows.
+_STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME = frozenset(
+    {
+        "place",
+        "point",
+        "address",
+        "intersection_road",
+        "intersection_highway",
+        "street_road",
+    }
+)
 
 
 def _router_audit_from_place_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -168,7 +181,13 @@ def _upsert_location_cache(
     )
 
     external_source, external_id = (
-        _external_identity_from_geocode_result(geocode_result) if geocode_result else (None, None)
+        _external_identity_from_geocode_result(
+            geocode_result,
+            display_name=query_text,
+            location_type=location_type,
+        )
+        if geocode_result
+        else (None, None)
     )
 
     row = session.exec(
@@ -224,28 +243,91 @@ def _upsert_location_cache(
 
 
 def _stylebook_prefixed_external_id(value: str) -> str:
-    """Return ``stylebook:{id}`` for substrate ``external_id`` (same pattern as ``pelias:``…)."""
-    s = str(value).strip()
+    """Return ``stylebook:{canonical_uuid}`` for substrate ``external_id`` (no name suffix)."""
+    s = _stylebook_canonical_uuid_only(str(value).strip())
     if not s:
-        return s
-    if s.startswith("stylebook:"):
-        return s
+        return ""
     return f"stylebook:{s}"
 
 
-def _external_identity_from_geocode_result(result: dict[str, Any]) -> tuple[str | None, str | None]:
+def _stylebook_canonical_uuid_only(canonical_or_prefixed: str) -> str:
+    """Strip ``stylebook:`` and any prior POI name suffix from a canonical key."""
+    s = str(canonical_or_prefixed).strip()
+    if not s:
+        return s
+    if s.lower().startswith("stylebook:"):
+        s = s.split(":", 1)[1].strip()
+    if ":" in s:
+        uuid_part, _suffix = s.split(":", 1)
+        return uuid_part.strip() or s
+    return s
+
+
+def _stylebook_identity_disambiguates_by_name(location_type: str | None) -> bool:
+    if not location_type:
+        return False
+    return location_type.lower() in _STYLEBOOK_LOCATION_TYPES_DISAMBIGUATE_BY_NAME
+
+
+def _stylebook_place_name_identity_suffix(display_name: str) -> str:
+    normalized = _normalize_name(display_name)
+    if not normalized:
+        return ""
+    slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    if not slug:
+        slug = _sha256_hex(normalized)[:16]
+    return slug[:64]
+
+
+def _stylebook_location_external_id(
+    canonical_key: str,
+    *,
+    display_name: str,
+    location_type: str | None,
+) -> str:
+    base = _stylebook_prefixed_external_id(canonical_key)
+    if not base:
+        return base
+    if not _stylebook_identity_disambiguates_by_name(location_type):
+        return base
+    suffix = _stylebook_place_name_identity_suffix(display_name)
+    if suffix:
+        return f"{base}:{suffix}"
+    return base
+
+
+def _external_identity_from_geocode_result(
+    result: dict[str, Any],
+    *,
+    display_name: str = "",
+    location_type: str | None = None,
+) -> tuple[str | None, str | None]:
     canonical_id = result.get("canonical_id")
     if canonical_id is not None:
         raw = str(canonical_id).strip()
         if raw:
-            return "stylebook_location", _stylebook_prefixed_external_id(raw)
+            return (
+                "stylebook_location",
+                _stylebook_location_external_id(
+                    raw,
+                    display_name=display_name,
+                    location_type=location_type,
+                ),
+            )
 
     rid = result.get("id")
     if rid is None:
         return None, None
     rid_str = str(rid)
     if rid_str.startswith("stylebook:"):
-        return "stylebook_location", rid_str
+        return (
+            "stylebook_location",
+            _stylebook_location_external_id(
+                rid_str,
+                display_name=display_name,
+                location_type=location_type,
+            ),
+        )
     if rid_str.startswith("wof:"):
         return "wof", rid_str
     if rid_str.startswith("pelias:"):
@@ -451,7 +533,11 @@ def _upsert_location(
     external_source: str | None = None
     external_id: str | None = None
     if isinstance(geocode_result, dict):
-        external_source, external_id = _external_identity_from_geocode_result(geocode_result)
+        external_source, external_id = _external_identity_from_geocode_result(
+            geocode_result,
+            display_name=display_name,
+            location_type=location_type_str,
+        )
 
     fingerprint = _fingerprint_for_location(
         project_id=project_id,

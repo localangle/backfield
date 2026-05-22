@@ -7,6 +7,8 @@ export interface ShellProductBrandProps {
   to: string
   /** Primary product name — large title (e.g. Agate, Stylebook). */
   productTitle: string
+  /** Optional mark before the title (e.g. product emoji). */
+  productMark?: string
   /** Platform line under the title (e.g. Backfield Platform). */
   platformSubtitle: string
   className?: string
@@ -19,6 +21,7 @@ export interface ShellProductBrandProps {
 export function ShellProductBrand({
   to,
   productTitle,
+  productMark,
   platformSubtitle,
   className,
 }: ShellProductBrandProps) {
@@ -27,7 +30,14 @@ export function ShellProductBrand({
       to={to}
       className={cn("block hover:opacity-80 transition-opacity", className)}
     >
-      <span className="block text-3xl font-bold tracking-tight">{productTitle}</span>
+      <span className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+        {productMark ? (
+          <span className="shrink-0 text-[1.75rem] leading-none" aria-hidden>
+            {productMark}
+          </span>
+        ) : null}
+        <span>{productTitle}</span>
+      </span>
       <p className="mt-1 text-sm text-muted-foreground">{platformSubtitle}</p>
     </Link>
   )

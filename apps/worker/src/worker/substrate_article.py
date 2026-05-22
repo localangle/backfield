@@ -23,12 +23,6 @@ def _upsert_article(
     if url_str == "":
         url_str = None
 
-    headline = consolidated.get("headline")
-    if isinstance(headline, str) and headline.strip():
-        headline_str = headline.strip()
-    else:
-        headline_str = "Article"
-
     text = consolidated.get("text")
     if not isinstance(text, str) or not text.strip():
         text = consolidated.get("article_text")
@@ -85,6 +79,15 @@ def _upsert_article(
                 col(SubstrateArticle.external_id) == fingerprint,
             )
         ).first()
+
+    headline = consolidated.get("headline")
+    if isinstance(headline, str) and headline.strip():
+        headline_str = headline.strip()
+    elif article is not None:
+        existing = (article.headline or "").strip()
+        headline_str = existing if existing else "Article"
+    else:
+        headline_str = "Article"
 
     now = _utcnow()
     if article is None:

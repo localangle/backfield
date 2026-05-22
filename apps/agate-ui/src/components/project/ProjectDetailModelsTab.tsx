@@ -231,7 +231,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
   return (
     <div className="w-full min-w-0 space-y-6">
       <p className="text-sm text-muted-foreground">
-        Turn models on or off for this project, or save a provider key that applies only to flows run here.
+        Turn models on or off to make them accessible to flows in this project.
       </p>
 
       <Card className="w-full">

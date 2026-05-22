@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { matchPath, NavLink, useLocation } from 'react-router-dom'
 import {
-  BookOpen,
-  FolderKanban,
   HelpCircle,
-  Newspaper,
   Settings,
 } from 'lucide-react'
 import { ShellSidebar } from '@backfield/ui'
@@ -131,16 +128,6 @@ export default function AppSidebar() {
       ? decodeURIComponent(workspaceRouteMatch.params.workspaceSlug)
       : null
 
-  const activeProjectName = useMemo(() => {
-    if (!activeProjectSlug) return null
-    for (const ws of workspaceRows) {
-      const p = ws.projects.find((x) => x.slug === activeProjectSlug)
-      if (p) return p.name
-    }
-    const ap = apiProjects.find((x) => x.slug === activeProjectSlug)
-    return ap?.name ?? activeProjectSlug
-  }, [activeProjectSlug, workspaceRows, apiProjects])
-
   const sortedStylebooks = useMemo(() => {
     return [...stylebooks].sort(
       (a, b) =>
@@ -156,7 +143,6 @@ export default function AppSidebar() {
 
   const workspaceAccess = hasWorkspaceAccess(workspaceRows, isOrgAdmin)
 
-  const headerTitle = activeProjectName ?? 'Backfield'
   const headerTo =
     activeProjectSlug != null
       ? `/project/${encodeURIComponent(activeProjectSlug)}`
@@ -191,23 +177,15 @@ export default function AppSidebar() {
         headerLeading={
           <NavLink
             to={headerTo}
-            title={headerTitle}
-            aria-label={
-              activeProjectName
-                ? `Active project: ${activeProjectName}`
-                : 'Backfield'
-            }
+            title="Backfield"
+            aria-label="Backfield"
             className={cn(
-              'flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 -ml-1',
+              'flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1',
               'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
           >
-            <FolderKanban
-              className="h-4 w-4 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
             <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-              {headerTitle}
+              Backfield
             </span>
           </NavLink>
         }
@@ -217,7 +195,9 @@ export default function AppSidebar() {
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
               {expanded ? (
                 <div className={sectionTitleClass}>
-                  <Newspaper className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="shrink-0 text-base leading-none" aria-hidden>
+                    🏷️
+                  </span>
                   <span>Agate</span>
                 </div>
               ) : (
@@ -225,11 +205,11 @@ export default function AppSidebar() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="w-full h-9 shrink-0"
+                  className="w-full h-9 shrink-0 text-lg"
                   onClick={() => expand()}
                   title="Agate — workspaces"
                 >
-                  <Newspaper className="h-5 w-5" aria-hidden />
+                  <span aria-hidden>🏷️</span>
                 </Button>
               )}
 
@@ -282,7 +262,9 @@ export default function AppSidebar() {
                   <div className="border-t border-border/50 my-1" />
                   {expanded ? (
                     <div className={sectionTitleClass}>
-                      <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+                      <span className="shrink-0 text-base leading-none" aria-hidden>
+                        📖
+                      </span>
                       <span>Stylebook</span>
                     </div>
                   ) : (
@@ -290,11 +272,11 @@ export default function AppSidebar() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="w-full h-9 shrink-0"
+                      className="w-full h-9 shrink-0 text-lg"
                       onClick={() => expand()}
                       title="Stylebook"
                     >
-                      <BookOpen className="h-5 w-5" aria-hidden />
+                      <span aria-hidden>📖</span>
                     </Button>
                   )}
                   {(expanded ? sortedStylebooks : []).map((sb) => {

@@ -152,6 +152,34 @@ def test_create_list_patch_delete_flow(client: TestClient) -> None:
     assert ok_del.status_code == 204
 
 
+def test_set_default_switches_org_default(client: TestClient) -> None:
+    imported = client.post(
+        "/v1/organizations/1/stylebooks",
+        headers=_service_headers(),
+        json={"name": "Imported Catalog", "is_default": False},
+    )
+    assert imported.status_code == 200
+    imported_id = imported.json()["id"]
+    assert imported.json()["is_default"] is False
+
+    before = client.get("/v1/organizations/1/stylebooks", headers=_service_headers()).json()
+    old_default_id = next(x["id"] for x in before if x["is_default"])
+
+    set_r = client.post(
+        f"/v1/organizations/1/stylebooks/{imported_id}/set-default",
+        headers=_service_headers(),
+    )
+    assert set_r.status_code == 200
+    assert set_r.json()["is_default"] is True
+
+    after = client.get("/v1/organizations/1/stylebooks", headers=_service_headers()).json()
+    defaults = [x for x in after if x["is_default"]]
+    assert len(defaults) == 1
+    assert defaults[0]["id"] == imported_id
+    old = next(x for x in after if x["id"] == old_default_id)
+    assert old["is_default"] is False
+
+
 def test_set_default_and_delete_default_with_replacement(client: TestClient) -> None:
     r = client.post(
         "/v1/organizations/1/stylebooks",

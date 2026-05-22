@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from backfield_db import BackfieldWorkspace, Stylebook, StylebookBundleJob, StylebookSlugRedirect
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, or_, update
 from sqlmodel import Session, col, select
 
 from backfield_stylebook.stylebook_record_slug import allocate_unique_stylebook_slug
@@ -80,24 +80,61 @@ def create_stylebook(
         raise StylebookLibraryError("a stylebook with this name already exists in the organization")
 
     slug = allocate_unique_stylebook_slug(session, organization_id, name)
-    if is_default:
-        for sb in session.exec(
-            select(Stylebook).where(Stylebook.organization_id == organization_id)
-        ).all():
-            sb.is_default = False
-            session.add(sb)
-        session.flush()
-
+    # Insert without default flag so the partial unique index never sees two defaults at once.
     sb = Stylebook(
         organization_id=organization_id,
         slug=slug,
         name=name,
-        is_default=is_default,
+        is_default=False,
     )
     session.add(sb)
     session.flush()
     session.refresh(sb)
+    if is_default and sb.id is not None:
+        return set_org_default_stylebook(
+            session,
+            organization_id=organization_id,
+            stylebook_id=int(sb.id),
+        )
     return sb
+
+
+def _org_default_stylebook_id(session: Session, organization_id: int) -> int | None:
+    row = session.exec(
+        select(Stylebook.id).where(
+            Stylebook.organization_id == organization_id,
+            Stylebook.is_default == True,  # noqa: E712
+        )
+    ).first()
+    if row is None:
+        return None
+    return int(row)
+
+
+def _reassign_workspaces_from_stylebook(
+    session: Session,
+    *,
+    organization_id: int,
+    from_stylebook_id: int,
+    to_stylebook_id: int,
+) -> int:
+    """Point workspaces at ``to_stylebook_id`` when they still reference ``from_stylebook_id``."""
+    if from_stylebook_id == to_stylebook_id:
+        return 0
+    rows = list(
+        session.exec(
+            select(BackfieldWorkspace).where(
+                BackfieldWorkspace.organization_id == organization_id,
+                BackfieldWorkspace.stylebook_id == int(from_stylebook_id),
+            )
+        ).all()
+    )
+    for ws in rows:
+        ws.stylebook_id = int(to_stylebook_id)
+        session.add(ws)
+    if rows:
+        session.flush()
+    return len(rows)
 
 
 def rename_stylebook(session: Session, *, stylebook_id: int, new_name: str) -> Stylebook:
@@ -157,15 +194,14 @@ def set_org_default_stylebook(
     if int(target.organization_id) != organization_id:
         raise StylebookLibraryError("stylebook does not belong to this organization")
 
-    # Clear defaults first so SQLite's partial unique index never sees two defaults at once.
-    for sb in session.exec(
-        select(Stylebook).where(Stylebook.organization_id == organization_id)
-    ).all():
-        sb.is_default = False
-        session.add(sb)
-    session.flush()
-    target.is_default = True
-    session.add(target)
+    session.exec(
+        update(Stylebook)
+        .where(Stylebook.organization_id == organization_id)
+        .values(is_default=False)
+    )
+    session.exec(
+        update(Stylebook).where(Stylebook.id == int(stylebook_id)).values(is_default=True)
+    )
     session.flush()
     session.refresh(target)
     return target
@@ -179,8 +215,9 @@ def delete_stylebook(
 ) -> None:
     """Delete a stylebook when guards pass (see StylebookLibraryError).
 
-    Workspaces still referencing this stylebook cannot be deleted (RESTRICT). Deleting the
-    current default requires ``replacement_default_id`` for another book in the same org.
+    Workspaces still referencing this stylebook are repointed to the org default (or the
+    replacement default when deleting the current default). Deleting the current default
+    requires ``replacement_default_id`` for another book in the same org.
     """
     book = session.get(Stylebook, stylebook_id)
     if book is None:
@@ -191,17 +228,7 @@ def delete_stylebook(
     if len(all_ids) <= 1:
         raise StylebookLibraryError("cannot delete the last stylebook for an organization")
 
-    ws_hit = session.exec(
-        select(BackfieldWorkspace.id)
-        .where(BackfieldWorkspace.stylebook_id == stylebook_id)
-        .limit(1)
-    ).first()
-    if ws_hit is not None:
-        raise StylebookLibraryError(
-            "cannot delete a stylebook that is still assigned to a workspace; "
-            "reassign workspaces first",
-        )
-
+    reassign_target_id: int | None = None
     if book.is_default:
         if replacement_default_id is None:
             raise StylebookLibraryError("replacement default stylebook is required")
@@ -210,14 +237,27 @@ def delete_stylebook(
         replacement = session.get(Stylebook, replacement_default_id)
         if replacement is None or int(replacement.organization_id) != org_id:
             raise StylebookLibraryError("replacement stylebook not found in this organization")
+        reassign_target_id = int(replacement_default_id)
+        session.exec(
+            update(Stylebook).where(Stylebook.organization_id == org_id).values(is_default=False)
+        )
+        session.exec(
+            update(Stylebook)
+            .where(Stylebook.id == int(replacement_default_id))
+            .values(is_default=True)
+        )
+        session.flush()
+    else:
+        reassign_target_id = _org_default_stylebook_id(session, org_id)
 
-        for sb in session.exec(select(Stylebook).where(Stylebook.organization_id == org_id)).all():
-            sb.is_default = False
-            session.add(sb)
-        session.flush()
-        replacement.is_default = True
-        session.add(replacement)
-        session.flush()
+    if reassign_target_id is None:
+        raise StylebookLibraryError("organization has no default stylebook to reassign workspaces")
+    _reassign_workspaces_from_stylebook(
+        session,
+        organization_id=org_id,
+        from_stylebook_id=int(stylebook_id),
+        to_stylebook_id=int(reassign_target_id),
+    )
 
     # Async bundle jobs reference this stylebook; remove them so FK does not block delete.
     session.exec(
