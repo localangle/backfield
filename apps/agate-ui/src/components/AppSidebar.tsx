@@ -4,7 +4,7 @@ import {
   HelpCircle,
   Settings,
 } from 'lucide-react'
-import { ShellSidebar } from '@backfield/ui'
+import { AgateProductMark, ShellSidebar, StylebookProductMark } from '@backfield/ui'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { listProjects, type Project } from '@/lib/api'
@@ -195,9 +195,7 @@ export default function AppSidebar() {
             <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
               {expanded ? (
                 <div className={sectionTitleClass}>
-                  <span className="shrink-0 text-base leading-none" aria-hidden>
-                    🏷️
-                  </span>
+                  <AgateProductMark className="size-4 text-[1.125rem]" />
                   <span>Agate</span>
                 </div>
               ) : (
@@ -205,11 +203,11 @@ export default function AppSidebar() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="w-full h-9 shrink-0 text-lg"
+                  className="w-full h-9 shrink-0"
                   onClick={() => expand()}
                   title="Agate — workspaces"
                 >
-                  <span aria-hidden>🏷️</span>
+                  <AgateProductMark className="size-5 text-[1.35rem]" />
                 </Button>
               )}
 
@@ -262,9 +260,7 @@ export default function AppSidebar() {
                   <div className="border-t border-border/50 my-1" />
                   {expanded ? (
                     <div className={sectionTitleClass}>
-                      <span className="shrink-0 text-base leading-none" aria-hidden>
-                        📖
-                      </span>
+                      <StylebookProductMark className="size-4 stroke-[1.75]" />
                       <span>Stylebook</span>
                     </div>
                   ) : (
@@ -276,7 +272,7 @@ export default function AppSidebar() {
                       onClick={() => expand()}
                       title="Stylebook"
                     >
-                      <span aria-hidden>📖</span>
+                      <StylebookProductMark className="size-5 stroke-[1.75]" />
                     </Button>
                   )}
                   {(expanded ? sortedStylebooks : []).map((sb) => {

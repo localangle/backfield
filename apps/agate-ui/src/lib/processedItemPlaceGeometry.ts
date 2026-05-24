@@ -642,17 +642,15 @@ function mergeOverlayGeocodePatch(
   }
 }
 
-export function applyAnchorPatchFragment(
-  draft: Record<string, unknown>,
-  anchor: string,
+/** Merge a place-shaped overlay fragment into an existing place dict. */
+export function mergePlacePatchFragment(
+  current: Record<string, unknown> | undefined,
   fragment: Record<string, unknown>,
-): void {
-  const n = normalizeOverlay(draft)
-  const loc = n.locations as Record<string, unknown>
-  const by = (loc.by_anchor as Record<string, unknown>) ?? {}
-  const cur = by[anchor]
+): Record<string, unknown> {
   const merged: Record<string, unknown> =
-    cur && typeof cur === 'object' && !Array.isArray(cur) ? { ...(cur as Record<string, unknown>) } : {}
+    current && typeof current === 'object' && !Array.isArray(current)
+      ? { ...(current as Record<string, unknown>) }
+      : {}
   for (const [k, v] of Object.entries(fragment)) {
     if (k === 'geocode' && v && typeof v === 'object' && !Array.isArray(v)) {
       const patchGeo = v as Record<string, unknown>
@@ -669,8 +667,51 @@ export function applyAnchorPatchFragment(
     }
     merged[k] = v
   }
-  by[anchor] = merged
+  return merged
+}
+
+export function applyAnchorPatchFragment(
+  draft: Record<string, unknown>,
+  anchor: string,
+  fragment: Record<string, unknown>,
+): void {
+  const n = normalizeOverlay(draft)
+  const loc = n.locations as Record<string, unknown>
+  const by = (loc.by_anchor as Record<string, unknown>) ?? {}
+  by[anchor] = mergePlacePatchFragment(
+    by[anchor] as Record<string, unknown> | undefined,
+    fragment,
+  )
   loc.by_anchor = by
+
+  if (anchor.startsWith('user_place:')) {
+    const ua = Array.isArray(loc.user_added) ? [...(loc.user_added as unknown[])] : []
+    let found = false
+    loc.user_added = ua.map((entry) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry
+      const row = entry as Record<string, unknown>
+      if (row.id !== anchor) return entry
+      found = true
+      const locPayload =
+        row.location && typeof row.location === 'object' && !Array.isArray(row.location)
+          ? (row.location as Record<string, unknown>)
+          : {}
+      return {
+        ...row,
+        location: mergePlacePatchFragment(locPayload, fragment),
+      }
+    })
+    if (!found) {
+      loc.user_added = [
+        ...ua,
+        {
+          id: anchor,
+          location: mergePlacePatchFragment(undefined, fragment),
+        },
+      ]
+    }
+  }
+
   n.locations = loc
   Object.assign(draft, n)
 }

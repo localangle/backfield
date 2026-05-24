@@ -170,6 +170,24 @@ def _apply_persisted_geometry_to_place(
     return out
 
 
+def _place_payload_from_substrate(location: SubstrateLocation) -> dict[str, Any]:
+    """Build a review-compatible place payload for a saved place with no model row."""
+    out: dict[str, Any] = {
+        "id": f"user_place:{int(location.id)}" if location.id is not None else None,
+        "location": {"full": str(location.name)},
+        "type": str(location.location_type or ""),
+    }
+    result: dict[str, Any] = {}
+    if isinstance(location.formatted_address, str) and location.formatted_address.strip():
+        result["formatted_address"] = location.formatted_address.strip()
+        result["processed_str"] = location.formatted_address.strip()
+    if isinstance(location.geometry_json, dict):
+        result["geometry"] = copy.deepcopy(location.geometry_json)
+    if result:
+        out["geocode"] = {"geocode_type": location.geocode_type or "manual", "result": result}
+    return out
+
+
 def _index_substrate_locations(
     locations: list[SubstrateLocation],
     *,
@@ -269,9 +287,6 @@ def enrich_merged_locations_for_review(
     merged_locations: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Attach persisted place identity and Stylebook link summary to merged location rows."""
-    if not merged_locations:
-        return merged_locations
-
     by_key = _load_substrate_locations_for_review(
         session, project_id=project_id, run_id=run_id, article_id=article_id
     )
@@ -297,6 +312,7 @@ def enrich_merged_locations_for_review(
     stylebook_slugs = _load_stylebook_slugs_by_id(session, stylebook_ids)
 
     enriched: list[dict[str, Any]] = []
+    matched_location_ids: set[int] = set()
     for row in merged_locations:
         out = copy.deepcopy(row)
         loc_payload = out.get("location")
@@ -307,6 +323,7 @@ def enrich_merged_locations_for_review(
             continue
 
         mention = mentions_by_location.get(int(substrate.id))
+        matched_location_ids.add(int(substrate.id))
         has_active_story_mention = article_id is None or mention is not None
         if has_active_story_mention:
             out["persisted_location_id"] = int(substrate.id)
@@ -357,4 +374,34 @@ def enrich_merged_locations_for_review(
             out["location"] = loc_payload
             out["mention_occurrences"] = mention_occurrences
         enriched.append(out)
+    for raw_entry_id, substrate in by_key.items():
+        if substrate.id is None or int(substrate.id) in matched_location_ids:
+            continue
+        mention = mentions_by_location.get(int(substrate.id))
+        if article_id is not None and mention is None:
+            continue
+        loc_payload = _place_payload_from_substrate(substrate)
+        if mention is not None:
+            loc_payload = _apply_mention_editorial_to_place(loc_payload, mention)
+        db_rows: list[SubstrateLocationMentionOccurrence] | None = None
+        if mention is not None and mention.id is not None:
+            db_rows = occurrences_by_mention_id.get(int(mention.id))
+        mention_occurrences = build_mention_occurrences_for_row(
+            place=loc_payload,
+            overlay_patch=None,
+            db_rows=db_rows,
+        )
+        sync_original_text_from_occurrences(loc_payload, mention_occurrences)
+        enriched.append(
+            {
+                "anchor": raw_entry_id,
+                "source": "user",
+                "node_id": None,
+                "index_in_node": None,
+                "stale": False,
+                "location": loc_payload,
+                "mention_occurrences": mention_occurrences,
+                "persisted_location_id": int(substrate.id),
+            }
+        )
     return enriched

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useAppMessage } from '@/components/AppMessageProvider'
+import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { ProcessedItemInformationCard } from '@/components/ProcessedItemInformationCard'
 import { ProcessedItemVerificationSection } from '@/components/ProcessedItemVerificationSection'
 import { Button } from '@/components/ui/button'
@@ -8,9 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
+import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { processedItemDisplayTitle } from '@/lib/processedItemDisplayTitle'
-import { formatRunTitleDate } from '@/lib/utils'
 import {
   PROCESSED_ITEM_DETAIL_TABS,
   isProcessedItemDetailTab,
@@ -24,7 +25,6 @@ import {
   rerunWarningBody,
 } from '@/lib/rerunWarning'
 import {
-  ArrowLeft,
   Download,
   CheckCircle,
   XCircle,
@@ -69,6 +69,7 @@ export default function ProcessedItemDetail() {
   const [rerunRequested, setRerunRequested] = useState(false)
   const [visualizations, setVisualizations] = useState<VisualizationDescriptor[]>([])
   const [catalogProject, setCatalogProject] = useState<Project | null>(null)
+  const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const [jsonOutputView, setJsonOutputView] = useState<JsonOutputView>('reviewed')
 
   const hasReviewedOutput = Boolean(
@@ -129,25 +130,6 @@ export default function ProcessedItemDetail() {
     [activeTab, setSearchParams, showConfirm],
   )
 
-  const navigateFromItem = useCallback(
-    async (to: string) => {
-      if (verificationDirtyRef.current) {
-        const leave = await showConfirm(
-          'Save your changes before leaving, or stay on this page to keep editing.',
-          {
-            title: 'Unsaved changes',
-            confirmLabel: 'Leave without saving',
-            cancelLabel: 'Stay',
-            destructive: true,
-          },
-        )
-        if (!leave) return
-      }
-      navigate(to)
-    },
-    [navigate, showConfirm],
-  )
-
   useEffect(() => {
     if (runId && itemId) {
       loadItemData()
@@ -171,6 +153,49 @@ export default function ProcessedItemDetail() {
       cancelled = true
     }
   }, [run?.project_id])
+
+  useEffect(() => {
+    if (catalogProject?.workspace_id == null) {
+      setProjectWorkspace(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const rows = await listMyWorkspaces()
+        if (cancelled) return
+        setProjectWorkspace(rows.find((row) => row.id === catalogProject.workspace_id) ?? null)
+      } catch {
+        if (!cancelled) setProjectWorkspace(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [catalogProject?.workspace_id])
+
+  const breadcrumbItems = useMemo(() => {
+    const items: { label: string; to?: string }[] = [{ label: 'Workspaces', to: '/' }]
+    if (projectWorkspace) {
+      items.push({
+        label: projectWorkspace.name,
+        to: `/workspace/${encodeURIComponent(projectWorkspace.slug)}`,
+      })
+    }
+    if (catalogProject) {
+      items.push({
+        label: catalogProject.name,
+        to: `/project/${encodeURIComponent(catalogProject.slug)}`,
+      })
+    }
+    if (runId) {
+      items.push({
+        label: 'Run',
+        to: `/runs/${runId}`,
+      })
+    }
+    return items
+  }, [projectWorkspace, catalogProject, runId])
 
   // Auto-refresh for pending or running items (but only update if data changed)
   useEffect(() => {
@@ -476,17 +501,16 @@ export default function ProcessedItemDetail() {
 
   if (!item) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Processed Item Not Found</h2>
-          <p className="text-muted-foreground mb-4">
-            The processed item you're looking for doesn't exist or has been deleted.
-          </p>
-          <Button onClick={() => void navigateFromItem(`/runs/${runId}`)}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Run
-          </Button>
+      <div className="space-y-6">
+        <PageBreadcrumbs items={[...breadcrumbItems, { label: 'Item' }]} />
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+            <h2 className="mb-2 text-xl font-semibold">Processed Item Not Found</h2>
+            <p className="text-muted-foreground">
+              The processed item you're looking for doesn't exist or has been deleted.
+            </p>
+          </div>
         </div>
       </div>
     )
@@ -505,42 +529,25 @@ export default function ProcessedItemDetail() {
         </Alert>
       )}
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => void navigateFromItem(`/runs/${runId}`)}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Run
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold">{pageTitle}</h1>
-            <p className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-x-1 gap-y-0">
-              {run?.graph_id ? (
-                <a
-                  href={`/flow/${run.graph_id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm text-primary hover:underline font-normal p-0 h-auto inline bg-transparent border-0 cursor-pointer"
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-3">
+          <PageBreadcrumbs items={[...breadcrumbItems, { label: 'Item' }]} />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold leading-tight sm:text-3xl">{pageTitle}</h1>
+            {run?.graph_id ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Flow:{' '}
+                <Link
+                  to={`/flow/${encodeURIComponent(run.graph_id)}`}
+                  className="font-medium text-primary hover:underline"
                 >
                   {graph?.name || `Flow ${run.graph_id}`}
-                </a>
-              ) : (
-                <span>{graph?.name || 'Flow'}</span>
-              )}
-              <span aria-hidden="true">•</span>
-              <a
-                href={`/runs/${runId}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-primary hover:underline font-normal inline"
-              >
-                {run?.created_at
-                  ? `Run: ${formatRunTitleDate(run.created_at)}`
-                  : 'Run'}
-              </a>
-            </p>
+                </Link>
+              </p>
+            ) : null}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {item.status === 'succeeded' && item.output && getS3Url(item) && (
             <Button
               variant="outline"

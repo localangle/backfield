@@ -145,6 +145,20 @@ def _payload_accepts_article_patch(payload: dict[str, Any]) -> bool:
     return False
 
 
+def _json_output_consolidated_places(output: dict[str, Any]) -> dict[str, Any] | None:
+    """``json_output.consolidated.places`` bucket when present (JSON Output node)."""
+    payload = output.get("json_output")
+    if not isinstance(payload, dict):
+        return None
+    consolidated = payload.get("consolidated")
+    if not isinstance(consolidated, dict):
+        return None
+    places = consolidated.get("places")
+    if isinstance(places, dict):
+        return places
+    return None
+
+
 def _apply_article_overlay_to_output(
     output: dict[str, Any],
     overlay: dict[str, Any],
@@ -206,6 +220,19 @@ def build_reviewed_output(
                 user_locations=user_locations,
             )
             payload["places"] = merged_places
+
+    json_places = _json_output_consolidated_places(reviewed)
+    if json_places is not None and merged_places is None:
+        merged_places = _apply_merged_places_to_places_bucket(
+            json_places,
+            node_id="json_output",
+            anchor_to_location=anchor_to_location,
+            removed_anchors=removed_anchors,
+            user_locations=user_locations,
+        )
+        consolidated = reviewed["json_output"]["consolidated"]
+        if isinstance(consolidated, dict):
+            consolidated["places"] = merged_places
 
     if merged_places is not None:
         _sync_consolidated_places_in_output(reviewed, merged_places)

@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Agate">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 5 22 22" role="img" aria-label="Agate">
   <text
     x="16"
-    y="23"
+    y="13"
     text-anchor="middle"
-    font-size="22"
-    font-family="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif"
-  >&#x1F3F7;&#xFE0F;</text>
+    dominant-baseline="central"
+    font-size="28"
+    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif"
+    font-weight="600"
+  >&#x229E;</text>
 </svg>

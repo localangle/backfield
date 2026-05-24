@@ -10,6 +10,7 @@ export type MentionOccurrenceDraft = {
   /** Stable client id for new rows before save. */
   clientId: string
   mentionText: string
+  quoteText?: string
   startChar: number | null
   endChar: number | null
   occurrenceOrder: number
@@ -40,10 +41,12 @@ function normalizeApiOccurrence(raw: Record<string, unknown>, order: number): Me
   const startRaw = raw.start_char
   const endRaw = raw.end_char
   const orderRaw = raw.occurrence_order
+  const quoteRaw = raw.quote_text
   return {
     id,
     clientId,
     mentionText,
+    quoteText: typeof quoteRaw === 'string' && quoteRaw.trim() ? quoteRaw : undefined,
     startChar: typeof startRaw === 'number' && Number.isFinite(startRaw) ? Math.trunc(startRaw) : null,
     endChar: typeof endRaw === 'number' && Number.isFinite(endRaw) ? Math.trunc(endRaw) : null,
     occurrenceOrder: typeof orderRaw === 'number' && Number.isFinite(orderRaw) ? Math.trunc(orderRaw) : order,
@@ -146,6 +149,7 @@ export function mentionOccurrencesEqual(a: MentionOccurrenceDraft[], b: MentionO
         id: o.id,
         clientId: o.clientId,
         mentionText: o.mentionText,
+        quoteText: o.quoteText,
         startChar: o.startChar,
         endChar: o.endChar,
         occurrenceOrder: o.occurrenceOrder,
@@ -197,6 +201,7 @@ export function createEmptyMentionOccurrence(order: number): MentionOccurrenceDr
   return {
     clientId: newClientId(),
     mentionText: '',
+      quoteText: undefined,
     startChar: null,
     endChar: null,
     occurrenceOrder: order,
@@ -215,6 +220,7 @@ export function buildOccurrencesOverlayPayload(occurrences: MentionOccurrenceDra
       suppressed: o.suppressed,
     }
     if (o.id !== undefined) row.id = o.id
+    if (o.quoteText !== undefined) row.quote_text = o.quoteText
     return row
   })
 }

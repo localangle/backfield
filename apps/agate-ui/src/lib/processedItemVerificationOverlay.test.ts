@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appendUserAddedPlaceToOverlay,
   applyDescriptionPatch,
   buildRemovePlaceOverlayPatch,
+  buildUserAddedOverlayRow,
   deepSortKeys,
   emptyOverlay,
   getLocationDescription,
@@ -120,6 +122,52 @@ describe('emptyOverlay', () => {
     expect(emptyOverlay()).toEqual({
       locations: { by_anchor: {}, user_added: [], removed_anchors: [] },
     })
+  })
+})
+
+describe('buildUserAddedOverlayRow', () => {
+  it('builds a geocode-shaped user_added location with mention occurrences', () => {
+    const row = buildUserAddedOverlayRow({
+      anchor: 'user_place:42',
+      label: 'Lincoln School',
+      locationType: 'place',
+      mentionText: 'Lincoln School',
+      quoteText: 'met at Lincoln School today',
+      startChar: 10,
+      endChar: 24,
+      roleInStory: 'Shelter',
+    })
+    expect(row.id).toBe('user_place:42')
+    const loc = row.location as Record<string, unknown>
+    expect(loc.description).toBe('Lincoln School')
+    expect(loc.original_text).toBe('Lincoln School')
+    const occurrences = loc.mention_occurrences as unknown[]
+    expect(occurrences).toHaveLength(1)
+    expect((occurrences[0] as Record<string, unknown>).quote_text).toBe('met at Lincoln School today')
+  })
+})
+
+describe('appendUserAddedPlaceToOverlay', () => {
+  it('appends and replaces by anchor id', () => {
+    const draft = normalizeOverlay({
+      locations: {
+        by_anchor: {},
+        user_added: [{ id: 'user_place:1', location: { description: 'Old' } }],
+      },
+    })
+    const row = buildUserAddedOverlayRow({
+      anchor: 'user_place:1',
+      label: 'New label',
+      locationType: 'place',
+      mentionText: 'New',
+      quoteText: 'q',
+      startChar: 0,
+      endChar: 1,
+    })
+    const next = appendUserAddedPlaceToOverlay(draft, row)
+    const ua = (next.locations as { user_added: unknown[] }).user_added
+    expect(ua).toHaveLength(1)
+    expect((ua[0] as { location: { description: string } }).location.description).toBe('New label')
   })
 })
 

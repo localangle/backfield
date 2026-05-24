@@ -114,6 +114,41 @@ def test_build_reviewed_output_removes_anchor() -> None:
     assert cities[0]["description"] == "keep"
 
 
+def test_build_reviewed_output_user_added_geometry_json_output_only() -> None:
+    geom = {"type": "Point", "coordinates": [-93.27, 44.98]}
+    uid = "user_place:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    output = {
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "places": {
+                    "areas": _empty_areas(),
+                    "points": [],
+                    "needs_review": [],
+                },
+            },
+        },
+    }
+    overlay = {
+        "locations": {
+            "user_added": [
+                {
+                    "id": uid,
+                    "location": _place(
+                        "manual",
+                        geocode={"geocode_type": "manual", "result": {"geometry": geom}},
+                    ),
+                }
+            ]
+        }
+    }
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    points = reviewed["json_output"]["consolidated"]["places"]["points"]
+    assert len(points) == 1
+    assert points[0]["geocode"]["result"]["geometry"] == geom
+
+
 def test_build_reviewed_output_user_added_in_points() -> None:
     output = _geocode_output(cities=[_place("m", id="mid")])
     uid = "user_place:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"

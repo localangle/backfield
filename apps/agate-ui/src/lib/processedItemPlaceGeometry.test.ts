@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   appendUserPlacePoint,
+  applyAnchorPatchFragment,
   buildGeocodePatchForGeometry,
   buildVerificationLeafletCollections,
   extractGeometryFromPlace,
@@ -15,6 +16,7 @@ import {
   shallowMergePlacePatch,
   validateGeometryObject,
 } from './processedItemPlaceGeometry'
+import { normalizeOverlay } from './processedItemVerificationOverlay'
 
 describe('iterBaselinePlacesFromOutput', () => {
   it('returns empty when output has only PlaceExtract locations', () => {
@@ -475,6 +477,38 @@ describe('stripSelectedVerificationPolygonsForEdit', () => {
     const stripped = stripSelectedVerificationPolygonsForEdit(collections, 'a1')
     expect(stripped.points.features).toHaveLength(1)
     expect(stripped.polygons.features.map((f) => (f as { id?: string }).id)).toEqual(['other', 'a1__baseline'])
+  })
+})
+
+describe('applyAnchorPatchFragment', () => {
+  it('writes geometry into user_added.location for user_place anchors', () => {
+    const anchor = 'user_place:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    const draft = normalizeOverlay({
+      locations: {
+        by_anchor: {},
+        user_added: [
+          {
+            id: anchor,
+            location: { description: 'Manual', geocode: { geocode_type: 'manual', result: {} } },
+          },
+        ],
+      },
+    })
+    const geom = { type: 'Point', coordinates: [-93.27, 44.98] }
+    applyAnchorPatchFragment(draft, anchor, {
+      geocode: { geocode_type: 'manual', result: { geometry: geom } },
+    })
+    const loc = draft.locations as Record<string, unknown>
+    const ua = loc.user_added as { id: string; location: Record<string, unknown> }[]
+    expect(ua[0]?.location.geocode).toEqual({
+      geocode_type: 'manual',
+      result: { geometry: geom },
+    })
+    const by = loc.by_anchor as Record<string, unknown>
+    expect((by[anchor] as Record<string, unknown>).geocode).toEqual({
+      geocode_type: 'manual',
+      result: { geometry: geom },
+    })
   })
 })
 

@@ -161,6 +161,27 @@ class CreateLocationBody(BaseModel):
     )
 
 
+class CreateLocationFromArticleEvidenceBody(BaseModel):
+    """Create a saved story place and its first article evidence in one transaction."""
+
+    article_id: int = Field(ge=1)
+    run_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    location_type: str = Field(min_length=1)
+    mention_text: str = Field(min_length=1)
+    quote_text: str = Field(min_length=1)
+    start_char: int = Field(ge=0)
+    end_char: int = Field(ge=0)
+    role_in_story: str | None = None
+
+
+class CreateLocationFromArticleEvidenceResponse(BaseModel):
+    location: LocationResponse
+    mention_id: int
+    occurrence_id: int
+    anchor: str
+
+
 class PatchLocationBody(BaseModel):
     name: str | None = None
     location_type: str | None = None
@@ -1024,6 +1045,112 @@ def create_location(
     )
 
 
+@router.post(
+    "/locations/from-article-evidence",
+    response_model=CreateLocationFromArticleEvidenceResponse,
+)
+def create_location_from_article_evidence(
+    body: CreateLocationFromArticleEvidenceBody,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CreateLocationFromArticleEvidenceResponse:
+    """Create a saved place from a manually selected article passage."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+
+    label = body.label.strip()
+    location_type = body.location_type.strip()
+    mention_text = body.mention_text.strip()
+    quote_text = body.quote_text.strip()
+    run_id = body.run_id.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="label is required")
+    if location_type not in PLACE_EXTRACT_LOCATION_TYPES:
+        raise HTTPException(status_code=400, detail="location_type is not supported")
+    if not mention_text:
+        raise HTTPException(status_code=400, detail="mention_text is required")
+    if not quote_text:
+        raise HTTPException(status_code=400, detail="quote_text is required")
+    if not run_id:
+        raise HTTPException(status_code=400, detail="run_id is required")
+    if body.end_char <= body.start_char:
+        raise HTTPException(status_code=400, detail="end_char must be after start_char")
+
+    article = session.get(SubstrateArticle, body.article_id)
+    if article is None or int(article.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Article not found")
+    article_text = str(article.text or "")
+    if body.end_char > len(article_text):
+        raise HTTPException(status_code=400, detail="source selection is outside the article")
+    selected_text = article_text[body.start_char : body.end_char]
+    if selected_text != quote_text:
+        raise HTTPException(status_code=400, detail="source selection does not match the article")
+
+    loc = SubstrateLocation(
+        project_id=int(proj.id),
+        name=label,
+        normalized_name=_normalize_name(label),
+        location_type=location_type,
+        status="active",
+        canonical_link_status=CANONICAL_LINK_PENDING,
+        source_kind="manual_add",
+        source_details_json={
+            "source": "agate_review_add_place",
+            "run_id": run_id,
+        },
+    )
+    session.add(loc)
+    session.flush()
+    if loc.id is None:
+        raise HTTPException(status_code=500, detail="Location could not be created")
+    anchor = f"user_place:{int(loc.id)}"
+    loc.source_details_json = {
+        "source": "agate_review_add_place",
+        "run_id": run_id,
+        "raw_entry_id": anchor,
+    }
+
+    mention = SubstrateLocationMention(
+        article_id=int(article.id),  # type: ignore[arg-type]
+        location_id=int(loc.id),
+        role_in_story=body.role_in_story.strip() if body.role_in_story else None,
+        added=True,
+        source_kind="manual_add",
+        source_details_json={"source": "agate_review_add_place", "run_id": run_id},
+    )
+    session.add(mention)
+    session.flush()
+    if mention.id is None:
+        raise HTTPException(status_code=500, detail="Location mention could not be created")
+
+    occurrence = SubstrateLocationMentionOccurrence(
+        location_mention_id=int(mention.id),
+        source_kind="manual_add",
+        source_details_json={"source": "agate_review_add_place", "run_id": run_id},
+        mention_text=mention_text,
+        quote_text=quote_text,
+        start_char=body.start_char,
+        end_char=body.end_char,
+        occurrence_order=0,
+        labels_json=[],
+        suppressed=False,
+    )
+    session.add(occurrence)
+    session.commit()
+    session.refresh(loc)
+    session.refresh(mention)
+    session.refresh(occurrence)
+
+    mc = _mention_counts(session, [int(loc.id)])
+    return CreateLocationFromArticleEvidenceResponse(
+        location=LocationResponse.from_row(loc, mc.get(int(loc.id), 0)),
+        mention_id=int(mention.id),
+        occurrence_id=int(occurrence.id),  # type: ignore[arg-type]
+        anchor=anchor,
+    )
+
+
 @router.patch("/locations/{location_id}", response_model=LocationResponse)
 def patch_location(
     location_id: int,
@@ -1305,6 +1432,7 @@ class MentionOccurrenceIn(BaseModel):
     id: int | None = None
     client_id: str | None = None
     mention_text: str = Field(min_length=1)
+    quote_text: str | None = None
     start_char: int | None = None
     end_char: int | None = None
     occurrence_order: int | None = None
@@ -1314,6 +1442,7 @@ class MentionOccurrenceIn(BaseModel):
 class MentionOccurrenceOut(BaseModel):
     id: int
     mention_text: str
+    quote_text: str | None = None
     start_char: int | None = None
     end_char: int | None = None
     occurrence_order: int | None = None
@@ -1367,6 +1496,7 @@ def replace_location_mention_occurrences(
             MentionOccurrenceOut(
                 id=int(row.id),
                 mention_text=str(row.mention_text),
+                quote_text=row.quote_text,
                 start_char=row.start_char,
                 end_char=row.end_char,
                 occurrence_order=row.occurrence_order,

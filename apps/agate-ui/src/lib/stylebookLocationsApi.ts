@@ -78,6 +78,48 @@ export async function updateSavedPlace(
   })
 }
 
+export type CreateSavedPlaceFromArticleEvidenceBody = {
+  article_id: number
+  run_id: string
+  label: string
+  location_type: string
+  mention_text: string
+  quote_text: string
+  start_char: number
+  end_char: number
+  role_in_story?: string | null
+}
+
+export type CreatedSavedPlaceFromArticleEvidence = {
+  location: {
+    id: number
+    project_id: number
+    name: string
+    location_type: string
+    formatted_address: string | null
+    geometry_json: Record<string, unknown> | null
+    geometry_type: string | null
+    status: string
+    mention_count: number
+  }
+  mention_id: number
+  occurrence_id: number
+  anchor: string
+}
+
+export async function createSavedPlaceFromArticleEvidence(
+  projectSlug: string,
+  body: CreateSavedPlaceFromArticleEvidenceBody,
+): Promise<CreatedSavedPlaceFromArticleEvidence> {
+  return stylebookJsonFetch(
+    `/v1/locations/from-article-evidence?project_slug=${encodeURIComponent(projectSlug)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  )
+}
+
 export async function deleteSavedPlace(
   locationId: number,
   projectSlug: string,
@@ -121,6 +163,7 @@ export type MentionOccurrencePayload = {
   id?: number
   client_id?: string
   mention_text: string
+  quote_text?: string
   start_char?: number | null
   end_char?: number | null
   occurrence_order?: number

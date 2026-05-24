@@ -85,6 +85,85 @@ function ensureLocations(draft: Record<string, unknown>): Record<string, unknown
   return loc
 }
 
+export type UserAddedPlaceOverlayInput = {
+  anchor: string
+  label: string
+  locationType: string
+  mentionText: string
+  quoteText: string
+  startChar: number
+  endChar: number
+  roleInStory?: string
+  formattedAddress?: string | null
+  geometry?: Record<string, unknown> | null
+}
+
+/** Build a ``locations.user_added`` row for reviewed-output materialization. */
+export function buildUserAddedOverlayRow(input: UserAddedPlaceOverlayInput): Record<string, unknown> {
+  const location: Record<string, unknown> = {
+    description: input.label.trim(),
+    original_text: input.mentionText.trim(),
+    location: {
+      full: input.label.trim(),
+      type: input.locationType.trim(),
+      components: {},
+    },
+    mentions: [{ text: input.mentionText.trim() }],
+    mention_occurrences: [
+      {
+        mention_text: input.mentionText.trim(),
+        quote_text: input.quoteText.trim(),
+        start_char: input.startChar,
+        end_char: input.endChar,
+        occurrence_order: 0,
+        suppressed: false,
+        source_kind: 'manual_add',
+      },
+    ],
+  }
+  if (input.roleInStory?.trim()) {
+    location.role_in_story = input.roleInStory.trim()
+  }
+  const formatted = input.formattedAddress?.trim()
+  if (input.geometry && typeof input.geometry === 'object') {
+    location.geocode = {
+      geocode_type: 'manual',
+      result: { geometry: cloneJson(input.geometry) },
+    }
+  } else if (formatted) {
+    location.geocode = {
+      geocode_type: 'manual',
+      result: {
+        formatted_address: formatted,
+        processed_str: formatted,
+      },
+    }
+  }
+  return {
+    id: input.anchor,
+    location,
+  }
+}
+
+/** Append or replace a user-added place row on the draft overlay (for reviewed JSON). */
+export function appendUserAddedPlaceToOverlay(
+  draft: Record<string, unknown>,
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = cloneJson(normalizeOverlay(draft)) as Record<string, unknown>
+  const loc = ensureLocations(next)
+  const anchor = typeof row.id === 'string' ? row.id : ''
+  const ua = loc.user_added as unknown[]
+  const rest = anchor
+    ? ua.filter((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return true
+        return (entry as { id?: unknown }).id !== anchor
+      })
+    : ua
+  loc.user_added = [...rest, row]
+  return next
+}
+
 /** Overlay patch that removes a place from review (model row hidden; user row dropped). */
 export function buildRemovePlaceOverlayPatch(
   draft: Record<string, unknown>,

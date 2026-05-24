@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isAxisAlignedRectanglePolygon } from '@backfield/ui/axisAlignedRectangle'
-import { LeafletMap } from '@backfield/ui/LeafletMap'
 import { useAppMessage } from '@/components/AppMessageProvider'
-import { ProcessedItemArticleBody } from '@/components/ProcessedItemArticleBody'
-import { ProcessedItemVerificationLeafletMap } from '@/components/ProcessedItemVerificationLeafletMap'
+import {
+  ProcessedItemArticleBody,
+  type ArticleTextSelection,
+} from '@/components/ProcessedItemArticleBody'
+import { ProcessedItemPlaceGeographyEditor } from '@/components/ProcessedItemPlaceGeographyEditor'
+import {
+  AddPlaceWorkflowPanel,
+  type AddPlaceWorkflowCreatedPayload,
+} from '@/components/AddPlaceWorkflowPanel'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { GeocodedPlaceEditForm } from '@/components/GeocodedPlaceEditForm'
-import { GeocodedPlacesTable } from '@/components/GeocodedPlacesTable'
 import { cn } from '@/lib/utils'
 import type { Graph, ProcessedItem } from '@/lib/api'
 import { getProcessedItem, patchProcessedItemOverlay } from '@/lib/api'
@@ -17,7 +20,6 @@ import { stylebookCanonicalDetailHref } from '@/lib/platformUrls'
 import {
   applyAnchorPatchFragment,
   applyGeometryToPlaceRow,
-  appendUserPlacePoint,
   buildVerificationLeafletCollections,
   extractGeometryFromPlace,
   isPolygonGeometry,
@@ -45,6 +47,7 @@ import {
   isReviewOnlyMergedRow,
   resolveStylebookSlugForLinkedRow,
 } from '@/lib/processedItemReviewRow'
+import { Plus } from 'lucide-react'
 import {
   buildOccurrencesOverlayPayload,
   recomputeOccurrenceSpans,
@@ -63,15 +66,13 @@ import {
   updateStylebookCanonicalGeometry,
 } from '@/lib/stylebookLocationsApi'
 import {
-  getMergedRowAnchor,
+  appendUserAddedPlaceToOverlay,
   buildRemovePlaceOverlayPatch,
+  buildUserAddedOverlayRow,
+  getMergedRowAnchor,
   normalizeOverlay,
   overlaysStructurallyEqual,
 } from '@/lib/processedItemVerificationOverlay'
-import { Loader2, MousePointer, Pencil, Square, Trash2 } from 'lucide-react'
-
-/** Map height in the review column; table below uses remaining flex space and scrolls. */
-const VERIFICATION_MAP_HEIGHT_PX = 300
 
 export interface ProcessedItemVerificationSectionProps {
   runId: string
@@ -122,6 +123,10 @@ export function ProcessedItemVerificationSection({
   const [selectedOccurrenceClientId, setSelectedOccurrenceClientId] = useState<string | null>(null)
   const [geometryAddMode, setGeometryAddMode] = useState<'point' | 'rectangle' | null>(null)
   const [mapFocusBoundsKey, setMapFocusBoundsKey] = useState(0)
+  const [articleTextSelection, setArticleTextSelection] = useState<ArticleTextSelection | null>(null)
+  const [addPlaceMode, setAddPlaceMode] = useState(false)
+  const [addPlaceSelection, setAddPlaceSelection] = useState<ArticleTextSelection | null>(null)
+  const [pendingGeometryStartAnchor, setPendingGeometryStartAnchor] = useState<string | null>(null)
   const dirty = useMemo(
     () => !overlaysStructurallyEqual(baselineOverlay, draftOverlay),
     [baselineOverlay, draftOverlay],
@@ -171,6 +176,12 @@ export function ProcessedItemVerificationSection({
     return s
   }, [staleEntries])
   const article = item.article_context
+  const articleIdForStylebook = resolveProcessedItemArticleId(
+    article,
+    item.input,
+    item.output ?? item.node_outputs ?? undefined,
+  )
+  const persistAddPlaceToStylebook = (articleIdForStylebook ?? 0) > 0
 
   const baselineByAnchor = useMemo(() => {
     const m = new Map<string, Record<string, unknown>>()
@@ -272,6 +283,7 @@ export function ProcessedItemVerificationSection({
       if (geometryEditing) {
         cancelGeometryEdit()
       }
+      setAddPlaceMode(false)
       setSelectedAnchor(anchor)
       setSelectedOccurrenceClientId(null)
       setMapFocusBoundsKey((k) => k + 1)
@@ -329,6 +341,16 @@ export function ProcessedItemVerificationSection({
 
   const storyHighlightRanges =
     storyHighlightResult.kind === 'ranges' ? storyHighlightResult.ranges : []
+  const activeStoryHighlightRanges = useMemo(
+    () =>
+      addPlaceSelection
+        ? [
+            ...storyHighlightRanges,
+            { start: addPlaceSelection.start, end: addPlaceSelection.end },
+          ]
+        : storyHighlightRanges,
+    [addPlaceSelection, storyHighlightRanges],
+  )
 
   const allMentionTexts = useMemo(() => {
     const seen = new Set<string>()
@@ -473,6 +495,20 @@ export function ProcessedItemVerificationSection({
     setMapFocusBoundsKey((k) => k + 1)
   }, [selectedAnchor, selectedRow, article?.body])
 
+  useEffect(() => {
+    if (!pendingGeometryStartAnchor || geometryEditing) return
+    if (selectedAnchor !== pendingGeometryStartAnchor) return
+    if (!selectedRow) return
+    setPendingGeometryStartAnchor(null)
+    startGeometryEdit()
+  }, [
+    pendingGeometryStartAnchor,
+    geometryEditing,
+    selectedAnchor,
+    selectedRow,
+    startGeometryEdit,
+  ])
+
   const saveGeometryForSelected = useCallback(async (): Promise<boolean> => {
     if (
       !selectedAnchor ||
@@ -526,7 +562,7 @@ export function ProcessedItemVerificationSection({
         const articleId = resolveProcessedItemArticleId(
           article,
           item.input,
-          item.output ?? item.node_outputs,
+          item.output ?? item.node_outputs ?? undefined,
         )
         if (geometryDirty) {
           await updateSavedPlaceGeometry(persistedId, projectSlug, geometryDraft)
@@ -541,7 +577,7 @@ export function ProcessedItemVerificationSection({
             persistedId,
             projectSlug,
             articleId,
-            buildOccurrencesOverlayPayload(occurrencesWithSpans),
+            buildOccurrencesOverlayPayload(occurrencesWithSpans) as any,
           )
         }
         const next = normalizeOverlay(draftOverlay)
@@ -706,7 +742,7 @@ export function ProcessedItemVerificationSection({
       const articleId = resolveProcessedItemArticleId(
         article,
         item.input,
-        item.output ?? item.node_outputs,
+        item.output ?? item.node_outputs ?? undefined,
       )
 
       setSaving(true)
@@ -778,26 +814,105 @@ export function ProcessedItemVerificationSection({
     [catalogProjectSlug, catalogStylebookSlug],
   )
 
-  const handleAddNewPointMode = useCallback(() => {
-    setGeometryAddMode('point')
-    setSelectedAnchor(null)
+  const handleBeginAddPlace = useCallback(
+    (selection: ArticleTextSelection) => {
+      if (geometryEditing) {
+        cancelGeometryEdit()
+      }
+      setAddPlaceMode(false)
+      setSelectedAnchor(null)
+      setAddPlaceSelection(selection)
+      setArticleTextSelection(null)
+    },
+    [geometryEditing, cancelGeometryEdit],
+  )
+
+  const exitAddPlaceMode = useCallback(() => {
+    setAddPlaceMode(false)
+    setArticleTextSelection(null)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
   }, [])
 
-  const handleMapClickForNewPlace = useCallback(
-    ({ latlng }: { latlng: { lat: number; lng: number } }) => {
-      if (geometryAddMode !== 'point' || selectedAnchor !== null) return
-      setDraftOverlay((prev) => {
-        const next = normalizeOverlay(prev)
-        const id = appendUserPlacePoint(next, latlng.lng, latlng.lat, 'New place')
-        requestAnimationFrame(() => {
-          setSelectedAnchor(id)
-          setGeometryAddMode(null)
-        })
-        return next
+  useEffect(() => {
+    if (!addPlaceMode) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitAddPlaceMode()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [addPlaceMode, exitAddPlaceMode])
+
+  const handleAddPlaceCreated = useCallback(
+    async (payload: AddPlaceWorkflowCreatedPayload) => {
+      const { anchor, label, locationType, mentionText, roleInStory, selection, created } = payload
+      const userAddedRow = buildUserAddedOverlayRow({
+        anchor,
+        label,
+        locationType,
+        mentionText,
+        roleInStory,
+        quoteText: selection.text,
+        startChar: selection.start,
+        endChar: selection.end,
+        formattedAddress: created?.location.formatted_address,
+        geometry: created?.location.geometry_json,
       })
+      const nextOverlay = appendUserAddedPlaceToOverlay(draftOverlay, userAddedRow)
+      try {
+        const updated = await patchProcessedItemOverlay(
+          runId,
+          item.id,
+          nextOverlay,
+          item.overlay_version ?? 0,
+        )
+        onItemUpdated(updated)
+        const normalized = normalizeOverlay(updated.overlay)
+        setBaselineOverlay(normalized)
+        setDraftOverlay(normalized)
+      } catch {
+        showError(
+          'The place was saved, but we could not update the reviewed output. Try saving your review again.',
+          { title: 'Review output' },
+        )
+        const updated = await getProcessedItem(runId, item.id)
+        onItemUpdated(updated)
+      }
+      setAddPlaceMode(false)
+      setAddPlaceSelection(null)
+      setArticleTextSelection(null)
+      setSelectedAnchor(anchor)
+      setPendingGeometryStartAnchor(anchor)
+      setGeometryAddMode(null)
+      setMapFocusBoundsKey((k) => k + 1)
     },
-    [geometryAddMode, selectedAnchor],
+    [draftOverlay, item.id, item.overlay_version, onItemUpdated, runId, showError],
   )
+
+  const handleFindOnMap = useCallback(
+    (row: Record<string, unknown>) => {
+      const anchor = getMergedRowAnchor(row)
+      if (!anchor) return
+      if (geometryEditing) {
+        cancelGeometryEdit()
+      }
+      setSelectedAnchor(anchor)
+      setPendingGeometryStartAnchor(anchor)
+      setGeometryAddMode(null)
+      setMapFocusBoundsKey((k) => k + 1)
+    },
+    [geometryEditing, cancelGeometryEdit],
+  )
+
+  const handleShowAllOnMap = useCallback(() => {
+    if (geometryEditing) {
+      cancelGeometryEdit()
+    }
+    setSelectedAnchor(null)
+    setPendingGeometryStartAnchor(null)
+    setArticleTextSelection(null)
+    setMapFocusBoundsKey((k) => k + 1)
+  }, [geometryEditing, cancelGeometryEdit])
 
   return (
     <Card className="isolate overflow-hidden border-primary/30">
@@ -808,42 +923,97 @@ export function ProcessedItemVerificationSection({
             className="border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-50"
           >
             <AlertDescription>
-              Some of your saved edits no longer match this run’s model output. They are kept on file
-              but may not apply until you review them against the latest extraction.
+              Place data for this article has been corrected or enhanced by an editor.
             </AlertDescription>
           </Alert>
         ) : null}
 
+        <div className="grid shrink-0 gap-x-3 gap-y-1 lg:grid-cols-2 lg:items-start">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">Review and edit places</h2>
+            <p className="text-sm text-muted-foreground">
+              Use the tools on this page to add, delete or edit places extracted from this text.
+            </p>
+          </div>
+          {article?.body?.trim() ? (
+            <div className="flex justify-end lg:col-start-2">
+              <Button
+                type="button"
+                size="sm"
+                className={cn(
+                  'shrink-0',
+                  addPlaceMode ? undefined : 'bg-black text-white hover:bg-black/90',
+                )}
+                variant={addPlaceMode ? 'outline' : 'default'}
+                disabled={Boolean(addPlaceSelection)}
+                onClick={() => {
+                  if (addPlaceSelection) return
+                  if (articleTextSelection) {
+                    handleBeginAddPlace(articleTextSelection)
+                    return
+                  }
+                  if (addPlaceMode) {
+                    exitAddPlaceMode()
+                    return
+                  }
+                  setAddPlaceMode(true)
+                }}
+              >
+                {addPlaceMode ? null : <Plus className="mr-2 h-4 w-4" />}
+                {addPlaceMode ? 'Cancel adding place' : 'Add place'}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+
         <div
           className={cn(
             'grid min-h-0 gap-3 overflow-hidden lg:grid-cols-2 lg:items-stretch',
-            geometryEditing
+            geometryEditing || addPlaceSelection
               ? 'h-[min(64rem,calc(100dvh-8rem))]'
               : 'h-[min(52rem,calc(100dvh-10rem))]',
           )}
         >
-          <div className="flex h-full min-h-0 flex-col gap-2">
-            <div className="shrink-0 space-y-1">
-              <h2 className="text-lg font-semibold text-foreground">Review and edit places</h2>
-              <p className="text-sm text-muted-foreground">
-                Use the tools on this page to add, delete or edit places extracted from this text.
-              </p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-md border bg-muted/30 p-2.5 text-sm">
+          <div
+            className={cn(
+              'min-h-0 overflow-y-auto rounded-md border p-2.5 text-sm transition-[border-color,box-shadow,background-color]',
+              addPlaceMode
+                ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
+                : 'border-border bg-muted/30',
+            )}
+          >
               {article?.resolution === 'none' && !article?.body?.trim() ? (
                 <p className="text-sm text-muted-foreground">
                   No article text is available for this item yet.
                 </p>
               ) : article?.body?.trim() ? (
                 <>
+                  {addPlaceMode ? (
+                    <p
+                      className="mb-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-sm text-foreground"
+                      role="status"
+                    >
+                      Highlight the passage in the story that supports this place.
+                    </p>
+                  ) : null}
                   <ProcessedItemArticleBody
                     body={article.body}
                     ambientHighlights={ambientHighlightRanges}
-                    highlights={storyHighlightRanges}
+                    highlights={activeStoryHighlightRanges}
                     scrollWhenKey={selectedAnchor}
                     mentionSpanHits={mentionSpanHits}
                     placeLabels={placeLabelsByAnchor}
                     onSelectPlace={selectPlaceAnchor}
+                    onTextSelectionChange={(selection) => {
+                      if (addPlaceSelection) return
+                      setArticleTextSelection(selection)
+                      if (addPlaceMode && selection) {
+                        handleBeginAddPlace(selection)
+                      }
+                    }}
+                    activeTextSelection={null}
+                    onAddPlaceFromSelection={undefined}
+                    className={addPlaceMode ? 'cursor-text' : undefined}
                   />
                   {storyHighlightAnchor &&
                   storyHighlightRanges.length === 0 &&
@@ -857,261 +1027,80 @@ export function ProcessedItemVerificationSection({
               ) : (
                 <p className="text-sm text-muted-foreground">No story text is available for this item yet.</p>
               )}
-            </div>
           </div>
 
-          <div
-            className={cn(
-              'flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden rounded-lg border bg-card p-2.5',
-              geometryEditing && 'border-primary/40 bg-background',
-            )}
-          >
-            <div className="flex w-full shrink-0 flex-wrap items-center gap-2">
-              {selectedAnchor && !geometryEditing ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="bg-black text-white hover:bg-black/90"
-                  onClick={() => startGeometryEdit()}
-                >
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </Button>
-              ) : null}
-              {geometryEditing && !mapDraftGeometry ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={geometryAddMode === 'rectangle' || geometrySaving}
-                    onClick={() => setGeometryAddMode('point')}
-                  >
-                    <MousePointer className="mr-2 h-4 w-4" />
-                    Add point
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={geometryAddMode === 'point' || geometrySaving}
-                    onClick={() => setGeometryAddMode('rectangle')}
-                  >
-                    <Square className="mr-2 h-4 w-4" />
-                    Add rectangle
-                  </Button>
-                </>
-              ) : null}
-              {!geometryEditing ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    void handleAddNewPointMode()
-                  }}
-                >
-                  New place (point)
-                </Button>
-              ) : null}
-              {geometryEditing && mapDraftGeometry ? (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  disabled={geometrySaving}
-                  onClick={() => {
-                    void (async () => {
-                      const ok = await showConfirm('Clear this geography from the map?', {
-                        title: 'Clear geometry',
-                        confirmLabel: 'Clear',
-                        destructive: true,
-                      })
-                      if (!ok) return
-                      setGeometryDraft(null)
-                      setGeometryAddMode(null)
-                    })()
-                  }}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Clear geometry
-                </Button>
-              ) : null}
-              {geometryEditing && selectedAnchor ? (
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={geometrySaving}
-                    onClick={() => cancelGeometryEdit()}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={!placeEditDirty || geometrySaving}
-                    onClick={() => void saveGeometryForSelected()}
-                  >
-                    {geometrySaving ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Saving…
-                      </>
-                    ) : (
-                      'Save'
-                    )}
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-            {geometryEditing ? (
-              <Tabs
-                value={editPaneTab}
-                onValueChange={(v) => setEditPaneTab(v === 'details' ? 'details' : 'map')}
-                className="flex min-h-0 min-w-0 flex-1 flex-col"
-              >
-                <TabsList className="h-9 w-full shrink-0 justify-start">
-                  <TabsTrigger value="map" className="flex-1 sm:flex-none">
-                    Map
-                  </TabsTrigger>
-                  <TabsTrigger value="details" className="flex-1 sm:flex-none">
-                    Place details
-                    {placeFieldsDirty ? (
-                      <span className="ml-1.5 text-primary" aria-hidden>
-                        •
-                      </span>
-                    ) : null}
-                  </TabsTrigger>
-                </TabsList>
-                <div className="relative mt-2 min-h-0 flex-1">
-                  <TabsContent
-                    value="map"
-                    className="absolute inset-0 mt-0 flex flex-col gap-2 overflow-hidden focus-visible:outline-none data-[state=inactive]:hidden"
-                  >
-                    <div className="relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md bg-background">
-                      {geometryAddMode === 'point' && selectedAnchor === null ? (
-                        <LeafletMap
-                          points={mapCollections.points as any}
-                          polygons={mapCollections.polygons as any}
-                          geocoder
-                          showPopups={false}
-                          fitToData={false}
-                          height={VERIFICATION_MAP_HEIGHT_PX}
-                          fillHeight
-                          initialCenter={[39.8283, -98.5795]}
-                          initialZoom={3}
-                          interactiveWhenEmpty
-                          tileUrl="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                          tileAttribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                          onMapClick={(e) => handleMapClickForNewPlace(e)}
-                        />
-                      ) : (
-                        <ProcessedItemVerificationLeafletMap
-                          collections={mapCollections}
-                          mapEditing={geometryEditing}
-                          geometryAddMode={geometryAddMode}
-                          onGeometryAddModeChange={setGeometryAddMode}
-                          editPointFeatureId={editPointFeatureId}
-                          draftGeometry={mapDraftGeometry}
-                          onDraftGeometryChange={handleMapGeometryChange}
-                          mapHeightPx={VERIFICATION_MAP_HEIGHT_PX}
-                          mapFillHeight
-                          focusBounds={mapFocusBounds}
-                          focusBoundsKey={mapFocusBoundsKey}
-                          onFeatureSelect={(anchor) => {
-                            selectPlaceAnchor(anchor)
-                          }}
-                        />
-                      )}
-                    </div>
-                    {geometryAddMode === 'rectangle' ? (
-                      <p className="shrink-0 text-xs text-muted-foreground">
-                        Hold Shift and drag on the map to draw an axis-aligned rectangle.
-                      </p>
-                    ) : selectedRow && isReviewOnlyMergedRow(selectedRow) ? (
-                      <p className="shrink-0 text-xs text-muted-foreground">
-                        These changes are saved with this review only until the place is persisted for this
-                        story.
-                      </p>
-                    ) : null}
-                  </TabsContent>
-                  <TabsContent
-                    value="details"
-                    className="absolute inset-0 mt-0 overflow-y-auto p-1.5 focus-visible:outline-none data-[state=inactive]:hidden"
-                  >
-                    {placeFieldsDraft ? (
-                      <GeocodedPlaceEditForm
-                        embeddedInTab
-                        fields={placeFieldsDraft}
-                        disabled={geometrySaving}
-                        selectedOccurrenceClientId={selectedOccurrenceClientId}
-                        onSelectOccurrence={setSelectedOccurrenceClientId}
-                        onChange={setPlaceFieldsDraft}
-                      />
-                    ) : null}
-                  </TabsContent>
-                </div>
-              </Tabs>
-            ) : (
-              <div className="relative z-0 w-full shrink-0 overflow-hidden rounded-md bg-background">
-                {geometryAddMode === 'point' && selectedAnchor === null ? (
-                  <LeafletMap
-                    points={mapCollections.points as any}
-                    polygons={mapCollections.polygons as any}
-                    geocoder
-                    showPopups={false}
-                    fitToData={false}
-                    height={VERIFICATION_MAP_HEIGHT_PX}
-                    initialCenter={[39.8283, -98.5795]}
-                    initialZoom={3}
-                    interactiveWhenEmpty
-                    tileUrl="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                    tileAttribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                    onMapClick={(e) => handleMapClickForNewPlace(e)}
-                  />
-                ) : (
-                  <ProcessedItemVerificationLeafletMap
-                    collections={mapCollections}
-                    mapEditing={false}
-                    geometryAddMode={geometryAddMode}
-                    onGeometryAddModeChange={setGeometryAddMode}
-                    editPointFeatureId={editPointFeatureId}
-                    draftGeometry={mapDraftGeometry}
-                    onDraftGeometryChange={handleMapGeometryChange}
-                    mapHeightPx={VERIFICATION_MAP_HEIGHT_PX}
-                    mapFillHeight={false}
-                    focusBounds={mapFocusBounds}
-                    focusBoundsKey={mapFocusBoundsKey}
-                    onFeatureSelect={(anchor) => {
-                      selectPlaceAnchor(anchor)
-                    }}
-                  />
-                )}
-              </div>
-            )}
-
-            {!geometryEditing ? (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-hidden border-t border-border pt-2">
-                <h4 className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Geocoded places
-                </h4>
-                <GeocodedPlacesTable
-                  rows={geocodedPlaceRows}
-                  selectedAnchor={selectedAnchor}
-                  staleAnchorSet={staleAnchorSet}
-                  getRowAnchor={getMergedRowAnchor}
-                  onSelectAnchor={selectPlaceAnchor}
-                  onOpenStylebookPlace={handleOpenStylebookPlace}
-                  onAdoptForStylebook={(row) => void handleAdoptForStylebook(row)}
-                  adoptDisabled={saving || geometrySaving}
-                  onDeletePlace={(row) => void handleDeletePlace(row)}
-                  deleteDisabled={saving || geometrySaving}
-                />
-              </div>
-            ) : null}
-          </div>
+          {addPlaceSelection ? (
+            <AddPlaceWorkflowPanel
+              projectSlug={catalogProjectSlug?.trim() ?? ''}
+              runId={runId}
+              articleId={articleIdForStylebook ?? 0}
+              persistToStylebook={persistAddPlaceToStylebook}
+              selection={addPlaceSelection}
+              onChangeSelection={() => {
+                setAddPlaceSelection(null)
+                setArticleTextSelection(null)
+                setAddPlaceMode(true)
+              }}
+              onCancel={() => {
+                setAddPlaceSelection(null)
+                setArticleTextSelection(null)
+                setAddPlaceMode(false)
+              }}
+              onCreated={(createdPayload) => {
+                void handleAddPlaceCreated(createdPayload)
+              }}
+              onError={(message, title) => showError(message, { title })}
+            />
+          ) : (
+            <ProcessedItemPlaceGeographyEditor
+              geometryEditing={geometryEditing}
+              selectedAnchor={selectedAnchor}
+              mapDraftGeometry={mapDraftGeometry}
+              geometryAddMode={geometryAddMode}
+              geometrySaving={geometrySaving}
+              placeEditDirty={placeEditDirty}
+              placeFieldsDirty={placeFieldsDirty}
+              editPaneTab={editPaneTab}
+              placeFieldsDraft={placeFieldsDraft}
+              selectedOccurrenceClientId={selectedOccurrenceClientId}
+              selectedRow={selectedRow}
+              mapCollections={mapCollections}
+              editPointFeatureId={editPointFeatureId}
+              mapFocusBounds={mapFocusBounds}
+              mapFocusBoundsKey={mapFocusBoundsKey}
+              geocodedPlaceRows={geocodedPlaceRows}
+              staleAnchorSet={staleAnchorSet}
+              saving={saving}
+              startGeometryEdit={startGeometryEdit}
+              setGeometryAddMode={setGeometryAddMode}
+              clearGeometry={() => {
+                void (async () => {
+                  const ok = await showConfirm('Clear this geography from the map?', {
+                    title: 'Clear geography',
+                    confirmLabel: 'Clear',
+                    destructive: true,
+                  })
+                  if (!ok) return
+                  setGeometryDraft(null)
+                  setGeometryAddMode(null)
+                })()
+              }}
+              cancelGeometryEdit={cancelGeometryEdit}
+              saveGeometryForSelected={() => void saveGeometryForSelected()}
+              setEditPaneTab={setEditPaneTab}
+              onPlaceFieldsDraftChange={setPlaceFieldsDraft}
+              onSelectedOccurrenceChange={setSelectedOccurrenceClientId}
+              onMapGeometryChange={handleMapGeometryChange}
+              onSelectAnchor={selectPlaceAnchor}
+              getRowAnchor={getMergedRowAnchor}
+              onOpenStylebookPlace={handleOpenStylebookPlace}
+              onAdoptForStylebook={(row) => void handleAdoptForStylebook(row)}
+              onDeletePlace={(row) => void handleDeletePlace(row)}
+              onShowAll={handleShowAllOnMap}
+              onFindOnMap={handleFindOnMap}
+              cancelLabel={!mapDraftGeometry ? 'Finish later' : 'Cancel'}
+            />
+          )}
         </div>
       </CardContent>
     </Card>

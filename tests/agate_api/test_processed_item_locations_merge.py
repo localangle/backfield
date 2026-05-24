@@ -111,6 +111,32 @@ def test_user_added_locations() -> None:
     assert anchors[uid]["location"]["description"] == "manual"
 
 
+def test_user_added_merges_by_anchor_geometry_patch() -> None:
+    geom = {"type": "Point", "coordinates": [-93.27, 44.98]}
+    uid = "user_place:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    overlay = {
+        "locations": {
+            "user_added": [
+                {
+                    "id": uid,
+                    "location": _place("manual"),
+                }
+            ],
+            "by_anchor": {
+                uid: {
+                    "geocode": {
+                        "geocode_type": "manual",
+                        "result": {"geometry": geom},
+                    }
+                }
+            },
+        }
+    }
+    merged, _stale = build_merged_locations_lane(output={}, overlay=overlay)
+    assert len(merged) == 1
+    assert merged[0]["location"]["geocode"]["result"]["geometry"] == geom
+
+
 def test_user_added_skips_invalid_id() -> None:
     merged, _ = build_merged_locations_lane(
         output={},

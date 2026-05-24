@@ -254,6 +254,9 @@ def build_merged_locations_lane(
         else:
             rest = {k: v for k, v in row.items() if k not in ("id", "location")}
             loc_out = rest if rest else {}
+        patch = patches.get(rid)
+        if isinstance(patch, dict):
+            loc_out = _shallow_merge_dict(loc_out, patch)
         mention_occurrences = build_mention_occurrences_for_row(
             place=loc_out,
             overlay_patch=None,

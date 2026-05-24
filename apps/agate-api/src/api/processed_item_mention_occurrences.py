@@ -45,7 +45,7 @@ def occurrences_from_place_dict(place: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def occurrence_dict_from_db(row: SubstrateLocationMentionOccurrence) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "id": int(row.id) if row.id is not None else None,
         "mention_text": _strip_text(row.mention_text),
         "start_char": row.start_char,
@@ -54,6 +54,10 @@ def occurrence_dict_from_db(row: SubstrateLocationMentionOccurrence) -> dict[str
         "suppressed": bool(row.suppressed),
         "source_kind": _strip_text(row.source_kind) or "system_extraction",
     }
+    quote_text = _strip_text(row.quote_text)
+    if quote_text:
+        out["quote_text"] = quote_text
+    return out
 
 
 def _occurrence_identity(occ: dict[str, Any]) -> str | None:
