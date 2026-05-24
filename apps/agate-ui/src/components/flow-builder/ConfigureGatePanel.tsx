@@ -6,6 +6,8 @@ import {
   canContinueMiddleNode,
   type BookendNodeLike,
 } from '@/lib/flowBuilderSteps'
+import type { Run } from '@/lib/api'
+import type { NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import type { Node } from 'reactflow'
 
 type ConfigureGatePanelProps = {
@@ -17,7 +19,11 @@ type ConfigureGatePanelProps = {
   setNodes: (nodes: Node[] | ((nodes: Node[]) => Node[])) => void
   graphContext?: GraphPanelContext | null
   isMiddleNode?: boolean
+  viewOnly?: boolean
   onDelete?: (nodeId: string) => void
+  running?: boolean
+  currentRun?: Run | null
+  nodeOutputLookupSpec?: NodeOutputLookupSpec | null
   showModal?: (config: {
     title: string
     description: string
@@ -38,7 +44,11 @@ export default function ConfigureGatePanel({
   setNodes,
   graphContext,
   isMiddleNode = false,
+  viewOnly = false,
   onDelete,
+  running,
+  currentRun,
+  nodeOutputLookupSpec,
   showModal,
 }: ConfigureGatePanelProps) {
   const nodeLike: BookendNodeLike = {
@@ -48,9 +58,10 @@ export default function ConfigureGatePanel({
   const canContinue = isMiddleNode
     ? canContinueMiddleNode(nodeLike)
     : canContinueBookendNode(nodeLike)
-  const hint = isMiddleNode ? null : bookendContinueHint(nodeLike)
+  const hint = isMiddleNode || viewOnly ? null : bookendContinueHint(nodeLike)
 
-  const footer = gateActive ? (
+  const footer =
+    !viewOnly && gateActive ? (
     <div className="border-t bg-background p-4">
       {hint && <p className="mb-3 text-sm text-destructive">{hint}</p>}
       <Button className="w-full" disabled={!canContinue} onClick={onContinue}>
@@ -64,13 +75,16 @@ export default function ConfigureGatePanel({
       selectedNode={selectedNode}
       onClose={onClose}
       onTextChange={onTextChange}
-      editMode
+      editMode={!viewOnly}
       setNodes={setNodes}
       graphContext={graphContext}
       showModal={showModal}
-      onDelete={isMiddleNode ? onDelete : undefined}
+      running={running}
+      currentRun={currentRun}
+      nodeOutputLookupSpec={nodeOutputLookupSpec}
+      onDelete={!viewOnly && isMiddleNode ? onDelete : undefined}
       skipDeleteConfirmation={isMiddleNode}
-      allowClose={!gateActive}
+      allowClose={viewOnly || !gateActive}
       footer={footer}
     />
   )

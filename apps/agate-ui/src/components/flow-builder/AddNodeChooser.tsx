@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import {
   categoryHeading,
+  countScaffoldNodeTypes,
+  shouldShowChooserSearch,
   type CompatibleNodeEntry,
   type CompatibleNextNodesResult,
 } from '@/lib/nodeCompatibility'
@@ -74,6 +76,7 @@ export default function AddNodeChooser({
   )
 
   const grouped = useMemo(() => groupRows(filteredRows), [filteredRows])
+  const showSearch = shouldShowChooserSearch(countScaffoldNodeTypes())
 
   useEffect(() => {
     if (!open) {
@@ -121,18 +124,20 @@ export default function AddNodeChooser({
         <DialogHeader className="space-y-1 border-b px-4 py-4">
           <DialogTitle>Add a step</DialogTitle>
           <DialogDescription>Choose what happens next in your flow.</DialogDescription>
-          <div className="relative pt-2">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Search steps…"
-              className="pl-9"
-              aria-label="Search steps"
-            />
-          </div>
+          {showSearch && (
+            <div className="relative pt-2">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Search steps…"
+                className="pl-9"
+                aria-label="Search steps"
+              />
+            </div>
+          )}
         </DialogHeader>
 
         <div ref={listRef} className="max-h-[50vh] overflow-y-auto px-2 py-2" role="listbox">

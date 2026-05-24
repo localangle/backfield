@@ -30,8 +30,17 @@ const CATEGORY_HEADINGS: Record<string, string> = {
   input: 'Input',
 }
 
-export function categoryHeading(category: string): string {
-  return CATEGORY_HEADINGS[category] ?? category.replace(/_/g, ' ')
+/** Show search in the "+" chooser when the scaffold node catalog exceeds this count. */
+export const CHOOSER_SEARCH_NODE_THRESHOLD = 8
+
+export function shouldShowChooserSearch(scaffoldNodeTypeCount: number): boolean {
+  return scaffoldNodeTypeCount > CHOOSER_SEARCH_NODE_THRESHOLD
+}
+
+export function countScaffoldNodeTypes(): number {
+  return nodeMetadata.filter(
+    (meta) => meta.enabled !== false && !isBookendType(String(meta.type)),
+  ).length
 }
 
 function isBookendType(type: string): boolean {
@@ -40,6 +49,10 @@ function isBookendType(type: string): boolean {
     (OUTPUT_BOOKEND_TYPES as readonly string[]).includes(type) ||
     type === 'S3Output'
   )
+}
+
+export function categoryHeading(category: string): string {
+  return CATEGORY_HEADINGS[category] ?? category.replace(/_/g, ' ')
 }
 
 function typesCompatible(outputType: string, inputType: string): boolean {

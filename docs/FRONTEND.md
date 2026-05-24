@@ -36,7 +36,7 @@ See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) for the full cross-repo map. Adding a n
 
 ## Agate UI responsibilities
 
-- Render the flowbuilder and run experience.
+- Render the **guided flow builder** and run experience (`/flow/new`, `/flow/:id/edit`, `/flow/:id`).
 - Own browser-facing API access through `src/lib/api.ts`.
 - Consume generated node registry output from `src/nodes/registry.ts`.
 - Keep page and component code readable, explicit, and easy to scan.
@@ -48,6 +48,59 @@ See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) for the full cross-repo map. Adding a n
 - **Processed item JSON tab:** when the API returns **`reviewed_output`** (saved place or story review), the tab defaults to **Reviewed**; **Original** shows immutable run **`output`**. A single **Download** button exports whichever version is selected. When there is no reviewed output, only original output is shown.
 - **Processed item Review (run item):** On wide viewports the **Places** tab uses a **viewport-capped two-column band**—a **Review and edit places** heading and short instructions above **story text** on the left (scrolls inside the pane) and a **compact map + geocoded-places table** on the right so the main page rarely needs vertical scroll. **Geocoded places** render in a dense table (name, type, address, **Actions**) for every merged model and user-added row, including **needs review** places with no map geography. Selecting a row highlights the story and zooms the map when geometry exists. The name-column source pill shows **No geography** when the row has no drawable geometry (failed geocode, cleared geometry, region-mismatch QA without a pin); otherwise it reflects **`geocode.geocode_type`** (and **`confidence.source`** when present). Assigning or changing geography on the map saves **`geocode_type: manual`** and clears model QA flags on the overlay patch. **Open Stylebook place**, **Adopt for Stylebook** (only when server **`geometry_differs`** and the story place has saved geography), **Find on map** (shown for rows with no drawable geography), and **Remove from story** (removes the row from review, soft-deletes mentions for this article; when no other stories use the saved place, unlinks from the catalog and deletes the substrate without adding an empty **candidates** row) live in **Actions**. Use **Stylebook** in user-facing copy (not “catalog”). The black **Edit** button on a selected place opens explicit **Save** / **Cancel** in the map toolbar (upper right), with add/clear geography tools on the left; the geocoded-places table is hidden while editing and the map expands into that space. While editing, the right pane uses **Map** and **Place details** tabs so the map keeps full height; **Place details** edits label, type (PlaceExtract taxonomy dropdown), formatted address, mentions in story, and role in story. The review band is slightly taller while editing. Review-only rows save to the run overlay; persisted rows save via Stylebook API to the story place (same **Save** label). Linked persisted rows show a notice under the map that Stylebook does not change until adopt. The map and merge lane use **geocoded** place rows when present (see `docs/API.md` → merged baseline and review enrichment); the **Visualizations** tab does **not** repeat a second locations map for Geocode nodes.
 - **Processed item add place:** In the article pane, selecting story text shows a contextual **Add place** action and an accessible fallback button. The selected sentence or paragraph is locked into the right-side add inspector as the source passage; users can choose **Change selection** before saving. The text step requires **Place name**, **Type** (existing PlaceExtract taxonomy with human-readable labels), and **Mention in the story**. When the item has a linked saved story article (`article_id` from substrate context or upstream node output), continuing saves a normal story place through Stylebook API with no geography yet, appends a `locations.user_added` overlay row, refreshes the places list so the row appears as **Needs geography**, then opens the same map/details editor used by existing add/replace geography. When there is story text but no linked article (typical **JSON Output** runs without **Stylebook Output**), continuing saves the place in the review overlay only (same list and map editor flow; not added to the location catalog until a saved article exists). Map saves for user-added places write geometry into ``locations.user_added`` (and mirrored ``by_anchor`` for preview); reviewed JSON materializes those coordinates onto ``json_output.consolidated.places`` when that is the only places bucket on the item. **Finish later** is represented by closing/canceling the map edit and resuming later from **Find on map** in the places table.
+
+## Guided flow builder (Agate UI)
+
+All create, edit, and run routes share one guided builder (`GuidedFlowBuilder.tsx` + `components/flow-builder/`). There is **no left node palette**, **no drag-to-connect**, and **no manual connection handles** on the canvas (`.guided-flow-canvas` hides React Flow handles in `index.css`).
+
+### Stepper and bookends
+
+- Three steps: **Where content comes in** → **Where results go** → **Build your flow** (`FlowStepper`, `flowBuilderSteps.ts`).
+- **New flows** (`/flow/new`) start on the input step; **edit** (`/flow/:id/edit`) and **run view** (`/flow/:id`) open on **Build your flow** with bookends already complete.
+- Input types: Text, JSON, S3. Output types: JSON Output, Stylebook Output (`BookendChooser`, `flowBuilderDefaults.ts`).
+- **Continue** on each bookend step is gated until required fields pass (`ConfigureGatePanel` + `canContinueBookendNode`).
+- Changing a bookend **type** when middle steps exist shows a plain-language confirm via `useAppMessage`; confirm clears middle steps, cancel keeps the graph.
+
+### Scaffold (“+” chain)
+
+- Middle steps are added only via **+** on nodes (not on the output bookend) and **+** on serial edges (`GuidedFlowCanvas`, `AddNodeChooser`).
+- Compatibility filtering uses synced `nodeMetadata` (`nodeCompatibility.ts`: port types + transitive `requiredUpstreamNodes`).
+- **ConfigureGatePanel** opens after add; other **+** affordances stay disabled until **Continue**.
+- Parallel branches fan vertically; serial steps extend horizontally (`flowGraphModel.ts` layout). **Tidy layout** recomputes positions.
+- Middle steps can be deleted with confirmation; the model rewires tips to output (`deleteMiddleNode`).
+- **Search** in the **+** chooser appears only when the scaffold node catalog exceeds **eight** types (`shouldShowChooserSearch` in `nodeCompatibility.ts`); with the current catalog, the list is short enough that search stays hidden.
+
+### Run view vs edit
+
+- **Run view** (`RunGraph.tsx`) embeds the guided builder in **read-only** mode: stepper navigation and node panels work; **+**, delete, bookend change, and tidy layout are off until **Edit flow**.
+- **Run flow** starts a run without entering edit mode; run output appears in `NodePanel` / `RunPanel`.
+- **Edit flow** takes a snapshot; **Cancel** restores it; **Save** uses shared `validateGraphForSave` and `paramsForGraphSave`.
+
+### UX reference patterns
+
+Patterns borrowed from other products (behavioral parity, not visual clone):
+
+| Pattern | Reference | Backfield |
+|--------|-----------|-----------|
+| **+** on nodes / edges | n8n | Serial edge insert + node toolbar **+**; hidden in read-only run view |
+| Node creator search | n8n | Deferred in **+** chooser until catalog > 8 types |
+| Read-only hides add controls | n8n | `getGuidedFlowCapabilities({ readOnly })` |
+| Tidy / auto layout | n8n | **Tidy layout** on scaffold |
+| Source / destination bookends first | Unstructured | Input → Output → Scaffold stepper |
+| **+** on DAG | Unstructured | Branch and serial **+** on guided canvas |
+| Valid layout before run | Unstructured | Save validation + single bookend rules |
+
+**Out of scope (v1):** Unstructured-style **“Build it For Me”** one-click preset workflows — consider a follow-up quick-start template slice.
+
+### Key modules
+
+| Module | Role |
+|--------|------|
+| `pages/GuidedFlowBuilder.tsx` | Orchestration: stepper, bookends, scaffold state, save, run embed |
+| `pages/RunGraph.tsx` | Run header, edit unlock, run polling; embeds guided builder |
+| `lib/flowGraphModel.ts` | Topology, layout, hydrate/save spec |
+| `lib/flowValidation.ts` | Shared save validation |
+| `lib/guidedFlowCapabilities.ts` | Read-only vs edit affordances |
 
 ## Auth and API bases (Agate UI)
 
@@ -101,7 +154,7 @@ See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) for the full cross-repo map. Adding a n
 - `apps/agate-ui/scripts/sync-nodes.js` copies UI files into `apps/agate-ui/src/nodes`.
 - The sync script also generates `src/nodes/registry.ts`.
 - Avoid hand-editing generated registry output unless the sync flow itself is changing.
-- The default Agate palette includes `TextInput`, `JSONInput`, `S3Input`, `PlaceExtract`, `GeocodeAgent`, and `Output`. `PlaceExtract` performs editorially relevant place extraction in a **single** LLM call; there is no separate Place Filter node.
+- The default Agate scaffold includes **PlaceExtract** and **GeocodeAgent** middle nodes plus bookend types synced from `agate_nodes`. There is no free-form palette; users add steps through the guided **+** chooser on `/flow/new`, edit, and run (edit mode).
 - **GeocodeAgent (catalog):** when **Use cache** is enabled, the panel requires a **catalog** selection (persisted as integer `**stylebook_id`** in node params, aligned with graph validation). New nodes dropped onto the canvas inherit the current project workspace’s catalog id when available; cache-off flows omit `**stylebook_id**`. Legacy `**stylebookId**` (camelCase) in saved graphs is still accepted for validation until edited.
 - **LLM model pickers** (`PlaceExtract`, `GeocodeAgent`, Stylebook Output adjudication when AI-assisted): dropdown options come only from Core API `**GET /v1/projects/{id}/ai-models/effective`** (via `fetchProjectAiModels` on the graph shell). Built-in preset model lists were removed from those panels—new nodes inherit empty model fields until the catalog loads and the panel assigns the first available row (or users pick explicitly). The trigger and list show the catalog `**name**` only (no appended technical id); persisted params still store `**provider_model_id**` / config id as today. `**GeocodeAgent**` exposes three picks: **routing** (post-cache strategy), **geographic reasoning** (external geocode prompts such as place search helpers and bbox estimation), and **evaluation** (ambiguous hit scoring plus consolidated **location** display lines). For **city**, **town**, **county**, and **state** rows, the display line stays at municipality/admin scope (e.g. `Chicago, IL`)—story neighborhoods are not inserted into city labels; use the separate neighborhood row for that geography.
 - **Project → Models tab:** uses `**GET …/ai-models/effective?include_disabled=true`** so editors can turn models off for this project (`**PUT …/availability**`) or paste a project-only provider key (`**PUT|DELETE …/credential-override**`). Worker LLM resolution prefers that stored key when present (`catalog_runtime.resolve_llm_auth_for_model_config`).

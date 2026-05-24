@@ -52,7 +52,7 @@ type MetadataCategory = 'input' | 'enrichment' | 'extraction' | 'organization' |
 export type NodeCategory = 'input' | 'enrichment' | 'output' | 'filter' | 'geography' | 'formatting' | 'control' | 'people' | 'organization' | 'work' | 'image' | 'text'
 
 /**
- * Get the category for a node type based on the same logic as NodePalette
+ * Get the category for a node type based on scaffold node metadata categories.
  */
 export function getNodeCategory(nodeType: string): NodeCategory {
   const metadata = nodeMetadata.find(m => m.type === nodeType)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getCompatibleNextNodes } from './nodeCompatibility'
+import { getCompatibleNextNodes, shouldShowChooserSearch } from './nodeCompatibility'
 
 describe('getCompatibleNextNodes', () => {
   it('enables Place Extract and disables Geocode from Text Input ancestry', () => {
@@ -28,5 +28,12 @@ describe('getCompatibleNextNodes', () => {
     const result = getCompatibleNextNodes('TextInput', ['TextInput'])
     const geocode = result.disabled.find((e) => e.type === 'GeocodeAgent')
     expect(geocode?.reason).toBe('Requires extracted places as input.')
+  })
+})
+
+describe('chooser search threshold', () => {
+  it('defers search until the scaffold catalog exceeds eight node types', () => {
+    expect(shouldShowChooserSearch(8)).toBe(false)
+    expect(shouldShowChooserSearch(9)).toBe(true)
   })
 })

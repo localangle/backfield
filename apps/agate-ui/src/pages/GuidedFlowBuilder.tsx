@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { Node } from 'reactflow'
 
@@ -8,6 +8,7 @@ import ConfigureGatePanel from '@/components/flow-builder/ConfigureGatePanel'
 import FlowStepper from '@/components/flow-builder/FlowStepper'
 import GuidedFlowCanvas from '@/components/flow-builder/GuidedFlowCanvas'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import RunPanel from '@/components/RunPanel'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { Button } from '@/components/ui/button'
 import {
@@ -38,7 +39,18 @@ import {
   type FlowBuilderStep,
 } from '@/lib/flowBuilderSteps'
 import { getCompatibleNextNodes } from '@/lib/nodeCompatibility'
-import { createGraph, getGraph, getProject, listProjects, updateGraph, type Project } from '@/lib/api'
+import { getGuidedFlowCapabilities } from '@/lib/guidedFlowCapabilities'
+import { captureGuidedFlowSnapshot, type GuidedFlowSnapshot } from '@/lib/guidedFlowSnapshot'
+import { nodeOutputLookupFromReactFlow } from '@/lib/nodeOutputs'
+import {
+  createGraph,
+  getGraph,
+  getProject,
+  listProjects,
+  updateGraph,
+  type Project,
+  type Run,
+} from '@/lib/api'
 import { fetchProjectEffectiveAiModels } from '@/lib/core-api'
 import {
   INPUT_BOOKEND_TYPES,
@@ -100,11 +112,57 @@ function toReactFlowBookend(node: {
   }
 }
 
-export default function GuidedFlowBuilder() {
+export type GuidedFlowBuilderVariant = 'create' | 'edit' | 'run'
+
+export type GuidedFlowBuilderProps = {
+  variant?: GuidedFlowBuilderVariant
+  readOnly?: boolean
+  hideHeader?: boolean
+  running?: boolean
+  currentRun?: Run | null
+  showRunPanel?: boolean
+  onCloseRunPanel?: () => void
+  onSaved?: (graphId: string) => void
+  onGraphLoaded?: (payload: { id: string; name: string; projectId: number }) => void
+  className?: string
+}
+
+export type GuidedFlowBuilderHandle = {
+  takeSnapshot: () => void
+  restoreSnapshot: () => void
+  save: () => Promise<boolean>
+  hasNodeType: (type: string) => boolean
+  isSaving: () => boolean
+}
+
+const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderProps>(
+  function GuidedFlowBuilder(
+    {
+      variant: variantProp,
+      readOnly = false,
+      hideHeader = false,
+      running = false,
+      currentRun = null,
+      showRunPanel = false,
+      onCloseRunPanel,
+      onSaved,
+      onGraphLoaded,
+      className,
+    },
+    ref,
+  ) {
   const { showConfirm } = useAppMessage()
   const navigate = useNavigate()
   const { graphId: routeGraphId } = useParams<{ graphId: string }>()
   const [searchParams] = useSearchParams()
+  const variant: GuidedFlowBuilderVariant =
+    variantProp ?? (routeGraphId ? 'edit' : 'create')
+  const isRunVariant = variant === 'run'
+  const snapshotRef = useRef<GuidedFlowSnapshot | null>(null)
+  const capabilities = useMemo(
+    () => getGuidedFlowCapabilities({ readOnly }),
+    [readOnly],
+  )
   const [graphName, setGraphName] = useState('Untitled Flow')
   const [activeStep, setActiveStep] = useState<FlowBuilderStep>('input')
   const [completedSteps, setCompletedSteps] = useState<Set<FlowBuilderStep>>(new Set())
@@ -215,6 +273,7 @@ export default function GuidedFlowBuilder() {
         setActiveStep(getInitialEditStep())
         setSelectedNodeId(null)
         setConfigureGateActive(false)
+        onGraphLoaded?.({ id: graph.id, name: graph.name, projectId: graph.project_id })
       } catch (error) {
         console.error('Failed to load graph:', error)
         if (!cancelled) navigate('/')
@@ -228,7 +287,26 @@ export default function GuidedFlowBuilder() {
     return () => {
       cancelled = true
     }
-  }, [routeGraphId, navigate, showModal])
+  }, [routeGraphId, navigate, showModal, onGraphLoaded])
+
+  const nodeOutputLookupSpec = useMemo(() => {
+    if (!isRunVariant || !scaffoldModel) return null
+    const spec = modelToGraphSpec(scaffoldModel)
+    const flowNodes = spec.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      position: node.position,
+      data: node.params,
+    }))
+    const flowEdges = spec.edges.map((edge, index) => ({
+      id: `edge-${index}`,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle ?? undefined,
+      targetHandle: edge.targetHandle ?? undefined,
+    }))
+    return nodeOutputLookupFromReactFlow(flowNodes, flowEdges)
+  }, [isRunVariant, scaffoldModel])
 
   const flowProjectId = resolvedFlowProject?.id ?? null
   const workspaceStylebookId = resolvedFlowProject?.workspace_stylebook_id ?? null
@@ -342,16 +420,16 @@ export default function GuidedFlowBuilder() {
       setEdgeInsert(null)
       if (step === 'input' && inputNode) {
         setSelectedNodeId(inputNode.id)
-        setConfigureGateActive(!completedSteps.has('input'))
+        setConfigureGateActive(!readOnly && !completedSteps.has('input'))
       } else if (step === 'output' && outputNode) {
         setSelectedNodeId(outputNode.id)
-        setConfigureGateActive(!completedSteps.has('output'))
+        setConfigureGateActive(!readOnly && !completedSteps.has('output'))
       } else {
         setSelectedNodeId(null)
         setConfigureGateActive(false)
       }
     },
-    [completedStepsReadonly, inputNode, outputNode, completedSteps],
+    [completedStepsReadonly, inputNode, outputNode, completedSteps, readOnly],
   )
 
   const handleInputTypeSelect = useCallback(
@@ -600,104 +678,112 @@ export default function GuidedFlowBuilder() {
     })()
   }, [resetStepsAfterOutput, clearScaffold, scaffoldModel, showConfirm])
 
-  const handleSave = useCallback(() => {
-    void (async () => {
-      if (!inputNode || !outputNode) {
-        showModal({
-          title: 'Flow not ready to save',
-          description: 'Choose where content comes in and where results are saved before saving.',
-          type: 'warning',
-          confirmText: 'OK',
-          onConfirm: () => {},
-        })
-        return
-      }
-
-      const saveModel = buildSaveModel(inputNode, outputNode, scaffoldModel)
-      const draftSpec = modelToGraphSpec(saveModel)
-      const validation = validateGraphForSave({
-        nodes: draftSpec.nodes.map((node) => ({
-          id: node.id,
-          type: node.type,
-          data: node.params,
-        })),
-        edges: draftSpec.edges,
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (!inputNode || !outputNode) {
+      showModal({
+        title: 'Flow not ready to save',
+        description: 'Choose where content comes in and where results are saved before saving.',
+        type: 'warning',
+        confirmText: 'OK',
+        onConfirm: () => {},
       })
-      if (!validation.ok) {
-        showModal({
-          title: validation.title,
-          description: validation.description,
-          type: validation.severity,
-          confirmText: 'OK',
-          onConfirm: () => {},
-        })
-        return
-      }
+      return false
+    }
 
-      if (flowProjectLoading) {
-        showModal({
-          title: 'Still loading',
-          description: 'Project details for this flow are still loading. Try again in a moment.',
-          type: 'warning',
-          confirmText: 'OK',
-          onConfirm: () => {},
-        })
-        return
-      }
+    const saveModel = buildSaveModel(inputNode, outputNode, scaffoldModel)
+    const draftSpec = modelToGraphSpec(saveModel)
+    const validation = validateGraphForSave({
+      nodes: draftSpec.nodes.map((node) => ({
+        id: node.id,
+        type: node.type,
+        data: node.params,
+      })),
+      edges: draftSpec.edges,
+    })
+    if (!validation.ok) {
+      showModal({
+        title: validation.title,
+        description: validation.description,
+        type: validation.severity,
+        confirmText: 'OK',
+        onConfirm: () => {},
+      })
+      return false
+    }
 
-      if (!resolvedFlowProject) {
-        showModal({
-          title: 'No project for this flow',
-          description:
-            'Could not determine which project this flow belongs to. Open the flow from a project or try reloading the page.',
-          type: 'warning',
-          confirmText: 'OK',
-          onConfirm: () => {},
-        })
-        return
-      }
+    if (flowProjectLoading) {
+      showModal({
+        title: 'Still loading',
+        description: 'Project details for this flow are still loading. Try again in a moment.',
+        type: 'warning',
+        confirmText: 'OK',
+        onConfirm: () => {},
+      })
+      return false
+    }
 
-      try {
-        setSaving(true)
-        const graphSpec = {
-          name: graphName,
-          project_id: resolvedFlowProject.id,
-          spec: {
-            name: graphName.toLowerCase().replace(/\s+/g, '_'),
-            nodes: draftSpec.nodes.map((node) => ({
+    if (!resolvedFlowProject) {
+      showModal({
+        title: 'No project for this flow',
+        description:
+          'Could not determine which project this flow belongs to. Open the flow from a project or try reloading the page.',
+        type: 'warning',
+        confirmText: 'OK',
+        onConfirm: () => {},
+      })
+      return false
+    }
+
+    try {
+      setSaving(true)
+      const graphSpec = {
+        name: graphName,
+        project_id: resolvedFlowProject.id,
+        spec: {
+          name: graphName.toLowerCase().replace(/\s+/g, '_'),
+          nodes: draftSpec.nodes.map((node) => ({
+            id: node.id,
+            type: node.type,
+            params: paramsForGraphSave({
               id: node.id,
               type: node.type,
-              params: paramsForGraphSave({
-                id: node.id,
-                type: node.type,
-                data: node.params,
-              }),
-              position: node.position,
-            })),
-            edges: draftSpec.edges,
-          },
-        }
+              data: node.params,
+            }),
+            position: node.position,
+          })),
+          edges: draftSpec.edges,
+        },
+      }
 
-        if (existingGraphId) {
-          await updateGraph(existingGraphId, graphSpec)
-          navigate(`/flow/${existingGraphId}`)
+      if (existingGraphId) {
+        await updateGraph(existingGraphId, graphSpec)
+        if (onSaved) {
+          onSaved(existingGraphId)
         } else {
-          const graph = await createGraph(graphSpec)
+          navigate(`/flow/${existingGraphId}`)
+        }
+      } else {
+        const graph = await createGraph(graphSpec)
+        if (onSaved) {
+          onSaved(graph.id)
+        } else {
           navigate(`/flow/${graph.id}`)
         }
-      } catch (error) {
-        console.error('Failed to save graph:', error)
-        showModal({
-          title: 'Save failed',
-          description: 'Failed to save flow. Please check the console for details and try again.',
-          type: 'error',
-          confirmText: 'OK',
-          onConfirm: () => {},
-        })
-      } finally {
-        setSaving(false)
       }
-    })()
+      return true
+    } catch (error) {
+      console.error('Failed to save graph:', error)
+      showModal({
+        title: 'Save failed',
+        description: 'Failed to save flow. Please check the console for details and try again.',
+        type: 'error',
+        confirmText: 'OK',
+        onConfirm: () => {},
+      })
+      return false
+    } finally {
+      setSaving(false)
+    }
   }, [
     inputNode,
     outputNode,
@@ -708,7 +794,61 @@ export default function GuidedFlowBuilder() {
     resolvedFlowProject,
     navigate,
     showModal,
+    onSaved,
   ])
+
+  const buildSnapshot = useCallback(
+    (): GuidedFlowSnapshot =>
+      captureGuidedFlowSnapshot({
+        graphName,
+        activeStep,
+        completedSteps: [...completedSteps],
+        inputNode,
+        outputNode,
+        scaffoldModel,
+        selectedNodeId,
+        configureGateActive,
+      }),
+    [
+      graphName,
+      activeStep,
+      completedSteps,
+      inputNode,
+      outputNode,
+      scaffoldModel,
+      selectedNodeId,
+      configureGateActive,
+    ],
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      takeSnapshot: () => {
+        snapshotRef.current = buildSnapshot()
+      },
+      restoreSnapshot: () => {
+        const snap = snapshotRef.current
+        if (!snap) return
+        setGraphName(snap.graphName)
+        setActiveStep(snap.activeStep)
+        setCompletedSteps(new Set(snap.completedSteps))
+        setInputNode(snap.inputNode)
+        setOutputNode(snap.outputNode)
+        setScaffoldModel(snap.scaffoldModel)
+        setSelectedNodeId(snap.selectedNodeId)
+        setConfigureGateActive(snap.configureGateActive)
+      },
+      save: () => handleSave(),
+      hasNodeType: (type: string) => {
+        if (inputNode?.type === type) return true
+        if (outputNode?.type === type) return true
+        return scaffoldModel?.middleNodes.some((node) => node.type === type) ?? false
+      },
+      isSaving: () => saving,
+    }),
+    [buildSnapshot, handleSave, inputNode, outputNode, scaffoldModel, saving],
+  )
 
   const handleAddNodeClick = useCallback((parentNodeId: string) => {
     if (configureGateActive) return
@@ -803,12 +943,21 @@ export default function GuidedFlowBuilder() {
   )
 
   const handleNodeDoubleClick = useCallback((node: Node) => {
-    if (activeStep !== 'scaffold') return
+    if (readOnly || activeStep !== 'scaffold') return
     const isMiddle = scaffoldModel?.middleNodes.some((n) => n.id === node.id)
     if (!isMiddle) return
     setSelectedNodeId(node.id)
     setConfigureGateActive(false)
-  }, [activeStep, scaffoldModel])
+  }, [activeStep, scaffoldModel, readOnly])
+
+  const handleNodeClick = useCallback(
+    (node: Node) => {
+      if (!readOnly || activeStep !== 'scaffold') return
+      setSelectedNodeId(node.id)
+      setConfigureGateActive(false)
+    },
+    [readOnly, activeStep],
+  )
 
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null
@@ -825,25 +974,33 @@ export default function GuidedFlowBuilder() {
     selectedNodeId != null &&
     scaffoldModel?.middleNodes.some((n) => n.id === selectedNodeId) === true
 
-  const showInputChooser = activeStep === 'input' && inputNode == null
+  const showInputChooser = !readOnly && activeStep === 'input' && inputNode == null
   const showInputCanvas = activeStep === 'input' && inputNode != null
-  const showOutputChooser = activeStep === 'output' && outputNode == null
+  const showOutputChooser = !readOnly && activeStep === 'output' && outputNode == null
   const showOutputCanvas = activeStep === 'output' && outputNode != null
 
   const showBookendConfigurePanel =
     selectedNode &&
     (activeStep === 'input' || activeStep === 'output') &&
-    (configureGateActive || completedSteps.has(activeStep))
+    (readOnly || configureGateActive || completedSteps.has(activeStep))
 
   const showScaffoldConfigurePanel =
-    selectedNode && activeStep === 'scaffold' && isMiddleSelected && configureGateActive
+    selectedNode &&
+    activeStep === 'scaffold' &&
+    isMiddleSelected &&
+    configureGateActive &&
+    !readOnly
 
   const showScaffoldReviewPanel =
     selectedNode &&
     activeStep === 'scaffold' &&
     isMiddleSelected &&
-    !configureGateActive &&
+    (readOnly || !configureGateActive) &&
     selectedNodeId != null
+
+  const rootClassName = hideHeader
+    ? `flex min-h-0 flex-1 flex-col ${className ?? ''}`
+    : `flex h-screen flex-col ${className ?? ''}`
 
   const handleConfigureContinue =
     activeStep === 'input'
@@ -854,14 +1011,21 @@ export default function GuidedFlowBuilder() {
 
   if (graphLoading) {
     return (
-      <div className="flex h-screen items-center justify-center text-muted-foreground">
+      <div
+        className={
+          hideHeader
+            ? 'flex flex-1 items-center justify-center text-muted-foreground'
+            : 'flex h-screen items-center justify-center text-muted-foreground'
+        }
+      >
         Loading flow…
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className={rootClassName}>
+      {!hideHeader && (
       <div className="sticky top-0 z-10 border-b bg-background">
         <div className="container mx-auto flex items-center justify-between px-4 py-4">
           <p className="flex items-center gap-4">
@@ -883,7 +1047,7 @@ export default function GuidedFlowBuilder() {
             </span>
           </p>
           <Button
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             disabled={saving || !inputNode || !outputNode}
           >
             <Save className="mr-2 h-4 w-4" />
@@ -891,6 +1055,7 @@ export default function GuidedFlowBuilder() {
           </Button>
         </div>
       </div>
+      )}
 
       <FlowStepper
         activeStep={activeStep}
@@ -909,7 +1074,7 @@ export default function GuidedFlowBuilder() {
                   Choose how articles or content enter this flow.
                 </p>
               </div>
-              {inputNode && (
+              {inputNode && capabilities.allowBookendEdit && (
                 <Button variant="outline" size="sm" onClick={handleChangeInputSource}>
                   Change source
                 </Button>
@@ -937,7 +1102,7 @@ export default function GuidedFlowBuilder() {
                   Choose where this flow saves its results.
                 </p>
               </div>
-              {outputNode && (
+              {outputNode && capabilities.allowBookendEdit && (
                 <Button variant="outline" size="sm" onClick={handleChangeOutputDestination}>
                   Change destination
                 </Button>
@@ -967,13 +1132,22 @@ export default function GuidedFlowBuilder() {
             <div className="relative min-h-0 flex-1">
               <GuidedFlowCanvas
                 scaffoldModel={scaffoldModel}
-                showEmptyMiddleCta={scaffoldModel.middleNodes.length === 0}
-                allowAddNodes={!configureGateActive}
-                onAddNodeClick={handleAddNodeClick}
-                onEdgeInsertClick={handleEdgeInsertClick}
-                onTidyLayout={handleTidyLayout}
-                onNodeDoubleClick={handleNodeDoubleClick}
+                readOnly={readOnly}
+                showEmptyMiddleCta={!readOnly && scaffoldModel.middleNodes.length === 0}
+                allowAddNodes={capabilities.allowAddNodes && !configureGateActive}
+                onAddNodeClick={capabilities.allowAddNodes ? handleAddNodeClick : undefined}
+                onEdgeInsertClick={capabilities.allowEdgeInsert ? handleEdgeInsertClick : undefined}
+                onTidyLayout={capabilities.allowTidyLayout ? handleTidyLayout : undefined}
+                onNodeClick={readOnly ? handleNodeClick : undefined}
+                onNodeDoubleClick={!readOnly ? handleNodeDoubleClick : undefined}
               />
+              {showRunPanel && onCloseRunPanel && (
+                <RunPanel
+                  onClose={onCloseRunPanel}
+                  running={running}
+                  currentRun={currentRun}
+                />
+              )}
             </div>
           </div>
         )}
@@ -981,7 +1155,7 @@ export default function GuidedFlowBuilder() {
         {(showBookendConfigurePanel || showScaffoldConfigurePanel) && selectedNode && (
           <ConfigureGatePanel
             selectedNode={selectedNode}
-            gateActive={configureGateActive}
+            gateActive={configureGateActive && !readOnly}
             onContinue={handleConfigureContinue}
             onClose={() => {
               setSelectedNodeId(null)
@@ -991,7 +1165,13 @@ export default function GuidedFlowBuilder() {
             setNodes={setNodes}
             graphContext={graphContext}
             isMiddleNode={isMiddleSelected}
-            onDelete={isMiddleSelected ? handleDeleteMiddleNode : undefined}
+            viewOnly={readOnly}
+            onDelete={
+              capabilities.allowDelete && isMiddleSelected ? handleDeleteMiddleNode : undefined
+            }
+            running={running}
+            currentRun={currentRun}
+            nodeOutputLookupSpec={nodeOutputLookupSpec}
             showModal={showModal}
           />
         )}
@@ -1005,14 +1185,18 @@ export default function GuidedFlowBuilder() {
             setNodes={setNodes}
             graphContext={graphContext}
             isMiddleNode
-            onDelete={handleDeleteMiddleNode}
+            viewOnly={readOnly}
+            onDelete={capabilities.allowDelete ? handleDeleteMiddleNode : undefined}
+            running={running}
+            currentRun={currentRun}
+            nodeOutputLookupSpec={nodeOutputLookupSpec}
             showModal={showModal}
           />
         )}
       </div>
 
       <AddNodeChooser
-        open={addChooserOpen}
+        open={addChooserOpen && capabilities.allowAddNodes}
         onOpenChange={setAddChooserOpen}
         compatibility={addNodeCompatibility}
         onSelect={handleAddNodeTypeSelect}
@@ -1031,4 +1215,7 @@ export default function GuidedFlowBuilder() {
       )}
     </div>
   )
-}
+},
+)
+
+export default GuidedFlowBuilder
