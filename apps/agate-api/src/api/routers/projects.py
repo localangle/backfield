@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import statistics
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -201,11 +202,11 @@ class ProjectStatsOut(BaseModel):
     runs_succeeded: int = 0
     runs_in_progress: int = 0
     runs_failed: int = 0
-    avg_duration_ms_per_run: float | None = None
-    avg_duration_ms_per_item: float | None = None
-    avg_estimated_ai_cost_per_run: Decimal | None = None
-    avg_estimated_ai_cost_currency: str | None = None
-    avg_estimated_ai_cost_incomplete: bool = False
+    median_duration_ms_per_run: float | None = None
+    median_duration_ms_per_item: float | None = None
+    median_estimated_ai_cost_per_run: Decimal | None = None
+    median_estimated_ai_cost_currency: str | None = None
+    median_estimated_ai_cost_incomplete: bool = False
 
 
 def _accumulate_ai_cost_rows(rows: list[BackfieldAiCallRecord]) -> tuple[Decimal, bool, str, int]:
@@ -256,10 +257,22 @@ def _rollup_project_ai_cost(session: Session, project_id: int) -> tuple[Decimal,
     return _accumulate_ai_cost_rows(_project_ai_cost_rows(session, project_id))
 
 
-def _avg_terminal_processed_item_duration_ms(
+def _median_ms(durations_ms: list[float]) -> float | None:
+    if not durations_ms:
+        return None
+    return float(statistics.median(durations_ms))
+
+
+def _median_decimal(values: list[Decimal]) -> Decimal | None:
+    if not values:
+        return None
+    return Decimal(str(statistics.median([float(v) for v in values])))
+
+
+def _median_terminal_processed_item_duration_ms(
     session: Session, succeeded_run_ids: list[str]
 ) -> float | None:
-    """Mean wall time per ``agate_processed_item`` row (terminal statuses only).
+    """Median wall time per ``agate_processed_item`` row (terminal statuses only).
 
     Returns ``None`` when there are no such rows (single-graph runs without batch items).
     """
@@ -280,9 +293,40 @@ def _avg_terminal_processed_item_duration_ms(
         if ms < 0:
             ms = 0.0
         durs.append(ms)
-    if not durs:
-        return None
-    return sum(durs) / len(durs)
+    return _median_ms(durs)
+
+
+def _per_run_ai_cost_totals(
+    session: Session,
+    project_id: int,
+    run_ids: frozenset[str],
+) -> tuple[list[Decimal], bool, str]:
+    """Total tracked LLM cost per run id (zeros for succeeded runs with no rows)."""
+    if not run_ids:
+        return [], False, "USD"
+    totals: dict[str, Decimal] = {rid: Decimal("0") for rid in run_ids}
+    incomplete = False
+    currency = "USD"
+    rows = list(
+        session.exec(
+            select(BackfieldAiCallRecord).where(
+                BackfieldAiCallRecord.project_id == project_id,
+                BackfieldAiCallRecord.run_id.in_(list(run_ids)),
+            )
+        ).all()
+    )
+    for row in rows:
+        currency = str(row.currency or "USD")
+        rid = row.run_id
+        if rid not in totals:
+            continue
+        if row.estimated_cost is not None:
+            totals[rid] += row.estimated_cost
+        else:
+            incomplete = True
+        if row.cost_estimate_incomplete:
+            incomplete = True
+    return list(totals.values()), incomplete, currency
 
 
 def _rollup_project_ai_cost_for_run_ids(
@@ -337,20 +381,18 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         if ms < 0:
             ms = 0.0
         dur_success.append(ms)
-    avg_run_duration = sum(dur_success) / len(dur_success) if dur_success else None
+    median_run_duration = _median_ms(dur_success)
 
-    avg_item_duration = _avg_terminal_processed_item_duration_ms(session, succeeded_ids)
-    if avg_item_duration is None:
-        avg_item_duration = avg_run_duration
+    median_item_duration = _median_terminal_processed_item_duration_ms(session, succeeded_ids)
+    if median_item_duration is None:
+        median_item_duration = median_run_duration
 
     pid = int(p.id) if p.id is not None else 0
     succeeded_frozen = frozenset(succeeded_ids)
-    total_ai, ai_incomplete, ai_currency, _n = _rollup_project_ai_cost_for_run_ids(
+    per_run_costs, ai_incomplete, ai_currency = _per_run_ai_cost_totals(
         session, pid, succeeded_frozen
     )
-    avg_ai: Decimal | None = None
-    if runs_succeeded > 0:
-        avg_ai = total_ai / Decimal(runs_succeeded)
+    median_ai = _median_decimal(per_run_costs)
 
     return ProjectStatsOut(
         total_runs=total_runs,
@@ -358,11 +400,11 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         runs_succeeded=runs_succeeded,
         runs_in_progress=runs_in_progress,
         runs_failed=runs_failed,
-        avg_duration_ms_per_run=avg_run_duration,
-        avg_duration_ms_per_item=avg_item_duration,
-        avg_estimated_ai_cost_per_run=avg_ai,
-        avg_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
-        avg_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
+        median_duration_ms_per_run=median_run_duration,
+        median_duration_ms_per_item=median_item_duration,
+        median_estimated_ai_cost_per_run=median_ai,
+        median_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
+        median_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
     )
 
 

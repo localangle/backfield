@@ -366,10 +366,12 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
     )
 
   const systemPromptSection = (
-          <div>
-            <p className="text-sm text-muted-foreground mb-4">Other settings for this project.</p>
+          <div className="border-t border-border pt-10">
             <div className="mb-4">
-              <h3 className="text-lg font-semibold">System Prompt</h3>
+              <h3 className="text-lg font-semibold">System prompt</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Used as the system message for all LLM calls in this project.
+              </p>
             </div>
 
             {editingSystemPrompt ? (
@@ -377,7 +379,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
                 <CardContent className="p-4">
                   <div className="space-y-4">
                     <div>
-                      <Label htmlFor="system-prompt">System Prompt</Label>
+                      <Label htmlFor="system-prompt">System prompt</Label>
                       <textarea
                         id="system-prompt"
                         value={systemPrompt}
@@ -417,7 +419,7 @@ const ProjectSettings = forwardRef<ProjectSettingsHandle, ProjectSettingsProps>(
                     <div>
                       {systemPrompt ? (
                         <div>
-                          <h4 className="font-medium mb-2">Current System Prompt</h4>
+                          <h4 className="font-medium mb-2">Current system prompt</h4>
                           <div className="bg-muted p-3 rounded-md text-sm whitespace-pre-wrap">
                             {systemPrompt}
                           </div>
