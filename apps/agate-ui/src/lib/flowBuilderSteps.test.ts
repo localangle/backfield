@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { canContinueBookendNode, canNavigateToStep } from './flowBuilderSteps'
+import {
+  canContinueBookendNode,
+  canNavigateToStep,
+  completedStepsForEdit,
+  getInitialEditStep,
+} from './flowBuilderSteps'
 
 describe('canNavigateToStep', () => {
   it('allows only Input on a new flow', () => {
@@ -66,5 +71,15 @@ describe('canContinueBookendNode', () => {
         data: { stylebook_id: null, canonicalization_mode: 'rules' },
       }),
     ).toBe(true)
+  })
+})
+
+describe('edit mode defaults', () => {
+  it('opens existing flows on the scaffold step', () => {
+    expect(getInitialEditStep()).toBe('scaffold')
+  })
+
+  it('marks input and output complete when editing', () => {
+    expect(completedStepsForEdit()).toEqual(new Set(['input', 'output']))
   })
 })

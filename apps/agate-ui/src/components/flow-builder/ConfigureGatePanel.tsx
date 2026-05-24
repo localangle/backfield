@@ -17,6 +17,7 @@ type ConfigureGatePanelProps = {
   setNodes: (nodes: Node[] | ((nodes: Node[]) => Node[])) => void
   graphContext?: GraphPanelContext | null
   isMiddleNode?: boolean
+  onDelete?: (nodeId: string) => void
   showModal?: (config: {
     title: string
     description: string
@@ -37,6 +38,7 @@ export default function ConfigureGatePanel({
   setNodes,
   graphContext,
   isMiddleNode = false,
+  onDelete,
   showModal,
 }: ConfigureGatePanelProps) {
   const nodeLike: BookendNodeLike = {
@@ -66,6 +68,8 @@ export default function ConfigureGatePanel({
       setNodes={setNodes}
       graphContext={graphContext}
       showModal={showModal}
+      onDelete={isMiddleNode ? onDelete : undefined}
+      skipDeleteConfirmation={isMiddleNode}
       allowClose={!gateActive}
       footer={footer}
     />

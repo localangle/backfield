@@ -48,6 +48,8 @@ interface NodePanelProps {
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
   allowClose?: boolean
   footer?: ReactNode
+  /** When true, onDelete runs immediately (caller handles confirmation). */
+  skipDeleteConfirmation?: boolean
   showModal?: (config: {
     title: string
     description: string
@@ -74,6 +76,7 @@ export default function NodePanel({
   nodeOutputLookupSpec,
   allowClose = true,
   footer,
+  skipDeleteConfirmation = false,
 }: NodePanelProps) {
   const { showConfirm } = useAppMessage()
   if (!selectedNode) return null
@@ -94,6 +97,10 @@ export default function NodePanel({
       : null
   
   const handleDelete = () => {
+    if (skipDeleteConfirmation) {
+      onDelete?.(selectedNode.id)
+      return
+    }
     if (showModal) {
       showModal({
         title: 'Delete Node',

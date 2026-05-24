@@ -49,3 +49,12 @@ export function bookendContinueHint(node: BookendNodeLike): string | null {
   }
   return null
 }
+
+/** Edit mode opens on the scaffold step with bookends already complete. */
+export function getInitialEditStep(): FlowBuilderStep {
+  return 'scaffold'
+}
+
+export function completedStepsForEdit(): Set<FlowBuilderStep> {
+  return new Set(['input', 'output'])
+}

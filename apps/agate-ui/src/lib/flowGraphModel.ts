@@ -182,6 +182,76 @@ export function insertBetween(
   return insertAfter(model, sourceId, newNode)
 }
 
+/** Remove a middle node and rewire branch children or serial links to the parent. */
+export function deleteMiddleNode(model: FlowGraphModel, nodeId: string): FlowGraphModel {
+  if (nodeId === model.inputNode.id || nodeId === model.outputNode.id) {
+    throw new Error('Cannot delete bookend nodes')
+  }
+  if (!model.middleNodes.some((n) => n.id === nodeId)) {
+    throw new Error(`Unknown middle node: ${nodeId}`)
+  }
+
+  const branchParent = findBranchParentId(model, nodeId)
+  const serialParent = findSerialParentId(model, nodeId)
+  const serialChild = model.serialLinks[nodeId]
+  const parallelChildren = [...(model.branchChildren[nodeId] ?? [])]
+
+  const branchChildren: Record<string, string[]> = { ...model.branchChildren }
+  const serialLinks: Record<string, string> = { ...model.serialLinks }
+
+  delete branchChildren[nodeId]
+  delete serialLinks[nodeId]
+
+  if (serialParent && serialLinks[serialParent] === nodeId) {
+    delete serialLinks[serialParent]
+  }
+
+  const downstream: string[] = []
+  if (serialChild) downstream.push(serialChild)
+  downstream.push(...parallelChildren)
+
+  const attachParent = serialParent ?? branchParent
+  if (attachParent && downstream.length > 0) {
+    if (serialParent) {
+      serialLinks[serialParent] = downstream[0]
+      if (downstream.length > 1) {
+        const existing = branchChildren[attachParent] ?? []
+        branchChildren[attachParent] = [...existing, ...downstream.slice(1)]
+      }
+    } else if (branchParent) {
+      const originalList = model.branchChildren[branchParent] ?? []
+      const idx = originalList.indexOf(nodeId)
+      const nextList = originalList.filter((id) => id !== nodeId)
+      if (idx >= 0) {
+        nextList.splice(idx, 0, ...downstream)
+      } else {
+        nextList.push(...downstream)
+      }
+      if (nextList.length > 0) {
+        branchChildren[branchParent] = nextList
+      } else {
+        delete branchChildren[branchParent]
+      }
+    }
+  } else if (branchParent) {
+    const nextList = (branchChildren[branchParent] ?? []).filter((id) => id !== nodeId)
+    if (nextList.length > 0) {
+      branchChildren[branchParent] = nextList
+    } else {
+      delete branchChildren[branchParent]
+    }
+  }
+
+  const middleNodes = model.middleNodes.filter((n) => n.id !== nodeId)
+
+  return applyLayoutToModel({
+    ...model,
+    middleNodes,
+    branchChildren,
+    serialLinks,
+  })
+}
+
 /** @deprecated Use insertAfter for serial extension or addSiblingBranch for parallel branches. */
 export function addSerialChild(
   model: FlowGraphModel,
@@ -353,5 +423,234 @@ export function updateMiddleNode(
   return {
     ...model,
     middleNodes: model.middleNodes.map((n) => (n.id === nodeId ? updater(n) : n)),
+  }
+}
+
+export type SavedGraphSpecNode = {
+  id: string
+  type: string
+  params?: Record<string, unknown>
+  position?: { x: number; y: number }
+}
+
+export type SavedGraphSpecEdge = {
+  source: string
+  target: string
+  sourceHandle?: string | null
+  targetHandle?: string | null
+}
+
+export type SavedGraphSpec = {
+  nodes: SavedGraphSpecNode[]
+  edges?: SavedGraphSpecEdge[]
+}
+
+export type HydrateFromSpecFailure = {
+  ok: false
+  title: string
+  description: string
+}
+
+export type HydrateFromSpecResult = { ok: true; model: FlowGraphModel } | HydrateFromSpecFailure
+
+const LAYOUT_Y_EPSILON = 2
+
+function specNodeToFlowNode(node: SavedGraphSpecNode): FlowGraphNode {
+  return {
+    id: node.id,
+    type: node.type,
+    data: { ...(node.params ?? {}) },
+    position: node.position,
+  }
+}
+
+export function isMiddleNodeId(model: FlowGraphModel, nodeId: string): boolean {
+  return model.middleNodes.some((n) => n.id === nodeId)
+}
+
+/** Remove all middle nodes and internal edges; bookends are preserved. */
+export function clearMiddleNodes(model: FlowGraphModel): FlowGraphModel {
+  return applyLayoutToModel({
+    ...model,
+    middleNodes: [],
+    branchChildren: {},
+    serialLinks: {},
+  })
+}
+
+function classifyOutgoingEdges(
+  sourceId: string,
+  inputId: string,
+  targets: string[],
+  positions: Map<string, { x: number; y: number }>,
+): { serial?: string; branch: string[] } {
+  const uniqueTargets = [...new Set(targets)]
+  if (uniqueTargets.length === 0) {
+    return { branch: [] }
+  }
+  if (sourceId === inputId) {
+    return { branch: uniqueTargets }
+  }
+  if (uniqueTargets.length === 1) {
+    return { serial: uniqueTargets[0], branch: [] }
+  }
+
+  const parentY = positions.get(sourceId)?.y ?? 0
+  const sameRow = uniqueTargets.filter(
+    (targetId) => Math.abs((positions.get(targetId)?.y ?? 0) - parentY) <= LAYOUT_Y_EPSILON,
+  )
+
+  if (sameRow.length === 1) {
+    return {
+      serial: sameRow[0],
+      branch: uniqueTargets.filter((id) => id !== sameRow[0]),
+    }
+  }
+
+  const byDepth = [...uniqueTargets].sort(
+    (a, b) => (positions.get(b)?.x ?? 0) - (positions.get(a)?.x ?? 0),
+  )
+  return {
+    serial: byDepth[0],
+    branch: uniqueTargets.filter((id) => id !== byDepth[0]),
+  }
+}
+
+function buildTopologyFromSpec(
+  inputId: string,
+  outputId: string,
+  middleIds: Set<string>,
+  edges: SavedGraphSpecEdge[],
+  positions: Map<string, { x: number; y: number }>,
+): { branchChildren: Record<string, string[]>; serialLinks: Record<string, string> } {
+  const branchChildren: Record<string, string[]> = {}
+  const serialLinks: Record<string, string> = {}
+  const outgoing = new Map<string, string[]>()
+
+  for (const edge of edges) {
+    if (edge.target === outputId) continue
+    if (edge.source === outputId) continue
+    const list = outgoing.get(edge.source) ?? []
+    list.push(edge.target)
+    outgoing.set(edge.source, list)
+  }
+
+  for (const [sourceId, targets] of outgoing) {
+    const middleTargets = targets.filter((targetId) => middleIds.has(targetId))
+    if (middleTargets.length === 0) continue
+
+    const { serial, branch } = classifyOutgoingEdges(sourceId, inputId, middleTargets, positions)
+    if (branch.length > 0) {
+      branchChildren[sourceId] = branch
+    }
+    if (serial) {
+      serialLinks[sourceId] = serial
+    }
+  }
+
+  return { branchChildren, serialLinks }
+}
+
+/** Parse a saved graph spec into a guided FlowGraphModel. */
+export function hydrateFromSpec(spec: SavedGraphSpec): HydrateFromSpecResult {
+  const nodes = spec.nodes ?? []
+  const inputNodes = nodes.filter((n) => isInputBookendType(n.type))
+  const outputNodes = nodes.filter((n) => isOutputBookendType(n.type))
+
+  if (inputNodes.length === 0) {
+    return {
+      ok: false,
+      title: 'Missing content source',
+      description: 'This flow needs one place where content comes in before it can be edited here.',
+    }
+  }
+  if (inputNodes.length > 1) {
+    return {
+      ok: false,
+      title: 'Too many content sources',
+      description:
+        'This flow has more than one content source. Open it in the classic editor or rebuild it with a single source.',
+    }
+  }
+  if (outputNodes.length === 0) {
+    return {
+      ok: false,
+      title: 'Missing destination',
+      description: 'This flow needs one place where results are saved before it can be edited here.',
+    }
+  }
+  if (outputNodes.length > 1) {
+    return {
+      ok: false,
+      title: 'Too many destinations',
+      description:
+        'This flow has more than one destination. Open it in the classic editor or rebuild it with a single output.',
+    }
+  }
+
+  const inputNode = specNodeToFlowNode(inputNodes[0])
+  const outputNode = specNodeToFlowNode(outputNodes[0])
+  const bookendIds = new Set([inputNode.id, outputNode.id])
+  const middleNodes = nodes
+    .filter((n) => !bookendIds.has(n.id))
+    .map(specNodeToFlowNode)
+  const middleIds = new Set(middleNodes.map((n) => n.id))
+
+  const positions = new Map<string, { x: number; y: number }>()
+  for (const node of nodes) {
+    positions.set(node.id, {
+      x: node.position?.x ?? 0,
+      y: node.position?.y ?? 0,
+    })
+  }
+
+  const { branchChildren, serialLinks } = buildTopologyFromSpec(
+    inputNode.id,
+    outputNode.id,
+    middleIds,
+    spec.edges ?? [],
+    positions,
+  )
+
+  return {
+    ok: true,
+    model: applyLayoutToModel({
+      inputNode,
+      outputNode,
+      middleNodes,
+      branchChildren,
+      serialLinks,
+    }),
+  }
+}
+
+export function modelToGraphSpec(model: FlowGraphModel): {
+  nodes: Array<{
+    id: string
+    type: string
+    params: Record<string, unknown>
+    position: { x: number; y: number }
+  }>
+  edges: Array<{
+    source: string
+    target: string
+    sourceHandle: string | null
+    targetHandle: string | null
+  }>
+} {
+  const positioned = assignLayoutPositions(model)
+  return {
+    nodes: positioned.map((node) => ({
+      id: node.id,
+      type: node.type ?? '',
+      params: { ...(node.data ?? {}) },
+      position: node.position ?? { x: 0, y: 0 },
+    })),
+    edges: deriveEdges(model).map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null,
+    })),
   }
 }

@@ -8,7 +8,6 @@ import RunsList from './pages/RunsList'
 import TemplatesPage from './pages/TemplatesPage'
 import HelpPlaceholderPage from './pages/HelpPlaceholderPage'
 import RunGraph from './pages/RunGraph'
-import GraphBuilder from './pages/GraphBuilder'
 import GuidedFlowBuilder from './pages/GuidedFlowBuilder'
 import RunDetail from './pages/RunDetail'
 import ProcessedItemDetail from './pages/ProcessedItemDetail'
@@ -83,7 +82,7 @@ function AppRoutes() {
         path="/flow/:graphId/edit"
         element={
           <ProtectedRoute>
-            <GraphBuilder />
+            <GuidedFlowBuilder />
           </ProtectedRoute>
         }
       />
