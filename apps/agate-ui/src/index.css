@@ -79,3 +79,8 @@
   padding: 0.4rem;
 }
 
+/* Guided flow builder: edges are system-managed; hide manual connection handles. */
+.guided-flow-canvas .react-flow__handle {
+  display: none;
+}
+

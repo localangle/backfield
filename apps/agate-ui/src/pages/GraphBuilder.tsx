@@ -28,45 +28,12 @@ import {
   type Project,
 } from '@/lib/api'
 import { fetchProjectEffectiveAiModels } from '@/lib/core-api'
+import { paramsForGraphSave, validateGraphForSave } from '@/lib/flowValidation'
 import { ArrowLeft, Save, Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 let id = 0
 const getId = () => `node-${id++}`
-
-function geocodeStylebookIdFromData(data: Record<string, unknown> | undefined): number | null {
-  if (!data) return null
-  const snake = data.stylebook_id
-  const camel = data.stylebookId
-  const raw = snake !== undefined && snake !== null ? snake : camel
-  if (raw === null || raw === undefined || raw === '') return null
-  const n = typeof raw === 'number' ? raw : Number(raw)
-  return Number.isFinite(n) ? n : null
-}
-
-/** Catalog required when Geocode cache is on (persisted as ``stylebook_id``). */
-function validateGeocodeCatalogSelection(nodes: Node[]): string | null {
-  for (const node of nodes) {
-    if (node.type !== 'GeocodeAgent') continue
-    const d = (node.data || {}) as Record<string, unknown>
-    if (!d.useCache) continue
-    if (geocodeStylebookIdFromData(d) == null) {
-      return 'Turn on catalog selection for Geocode: open each Geocode step with cache turned on and pick a catalog.'
-    }
-  }
-  return null
-}
-
-function paramsForGraphSave(node: Node): Record<string, unknown> {
-  const raw = { ...(node.data || {}) } as Record<string, unknown>
-  if (node.type === 'GeocodeAgent') {
-    delete raw.stylebookId
-    if (!raw.useCache) {
-      delete raw.stylebook_id
-    }
-  }
-  return raw
-}
 
 export default function GraphBuilder() {
   const navigate = useNavigate()
@@ -477,142 +444,16 @@ export default function GraphBuilder() {
     [reactFlowInstance, setNodes, getDefaultNodeData]
   )
 
-  const validateFlow = () => {
-    // Check for at least one Input node
-    const hasInputNode = nodes.some(node => node.type === 'TextInput' || node.type === 'JSONInput' || node.type === 'S3Input' || node.type === 'APIInput' || node.type === 'DBInput')
-    if (!hasInputNode) {
-      showModal({
-        title: 'Missing Input Node',
-        description: 'Flow must have at least one Input node (TextInput, JSONInput, S3Input, APIInput, or DBInput) to be valid.',
-        type: 'warning',
-        confirmText: 'OK',
-        onConfirm: () => {},
-      })
-      return false
-    }
-
-    // Check that flow doesn't have both S3Input and APIInput
-    const hasS3Input = nodes.some(node => node.type === 'S3Input')
-    const hasAPIInput = nodes.some(node => node.type === 'APIInput')
-    if (hasS3Input && hasAPIInput) {
-      showModal({
-        title: 'Invalid Input Node Configuration',
-        description: 'Flow cannot have both S3Input and APIInput nodes. Use only one input node type.',
-        type: 'error',
-        confirmText: 'OK',
-        onConfirm: () => {},
-      })
-      return false
-    }
-
-    // Check that APIInput is the first node (has no incoming edges)
-    if (hasAPIInput) {
-      const apiInputNodes = nodes.filter(node => node.type === 'APIInput')
-      const nodesWithInput = new Set<string>()
-      edges.forEach(edge => {
-        nodesWithInput.add(edge.target)
-      })
-      
-      const apiInputNotFirst = apiInputNodes.some(node => nodesWithInput.has(node.id))
-      if (apiInputNotFirst) {
-        showModal({
-          title: 'API Input Node Position',
-          description: 'APIInput node must be the first node in the flow (no incoming connections).',
-          type: 'error',
-          confirmText: 'OK',
-          onConfirm: () => {},
-        })
-        return false
-      }
-    }
-
-    // Check for at least one Output node
-    const hasOutputNode = nodes.some(node => node.type === 'Output' || node.type === 'S3Output' || node.type === 'DBOutput')
-    if (!hasOutputNode) {
-      showModal({
-        title: 'Missing Output Node',
-        description: 'Flow must have at least one Output node to be valid.',
-        type: 'warning',
-        confirmText: 'OK',
-        onConfirm: () => {},
-      })
-      return false
-    }
-
-    return true
-  }
-
-  const validateNoOrphans = () => {
-    // Get all connected node IDs
-    const connectedNodeIds = new Set<string>()
-    edges.forEach(edge => {
-      connectedNodeIds.add(edge.source)
-      connectedNodeIds.add(edge.target)
-    })
-    
-    // Find orphan nodes (nodes with no connections)
-    const orphanNodes = nodes.filter(node => !connectedNodeIds.has(node.id))
-    
-    if (orphanNodes.length > 0) {
-      const orphanNames = orphanNodes.map(n => `${n.type} (${n.id})`).join(', ')
-      showModal({
-        title: 'Orphan Nodes Detected',
-        description: `The following nodes are not connected to the flow: ${orphanNames}. Please connect or delete them before saving.`,
-        type: 'warning',
-        confirmText: 'OK',
-        onConfirm: () => {},
-      })
-      return false
-    }
-    
-    return true
-  }
-
-  const validateInputConnections = () => {
-    // Get all nodes that have incoming edges (receive input)
-    const nodesWithInput = new Set<string>()
-    edges.forEach(edge => {
-      nodesWithInput.add(edge.target)
-    })
-    
-    // Find non-Input nodes that don't receive input from another node
-    const nodesWithoutInput = nodes.filter(node => {
-      // Skip Input nodes (they don't need input from other nodes)
-      if (node.type === 'TextInput' || node.type === 'JSONInput' || node.type === 'S3Input' || node.type === 'APIInput' || node.type === 'DBInput') {
-        return false
-      }
-      // Check if this node receives input from another node
-      return !nodesWithInput.has(node.id)
-    })
-    
-    if (nodesWithoutInput.length > 0) {
-      const nodeNames = nodesWithoutInput.map(n => `${n.type} (${n.id})`).join(', ')
-      showModal({
-        title: 'Nodes Without Input Detected',
-        description: `The following nodes are not receiving input from another node: ${nodeNames}. All non-Input nodes must be connected to receive data from upstream nodes.`,
-        type: 'warning',
-        confirmText: 'OK',
-        onConfirm: () => {},
-      })
-      return false
-    }
-    
-    return true
-  }
-
   const handleSave = async () => {
-    // Validate flow before saving
-    if (!validateFlow()) {
-      return
-    }
-
-    // Validate no orphan nodes
-    if (!validateNoOrphans()) {
-      return
-    }
-
-    // Validate that non-Input nodes receive input
-    if (!validateInputConnections()) {
+    const validation = validateGraphForSave({ nodes, edges })
+    if (!validation.ok) {
+      showModal({
+        title: validation.title,
+        description: validation.description,
+        type: validation.severity,
+        confirmText: 'OK',
+        onConfirm: () => {},
+      })
       return
     }
 
@@ -632,18 +473,6 @@ export default function GraphBuilder() {
         title: 'No project for this flow',
         description:
           'Could not determine which project this flow belongs to. Open the flow from a project or try reloading the page.',
-        type: 'warning',
-        confirmText: 'OK',
-        onConfirm: () => {},
-      })
-      return
-    }
-
-    const geocodeCatalogErr = validateGeocodeCatalogSelection(nodes)
-    if (geocodeCatalogErr) {
-      showModal({
-        title: 'Catalog required',
-        description: geocodeCatalogErr,
         type: 'warning',
         confirmText: 'OK',
         onConfirm: () => {},

@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import type { Run } from '@/lib/api'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
-import { Suspense } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import { nodeMetadata, panelComponents } from '@/nodes/registry'
 
 export type ProjectAiModelOption = {
@@ -46,6 +46,8 @@ interface NodePanelProps {
   setNodes?: (nodes: any) => void
   graphContext?: GraphPanelContext | null
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
+  allowClose?: boolean
+  footer?: ReactNode
   showModal?: (config: {
     title: string
     description: string
@@ -70,6 +72,8 @@ export default function NodePanel({
   showModal,
   graphContext,
   nodeOutputLookupSpec,
+  allowClose = true,
+  footer,
 }: NodePanelProps) {
   const { showConfirm } = useAppMessage()
   if (!selectedNode) return null
@@ -139,9 +143,11 @@ export default function NodePanel({
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          {allowClose && (
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -587,6 +593,7 @@ export default function NodePanel({
           </Card>
         )}
       </div>
+      {footer}
     </div>
   )
 }
