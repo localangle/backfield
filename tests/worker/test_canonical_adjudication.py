@@ -13,7 +13,7 @@ from backfield_stylebook.canonical_policy import (
     CanonicalPersistPlan,
 )
 from sqlmodel import Session, SQLModel, create_engine
-from worker.canonical_adjudication import (
+from worker.substrate.canonical.adjudication import (
     ADJUDICATION_LINK_MIN_CONFIDENCE,
     adjudicate_ambiguous_plan_with_llm,
 )
@@ -107,7 +107,7 @@ def test_adjudicate_ambiguous_upgrades_when_llm_confident(monkeypatch) -> None:
                 f'"rationale": "Name matches Alpha."}}'
             )
 
-        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
         out = adjudicate_ambiguous_plan_with_llm(
             session,
@@ -175,7 +175,7 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
                 '"rationale": "AR vs TX; no fit."}'
             )
 
-        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
         out = adjudicate_ambiguous_plan_with_llm(
             session,
@@ -241,7 +241,7 @@ def test_adjudicate_rejects_link_when_confidence_below_floor(monkeypatch) -> Non
                 f'"rationale": "Probably the same POI."}}'
             )
 
-        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
         out = adjudicate_ambiguous_plan_with_llm(
             session,
@@ -305,7 +305,7 @@ def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
                 f'"rationale": "Exact label match."}}'
             )
 
-        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
         out = adjudicate_ambiguous_plan_with_llm(
             session,
@@ -322,7 +322,7 @@ def test_adjudicate_accepts_link_at_exact_min_confidence(monkeypatch) -> None:
 def test_adjudicate_rejects_llm_choice_when_link_pair_denied(monkeypatch) -> None:
     """High-confidence LLM pick is ignored when :func:`link_pair_allowed` returns False."""
     monkeypatch.setattr(
-        "worker.canonical_adjudication.link_pair_allowed",
+        "worker.substrate.canonical.adjudication.link_pair_allowed",
         lambda _s, _c: False,
     )
     engine = create_engine("sqlite://", echo=False)
@@ -372,7 +372,7 @@ def test_adjudicate_rejects_llm_choice_when_link_pair_denied(monkeypatch) -> Non
                 f'"rationale": "Name overlap."}}'
             )
 
-        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
         out = adjudicate_ambiguous_plan_with_llm(
             session,
@@ -449,7 +449,7 @@ def test_adjudicate_political_district_fuzzy_plan_runs_llm(monkeypatch) -> None:
                 f'"rationale": "Same ward number and city."}}'
             )
 
-        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
         out = adjudicate_ambiguous_plan_with_llm(
             session,
@@ -522,7 +522,7 @@ def test_adjudicate_political_district_coerces_when_district_key_mismatch(monkey
                 f'"rationale": "LLM wrongly picks nearby ward."}}'
             )
 
-        monkeypatch.setattr("worker.canonical_adjudication.call_llm", _fake_llm)
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
 
         out = adjudicate_ambiguous_plan_with_llm(
             session,

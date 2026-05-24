@@ -33,8 +33,8 @@ from backfield_stylebook.full_bundle import export_stylebook_bundle, import_styl
 from celery import Celery, chord, group
 from sqlmodel import Session, select
 
+from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
-from worker.replace_geography_flags import clear_replace_article_geography_flags
 
 logger = logging.getLogger(__name__)
 

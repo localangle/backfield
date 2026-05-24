@@ -12,8 +12,8 @@ import {
   readArticleFieldsFromProcessedItem,
   type ArticleFieldKey,
   type ArticleFields,
-} from '@/lib/processedItemArticleFields'
-import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
+} from '@/lib/review/content/articleFields'
+import { isBatchFileSource, processedItemSourceLabel } from '@/lib/review/content/sourceDisplay'
 import { formatDateCentral } from '@/lib/utils'
 import { CheckCircle, Clock, ExternalLink, FileText, Loader2, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'

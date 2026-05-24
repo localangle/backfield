@@ -1,18 +1,27 @@
 """Stylebook domain logic shared by worker, stylebook-api, and core-api."""
 
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-from backfield_stylebook.canonical_link import (
+from backfield_stylebook.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.canonical_policy import (
+from backfield_stylebook.canonical.policy import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
     decide_canonical_persist_plan,
     find_existing_canonical_id_by_alias,
     rank_scored_canonical_recall_matches,
+)
+from backfield_stylebook.entities.location.persist import (
+    apply_canonical_persist_plan,
+    assert_canonical_link_invariant,
+    create_standalone_canonical,
+    link_to_existing_canonical,
+    materialize_new_canonical_and_link,
+    refresh_aliases_for_linked_location,
+    sync_substrate_location_into_stylebook,
 )
 from backfield_stylebook.full_bundle import (
     ALLOWED_MANIFEST_SCHEMA_VERSIONS,
@@ -29,15 +38,6 @@ from backfield_stylebook.graph_stylebook_refs import (
     iter_stylebook_refs_from_spec_dict,
     unique_stylebook_ids_from_spec_dict,
     validate_stylebook_refs_for_organization,
-)
-from backfield_stylebook.locations import (
-    apply_canonical_persist_plan,
-    assert_canonical_link_invariant,
-    create_standalone_canonical,
-    link_to_existing_canonical,
-    materialize_new_canonical_and_link,
-    refresh_aliases_for_linked_location,
-    sync_substrate_location_into_stylebook,
 )
 from backfield_stylebook.resolve import (
     STYLEBOOK_SLUG_NOT_IN_ORG,

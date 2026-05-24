@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
 
 import { cn } from "./cn"
@@ -7,8 +8,8 @@ export interface ShellProductBrandProps {
   to: string
   /** Primary product name — large title (e.g. Agate, Stylebook). */
   productTitle: string
-  /** Optional mark before the title (e.g. product emoji). */
-  productMark?: string
+  /** Optional mark before the title (e.g. Agate ⊞, Stylebook book icon). */
+  productMark?: ReactNode
   /** Platform line under the title (e.g. Backfield Platform). */
   platformSubtitle: string
   className?: string
@@ -32,7 +33,13 @@ export function ShellProductBrand({
     >
       <span className="flex items-center gap-2 text-3xl font-bold tracking-tight">
         {productMark ? (
-          <span className="shrink-0 text-[1.75rem] leading-none" aria-hidden>
+          <span
+            className={cn(
+              "shrink-0 flex items-center leading-none",
+              typeof productMark === "string" && "text-[1.75rem]",
+            )}
+            aria-hidden
+          >
             {productMark}
           </span>
         ) : null}

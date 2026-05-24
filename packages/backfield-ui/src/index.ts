@@ -1,3 +1,7 @@
+export { AGATE_PRODUCT_MARK } from "./agateBrand"
+export { AgateProductMark } from "./AgateProductMark"
+export { STYLEBOOK_BOOK_OPEN_PATHS } from "./stylebookBrand"
+export { StylebookProductMark } from "./StylebookProductMark"
 export { UserAccountMenu, type UserAccountMenuProps } from "./UserAccountMenu"
 export { ShellProductBrand, type ShellProductBrandProps } from "./ShellProductBrand"
 export {

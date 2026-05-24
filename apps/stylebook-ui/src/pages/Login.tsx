@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { StylebookProductMark } from "@backfield/ui"
 import { useAuth } from "@/lib/auth"
 
 const AUTH_API_BASE = import.meta.env.VITE_AUTH_API_BASE ?? ""
@@ -48,7 +49,10 @@ export default function Login() {
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Stylebook</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <StylebookProductMark className="size-7 stroke-[1.75]" />
+            Stylebook
+          </CardTitle>
           <CardDescription>Sign in with your Backfield account</CardDescription>
         </CardHeader>
         <CardContent>

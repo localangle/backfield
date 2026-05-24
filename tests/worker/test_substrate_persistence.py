@@ -17,8 +17,8 @@ from backfield_stylebook import assert_canonical_link_invariant
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from sqlmodel import Session, SQLModel, col, create_engine, select
-from worker.substrate_article_geography_reset import replace_machine_geography_for_article
-from worker.substrate_persistence import _find_mention_span, persist_from_consolidated
+from worker.substrate import _find_mention_span, persist_from_consolidated
+from worker.substrate.content.geography_reset import replace_machine_geography_for_article
 
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 WGP_POINT = {"type": "Point", "coordinates": [-87.703, 41.914]}
@@ -690,7 +690,7 @@ def test_reconciliation_failure_rolls_back_prior_saved_places(monkeypatch) -> No
             raise RuntimeError("simulated mention failure")
 
         monkeypatch.setattr(
-            "worker.substrate_persistence._upsert_mention_and_occurrence",
+            "worker.substrate.orchestration._upsert_mention_and_occurrence",
             fail_mention,
         )
 

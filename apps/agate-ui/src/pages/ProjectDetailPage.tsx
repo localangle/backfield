@@ -385,20 +385,20 @@ export default function ProjectDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average cost per run
+                Median cost per run
               </CardTitle>
             </CardHeader>
             <CardContent>
               {stats.runs_succeeded > 0 &&
-              stats.avg_estimated_ai_cost_per_run != null &&
-              stats.avg_estimated_ai_cost_currency ? (
+              stats.median_estimated_ai_cost_per_run != null &&
+              stats.median_estimated_ai_cost_currency ? (
                 <>
                   <p className="text-3xl font-semibold tabular-nums">
                     {formatCurrencySummary(
-                      stats.avg_estimated_ai_cost_per_run,
-                      stats.avg_estimated_ai_cost_currency || 'USD',
+                      stats.median_estimated_ai_cost_per_run,
+                      stats.median_estimated_ai_cost_currency || 'USD',
                     )}
-                    {stats.avg_estimated_ai_cost_incomplete ? (
+                    {stats.median_estimated_ai_cost_incomplete ? (
                       <span
                         className="text-amber-700 dark:text-amber-400 ml-1"
                         title="Some usage data was missing"
@@ -420,12 +420,12 @@ export default function ProjectDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Average time per run
+                Median time per run
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-semibold tabular-nums">
-                {formatDurationMs(stats.avg_duration_ms_per_run)}
+                {formatDurationMs(stats.median_duration_ms_per_run)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Wall time per completed run
@@ -495,7 +495,7 @@ export default function ProjectDetailPage() {
           onValueChange={setWorkspaceTab}
           className="w-full min-w-0"
         >
-          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-3 lg:grid-cols-6">
+          <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-3 lg:grid-cols-5">
             <TabsTrigger value="flows" className="w-full">
               Flows
             </TabsTrigger>
@@ -507,9 +507,6 @@ export default function ProjectDetailPage() {
             </TabsTrigger>
             <TabsTrigger value="integrations" className="w-full">
               Integrations
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="w-full">
-              Settings
             </TabsTrigger>
             <TabsTrigger value="keys" className="w-full col-span-2 sm:col-span-1 lg:col-span-1">
               API
@@ -531,24 +528,23 @@ export default function ProjectDetailPage() {
               />
             ) : null}
             {workspaceTab === 'models' ? (
-              <ProjectDetailModelsTab projectId={project.id} />
+              <div className="w-full min-w-0 space-y-10">
+                <ProjectDetailModelsTab projectId={project.id} />
+                <ProjectSettings
+                  project={project}
+                  open={true}
+                  onOpenChange={() => {}}
+                  variant="inline"
+                  inlineScope="system"
+                  onRemoteUpdated={reload}
+                />
+              </div>
             ) : null}
             {workspaceTab === 'integrations' ? (
               <ProjectDetailIntegrationsTab
                 projectId={project.id}
                 organizationId={organizationId}
                 isOrgAdmin={isOrgAdmin}
-              />
-            ) : null}
-            {workspaceTab === 'settings' ? (
-              <ProjectSettings
-                project={project}
-                open={true}
-                onOpenChange={() => {}}
-                variant="inline"
-                inlineScope="system"
-                primaryActionsInToolbar
-                onRemoteUpdated={reload}
               />
             ) : null}
             {workspaceTab === 'keys' ? (

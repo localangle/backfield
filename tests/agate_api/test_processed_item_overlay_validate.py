@@ -1,9 +1,9 @@
-"""Tests for ``processed_item_overlay_validate``."""
+"""Tests for ``api.processed_item.overlay.validate``."""
 
 from __future__ import annotations
 
 import pytest
-from api.processed_item_overlay_validate import (
+from api.processed_item.overlay.validate import (
     OverlayGeometryValidationError,
     validate_processed_item_overlay_geometry,
 )

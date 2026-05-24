@@ -8,8 +8,8 @@ from typing import Any
 from agate_runtime.output_node import consolidated_body_from_dboutput
 from sqlmodel import Session
 
-from worker.replace_geography_flags import clear_replace_article_geography_flags
-from worker.substrate_persistence import persist_from_consolidated
+from worker.flags.replace_geography import clear_replace_article_geography_flags
+from worker.substrate import persist_from_consolidated
 
 
 def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:

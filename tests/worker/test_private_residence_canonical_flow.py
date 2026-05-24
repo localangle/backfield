@@ -5,7 +5,7 @@ from __future__ import annotations
 from backfield_db import AgateRun, SubstrateLocation
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED
 from sqlmodel import Session, SQLModel, create_engine, select
-from worker.substrate_persistence import persist_from_consolidated
+from worker.substrate import persist_from_consolidated
 
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 

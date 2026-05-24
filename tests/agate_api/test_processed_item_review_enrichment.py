@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from api.processed_item_review_enrichment import (
+from api.processed_item.entities.location.review_enrichment import (
     enrich_merged_locations_for_review,
     geometries_json_equal,
     geometry_differs_from_canonical,
@@ -15,6 +15,7 @@ from backfield_db import (
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from sqlmodel import Session, create_engine
@@ -206,6 +207,95 @@ def test_enrich_skips_unlinked_canonical() -> None:
         )
         assert out[0]["persisted_location_id"] == int(loc.id)
         assert "stylebook_link" not in out[0]
+
+
+def test_enrich_appends_manual_location_without_model_row() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Manual Org", slug="manual-org")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+
+        project = BackfieldProject(
+            organization_id=int(org.id),
+            name="Manual Proj",
+            slug="manual-proj",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
+        article = SubstrateArticle(
+            project_id=int(project.id),
+            headline="Manual",
+            text="Neighbors gathered at Lincoln School after the storm.",
+        )
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+
+        loc = SubstrateLocation(
+            project_id=int(project.id),
+            name="Lincoln School",
+            normalized_name="lincoln school",
+            location_type="place",
+            status="active",
+            source_kind="manual_add",
+            source_details_json={
+                "source": "agate_review_add_place",
+                "run_id": "run-manual",
+                "raw_entry_id": "user_place:123",
+            },
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        mention = SubstrateLocationMention(
+            article_id=int(article.id),
+            location_id=int(loc.id),
+            role_in_story="Shelter",
+            added=True,
+            source_kind="manual_add",
+        )
+        session.add(mention)
+        session.commit()
+        session.refresh(mention)
+        session.add(
+            SubstrateLocationMentionOccurrence(
+                location_mention_id=int(mention.id),
+                mention_text="Lincoln School",
+                quote_text="Lincoln School after the storm.",
+                start_char=22,
+                end_char=53,
+                occurrence_order=0,
+                source_kind="manual_add",
+            )
+        )
+        session.commit()
+
+        out = enrich_merged_locations_for_review(
+            session,
+            project_id=int(project.id),
+            run_id="run-manual",
+            article_id=int(article.id),
+            merged_locations=[],
+        )
+        assert len(out) == 1
+        row = out[0]
+        assert row["anchor"] == "user_place:123"
+        assert row["source"] == "user"
+        assert row["persisted_location_id"] == int(loc.id)
+        assert row["location"]["location"]["full"] == "Lincoln School"
+        assert row["location"]["type"] == "place"
+        assert row["location"]["role_in_story"] == "Shelter"
+        assert row["mention_occurrences"][0]["mention_text"] == "Lincoln School"
+        assert row["mention_occurrences"][0]["quote_text"] == "Lincoln School after the storm."
 
 
 def test_enrich_matches_h3_rows_by_display_name_suffix() -> None:

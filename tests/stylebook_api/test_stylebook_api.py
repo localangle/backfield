@@ -1244,6 +1244,80 @@ def test_candidate_context_and_note_roundtrip(
     assert row["note"] == "Ambiguous between city and sports team."
 
 
+def test_create_location_from_article_evidence(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        text = "Neighbors gathered at Lincoln School after the storm."
+        art = SubstrateArticle(
+            project_id=pid,
+            headline="Storm response",
+            text=text,
+            url="https://example.com/add-place",
+            deleted=False,
+        )
+        s.add(art)
+        s.commit()
+        s.refresh(art)
+        aid = int(art.id)  # type: ignore[arg-type]
+
+    start = text.index("Lincoln School")
+    end = len(text)
+    r = client.post(
+        "/v1/locations/from-article-evidence?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "article_id": aid,
+            "run_id": "run-123",
+            "label": "Lincoln School",
+            "location_type": "place",
+            "mention_text": "Lincoln School",
+            "quote_text": text[start:end],
+            "start_char": start,
+            "end_char": end,
+            "role_in_story": "Shelter after the storm",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["anchor"].startswith("user_place:")
+    loc_id = int(body["location"]["id"])
+    assert body["location"]["name"] == "Lincoln School"
+    assert body["location"]["location_type"] == "place"
+    assert body["location"]["geometry_json"] is None
+
+    with Session(engine) as s:
+        loc = s.get(SubstrateLocation, loc_id)
+        assert loc is not None
+        assert loc.status == "active"
+        assert loc.canonical_link_status == CANONICAL_LINK_PENDING
+        assert loc.source_kind == "manual_add"
+        assert loc.source_details_json["run_id"] == "run-123"
+        assert loc.source_details_json["raw_entry_id"] == body["anchor"]
+        mention = s.exec(
+            select(SubstrateLocationMention).where(
+                SubstrateLocationMention.location_id == loc_id,
+                SubstrateLocationMention.article_id == aid,
+            )
+        ).one()
+        assert mention.added is True
+        assert mention.source_kind == "manual_add"
+        assert mention.role_in_story == "Shelter after the storm"
+        occurrence = s.exec(
+            select(SubstrateLocationMentionOccurrence).where(
+                SubstrateLocationMentionOccurrence.location_mention_id == int(mention.id)
+            )
+        ).one()
+        assert occurrence.source_kind == "manual_add"
+        assert occurrence.mention_text == "Lincoln School"
+        assert occurrence.quote_text == text[start:end]
+        assert occurrence.start_char == start
+        assert occurrence.end_char == end
+
+
 def test_candidates_needs_review_facet(
     client: TestClient, stylebook_test_engine: object
 ) -> None:

@@ -99,6 +99,7 @@ def replace_mention_occurrences_for_article(
             source_kind="user_review",
             source_details_json={"source": "agate_review"},
             mention_text=mention_text,
+            quote_text=raw.get("quote_text") if isinstance(raw.get("quote_text"), str) else None,
             start_char=start,
             end_char=end,
             occurrence_order=order,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from worker.substrate_location import (
+from worker.substrate.entities.location.upsert import (
     _apply_substrate_location_merge,
     _router_audit_from_place_entry,
 )

@@ -1,8 +1,8 @@
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import type { MentionOccurrenceDraft } from '@/lib/processedItemMentionOccurrences'
-import { createEmptyMentionOccurrence } from '@/lib/processedItemMentionOccurrences'
+import type { MentionOccurrenceDraft } from '@/lib/review/entities/location/mentionOccurrences'
+import { createEmptyMentionOccurrence } from '@/lib/review/entities/location/mentionOccurrences'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 
 export type MentionOccurrenceListEditorProps = {

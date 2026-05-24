@@ -8,8 +8,10 @@ import {
 } from "react-router-dom"
 import { HelpCircle, Settings } from "lucide-react"
 import {
+  AgateProductMark,
   ShellProductBrand,
   ShellSidebar,
+  StylebookProductMark,
   UserAccountMenu,
   cn,
 } from "@backfield/ui"
@@ -238,7 +240,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
         <div className="px-4 py-4 flex justify-between items-center gap-3 flex-wrap">
           <ShellProductBrand
             to={indexPath}
-            productMark="📖"
+            productMark={<StylebookProductMark />}
             productTitle="Stylebook"
             platformSubtitle="Backfield Platform"
           />
@@ -299,9 +301,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
               <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
                 {expanded ? (
                   <div className={sectionTitleClass}>
-                    <span className="shrink-0 text-base leading-none" aria-hidden>
-                      🏷️
-                    </span>
+                    <AgateProductMark className="size-4 text-[1.125rem]" />
                     <span>Agate</span>
                   </div>
                 ) : (
@@ -309,12 +309,12 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     type="button"
                     title="Agate — workspaces"
                     className={cn(
-                      "inline-flex h-9 w-full items-center justify-center rounded-md text-lg",
+                      "inline-flex h-9 w-full items-center justify-center rounded-md",
                       "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     )}
                     onClick={() => expand()}
                   >
-                    <span aria-hidden>🏷️</span>
+                    <AgateProductMark className="size-5 text-[1.35rem]" />
                   </button>
                 )}
 
@@ -340,9 +340,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     <div className="border-t border-border/50 my-1" />
                     {expanded ? (
                       <div className={sectionTitleClass}>
-                        <span className="shrink-0 text-base leading-none" aria-hidden>
-                          📖
-                        </span>
+                        <StylebookProductMark className="size-4 stroke-[1.75]" />
                         <span>Stylebook</span>
                       </div>
                     ) : (
@@ -355,7 +353,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                         )}
                         onClick={() => expand()}
                       >
-                        <span aria-hidden>📖</span>
+                        <StylebookProductMark className="size-5 stroke-[1.75]" />
                       </button>
                     )}
                     {(expanded ? sortedStylebooks : []).map((sb) => {

@@ -5,7 +5,7 @@ import {
   mergeTieredHighlightRanges,
   type EvidenceSpanRange,
   type MentionSpanHit,
-} from '@/lib/processedItemEvidenceSpan'
+} from '@/lib/review/content/evidenceSpan'
 import { cn } from '@/lib/utils'
 
 export interface ProcessedItemArticleBodyProps {
@@ -25,6 +25,19 @@ export interface ProcessedItemArticleBodyProps {
   placeLabels?: Record<string, string>
   /** Select a geocoded place from a story mention click. */
   onSelectPlace?: (anchor: string) => void
+  /** Report ordinary text selections so callers can start an add workflow. */
+  onTextSelectionChange?: (selection: ArticleTextSelection | null) => void
+  activeTextSelection?: ArticleTextSelection | null
+  onAddPlaceFromSelection?: (selection: ArticleTextSelection) => void
+  addPlaceActionLabel?: string
+  className?: string
+}
+
+export type ArticleTextSelection = {
+  start: number
+  end: number
+  text: string
+  rect: { left: number; top: number; width: number; height: number }
 }
 
 type DisambiguationMenuState = {
@@ -106,7 +119,7 @@ function StoryMentionMark({
   anchors: string[]
   onSelectPlace?: (anchor: string) => void
   onOpenDisambiguation: (anchors: string[], clientX: number, clientY: number) => void
-  markRef?: RefObject<HTMLElement | null>
+  markRef?: RefObject<HTMLElement>
   children: ReactNode
 }) {
   const interactive = Boolean(onSelectPlace) && anchors.length > 0
@@ -172,8 +185,14 @@ export function ProcessedItemArticleBody({
   mentionSpanHits = [],
   placeLabels = {},
   onSelectPlace,
+  onTextSelectionChange,
+  activeTextSelection = null,
+  onAddPlaceFromSelection,
+  addPlaceActionLabel = 'Add place',
+  className,
 }: ProcessedItemArticleBodyProps) {
-  const firstSelectedMarkRef = useRef<HTMLElement | null>(null)
+  const firstSelectedMarkRef = useRef<HTMLElement>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
   const [disambiguation, setDisambiguation] = useState<DisambiguationMenuState | null>(null)
 
   const tieredRanges = useMemo(
@@ -194,9 +213,60 @@ export function ProcessedItemArticleBody({
     setDisambiguation({ anchors, x: clientX, y: clientY })
   }
 
+  const readTextSelection = () => {
+    if (!onTextSelectionChange) return
+    const root = bodyRef.current
+    const sel = window.getSelection()
+    if (!root || !sel || sel.rangeCount === 0 || sel.isCollapsed) {
+      onTextSelectionChange(null)
+      return
+    }
+    const range = sel.getRangeAt(0)
+    if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) {
+      onTextSelectionChange(null)
+      return
+    }
+    const before = range.cloneRange()
+    before.selectNodeContents(root)
+    before.setEnd(range.startContainer, range.startOffset)
+    const start = before.toString().length
+    const text = range.toString()
+    const end = start + text.length
+    if (!text.trim() || start < 0 || end <= start || end > body.length) {
+      onTextSelectionChange(null)
+      return
+    }
+    const rect = range.getBoundingClientRect()
+    onTextSelectionChange({
+      start,
+      end,
+      text,
+      rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    })
+  }
+
   if (tieredRanges.length === 0) {
     return (
-      <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{body}</div>
+      <>
+        <div
+          ref={bodyRef}
+          onMouseUp={readTextSelection}
+          onKeyUp={readTextSelection}
+          className={cn(
+            'whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground',
+            className,
+          )}
+        >
+          {body}
+        </div>
+        {activeTextSelection && onAddPlaceFromSelection ? (
+          <AddPlaceSelectionAction
+            selection={activeTextSelection}
+            label={addPlaceActionLabel}
+            onAdd={onAddPlaceFromSelection}
+          />
+        ) : null}
+      </>
     )
   }
 
@@ -237,7 +307,17 @@ export function ProcessedItemArticleBody({
 
   return (
     <>
-      <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">{segments}</div>
+      <div
+        ref={bodyRef}
+        onMouseUp={readTextSelection}
+        onKeyUp={readTextSelection}
+        className={cn(
+          'whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground',
+          className,
+        )}
+      >
+        {segments}
+      </div>
       {disambiguation ? (
         <MentionDisambiguationMenu
           anchors={disambiguation.anchors}
@@ -247,6 +327,38 @@ export function ProcessedItemArticleBody({
           onClose={() => setDisambiguation(null)}
         />
       ) : null}
+      {activeTextSelection && onAddPlaceFromSelection ? (
+        <AddPlaceSelectionAction
+          selection={activeTextSelection}
+          label={addPlaceActionLabel}
+          onAdd={onAddPlaceFromSelection}
+        />
+      ) : null}
     </>
+  )
+}
+
+function AddPlaceSelectionAction({
+  selection,
+  label,
+  onAdd,
+}: {
+  selection: ArticleTextSelection
+  label: string
+  onAdd: (selection: ArticleTextSelection) => void
+}) {
+  const top = Math.max(8, selection.rect.top - 38)
+  const left = Math.max(8, selection.rect.left + selection.rect.width / 2 - 44)
+  return createPortal(
+    <button
+      type="button"
+      className="fixed z-[210] rounded-md border bg-popover px-2.5 py-1.5 text-xs font-medium text-popover-foreground shadow-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring"
+      style={{ left, top }}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => onAdd(selection)}
+    >
+      {label}
+    </button>,
+    document.body,
   )
 }

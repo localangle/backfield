@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from api.processed_item_mention_occurrences import (
+from api.processed_item.mention_occurrences import (
     build_mention_occurrences_for_row,
     merge_occurrence_lists,
     occurrences_from_place_dict,

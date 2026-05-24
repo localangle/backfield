@@ -1,8 +1,8 @@
-"""Tests for ``processed_item_reviewed_output``."""
+"""Tests for ``api.processed_item.overlay.reviewed_output``."""
 
 from __future__ import annotations
 
-from api.processed_item_reviewed_output import (
+from api.processed_item.overlay.reviewed_output import (
     build_reviewed_output,
     overlay_has_review_content,
 )
@@ -112,6 +112,41 @@ def test_build_reviewed_output_removes_anchor() -> None:
     cities = reviewed["geocode_agent"]["places"]["areas"]["cities"]
     assert len(cities) == 1
     assert cities[0]["description"] == "keep"
+
+
+def test_build_reviewed_output_user_added_geometry_json_output_only() -> None:
+    geom = {"type": "Point", "coordinates": [-93.27, 44.98]}
+    uid = "user_place:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    output = {
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "places": {
+                    "areas": _empty_areas(),
+                    "points": [],
+                    "needs_review": [],
+                },
+            },
+        },
+    }
+    overlay = {
+        "locations": {
+            "user_added": [
+                {
+                    "id": uid,
+                    "location": _place(
+                        "manual",
+                        geocode={"geocode_type": "manual", "result": {"geometry": geom}},
+                    ),
+                }
+            ]
+        }
+    }
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    points = reviewed["json_output"]["consolidated"]["places"]["points"]
+    assert len(points) == 1
+    assert points[0]["geocode"]["result"]["geometry"] == geom
 
 
 def test_build_reviewed_output_user_added_in_points() -> None:

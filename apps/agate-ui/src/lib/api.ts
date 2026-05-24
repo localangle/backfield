@@ -33,12 +33,12 @@ export interface ProjectStats {
   runs_in_progress: number
   /** Runs with status ``failed`` (includes cancelled runs). */
   runs_failed: number
-  avg_duration_ms_per_run: number | null
-  avg_duration_ms_per_item: number | null
-  /** LLM rollup for completed runs only, divided by ``runs_succeeded``. */
-  avg_estimated_ai_cost_per_run?: string | number | null
-  avg_estimated_ai_cost_currency?: string | null
-  avg_estimated_ai_cost_incomplete?: boolean
+  median_duration_ms_per_run: number | null
+  median_duration_ms_per_item: number | null
+  /** Median tracked LLM spend per succeeded run. */
+  median_estimated_ai_cost_per_run?: string | number | null
+  median_estimated_ai_cost_currency?: string | null
+  median_estimated_ai_cost_incomplete?: boolean
 }
 
 export interface Graph {

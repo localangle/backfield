@@ -13,11 +13,12 @@ import {
   getGeocodedPlaceDisplay,
   getGeocodingSourceLabel,
   getPlaceEditorialDetail,
+  extractGeometryFromPlace,
   placeEditorialDetailHasContent,
-} from '@/lib/processedItemPlaceGeometry'
+} from '@/lib/review/entities/location/placeGeometry'
 import { mentionNatureBadgeClass, mentionNatureDisplayLabel } from '@/lib/placeMentionNature'
 import { placeExtractTypeLabel } from '@/lib/placeExtractTypeLabel'
-import { isMergedRowLinkedToStylebook, shouldShowAdoptForStylebook } from '@/lib/processedItemReviewRow'
+import { isMergedRowLinkedToStylebook, shouldShowAdoptForStylebook } from '@/lib/review/entities/location/reviewRow'
 import { cn } from '@/lib/utils'
 import { BookMarked, ChevronDown, ChevronRight, ExternalLink, Trash2 } from 'lucide-react'
 
@@ -60,6 +61,7 @@ export interface GeocodedPlacesTableProps {
   adoptDisabled?: boolean
   onDeletePlace?: (row: Record<string, unknown>) => void
   deleteDisabled?: boolean
+  onFindOnMap?: (row: Record<string, unknown>) => void
 }
 
 export function GeocodedPlacesTable({
@@ -73,6 +75,7 @@ export function GeocodedPlacesTable({
   adoptDisabled = false,
   onDeletePlace,
   deleteDisabled = false,
+  onFindOnMap,
 }: GeocodedPlacesTableProps) {
   const [expandedAnchors, setExpandedAnchors] = useState<Set<string>>(() => new Set())
 
@@ -98,7 +101,7 @@ export function GeocodedPlacesTable({
             <TableHead className="h-7 w-[38%] px-2 py-0 text-[11px] font-medium">Name</TableHead>
             <TableHead className="h-7 w-[14%] px-2 py-0 text-[11px] font-medium">Type</TableHead>
             <TableHead className="h-7 px-2 py-0 text-[11px] font-medium">Address</TableHead>
-            <TableHead className="h-7 w-[5.5rem] px-1 py-0 text-right text-[11px] font-medium">
+            <TableHead className="h-7 w-[9rem] px-1 py-0 text-right text-[11px] font-medium">
               <span className="sr-only">Actions</span>
             </TableHead>
           </TableRow>
@@ -118,6 +121,7 @@ export function GeocodedPlacesTable({
             const linked = isMergedRowLinkedToStylebook(row)
             const showAdopt = shouldShowAdoptForStylebook(row)
             const geocodingSourceLabel = loc ? getGeocodingSourceLabel(loc) : null
+            const needsGeography = !extractGeometryFromPlace(loc)
             const typeLabel = display.type.trim()
               ? placeExtractTypeLabel(display.type)
               : '—'
@@ -177,6 +181,14 @@ export function GeocodedPlacesTable({
                           {geocodingSourceLabel}
                         </Badge>
                       ) : null}
+                      {needsGeography ? (
+                        <Badge
+                          variant="outline"
+                          className="w-fit max-w-full truncate border-amber-300 bg-amber-50 text-[10px] font-normal text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+                        >
+                          Needs geography
+                        </Badge>
+                      ) : null}
                     </div>
                   </TableCell>
                   <TableCell
@@ -192,10 +204,21 @@ export function GeocodedPlacesTable({
                     {address}
                   </TableCell>
                   <TableCell
-                    className="w-[5.5rem] px-1 py-1.5 align-middle"
+                    className="w-[9rem] px-1 py-1.5 align-middle"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center justify-end gap-0.5">
+                      {needsGeography && onFindOnMap ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-7 shrink-0 px-2 text-[11px]"
+                          onClick={() => onFindOnMap(row)}
+                        >
+                          Find on map
+                        </Button>
+                      ) : null}
                       {linked && onOpenStylebookPlace ? (
                         <Button
                           type="button"

@@ -1,8 +1,8 @@
-"""Unit tests for ``processed_item_article_context``."""
+"""Unit tests for ``api.processed_item.content.article_context``."""
 
 from __future__ import annotations
 
-from api.processed_item_article_context import build_processed_item_article_context
+from api.processed_item.content.article_context import build_processed_item_article_context
 from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
