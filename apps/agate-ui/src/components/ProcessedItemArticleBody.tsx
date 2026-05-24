@@ -5,7 +5,7 @@ import {
   mergeTieredHighlightRanges,
   type EvidenceSpanRange,
   type MentionSpanHit,
-} from '@/lib/processedItemEvidenceSpan'
+} from '@/lib/review/content/evidenceSpan'
 import { cn } from '@/lib/utils'
 
 export interface ProcessedItemArticleBodyProps {

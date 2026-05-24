@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from api.processed_item_review_enrichment import (
+from api.processed_item.entities.location.review_enrichment import (
     enrich_merged_locations_for_review,
     geometries_json_equal,
     geometry_differs_from_canonical,

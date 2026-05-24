@@ -8,7 +8,7 @@ from typing import Any
 from backfield_db import SubstrateArticle, SubstrateImage
 from sqlmodel import Session, col, select
 
-from worker.substrate_common import _parse_date, _sha256_hex, _utcnow
+from worker.substrate.common import _parse_date, _sha256_hex, _utcnow
 
 
 def _upsert_article(

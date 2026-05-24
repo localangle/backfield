@@ -15,10 +15,10 @@ import {
   getPlaceEditorialDetail,
   extractGeometryFromPlace,
   placeEditorialDetailHasContent,
-} from '@/lib/processedItemPlaceGeometry'
+} from '@/lib/review/entities/location/placeGeometry'
 import { mentionNatureBadgeClass, mentionNatureDisplayLabel } from '@/lib/placeMentionNature'
 import { placeExtractTypeLabel } from '@/lib/placeExtractTypeLabel'
-import { isMergedRowLinkedToStylebook, shouldShowAdoptForStylebook } from '@/lib/processedItemReviewRow'
+import { isMergedRowLinkedToStylebook, shouldShowAdoptForStylebook } from '@/lib/review/entities/location/reviewRow'
 import { cn } from '@/lib/utils'
 import { BookMarked, ChevronDown, ChevronRight, ExternalLink, Trash2 } from 'lucide-react'
 

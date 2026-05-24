@@ -20,8 +20,8 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.entities.location.locations import _escape_ilike_metacharacters
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
-from stylebook_api.routers.locations import _escape_ilike_metacharacters
 from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import (
     optional_project_filter_to_ids,

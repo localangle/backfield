@@ -9,19 +9,19 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocationCache
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.canonical_link_matrix import (
+from backfield_stylebook.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
 )
-from backfield_stylebook.canonical_retrieval import (
+from backfield_stylebook.canonical.retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
-from backfield_stylebook.geocode_cache_sanity import cache_hit_sane_for_substrate
-from backfield_stylebook.substrate_location_cache_fingerprint import (
+from backfield_stylebook.geocode_cache.fingerprint import (
     normalize_substrate_cache_query,
     substrate_location_cache_query_fingerprint,
 )
+from backfield_stylebook.geocode_cache.sanity import cache_hit_sane_for_substrate
 
 _DEFAULT_ADJUDICATION_CANDIDATE_LIMIT: int = 18
 

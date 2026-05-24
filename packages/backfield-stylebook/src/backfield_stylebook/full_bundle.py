@@ -17,7 +17,7 @@ from typing import Any
 from backfield_db import Stylebook, StylebookLocationCanonical
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.canonical_slug import allocate_unique_canonical_slug
+from backfield_stylebook.canonical.slug import allocate_unique_canonical_slug
 from backfield_stylebook.stylebook_library import (
     StylebookLibraryError,
     create_stylebook_for_import,

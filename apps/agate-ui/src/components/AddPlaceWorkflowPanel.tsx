@@ -16,7 +16,7 @@ import {
   placeExtractTypeLabel,
   sortPlaceExtractTypeOptions,
 } from '@/lib/placeExtractTypeLabel'
-import { newUserPlaceId } from '@/lib/processedItemPlaceGeometry'
+import { newUserPlaceId } from '@/lib/review/entities/location/placeGeometry'
 import {
   createSavedPlaceFromArticleEvidence,
   type CreatedSavedPlaceFromArticleEvidence,

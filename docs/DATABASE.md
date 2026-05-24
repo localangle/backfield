@@ -9,7 +9,7 @@ Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix*
 | ------------------------------------------------ | ----------------------- | ---------------------------------------------------------------------- |
 | Agate graphs, runs, templates                    | `packages/backfield-db` | Alembic migrations live here only                                      |
 | Backfield orgs, users, projects, credentials     | `packages/backfield-db` | Same migration chain                                                   |
-| Shared content/location substrate                | `packages/backfield-db` | `substrate_article`, `substrate_location`, mentions, occurrences, cache |
+| Shared content/location substrate                | `packages/backfield-db` | `substrate_article`, `substrate_location`, mentions, occurrences, cache; worker ingest layout in [`ENTITY_TYPES.md`](ENTITY_TYPES.md) |
 | Stylebook editorial / canonical tables           | `packages/backfield-db` | `stylebook`, `stylebook_location_canonical`, `stylebook_location_alias`, **`stylebook_location_meta`**, **`stylebook_connections`**; helpers in `packages/backfield-stylebook` |
 | Shared AI model configuration and usage tracking | `packages/backfield-db` | `backfield_ai_*` tables for model catalog, project overrides, default roles, and LLM call cost records |
 

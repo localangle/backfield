@@ -5,11 +5,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from backfield_stylebook.canonical_link_matrix import (
+from backfield_stylebook.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
 )
-from backfield_stylebook.substrate_location_cache_fingerprint import normalize_substrate_cache_query
+from backfield_stylebook.geocode_cache.fingerprint import normalize_substrate_cache_query
 
 # Fine-grained PlaceExtract rows must not autolink to container admin canonicals via cache.
 _FINE_SUBSTRATE_TYPES: frozenset[str] = frozenset(

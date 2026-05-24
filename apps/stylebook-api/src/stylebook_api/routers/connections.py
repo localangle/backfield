@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.entities.location.locations import _project_by_slug, _require_stylebook_id
 from stylebook_api.helpers.connections_utils import (
     get_canonical_display_name,
     normalize_connection_entity_id,
@@ -22,7 +23,6 @@ from stylebook_api.helpers.connections_utils import (
     validate_connection_pair,
     validate_not_self_connection,
 )
-from stylebook_api.routers.locations import _project_by_slug, _require_stylebook_id
 from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import require_stylebook_by_slug_in_auth_org
 

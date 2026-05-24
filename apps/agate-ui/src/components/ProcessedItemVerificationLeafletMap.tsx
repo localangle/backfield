@@ -1,5 +1,5 @@
 import { GeometryEditLeafletMap } from '@backfield/ui/GeometryEditLeafletMap'
-import type { LeafletFeatureCollections } from '@/lib/processedItemPlaceGeometry'
+import type { LeafletFeatureCollections } from '@/lib/review/entities/location/placeGeometry'
 
 export interface ProcessedItemVerificationLeafletMapProps {
   collections: LeafletFeatureCollections

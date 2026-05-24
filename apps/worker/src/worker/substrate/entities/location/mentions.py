@@ -16,9 +16,9 @@ from backfield_stylebook.substrate_canonical_link_actions import (
 from sqlalchemy import func
 from sqlmodel import Session, col, select
 
-from worker.substrate_common import _WS_RE, _utcnow
-from worker.substrate_location import _display_name_for_place_entry
-from worker.substrate_span import _find_mention_span
+from worker.substrate.common import _WS_RE, _utcnow
+from worker.substrate.entities.location.span import _find_mention_span
+from worker.substrate.entities.location.upsert import _display_name_for_place_entry
 
 # Primary editorial role (PlaceExtract `nature`). Extras: `nature_secondary_tags` in extraction JSON
 # → `SubstrateLocationMention.nature_secondary_tags_json`.

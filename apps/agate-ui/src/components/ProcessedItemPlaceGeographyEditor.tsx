@@ -1,12 +1,12 @@
-import { isReviewOnlyMergedRow } from '@/lib/processedItemReviewRow'
+import { isReviewOnlyMergedRow } from '@/lib/review/entities/location/reviewRow'
 import { ProcessedItemVerificationLeafletMap } from '@/components/ProcessedItemVerificationLeafletMap'
 import { GeocodedPlaceEditForm } from '@/components/GeocodedPlaceEditForm'
 import { GeocodedPlacesTable } from '@/components/GeocodedPlacesTable'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import type { LeafletFeatureCollections } from '@/lib/processedItemPlaceGeometry'
-import type { PlaceEditFields } from '@/lib/processedItemPlaceEditFields'
+import type { LeafletFeatureCollections } from '@/lib/review/entities/location/placeGeometry'
+import type { PlaceEditFields } from '@/lib/review/entities/location/placeEditFields'
 import { Loader2, Map, MousePointer, Pencil, Square, Trash2 } from 'lucide-react'
 
 export interface ProcessedItemPlaceGeographyEditorProps {

@@ -8,7 +8,7 @@ from backfield_db import StylebookLocationAlias, StylebookLocationCanonical
 from sqlalchemy import or_, text
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.canonical_link_matrix import types_are_comparable
+from backfield_stylebook.canonical.link_matrix import types_are_comparable
 
 # Low threshold: precision is handled in :mod:`canonical_match_score`.
 _PG_SIMILARITY_THRESHOLD: float = 0.12

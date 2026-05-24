@@ -1,8 +1,8 @@
-"""Unit tests for ``processed_item_locations_merge``."""
+"""Unit tests for ``api.processed_item.entities.location.locations_merge``."""
 
 from __future__ import annotations
 
-from api.processed_item_locations_merge import build_merged_locations_lane
+from api.processed_item.entities.location.locations_merge import build_merged_locations_lane
 
 
 def _place(desc: str, **extra: object) -> dict:

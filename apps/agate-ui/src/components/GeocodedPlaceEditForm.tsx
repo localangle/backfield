@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { MentionOccurrenceListEditor } from '@/components/MentionOccurrenceListEditor'
-import type { PlaceEditFields } from '@/lib/processedItemPlaceEditFields'
+import type { PlaceEditFields } from '@/lib/review/entities/location/placeEditFields'
 import {
   PLACE_EXTRACT_LOCATION_TYPES,
   placeExtractTypeLabel,

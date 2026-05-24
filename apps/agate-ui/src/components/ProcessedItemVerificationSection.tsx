@@ -30,7 +30,7 @@ import {
   overlayAnchorGeometryChanged,
   shallowMergePlacePatch,
   validateGeometryObject,
-} from '@/lib/processedItemPlaceGeometry'
+} from '@/lib/review/entities/location/placeGeometry'
 import {
   applyPlaceEditFields,
   buildPlaceEditOverlayPatch,
@@ -38,7 +38,7 @@ import {
   placeEditFieldsEqual,
   readPlaceEditFields,
   type PlaceEditFields,
-} from '@/lib/processedItemPlaceEditFields'
+} from '@/lib/review/entities/location/placeEditFields'
 import {
   getMergedRowPersistedLocationId,
   resolveProcessedItemArticleId,
@@ -46,18 +46,18 @@ import {
   getMergedRowStylebookLink,
   isReviewOnlyMergedRow,
   resolveStylebookSlugForLinkedRow,
-} from '@/lib/processedItemReviewRow'
+} from '@/lib/review/entities/location/reviewRow'
 import { Plus } from 'lucide-react'
 import {
   buildOccurrencesOverlayPayload,
   recomputeOccurrenceSpans,
   readMentionOccurrencesFromRow,
-} from '@/lib/processedItemMentionOccurrences'
+} from '@/lib/review/entities/location/mentionOccurrences'
 import {
   buildOccurrenceSpanHits,
   findAllMentionOccurrencesInArticle,
   resolveEvidenceSpansInArticle,
-} from '@/lib/processedItemEvidenceSpan'
+} from '@/lib/review/content/evidenceSpan'
 import {
   deleteSavedPlace,
   replaceSavedPlaceMentionOccurrences,
@@ -72,7 +72,7 @@ import {
   getMergedRowAnchor,
   normalizeOverlay,
   overlaysStructurallyEqual,
-} from '@/lib/processedItemVerificationOverlay'
+} from '@/lib/review/overlay/verificationOverlay'
 
 export interface ProcessedItemVerificationSectionProps {
   runId: string

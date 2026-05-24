@@ -11,14 +11,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
-import { processedItemDisplayTitle } from '@/lib/processedItemDisplayTitle'
+import { processedItemDisplayTitle } from '@/lib/review/content/displayTitle'
 import {
   PROCESSED_ITEM_DETAIL_TABS,
   isProcessedItemDetailTab,
   parseProcessedItemDetailTab,
   readProcessedItemTabFromLocation,
   type ProcessedItemDetailTab,
-} from '@/lib/processedItemDetailTab'
+} from '@/lib/review/content/detailTab'
 import {
   RERUN_WARNING_TITLE,
   reconciliationPolicyFromGraph,

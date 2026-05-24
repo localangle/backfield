@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from worker.substrate_common import _WS_RE
+from worker.substrate.common import _WS_RE
 
 # Private-use sentinel: map all ASCII/Unicode apostrophe and quote marks to one code point so
 # `find()` indices stay aligned with the original `haystack` / `needle` (1:1 length).

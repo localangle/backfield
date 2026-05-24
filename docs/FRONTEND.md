@@ -22,6 +22,18 @@ This document covers frontend conventions for `apps/agate-ui` and `apps/styleboo
 - **Client layout:** typed calls are split under `apps/stylebook-ui/src/lib/stylebook-api/` and re-exported from `src/lib/api.ts` for pages that still follow the agate-ai-platform import style.
 - **Shell vs home heading:** the top bar `**ShellProductBrand`** title is always **Stylebook**. The dashboard main heading shows the **selected catalog** display name (same resolution as sidebar scope: org stylebooks + `**/stylebook/<slug>/`** / defaults), provided by `**StylebookScopeProvider**` in `Layout` and `useSelectedStylebookLabel()` on the home page.
 
+## Agate UI review library (`src/lib/review/`)
+
+Processed-item review helpers are grouped to match backend layout (`content/` vs `entities/location/` vs `overlay/`). Import from `@/lib/review/…` in components and pages.
+
+| Area | Path |
+|------|------|
+| Article / item chrome | `review/content/` (`articleFields`, `detailTab`, `displayTitle`, `sourceDisplay`, `evidenceSpan`) |
+| Location review | `review/entities/location/` (`placeGeometry`, `placeEditFields`, `mentionOccurrences`, `reviewRow`) |
+| Overlay state | `review/overlay/verificationOverlay` |
+
+See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) for the full cross-repo map. Adding a new entity type later: add `review/entities/<type>/` when product ships that review UI.
+
 ## Agate UI responsibilities
 
 - Render the flowbuilder and run experience.

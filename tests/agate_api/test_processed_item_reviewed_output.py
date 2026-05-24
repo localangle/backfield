@@ -1,8 +1,8 @@
-"""Tests for ``processed_item_reviewed_output``."""
+"""Tests for ``api.processed_item.overlay.reviewed_output``."""
 
 from __future__ import annotations
 
-from api.processed_item_reviewed_output import (
+from api.processed_item.overlay.reviewed_output import (
     build_reviewed_output,
     overlay_has_review_content,
 )

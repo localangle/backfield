@@ -188,7 +188,7 @@ def validate_overlay_occurrences(
     *,
     article_body_length: int | None,
 ) -> None:
-    from api.processed_item_overlay_validate import OverlayGeometryValidationError
+    from api.processed_item.overlay.validate import OverlayGeometryValidationError
 
     raw = patch.get("occurrences")
     if raw is None:

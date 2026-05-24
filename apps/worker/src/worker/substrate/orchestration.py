@@ -24,19 +24,19 @@ from backfield_stylebook.locations import (
 )
 from sqlmodel import Session, col, select
 
-from worker.canonical_adjudication import adjudicate_ambiguous_plan_with_llm
-from worker.substrate_article import _sync_images, _upsert_article
-from worker.substrate_article_geography_reset import (
+from worker.substrate.canonical.adjudication import adjudicate_ambiguous_plan_with_llm
+from worker.substrate.content.article import _sync_images, _upsert_article
+from worker.substrate.content.geography_reset import (
     ArticleGeographyReplaceStats,
     replace_machine_geography_for_article,
 )
-from worker.substrate_location import _iter_place_entries, _upsert_location
-from worker.substrate_mentions import (
+from worker.substrate.entities.location.mentions import (
     _upsert_mention_and_occurrence,
     dispose_orphan_substrates_after_retired_mentions,
     retire_stale_article_mentions_for_rerun,
 )
-from worker.substrate_span import _find_mention_span
+from worker.substrate.entities.location.span import _find_mention_span
+from worker.substrate.entities.location.upsert import _iter_place_entries, _upsert_location
 
 logger = logging.getLogger(__name__)
 

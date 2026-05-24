@@ -30,7 +30,7 @@ import {
   rerunWarningBody,
   rerunWarningTitle,
 } from '@/lib/rerunWarning'
-import { isBatchFileSource, processedItemSourceLabel } from '@/lib/processedItemSourceDisplay'
+import { isBatchFileSource, processedItemSourceLabel } from '@/lib/review/content/sourceDisplay'
 import {
   isRunPreparingItems,
   PREPARING_ITEMS_SOURCE_LABEL,

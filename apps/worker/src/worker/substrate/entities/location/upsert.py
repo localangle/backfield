@@ -15,7 +15,7 @@ from backfield_stylebook.substrate_location_cache_fingerprint import (
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from worker.substrate_common import _normalize_name, _sha256_hex, _utcnow
+from worker.substrate.common import _normalize_name, _sha256_hex, _utcnow
 
 # Consolidated place payload key from GeocodeAgent (ignored by geometry/canonical logic).
 _AGATE_GEOCODE_ROUTER_AUDIT_KEY = "agate_geocode_router_audit"
