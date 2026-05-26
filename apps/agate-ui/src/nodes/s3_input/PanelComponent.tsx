@@ -21,9 +21,21 @@ const nodeMetadata = {
   }
 };
 
+import { useEffect, useState } from 'react'
+import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
+import { NodePanelOutputsSection } from '@/components/node-panel/NodePanelOutputsSection'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
+
+const MAX_FILES_MIN = 1
+const MAX_FILES_MAX = 10000
+const MAX_FILES_DEFAULT = 500
+
+function clampMaxFiles(value: number): number {
+  if (!Number.isFinite(value)) return MAX_FILES_DEFAULT
+  return Math.min(MAX_FILES_MAX, Math.max(MAX_FILES_MIN, Math.trunc(value)))
+}
 
 interface S3InputPanelProps {
   node: any
@@ -43,29 +55,37 @@ export default function S3InputPanel({
   setNodes,
   nodeOutputLookupSpec,
 }: S3InputPanelProps) {
+  const storedMaxFiles = clampMaxFiles(Number(node.data.max_files ?? MAX_FILES_DEFAULT))
+  const [maxFilesDraft, setMaxFilesDraft] = useState(String(storedMaxFiles))
+
+  useEffect(() => {
+    setMaxFilesDraft(String(clampMaxFiles(Number(node.data.max_files ?? MAX_FILES_DEFAULT))))
+  }, [node.id, node.data.max_files])
+
+  const commitMaxFiles = () => {
+    if (!setNodes) return
+    const digits = maxFilesDraft.replace(/\D/g, '')
+    const parsed = digits === '' ? MAX_FILES_DEFAULT : parseInt(digits, 10)
+    const next = clampMaxFiles(parsed)
+    setMaxFilesDraft(String(next))
+    setNodes((nds: any[]) =>
+      nds.map((n: any) =>
+        n.id === node.id ? { ...n, data: { ...n.data, max_files: next } } : n,
+      ),
+    )
+  }
+
   const rawOutputs = currentRun?.node_outputs as Record<string, unknown> | undefined
   const slice = rawOutputs
     ? (getNodeOutputById(rawOutputs, node.id, nodeOutputLookupSpec ?? undefined) as
         | Record<string, unknown>
         | undefined)
     : undefined
+
   return (
     <>
-      <div className="space-y-3">
-        <div>
-          <Label className="text-sm font-medium">Description</Label>
-          <p className="text-sm text-muted-foreground mt-1">
-            Load article text from JSON files in S3.
-          </p>
-        </div>
-      </div>
-
-      <div className="pt-4 border-t">
-        <div>
-          <Label className="text-sm font-medium">Parameters</Label>
-        </div>
-
-        <div className="space-y-3 mt-2">
+      <NodePanelTabGate tab="settings">
+        <div className="space-y-3">
           <div>
             <Label htmlFor="bucket" className="text-xs text-muted-foreground">
               S3 bucket name
@@ -117,8 +137,8 @@ export default function S3InputPanel({
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              Optional prefix inside the bucket (for example <span className="font-mono">input/</span>
-              ).
+              Optional prefix inside the bucket (for example{' '}
+              <span className="font-mono">input/</span>).
             </p>
           </div>
 
@@ -129,34 +149,32 @@ export default function S3InputPanel({
             {editMode && setNodes ? (
               <Input
                 id="max-files"
-                type="number"
-                min={1}
-                max={10000}
-                value={node.data.max_files ?? 500}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10)
-                  const next = Number.isFinite(v) ? v : 500
-                  setNodes((nds: any[]) =>
-                    nds.map((n: any) =>
-                      n.id === node.id ? { ...n, data: { ...n.data, max_files: next } } : n,
-                    ),
-                  )
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={maxFilesDraft}
+                onChange={(e) => setMaxFilesDraft(e.target.value.replace(/\D/g, ''))}
+                onBlur={commitMaxFiles}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitMaxFiles()
+                  }
                 }}
-                className="mt-1 text-xs"
+                className="mt-1 text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             ) : (
               <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs">{node.data.max_files ?? 500}</span>
+                <span className="text-xs">{storedMaxFiles}</span>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </NodePanelTabGate>
 
-      {slice && typeof slice.total_files === 'number' && (
-        <div className="pt-4 border-t">
-          <Label className="text-sm font-medium">Latest run</Label>
-          <div className="mt-2 space-y-2">
+      <NodePanelTabGate tab="outputs">
+        {slice && typeof slice.total_files === 'number' ? (
+          <NodePanelOutputsSection>
             <div className="text-xs space-y-1">
               <div className="flex justify-between items-center p-2 bg-muted rounded">
                 <span className="text-muted-foreground">Total files</span>
@@ -181,9 +199,9 @@ export default function S3InputPanel({
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          </NodePanelOutputsSection>
+        ) : null}
+      </NodePanelTabGate>
     </>
   )
 }

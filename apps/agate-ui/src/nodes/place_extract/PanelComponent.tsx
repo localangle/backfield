@@ -40,6 +40,8 @@ const nodeMetadata = {
 };
 
 import React, { useEffect, useMemo, useState } from 'react'
+import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
+import { NodePanelOutputsSection } from '@/components/node-panel/NodePanelOutputsSection'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
@@ -264,17 +266,7 @@ export default function PlaceExtractPanel({
 
   return (
     <>
-      <div className="space-y-4">
-        <div>
-          <Label className="text-sm font-medium">About</Label>
-          <p className="text-sm text-muted-foreground mt-1">{nodeMetadata.description}</p>
-          {nodeMetadata.dependencyHelperText ? (
-            <p className="text-sm text-muted-foreground mt-2 border-l-2 border-muted pl-3">
-              {nodeMetadata.dependencyHelperText}
-            </p>
-          ) : null}
-        </div>
-
+      <NodePanelTabGate tab="settings">
         <div>
           <Label className="text-sm font-medium">Input placeholders</Label>
           <p className="text-sm text-muted-foreground mt-1">
@@ -306,14 +298,10 @@ export default function PlaceExtractPanel({
             </li>
           </ul>
         </div>
-      </div>
+      </NodePanelTabGate>
 
-      <div className="pt-4 border-t">
-        <div>
-          <Label className="text-sm font-medium">Parameters</Label>
-        </div>
-
-        <div className="space-y-2 text-sm mt-2">
+      <NodePanelTabGate tab="models">
+        <div className="space-y-2 text-sm">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Model</Label>
             {editMode && setNodes ? (
@@ -376,8 +364,10 @@ export default function PlaceExtractPanel({
             )}
           </div>
         </div>
+      </NodePanelTabGate>
 
-        <div className="pt-2">
+      <NodePanelTabGate tab="prompts">
+        <div>
           <Label className="text-sm font-medium">Prompt</Label>
           {editMode && setNodes ? (
             <Textarea
@@ -413,12 +403,11 @@ export default function PlaceExtractPanel({
           />
           <p className="text-xs text-muted-foreground mt-1">For reference only.</p>
         </div>
-      </div>
+      </NodePanelTabGate>
 
-      {latestData && latestData.locations && (
-        <div className="pt-4 border-t">
-          <Label className="text-sm font-medium">Latest run</Label>
-          <div className="mt-2 space-y-2">
+      <NodePanelTabGate tab="outputs">
+        {latestData && latestData.locations ? (
+          <NodePanelOutputsSection>
             <div className="text-xs text-muted-foreground">
               <div>Places found: {latestData.locations.length}</div>
             </div>
@@ -438,9 +427,9 @@ export default function PlaceExtractPanel({
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
+          </NodePanelOutputsSection>
+        ) : null}
+      </NodePanelTabGate>
     </>
   )
 }

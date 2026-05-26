@@ -3,9 +3,30 @@ export type FlowBuilderStep = 'input' | 'output' | 'scaffold'
 export const FLOW_BUILDER_STEPS: FlowBuilderStep[] = ['input', 'output', 'scaffold']
 
 export const STEP_HEADINGS: Record<FlowBuilderStep, string> = {
-  input: 'Where content comes in',
-  output: 'Where results go',
+  input: 'Choose an input',
+  output: 'Choose an output',
   scaffold: 'Build your flow',
+}
+
+export const STEP_DESCRIPTIONS: Record<FlowBuilderStep, string> = {
+  input: 'Choose how articles or content enter this flow.',
+  output: 'Choose where this flow saves its results.',
+  scaffold: 'Add steps between your source and destination.',
+}
+
+export const STEP_CHOOSER_COPY: Partial<
+  Record<FlowBuilderStep, { title: string; description: string }>
+> = {
+  input: {
+    title: 'First, choose an input',
+    description:
+      'Pick how articles or content enter this flow — paste text, provide structured JSON, or read files from cloud storage.',
+  },
+  output: {
+    title: 'Second, choose an output',
+    description:
+      'Pick where this flow sends its results — as JSON for review and export, or to your organization Stylebook.',
+  },
 }
 
 export type CompletedSteps = ReadonlySet<FlowBuilderStep>

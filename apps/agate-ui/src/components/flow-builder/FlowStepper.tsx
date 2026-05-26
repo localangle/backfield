@@ -21,8 +21,8 @@ export default function FlowStepper({
   canNavigateTo,
 }: FlowStepperProps) {
   return (
-    <nav aria-label="Flow setup steps" className="border-b bg-muted/30">
-      <ol className="container mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 py-4">
+    <nav aria-label="Flow setup steps" className="border-b">
+      <ol className="container mx-auto flex max-w-3xl items-center gap-1 px-4 py-2.5">
         {FLOW_BUILDER_STEPS.map((step, index) => {
           const isActive = activeStep === step
           const isComplete = completedSteps.has(step)
@@ -30,40 +30,43 @@ export default function FlowStepper({
           const stepNumber = index + 1
 
           return (
-            <li key={step} className="flex flex-1 items-center gap-2">
+            <li key={step} className="flex min-w-0 flex-1 items-center gap-1">
               <button
                 type="button"
                 disabled={isLocked}
                 onClick={() => onStepChange(step)}
+                aria-current={isActive ? 'step' : undefined}
                 className={cn(
-                  'flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors',
-                  isActive && 'bg-background shadow-sm ring-1 ring-border',
-                  !isActive && !isLocked && 'hover:bg-background/60',
-                  isLocked && 'cursor-not-allowed opacity-50',
+                  'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left transition-colors',
+                  isActive && 'text-foreground',
+                  !isActive && !isLocked && 'text-muted-foreground hover:text-foreground',
+                  isLocked && 'cursor-not-allowed text-muted-foreground/50',
                 )}
               >
                 <span
                   className={cn(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium',
-                    isComplete && 'bg-primary text-primary-foreground',
-                    isActive && !isComplete && 'bg-primary/10 text-primary ring-2 ring-primary',
+                    'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium',
+                    isComplete && 'bg-primary/15 text-primary',
+                    isActive && !isComplete && 'bg-foreground text-background',
                     !isActive && !isComplete && 'bg-muted text-muted-foreground',
                   )}
                 >
-                  {isComplete ? <Check className="h-4 w-4" aria-hidden /> : stepNumber}
+                  {isComplete ? <Check className="h-3 w-3" aria-hidden /> : stepNumber}
                 </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium leading-tight">{STEP_HEADINGS[step]}</span>
-                  {isLocked && !isComplete && (
-                    <span className="block text-xs text-muted-foreground">Complete the previous step first</span>
+                <span
+                  className={cn(
+                    'truncate text-xs leading-tight',
+                    isActive ? 'font-medium' : 'font-normal',
                   )}
+                >
+                  {STEP_HEADINGS[step]}
                 </span>
               </button>
               {index < FLOW_BUILDER_STEPS.length - 1 && (
                 <div
                   className={cn(
-                    'hidden h-px flex-1 bg-border sm:block',
-                    completedSteps.has(step) && 'bg-primary/40',
+                    'hidden h-px w-4 shrink-0 bg-border sm:block',
+                    completedSteps.has(step) && 'bg-primary/25',
                   )}
                   aria-hidden
                 />

@@ -62,6 +62,48 @@ function typesCompatible(outputType: string, inputType: string): boolean {
   return false
 }
 
+/** Pick source/target handle ids for a guided edge from node metadata ports. */
+export function resolveEdgeHandles(
+  sourceType: string,
+  targetType: string,
+): { sourceHandle: string; targetHandle: string } | null {
+  const sourceMeta = nodeMetadata.find((m) => m.type === sourceType)
+  const targetMeta = nodeMetadata.find((m) => m.type === targetType)
+  if (!sourceMeta || !targetMeta) return null
+
+  const outputs = sourceMeta.outputs ?? []
+  const inputs = targetMeta.inputs ?? []
+  if (outputs.length === 0 || inputs.length === 0) return null
+
+  const requiredInputs = inputs.filter((input) => input.required)
+  const inputsToTry = requiredInputs.length > 0 ? requiredInputs : inputs
+
+  for (const input of inputsToTry) {
+    const compatible = outputs.filter((output) =>
+      typesCompatible(String(output.type), String(input.type)),
+    )
+    if (compatible.length === 0) continue
+
+    const sameId = compatible.find((output) => output.id === input.id)
+    if (sameId) {
+      return { sourceHandle: sameId.id, targetHandle: input.id }
+    }
+
+    if (input.type === 'any' || input.type === 'object') {
+      const preferred =
+        compatible.find((output) => output.id === 'locations') ??
+        compatible.find((output) => output.id === 'places') ??
+        compatible.find((output) => output.type === 'array' || output.type === 'object') ??
+        compatible[compatible.length - 1]
+      return { sourceHandle: preferred.id, targetHandle: input.id }
+    }
+
+    return { sourceHandle: compatible[0].id, targetHandle: input.id }
+  }
+
+  return null
+}
+
 function parentOutputsCompatible(
   parentMeta: NodeMetadataEntry,
   candidateMeta: NodeMetadataEntry,

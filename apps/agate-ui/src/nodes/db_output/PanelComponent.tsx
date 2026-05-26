@@ -44,6 +44,7 @@ const nodeMetadata = {
 };
 
 import React, { useEffect, useMemo, useState } from 'react'
+import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { Label } from '@/components/ui/label'
 import {
@@ -323,14 +324,7 @@ export default function DBOutputPanel({
 
   return (
     <div className="space-y-4">
-      <div>
-        <Label className="text-sm font-medium">Description</Label>
-        <p className="text-sm text-muted-foreground mt-1">
-          Persists geocoded places to substrate tables and applies Stylebook canonicalization
-          according to the options below.
-        </p>
-      </div>
-
+      <NodePanelTabGate tab="settings">
       <div className="space-y-2">
         <Label htmlFor="dbout-stylebook" className="text-xs">
           Catalog
@@ -422,6 +416,22 @@ export default function DBOutputPanel({
         </select>
       </div>
 
+      <div className="flex items-center gap-2">
+        <input
+          id="dbout-auto"
+          type="checkbox"
+          className="h-4 w-4 rounded border-input"
+          disabled={disabled}
+          checked={Boolean(data.auto_apply_canonicalization)}
+          onChange={(e) => patch({ auto_apply_canonicalization: e.target.checked })}
+        />
+        <Label htmlFor="dbout-auto" className="text-sm font-normal cursor-pointer">
+          Auto-apply canonicalization (off = review queue with recommendations)
+        </Label>
+      </div>
+      </NodePanelTabGate>
+
+      <NodePanelTabGate tab="models">
       <div className="space-y-2">
         <Label htmlFor="dbout-model" className="text-xs">
           Adjudication model (AI-assisted)
@@ -463,20 +473,7 @@ export default function DBOutputPanel({
           come from this project&apos;s enabled models.
         </p>
       </div>
-
-      <div className="flex items-center gap-2">
-        <input
-          id="dbout-auto"
-          type="checkbox"
-          className="h-4 w-4 rounded border-input"
-          disabled={disabled}
-          checked={Boolean(data.auto_apply_canonicalization)}
-          onChange={(e) => patch({ auto_apply_canonicalization: e.target.checked })}
-        />
-        <Label htmlFor="dbout-auto" className="text-sm font-normal cursor-pointer">
-          Auto-apply canonicalization (off = review queue with recommendations)
-        </Label>
-      </div>
+      </NodePanelTabGate>
     </div>
   )
 }

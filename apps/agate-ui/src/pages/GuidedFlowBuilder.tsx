@@ -4,9 +4,12 @@ import type { Node } from 'reactflow'
 
 import AddNodeChooser from '@/components/flow-builder/AddNodeChooser'
 import BookendChooser from '@/components/flow-builder/BookendChooser'
+import BookendSwapDialog from '@/components/flow-builder/BookendSwapDialog'
 import ConfigureGatePanel from '@/components/flow-builder/ConfigureGatePanel'
 import FlowStepper from '@/components/flow-builder/FlowStepper'
-import GuidedFlowCanvas from '@/components/flow-builder/GuidedFlowCanvas'
+import GuidedFlowCanvas, {
+  GUIDED_FLOW_NODE_PANEL_WIDTH_PX,
+} from '@/components/flow-builder/GuidedFlowCanvas'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import RunPanel from '@/components/RunPanel'
 import { useAppMessage } from '@/components/AppMessageProvider'
@@ -19,23 +22,28 @@ import {
 import {
   addSiblingBranch,
   applyLayoutToModel,
+  canReplaceInputBookend,
+  canReplaceOutputBookend,
   clearMiddleNodes,
   createFlowGraphModel,
   deleteMiddleNode,
+  replaceInputBookend,
+  replaceOutputBookend,
   getBranchAncestry,
   getNodeById,
   hydrateFromSpec,
   insertAfter,
-  insertBetween,
   modelToGraphSpec,
   updateMiddleNode,
+  toReactFlowNodes,
+  updateNodePosition,
   type FlowGraphModel,
 } from '@/lib/flowGraphModel'
 import {
   canNavigateToStep,
   completedStepsForEdit,
   getInitialEditStep,
-  STEP_HEADINGS,
+  STEP_CHOOSER_COPY,
   type FlowBuilderStep,
 } from '@/lib/flowBuilderSteps'
 import { getCompatibleNextNodes } from '@/lib/nodeCompatibility'
@@ -82,13 +90,13 @@ function buildSaveModel(
     id: inputNode.id,
     type: inputNode.type ?? 'TextInput',
     data: inputNode.data as Record<string, unknown>,
-    position: inputNode.position,
+    position: scaffoldModel?.inputNode.position,
   }
   const outputBookend = {
     id: outputNode.id,
     type: outputNode.type ?? 'Output',
     data: outputNode.data as Record<string, unknown>,
-    position: outputNode.position,
+    position: scaffoldModel?.outputNode.position,
   }
   const base = scaffoldModel ?? createFlowGraphModel(inputBookend, outputBookend)
   return applyLayoutToModel({
@@ -173,13 +181,15 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const [configureGateActive, setConfigureGateActive] = useState(false)
   const [addChooserOpen, setAddChooserOpen] = useState(false)
   const [addFromParentId, setAddFromParentId] = useState<string | null>(null)
-  const [edgeInsert, setEdgeInsert] = useState<{ sourceId: string; targetId: string } | null>(null)
+  const [bookendSwapOpen, setBookendSwapOpen] = useState(false)
+  const [bookendSwapKind, setBookendSwapKind] = useState<'input' | 'output'>('input')
+  /** After the first middle step is added or the empty-flow CTA is dismissed, do not show it again. */
+  const [firstStepIntroComplete, setFirstStepIntroComplete] = useState(false)
   const [resolvedFlowProject, setResolvedFlowProject] = useState<Project | null>(null)
   const [flowProjectLoading, setFlowProjectLoading] = useState(false)
   const [existingGraphId, setExistingGraphId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [graphLoading, setGraphLoading] = useState(false)
-
   const [modalOpen, setModalOpen] = useState(false)
   const [modalConfig, setModalConfig] = useState<{
     title: string
@@ -266,7 +276,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         setExistingGraphId(graph.id)
         setGraphName(graph.name)
         setResolvedFlowProject(project)
-        setScaffoldModel(hydrated.model)
+        setScaffoldModel(applyLayoutToModel(hydrated.model, { relayoutBookends: true }))
         setInputNode(toReactFlowBookend(hydrated.model.inputNode))
         setOutputNode(toReactFlowBookend(hydrated.model.outputNode))
         setCompletedSteps(completedStepsForEdit())
@@ -385,7 +395,14 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
   const clearScaffold = useCallback(() => {
     setScaffoldModel(null)
+    setFirstStepIntroComplete(false)
   }, [])
+
+  useEffect(() => {
+    if ((scaffoldModel?.middleNodes.length ?? 0) > 0) {
+      setFirstStepIntroComplete(true)
+    }
+  }, [scaffoldModel?.middleNodes.length])
 
   useEffect(() => {
     if (activeStep !== 'scaffold' || !inputNode || !outputNode) return
@@ -401,13 +418,25 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         data: outputNode.data as Record<string, unknown>,
       }
       if (!current) {
-        return createFlowGraphModel(inputBookend, outputBookend)
+        return applyLayoutToModel(createFlowGraphModel(inputBookend, outputBookend), {
+          relayoutBookends: true,
+        })
       }
-      return {
-        ...current,
-        inputNode: inputBookend,
-        outputNode: outputBookend,
-      }
+      return applyLayoutToModel(
+        {
+          ...current,
+          inputNode: {
+            ...inputBookend,
+            position: current.inputNode.id === inputBookend.id ? current.inputNode.position : undefined,
+          },
+          outputNode: {
+            ...outputBookend,
+            position:
+              current.outputNode.id === outputBookend.id ? current.outputNode.position : undefined,
+          },
+        },
+        { relayoutBookends: true },
+      )
     })
   }, [activeStep, inputNode, outputNode])
 
@@ -417,7 +446,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setActiveStep(step)
       setAddChooserOpen(false)
       setAddFromParentId(null)
-      setEdgeInsert(null)
       if (step === 'input' && inputNode) {
         setSelectedNodeId(inputNode.id)
         setConfigureGateActive(!readOnly && !completedSteps.has('input'))
@@ -432,125 +460,151 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [completedStepsReadonly, inputNode, outputNode, completedSteps, readOnly],
   )
 
-  const handleInputTypeSelect = useCallback(
-    (type: string) => {
-      void (async () => {
-        if (!(INPUT_BOOKEND_TYPES as readonly string[]).includes(type)) return
-        const typeChanging = inputNode?.type !== type
-        const middleCount = scaffoldModel?.middleNodes.length ?? 0
-        if (middleCount > 0 && typeChanging) {
-          const ok = await showConfirm(
-            'Change your content source type? All steps between your source and destination will be removed.',
-            {
-              title: 'Change content source',
-              confirmLabel: 'Change source',
-              destructive: true,
-            },
-          )
-          if (!ok) return
-        }
+  const applyInputBookendSwap = useCallback(
+    (type: string, options?: { activeStepAfter?: FlowBuilderStep }) => {
+      if (!(INPUT_BOOKEND_TYPES as readonly string[]).includes(type)) return false
 
-        const id = inputNode?.id ?? nextNodeId()
-        const node: Node = {
-          id,
-          type,
-          position: { x: 0, y: 0 },
-          data: getInputBookendDefaultData(type),
+      const id = inputNode?.id ?? nextNodeId()
+      const data = getInputBookendDefaultData(type) as Record<string, unknown>
+      const node: Node = { id, type, data, position: inputNode?.position ?? { x: 0, y: 0 } }
+
+      if (scaffoldModel && outputNode && inputNode) {
+        if (inputNode.type === type) {
+          setSelectedNodeId(id)
+          return true
+        }
+        const check = canReplaceInputBookend(scaffoldModel, type)
+        if (!check.ok) {
+          showModal({
+            title: 'Cannot change source',
+            description: check.reason,
+            type: 'warning',
+            confirmText: 'OK',
+            onConfirm: () => {},
+          })
+          return false
         }
         setInputNode(node)
+        setScaffoldModel((current) =>
+          current
+            ? applyLayoutToModel(replaceInputBookend(current, { type, data }), {
+                relayoutBookends: false,
+              })
+            : current,
+        )
         setSelectedNodeId(id)
         setConfigureGateActive(true)
-        setActiveStep('input')
+        if (options?.activeStepAfter) setActiveStep(options.activeStepAfter)
+        return true
+      }
 
-        if (!outputNode) {
-          setOutputNode(null)
-          clearScaffold()
-          setCompletedSteps(resetStepsAfterInput)
-          return
-        }
+      setInputNode(node)
+      setSelectedNodeId(id)
+      setConfigureGateActive(true)
+      setActiveStep('input')
 
-        const outputBookend = {
-          id: outputNode.id,
-          type: outputNode.type ?? 'Output',
-          data: outputNode.data as Record<string, unknown>,
-        }
-        const inputBookend = {
-          id,
-          type,
-          data: node.data as Record<string, unknown>,
-        }
-        setScaffoldModel((current) =>
-          applyLayoutToModel(
-            clearMiddleNodes({
-              ...(current ?? createFlowGraphModel(inputBookend, outputBookend)),
-              inputNode: inputBookend,
-              outputNode: outputBookend,
-            }),
-          ),
-        )
-        setCompletedSteps((prev) => new Set(prev).add('input'))
-      })()
+      if (!outputNode) {
+        clearScaffold()
+        setCompletedSteps(resetStepsAfterInput)
+        return true
+      }
+
+      const outputBookend = {
+        id: outputNode.id,
+        type: outputNode.type ?? 'Output',
+        data: outputNode.data as Record<string, unknown>,
+      }
+      const inputBookend = { id, type, data }
+      setScaffoldModel((current) =>
+        applyLayoutToModel(
+          clearMiddleNodes({
+            ...(current ?? createFlowGraphModel(inputBookend, outputBookend)),
+            inputNode: inputBookend,
+            outputNode: outputBookend,
+          }),
+          { relayoutBookends: true },
+        ),
+      )
+      setCompletedSteps((prev) => new Set(prev).add('input'))
+      return true
     },
-    [inputNode, outputNode, scaffoldModel, resetStepsAfterInput, clearScaffold, showConfirm],
+    [
+      inputNode,
+      outputNode,
+      scaffoldModel,
+      resetStepsAfterInput,
+      clearScaffold,
+      showModal,
+    ],
   )
 
-  const handleOutputTypeSelect = useCallback(
-    (type: string) => {
-      void (async () => {
-        if (!(OUTPUT_BOOKEND_TYPES as readonly string[]).includes(type)) return
-        const typeChanging = outputNode?.type !== type
-        const middleCount = scaffoldModel?.middleNodes.length ?? 0
-        if (middleCount > 0 && typeChanging) {
-          const ok = await showConfirm(
-            'Change where results are saved? All steps between your source and destination will be removed.',
-            {
-              title: 'Change destination',
-              confirmLabel: 'Change destination',
-              destructive: true,
-            },
-          )
-          if (!ok) return
-        }
+  const applyOutputBookendSwap = useCallback(
+    (type: string, options?: { activeStepAfter?: FlowBuilderStep }) => {
+      if (!(OUTPUT_BOOKEND_TYPES as readonly string[]).includes(type)) return false
 
-        const id = outputNode?.id ?? nextNodeId()
-        const node: Node = {
-          id,
-          type,
-          position: { x: 0, y: 0 },
-          data: getOutputBookendDefaultData(type, workspaceStylebookId),
+      const id = outputNode?.id ?? nextNodeId()
+      const data = getOutputBookendDefaultData(type, workspaceStylebookId) as Record<string, unknown>
+      const node: Node = { id, type, data, position: outputNode?.position ?? { x: 0, y: 0 } }
+
+      if (scaffoldModel && inputNode && outputNode) {
+        if (outputNode.type === type) {
+          setSelectedNodeId(id)
+          return true
+        }
+        const check = canReplaceOutputBookend(scaffoldModel, type)
+        if (!check.ok) {
+          showModal({
+            title: 'Cannot change destination',
+            description: check.reason,
+            type: 'warning',
+            confirmText: 'OK',
+            onConfirm: () => {},
+          })
+          return false
         }
         setOutputNode(node)
+        setScaffoldModel((current) =>
+          current
+            ? applyLayoutToModel(replaceOutputBookend(current, { type, data }), {
+                relayoutBookends: false,
+              })
+            : current,
+        )
         setSelectedNodeId(id)
         setConfigureGateActive(true)
-        setActiveStep('output')
+        if (options?.activeStepAfter) setActiveStep(options.activeStepAfter)
+        return true
+      }
 
-        if (!inputNode) {
-          clearScaffold()
-          setCompletedSteps(resetStepsAfterOutput)
-          return
-        }
+      setOutputNode(node)
+      setSelectedNodeId(id)
+      setConfigureGateActive(true)
+      setActiveStep('output')
 
-        const inputBookend = {
-          id: inputNode.id,
-          type: inputNode.type ?? 'TextInput',
-          data: inputNode.data as Record<string, unknown>,
-        }
-        const outputBookend = {
-          id,
-          type,
-          data: node.data as Record<string, unknown>,
-        }
-        setScaffoldModel((current) =>
-          applyLayoutToModel(
-            clearMiddleNodes({
-              ...(current ?? createFlowGraphModel(inputBookend, outputBookend)),
-              inputNode: inputBookend,
-              outputNode: outputBookend,
-            }),
-          ),
-        )
-        setCompletedSteps((prev) => new Set(prev).add('output'))
-      })()
+      if (!inputNode) {
+        clearScaffold()
+        setCompletedSteps(resetStepsAfterOutput)
+        return true
+      }
+
+      const inputBookend = {
+        id: inputNode.id,
+        type: inputNode.type ?? 'TextInput',
+        data: inputNode.data as Record<string, unknown>,
+      }
+      const outputBookend = { id, type, data }
+      setScaffoldModel((current) =>
+        applyLayoutToModel(
+          clearMiddleNodes({
+            ...(current ?? createFlowGraphModel(inputBookend, outputBookend)),
+            inputNode: inputBookend,
+            outputNode: outputBookend,
+          }),
+          { relayoutBookends: true },
+        ),
+      )
+      setCompletedSteps((prev) => new Set(prev).add('output'))
+      return true
     },
     [
       inputNode,
@@ -559,18 +613,44 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       workspaceStylebookId,
       resetStepsAfterOutput,
       clearScaffold,
-      showConfirm,
+      showModal,
     ],
+  )
+
+  const handleInputTypeSelect = useCallback(
+    (type: string) => {
+      applyInputBookendSwap(type)
+    },
+    [applyInputBookendSwap],
+  )
+
+  const handleOutputTypeSelect = useCallback(
+    (type: string) => {
+      applyOutputBookendSwap(type)
+    },
+    [applyOutputBookendSwap],
+  )
+
+  const handleBookendSwapSelect = useCallback(
+    (type: string) => {
+      if (bookendSwapKind === 'input') {
+        applyInputBookendSwap(type, { activeStepAfter: 'scaffold' })
+      } else {
+        applyOutputBookendSwap(type, { activeStepAfter: 'scaffold' })
+      }
+    },
+    [applyInputBookendSwap, applyOutputBookendSwap, bookendSwapKind],
   )
 
   const setNodes = useCallback(
     (updater: Node[] | ((nodes: Node[]) => Node[])) => {
       if (activeStep === 'scaffold' && scaffoldModel) {
-        const reactNodes: Node[] = [
-          { ...scaffoldModel.inputNode, position: { x: 0, y: 0 } },
-          ...scaffoldModel.middleNodes.map((n) => ({ ...n, position: n.position ?? { x: 0, y: 0 } })),
-          { ...scaffoldModel.outputNode, position: { x: 0, y: 0 } },
-        ]
+        const reactNodes: Node[] = toReactFlowNodes(scaffoldModel).map((node) => ({
+          id: node.id,
+          type: node.type,
+          position: node.position ?? { x: 0, y: 0 },
+          data: node.data,
+        }))
         const list = typeof updater === 'function' ? updater(reactNodes) : updater
         let nextModel = scaffoldModel
         for (const n of list) {
@@ -634,49 +714,44 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   }, [])
 
   const handleChangeInputSource = useCallback(() => {
-    void (async () => {
-      const middleCount = scaffoldModel?.middleNodes.length ?? 0
-      if (middleCount > 0) {
-        const ok = await showConfirm(
-          'Change your content source? All steps in the middle of this flow will be removed.',
-          {
-            title: 'Change content source',
-            confirmLabel: 'Change source',
-            destructive: true,
-          },
-        )
-        if (!ok) return
-      }
-      setInputNode(null)
-      setOutputNode(null)
-      clearScaffold()
-      setSelectedNodeId(null)
-      setConfigureGateActive(false)
-      setCompletedSteps(resetStepsAfterInput)
-    })()
-  }, [resetStepsAfterInput, clearScaffold, scaffoldModel, showConfirm])
+    if (inputNode && outputNode && scaffoldModel) {
+      setBookendSwapKind('input')
+      setBookendSwapOpen(true)
+      return
+    }
+    setInputNode(null)
+    setOutputNode(null)
+    clearScaffold()
+    setSelectedNodeId(null)
+    setConfigureGateActive(false)
+    setCompletedSteps(resetStepsAfterInput)
+    setActiveStep('input')
+  }, [inputNode, outputNode, scaffoldModel, resetStepsAfterInput, clearScaffold])
 
   const handleChangeOutputDestination = useCallback(() => {
-    void (async () => {
-      const middleCount = scaffoldModel?.middleNodes.length ?? 0
-      if (middleCount > 0) {
-        const ok = await showConfirm(
-          'Change where results are saved? All steps in the middle of this flow will be removed.',
-          {
-            title: 'Change destination',
-            confirmLabel: 'Change destination',
-            destructive: true,
-          },
-        )
-        if (!ok) return
-      }
-      setOutputNode(null)
-      clearScaffold()
-      setSelectedNodeId(null)
-      setConfigureGateActive(false)
-      setCompletedSteps(resetStepsAfterOutput)
-    })()
-  }, [resetStepsAfterOutput, clearScaffold, scaffoldModel, showConfirm])
+    if (inputNode && outputNode && scaffoldModel) {
+      setBookendSwapKind('output')
+      setBookendSwapOpen(true)
+      return
+    }
+    setOutputNode(null)
+    clearScaffold()
+    setSelectedNodeId(null)
+    setConfigureGateActive(false)
+    setCompletedSteps(resetStepsAfterOutput)
+    setActiveStep('output')
+  }, [inputNode, outputNode, scaffoldModel, resetStepsAfterOutput, clearScaffold])
+
+  const inputBookendId = scaffoldModel?.inputNode.id ?? inputNode?.id ?? null
+  const outputBookendId = scaffoldModel?.outputNode.id ?? outputNode?.id ?? null
+
+  const bookendSwapCanvasProps = {
+    allowBookendSwap: capabilities.allowBookendEdit,
+    inputBookendId,
+    outputBookendId,
+    onSwapInputBookend: capabilities.allowBookendEdit ? handleChangeInputSource : undefined,
+    onSwapOutputBookend: capabilities.allowBookendEdit ? handleChangeOutputDestination : undefined,
+  }
 
   const handleSave = useCallback(async (): Promise<boolean> => {
     if (!inputNode || !outputNode) {
@@ -852,24 +927,16 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
   const handleAddNodeClick = useCallback((parentNodeId: string) => {
     if (configureGateActive) return
-    setEdgeInsert(null)
     setAddFromParentId(parentNodeId)
     setAddChooserOpen(true)
   }, [configureGateActive])
 
-  const handleEdgeInsertClick = useCallback(
-    (sourceId: string, targetId: string) => {
-      if (configureGateActive) return
-      setEdgeInsert({ sourceId, targetId })
-      setAddFromParentId(sourceId)
-      setAddChooserOpen(true)
+  const handleNodePositionChange = useCallback(
+    (nodeId: string, position: { x: number; y: number }) => {
+      setScaffoldModel((model) => (model ? updateNodePosition(model, nodeId, position) : model))
     },
-    [configureGateActive],
+    [],
   )
-
-  const handleTidyLayout = useCallback(() => {
-    setScaffoldModel((model) => (model ? applyLayoutToModel(model) : model))
-  }, [])
 
   const handleDeleteMiddleNode = useCallback(
     (nodeId: string) => {
@@ -898,18 +965,23 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [scaffoldModel, showConfirm],
   )
 
+  const deletableNodeIds = useMemo(
+    () => new Set(scaffoldModel?.middleNodes.map((node) => node.id) ?? []),
+    [scaffoldModel],
+  )
+
   const addNodeCompatibility = useMemo(() => {
     if (!scaffoldModel) {
       return { enabled: [], disabled: [] }
     }
-    const parentId = edgeInsert?.sourceId ?? addFromParentId
+    const parentId = addFromParentId
     if (!parentId) {
       return { enabled: [], disabled: [] }
     }
     const parent = getNodeById(scaffoldModel, parentId)
     if (!parent?.type) return { enabled: [], disabled: [] }
     return getCompatibleNextNodes(parent.type, getBranchAncestry(scaffoldModel, parentId))
-  }, [addFromParentId, edgeInsert, scaffoldModel])
+  }, [addFromParentId, scaffoldModel])
 
   const handleAddNodeTypeSelect = useCallback(
     (type: string) => {
@@ -922,45 +994,51 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setScaffoldModel((model) => {
         if (!model) return model
         let next = model
-        if (edgeInsert) {
-          next = insertBetween(model, edgeInsert.sourceId, edgeInsert.targetId, newNode)
-        } else if (addFromParentId === model.inputNode.id) {
+        if (addFromParentId === model.inputNode.id) {
           next = addSiblingBranch(model, addFromParentId, newNode)
         } else if (addFromParentId) {
           next = insertAfter(model, addFromParentId, newNode)
         } else {
           return model
         }
-        return applyLayoutToModel(next)
+        return applyLayoutToModel(next, { relayoutBookends: true })
       })
       setSelectedNodeId(newNode.id)
       setConfigureGateActive(true)
       setAddChooserOpen(false)
       setAddFromParentId(null)
-      setEdgeInsert(null)
     },
-    [addFromParentId, edgeInsert, scaffoldModel, workspaceStylebookId],
+    [addFromParentId, scaffoldModel, workspaceStylebookId],
   )
 
-  const handleNodeDoubleClick = useCallback((node: Node) => {
-    if (readOnly || activeStep !== 'scaffold') return
-    const isMiddle = scaffoldModel?.middleNodes.some((n) => n.id === node.id)
-    if (!isMiddle) return
-    setSelectedNodeId(node.id)
-    setConfigureGateActive(false)
-  }, [activeStep, scaffoldModel, readOnly])
-
-  const handleNodeClick = useCallback(
+  const handleScaffoldNodeSelect = useCallback(
     (node: Node) => {
-      if (!readOnly || activeStep !== 'scaffold') return
+      if (activeStep !== 'scaffold') return
+
+      const isMiddle = scaffoldModel?.middleNodes.some((n) => n.id === node.id) ?? false
+      const isBookend = node.id === inputNode?.id || node.id === outputNode?.id
+      if (!isMiddle && !isBookend) return
+
       setSelectedNodeId(node.id)
       setConfigureGateActive(false)
     },
-    [readOnly, activeStep],
+    [activeStep, scaffoldModel, inputNode, outputNode],
   )
 
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null
+    if (scaffoldModel?.inputNode.id === selectedNodeId) {
+      return {
+        ...scaffoldModel.inputNode,
+        position: scaffoldModel.inputNode.position ?? { x: 0, y: 0 },
+      } as Node
+    }
+    if (scaffoldModel?.outputNode.id === selectedNodeId) {
+      return {
+        ...scaffoldModel.outputNode,
+        position: scaffoldModel.outputNode.position ?? { x: 0, y: 0 },
+      } as Node
+    }
     if (inputNode?.id === selectedNodeId) return inputNode
     if (outputNode?.id === selectedNodeId) return outputNode
     const middle = scaffoldModel?.middleNodes.find((n) => n.id === selectedNodeId)
@@ -973,6 +1051,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const isMiddleSelected =
     selectedNodeId != null &&
     scaffoldModel?.middleNodes.some((n) => n.id === selectedNodeId) === true
+
+  const isBookendSelected =
+    selectedNodeId != null &&
+    (selectedNodeId === inputNode?.id || selectedNodeId === outputNode?.id)
 
   const showInputChooser = !readOnly && activeStep === 'input' && inputNode == null
   const showInputCanvas = activeStep === 'input' && inputNode != null
@@ -994,9 +1076,15 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const showScaffoldReviewPanel =
     selectedNode &&
     activeStep === 'scaffold' &&
-    isMiddleSelected &&
+    (isMiddleSelected || isBookendSelected) &&
     (readOnly || !configureGateActive) &&
     selectedNodeId != null
+
+  const sidePanelOpen =
+    showScaffoldReviewPanel || showScaffoldConfigurePanel || showBookendConfigurePanel
+  const canvasFrameStyle = sidePanelOpen
+    ? { marginRight: GUIDED_FLOW_NODE_PANEL_WIDTH_PX }
+    : undefined
 
   const rootClassName = hideHeader
     ? `flex min-h-0 flex-1 flex-col ${className ?? ''}`
@@ -1043,7 +1131,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                 className="border-none bg-transparent text-2xl font-bold outline-none"
                 aria-label="Flow name"
               />
-              <span className="mt-1 block text-xs text-muted-foreground">Set up your flow step by step</span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {activeStep === 'scaffold' ? 'Set up your flow step by step' : null}
+              </span>
             </span>
           </p>
           <Button
@@ -1057,37 +1147,43 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       </div>
       )}
 
-      <FlowStepper
-        activeStep={activeStep}
-        completedSteps={completedStepsReadonly}
-        onStepChange={handleStepChange}
-        canNavigateTo={canNavigateTo}
-      />
+      {activeStep !== 'scaffold' && (
+        <FlowStepper
+          activeStep={activeStep}
+          completedSteps={completedStepsReadonly}
+          onStepChange={handleStepChange}
+          canNavigateTo={canNavigateTo}
+        />
+      )}
 
       <div className="relative flex-1 overflow-hidden">
         {activeStep === 'input' && (
           <div className="flex h-full flex-col">
-            <div className="flex items-start justify-between gap-4 border-b px-4 py-6">
-              <div>
-                <h1 className="text-xl font-semibold">{STEP_HEADINGS.input}</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Choose how articles or content enter this flow.
-                </p>
-              </div>
-              {inputNode && capabilities.allowBookendEdit && (
-                <Button variant="outline" size="sm" onClick={handleChangeInputSource}>
-                  Change source
-                </Button>
-              )}
-            </div>
             {showInputChooser && (
-              <div className="flex-1 overflow-y-auto px-4 py-8">
+              <div className="flex-1 overflow-y-auto px-4 py-6">
+                {STEP_CHOOSER_COPY.input && (
+                  <div className="mx-auto my-12 max-w-4xl px-4 text-center">
+                    <h2 className="text-2xl font-semibold">{STEP_CHOOSER_COPY.input.title}</h2>
+                    <p className="mx-auto mt-1 max-w-2xl text-sm text-muted-foreground">
+                      {STEP_CHOOSER_COPY.input.description}
+                    </p>
+                  </div>
+                )}
                 <BookendChooser kind="input" onSelect={handleInputTypeSelect} />
               </div>
             )}
             {showInputCanvas && inputNode && (
-              <div className="relative min-h-0 flex-1">
-                <GuidedFlowCanvas inputNode={inputNode} />
+              <div
+                className="relative min-h-0 flex-1 transition-[margin] duration-300"
+                style={canvasFrameStyle}
+              >
+                <GuidedFlowCanvas
+                  inputNode={inputNode}
+                  outputNode={outputNode}
+                  selectedNodeId={selectedNodeId}
+                  reserveRightPx={sidePanelOpen ? 1 : 0}
+                  {...bookendSwapCanvasProps}
+                />
               </div>
             )}
           </div>
@@ -1095,27 +1191,31 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
         {activeStep === 'output' && (
           <div className="flex h-full flex-col">
-            <div className="flex items-start justify-between gap-4 border-b px-4 py-6">
-              <div>
-                <h1 className="text-xl font-semibold">{STEP_HEADINGS.output}</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Choose where this flow saves its results.
-                </p>
-              </div>
-              {outputNode && capabilities.allowBookendEdit && (
-                <Button variant="outline" size="sm" onClick={handleChangeOutputDestination}>
-                  Change destination
-                </Button>
-              )}
-            </div>
             {showOutputChooser && (
-              <div className="flex-1 overflow-y-auto px-4 py-8">
+              <div className="flex-1 overflow-y-auto px-4 py-6">
+                {STEP_CHOOSER_COPY.output && (
+                  <div className="mx-auto my-12 max-w-4xl px-4 text-center">
+                    <h2 className="text-2xl font-semibold">{STEP_CHOOSER_COPY.output.title}</h2>
+                    <p className="mx-auto mt-1 max-w-2xl text-sm text-muted-foreground">
+                      {STEP_CHOOSER_COPY.output.description}
+                    </p>
+                  </div>
+                )}
                 <BookendChooser kind="output" onSelect={handleOutputTypeSelect} />
               </div>
             )}
             {showOutputCanvas && outputNode && (
-              <div className="relative min-h-0 flex-1">
-                <GuidedFlowCanvas outputNode={outputNode} />
+              <div
+                className="relative min-h-0 flex-1 transition-[margin] duration-300"
+                style={canvasFrameStyle}
+              >
+                <GuidedFlowCanvas
+                  inputNode={inputNode}
+                  outputNode={outputNode}
+                  selectedNodeId={selectedNodeId}
+                  reserveRightPx={sidePanelOpen ? 1 : 0}
+                  {...bookendSwapCanvasProps}
+                />
               </div>
             )}
           </div>
@@ -1123,23 +1223,31 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
         {activeStep === 'scaffold' && inputNode && outputNode && scaffoldModel && (
           <div className="flex h-full flex-col">
-            <div className="border-b px-4 py-6">
-              <h1 className="text-xl font-semibold">{STEP_HEADINGS.scaffold}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Add steps between your content source and where results are saved.
-              </p>
-            </div>
-            <div className="relative min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1 transition-[margin] duration-300" style={canvasFrameStyle}>
               <GuidedFlowCanvas
                 scaffoldModel={scaffoldModel}
                 readOnly={readOnly}
-                showEmptyMiddleCta={!readOnly && scaffoldModel.middleNodes.length === 0}
-                allowAddNodes={capabilities.allowAddNodes && !configureGateActive}
+                showEmptyMiddleCta={
+                  !readOnly &&
+                  scaffoldModel.middleNodes.length === 0 &&
+                  !firstStepIntroComplete
+                }
+                onEmptyMiddleCtaDismiss={() => setFirstStepIntroComplete(true)}
+                allowAddNodes={capabilities.allowAddNodes}
+                allowNodeDrag={capabilities.allowNodeDrag}
+                allowDeleteNodes={capabilities.allowDelete && !configureGateActive}
+                deletableNodeIds={deletableNodeIds}
+                reserveRightPx={sidePanelOpen ? 1 : 0}
+                selectedNodeId={selectedNodeId}
                 onAddNodeClick={capabilities.allowAddNodes ? handleAddNodeClick : undefined}
-                onEdgeInsertClick={capabilities.allowEdgeInsert ? handleEdgeInsertClick : undefined}
-                onTidyLayout={capabilities.allowTidyLayout ? handleTidyLayout : undefined}
-                onNodeClick={readOnly ? handleNodeClick : undefined}
-                onNodeDoubleClick={!readOnly ? handleNodeDoubleClick : undefined}
+                onDeleteNodeClick={
+                  capabilities.allowDelete ? handleDeleteMiddleNode : undefined
+                }
+                {...bookendSwapCanvasProps}
+                onNodeClick={handleScaffoldNodeSelect}
+                onNodePositionChange={
+                  capabilities.allowNodeDrag ? handleNodePositionChange : undefined
+                }
               />
               {showRunPanel && onCloseRunPanel && (
                 <RunPanel
@@ -1184,9 +1292,11 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             onClose={() => setSelectedNodeId(null)}
             setNodes={setNodes}
             graphContext={graphContext}
-            isMiddleNode
+            isMiddleNode={isMiddleSelected}
             viewOnly={readOnly}
-            onDelete={capabilities.allowDelete ? handleDeleteMiddleNode : undefined}
+            onDelete={
+              capabilities.allowDelete && isMiddleSelected ? handleDeleteMiddleNode : undefined
+            }
             running={running}
             currentRun={currentRun}
             nodeOutputLookupSpec={nodeOutputLookupSpec}
@@ -1200,6 +1310,16 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         onOpenChange={setAddChooserOpen}
         compatibility={addNodeCompatibility}
         onSelect={handleAddNodeTypeSelect}
+      />
+
+      <BookendSwapDialog
+        open={bookendSwapOpen}
+        kind={bookendSwapKind}
+        selectedType={
+          bookendSwapKind === 'input' ? inputNode?.type ?? undefined : outputNode?.type ?? undefined
+        }
+        onOpenChange={setBookendSwapOpen}
+        onSelect={handleBookendSwapSelect}
       />
 
       {modalConfig && (

@@ -55,7 +55,7 @@ All create, edit, and run routes share one guided builder (`GuidedFlowBuilder.ts
 
 ### Stepper and bookends
 
-- Three steps: **Where content comes in** → **Where results go** → **Build your flow** (`FlowStepper`, `flowBuilderSteps.ts`).
+- Three steps: **Choose an input** → **Choose an output** → **Build your flow** (`FlowStepper`, `flowBuilderSteps.ts`). On input/output steps the stepper is a compact text row (no card chrome). Each bookend chooser shows centered step copy with explainer text above the cards (`STEP_CHOOSER_COPY`: **First, choose an input** / **Second, choose an output**). On the scaffold step the stepper and page heading are hidden so the canvas uses the full height. Hover the source or destination node and use the swap control to open the bookend swap dialog (`BookendSwapDialog`) — middle steps stay in place when the new bookend type is compatible (`canReplaceInputBookend` / `canReplaceOutputBookend` in `flowGraphModel.ts`).
 - **New flows** (`/flow/new`) start on the input step; **edit** (`/flow/:id/edit`) and **run view** (`/flow/:id`) open on **Build your flow** with bookends already complete.
 - Input types: Text, JSON, S3. Output types: JSON Output, Stylebook Output (`BookendChooser`, `flowBuilderDefaults.ts`).
 - **Continue** on each bookend step is gated until required fields pass (`ConfigureGatePanel` + `canContinueBookendNode`).
@@ -66,14 +66,15 @@ All create, edit, and run routes share one guided builder (`GuidedFlowBuilder.ts
 - Middle steps are added only via **+** on nodes (not on the output bookend) and **+** on serial edges (`GuidedFlowCanvas`, `AddNodeChooser`).
 - Compatibility filtering uses synced `nodeMetadata` (`nodeCompatibility.ts`: port types + transitive `requiredUpstreamNodes`).
 - **ConfigureGatePanel** opens after add; other **+** affordances stay disabled until **Continue**.
-- Parallel branches fan vertically; serial steps extend horizontally (`flowGraphModel.ts` layout). **Tidy layout** recomputes positions.
+- Parallel branches fan vertically; serial steps extend horizontally (`flowGraphModel.ts` layout). The canvas **auto-layouts** on add, delete, and load (with recenter), and nodes can be **dragged** to adjust positions; dragged positions persist on save. New steps still get auto positions; existing dragged nodes keep their placement unless a full bookend relayout runs.
 - Middle steps can be deleted with confirmation; the model rewires tips to output (`deleteMiddleNode`).
 - **Search** in the **+** chooser appears only when the scaffold node catalog exceeds **eight** types (`shouldShowChooserSearch` in `nodeCompatibility.ts`); with the current catalog, the list is short enough that search stays hidden.
 
 ### Run view vs edit
 
-- **Run view** (`RunGraph.tsx`) embeds the guided builder in **read-only** mode: stepper navigation and node panels work; **+**, delete, bookend change, and tidy layout are off until **Edit flow**.
+- **Run view** (`RunGraph.tsx`) embeds the guided builder in **read-only** mode: stepper navigation and node panels work; **+**, delete, and bookend change are off until **Edit flow**.
 - **Run flow** starts a run without entering edit mode; run output appears in `NodePanel` / `RunPanel`.
+- **Node panel layout:** The right-hand panel shows the node icon beside the title, a short description under the header, then tabbed content when relevant: **Settings**, **Models**, **Prompts**, and **Outputs** (see `getNodePanelTabs` in `apps/agate-ui/src/lib/nodePanelTabs.ts`). JSON Output has no settings tab—only **Outputs** after a run. Numeric fields that users type freely (for example S3 max files per run) use a plain text input, not browser number spinners.
 - **Edit flow** takes a snapshot; **Cancel** restores it; **Save** uses shared `validateGraphForSave` and `paramsForGraphSave`.
 
 ### UX reference patterns
@@ -82,10 +83,9 @@ Patterns borrowed from other products (behavioral parity, not visual clone):
 
 | Pattern | Reference | Backfield |
 |--------|-----------|-----------|
-| **+** on nodes / edges | n8n | Serial edge insert + node toolbar **+**; hidden in read-only run view |
+| **+** on nodes | n8n | Node **+** adds the next step; hidden in read-only run view |
 | Node creator search | n8n | Deferred in **+** chooser until catalog > 8 types |
 | Read-only hides add controls | n8n | `getGuidedFlowCapabilities({ readOnly })` |
-| Tidy / auto layout | n8n | **Tidy layout** on scaffold |
 | Source / destination bookends first | Unstructured | Input → Output → Scaffold stepper |
 | **+** on DAG | Unstructured | Branch and serial **+** on guided canvas |
 | Valid layout before run | Unstructured | Save validation + single bookend rules |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getCompatibleNextNodes, shouldShowChooserSearch } from './nodeCompatibility'
+import { getCompatibleNextNodes, resolveEdgeHandles, shouldShowChooserSearch } from './nodeCompatibility'
 
 describe('getCompatibleNextNodes', () => {
   it('enables Place Extract and disables Geocode from Text Input ancestry', () => {
@@ -28,6 +28,22 @@ describe('getCompatibleNextNodes', () => {
     const result = getCompatibleNextNodes('TextInput', ['TextInput'])
     const geocode = result.disabled.find((e) => e.type === 'GeocodeAgent')
     expect(geocode?.reason).toBe('Requires extracted places as input.')
+  })
+})
+
+describe('resolveEdgeHandles', () => {
+  it('maps Text Input to Place Extract on the text port', () => {
+    expect(resolveEdgeHandles('TextInput', 'PlaceExtract')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'text',
+    })
+  })
+
+  it('maps Place Extract to JSON Output on locations → data', () => {
+    expect(resolveEdgeHandles('PlaceExtract', 'Output')).toEqual({
+      sourceHandle: 'locations',
+      targetHandle: 'data',
+    })
   })
 })
 

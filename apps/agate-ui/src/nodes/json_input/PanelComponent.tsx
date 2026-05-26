@@ -20,6 +20,11 @@ const nodeMetadata = {
 };
 
 import { useEffect, useState } from 'react'
+import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
+import {
+  NodePanelJsonPreview,
+  NodePanelOutputsSection,
+} from '@/components/node-panel/NodePanelOutputsSection'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
@@ -96,64 +101,41 @@ export default function JSONInputPanel({
 
   return (
     <>
-      <div className="space-y-3">
-        <div>
-          <Label className="text-sm font-medium">Description</Label>
-          <p className="text-sm text-muted-foreground mt-1">
-            Structured JSON for the flow. The <span className="font-mono">&quot;text&quot;</span>{' '}
-            field is required for downstream text processing. Any other top-level fields (for
-            example <span className="font-mono">headline</span>,{' '}
-            <span className="font-mono">url</span>, nested objects) are passed through so prompts
-            can reference them with placeholders like{' '}
-            <span className="font-mono">{'{headline}'}</span>.
+      <NodePanelTabGate tab="settings">
+        <div className="space-y-2">
+          <Label htmlFor="node-json" className="text-xs text-muted-foreground">
+            JSON data (must include &quot;text&quot;)
+          </Label>
+          <Textarea
+            id="node-json"
+            value={jsonText}
+            onChange={(e) => handleJsonChange(e.target.value)}
+            placeholder={`{\n  "text": "Your text here...",\n  "headline": "Optional headline"\n}`}
+            className="min-h-[300px] mt-1 font-mono text-xs"
+            disabled={isDisabled}
+          />
+          {jsonError && <p className="text-xs text-red-500 mt-1">{jsonError}</p>}
+          <p className="text-xs text-muted-foreground mt-1">
+            Use extra fields (for example headline, url) so downstream steps can reference them.
           </p>
         </div>
-      </div>
+      </NodePanelTabGate>
 
-      <div className="pt-4 border-t">
-        <div>
-          <Label className="text-sm font-medium">Parameters</Label>
-        </div>
-
-        <div className="space-y-2 mt-2">
-          <div>
-            <Label htmlFor="node-json" className="text-xs text-muted-foreground">
-              JSON data (must include &quot;text&quot;)
-            </Label>
-            <Textarea
-              id="node-json"
-              value={jsonText}
-              onChange={(e) => handleJsonChange(e.target.value)}
-              placeholder={`{\n  "text": "Your text here...",\n  "headline": "Optional headline"\n}`}
-              className="min-h-[300px] mt-1 font-mono text-xs"
-              disabled={isDisabled}
-            />
-            {jsonError && <p className="text-xs text-red-500 mt-1">{jsonError}</p>}
-            <p className="text-xs text-muted-foreground mt-1">
-              Example:{' '}
-              <span className="font-mono">
-                {'{'}&quot;text&quot;: &quot;Article…&quot;, &quot;headline&quot;: &quot;Title&quot;
-                {'}'}
-              </span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {slice && typeof slice.text === 'string' && (
-        <div className="pt-4 border-t">
-          <Label className="text-sm font-medium">Latest run</Label>
-          <div className="mt-2 space-y-2">
-            <div className="text-xs text-muted-foreground">Fields in output: {Object.keys(slice).length}</div>
+      <NodePanelTabGate tab="outputs">
+        {slice ? (
+          <NodePanelOutputsSection>
+            <div className="text-xs text-muted-foreground">
+              Fields in output: {Object.keys(slice).length}
+            </div>
             <div>
               <Label className="text-xs font-medium">Output preview</Label>
-              <div className="text-xs font-mono p-2 bg-muted rounded mt-1 max-h-48 overflow-y-auto">
-                {JSON.stringify(slice, null, 2)}
+              <div className="mt-1">
+                <NodePanelJsonPreview value={slice} />
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </NodePanelOutputsSection>
+        ) : null}
+      </NodePanelTabGate>
     </>
   )
 }

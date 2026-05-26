@@ -1,5 +1,7 @@
 import { INPUT_BOOKEND_TYPES, OUTPUT_BOOKEND_TYPES } from '@/lib/flowValidation'
+import { nodeMetadata } from '@/nodes/registry'
 import { BOOKEND_INPUT_POSITION, BOOKEND_OUTPUT_POSITION } from '@/lib/flowBuilderLayout'
+import { getCompatibleNextNodes, resolveEdgeHandles } from '@/lib/nodeCompatibility'
 
 export type FlowGraphNode = {
   id: string
@@ -31,10 +33,11 @@ export type FlowGraphModel = {
 
 export const LAYOUT_INPUT_X = BOOKEND_INPUT_POSITION.x
 export const LAYOUT_INPUT_Y = BOOKEND_INPUT_POSITION.y
-export const LAYOUT_X_STEP = 160
-export const LAYOUT_Y_STEP = 140
+export const LAYOUT_NODE_WIDTH = 200
+export const LAYOUT_X_GAP = 32
+export const LAYOUT_X_STEP = LAYOUT_NODE_WIDTH + LAYOUT_X_GAP
+export const LAYOUT_Y_STEP = 96
 export const LAYOUT_OUTPUT_MIN_X = BOOKEND_OUTPUT_POSITION.x
-export const LAYOUT_NODE_WIDTH = 280
 
 /** @deprecated Use LAYOUT_X_STEP */
 export const MIDDLE_NODE_X_START = 220
@@ -134,14 +137,14 @@ export function addSiblingBranch(
   }
 
   const existing = model.branchChildren[parentId] ?? []
-  return {
+  return applyLayoutToModel({
     ...model,
     middleNodes: [...model.middleNodes, newNode],
     branchChildren: {
       ...model.branchChildren,
       [parentId]: [...existing, newNode.id],
     },
-  }
+  })
 }
 
 /** Insert or extend serially after `afterNodeId`, pushing any existing serial child downstream. */
@@ -163,11 +166,11 @@ export function insertAfter(
     serialLinks[newNode.id] = existingNext
   }
 
-  return {
+  return applyLayoutToModel({
     ...model,
     middleNodes: [...model.middleNodes, newNode],
     serialLinks,
-  }
+  })
 }
 
 export function insertBetween(
@@ -264,33 +267,35 @@ export function addSerialChild(
 export function deriveEdges(model: FlowGraphModel): FlowGraphEdge[] {
   const edges: FlowGraphEdge[] = []
 
+  const addEdge = (sourceId: string, targetId: string, kind: FlowGraphEdgeKind) => {
+    const sourceNode = getNodeById(model, sourceId)
+    const targetNode = getNodeById(model, targetId)
+    const handles =
+      sourceNode?.type && targetNode?.type
+        ? resolveEdgeHandles(sourceNode.type, targetNode.type)
+        : null
+    edges.push({
+      id: `${sourceId}-${targetId}`,
+      source: sourceId,
+      target: targetId,
+      kind,
+      sourceHandle: handles?.sourceHandle,
+      targetHandle: handles?.targetHandle,
+    })
+  }
+
   for (const [parentId, children] of Object.entries(model.branchChildren)) {
     for (const childId of children) {
-      edges.push({
-        id: `${parentId}-${childId}`,
-        source: parentId,
-        target: childId,
-        kind: 'branch',
-      })
+      addEdge(parentId, childId, 'branch')
     }
   }
 
   for (const [source, target] of Object.entries(model.serialLinks)) {
-    edges.push({
-      id: `${source}-${target}`,
-      source,
-      target,
-      kind: 'serial',
-    })
+    addEdge(source, target, 'serial')
   }
 
   for (const tipId of getBranchTipIds(model)) {
-    edges.push({
-      id: `${tipId}-${model.outputNode.id}`,
-      source: tipId,
-      target: model.outputNode.id,
-      kind: 'tip',
-    })
+    addEdge(tipId, model.outputNode.id, 'tip')
   }
 
   return edges
@@ -333,6 +338,8 @@ function walkBranchLayout(
 export function assignLayoutPositions(model: FlowGraphModel): FlowGraphNode[] {
   const slots = assignLayoutSlots(model)
   const positioned: FlowGraphNode[] = []
+  const originX = model.inputNode.position?.x ?? LAYOUT_INPUT_X
+  const originY = model.inputNode.position?.y ?? LAYOUT_INPUT_Y
 
   let maxDepth = 0
   for (const { depth } of slots.values()) {
@@ -344,62 +351,115 @@ export function assignLayoutPositions(model: FlowGraphModel): FlowGraphNode[] {
   const maxSlot = slotValues.length > 0 ? Math.max(...slotValues) : 0
   const slotCenter = (minSlot + maxSlot) / 2
 
+  let orphanDepth = 0
   const positionFor = (nodeId: string, fallbackY: number) => {
     const slot = slots.get(nodeId)
     if (!slot) {
-      return { x: LAYOUT_INPUT_X, y: fallbackY }
+      orphanDepth += 1
+      return {
+        x: originX + orphanDepth * LAYOUT_X_STEP,
+        y: fallbackY,
+      }
     }
     return {
-      x: LAYOUT_INPUT_X + slot.depth * LAYOUT_X_STEP,
-      y: LAYOUT_INPUT_Y + (slot.slot - slotCenter) * LAYOUT_Y_STEP,
+      x: originX + slot.depth * LAYOUT_X_STEP,
+      y: originY + (slot.slot - slotCenter) * LAYOUT_Y_STEP,
     }
   }
 
   positioned.push({
     ...model.inputNode,
-    position: positionFor(model.inputNode.id, LAYOUT_INPUT_Y),
+    position: positionFor(model.inputNode.id, originY),
   })
 
   for (const middle of model.middleNodes) {
     positioned.push({
       ...middle,
-      position: positionFor(middle.id, LAYOUT_INPUT_Y),
+      position: positionFor(middle.id, originY),
     })
   }
 
-  const outputX = Math.max(LAYOUT_OUTPUT_MIN_X, LAYOUT_INPUT_X + (maxDepth + 1) * LAYOUT_X_STEP + 40)
+  const outputX = originX + (maxDepth + 1) * LAYOUT_X_STEP
   positioned.push({
     ...model.outputNode,
-    position: { x: outputX, y: LAYOUT_INPUT_Y },
+    position: { x: outputX, y: originY },
   })
 
   return positioned
 }
 
 /** Recompute layout positions and persist them on the model nodes. */
-export function applyLayoutToModel(model: FlowGraphModel): FlowGraphModel {
+export function applyLayoutToModel(
+  model: FlowGraphModel,
+  options?: { relayoutBookends?: boolean },
+): FlowGraphModel {
+  const relayoutBookends = options?.relayoutBookends ?? false
   const positioned = assignLayoutPositions(model)
   const byId = new Map(positioned.map((n) => [n.id, n.position]))
+
+  const bookendInputPosition = (node: FlowGraphNode) => {
+    const auto = byId.get(node.id)
+    if (relayoutBookends) {
+      return auto ?? node.position ?? { x: 0, y: 0 }
+    }
+    return node.position ?? auto ?? { x: 0, y: 0 }
+  }
 
   return {
     ...model,
     inputNode: {
       ...model.inputNode,
-      position: byId.get(model.inputNode.id) ?? model.inputNode.position,
+      position: bookendInputPosition(model.inputNode),
     },
     outputNode: {
       ...model.outputNode,
-      position: byId.get(model.outputNode.id) ?? model.outputNode.position,
+      position: byId.get(model.outputNode.id) ?? model.outputNode.position ?? { x: 0, y: 0 },
     },
     middleNodes: model.middleNodes.map((n) => ({
       ...n,
-      position: byId.get(n.id) ?? n.position,
+      position: relayoutBookends
+        ? (byId.get(n.id) ?? n.position ?? { x: 0, y: 0 })
+        : (n.position ?? byId.get(n.id) ?? { x: 0, y: 0 }),
     })),
   }
 }
 
 export function toReactFlowNodes(model: FlowGraphModel): FlowGraphNode[] {
-  return assignLayoutPositions(model)
+  const layoutDefaults = assignLayoutPositions(model)
+  const defaultById = new Map(layoutDefaults.map((node) => [node.id, node.position!]))
+
+  const withStoredOrDefault = (node: FlowGraphNode): FlowGraphNode => ({
+    ...node,
+    position: node.position ?? defaultById.get(node.id) ?? { x: 0, y: 0 },
+  })
+
+  return [
+    withStoredOrDefault(model.inputNode),
+    ...model.middleNodes.map(withStoredOrDefault),
+    withStoredOrDefault(model.outputNode),
+  ]
+}
+
+export function updateNodePosition(
+  model: FlowGraphModel,
+  nodeId: string,
+  position: { x: number; y: number },
+): FlowGraphModel {
+  if (model.inputNode.id === nodeId) {
+    return { ...model, inputNode: { ...model.inputNode, position } }
+  }
+  if (model.outputNode.id === nodeId) {
+    return { ...model, outputNode: { ...model.outputNode, position } }
+  }
+  if (model.middleNodes.some((node) => node.id === nodeId)) {
+    return {
+      ...model,
+      middleNodes: model.middleNodes.map((node) =>
+        node.id === nodeId ? { ...node, position } : node,
+      ),
+    }
+  }
+  return model
 }
 
 export function updateMiddleNodeData(
@@ -466,6 +526,80 @@ function specNodeToFlowNode(node: SavedGraphSpecNode): FlowGraphNode {
 
 export function isMiddleNodeId(model: FlowGraphModel, nodeId: string): boolean {
   return model.middleNodes.some((n) => n.id === nodeId)
+}
+
+export type BookendSwapCheck = { ok: true } | { ok: false; reason: string }
+
+function nodeTypeLabel(type: string): string {
+  return nodeMetadata.find((meta) => meta.type === type)?.label ?? type
+}
+
+/** Whether a new input bookend type can connect to existing first-hop middle steps. */
+export function canReplaceInputBookend(model: FlowGraphModel, newType: string): BookendSwapCheck {
+  const childIds = model.branchChildren[model.inputNode.id] ?? []
+  if (childIds.length === 0) return { ok: true }
+
+  const { enabled } = getCompatibleNextNodes(newType, [newType])
+  const enabledTypes = new Set(enabled.map((entry) => entry.type))
+
+  for (const childId of childIds) {
+    const child = getNodeById(model, childId)
+    if (!child?.type) continue
+    if (!enabledTypes.has(child.type)) {
+      return {
+        ok: false,
+        reason: `“${nodeTypeLabel(child.type)}” cannot connect to this content source. Remove or change that step first.`,
+      }
+    }
+  }
+
+  return { ok: true }
+}
+
+/** Whether branch tips can still connect to a new output bookend type. */
+export function canReplaceOutputBookend(model: FlowGraphModel, newType: string): BookendSwapCheck {
+  for (const tipId of getBranchTipIds(model)) {
+    const tip = getNodeById(model, tipId)
+    if (!tip?.type) continue
+    if (!resolveEdgeHandles(tip.type, newType)) {
+      return {
+        ok: false,
+        reason: `“${nodeTypeLabel(tip.type)}” cannot connect to this destination. Remove or change that step first.`,
+      }
+    }
+  }
+
+  return { ok: true }
+}
+
+/** Swap input bookend type/data; middle topology and node id are preserved. */
+export function replaceInputBookend(
+  model: FlowGraphModel,
+  patch: { type: string; data?: Record<string, unknown> },
+): FlowGraphModel {
+  return applyLayoutToModel({
+    ...model,
+    inputNode: {
+      ...model.inputNode,
+      type: patch.type,
+      data: patch.data ?? model.inputNode.data,
+    },
+  })
+}
+
+/** Swap output bookend type/data; middle topology and node id are preserved. */
+export function replaceOutputBookend(
+  model: FlowGraphModel,
+  patch: { type: string; data?: Record<string, unknown> },
+): FlowGraphModel {
+  return applyLayoutToModel({
+    ...model,
+    outputNode: {
+      ...model.outputNode,
+      type: patch.type,
+      data: patch.data ?? model.outputNode.data,
+    },
+  })
 }
 
 /** Remove all middle nodes and internal edges; bookends are preserved. */
@@ -614,13 +748,13 @@ export function hydrateFromSpec(spec: SavedGraphSpec): HydrateFromSpecResult {
 
   return {
     ok: true,
-    model: applyLayoutToModel({
+    model: {
       inputNode,
       outputNode,
       middleNodes,
       branchChildren,
       serialLinks,
-    }),
+    },
   }
 }
 
@@ -638,7 +772,7 @@ export function modelToGraphSpec(model: FlowGraphModel): {
     targetHandle: string | null
   }>
 } {
-  const positioned = assignLayoutPositions(model)
+  const positioned = toReactFlowNodes(model)
   return {
     nodes: positioned.map((node) => ({
       id: node.id,

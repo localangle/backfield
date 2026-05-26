@@ -7,8 +7,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import type { Run } from '@/lib/api'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
-import { Suspense, type ReactNode } from 'react'
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { nodeMetadata, panelComponents } from '@/nodes/registry'
+import { NodePanelTabProvider } from '@/components/node-panel/NodePanelTabContext'
+import { getNodePanelTabs, NODE_PANEL_TAB_LABELS, type NodePanelTabId } from '@/lib/nodePanelTabs'
+import { getNodeBgColor, getNodeIcon, getNodeLabel } from '@/lib/nodeUtils'
+import { cn } from '@/lib/utils'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export type ProjectAiModelOption = {
   label: string
@@ -81,8 +86,9 @@ export default function NodePanel({
   const { showConfirm } = useAppMessage()
   if (!selectedNode) return null
 
-  const nodePanelTitle =
-    nodeMetadata.find((m) => m.type === selectedNode.type)?.label ?? selectedNode.type
+  const nodeMeta = nodeMetadata.find((m) => m.type === selectedNode.type)
+  const nodePanelTitle = nodeMeta?.label ?? getNodeLabel(String(selectedNode.type))
+  const nodeType = String(selectedNode.type ?? '')
 
   const rawNodeOutputs = currentRun?.node_outputs as Record<string, unknown> | undefined
   const selectedNodeOutput = rawNodeOutputs
@@ -95,7 +101,19 @@ export default function NodePanel({
     !Array.isArray(selectedNodeOutput)
       ? (selectedNodeOutput as Record<string, unknown>)
       : null
-  
+
+  const hasRunOutput = selectedNodeOutput !== undefined && selectedNodeOutput !== null
+  const panelTabs = useMemo(
+    () => getNodePanelTabs(nodeType, { hasRunOutput }),
+    [hasRunOutput, nodeType],
+  )
+  const [activeTab, setActiveTab] = useState<NodePanelTabId>(panelTabs[0] ?? 'settings')
+
+  useEffect(() => {
+    if (panelTabs.length === 0) return
+    setActiveTab(panelTabs[0]!)
+  }, [panelTabs, selectedNode.id])
+
   const handleDelete = () => {
     if (skipDeleteConfirmation) {
       onDelete?.(selectedNode.id)
@@ -140,9 +158,17 @@ export default function NodePanel({
 
   return (
     <div className="absolute top-0 right-0 h-full w-96 bg-background/95 backdrop-blur-sm border-l shadow-lg flex flex-col z-10 slide-in-from-right">
-      <div className="flex items-center justify-between p-4 border-b">
-        <div>
-          <h3 className="font-semibold text-lg">{nodePanelTitle}</h3>
+      <div className="flex items-center justify-between gap-3 p-4 border-b">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+              getNodeBgColor(nodeType),
+            )}
+          >
+            {getNodeIcon(nodeType, 'h-4 w-4')}
+          </div>
+          <h3 className="truncate font-semibold text-lg">{nodePanelTitle}</h3>
         </div>
         <div className="flex gap-1">
           {editMode && onDelete && (
@@ -159,27 +185,59 @@ export default function NodePanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <Suspense fallback={<div>Loading...</div>}>
-          {(() => {
-            const PanelComponent = panelComponents[selectedNode.type as keyof typeof panelComponents]
-            if (PanelComponent) {
-              return (
-                <PanelComponent
-                  node={selectedNode}
-                  onChange={onTextChange}
-                  onRun={onRun}
-                  running={running}
-                  currentRun={currentRun}
-                  editMode={editMode}
-                  setNodes={setNodes}
-                  graphContext={graphContext ?? undefined}
-                  nodeOutputLookupSpec={nodeOutputLookupSpec}
-                />
-              )
-            }
-            return <div>Unknown node type: {selectedNode.type}</div>
-          })()}
-        </Suspense>
+        {nodeMeta?.description ? (
+          <p className="text-sm text-muted-foreground leading-relaxed">{nodeMeta.description}</p>
+        ) : null}
+        {'dependencyHelperText' in (nodeMeta ?? {}) &&
+        typeof (nodeMeta as { dependencyHelperText?: string }).dependencyHelperText === 'string' ? (
+          <p className="text-sm text-muted-foreground border-l-2 border-muted pl-3 leading-relaxed">
+            {(nodeMeta as { dependencyHelperText: string }).dependencyHelperText}
+          </p>
+        ) : null}
+
+        {panelTabs.length > 0 ? (
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as NodePanelTabId)}
+            className="space-y-4"
+          >
+            <TabsList
+              className="grid h-auto w-full gap-1 p-1"
+              style={{ gridTemplateColumns: `repeat(${panelTabs.length}, minmax(0, 1fr))` }}
+            >
+              {panelTabs.map((tab) => (
+                <TabsTrigger key={tab} value={tab} className="text-xs sm:text-sm">
+                  {NODE_PANEL_TAB_LABELS[tab]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        ) : null}
+
+        <NodePanelTabProvider activeTab={panelTabs.length > 0 ? activeTab : 'settings'}>
+          <Suspense fallback={<div>Loading...</div>}>
+            {(() => {
+              const PanelComponent =
+                panelComponents[selectedNode.type as keyof typeof panelComponents]
+              if (PanelComponent) {
+                return (
+                  <PanelComponent
+                    node={selectedNode}
+                    onChange={onTextChange}
+                    onRun={onRun}
+                    running={running}
+                    currentRun={currentRun}
+                    editMode={editMode}
+                    setNodes={setNodes}
+                    graphContext={graphContext ?? undefined}
+                    nodeOutputLookupSpec={nodeOutputLookupSpec}
+                  />
+                )
+              }
+              return <div>Unknown node type: {selectedNode.type}</div>
+            })()}
+          </Suspense>
+        </NodePanelTabProvider>
 
         {/* Legacy conditional logic - to be removed after migration */}
         {false && selectedNode.type === 'TextInput' && (

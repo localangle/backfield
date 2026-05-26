@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { BOOKEND_OUTPUT_POSITION } from './flowBuilderLayout'
 import {
   addSiblingBranch,
+  applyLayoutToModel,
   assignLayoutPositions,
+  canReplaceInputBookend,
+  canReplaceOutputBookend,
   clearMiddleNodes,
+  replaceInputBookend,
   createFlowGraphModel,
   deleteMiddleNode,
   deriveEdges,
@@ -12,7 +17,12 @@ import {
   insertAfter,
   insertBetween,
   isMiddleNodeId,
+  LAYOUT_NODE_WIDTH,
+  LAYOUT_X_GAP,
+  LAYOUT_X_STEP,
   modelToGraphSpec,
+  toReactFlowNodes,
+  updateNodePosition,
   type FlowGraphNode,
 } from './flowGraphModel'
 
@@ -39,6 +49,13 @@ describe('flowGraphModel serial chain', () => {
     expect(edgeSet(model)).toEqual(
       new Set(['input-1->place-1:branch', 'place-1->output-1:tip']),
     )
+    const edges = deriveEdges(model)
+    const inputToPlace = edges.find((e) => e.source === 'input-1' && e.target === 'place-1')
+    const placeToOutput = edges.find((e) => e.source === 'place-1' && e.target === 'output-1')
+    expect(inputToPlace?.sourceHandle).toBe('text')
+    expect(inputToPlace?.targetHandle).toBe('text')
+    expect(placeToOutput?.sourceHandle).toBe('locations')
+    expect(placeToOutput?.targetHandle).toBe('data')
     expect(getBranchTipIds(model)).toEqual(['place-1'])
   })
 
@@ -160,6 +177,96 @@ describe('flowGraphModel layout', () => {
     expect(byId.get('place-1')!.y).not.toBe(byId.get('place-2')!.y)
     expect(byId.get('output-1')!.x).toBeGreaterThan(byId.get('geo-1')!.x)
   })
+
+  it('spaces the first middle step to the right of the input bookend', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const model = addSiblingBranch(bookends(), 'input-1', place)
+    const positioned = assignLayoutPositions(model)
+    const byId = new Map(positioned.map((n) => [n.id, n.position!]))
+
+    const inputRight = byId.get('input-1')!.x + LAYOUT_NODE_WIDTH
+    expect(byId.get('place-1')!.x).toBeGreaterThanOrEqual(inputRight)
+  })
+
+  it('toReactFlowNodes prefers stored positions over auto layout', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = updateNodePosition(model, 'place-1', { x: 900, y: 400 })
+
+    const nodes = toReactFlowNodes(model)
+    expect(nodes.find((node) => node.id === 'place-1')?.position).toEqual({ x: 900, y: 400 })
+  })
+
+  it('applyLayoutToModel preserves dragged input and relayouts output when middle steps exist', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = updateNodePosition(model, 'input-1', { x: 120, y: 300 })
+    model = updateNodePosition(model, 'output-1', { x: 520, y: 300 })
+
+    const afterAdd = applyLayoutToModel(model)
+    const auto = assignLayoutPositions(model)
+    expect(afterAdd.inputNode.position).toEqual({ x: 120, y: 300 })
+    expect(afterAdd.outputNode.position).toEqual(auto.find((node) => node.id === 'output-1')?.position)
+    const middleX = afterAdd.middleNodes.find((node) => node.id === 'place-1')?.position?.x ?? 0
+    expect(afterAdd.outputNode.position!.x).toBeGreaterThan(middleX + LAYOUT_NODE_WIDTH)
+
+    const tidied = applyLayoutToModel(model, { relayoutBookends: true })
+    expect(tidied.inputNode.position).toEqual(auto.find((node) => node.id === 'input-1')?.position)
+    expect(tidied.outputNode.position).toEqual(auto.find((node) => node.id === 'output-1')?.position)
+  })
+
+  it('addSiblingBranch spaces output past new middle nodes', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const model = addSiblingBranch(
+      {
+        ...bookends(),
+        outputNode: { ...bookends().outputNode, position: BOOKEND_OUTPUT_POSITION },
+      },
+      'input-1',
+      place,
+    )
+    const middleX = model.middleNodes[0]?.position?.x ?? 0
+    const gapBeforeOutput = model.outputNode.position!.x - (middleX + LAYOUT_NODE_WIDTH)
+    expect(gapBeforeOutput).toBe(LAYOUT_X_GAP)
+    expect(model.outputNode.position!.x).toBeGreaterThan(middleX + LAYOUT_NODE_WIDTH)
+  })
+
+  it('serial chain uses consistent horizontal gaps between nodes', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = insertAfter(model, 'place-1', { id: 'geo-1', type: 'GeocodeAgent', data: {} })
+
+    const nodes = toReactFlowNodes(model)
+    const input = nodes.find((n) => n.id === 'input-1')!
+    const placeNode = nodes.find((n) => n.id === 'place-1')!
+    const geo = nodes.find((n) => n.id === 'geo-1')!
+    const output = nodes.find((n) => n.id === 'output-1')!
+
+    expect(placeNode.position!.x - (input.position!.x + LAYOUT_NODE_WIDTH)).toBe(LAYOUT_X_GAP)
+    expect(geo.position!.x - (placeNode.position!.x + LAYOUT_NODE_WIDTH)).toBe(LAYOUT_X_GAP)
+    expect(output.position!.x - (geo.position!.x + LAYOUT_NODE_WIDTH)).toBe(LAYOUT_X_GAP)
+    expect(input.position!.y).toBe(placeNode.position!.y)
+    expect(placeNode.position!.y).toBe(geo.position!.y)
+    expect(geo.position!.y).toBe(output.position!.y)
+  })
+
+  it('applyLayoutToModel preserves dragged middle positions unless relayoutBookends', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = updateNodePosition(model, 'place-1', { x: 900, y: 400 })
+
+    const relayouted = applyLayoutToModel(model)
+    expect(relayouted.middleNodes.find((node) => node.id === 'place-1')?.position).toEqual({
+      x: 900,
+      y: 400,
+    })
+
+    const tidied = applyLayoutToModel(model, { relayoutBookends: true })
+    const auto = assignLayoutPositions(model)
+    expect(tidied.middleNodes.find((node) => node.id === 'place-1')?.position).toEqual(
+      auto.find((node) => node.id === 'place-1')?.position,
+    )
+  })
 })
 
 describe('flowGraphModel deleteMiddleNode', () => {
@@ -227,6 +334,27 @@ describe('flowGraphModel deleteMiddleNode', () => {
 })
 
 describe('flowGraphModel hydrate and edit helpers', () => {
+  it('replaceInputBookend preserves middle nodes and topology', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+
+    const swapped = replaceInputBookend(model, {
+      type: 'JSONInput',
+      data: { text: '{}' },
+    })
+
+    expect(swapped.inputNode.type).toBe('JSONInput')
+    expect(swapped.inputNode.id).toBe('input-1')
+    expect(swapped.middleNodes).toHaveLength(1)
+    expect(swapped.branchChildren['input-1']).toEqual(['place-1'])
+  })
+
+  it('canReplaceOutputBookend checks tip compatibility', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const model = addSiblingBranch(bookends(), 'input-1', place)
+    expect(canReplaceOutputBookend(model, 'Output').ok).toBe(true)
+  })
+
   it('clearMiddleNodes preserves bookends and removes middle topology', () => {
     const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
     let model = addSiblingBranch(bookends(), 'input-1', place)
