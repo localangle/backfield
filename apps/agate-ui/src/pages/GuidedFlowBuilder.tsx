@@ -1,7 +1,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { Node } from 'reactflow'
 
+import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import AddNodeChooser from '@/components/flow-builder/AddNodeChooser'
 import BookendChooser from '@/components/flow-builder/BookendChooser'
 import BookendSwapDialog from '@/components/flow-builder/BookendSwapDialog'
@@ -59,7 +60,8 @@ import {
   type Project,
   type Run,
 } from '@/lib/api'
-import { fetchProjectEffectiveAiModels } from '@/lib/core-api'
+import { buildProjectBreadcrumbItems } from '@/lib/projectBreadcrumbs'
+import { fetchProjectEffectiveAiModels, listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import {
   INPUT_BOOKEND_TYPES,
   OUTPUT_BOOKEND_TYPES,
@@ -67,7 +69,7 @@ import {
   validateGraphForSave,
 } from '@/lib/flowValidation'
 import { nodeMetadata } from '@/nodes/registry'
-import { ArrowLeft, Save } from 'lucide-react'
+import { Save } from 'lucide-react'
 
 let nodeIdCounter = 0
 const nextNodeId = () => `node-${nodeIdCounter++}`
@@ -186,6 +188,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   /** After the first middle step is added or the empty-flow CTA is dismissed, do not show it again. */
   const [firstStepIntroComplete, setFirstStepIntroComplete] = useState(false)
   const [resolvedFlowProject, setResolvedFlowProject] = useState<Project | null>(null)
+  const [flowWorkspace, setFlowWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const [flowProjectLoading, setFlowProjectLoading] = useState(false)
   const [existingGraphId, setExistingGraphId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -320,6 +323,36 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
   const flowProjectId = resolvedFlowProject?.id ?? null
   const workspaceStylebookId = resolvedFlowProject?.workspace_stylebook_id ?? null
+
+  useEffect(() => {
+    if (resolvedFlowProject?.workspace_id == null) {
+      setFlowWorkspace(null)
+      return
+    }
+    let cancelled = false
+    void listMyWorkspaces()
+      .then((rows) => {
+        if (!cancelled) {
+          setFlowWorkspace(rows.find((row) => row.id === resolvedFlowProject.workspace_id) ?? null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFlowWorkspace(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [resolvedFlowProject?.workspace_id])
+
+  const headerBreadcrumbItems = useMemo(
+    () =>
+      buildProjectBreadcrumbItems({
+        project: resolvedFlowProject,
+        workspace: flowWorkspace,
+        tail: [{ label: graphName.trim() || 'Untitled flow' }],
+      }),
+    [flowWorkspace, graphName, resolvedFlowProject],
+  )
 
   const fetchProjectAiModels = useCallback(
     async (capabilities: string[]) => {
@@ -1115,27 +1148,28 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     <div className={rootClassName}>
       {!hideHeader && (
       <div className="sticky top-0 z-10 border-b bg-background">
-        <div className="container mx-auto flex items-center justify-between px-4 py-4">
-          <p className="flex items-center gap-4">
-            <Link to="/">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back
-              </Button>
-            </Link>
-            <span>
+        <div className="container mx-auto flex items-center justify-between gap-4 px-4 py-4">
+          <div className="min-w-0 flex-1 space-y-2">
+            <PageBreadcrumbs items={headerBreadcrumbItems} />
+            <div>
               <input
                 type="text"
                 value={graphName}
                 onChange={(e) => setGraphName(e.target.value)}
-                className="border-none bg-transparent text-2xl font-bold outline-none"
+                className="w-full min-w-0 border-none bg-transparent text-2xl font-bold outline-none"
                 aria-label="Flow name"
               />
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {activeStep === 'scaffold' ? 'Set up your flow step by step' : null}
-              </span>
-            </span>
-          </p>
+              {activeStep !== 'scaffold' ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {activeStep === 'input'
+                    ? 'Choose where content comes in'
+                    : 'Choose where results are saved'}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">Set up your flow step by step</p>
+              )}
+            </div>
+          </div>
           <Button
             onClick={() => void handleSave()}
             disabled={saving || !inputNode || !outputNode}

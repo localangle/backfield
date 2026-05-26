@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Button } from '@/components/ui/button'
 import GuidedFlowBuilder, { type GuidedFlowBuilderHandle } from '@/pages/GuidedFlowBuilder'
 import { createRun, deleteGraph, getGraph, getRun, updateGraph, type Graph, type Run } from '@/lib/api'
-import { ArrowLeft, Edit, Loader2, Play, Save, Trash2 } from 'lucide-react'
+import {
+  buildProjectBreadcrumbItems,
+  useProjectAndWorkspace,
+} from '@/lib/projectBreadcrumbs'
+import { Edit, Loader2, Play, Save, Trash2 } from 'lucide-react'
 
 export default function RunGraph() {
   const { graphId } = useParams<{ graphId: string }>()
@@ -24,6 +29,20 @@ export default function RunGraph() {
   const [titleValue, setTitleValue] = useState('')
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const { project: flowProject, workspace: flowWorkspace } = useProjectAndWorkspace(
+    graph?.project_id,
+  )
+
+  const breadcrumbItems = useMemo(
+    () =>
+      buildProjectBreadcrumbItems({
+        project: flowProject,
+        workspace: flowWorkspace,
+        tail: [{ label: graph?.name?.trim() || 'Flow' }],
+      }),
+    [flowProject, flowWorkspace, graph?.name],
+  )
 
   const [modalOpen, setModalOpen] = useState(false)
   const [modalConfig, setModalConfig] = useState<{
@@ -258,8 +277,7 @@ export default function RunGraph() {
         <p className="text-muted-foreground">Flow not found</p>
         <Link to="/">
           <Button variant="link" className="mt-4">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to flows
+            Back to workspaces
           </Button>
         </Link>
       </div>
@@ -270,13 +288,8 @@ export default function RunGraph() {
     <div className="flex h-screen flex-col">
       <div className="sticky top-0 z-10 border-b bg-background">
         <div className="container mx-auto flex items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Link to="/">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back
-              </Button>
-            </Link>
+          <div className="min-w-0 flex-1 space-y-2">
+            <PageBreadcrumbs items={breadcrumbItems} />
             <div>
               {editingTitle ? (
                 <input
@@ -305,6 +318,7 @@ export default function RunGraph() {
             </div>
           </div>
 
+          <div className="flex shrink-0 gap-2">
           {editMode ? (
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleCancelEdit}>
@@ -348,6 +362,7 @@ export default function RunGraph() {
               </Button>
             </div>
           )}
+          </div>
         </div>
       </div>
 
