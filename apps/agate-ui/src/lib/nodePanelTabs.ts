@@ -1,7 +1,8 @@
-export type NodePanelTabId = 'settings' | 'models' | 'prompts' | 'outputs'
+export type NodePanelTabId = 'settings' | 'info' | 'models' | 'prompts' | 'outputs'
 
 export const NODE_PANEL_TAB_LABELS: Record<NodePanelTabId, string> = {
   settings: 'Settings',
+  info: 'Info',
   models: 'Models',
   prompts: 'Prompts',
   outputs: 'Outputs',
@@ -16,9 +17,10 @@ export function getNodePanelTabs(
 
   switch (nodeType) {
     case 'TextInput':
-    case 'JSONInput':
     case 'S3Input':
       return hasRunOutput ? ['settings', 'outputs'] : ['settings']
+    case 'JSONInput':
+      return hasRunOutput ? ['settings', 'info', 'outputs'] : ['settings', 'info']
     case 'PlaceExtract':
       return hasRunOutput
         ? ['settings', 'models', 'prompts', 'outputs']
@@ -28,7 +30,7 @@ export function getNodePanelTabs(
     case 'Output':
       return hasRunOutput ? ['outputs'] : []
     case 'DBOutput':
-      return ['settings', 'models']
+      return ['settings']
     default:
       return ['settings']
   }

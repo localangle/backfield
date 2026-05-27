@@ -1,4 +1,3 @@
-import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   FLOW_BUILDER_STEPS,
@@ -25,7 +24,6 @@ export default function FlowStepper({
       <ol className="container mx-auto flex max-w-3xl items-center gap-1 px-4 py-2.5">
         {FLOW_BUILDER_STEPS.map((step, index) => {
           const isActive = activeStep === step
-          const isComplete = completedSteps.has(step)
           const isLocked = !canNavigateTo(step)
           const stepNumber = index + 1
 
@@ -46,12 +44,12 @@ export default function FlowStepper({
                 <span
                   className={cn(
                     'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-medium',
-                    isComplete && 'bg-primary/15 text-primary',
-                    isActive && !isComplete && 'bg-foreground text-background',
-                    !isActive && !isComplete && 'bg-muted text-muted-foreground',
+                    completedSteps.has(step) && 'bg-primary/15 text-primary',
+                    isActive && !completedSteps.has(step) && 'bg-foreground text-background',
+                    !isActive && !completedSteps.has(step) && 'bg-muted text-muted-foreground',
                   )}
                 >
-                  {isComplete ? <Check className="h-3 w-3" aria-hidden /> : stepNumber}
+                  {stepNumber}
                 </span>
                 <span
                   className={cn(
@@ -62,15 +60,6 @@ export default function FlowStepper({
                   {STEP_HEADINGS[step]}
                 </span>
               </button>
-              {index < FLOW_BUILDER_STEPS.length - 1 && (
-                <div
-                  className={cn(
-                    'hidden h-px w-4 shrink-0 bg-border sm:block',
-                    completedSteps.has(step) && 'bg-primary/25',
-                  )}
-                  aria-hidden
-                />
-              )}
             </li>
           )
         })}

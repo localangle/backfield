@@ -1,12 +1,11 @@
 {
   "type": "DBOutput",
-  "label": "Stylebook Output",
+  "label": "Backfield Output",
   "icon": "Database",
   "color": "bg-slate-500",
-  "description": "Persists results to Stylebook",
+  "description": "Persist the data to Backfield database, for access in Stylebook and Proof.",
   "category": "output",
   "requiredUpstreamNodes": [],
-  "dependencyHelperText": "Persists results to Stylebook",
   "inputs": [
     {
       "id": "data",
@@ -34,7 +33,7 @@
   ],
   "defaultParams": {
     "stylebook_id": null,
-    "canonicalization_mode": "rules",
+    "canonicalization_mode": "ai_assisted",
     "reconciliation_policy": "smart_merge",
     "auto_apply_canonicalization": true,
     "adjudication_model": "",

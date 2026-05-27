@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { FlowTitleRow } from '@/components/flow-builder/FlowTitleRow'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Button } from '@/components/ui/button'
 import GuidedFlowBuilder, { type GuidedFlowBuilderHandle } from '@/pages/GuidedFlowBuilder'
@@ -25,9 +26,6 @@ export default function RunGraph() {
   const [saving, setSaving] = useState(false)
   const [showRunPanel, setShowRunPanel] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [titleValue, setTitleValue] = useState('')
-
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { project: flowProject, workspace: flowWorkspace } = useProjectAndWorkspace(
@@ -65,7 +63,6 @@ export default function RunGraph() {
       setLoading(true)
       const data = await getGraph(id)
       setGraph(data)
-      setTitleValue(data.name)
     } catch (error) {
       console.error('Failed to load graph:', error)
       setGraph(null)
@@ -96,7 +93,6 @@ export default function RunGraph() {
               project_id: payload.projectId,
             } as Graph),
       )
-      setTitleValue(payload.name)
       setLoading(false)
     },
     [],
@@ -202,45 +198,20 @@ export default function RunGraph() {
     void executeRun()
   }, [graphId, executeRun, showModal])
 
-  const handleTitleClick = useCallback(() => {
-    setEditingTitle(true)
-  }, [])
-
-  const handleTitleSave = useCallback(async () => {
-    if (!graph || !titleValue.trim()) {
-      setEditingTitle(false)
-      setTitleValue(graph?.name ?? '')
-      return
-    }
-
-    try {
+  const handleFlowNameSave = useCallback(
+    async (nextName: string) => {
+      if (!graph) return
       await updateGraph(graph.id, {
-        name: titleValue,
+        name: nextName,
         project_id: graph.project_id,
         spec: {
           ...graph.spec,
-          name: titleValue.toLowerCase().replace(/\s+/g, '_'),
+          name: nextName.toLowerCase().replace(/\s+/g, '_'),
         },
       })
       await loadGraph(graph.id)
-      setEditingTitle(false)
-    } catch (error) {
-      console.error('Failed to update title:', error)
-      setEditingTitle(false)
-      setTitleValue(graph.name)
-    }
-  }, [graph, titleValue, loadGraph])
-
-  const handleTitleKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (event.key === 'Enter') {
-        void handleTitleSave()
-      } else if (event.key === 'Escape') {
-        setEditingTitle(false)
-        setTitleValue(graph?.name ?? '')
-      }
     },
-    [handleTitleSave, graph?.name],
+    [graph, loadGraph],
   )
 
   const confirmDeleteFlow = useCallback(async () => {
@@ -291,25 +262,7 @@ export default function RunGraph() {
           <div className="min-w-0 flex-1 space-y-2">
             <PageBreadcrumbs items={breadcrumbItems} />
             <div>
-              {editingTitle ? (
-                <input
-                  type="text"
-                  value={titleValue}
-                  onChange={(event) => setTitleValue(event.target.value)}
-                  onBlur={() => void handleTitleSave()}
-                  onKeyDown={handleTitleKeyDown}
-                  autoFocus
-                  className="border-b-2 border-primary bg-transparent px-1 text-2xl font-bold outline-none"
-                />
-              ) : (
-                <h1
-                  className="cursor-pointer text-2xl font-bold transition-colors hover:text-primary"
-                  onClick={handleTitleClick}
-                  title="Click to edit title"
-                >
-                  {graph?.name ?? 'Flow'}
-                </h1>
-              )}
+              <FlowTitleRow name={graph?.name ?? 'Flow'} onSave={handleFlowNameSave} />
               <p className="text-sm text-muted-foreground">
                 {editMode
                   ? 'Edit mode — add steps, change bookends, or save your changes'

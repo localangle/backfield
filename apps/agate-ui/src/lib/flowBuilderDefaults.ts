@@ -27,11 +27,7 @@ export function getOutputBookendDefaultData(
       return {}
     case 'DBOutput': {
       const meta = nodeMetadata.find((m) => m.type === 'DBOutput')
-      const base = { ...(meta?.defaultParams ?? {}) } as Record<string, unknown>
-      if (typeof workspaceStylebookId === 'number') {
-        base.stylebook_id = workspaceStylebookId
-      }
-      return base
+      return { ...(meta?.defaultParams ?? {}) } as Record<string, unknown>
     }
     default: {
       const meta = nodeMetadata.find((m) => m.type === type)

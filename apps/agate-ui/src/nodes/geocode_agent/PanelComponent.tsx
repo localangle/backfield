@@ -49,8 +49,6 @@ const nodeMetadata = {
 };
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
-import { NodePanelOutputsSection } from '@/components/node-panel/NodePanelOutputsSection'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
@@ -82,6 +80,9 @@ const DEFAULTS = {
   useCacheLlmAdjudication: true,
   useCacheLlmAdjudicationOnMissRecall: false,
 }
+
+const PANEL_DESCRIPTION =
+  'Turns extracted places into map-ready results: optional location cache, smart routing, then external geocoding. Pick three models: routing after cache, geographic reasoning during lookup, and evaluation for ambiguous hits plus display lines.'
 
 type UnifiedAiModelOption = {
   selectValue: string
@@ -565,8 +566,19 @@ export default function GeocodeAgentPanel({
 
   return (
     <>
-      <NodePanelTabGate tab="models">
-        <div className="space-y-3">
+      <div className="space-y-3">
+        <div>
+          <Label className="text-sm font-medium">Description</Label>
+          <p className="text-sm text-muted-foreground mt-1">{PANEL_DESCRIPTION}</p>
+        </div>
+      </div>
+
+      <div className="pt-4 border-t">
+        <div>
+          <Label className="text-sm font-medium">Parameters</Label>
+        </div>
+
+        <div className="space-y-3 mt-2">
           <div className="space-y-2">
             <Label className="text-xs">Routing model</Label>
             {catalogHint}
@@ -673,26 +685,24 @@ export default function GeocodeAgentPanel({
               Judges ambiguous area geocoder results and refines the human-readable location line in consolidated output.
             </p>
           </div>
-        </div>
-      </NodePanelTabGate>
 
-      <NodePanelTabGate tab="settings">
-        <div className="space-y-3">
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="geocode-useCache"
-              checked={params.useCache || false}
-              onCheckedChange={(c) => handleUseCacheChange(c === true)}
-              disabled={isDisabled}
-            />
-            <Label htmlFor="geocode-useCache" className="text-xs font-medium cursor-pointer">
-              Use cache
-            </Label>
+          <div className="pt-2 border-t">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="geocode-useCache"
+                checked={params.useCache || false}
+                onCheckedChange={(c) => handleUseCacheChange(c === true)}
+                disabled={isDisabled}
+              />
+              <Label htmlFor="geocode-useCache" className="text-xs font-medium cursor-pointer">
+                Use cache
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 ml-6">
+              Worker runs: match catalog locations and location cache before external geocoding when a catalog is
+              selected.
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground ml-6">
-            Match catalog locations and location cache before external geocoding when a catalog is
-            selected.
-          </p>
 
           {params.useCache && (
             <div className="space-y-2">
@@ -717,8 +727,7 @@ export default function GeocodeAgentPanel({
               </Select>
               {orgId == null && (
                 <p className="text-xs text-muted-foreground">
-                  Save the flow to a project (or open an existing project flow) to load catalogs for
-                  your organization.
+                  Save the flow to a project (or open an existing project flow) to load catalogs for your organization.
                 </p>
               )}
               {orgId != null && params.useCache && stylebooks.length === 0 && !stylebooksError && (
@@ -737,8 +746,8 @@ export default function GeocodeAgentPanel({
                 </Label>
               </div>
               <p className="text-xs text-muted-foreground ml-6">
-                Runs after strict catalog and location fingerprint tiers: chooses among recalled
-                catalog candidates (same evaluation model as area judging).
+                Runs after strict catalog and substrate fingerprint tiers: chooses among recalled catalog candidates
+                (same evaluation model as area judging).
               </p>
               <div className="flex items-center space-x-2 pt-1">
                 <Checkbox
@@ -752,23 +761,24 @@ export default function GeocodeAgentPanel({
                 </Label>
               </div>
               <p className="text-xs text-muted-foreground ml-6">
-                Optional; increases model usage when aliases nearly match but strict tiers miss.
+                Optional; increases LLM usage when aliases nearly match but strict tiers miss.
               </p>
             </div>
           )}
         </div>
-      </NodePanelTabGate>
+      </div>
 
-      <NodePanelTabGate tab="outputs">
-        {latestData ? (
-          <NodePanelOutputsSection>
+      {latestData && (
+        <div className="pt-4 border-t">
+          <Label className="text-sm font-medium">Latest run</Label>
+          <div className="mt-2 space-y-2">
             <div className="text-xs text-muted-foreground">
               <div>
                 Geocoded {locationCount} location{locationCount !== 1 ? 's' : ''}
               </div>
             </div>
 
-            {locationCount > 0 && sampleSnippet ? (
+            {locationCount > 0 && sampleSnippet && (
               <div>
                 <Label className="text-xs font-medium">Sample output</Label>
                 <div className="text-xs font-mono p-2 bg-muted rounded mt-1 max-h-32 overflow-y-auto">
@@ -776,10 +786,10 @@ export default function GeocodeAgentPanel({
                   {sampleSnippet.length > 200 ? '...' : ''}
                 </div>
               </div>
-            ) : null}
-          </NodePanelOutputsSection>
-        ) : null}
-      </NodePanelTabGate>
+            )}
+          </div>
+        </div>
+      )}
     </>
   )
 }

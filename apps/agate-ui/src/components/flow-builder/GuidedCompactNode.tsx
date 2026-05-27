@@ -20,6 +20,7 @@ type GuidedCompactNodeProps = NodeProps & {
 export default function GuidedCompactNode({
   id,
   type,
+  data,
   selected,
   exitAnimation = false,
 }: GuidedCompactNodeProps) {
@@ -31,10 +32,14 @@ export default function GuidedCompactNode({
   const inputs = (meta?.inputs ?? []) as PortDef[]
   const outputs = (meta?.outputs ?? []) as PortDef[]
   const primaryTarget = inputs[0]
-  const primarySource =
-    outputs.find((output) => output.id === 'locations') ??
-    outputs.find((output) => output.id === 'text') ??
-    outputs[outputs.length - 1]
+  const isOutputBookend = Boolean(
+    (data as { guidedIsOutputBookend?: boolean } | undefined)?.guidedIsOutputBookend,
+  )
+  const primarySource = isOutputBookend
+    ? null
+    : (outputs.find((output) => output.id === 'locations') ??
+      outputs.find((output) => output.id === 'text') ??
+      outputs[outputs.length - 1])
   const label = getNodeLabel(nodeType)
   const icon = getNodeIcon(nodeType, 'h-4 w-4')
   const bgColor = getNodeBgColor(nodeType)

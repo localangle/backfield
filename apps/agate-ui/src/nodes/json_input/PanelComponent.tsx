@@ -21,13 +21,14 @@ const nodeMetadata = {
 
 import { useEffect, useState } from 'react'
 import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
-import {
-  NodePanelJsonPreview,
-  NodePanelOutputsSection,
-} from '@/components/node-panel/NodePanelOutputsSection'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  jsonInputInvalidNodeData,
+  parseJsonInputEditorText,
+} from '@/lib/jsonInputValidation'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
+import { JSON_INPUT_SCHEMA_EXAMPLE } from './schemaExample'
 
 interface JSONInputPanelProps {
   node: any
@@ -64,29 +65,23 @@ export default function JSONInputPanel({
   const handleJsonChange = (value: string) => {
     setJsonText(value)
 
-    try {
-      const parsed = JSON.parse(value) as unknown
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        setJsonError('JSON must be an object')
-        return
-      }
-      const rec = parsed as Record<string, unknown>
-      if (!('text' in rec)) {
-        setJsonError('JSON must include a "text" field')
-        return
-      }
-      if (typeof rec.text !== 'string' || !rec.text.trim()) {
-        setJsonError('"text" must be a non-empty string')
-        return
-      }
-
-      setJsonError('')
-
+    const result = parseJsonInputEditorText(value)
+    if (!result.ok) {
+      setJsonError(result.error)
       if (setNodes) {
-        setNodes((nds: any[]) => nds.map((n: any) => (n.id === node.id ? { ...n, data: parsed } : n)))
+        setNodes((nds: any[]) =>
+          nds.map((n: any) => (n.id === node.id ? { ...n, data: jsonInputInvalidNodeData() } : n)),
+        )
       }
-    } catch {
-      setJsonError('Invalid JSON syntax')
+      return
+    }
+
+    setJsonError('')
+
+    if (setNodes) {
+      setNodes((nds: any[]) =>
+        nds.map((n: any) => (n.id === node.id ? { ...n, data: result.data } : n)),
+      )
     }
   }
 
@@ -115,25 +110,44 @@ export default function JSONInputPanel({
             disabled={isDisabled}
           />
           {jsonError && <p className="text-xs text-red-500 mt-1">{jsonError}</p>}
-          <p className="text-xs text-muted-foreground mt-1">
-            Use extra fields (for example headline, url) so downstream steps can reference them.
+        </div>
+      </NodePanelTabGate>
+
+      <NodePanelTabGate tab="info">
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Use a single JSON object. Include a <span className="font-mono">text</span> field (it may
+            be empty); other top-level fields are optional and can be referenced in prompts (for
+            example{' '}
+            <span className="font-mono">{'{headline}'}</span>).
           </p>
+          <Label htmlFor="node-json-schema" className="text-xs text-muted-foreground">
+            Example shape
+          </Label>
+          <Textarea
+            id="node-json-schema"
+            readOnly
+            value={JSON_INPUT_SCHEMA_EXAMPLE}
+            className="min-h-[300px] mt-1 font-mono text-xs bg-muted/40 cursor-default"
+            tabIndex={-1}
+            aria-readonly
+          />
         </div>
       </NodePanelTabGate>
 
       <NodePanelTabGate tab="outputs">
-        {slice ? (
-          <NodePanelOutputsSection>
+        {slice && typeof slice.text === 'string' ? (
+          <div className="space-y-2">
             <div className="text-xs text-muted-foreground">
               Fields in output: {Object.keys(slice).length}
             </div>
             <div>
               <Label className="text-xs font-medium">Output preview</Label>
-              <div className="mt-1">
-                <NodePanelJsonPreview value={slice} />
+              <div className="text-xs font-mono p-2 bg-muted rounded mt-1 max-h-48 overflow-y-auto">
+                {JSON.stringify(slice, null, 2)}
               </div>
             </div>
-          </NodePanelOutputsSection>
+          </div>
         ) : null}
       </NodePanelTabGate>
     </>

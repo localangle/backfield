@@ -6,8 +6,8 @@ import { INPUT_BOOKEND_TYPES, OUTPUT_BOOKEND_TYPES } from '@/lib/flowValidation'
 
 const INPUT_CARD_COPY: Record<string, { title: string; description: string }> = {
   TextInput: {
-    title: 'Paste or type text',
-    description: 'Add article text directly in the flow — ideal for trying a single story.',
+    title: 'Type or paste text',
+    description: 'Add article text directly. Ideal for processing a single story.',
   },
   JSONInput: {
     title: 'Structured JSON',
@@ -21,12 +21,12 @@ const INPUT_CARD_COPY: Record<string, { title: string; description: string }> = 
 
 const OUTPUT_CARD_COPY: Record<string, { title: string; description: string }> = {
   Output: {
-    title: 'JSON results',
+    title: 'JSON Output',
     description: 'Collect the flow results as a single JSON file for review or export.',
   },
   DBOutput: {
-    title: 'Stylebook',
-    description: 'Save places and related results to your organization Stylebook.',
+    title: 'Backfield Output',
+    description: 'Save places and related results to Backfield.',
   },
 }
 
@@ -39,9 +39,10 @@ type BookendChooserProps = {
 export default function BookendChooser({ kind, selectedType, onSelect }: BookendChooserProps) {
   const allowedTypes = kind === 'input' ? INPUT_BOOKEND_TYPES : OUTPUT_BOOKEND_TYPES
   const copyMap = kind === 'input' ? INPUT_CARD_COPY : OUTPUT_CARD_COPY
-  const options = nodeMetadata.filter((meta) =>
-    (allowedTypes as readonly string[]).includes(meta.type),
-  )
+  const options = (allowedTypes as readonly string[]).flatMap((type) => {
+    const meta = nodeMetadata.find((m) => m.type === type)
+    return meta ? [meta] : []
+  })
 
   return (
     <div className="mx-auto grid max-w-4xl gap-4 md:grid-cols-2 lg:grid-cols-3">

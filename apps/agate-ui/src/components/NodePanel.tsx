@@ -157,7 +157,7 @@ export default function NodePanel({
   }
 
   return (
-    <div className="absolute top-0 right-0 h-full w-96 bg-background/95 backdrop-blur-sm border-l shadow-lg flex flex-col z-10 slide-in-from-right">
+    <div className="absolute top-0 right-0 z-20 flex h-full w-96 flex-col border-l bg-background/95 shadow-lg backdrop-blur-sm slide-in-from-right">
       <div className="flex items-center justify-between gap-3 p-4 border-b">
         <div className="flex min-w-0 items-center gap-3">
           <div
@@ -195,7 +195,7 @@ export default function NodePanel({
           </p>
         ) : null}
 
-        {panelTabs.length > 0 ? (
+        {panelTabs.length > 1 ? (
           <Tabs
             value={activeTab}
             onValueChange={(value) => setActiveTab(value as NodePanelTabId)}

@@ -14,6 +14,8 @@ type ConfigureGatePanelProps = {
   selectedNode: Node
   gateActive: boolean
   onContinue: () => void
+  /** Clears the current bookend selection and returns to the chooser on input/output steps. */
+  onCancel?: () => void
   onClose: () => void
   onTextChange?: (text: string) => void
   setNodes: (nodes: Node[] | ((nodes: Node[]) => Node[])) => void
@@ -39,6 +41,7 @@ export default function ConfigureGatePanel({
   selectedNode,
   gateActive,
   onContinue,
+  onCancel,
   onClose,
   onTextChange,
   setNodes,
@@ -64,9 +67,20 @@ export default function ConfigureGatePanel({
     !viewOnly && gateActive ? (
     <div className="border-t bg-background p-4">
       {hint && <p className="mb-3 text-sm text-destructive">{hint}</p>}
-      <Button className="w-full" disabled={!canContinue} onClick={onContinue}>
-        Continue
-      </Button>
+      <div className={onCancel ? 'flex gap-2' : undefined}>
+        {onCancel ? (
+          <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : null}
+        <Button
+          className={onCancel ? 'flex-1' : 'w-full'}
+          disabled={!canContinue}
+          onClick={onContinue}
+        >
+          Continue
+        </Button>
+      </div>
     </div>
   ) : undefined
 

@@ -20,7 +20,7 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 1. **TextInput** — parameter text out (non-empty validation)  
 2. **PlaceExtract** — LLM extraction (ported from agate-ai-platform; needs `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` on the worker)  
 3. **GeocodeAgent** — LangGraph + external geocoders / LLM (ported; optional Stylebook cache)  
-4. **DBOutput** (Stylebook Output in the palette) — persists consolidated upstream JSON into shared **`substrate_*`** tables (worker-local). The seeded graph wires **GeocodeAgent → DBOutput** directly; add **Output** (JSON Output) if you want a `consolidated` JSON view on the canvas.  
+4. **DBOutput** (Backfield Output in the palette) — persists consolidated upstream JSON into shared **`substrate_*`** tables (worker-local). The seeded graph wires **GeocodeAgent → DBOutput** directly; add **Output** (JSON Output) if you want a `consolidated` JSON view on the canvas.  
 
 ## Quick start
 

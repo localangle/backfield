@@ -25,7 +25,7 @@ const INVALID_SELECTION_VALUE = '__bf_model_invalid__'
 
 const DEFAULTS = {
   stylebook_id: null as number | null,
-  canonicalization_mode: 'rules' as 'rules' | 'ai_assisted',
+  canonicalization_mode: 'ai_assisted' as 'rules' | 'ai_assisted',
   reconciliation_policy: 'smart_merge' as 'add_only' | 'smart_merge' | 'replace',
   auto_apply_canonicalization: true,
   adjudication_model: '',
@@ -287,9 +287,7 @@ export default function DBOutputPanel({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="dbout-stylebook" className="text-xs">
-          Catalog
-        </Label>
+        <Label htmlFor="dbout-stylebook">Stylebook</Label>
         <Select
           value={stylebookSelectValue}
           onValueChange={handleStylebookSelect}
@@ -333,7 +331,7 @@ export default function DBOutputPanel({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="dbout-reconciliation">Saved data</Label>
+        <Label htmlFor="dbout-reconciliation">Update strategy</Label>
         <Select
           value={data.reconciliation_policy}
           onValueChange={(value) =>
@@ -362,7 +360,7 @@ export default function DBOutputPanel({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="dbout-mode">Canonicalization</Label>
+        <Label htmlFor="dbout-mode">Canonicalization strategy</Label>
         <select
           id="dbout-mode"
           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -373,7 +371,7 @@ export default function DBOutputPanel({
           }
         >
           <option value="rules">Rules-based</option>
-          <option value="ai_assisted">AI-assisted</option>
+          <option value="ai_assisted">AI Assisted</option>
         </select>
       </div>
 

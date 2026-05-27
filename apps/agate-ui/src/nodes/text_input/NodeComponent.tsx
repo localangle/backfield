@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "Text Input",
   "icon": "FileText",
   "color": "bg-blue-500",
-  "description": "Input text for Agate pipelines.",
+  "description": "Type or paste text to be processed by this flow.",
   "category": "input",
   "inputs": [],
   "outputs": [

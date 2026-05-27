@@ -189,7 +189,7 @@ export interface GraphCreate {
 
 export interface RunCreate {
   input?: Record<string, unknown>
-  /** Legacy compatibility flag; saved-data policy now lives on Stylebook Output. */
+  /** Legacy compatibility flag; saved-data policy now lives on Backfield Output. */
   replace_article_geography_on_persist?: boolean
 }
 

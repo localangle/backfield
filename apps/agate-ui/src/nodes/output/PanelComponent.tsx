@@ -4,10 +4,9 @@ const nodeMetadata = {
   "label": "JSON Output",
   "icon": "Braces",
   "color": "bg-slate-500",
-  "description": "Consolidate results from multiple nodes",
+  "description": "Save the results to a JSON object that can be exported from Agate.",
   "category": "output",
   "requiredUpstreamNodes": [],
-  "dependencyHelperText": "Consolidates results from multiple nodes into a single JSON object.",
   "inputs": [
     {
       "id": "data",
@@ -29,32 +28,7 @@ const nodeMetadata = {
   }
 };
 
-import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
-import {
-  NodePanelJsonPreview,
-  NodePanelOutputsSection,
-} from '@/components/node-panel/NodePanelOutputsSection'
-import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
-
-interface OutputPanelProps {
-  node: any
-  currentRun?: any
-  nodeOutputLookupSpec?: NodeOutputLookupSpec | null
-}
-
-export default function OutputPanel({ node, currentRun, nodeOutputLookupSpec }: OutputPanelProps) {
-  const rawOutputs = currentRun?.node_outputs as Record<string, unknown> | undefined
-  const slice = rawOutputs
-    ? getNodeOutputById(rawOutputs, node.id, nodeOutputLookupSpec ?? undefined)
-    : undefined
-
-  return (
-    <NodePanelTabGate tab="outputs">
-      {slice !== undefined && slice !== null ? (
-        <NodePanelOutputsSection title="Consolidated output">
-          <NodePanelJsonPreview value={slice} maxHeightClassName="max-h-[min(24rem,50vh)]" />
-        </NodePanelOutputsSection>
-      ) : null}
-    </NodePanelTabGate>
-  )
+/** Settings live in the panel header description; run output uses the Outputs tab when present. */
+export default function OutputPanel() {
+  return null
 }

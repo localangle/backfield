@@ -31,7 +31,7 @@ describe('rerunWarning', () => {
     )
   })
 
-  it('reads the Stylebook Output policy from graph params', () => {
+  it('reads the Backfield Output policy from graph params', () => {
     expect(
       reconciliationPolicyFromGraph({
         spec: {

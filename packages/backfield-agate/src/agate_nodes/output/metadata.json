@@ -3,10 +3,9 @@
   "label": "JSON Output",
   "icon": "Braces",
   "color": "bg-slate-500",
-  "description": "Consolidate results from multiple nodes",
+  "description": "Save the results to a JSON object that can be exported from Agate.",
   "category": "output",
   "requiredUpstreamNodes": [],
-  "dependencyHelperText": "Consolidates results from multiple nodes into a single JSON object.",
   "inputs": [
     {
       "id": "data",

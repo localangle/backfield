@@ -7,6 +7,15 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('TextInput')).toEqual(['settings'])
   })
 
+  it('shows settings and info for JSON input without a run', () => {
+    expect(getNodePanelTabs('JSONInput')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('JSONInput', { hasRunOutput: true })).toEqual([
+      'settings',
+      'info',
+      'outputs',
+    ])
+  })
+
   it('adds outputs when a run exists for inputs', () => {
     expect(getNodePanelTabs('S3Input', { hasRunOutput: true })).toEqual(['settings', 'outputs'])
   })
@@ -26,7 +35,7 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('Output', { hasRunOutput: true })).toEqual(['outputs'])
   })
 
-  it('shows settings and models for stylebook output', () => {
-    expect(getNodePanelTabs('DBOutput')).toEqual(['settings', 'models'])
+  it('shows settings only for backfield output', () => {
+    expect(getNodePanelTabs('DBOutput')).toEqual(['settings'])
   })
 })

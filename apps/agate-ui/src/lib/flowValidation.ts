@@ -1,3 +1,4 @@
+import { stripJsonInputEditorMarkers } from '@/lib/jsonInputValidation'
 import { nodeMetadata } from '@/nodes/registry'
 
 /** Guided builder: exactly one of these per flow. */
@@ -101,7 +102,10 @@ export function validateGeocodeCatalogSelection(
 }
 
 export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown> {
-  const raw = { ...(node.data ?? {}) }
+  let raw = { ...(node.data ?? {}) }
+  if (node.type === 'JSONInput') {
+    raw = stripJsonInputEditorMarkers(raw)
+  }
   if (node.type === 'GeocodeAgent') {
     delete raw.stylebookId
     if (!raw.useCache) {

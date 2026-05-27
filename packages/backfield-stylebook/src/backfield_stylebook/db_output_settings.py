@@ -1,4 +1,4 @@
-"""Validated parameters for Stylebook Output (DBOutput) canonicalization."""
+"""Validated parameters for Backfield Output (DBOutput) canonicalization."""
 
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ class DbOutputCanonicalSettings(BaseModel):
     stylebook_id: int | None = Field(
         default=None,
         description="When set, canonical policy uses this Stylebook (same org as project). "
-        "When null, use the project's workspace default Stylebook.",
+        "When null, use the organization's default Stylebook.",
     )
-    canonicalization_mode: CanonicalizationMode = "rules"
+    canonicalization_mode: CanonicalizationMode = "ai_assisted"
     reconciliation_policy: ReconciliationPolicy = Field(
         default="smart_merge",
-        description="How Stylebook Output reconciles saved data in domains produced by this flow.",
+        description="How Backfield Output reconciles saved data in domains produced by this flow.",
     )
     auto_apply_canonicalization: bool = True
     adjudication_model: str = Field(
@@ -66,10 +66,10 @@ def resolve_effective_stylebook_id(
     project_id: int,
     stylebook_id_override: int | None,
 ) -> int:
-    """Return catalog id for DBOutput persistence (node override, else workspace).
+    """Return catalog id for DBOutput persistence (node override, else org default).
 
     Delegates to :func:`resolve_effective_stylebook_id_for_project` so precedence matches
-    the documented bridge order (explicit id → slug — unused here — → workspace).
+    the documented bridge order (explicit id → slug — unused here — → organization default).
     """
     proj = session.get(BackfieldProject, project_id)
     if proj is None:

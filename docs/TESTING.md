@@ -44,7 +44,7 @@
 
 ## Conventions
 
-- Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → Stylebook Output / `DBOutput`, no JSON Output node) as the canonical regression story; add tests when changing execution or handles.
+- Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → Backfield Output / `DBOutput`, no JSON Output node) as the canonical regression story; add tests when changing execution or handles.
 - Places reconciliation policy changes should include focused worker tests for **Add Only**, **Smart Merge**, and **Replace** before relying on smoke tests. Cover stale machine-place removal, editor-touched place preservation, hard replacement cleanup, and the no-tombstone behavior for future re-adds.
 - Prefer a few high-signal tests over broad shallow coverage.
 - When adding nodes, add a focused unit test under `packages/backfield-agate/tests/`.

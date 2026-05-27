@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
   type ComponentType,
-  type MouseEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react'
 import { cn } from '@/lib/utils'
@@ -142,17 +142,24 @@ function GuidedNodeShell({
   const exitAnimation = Boolean(
     (nodeProps.data as { exitAnimation?: boolean } | undefined)?.exitAnimation,
   )
-  const { selectedNodeId } = useGuidedFlowCanvasUi()
+  const { selectedNodeId, onNodeActivate } = useGuidedFlowCanvasUi()
   const nodeSelected = Boolean(nodeProps.selected || nodeProps.id === selectedNodeId)
+
+  const handleNodeActivate = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('button')) return
+    event.stopPropagation()
+    onNodeActivate?.(nodeProps.id)
+  }
 
   return (
     <div
-      className="group relative overflow-visible"
+      className="group relative cursor-pointer overflow-visible"
       style={
         guidedMode
           ? { width: GUIDED_COMPACT_NODE_WIDTH, height: GUIDED_COMPACT_NODE_HEIGHT }
           : undefined
       }
+      onClick={onNodeActivate ? handleNodeActivate : undefined}
     >
       {guidedMode ? (
         <GuidedCompactNode {...nodeProps} exitAnimation={exitAnimation} />
@@ -231,12 +238,17 @@ function buildModelNodes(
   const base = scaffoldModel
     ? toReactFlowNodes(scaffoldModel)
     : withBookendPositions(inputNode, outputNode)
+  const outputBookendId = scaffoldModel?.outputNode.id ?? outputNode?.id ?? null
 
   return base.map((node) => ({
     id: node.id,
     type: node.type,
     position: node.position ?? { x: 0, y: 0 },
-    data: { ...node.data, guidedMode: true },
+    data: {
+      ...node.data,
+      guidedMode: true,
+      guidedIsOutputBookend: outputBookendId != null && node.id === outputBookendId,
+    },
     draggable: allowNodeDrag,
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
@@ -266,6 +278,7 @@ type GuidedFlowCanvasProps = {
   onSwapInputBookend?: () => void
   onSwapOutputBookend?: () => void
   onNodeClick?: (node: Node) => void
+  onCanvasPaneClick?: () => void
   onNodePositionChange?: (nodeId: string, position: { x: number; y: number }) => void
 }
 
@@ -290,6 +303,7 @@ function GuidedFlowCanvasInner({
   onSwapInputBookend,
   onSwapOutputBookend,
   onNodeClick,
+  onCanvasPaneClick,
   onNodePositionChange,
 }: GuidedFlowCanvasProps) {
   const { fitView, getNodes } = useReactFlow()
@@ -444,9 +458,22 @@ function GuidedFlowCanvasInner({
     return [...nodes, ...exiting]
   }, [exitingNodes, nodes])
 
+  const activateNodeById = useCallback(
+    (nodeId: string) => {
+      if (!onNodeClick) return
+      const node = modelNodesRef.current.find((entry) => entry.id === nodeId)
+      if (node) onNodeClick(node)
+    },
+    [onNodeClick],
+  )
+
   const canvasUi = useMemo(
-    () => ({ selectedNodeId, enteringNodeIds }),
-    [enteringNodeIds, selectedNodeId],
+    () => ({
+      selectedNodeId,
+      enteringNodeIds,
+      onNodeActivate: onNodeClick ? activateNodeById : undefined,
+    }),
+    [activateNodeById, enteringNodeIds, onNodeClick, selectedNodeId],
   )
   const animateGraphChanges = scaffoldModel != null
   const wasAnimatingGraphChangesRef = useRef(animateGraphChanges)
@@ -520,6 +547,15 @@ function GuidedFlowCanvasInner({
   const modelNodesRef = useRef(modelNodes)
   modelNodesRef.current = modelNodes
 
+  const applySelectionToNodes = useCallback(
+    (nodes: Node[]): Node[] =>
+      nodes.map((node) => ({
+        ...node,
+        selected: selectedNodeId != null && node.id === selectedNodeId,
+      })),
+    [selectedNodeId],
+  )
+
   const prevGraphNodeIdsKeyRef = useRef(graphNodeIdsKey)
   useLayoutEffect(() => {
     const topologyChanged = prevGraphNodeIdsKeyRef.current !== graphNodeIdsKey
@@ -527,9 +563,13 @@ function GuidedFlowCanvasInner({
 
     if (!topologyChanged && isDraggingRef.current) return
 
-    setNodes(modelNodesRef.current)
+    setNodes(applySelectionToNodes(modelNodesRef.current))
     remeasureNodesRef.current(modelNodesRef.current.map((node) => node.id))
-  }, [graphNodeContentKey, graphNodeIdsKey, nodesLayoutKey, setNodes])
+  }, [applySelectionToNodes, graphNodeContentKey, graphNodeIdsKey, nodesLayoutKey, setNodes])
+
+  useEffect(() => {
+    setNodes((current) => applySelectionToNodes(current))
+  }, [applySelectionToNodes, setNodes])
 
   useEffect(() => {
     const currentIds = new Set(modelNodes.map((node) => node.id))
@@ -627,8 +667,12 @@ function GuidedFlowCanvasInner({
           isDraggingRef.current = false
         }
       }
-      if (allowNodeDrag) {
-        onNodesChange(filtered)
+
+      const applicable = allowNodeDrag
+        ? filtered
+        : filtered.filter((change) => change.type !== 'position')
+      if (applicable.length > 0) {
+        onNodesChange(applicable)
       }
     },
     [allowNodeDrag, onNodesChange],
@@ -689,15 +733,17 @@ function GuidedFlowCanvasInner({
             onNodeDragStop={allowNodeDrag ? onNodeDragStop : undefined}
             onNodeClick={
               onNodeClick
-                ? (_event, node) => {
+                ? (event, node) => {
+                    event.stopPropagation()
                     onNodeClick(node)
                   }
                 : undefined
             }
+            onPaneClick={onCanvasPaneClick ? () => onCanvasPaneClick() : undefined}
             maxZoom={1.2}
             nodesDraggable={allowNodeDrag}
             nodesConnectable={false}
-            elementsSelectable={!readOnly}
+            elementsSelectable={Boolean(onNodeClick) || !readOnly}
             selectNodesOnDrag={false}
             panOnDrag
             zoomOnScroll
@@ -709,24 +755,28 @@ function GuidedFlowCanvasInner({
         </Suspense>
       </GuidedFlowCanvasUiContext.Provider>
       {showScaffoldEmptyCta && (
-        <button
-          type="button"
-          className="absolute inset-0 z-20 flex cursor-default items-center justify-center bg-background/75 px-4 backdrop-blur-[1px]"
-          aria-label="Dismiss getting started message"
-          onClick={() => onEmptyMiddleCtaDismiss?.()}
+        <div
+          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 px-4 backdrop-blur-[1px]"
+          role="presentation"
         >
-          <Card
-            className="max-w-sm border-dashed bg-background p-6 text-center shadow-md pointer-events-none"
-            role="presentation"
-          >
+          <Card className="pointer-events-auto max-w-sm border-dashed bg-background p-6 text-center shadow-md">
             <CardTitle id="empty-flow-cta-title" className="text-base font-medium">
               Add your first step
             </CardTitle>
             <CardDescription className="mt-2 text-sm leading-relaxed">
               Use the plus button on your content source to add a step that processes your content.
             </CardDescription>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="mt-4"
+              onClick={() => onEmptyMiddleCtaDismiss?.()}
+            >
+              Got it
+            </Button>
           </Card>
-        </button>
+        </div>
       )}
     </div>
   )

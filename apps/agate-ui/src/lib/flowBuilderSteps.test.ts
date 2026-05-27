@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { jsonInputInvalidNodeData } from '@/lib/jsonInputValidation'
 import {
   canContinueBookendNode,
   canNavigateToStep,
@@ -51,9 +52,14 @@ describe('canContinueBookendNode', () => {
     expect(canContinueBookendNode({ type: 'S3Input', data: { bucket: 'my-bucket' } })).toBe(true)
   })
 
-  it('requires JSON text field', () => {
-    expect(canContinueBookendNode({ type: 'JSONInput', data: { text: '' } })).toBe(false)
+  it('requires JSON object with string text field (may be empty)', () => {
+    expect(canContinueBookendNode({ type: 'JSONInput', data: { text: '' } })).toBe(true)
     expect(canContinueBookendNode({ type: 'JSONInput', data: { text: 'hello' } })).toBe(true)
+    expect(canContinueBookendNode({ type: 'JSONInput', data: { headline: 'Title' } })).toBe(false)
+    expect(canContinueBookendNode({ type: 'JSONInput', data: { text: 1 } })).toBe(false)
+    expect(canContinueBookendNode({ type: 'JSONInput', data: jsonInputInvalidNodeData() })).toBe(
+      false,
+    )
   })
 
   it('allows Text Input without sample text', () => {
@@ -64,11 +70,11 @@ describe('canContinueBookendNode', () => {
     expect(canContinueBookendNode({ type: 'Output', data: {} })).toBe(true)
   })
 
-  it('allows Stylebook Output with default params', () => {
+  it('allows Backfield Output with default params', () => {
     expect(
       canContinueBookendNode({
         type: 'DBOutput',
-        data: { stylebook_id: null, canonicalization_mode: 'rules' },
+        data: { stylebook_id: null, canonicalization_mode: 'ai_assisted' },
       }),
     ).toBe(true)
   })

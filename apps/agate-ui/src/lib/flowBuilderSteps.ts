@@ -1,10 +1,12 @@
+import { isValidJsonInputData } from '@/lib/jsonInputValidation'
+
 export type FlowBuilderStep = 'input' | 'output' | 'scaffold'
 
 export const FLOW_BUILDER_STEPS: FlowBuilderStep[] = ['input', 'output', 'scaffold']
 
 export const STEP_HEADINGS: Record<FlowBuilderStep, string> = {
-  input: 'Choose an input',
-  output: 'Choose an output',
+  input: 'Choose a source',
+  output: 'Choose a destination',
   scaffold: 'Build your flow',
 }
 
@@ -18,14 +20,14 @@ export const STEP_CHOOSER_COPY: Partial<
   Record<FlowBuilderStep, { title: string; description: string }>
 > = {
   input: {
-    title: 'First, choose an input',
+    title: 'Where will your input data come from?',
     description:
-      'Pick how articles or content enter this flow — paste text, provide structured JSON, or read files from cloud storage.',
+      'Choose the option that best describes the source of the text you will feed into this flow.',
   },
   output: {
-    title: 'Second, choose an output',
+    title: 'Where would you like to save your output?',
     description:
-      'Pick where this flow sends its results — as JSON for review and export, or to your organization Stylebook.',
+      'Choose the option that describes the destination to which you would like to persist the results of the flow.',
   },
 }
 
@@ -50,8 +52,7 @@ export function canContinueBookendNode(node: BookendNodeLike): boolean {
     return typeof bucket === 'string' && bucket.trim() !== ''
   }
   if (node.type === 'JSONInput') {
-    const text = node.data?.text
-    return typeof text === 'string' && text.trim() !== ''
+    return isValidJsonInputData(node.data)
   }
   return true
 }
@@ -66,7 +67,7 @@ export function bookendContinueHint(node: BookendNodeLike): string | null {
     return 'Enter the S3 bucket name before continuing.'
   }
   if (node.type === 'JSONInput' && !canContinueBookendNode(node)) {
-    return 'Add JSON with a non-empty text field before continuing.'
+    return 'Add valid JSON with a "text" field before continuing.'
   }
   return null
 }

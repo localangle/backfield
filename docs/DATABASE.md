@@ -55,7 +55,7 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 ### Agate execution (`agate_*`)
 
 - `agate_graph` — stored graph spec (JSON), FK to `backfield_project`.
-- `agate_run` — execution record, status, result/error JSON. Boolean **`replace_article_geography_on_persist`** remains for legacy queued-run compatibility, but saved geography behavior now comes from the Stylebook Output `reconciliation_policy` stored in graph node params.
+- `agate_run` — execution record, status, result/error JSON. Boolean **`replace_article_geography_on_persist`** remains for legacy queued-run compatibility, but saved geography behavior now comes from the Backfield Output `reconciliation_policy` stored in graph node params.
 - `agate_processed_item` — per-S3-object work unit for **S3Input** batch runs: FK to `agate_run.id`, optional `source_file` (S3 key), optional `input_json` (full valid document), `status` (`pending` / `running` / `succeeded` / `failed` / `skipped`), optional `error_message` / `result_json` (immutable model output), optional **`overlay_json`** (human review overlay) and integer **`overlay_version`** (optimistic concurrency for overlay PATCH; default `0`), optional **`reviewed_output_json`** (materialized `result_json` + overlay for export/display; cleared with overlay on rerun), legacy boolean **`replace_article_geography_on_persist`** (default `false`), timestamps. Indexed on `run_id`.
 - `agate_template` — curated template flows (`spec_json`); instantiated as new `agate_graph` rows.
 
@@ -99,7 +99,7 @@ Revision **`033_agate_processed_item_overlay`** adds nullable **`overlay_json`**
 
 Revision **`034_replace_article_geography`** adds **`replace_article_geography_on_persist`** (boolean, default `false`) on **`agate_run`** and **`agate_processed_item`** for one-shot full geography replace on the next worker persist after a confirmed re-run or Run Again.
 
-Current behavior: new runs and reruns no longer set that flag for normal UI paths. Stylebook Output uses its node-level `reconciliation_policy` (`add_only`, `smart_merge`, or `replace`) to reconcile saved Places and returns summary counts in node output. The legacy flag is still honored as Replace when no node policy is present, so older queued work has a deterministic path.
+Current behavior: new runs and reruns no longer set that flag for normal UI paths. Backfield Output uses its node-level `reconciliation_policy` (`add_only`, `smart_merge`, or `replace`) to reconcile saved Places and returns summary counts in node output. The legacy flag is still honored as Replace when no node policy is present, so older queued work has a deterministic path.
 
 Revision **`035_reviewed_output_json`** adds nullable **`reviewed_output_json`** for eager materialization of reviewed run output (see `docs/API.md` → *Reviewed output*).
 

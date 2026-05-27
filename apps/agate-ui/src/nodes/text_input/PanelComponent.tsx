@@ -4,7 +4,7 @@ const nodeMetadata = {
   "label": "Text Input",
   "icon": "FileText",
   "color": "bg-blue-500",
-  "description": "Input text for Agate pipelines.",
+  "description": "Type or paste text to be processed by this flow.",
   "category": "input",
   "inputs": [],
   "outputs": [
@@ -19,7 +19,6 @@ const nodeMetadata = {
   }
 };
 
-import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -36,26 +35,27 @@ interface TextInputPanelProps {
 export default function TextInputPanel({
   node,
   onChange,
+  onRun,
+  running,
+  currentRun,
   editMode,
   setNodes,
 }: TextInputPanelProps) {
   const isDisabled = !(editMode && setNodes)
 
   return (
-    <NodePanelTabGate tab="settings">
-      <div className="space-y-2">
-        <Label htmlFor="node-text" className="text-xs text-muted-foreground">
-          Input text
-        </Label>
-        <Textarea
-          id="node-text"
-          value={node.data.text || ''}
-          onChange={(e) => onChange?.(e.target.value)}
-          placeholder="Enter article text..."
-          className="min-h-[300px] mt-1"
-          disabled={isDisabled}
-        />
-      </div>
-    </NodePanelTabGate>
+    <div className="space-y-2">
+      <Label htmlFor="node-text" className="text-xs text-muted-foreground">
+        Input text
+      </Label>
+      <Textarea
+        id="node-text"
+        value={node.data.text || ''}
+        onChange={(e) => onChange?.(e.target.value)}
+        placeholder="Enter article text..."
+        className="min-h-[300px] mt-1"
+        disabled={isDisabled}
+      />
+    </div>
   )
 }

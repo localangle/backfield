@@ -1,13 +1,12 @@
 // Auto-injected metadata for DBOutput
 const nodeMetadata = {
   "type": "DBOutput",
-  "label": "Stylebook Output",
+  "label": "Backfield Output",
   "icon": "Database",
   "color": "bg-slate-500",
-  "description": "Persists results to Stylebook",
+  "description": "Persist the data to Backfield database, for access in Stylebook and Proof.",
   "category": "output",
   "requiredUpstreamNodes": [],
-  "dependencyHelperText": "Persists results to Stylebook",
   "inputs": [
     {
       "id": "data",
@@ -35,7 +34,7 @@ const nodeMetadata = {
   ],
   "defaultParams": {
     "stylebook_id": null,
-    "canonicalization_mode": "rules",
+    "canonicalization_mode": "ai_assisted",
     "reconciliation_policy": "smart_merge",
     "auto_apply_canonicalization": true,
     "adjudication_model": "",
@@ -51,7 +50,6 @@ import { getNodeIcon, getNodeLabel, getNodeBgColor } from '@/lib/nodeUtils'
 
 function DBOutputNode({ selected }: NodeProps) {
   const requiredUpstreamNodes = nodeMetadata?.requiredUpstreamNodes || []
-  const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
   const type = 'DBOutput'
   const icon = getNodeIcon(type, 'h-4 w-4')
   const bgColor = getNodeBgColor(type)
@@ -92,7 +90,6 @@ function DBOutputNode({ selected }: NodeProps) {
               </div>
             </div>
           )}
-          {dependencyHelperText && <p className="text-xs text-muted-foreground mt-1">{dependencyHelperText}</p>}
         </div>
       </CardContent>
     </Card>

@@ -21,21 +21,10 @@ const nodeMetadata = {
   }
 };
 
-import { useEffect, useState } from 'react'
-import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
-import { NodePanelOutputsSection } from '@/components/node-panel/NodePanelOutputsSection'
-import { Label } from '@/components/ui/label'
+import { FieldLabel } from '@/components/node-panel/FieldLabel'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
-
-const MAX_FILES_MIN = 1
-const MAX_FILES_MAX = 10000
-const MAX_FILES_DEFAULT = 500
-
-function clampMaxFiles(value: number): number {
-  if (!Number.isFinite(value)) return MAX_FILES_DEFAULT
-  return Math.min(MAX_FILES_MAX, Math.max(MAX_FILES_MIN, Math.trunc(value)))
-}
 
 interface S3InputPanelProps {
   node: any
@@ -55,26 +44,6 @@ export default function S3InputPanel({
   setNodes,
   nodeOutputLookupSpec,
 }: S3InputPanelProps) {
-  const storedMaxFiles = clampMaxFiles(Number(node.data.max_files ?? MAX_FILES_DEFAULT))
-  const [maxFilesDraft, setMaxFilesDraft] = useState(String(storedMaxFiles))
-
-  useEffect(() => {
-    setMaxFilesDraft(String(clampMaxFiles(Number(node.data.max_files ?? MAX_FILES_DEFAULT))))
-  }, [node.id, node.data.max_files])
-
-  const commitMaxFiles = () => {
-    if (!setNodes) return
-    const digits = maxFilesDraft.replace(/\D/g, '')
-    const parsed = digits === '' ? MAX_FILES_DEFAULT : parseInt(digits, 10)
-    const next = clampMaxFiles(parsed)
-    setMaxFilesDraft(String(next))
-    setNodes((nds: any[]) =>
-      nds.map((n: any) =>
-        n.id === node.id ? { ...n, data: { ...n.data, max_files: next } } : n,
-      ),
-    )
-  }
-
   const rawOutputs = currentRun?.node_outputs as Record<string, unknown> | undefined
   const slice = rawOutputs
     ? (getNodeOutputById(rawOutputs, node.id, nodeOutputLookupSpec ?? undefined) as
@@ -84,97 +53,93 @@ export default function S3InputPanel({
 
   return (
     <>
-      <NodePanelTabGate tab="settings">
-        <div className="space-y-3">
-          <div>
-            <Label htmlFor="bucket" className="text-xs text-muted-foreground">
-              S3 bucket name
-            </Label>
-            {editMode && setNodes ? (
-              <Input
-                id="bucket"
-                value={node.data.bucket || ''}
-                onChange={(e) => {
-                  setNodes((nds: any[]) =>
-                    nds.map((n: any) =>
-                      n.id === node.id ? { ...n, data: { ...n.data, bucket: e.target.value } } : n,
-                    ),
-                  )
-                }}
-                placeholder="my-bucket-name"
-                className="mt-1 text-xs font-mono"
-              />
-            ) : (
-              <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs font-mono">{node.data.bucket || 'Not configured'}</span>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <Label htmlFor="folder-path" className="text-xs text-muted-foreground">
-              Folder path (optional)
-            </Label>
-            {editMode && setNodes ? (
-              <Input
-                id="folder-path"
-                value={node.data.folder_path || ''}
-                onChange={(e) => {
-                  setNodes((nds: any[]) =>
-                    nds.map((n: any) =>
-                      n.id === node.id
-                        ? { ...n, data: { ...n.data, folder_path: e.target.value } }
-                        : n,
-                    ),
-                  )
-                }}
-                placeholder="input/articles/"
-                className="mt-1 text-xs font-mono"
-              />
-            ) : (
-              <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs font-mono">{node.data.folder_path || '(root)'}</span>
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">
-              Optional prefix inside the bucket (for example{' '}
-              <span className="font-mono">input/</span>).
-            </p>
-          </div>
-
-          <div>
-            <Label htmlFor="max-files" className="text-xs text-muted-foreground">
-              Max files per run
-            </Label>
-            {editMode && setNodes ? (
-              <Input
-                id="max-files"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={maxFilesDraft}
-                onChange={(e) => setMaxFilesDraft(e.target.value.replace(/\D/g, ''))}
-                onBlur={commitMaxFiles}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    commitMaxFiles()
-                  }
-                }}
-                className="mt-1 text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              />
-            ) : (
-              <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs">{storedMaxFiles}</span>
-              </div>
-            )}
-          </div>
+      <div className="space-y-3">
+        <div>
+          <FieldLabel htmlFor="bucket" required>
+            S3 bucket name
+          </FieldLabel>
+          {editMode && setNodes ? (
+            <Input
+              id="bucket"
+              value={node.data.bucket || ''}
+              onChange={(e) => {
+                setNodes((nds: any[]) =>
+                  nds.map((n: any) =>
+                    n.id === node.id ? { ...n, data: { ...n.data, bucket: e.target.value } } : n,
+                  ),
+                )
+              }}
+              placeholder="my-bucket-name"
+              className="mt-1 text-xs font-mono"
+              required
+              aria-required
+            />
+          ) : (
+            <div className="mt-1 p-2 bg-muted rounded">
+              <span className="text-xs font-mono">{node.data.bucket || 'Not configured'}</span>
+            </div>
+          )}
         </div>
-      </NodePanelTabGate>
 
-      <NodePanelTabGate tab="outputs">
-        {slice && typeof slice.total_files === 'number' ? (
-          <NodePanelOutputsSection>
+        <div>
+          <FieldLabel htmlFor="folder-path">Folder path (optional)</FieldLabel>
+          {editMode && setNodes ? (
+            <Input
+              id="folder-path"
+              value={node.data.folder_path || ''}
+              onChange={(e) => {
+                setNodes((nds: any[]) =>
+                  nds.map((n: any) =>
+                    n.id === node.id
+                      ? { ...n, data: { ...n.data, folder_path: e.target.value } }
+                      : n,
+                  ),
+                )
+              }}
+              placeholder="input/articles/"
+              className="mt-1 text-xs font-mono"
+            />
+          ) : (
+            <div className="mt-1 p-2 bg-muted rounded">
+              <span className="text-xs font-mono">{node.data.folder_path || '(root)'}</span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-1">
+            Optional prefix inside the bucket (for example <span className="font-mono">input/</span>
+            ).
+          </p>
+        </div>
+
+        <div>
+          <FieldLabel htmlFor="max-files">Max files per run</FieldLabel>
+          {editMode && setNodes ? (
+            <Input
+              id="max-files"
+              inputMode="numeric"
+              value={String(node.data.max_files ?? 500)}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10)
+                const next = Number.isFinite(v) ? v : 500
+                setNodes((nds: any[]) =>
+                  nds.map((n: any) =>
+                    n.id === node.id ? { ...n, data: { ...n.data, max_files: next } } : n,
+                  ),
+                )
+              }}
+              className="mt-1 text-xs"
+            />
+          ) : (
+            <div className="mt-1 p-2 bg-muted rounded">
+              <span className="text-xs">{node.data.max_files ?? 500}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {slice && typeof slice.total_files === 'number' && (
+        <div className="pt-4 border-t">
+          <Label className="text-sm font-medium">Latest run</Label>
+          <div className="mt-2 space-y-2">
             <div className="text-xs space-y-1">
               <div className="flex justify-between items-center p-2 bg-muted rounded">
                 <span className="text-muted-foreground">Total files</span>
@@ -199,9 +164,9 @@ export default function S3InputPanel({
                 </div>
               )}
             </div>
-          </NodePanelOutputsSection>
-        ) : null}
-      </NodePanelTabGate>
+          </div>
+        </div>
+      )}
     </>
   )
 }
