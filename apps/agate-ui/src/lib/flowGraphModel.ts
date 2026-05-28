@@ -144,7 +144,7 @@ export function addSiblingBranch(
       ...model.branchChildren,
       [parentId]: [...existing, newNode.id],
     },
-  })
+  }, { relayoutBookends: true })
 }
 
 /** Insert or extend serially after `afterNodeId`, pushing any existing serial child downstream. */
@@ -170,7 +170,7 @@ export function insertAfter(
     ...model,
     middleNodes: [...model.middleNodes, newNode],
     serialLinks,
-  })
+  }, { relayoutBookends: true })
 }
 
 export function insertBetween(
@@ -252,7 +252,7 @@ export function deleteMiddleNode(model: FlowGraphModel, nodeId: string): FlowGra
     middleNodes,
     branchChildren,
     serialLinks,
-  })
+  }, { relayoutBookends: true })
 }
 
 /** @deprecated Use insertAfter for serial extension or addSiblingBranch for parallel branches. */
@@ -413,7 +413,9 @@ export function applyLayoutToModel(
     },
     outputNode: {
       ...model.outputNode,
-      position: byId.get(model.outputNode.id) ?? model.outputNode.position ?? { x: 0, y: 0 },
+      position: relayoutBookends
+        ? (byId.get(model.outputNode.id) ?? model.outputNode.position ?? { x: 0, y: 0 })
+        : (model.outputNode.position ?? byId.get(model.outputNode.id) ?? { x: 0, y: 0 }),
     },
     middleNodes: model.middleNodes.map((n) => ({
       ...n,

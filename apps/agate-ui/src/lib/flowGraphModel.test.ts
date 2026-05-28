@@ -197,7 +197,7 @@ describe('flowGraphModel layout', () => {
     expect(nodes.find((node) => node.id === 'place-1')?.position).toEqual({ x: 900, y: 400 })
   })
 
-  it('applyLayoutToModel preserves dragged input and relayouts output when middle steps exist', () => {
+  it('applyLayoutToModel preserves dragged bookend positions unless relayoutBookends is set', () => {
     const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
     let model = addSiblingBranch(bookends(), 'input-1', place)
     model = updateNodePosition(model, 'input-1', { x: 120, y: 300 })
@@ -206,9 +206,7 @@ describe('flowGraphModel layout', () => {
     const afterAdd = applyLayoutToModel(model)
     const auto = assignLayoutPositions(model)
     expect(afterAdd.inputNode.position).toEqual({ x: 120, y: 300 })
-    expect(afterAdd.outputNode.position).toEqual(auto.find((node) => node.id === 'output-1')?.position)
-    const middleX = afterAdd.middleNodes.find((node) => node.id === 'place-1')?.position?.x ?? 0
-    expect(afterAdd.outputNode.position!.x).toBeGreaterThan(middleX + LAYOUT_NODE_WIDTH)
+    expect(afterAdd.outputNode.position).toEqual({ x: 520, y: 300 })
 
     const tidied = applyLayoutToModel(model, { relayoutBookends: true })
     expect(tidied.inputNode.position).toEqual(auto.find((node) => node.id === 'input-1')?.position)
@@ -387,6 +385,10 @@ describe('flowGraphModel hydrate and edit helpers', () => {
     let model = addSiblingBranch(bookends(), 'input-1', place)
     model = addSiblingBranch(model, 'input-1', place2)
     model = insertAfter(model, 'place-1', geocode)
+    model = updateNodePosition(model, 'input-1', { x: 33, y: 44 })
+    model = updateNodePosition(model, 'place-1', { x: 333, y: 444 })
+    model = updateNodePosition(model, 'geo-1', { x: 555, y: 666 })
+    model = updateNodePosition(model, 'output-1', { x: 777, y: 888 })
 
     const spec = modelToGraphSpec(model)
     const hydrated = hydrateFromSpec({
@@ -400,6 +402,16 @@ describe('flowGraphModel hydrate and edit helpers', () => {
       ['geo-1', 'place-1', 'place-2'],
     )
     expect(edgeSet(hydrated.model)).toEqual(edgeSet(model))
+    expect(hydrated.model.inputNode.position).toEqual({ x: 33, y: 44 })
+    expect(hydrated.model.middleNodes.find((node) => node.id === 'place-1')?.position).toEqual({
+      x: 333,
+      y: 444,
+    })
+    expect(hydrated.model.middleNodes.find((node) => node.id === 'geo-1')?.position).toEqual({
+      x: 555,
+      y: 666,
+    })
+    expect(hydrated.model.outputNode.position).toEqual({ x: 777, y: 888 })
   })
 
   it('rejects graphs without a single input bookend', () => {

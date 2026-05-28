@@ -24,8 +24,10 @@ import ReactFlow, {
   type Edge,
   type Node,
   type NodeChange,
+  type NodeDragHandler,
   type NodeProps,
   type NodeTypes,
+  type Viewport,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -37,6 +39,8 @@ import { nodeComponents } from '@/nodes/registry'
 import {
   GuidedFlowCanvasUiContext,
   useGuidedFlowCanvasUi,
+  type GuidedFlowCanvasCallbacks,
+  type GuidedFlowCanvasUi,
 } from '@/components/flow-builder/guidedFlowCanvasUi'
 import GuidedCompactNode, {
   GUIDED_COMPACT_NODE_HEIGHT,
@@ -115,41 +119,75 @@ function NodeBottomHoverButton({
 }
 
 type GuidedNodeShellProps = NodeProps & {
-  showAddButton: boolean
-  onAddClick?: () => void
-  showDeleteButton: boolean
-  onDeleteClick?: () => void
-  showSwapButton: boolean
-  swapAriaLabel?: string
-  onSwapClick?: () => void
   NodeComponent: ComponentType<NodeProps>
 }
 
-function GuidedNodeShell({
-  showAddButton,
-  onAddClick,
-  showDeleteButton,
-  onDeleteClick,
-  showSwapButton,
-  swapAriaLabel,
-  onSwapClick,
-  NodeComponent,
-  ...nodeProps
-}: GuidedNodeShellProps) {
+/**
+ * Renders a single React Flow node. Reads every per-render concern (selection,
+ * bookend ids, capability flags, callbacks) from the canvas context so the
+ * surrounding `nodeTypes` map can stay referentially stable. If `nodeTypes`
+ * changes identity, React Flow remounts every node, which drops mid-flight
+ * clicks and re-triggers focus animations — the source of past "clicks do
+ * nothing / middle node pulses" bugs.
+ */
+function GuidedNodeShell({ NodeComponent, ...nodeProps }: GuidedNodeShellProps) {
+  const {
+    selectedNodeId,
+    inputBookendId,
+    outputBookendId,
+    allowAddNodes,
+    allowBookendSwap,
+    allowDeleteNodes,
+    readOnly,
+    deletableNodeIds,
+    callbacks,
+  } = useGuidedFlowCanvasUi()
+
   const guidedMode = Boolean(
     (nodeProps.data as { guidedMode?: boolean } | undefined)?.guidedMode,
   )
   const exitAnimation = Boolean(
     (nodeProps.data as { exitAnimation?: boolean } | undefined)?.exitAnimation,
   )
-  const { selectedNodeId, onNodeActivate } = useGuidedFlowCanvasUi()
   const nodeSelected = Boolean(nodeProps.selected || nodeProps.id === selectedNodeId)
+
+  const isInputBookend = inputBookendId != null && nodeProps.id === inputBookendId
+  const isOutputBookendNode = outputBookendId != null && nodeProps.id === outputBookendId
+
+  const showAddButton =
+    allowAddNodes &&
+    !!callbacks.current.onAddNodeClick &&
+    !isOutputBookendNode &&
+    !readOnly
+  const showDeleteButton =
+    allowDeleteNodes &&
+    !!callbacks.current.onDeleteNodeClick &&
+    deletableNodeIds.has(nodeProps.id) &&
+    !readOnly
+  const showSwapButton =
+    allowBookendSwap &&
+    !readOnly &&
+    ((isInputBookend && !!callbacks.current.onSwapInputBookend) ||
+      (isOutputBookendNode && !!callbacks.current.onSwapOutputBookend))
 
   const handleNodeActivate = (event: ReactMouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest('button')) return
     event.stopPropagation()
-    onNodeActivate?.(nodeProps.id)
+    callbacks.current.onNodeClick?.({
+      id: nodeProps.id,
+      type: nodeProps.type,
+      data: nodeProps.data,
+      position: { x: nodeProps.xPos, y: nodeProps.yPos },
+    } as Node)
   }
+
+  const handleAddClick = () => callbacks.current.onAddNodeClick?.(nodeProps.id)
+  const handleDeleteClick = () => callbacks.current.onDeleteNodeClick?.(nodeProps.id)
+  const handleSwapClick = isInputBookend
+    ? () => callbacks.current.onSwapInputBookend?.()
+    : isOutputBookendNode
+      ? () => callbacks.current.onSwapOutputBookend?.()
+      : undefined
 
   return (
     <div
@@ -159,7 +197,7 @@ function GuidedNodeShell({
           ? { width: GUIDED_COMPACT_NODE_WIDTH, height: GUIDED_COMPACT_NODE_HEIGHT }
           : undefined
       }
-      onClick={onNodeActivate ? handleNodeActivate : undefined}
+      onClick={handleNodeActivate}
     >
       {guidedMode ? (
         <GuidedCompactNode {...nodeProps} exitAnimation={exitAnimation} />
@@ -169,13 +207,13 @@ function GuidedNodeShell({
         </Suspense>
       )}
       {showAddButton && !exitAnimation && (
-        <NodeRightAddButton nodeSelected={nodeSelected} onClick={onAddClick} />
+        <NodeRightAddButton nodeSelected={nodeSelected} onClick={handleAddClick} />
       )}
       {showDeleteButton && !exitAnimation && (
         <NodeBottomHoverButton
           ariaLabel="Remove step"
           nodeSelected={nodeSelected}
-          onClick={onDeleteClick}
+          onClick={handleDeleteClick}
           className="text-destructive hover:border-destructive hover:bg-destructive hover:text-destructive-foreground hover:ring-destructive/30"
         >
           <Trash2 className="h-3 w-3" />
@@ -183,9 +221,9 @@ function GuidedNodeShell({
       )}
       {showSwapButton && !exitAnimation && (
         <NodeBottomHoverButton
-          ariaLabel={swapAriaLabel ?? 'Change bookend'}
+          ariaLabel={isInputBookend ? 'Change source' : 'Change destination'}
           nodeSelected={nodeSelected}
-          onClick={onSwapClick}
+          onClick={handleSwapClick}
           className="text-foreground hover:border-primary hover:bg-primary hover:text-primary-foreground hover:ring-primary/30"
         >
           <ArrowLeftRight className="h-3 w-3" />
@@ -195,14 +233,29 @@ function GuidedNodeShell({
   )
 }
 
+/**
+ * Module-level so React Flow sees a stable identity across every parent
+ * render. Per-node and per-render concerns now flow through the canvas
+ * context, not closure variables in this map.
+ */
+const GUIDED_NODE_TYPES: NodeTypes = Object.fromEntries(
+  Object.entries(nodeComponents).map(([type, LazyComponent]) => [
+    type,
+    (props: NodeProps) => (
+      <GuidedNodeShell {...props} NodeComponent={LazyComponent as ComponentType<NodeProps>} />
+    ),
+  ]),
+)
+
 /** Matches NodePanel (`w-96`) so fitView leaves room when the side panel is open. */
 export const GUIDED_FLOW_NODE_PANEL_WIDTH_PX = 384
 
 const FIT_VIEW_PAD_PX = 32
-const GUIDED_NODE_EXIT_MS = 440
+export const GUIDED_NODE_EXIT_MS = 440
 const GUIDED_NODE_ENTER_MS = 520
 const FIT_DURATION_GRAPH_CHANGE_MS = 500
-const FIT_DURATION_PANEL_MS = 300
+const PANEL_VIEWPORT_DURATION_MS = 220
+const PANEL_SELECTED_NODE_ZOOM = 1.2
 
 const SOLID_EDGE_STYLE = { stroke: '#000000', strokeWidth: 1 }
 const SOLID_EDGE_MARKER = {
@@ -233,13 +286,19 @@ function buildModelNodes(
   scaffoldModel: FlowGraphModel | null,
   inputNode: Node | null,
   outputNode: Node | null,
-  allowNodeDrag: boolean,
+  exitingNodeIds: ReadonlySet<string>,
 ): Node[] {
   const base = scaffoldModel
     ? toReactFlowNodes(scaffoldModel)
     : withBookendPositions(inputNode, outputNode)
   const outputBookendId = scaffoldModel?.outputNode.id ?? outputNode?.id ?? null
 
+  // Leave `draggable` undefined so React Flow falls back to the canvas-level
+  // `nodesDraggable` prop. If we hard-coded a per-node flag here it would get
+  // baked into React Flow's internal `nodes` state on first mount and stick
+  // there when the parent later toggled edit mode on (e.g. clicking "Edit
+  // flow" on a saved flow), since the resync effect doesn't fire on a pure
+  // `allowNodeDrag` change.
   return base.map((node) => ({
     id: node.id,
     type: node.type,
@@ -248,8 +307,8 @@ function buildModelNodes(
       ...node.data,
       guidedMode: true,
       guidedIsOutputBookend: outputBookendId != null && node.id === outputBookendId,
+      exitAnimation: exitingNodeIds.has(node.id),
     },
-    draggable: allowNodeDrag,
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
     width: GUIDED_COMPACT_NODE_WIDTH,
@@ -278,8 +337,8 @@ type GuidedFlowCanvasProps = {
   onSwapInputBookend?: () => void
   onSwapOutputBookend?: () => void
   onNodeClick?: (node: Node) => void
-  onCanvasPaneClick?: () => void
   onNodePositionChange?: (nodeId: string, position: { x: number; y: number }) => void
+  exitingNodeIds?: ReadonlySet<string>
 }
 
 function GuidedFlowCanvasInner({
@@ -303,10 +362,10 @@ function GuidedFlowCanvasInner({
   onSwapInputBookend,
   onSwapOutputBookend,
   onNodeClick,
-  onCanvasPaneClick,
   onNodePositionChange,
+  exitingNodeIds = new Set(),
 }: GuidedFlowCanvasProps) {
-  const { fitView, getNodes } = useReactFlow()
+  const { fitView, getNodes, getViewport, setCenter, setViewport } = useReactFlow()
   const updateNodeInternals = useUpdateNodeInternals()
   const containerRef = useRef<HTMLDivElement>(null)
   const inputBookendId =
@@ -316,65 +375,29 @@ function GuidedFlowCanvasInner({
   const prevNodeIdsRef = useRef<Set<string> | null>(null)
   const prevModelNodesRef = useRef<Node[]>([])
   const isDraggingRef = useRef(false)
+  const reactFlowInitializedRef = useRef(false)
   const isFirstLayoutFitRef = useRef(true)
+  const viewportBeforePanelOpenRef = useRef<Viewport | null>(null)
+  const previousSelectedNodeIdRef = useRef<string | null>(selectedNodeId)
   const [enteringNodeIds, setEnteringNodeIds] = useState<Set<string>>(() => new Set())
   const [exitingNodes, setExitingNodes] = useState<Map<string, Node>>(() => new Map())
 
-  const nodeTypes: NodeTypes = useMemo(() => {
-    const wrapped: NodeTypes = {}
-    for (const [type, LazyComponent] of Object.entries(nodeComponents)) {
-      wrapped[type] = (props: NodeProps) => {
-        const isOutputBookendNode = outputBookendId != null && props.id === outputBookendId
-        const showAddButton = Boolean(
-          allowAddNodes && onAddNodeClick && !isOutputBookendNode && !readOnly,
-        )
-        const showDeleteButton = Boolean(
-          allowDeleteNodes &&
-            onDeleteNodeClick &&
-            deletableNodeIds?.has(props.id) &&
-            !readOnly,
-        )
-        const isInputBookend = inputBookendId != null && props.id === inputBookendId
-        const showSwapButton = Boolean(
-          allowBookendSwap &&
-            !readOnly &&
-            ((isInputBookend && onSwapInputBookend) || (isOutputBookendNode && onSwapOutputBookend)),
-        )
-        return (
-          <GuidedNodeShell
-            {...props}
-            NodeComponent={LazyComponent as ComponentType<NodeProps>}
-            showAddButton={showAddButton}
-            onAddClick={() => onAddNodeClick?.(props.id)}
-            showDeleteButton={showDeleteButton}
-            onDeleteClick={() => onDeleteNodeClick?.(props.id)}
-            showSwapButton={showSwapButton}
-            swapAriaLabel={isInputBookend ? 'Change source' : 'Change destination'}
-            onSwapClick={
-              isInputBookend
-                ? onSwapInputBookend
-                : isOutputBookendNode
-                  ? onSwapOutputBookend
-                  : undefined
-            }
-          />
-        )
-      }
-    }
-    return wrapped
-  }, [
-    allowAddNodes,
-    allowBookendSwap,
-    allowDeleteNodes,
-    deletableNodeIds,
-    inputBookendId,
+  // Stable identity — see GUIDED_NODE_TYPES module-level definition above.
+  const nodeTypes = GUIDED_NODE_TYPES
+
+  /**
+   * Latest callbacks for the node shell. Stored in a ref because we don't
+   * want their identity churn to invalidate context consumers — and we
+   * definitely don't want it to invalidate `nodeTypes`.
+   */
+  const callbacksRef = useRef<GuidedFlowCanvasCallbacks>({})
+  callbacksRef.current = {
+    onNodeClick,
     onAddNodeClick,
     onDeleteNodeClick,
     onSwapInputBookend,
     onSwapOutputBookend,
-    outputBookendId,
-    readOnly,
-  ])
+  }
 
   const nodesLayoutKey = useMemo(() => {
     if (scaffoldModel) {
@@ -421,11 +444,22 @@ function GuidedFlowCanvasInner({
   }, [inputNode, outputNode, scaffoldModel])
 
   const modelNodes = useMemo(
-    () => buildModelNodes(scaffoldModel, inputNode, outputNode, allowNodeDrag),
-    [allowNodeDrag, inputNode, outputNode, nodesLayoutKey, scaffoldModel],
+    () => buildModelNodes(scaffoldModel, inputNode, outputNode, exitingNodeIds),
+    [exitingNodeIds, inputNode, outputNode, nodesLayoutKey, scaffoldModel],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(modelNodes)
+  const liveNodePositionsRef = useRef(new Map<string, { x: number; y: number }>())
+
+  const rememberNodePosition = useCallback((nodeId: string, position: { x: number; y: number }) => {
+    liveNodePositionsRef.current.set(nodeId, position)
+  }, [])
+
+  useEffect(() => {
+    for (const node of nodes) {
+      rememberNodePosition(node.id, node.position)
+    }
+  }, [nodes, rememberNodePosition])
 
   const derivedEdges = useMemo(() => {
     if (scaffoldModel) {
@@ -451,6 +485,7 @@ function GuidedFlowCanvasInner({
   const displayNodes = useMemo(() => {
     const exiting = [...exitingNodes.values()].map((node) => ({
       ...node,
+      id: `${node.id}__exiting`,
       position: node.position ?? { x: 0, y: 0 },
       draggable: false,
       selectable: false,
@@ -458,22 +493,32 @@ function GuidedFlowCanvasInner({
     return [...nodes, ...exiting]
   }, [exitingNodes, nodes])
 
-  const activateNodeById = useCallback(
-    (nodeId: string) => {
-      if (!onNodeClick) return
-      const node = modelNodesRef.current.find((entry) => entry.id === nodeId)
-      if (node) onNodeClick(node)
-    },
-    [onNodeClick],
-  )
-
-  const canvasUi = useMemo(
+  const emptyDeletableSet = useMemo<ReadonlySet<string>>(() => new Set(), [])
+  const canvasUi: GuidedFlowCanvasUi = useMemo(
     () => ({
       selectedNodeId,
       enteringNodeIds,
-      onNodeActivate: onNodeClick ? activateNodeById : undefined,
+      inputBookendId,
+      outputBookendId,
+      allowAddNodes,
+      allowBookendSwap,
+      allowDeleteNodes,
+      readOnly,
+      deletableNodeIds: deletableNodeIds ?? emptyDeletableSet,
+      callbacks: callbacksRef,
     }),
-    [activateNodeById, enteringNodeIds, onNodeClick, selectedNodeId],
+    [
+      allowAddNodes,
+      allowBookendSwap,
+      allowDeleteNodes,
+      deletableNodeIds,
+      emptyDeletableSet,
+      enteringNodeIds,
+      inputBookendId,
+      outputBookendId,
+      readOnly,
+      selectedNodeId,
+    ],
   )
   const animateGraphChanges = scaffoldModel != null
   const wasAnimatingGraphChangesRef = useRef(animateGraphChanges)
@@ -493,11 +538,22 @@ function GuidedFlowCanvasInner({
   const remeasureNodesRef = useRef(remeasureNodes)
   remeasureNodesRef.current = remeasureNodes
 
+  const modelNodesRef = useRef(modelNodes)
+  modelNodesRef.current = modelNodes
+
+  /**
+   * Reads node ids through `modelNodesRef` rather than closing over `modelNodes`.
+   * If this callback's identity churned every time scaffoldModel changed (i.e.
+   * on every keystroke that updated node.data) the recenter effect below would
+   * refire and trigger a fitView animation, making nodes appear to "jump back"
+   * while the user types.
+   */
   const fitGraphInView = useCallback(
     (options?: { duration?: number }) => {
       if (isDraggingRef.current) return
       const el = containerRef.current
-      if (!el || modelNodes.length === 0) return
+      const currentModelNodes = modelNodesRef.current
+      if (!el || currentModelNodes.length === 0) return
       const w = el.clientWidth
       const h = el.clientHeight
       if (w <= 0 || h <= 0) return
@@ -513,23 +569,25 @@ function GuidedFlowCanvasInner({
         maxZoom: 1.2,
         duration,
       })
+      const nodeIds = currentModelNodes.map((node) => node.id)
       if (duration > 0) {
-        window.setTimeout(() => remeasureNodes(modelNodes.map((node) => node.id)), duration + 32)
+        window.setTimeout(() => remeasureNodesRef.current(nodeIds), duration + 32)
       } else {
-        remeasureNodes(modelNodes.map((node) => node.id))
+        remeasureNodesRef.current(nodeIds)
       }
     },
-    [fitView, modelNodes, remeasureNodes, reserveRightPx],
+    [fitView, reserveRightPx],
   )
 
   const recenterGraph = useCallback(
     (options?: { duration?: number; delayMs?: number }) => {
       if (isDraggingRef.current) return
+      if (!reactFlowInitializedRef.current) return
       const duration = options?.duration ?? FIT_DURATION_GRAPH_CHANGE_MS
       const delayMs = options?.delayMs ?? 0
       const run = () => {
         requestAnimationFrame(() => {
-          remeasureNodes(modelNodes.map((node) => node.id))
+          remeasureNodesRef.current(modelNodesRef.current.map((node) => node.id))
           requestAnimationFrame(() => {
             fitGraphInView({ duration })
           })
@@ -541,11 +599,50 @@ function GuidedFlowCanvasInner({
         run()
       }
     },
-    [fitGraphInView, modelNodes, remeasureNodes],
+    [fitGraphInView],
   )
 
-  const modelNodesRef = useRef(modelNodes)
-  modelNodesRef.current = modelNodes
+  const restoreViewportAfterTopologyChange = useCallback(
+    (viewport: Viewport) => {
+      requestAnimationFrame(() => {
+        void setViewport(viewport, { duration: 0 })
+        requestAnimationFrame(() => {
+          void setViewport(viewport, { duration: 0 })
+        })
+      })
+    },
+    [setViewport],
+  )
+
+  const centerSelectedNodeForPanel = useCallback(
+    (nodeId: string, delayMs = 0) => {
+      const run = () => {
+        const node = modelNodesRef.current.find((entry) => entry.id === nodeId)
+        if (!node) return
+        const position = liveNodePositionsRef.current.get(node.id) ?? node.position ?? { x: 0, y: 0 }
+        const width = typeof node.width === 'number' ? node.width : GUIDED_COMPACT_NODE_WIDTH
+        const height = typeof node.height === 'number' ? node.height : GUIDED_COMPACT_NODE_HEIGHT
+        void setCenter(position.x + width / 2, position.y + height / 2, {
+          zoom: PANEL_SELECTED_NODE_ZOOM,
+          duration: PANEL_VIEWPORT_DURATION_MS,
+        })
+      }
+      if (delayMs > 0) {
+        window.setTimeout(run, delayMs)
+      } else {
+        requestAnimationFrame(run)
+      }
+    },
+    [setCenter],
+  )
+
+  const fitInitialGraphInView = useCallback(() => {
+    if (!isFirstLayoutFitRef.current) return
+    if (!reactFlowInitializedRef.current) return
+    if (modelNodesRef.current.length === 0) return
+    isFirstLayoutFitRef.current = false
+    recenterGraph({ duration: 0 })
+  }, [recenterGraph])
 
   const applySelectionToNodes = useCallback(
     (nodes: Node[]): Node[] =>
@@ -559,17 +656,69 @@ function GuidedFlowCanvasInner({
   const prevGraphNodeIdsKeyRef = useRef(graphNodeIdsKey)
   useLayoutEffect(() => {
     const topologyChanged = prevGraphNodeIdsKeyRef.current !== graphNodeIdsKey
+    const viewportBeforeTopologyChange = topologyChanged ? getViewport() : null
     prevGraphNodeIdsKeyRef.current = graphNodeIdsKey
 
     if (!topologyChanged && isDraggingRef.current) return
-
-    setNodes(applySelectionToNodes(modelNodesRef.current))
-    remeasureNodesRef.current(modelNodesRef.current.map((node) => node.id))
-  }, [applySelectionToNodes, graphNodeContentKey, graphNodeIdsKey, nodesLayoutKey, setNodes])
+    const nextModelNodes = applySelectionToNodes(modelNodesRef.current)
+    if (topologyChanged) {
+      setNodes(nextModelNodes)
+    } else {
+      const modelNodeById = new Map(nextModelNodes.map((node) => [node.id, node]))
+      setNodes((current) =>
+        current.map((node) => {
+          const modelNode = modelNodeById.get(node.id)
+          if (!modelNode) return node
+          const livePosition = liveNodePositionsRef.current.get(node.id)
+          return {
+            ...modelNode,
+            position: livePosition ?? node.position,
+            positionAbsolute: node.positionAbsolute,
+          }
+        }),
+      )
+    }
+    remeasureNodesRef.current(nextModelNodes.map((node) => node.id))
+    if (viewportBeforeTopologyChange) {
+      restoreViewportAfterTopologyChange(viewportBeforeTopologyChange)
+    }
+  }, [
+    applySelectionToNodes,
+    exitingNodeIds,
+    getViewport,
+    graphNodeContentKey,
+    graphNodeIdsKey,
+    nodesLayoutKey,
+    restoreViewportAfterTopologyChange,
+    setNodes,
+  ])
 
   useEffect(() => {
     setNodes((current) => applySelectionToNodes(current))
   }, [applySelectionToNodes, setNodes])
+
+  useEffect(() => {
+    const previousSelectedNodeId = previousSelectedNodeIdRef.current
+    previousSelectedNodeIdRef.current = selectedNodeId
+    if (!reactFlowInitializedRef.current) return
+
+    if (selectedNodeId && !previousSelectedNodeId) {
+      viewportBeforePanelOpenRef.current = getViewport()
+      centerSelectedNodeForPanel(selectedNodeId)
+      return
+    }
+
+    if (selectedNodeId && selectedNodeId !== previousSelectedNodeId) {
+      centerSelectedNodeForPanel(selectedNodeId)
+      return
+    }
+
+    if (!selectedNodeId && previousSelectedNodeId && viewportBeforePanelOpenRef.current) {
+      const viewport = viewportBeforePanelOpenRef.current
+      viewportBeforePanelOpenRef.current = null
+      void setViewport(viewport, { duration: PANEL_VIEWPORT_DURATION_MS })
+    }
+  }, [centerSelectedNodeForPanel, getViewport, selectedNodeId, setViewport])
 
   useEffect(() => {
     const currentIds = new Set(modelNodes.map((node) => node.id))
@@ -582,7 +731,6 @@ function GuidedFlowCanvasInner({
       prevModelNodesRef.current = modelNodes
       setEnteringNodeIds(new Set())
       setExitingNodes(new Map())
-      recenterGraph({ duration: 0 })
       return
     }
 
@@ -596,14 +744,12 @@ function GuidedFlowCanvasInner({
     if (addedNodeIds.length > 0) {
       if (animateGraphChanges) {
         setEnteringNodeIds(new Set(addedNodeIds))
-        recenterGraph({ duration: FIT_DURATION_GRAPH_CHANGE_MS, delayMs: 48 })
         enterTimer = window.setTimeout(() => {
           setEnteringNodeIds(new Set())
           remeasureNodes(modelNodes.map((node) => node.id))
         }, GUIDED_NODE_ENTER_MS)
       } else {
         setEnteringNodeIds(new Set())
-        recenterGraph({ duration: 0 })
       }
     }
 
@@ -613,6 +759,7 @@ function GuidedFlowCanvasInner({
         const next = new Map(current)
         for (const snapshot of prevModelNodesRef.current) {
           if (!removedIdSet.has(snapshot.id)) continue
+          if ((snapshot.data as { exitAnimation?: boolean } | undefined)?.exitAnimation) continue
           next.set(snapshot.id, {
             ...snapshot,
             data: {
@@ -626,7 +773,6 @@ function GuidedFlowCanvasInner({
 
       exitTimer = window.setTimeout(() => {
         setExitingNodes(new Map())
-        recenterGraph({ duration: FIT_DURATION_GRAPH_CHANGE_MS, delayMs: 32 })
       }, GUIDED_NODE_EXIT_MS)
     }
 
@@ -636,23 +782,12 @@ function GuidedFlowCanvasInner({
       if (enterTimer != null) window.clearTimeout(enterTimer)
       if (exitTimer != null) window.clearTimeout(exitTimer)
     }
-  }, [animateGraphChanges, modelNodes, recenterGraph, remeasureNodes])
+  }, [animateGraphChanges, modelNodes, remeasureNodes])
 
   useEffect(() => {
     if (modelNodes.length === 0) return
-    const duration =
-      isFirstLayoutFitRef.current || !animateGraphChanges ? 0 : FIT_DURATION_GRAPH_CHANGE_MS
-    isFirstLayoutFitRef.current = false
-    recenterGraph({ duration })
-  }, [animateGraphChanges, graphNodeIdsKey, modelNodes.length, recenterGraph])
-
-  const prevReserveRightRef = useRef(reserveRightPx)
-  useEffect(() => {
-    if (modelNodes.length === 0) return
-    if (prevReserveRightRef.current === reserveRightPx) return
-    prevReserveRightRef.current = reserveRightPx
-    recenterGraph({ duration: FIT_DURATION_PANEL_MS })
-  }, [modelNodes.length, recenterGraph, reserveRightPx])
+    fitInitialGraphInView()
+  }, [fitInitialGraphInView, modelNodes.length])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -661,10 +796,16 @@ function GuidedFlowCanvasInner({
 
       for (const change of filtered) {
         if (change.type !== 'position') continue
+        if (allowNodeDrag && change.position) {
+          rememberNodePosition(change.id, change.position)
+        }
         if (!('dragging' in change) || change.dragging !== false) {
           isDraggingRef.current = true
         } else {
           isDraggingRef.current = false
+          if (allowNodeDrag && change.position) {
+            onNodePositionChange?.(change.id, change.position)
+          }
         }
       }
 
@@ -675,7 +816,7 @@ function GuidedFlowCanvasInner({
         onNodesChange(applicable)
       }
     },
-    [allowNodeDrag, onNodesChange],
+    [allowNodeDrag, onNodePositionChange, onNodesChange, rememberNodePosition],
   )
 
   const onNodeDragStart = useCallback(() => {
@@ -686,8 +827,8 @@ function GuidedFlowCanvasInner({
     isDraggingRef.current = true
   }, [])
 
-  const onNodeDragStop = useCallback(
-    (_event: MouseEvent, node: Node) => {
+  const onNodeDragStop: NodeDragHandler = useCallback(
+    (_event, node) => {
       isDraggingRef.current = false
       const live = getNodes().find((entry) => entry.id === node.id)
       const position = live?.position ?? node.position
@@ -700,8 +841,10 @@ function GuidedFlowCanvasInner({
   )
 
   const handleInit = useCallback(() => {
+    reactFlowInitializedRef.current = true
     remeasureNodes(modelNodes.map((node) => node.id))
-  }, [modelNodes, remeasureNodes])
+    fitInitialGraphInView()
+  }, [fitInitialGraphInView, modelNodes, remeasureNodes])
 
   if (modelNodes.length === 0) {
     return null
@@ -739,11 +882,10 @@ function GuidedFlowCanvasInner({
                   }
                 : undefined
             }
-            onPaneClick={onCanvasPaneClick ? () => onCanvasPaneClick() : undefined}
             maxZoom={1.2}
             nodesDraggable={allowNodeDrag}
             nodesConnectable={false}
-            elementsSelectable={Boolean(onNodeClick) || !readOnly}
+            elementsSelectable={false}
             selectNodesOnDrag={false}
             panOnDrag
             zoomOnScroll

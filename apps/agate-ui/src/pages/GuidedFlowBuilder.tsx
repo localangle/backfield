@@ -10,6 +10,7 @@ import BookendSwapDialog from '@/components/flow-builder/BookendSwapDialog'
 import ConfigureGatePanel from '@/components/flow-builder/ConfigureGatePanel'
 import FlowStepper from '@/components/flow-builder/FlowStepper'
 import GuidedFlowCanvas, {
+  GUIDED_NODE_EXIT_MS,
   GUIDED_FLOW_NODE_PANEL_WIDTH_PX,
 } from '@/components/flow-builder/GuidedFlowCanvas'
 import ConfirmDialog from '@/components/ConfirmDialog'
@@ -220,6 +221,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const [outputNode, setOutputNode] = useState<Node | null>(null)
   const [scaffoldModel, setScaffoldModel] = useState<FlowGraphModel | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [dirtyPanelNodeIds, setDirtyPanelNodeIds] = useState<Set<string>>(new Set())
+  const [exitingNodeIds, setExitingNodeIds] = useState<Set<string>>(new Set())
+  const deleteAnimationTimersRef = useRef(new Map<string, ReturnType<typeof window.setTimeout>>())
   const [configureGateActive, setConfigureGateActive] = useState(false)
   const [addChooserOpen, setAddChooserOpen] = useState(false)
   const [addFromParentId, setAddFromParentId] = useState<string | null>(null)
@@ -243,6 +247,16 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   } | null>(null)
 
   const completedStepsReadonly = completedSteps as ReadonlySet<FlowBuilderStep>
+
+  useEffect(
+    () => () => {
+      for (const timer of deleteAnimationTimersRef.current.values()) {
+        window.clearTimeout(timer)
+      }
+      deleteAnimationTimersRef.current.clear()
+    },
+    [],
+  )
 
   const showModal = useCallback(
     (config: {
@@ -319,7 +333,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         setExistingGraphId(graph.id)
         setGraphName(graph.name)
         setResolvedFlowProject(project)
-        setScaffoldModel(applyLayoutToModel(hydrated.model, { relayoutBookends: true }))
+        setScaffoldModel(applyLayoutToModel(hydrated.model))
         setInputNode(toReactFlowBookend(hydrated.model.inputNode))
         setOutputNode(toReactFlowBookend(hydrated.model.outputNode))
         setCompletedSteps(completedStepsForEdit())
@@ -525,7 +539,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
               current.outputNode.id === outputBookend.id ? current.outputNode.position : undefined,
           },
         },
-        { relayoutBookends: true },
       )
     })
   }, [activeStep, inputNode, outputNode])
@@ -741,8 +754,12 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           data: node.data,
         }))
         const list = typeof updater === 'function' ? updater(reactNodes) : updater
+        const previousById = new Map(reactNodes.map((node) => [node.id, node]))
         let nextModel = scaffoldModel
         for (const n of list) {
+          if (previousById.get(n.id)?.data !== n.data) {
+            setDirtyPanelNodeIds((prev) => new Set(prev).add(n.id))
+          }
           if (n.id === scaffoldModel.inputNode.id) {
             setInputNode((prev) => (prev ? { ...prev, data: n.data } : prev))
             nextModel = { ...nextModel, inputNode: { ...nextModel.inputNode, data: n.data as Record<string, unknown> } }
@@ -765,9 +782,13 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
       const current = [inputNode, outputNode].filter((n): n is Node => n != null)
       const list = typeof updater === 'function' ? updater(current) : updater
+      const previousById = new Map(current.map((node) => [node.id, node]))
       let nextInput = inputNode
       let nextOutput = outputNode
       for (const n of list) {
+        if (previousById.get(n.id)?.data !== n.data) {
+          setDirtyPanelNodeIds((prev) => new Set(prev).add(n.id))
+        }
         if (inputNode?.id === n.id) nextInput = n
         if (outputNode?.id === n.id) nextOutput = n
       }
@@ -888,7 +909,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     onSwapOutputBookend: capabilities.allowBookendEdit ? handleChangeOutputDestination : undefined,
   }
 
-  const handleSave = useCallback(async (): Promise<boolean> => {
+  const handleSave = useCallback(async (options?: { stayInEditMode?: boolean }): Promise<boolean> => {
     if (!inputNode || !outputNode) {
       showModal({
         title: 'Flow not ready to save',
@@ -967,6 +988,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
       if (existingGraphId) {
         await updateGraph(existingGraphId, graphSpec)
+        if (options?.stayInEditMode) {
+          return true
+        }
         if (onSaved) {
           onSaved(existingGraphId)
         } else {
@@ -1006,6 +1030,17 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     showModal,
     onSaved,
   ])
+
+  const handlePanelSave = useCallback(async (): Promise<void> => {
+    if (!selectedNodeId) return
+    const saved = await handleSave({ stayInEditMode: true })
+    if (!saved) return
+    setDirtyPanelNodeIds((prev) => {
+      const next = new Set(prev)
+      next.delete(selectedNodeId)
+      return next
+    })
+  }, [handleSave, selectedNodeId])
 
   const buildSnapshot = useCallback(
     (): GuidedFlowSnapshot =>
@@ -1076,6 +1111,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const handleDeleteMiddleNode = useCallback(
     (nodeId: string) => {
       void (async () => {
+        if (exitingNodeIds.has(nodeId)) return
         const node = scaffoldModel?.middleNodes.find((n) => n.id === nodeId)
         const label =
           nodeMetadata.find((m) => m.type === node?.type)?.label ?? 'this step'
@@ -1089,20 +1125,58 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         )
         if (!ok || !scaffoldModel) return
         try {
-          setScaffoldModel(deleteMiddleNode(scaffoldModel, nodeId))
+          setExitingNodeIds((prev) => new Set(prev).add(nodeId))
           setSelectedNodeId(null)
           setConfigureGateActive(false)
+          const timer = window.setTimeout(() => {
+            deleteAnimationTimersRef.current.delete(nodeId)
+            setScaffoldModel((current) => {
+              if (!current?.middleNodes.some((node) => node.id === nodeId)) return current
+              return deleteMiddleNode(current, nodeId)
+            })
+            setDirtyPanelNodeIds((prev) => {
+              const next = new Set(prev)
+              next.delete(nodeId)
+              return next
+            })
+            setExitingNodeIds((prev) => {
+              const next = new Set(prev)
+              next.delete(nodeId)
+              return next
+            })
+          }, GUIDED_NODE_EXIT_MS)
+          deleteAnimationTimersRef.current.set(nodeId, timer)
         } catch (error) {
           console.error('Failed to delete step:', error)
         }
       })()
     },
-    [scaffoldModel, showConfirm],
+    [exitingNodeIds, scaffoldModel, showConfirm],
   )
 
+  const handleCancelMiddleNodeAdd = useCallback(() => {
+    if (!selectedNodeId) return
+    setScaffoldModel((model) => {
+      if (!model?.middleNodes.some((node) => node.id === selectedNodeId)) return model
+      return deleteMiddleNode(model, selectedNodeId)
+    })
+    setDirtyPanelNodeIds((prev) => {
+      const next = new Set(prev)
+      next.delete(selectedNodeId)
+      return next
+    })
+    setSelectedNodeId(null)
+    setConfigureGateActive(false)
+  }, [selectedNodeId])
+
   const deletableNodeIds = useMemo(
-    () => new Set(scaffoldModel?.middleNodes.map((node) => node.id) ?? []),
-    [scaffoldModel],
+    () =>
+      new Set(
+        scaffoldModel?.middleNodes
+          .filter((node) => !exitingNodeIds.has(node.id))
+          .map((node) => node.id) ?? [],
+      ),
+    [exitingNodeIds, scaffoldModel],
   )
 
   const addNodeCompatibility = useMemo(() => {
@@ -1146,43 +1220,21 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [addFromParentId, scaffoldModel, workspaceStylebookId],
   )
 
-  const handleBookendNodeSelect = useCallback(
+  /**
+   * Single click handler for every canvas. Clicking a node always opens its
+   * panel. The configure gate (Continue / Cancel footer) is orthogonal: it is
+   * armed when a bookend is freshly chosen on step 1/2 or a middle node is
+   * freshly added on step 3, and cleared by Continue / Cancel / Close. A
+   * regular click does not touch it, so re-clicking the active node keeps the
+   * gate visible and clicking a different node leaves the gate state untouched
+   * (the footer just attaches to whichever node is now selected).
+   */
+  const handleNodeClick = useCallback(
     (node: Node) => {
-      const isInput = node.id === inputNode?.id
-      const isOutput = node.id === outputNode?.id
-      if (!isInput && !isOutput) return
-
       setSelectedNodeId(node.id)
-      if (!readOnly && (activeStep === 'input' || activeStep === 'output')) {
-        setConfigureGateActive(true)
-      }
     },
-    [activeStep, inputNode?.id, outputNode?.id, readOnly],
+    [],
   )
-
-  const handleScaffoldNodeSelect = useCallback(
-    (node: Node) => {
-      if (activeStep !== 'scaffold' || !scaffoldModel) return
-
-      const isMiddle = scaffoldModel.middleNodes.some((n) => n.id === node.id)
-      const isBookend =
-        node.id === inputNode?.id ||
-        node.id === outputNode?.id ||
-        node.id === scaffoldModel.inputNode.id ||
-        node.id === scaffoldModel.outputNode.id
-      if (!isMiddle && !isBookend) return
-
-      setSelectedNodeId(node.id)
-      setConfigureGateActive(false)
-    },
-    [activeStep, scaffoldModel, inputNode, outputNode],
-  )
-
-  const handleScaffoldCanvasPaneClick = useCallback(() => {
-    if (activeStep !== 'scaffold') return
-    setSelectedNodeId(null)
-    setConfigureGateActive(false)
-  }, [activeStep])
 
   const selectedNode = useMemo(() => {
     if (!selectedNodeId) return null
@@ -1205,26 +1257,16 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const showOutputChooser = !readOnly && activeStep === 'output' && outputNode == null
   const showOutputCanvas = activeStep === 'output' && outputNode != null
 
-  const showBookendNodePanel =
-    selectedNode != null &&
-    (activeStep === 'input' || activeStep === 'output') &&
-    isBookendSelected &&
-    selectedNodeId != null
-
-  const bookendPanelGateActive = !readOnly && configureGateActive
-
-  const showScaffoldNodePanel =
-    selectedNode != null &&
-    activeStep === 'scaffold' &&
-    selectedNodeId != null &&
-    (isMiddleSelected || isBookendSelected)
-
-  const scaffoldPanelGateActive = !readOnly && configureGateActive
-
-  const sidePanelOpen = showScaffoldNodePanel || showBookendNodePanel
+  // One rule: a node is clicked, the panel opens. The gate (Continue / Cancel
+  // footer) is orthogonal and reflects configureGateActive only.
+  const showNodePanel = selectedNode != null
+  const panelGateActive = !readOnly && configureGateActive
+  const sidePanelOpen = showNodePanel
   const canvasFrameStyle = sidePanelOpen
     ? { marginRight: GUIDED_FLOW_NODE_PANEL_WIDTH_PX }
     : undefined
+  const showEditModeCue = !readOnly && (isRunVariant || existingGraphId != null)
+  const selectedPanelHasChanges = selectedNodeId != null && dirtyPanelNodeIds.has(selectedNodeId)
 
   const rootClassName = hideHeader
     ? `flex min-h-0 flex-1 flex-col ${className ?? ''}`
@@ -1291,7 +1333,18 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         />
       )}
 
-      <div className="relative flex-1 overflow-hidden">
+      <div
+        className={`relative flex-1 overflow-hidden transition-colors ${
+          showEditModeCue ? 'bg-amber-50/25' : ''
+        }`}
+      >
+        {showEditModeCue && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center border-t border-amber-200/70 bg-amber-50/40 py-2">
+            <div className="rounded-full border border-amber-200 bg-background/90 px-3 py-1 text-xs font-medium text-amber-800 shadow-sm">
+              Editing flow · Save changes when you're done
+            </div>
+          </div>
+        )}
         {activeStep === 'input' && (
           <div className="flex h-full flex-col">
             {showInputChooser && (
@@ -1317,7 +1370,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                   outputNode={outputNode}
                   selectedNodeId={selectedNodeId}
                   reserveRightPx={sidePanelOpen ? 1 : 0}
-                  onNodeClick={handleBookendNodeSelect}
+                  onNodeClick={handleNodeClick}
                   {...bookendSwapCanvasProps}
                 />
               </div>
@@ -1350,7 +1403,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                   outputNode={outputNode}
                   selectedNodeId={selectedNodeId}
                   reserveRightPx={sidePanelOpen ? 1 : 0}
-                  onNodeClick={handleBookendNodeSelect}
+                  onNodeClick={handleNodeClick}
                   {...bookendSwapCanvasProps}
                 />
               </div>
@@ -1374,6 +1427,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                 allowNodeDrag={capabilities.allowNodeDrag}
                 allowDeleteNodes={capabilities.allowDelete && !configureGateActive}
                 deletableNodeIds={deletableNodeIds}
+                exitingNodeIds={exitingNodeIds}
                 reserveRightPx={sidePanelOpen ? 1 : 0}
                 selectedNodeId={selectedNodeId}
                 onAddNodeClick={capabilities.allowAddNodes ? handleAddNodeClick : undefined}
@@ -1381,8 +1435,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                   capabilities.allowDelete ? handleDeleteMiddleNode : undefined
                 }
                 {...bookendSwapCanvasProps}
-                onNodeClick={handleScaffoldNodeSelect}
-                onCanvasPaneClick={handleScaffoldCanvasPaneClick}
+                onNodeClick={handleNodeClick}
                 onNodePositionChange={
                   capabilities.allowNodeDrag ? handleNodePositionChange : undefined
                 }
@@ -1398,59 +1451,44 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           </div>
         )}
 
-        {showBookendNodePanel && selectedNode && (
+        {showNodePanel && selectedNode && (
           <ConfigureGatePanel
             selectedNode={selectedNode}
-            gateActive={bookendPanelGateActive}
-            onContinue={handleConfigureContinue}
-            onCancel={
-              bookendPanelGateActive
-                ? activeStep === 'input'
-                  ? handleInputBookendCancel
-                  : activeStep === 'output'
-                    ? handleOutputBookendCancel
-                    : undefined
-                : undefined
-            }
-            onClose={() => {
-              setSelectedNodeId(null)
-              setConfigureGateActive(false)
-            }}
-            onTextChange={activeStep === 'input' ? handleTextInputChange : undefined}
-            setNodes={setNodes}
-            graphContext={graphContext}
-            isMiddleNode={false}
-            viewOnly={readOnly}
-            running={running}
-            currentRun={currentRun}
-            nodeOutputLookupSpec={nodeOutputLookupSpec}
-            showModal={showModal}
-          />
-        )}
-
-        {showScaffoldNodePanel && selectedNode && (
-          <ConfigureGatePanel
-            selectedNode={selectedNode}
-            gateActive={scaffoldPanelGateActive}
+            gateActive={panelGateActive}
             onContinue={
-              scaffoldPanelGateActive
-                ? isBookendSelected
+              panelGateActive
+                ? activeStep === 'scaffold' && isBookendSelected
                   ? handleScaffoldBookendGateContinue
-                  : handleScaffoldContinue
-                : handleScaffoldContinue
+                  : handleConfigureContinue
+                : handleConfigureContinue
+            }
+            onCancel={
+              panelGateActive && activeStep === 'input'
+                ? handleInputBookendCancel
+                : panelGateActive && activeStep === 'output'
+                  ? handleOutputBookendCancel
+                  : panelGateActive && activeStep === 'scaffold' && isMiddleSelected
+                    ? handleCancelMiddleNodeAdd
+                    : undefined
             }
             onClose={() => {
               setSelectedNodeId(null)
               setConfigureGateActive(false)
             }}
+            onSave={() => void handlePanelSave()}
+            onTextChange={activeStep === 'input' ? handleTextInputChange : undefined}
             setNodes={setNodes}
             graphContext={graphContext}
             isMiddleNode={isMiddleSelected}
             viewOnly={readOnly}
             onDelete={
-              capabilities.allowDelete && isMiddleSelected ? handleDeleteMiddleNode : undefined
+              capabilities.allowDelete && activeStep === 'scaffold' && isMiddleSelected && !panelGateActive
+                ? handleDeleteMiddleNode
+                : undefined
             }
             running={running}
+            saving={saving}
+            canSave={Boolean(inputNode && outputNode && selectedPanelHasChanges)}
             currentRun={currentRun}
             nodeOutputLookupSpec={nodeOutputLookupSpec}
             showModal={showModal}

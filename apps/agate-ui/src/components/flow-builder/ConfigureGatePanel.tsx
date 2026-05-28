@@ -17,6 +17,7 @@ type ConfigureGatePanelProps = {
   /** Clears the current bookend selection and returns to the chooser on input/output steps. */
   onCancel?: () => void
   onClose: () => void
+  onSave?: () => void
   onTextChange?: (text: string) => void
   setNodes: (nodes: Node[] | ((nodes: Node[]) => Node[])) => void
   graphContext?: GraphPanelContext | null
@@ -24,6 +25,8 @@ type ConfigureGatePanelProps = {
   viewOnly?: boolean
   onDelete?: (nodeId: string) => void
   running?: boolean
+  saving?: boolean
+  canSave?: boolean
   currentRun?: Run | null
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
   showModal?: (config: {
@@ -43,6 +46,7 @@ export default function ConfigureGatePanel({
   onContinue,
   onCancel,
   onClose,
+  onSave,
   onTextChange,
   setNodes,
   graphContext,
@@ -50,6 +54,8 @@ export default function ConfigureGatePanel({
   viewOnly = false,
   onDelete,
   running,
+  saving = false,
+  canSave = true,
   currentRun,
   nodeOutputLookupSpec,
   showModal,
@@ -63,24 +69,47 @@ export default function ConfigureGatePanel({
     : canContinueBookendNode(nodeLike)
   const hint = isMiddleNode || viewOnly ? null : bookendContinueHint(nodeLike)
 
+  const saveButton =
+    !viewOnly && !gateActive && onSave ? (
+      <Button
+        type="button"
+        className="w-full"
+        disabled={saving || !canSave}
+        onClick={onSave}
+      >
+        {saving ? 'Saving...' : 'Save changes'}
+      </Button>
+    ) : null
+
   const footer =
-    !viewOnly && gateActive ? (
+    !viewOnly && (gateActive || saveButton) ? (
     <div className="border-t bg-background p-4">
-      {hint && <p className="mb-3 text-sm text-destructive">{hint}</p>}
-      <div className={onCancel ? 'flex gap-2' : undefined}>
-        {onCancel ? (
-          <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
-            Cancel
-          </Button>
-        ) : null}
-        <Button
-          className={onCancel ? 'flex-1' : 'w-full'}
-          disabled={!canContinue}
-          onClick={onContinue}
-        >
-          Continue
-        </Button>
-      </div>
+      {gateActive ? (
+        <>
+          {hint && <p className="mb-3 text-sm text-destructive">{hint}</p>}
+          <div className={onCancel && !isMiddleNode ? 'flex gap-2' : 'space-y-2'}>
+            <Button
+              className={onCancel && !isMiddleNode ? 'flex-1' : 'w-full'}
+              disabled={!canContinue}
+              onClick={onContinue}
+            >
+              {isMiddleNode ? 'Add node' : 'Continue'}
+            </Button>
+            {onCancel ? (
+              <Button
+                type="button"
+                variant="outline"
+                className={isMiddleNode ? 'w-full' : 'flex-1'}
+                onClick={onCancel}
+              >
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        saveButton
+      )}
     </div>
   ) : undefined
 

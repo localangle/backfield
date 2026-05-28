@@ -102,11 +102,11 @@
 @keyframes guidedNodeExit {
   from {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0) scale(1);
   }
   to {
-    opacity: 0.35;
-    transform: scale(0.88);
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
   }
 }
 
