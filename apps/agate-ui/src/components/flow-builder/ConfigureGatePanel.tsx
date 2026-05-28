@@ -29,6 +29,7 @@ type ConfigureGatePanelProps = {
   canSave?: boolean
   currentRun?: Run | null
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
+  invalidConnectionMessage?: string | null
   showModal?: (config: {
     title: string
     description: string
@@ -58,6 +59,7 @@ export default function ConfigureGatePanel({
   canSave = true,
   currentRun,
   nodeOutputLookupSpec,
+  invalidConnectionMessage,
   showModal,
 }: ConfigureGatePanelProps) {
   const nodeLike: BookendNodeLike = {
@@ -125,6 +127,7 @@ export default function ConfigureGatePanel({
       running={running}
       currentRun={currentRun}
       nodeOutputLookupSpec={nodeOutputLookupSpec}
+      invalidConnectionMessage={invalidConnectionMessage}
       onDelete={!viewOnly && isMiddleNode ? onDelete : undefined}
       skipDeleteConfirmation={isMiddleNode}
       allowClose={viewOnly || !gateActive}

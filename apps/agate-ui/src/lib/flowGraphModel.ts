@@ -124,6 +124,87 @@ export function getBranchTipIds(model: FlowGraphModel): string[] {
   return allIds.filter((id) => getMiddleSuccessors(model, id).length === 0)
 }
 
+export function getInvalidFlowNodeIds(model: FlowGraphModel): Set<string> {
+  const invalid = new Set<string>()
+
+  for (const edge of deriveEdges(model)) {
+    if (edge.sourceHandle == null || edge.targetHandle == null) {
+      invalid.add(edge.target)
+    }
+  }
+
+  for (const node of [model.inputNode, ...model.middleNodes, model.outputNode]) {
+    const meta = nodeMetadata.find((entry) => entry.type === node.type)
+    const requiredUpstreamNodes = meta?.requiredUpstreamNodes ?? []
+    if (requiredUpstreamNodes.length === 0) continue
+
+    const ancestry = getBranchAncestry(model, node.id)
+    const hasRequiredUpstream = requiredUpstreamNodes.some((type) => ancestry.includes(type))
+    if (!hasRequiredUpstream) {
+      invalid.add(node.id)
+    }
+  }
+
+  return invalid
+}
+
+function positionedNodesById(model: FlowGraphModel): Map<string, FlowGraphNode> {
+  return new Map(toReactFlowNodes(model).map((node) => [node.id, node]))
+}
+
+function positionForNewSibling(model: FlowGraphModel, parentId: string): { x: number; y: number } {
+  const positioned = positionedNodesById(model)
+  const parent = positioned.get(parentId)
+  const existingSiblings = model.branchChildren[parentId] ?? []
+  const parentPosition = parent?.position ?? { x: LAYOUT_INPUT_X, y: LAYOUT_INPUT_Y }
+  return {
+    x: parentPosition.x + LAYOUT_X_STEP,
+    y: parentPosition.y + existingSiblings.length * LAYOUT_Y_STEP,
+  }
+}
+
+function positionForNewSerialNode(model: FlowGraphModel, afterNodeId: string): { x: number; y: number } {
+  const positioned = positionedNodesById(model)
+  const parent = positioned.get(afterNodeId)
+  const parentPosition = parent?.position ?? { x: LAYOUT_INPUT_X, y: LAYOUT_INPUT_Y }
+  return {
+    x: parentPosition.x + LAYOUT_X_STEP,
+    y: parentPosition.y,
+  }
+}
+
+function collectDownstreamMiddleNodeIds(model: FlowGraphModel, nodeId: string): Set<string> {
+  const out = new Set<string>()
+  const visit = (id: string) => {
+    if (out.has(id)) return
+    if (!model.middleNodes.some((node) => node.id === id)) return
+    out.add(id)
+    const serialNext = model.serialLinks[id]
+    if (serialNext) visit(serialNext)
+    for (const childId of model.branchChildren[id] ?? []) {
+      visit(childId)
+    }
+  }
+  visit(nodeId)
+  return out
+}
+
+function positionAfter(node: FlowGraphNode): number {
+  return (node.position?.x ?? 0) + LAYOUT_X_STEP
+}
+
+function outputAfterNodes(outputNode: FlowGraphNode, nodes: FlowGraphNode[]): FlowGraphNode {
+  const minOutputX = Math.max(...nodes.map(positionAfter))
+  if ((outputNode.position?.x ?? 0) >= minOutputX) return outputNode
+  return {
+    ...outputNode,
+    position: {
+      x: minOutputX,
+      y: outputNode.position?.y ?? LAYOUT_INPUT_Y,
+    },
+  }
+}
+
 export function addSiblingBranch(
   model: FlowGraphModel,
   parentId: string,
@@ -137,14 +218,19 @@ export function addSiblingBranch(
   }
 
   const existing = model.branchChildren[parentId] ?? []
+  const positionedNewNode = {
+    ...newNode,
+    position: newNode.position ?? positionForNewSibling(model, parentId),
+  }
   return applyLayoutToModel({
     ...model,
-    middleNodes: [...model.middleNodes, newNode],
+    outputNode: outputAfterNodes(model.outputNode, [positionedNewNode]),
+    middleNodes: [...model.middleNodes, positionedNewNode],
     branchChildren: {
       ...model.branchChildren,
       [parentId]: [...existing, newNode.id],
     },
-  }, { relayoutBookends: true })
+  })
 }
 
 /** Insert or extend serially after `afterNodeId`, pushing any existing serial child downstream. */
@@ -162,15 +248,36 @@ export function insertAfter(
 
   const existingNext = model.serialLinks[afterNodeId]
   const serialLinks = { ...model.serialLinks, [afterNodeId]: newNode.id }
+  const positionedNewNode = {
+    ...newNode,
+    position: newNode.position ?? positionForNewSerialNode(model, afterNodeId),
+  }
+  const shiftedIds = existingNext ? collectDownstreamMiddleNodeIds(model, existingNext) : new Set<string>()
+  const middleNodes = model.middleNodes.map((node) =>
+    shiftedIds.has(node.id)
+      ? {
+          ...node,
+          position: {
+            x: (node.position?.x ?? 0) + LAYOUT_X_STEP,
+            y: node.position?.y ?? LAYOUT_INPUT_Y,
+          },
+        }
+      : node,
+  )
   if (existingNext) {
     serialLinks[newNode.id] = existingNext
   }
 
+  const shiftedNodesById = new Map(middleNodes.map((node) => [node.id, node]))
+  const downstreamNodes = existingNext
+    ? [...shiftedIds].map((id) => shiftedNodesById.get(id)).filter((node): node is FlowGraphNode => node != null)
+    : []
   return applyLayoutToModel({
     ...model,
-    middleNodes: [...model.middleNodes, newNode],
+    outputNode: outputAfterNodes(model.outputNode, [positionedNewNode, ...downstreamNodes]),
+    middleNodes: [...middleNodes, positionedNewNode],
     serialLinks,
-  }, { relayoutBookends: true })
+  })
 }
 
 export function insertBetween(
@@ -252,7 +359,7 @@ export function deleteMiddleNode(model: FlowGraphModel, nodeId: string): FlowGra
     middleNodes,
     branchChildren,
     serialLinks,
-  }, { relayoutBookends: true })
+  })
 }
 
 /** @deprecated Use insertAfter for serial extension or addSiblingBranch for parallel branches. */

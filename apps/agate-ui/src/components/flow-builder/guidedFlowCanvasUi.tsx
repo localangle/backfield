@@ -18,6 +18,7 @@ export type GuidedFlowCanvasCallbacks = {
 export type GuidedFlowCanvasUi = {
   selectedNodeId: string | null
   enteringNodeIds: ReadonlySet<string>
+  invalidNodeIds: ReadonlySet<string>
   inputBookendId: string | null
   outputBookendId: string | null
   allowAddNodes: boolean
@@ -33,6 +34,7 @@ const emptyCallbacksRef: MutableRefObject<GuidedFlowCanvasCallbacks> = { current
 const defaultUi: GuidedFlowCanvasUi = {
   selectedNodeId: null,
   enteringNodeIds: new Set(),
+  invalidNodeIds: new Set(),
   inputBookendId: null,
   outputBookendId: null,
   allowAddNodes: false,

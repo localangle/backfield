@@ -7,6 +7,7 @@ import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Button } from '@/components/ui/button'
 import GuidedFlowBuilder, { type GuidedFlowBuilderHandle } from '@/pages/GuidedFlowBuilder'
 import { createRun, deleteGraph, getGraph, getRun, updateGraph, type Graph, type Run } from '@/lib/api'
+import { getInvalidFlowNodeIds, hydrateFromSpec } from '@/lib/flowGraphModel'
 import {
   buildProjectBreadcrumbItems,
   useProjectAndWorkspace,
@@ -41,6 +42,13 @@ export default function RunGraph() {
       }),
     [flowProject, flowWorkspace, graph?.name],
   )
+
+  const graphInvalid = useMemo(() => {
+    if (!graph) return false
+    const hydrated = hydrateFromSpec(graph.spec)
+    if (!hydrated.ok) return true
+    return getInvalidFlowNodeIds(hydrated.model).size > 0
+  }, [graph])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [modalConfig, setModalConfig] = useState<{
@@ -181,6 +189,18 @@ export default function RunGraph() {
   const handleRunFlow = useCallback(() => {
     if (!graphId) return
 
+    if (graphInvalid) {
+      showModal({
+        title: 'Flow needs attention',
+        description:
+          'This flow has an invalid connection. Fix the highlighted step before running it.',
+        type: 'warning',
+        confirmText: 'OK',
+        onConfirm: () => {},
+      })
+      return
+    }
+
     if (builderRef.current?.hasNodeType('APIInput')) {
       showModal({
         title: 'API input flow',
@@ -196,7 +216,7 @@ export default function RunGraph() {
     }
 
     void executeRun()
-  }, [graphId, executeRun, showModal])
+  }, [graphId, graphInvalid, executeRun, showModal])
 
   const handleFlowNameSave = useCallback(
     async (nextName: string) => {
@@ -290,7 +310,8 @@ export default function RunGraph() {
             <div className="flex gap-2">
               <Button
                 onClick={handleRunFlow}
-                disabled={running}
+                disabled={running || graphInvalid}
+                title={graphInvalid ? 'Fix invalid connections before running this flow.' : undefined}
                 className="bg-black text-white hover:bg-gray-800"
               >
                 {running ? (

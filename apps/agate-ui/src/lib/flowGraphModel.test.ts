@@ -13,6 +13,7 @@ import {
   deriveEdges,
   getBranchAncestry,
   getBranchTipIds,
+  getInvalidFlowNodeIds,
   hydrateFromSpec,
   insertAfter,
   insertBetween,
@@ -106,6 +107,20 @@ describe('flowGraphModel serial chain', () => {
       'PlaceExtract',
       'GeocodeAgent',
     ])
+  })
+
+  it('marks a rewired Geocode step invalid when its Place Extract upstream is deleted', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const geocode: FlowGraphNode = { id: 'geo-1', type: 'GeocodeAgent', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = insertAfter(model, 'place-1', geocode)
+
+    expect(getInvalidFlowNodeIds(model)).toEqual(new Set())
+
+    model = deleteMiddleNode(model, 'place-1')
+
+    expect(edgeSet(model)).toEqual(new Set(['input-1->geo-1:branch', 'geo-1->output-1:tip']))
+    expect(getInvalidFlowNodeIds(model)).toEqual(new Set(['geo-1']))
   })
 })
 
@@ -213,25 +228,45 @@ describe('flowGraphModel layout', () => {
     expect(tidied.outputNode.position).toEqual(auto.find((node) => node.id === 'output-1')?.position)
   })
 
-  it('addSiblingBranch spaces output past new middle nodes', () => {
+  it('addSiblingBranch places the new node without moving existing nodes', () => {
     const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
-    const model = addSiblingBranch(
-      {
-        ...bookends(),
-        outputNode: { ...bookends().outputNode, position: BOOKEND_OUTPUT_POSITION },
-      },
-      'input-1',
-      place,
-    )
-    const middleX = model.middleNodes[0]?.position?.x ?? 0
-    const gapBeforeOutput = model.outputNode.position!.x - (middleX + LAYOUT_NODE_WIDTH)
-    expect(gapBeforeOutput).toBe(LAYOUT_X_GAP)
-    expect(model.outputNode.position!.x).toBeGreaterThan(middleX + LAYOUT_NODE_WIDTH)
+    const base = {
+      ...bookends(),
+      inputNode: { ...bookends().inputNode, position: { x: 100, y: 300 } },
+      outputNode: { ...bookends().outputNode, position: { x: 900, y: 450 } },
+    }
+
+    const model = addSiblingBranch(base, 'input-1', place)
+
+    expect(model.inputNode.position).toEqual({ x: 100, y: 300 })
+    expect(model.outputNode.position).toEqual({ x: 900, y: 450 })
+    expect(model.middleNodes[0]?.position).toEqual({
+      x: 100 + LAYOUT_X_STEP,
+      y: 300,
+    })
   })
 
-  it('serial chain uses consistent horizontal gaps between nodes', () => {
+  it('addSiblingBranch shifts the output only when needed to make room', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const base = {
+      ...bookends(),
+      inputNode: { ...bookends().inputNode, position: { x: 80, y: 120 } },
+      outputNode: { ...bookends().outputNode, position: { x: 312, y: 120 } },
+    }
+
+    const model = addSiblingBranch(base, 'input-1', place)
+
+    expect(model.inputNode.position).toEqual({ x: 80, y: 120 })
+    expect(model.middleNodes[0]?.position).toEqual({ x: 80 + LAYOUT_X_STEP, y: 120 })
+    expect(model.outputNode.position).toEqual({ x: 80 + LAYOUT_X_STEP * 2, y: 120 })
+  })
+
+  it('insertAfter places the new node without moving existing nodes', () => {
     const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
     let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = updateNodePosition(model, 'input-1', { x: 20, y: 30 })
+    model = updateNodePosition(model, 'place-1', { x: 420, y: 330 })
+    model = updateNodePosition(model, 'output-1', { x: 900, y: 60 })
     model = insertAfter(model, 'place-1', { id: 'geo-1', type: 'GeocodeAgent', data: {} })
 
     const nodes = toReactFlowNodes(model)
@@ -240,12 +275,32 @@ describe('flowGraphModel layout', () => {
     const geo = nodes.find((n) => n.id === 'geo-1')!
     const output = nodes.find((n) => n.id === 'output-1')!
 
-    expect(placeNode.position!.x - (input.position!.x + LAYOUT_NODE_WIDTH)).toBe(LAYOUT_X_GAP)
+    expect(input.position).toEqual({ x: 20, y: 30 })
+    expect(placeNode.position).toEqual({ x: 420, y: 330 })
+    expect(output.position).toEqual({ x: 900, y: 60 })
     expect(geo.position!.x - (placeNode.position!.x + LAYOUT_NODE_WIDTH)).toBe(LAYOUT_X_GAP)
-    expect(output.position!.x - (geo.position!.x + LAYOUT_NODE_WIDTH)).toBe(LAYOUT_X_GAP)
-    expect(input.position!.y).toBe(placeNode.position!.y)
     expect(placeNode.position!.y).toBe(geo.position!.y)
-    expect(geo.position!.y).toBe(output.position!.y)
+  })
+
+  it('insertAfter shifts downstream nodes and output just enough to avoid overlap', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = updateNodePosition(model, 'input-1', { x: 80, y: 120 })
+    model = updateNodePosition(model, 'place-1', { x: 312, y: 120 })
+    model = updateNodePosition(model, 'output-1', { x: 544, y: 120 })
+
+    model = insertAfter(model, 'place-1', { id: 'geo-1', type: 'GeocodeAgent', data: {} })
+
+    expect(model.inputNode.position).toEqual({ x: 80, y: 120 })
+    expect(model.middleNodes.find((node) => node.id === 'place-1')?.position).toEqual({
+      x: 312,
+      y: 120,
+    })
+    expect(model.middleNodes.find((node) => node.id === 'geo-1')?.position).toEqual({
+      x: 544,
+      y: 120,
+    })
+    expect(model.outputNode.position).toEqual({ x: 776, y: 120 })
   })
 
   it('applyLayoutToModel preserves dragged middle positions unless relayoutBookends', () => {

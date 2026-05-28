@@ -1,4 +1,4 @@
-import { X, Play, Loader2, Trash2 } from 'lucide-react'
+import { X, Play, Loader2, Trash2, AlertTriangle } from 'lucide-react'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -53,6 +53,7 @@ interface NodePanelProps {
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
   allowClose?: boolean
   footer?: ReactNode
+  invalidConnectionMessage?: string | null
   /** When true, onDelete runs immediately (caller handles confirmation). */
   skipDeleteConfirmation?: boolean
   showModal?: (config: {
@@ -81,6 +82,7 @@ export default function NodePanel({
   nodeOutputLookupSpec,
   allowClose = true,
   footer,
+  invalidConnectionMessage = null,
   skipDeleteConfirmation = false,
 }: NodePanelProps) {
   const { showConfirm } = useAppMessage()
@@ -185,6 +187,16 @@ export default function NodePanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {invalidConnectionMessage ? (
+          <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+            <div>
+              <p className="font-medium">Invalid connection</p>
+              <p className="mt-0.5 text-amber-800">{invalidConnectionMessage}</p>
+            </div>
+          </div>
+        ) : null}
+
         {nodeMeta?.description ? (
           <p className="text-sm text-muted-foreground leading-relaxed">{nodeMeta.description}</p>
         ) : null}

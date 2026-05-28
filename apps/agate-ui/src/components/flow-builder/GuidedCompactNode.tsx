@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { getNodeBgColor, getNodeIcon, getNodeLabel } from '@/lib/nodeUtils'
 import { nodeMetadata } from '@/nodes/registry'
+import { AlertTriangle } from 'lucide-react'
 
 /** Canvas layout width for guided compact nodes (keep in sync with flowGraphModel). */
 export const GUIDED_COMPACT_NODE_WIDTH = 200
@@ -24,9 +25,10 @@ export default function GuidedCompactNode({
   selected,
   exitAnimation = false,
 }: GuidedCompactNodeProps) {
-  const { selectedNodeId, enteringNodeIds } = useGuidedFlowCanvasUi()
+  const { selectedNodeId, enteringNodeIds, invalidNodeIds } = useGuidedFlowCanvasUi()
   const isSelected = selected || id === selectedNodeId
   const enterAnimation = enteringNodeIds.has(id)
+  const isInvalid = invalidNodeIds.has(id)
   const nodeType = String(type ?? '')
   const meta = nodeMetadata.find((entry) => entry.type === nodeType)
   const inputs = (meta?.inputs ?? []) as PortDef[]
@@ -67,12 +69,23 @@ export default function GuidedCompactNode({
       ) : null}
       <Card
         className={cn(
-          'flex h-full w-full items-center',
+          'relative flex h-full w-full items-center',
           isSelected && 'ring-2 ring-primary',
+          isInvalid && !isSelected && 'border-amber-300 bg-amber-50/80 ring-2 ring-amber-300/70',
+          isInvalid && isSelected && 'border-amber-300 ring-2 ring-amber-400',
           exitAnimation && 'guided-node-exit',
           enterAnimation && !exitAnimation && 'guided-node-enter',
         )}
       >
+        {isInvalid ? (
+          <div
+            className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full border border-amber-300 bg-amber-100 text-amber-700 shadow-sm"
+            title="Invalid connection to the preceding node"
+            aria-label="Invalid connection to the preceding node"
+          >
+            <AlertTriangle className="h-3 w-3" />
+          </div>
+        ) : null}
         <CardHeader className="flex w-full flex-row items-center gap-2 space-y-0 p-3">
           <div
             className={cn(

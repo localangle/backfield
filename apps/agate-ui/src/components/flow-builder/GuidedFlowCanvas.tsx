@@ -21,6 +21,7 @@ import ReactFlow, {
   useNodesState,
   useReactFlow,
   useUpdateNodeInternals,
+  type CoordinateExtent,
   type Edge,
   type Node,
   type NodeChange,
@@ -34,7 +35,12 @@ import 'reactflow/dist/style.css'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { bookendPreviewEdge, withBookendPositions } from '@/lib/flowBuilderLayout'
-import { deriveEdges, toReactFlowNodes, type FlowGraphModel } from '@/lib/flowGraphModel'
+import {
+  deriveEdges,
+  getInvalidFlowNodeIds,
+  toReactFlowNodes,
+  type FlowGraphModel,
+} from '@/lib/flowGraphModel'
 import { nodeComponents } from '@/nodes/registry'
 import {
   GuidedFlowCanvasUiContext,
@@ -256,6 +262,7 @@ const GUIDED_NODE_ENTER_MS = 520
 const FIT_DURATION_GRAPH_CHANGE_MS = 500
 const PANEL_VIEWPORT_DURATION_MS = 220
 const PANEL_SELECTED_NODE_ZOOM = 1.2
+const PAN_EXTENT_PADDING_PX = 1500
 
 const SOLID_EDGE_STYLE = { stroke: '#000000', strokeWidth: 1 }
 const SOLID_EDGE_MARKER = {
@@ -482,6 +489,11 @@ function GuidedFlowCanvasInner({
     return []
   }, [inputNode, outputNode, scaffoldModel])
 
+  const invalidNodeIds = useMemo(
+    () => (scaffoldModel ? getInvalidFlowNodeIds(scaffoldModel) : new Set<string>()),
+    [scaffoldModel],
+  )
+
   const displayNodes = useMemo(() => {
     const exiting = [...exitingNodes.values()].map((node) => ({
       ...node,
@@ -493,11 +505,41 @@ function GuidedFlowCanvasInner({
     return [...nodes, ...exiting]
   }, [exitingNodes, nodes])
 
+  const panExtent = useMemo<CoordinateExtent>(() => {
+    if (displayNodes.length === 0) {
+      return [
+        [-PAN_EXTENT_PADDING_PX, -PAN_EXTENT_PADDING_PX],
+        [PAN_EXTENT_PADDING_PX, PAN_EXTENT_PADDING_PX],
+      ]
+    }
+
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+
+    for (const node of displayNodes) {
+      const position = node.position ?? { x: 0, y: 0 }
+      const width = typeof node.width === 'number' ? node.width : GUIDED_COMPACT_NODE_WIDTH
+      const height = typeof node.height === 'number' ? node.height : GUIDED_COMPACT_NODE_HEIGHT
+      minX = Math.min(minX, position.x)
+      minY = Math.min(minY, position.y)
+      maxX = Math.max(maxX, position.x + width)
+      maxY = Math.max(maxY, position.y + height)
+    }
+
+    return [
+      [minX - PAN_EXTENT_PADDING_PX, minY - PAN_EXTENT_PADDING_PX],
+      [maxX + PAN_EXTENT_PADDING_PX, maxY + PAN_EXTENT_PADDING_PX],
+    ]
+  }, [displayNodes])
+
   const emptyDeletableSet = useMemo<ReadonlySet<string>>(() => new Set(), [])
   const canvasUi: GuidedFlowCanvasUi = useMemo(
     () => ({
       selectedNodeId,
       enteringNodeIds,
+      invalidNodeIds,
       inputBookendId,
       outputBookendId,
       allowAddNodes,
@@ -514,6 +556,7 @@ function GuidedFlowCanvasInner({
       deletableNodeIds,
       emptyDeletableSet,
       enteringNodeIds,
+      invalidNodeIds,
       inputBookendId,
       outputBookendId,
       readOnly,
@@ -883,6 +926,7 @@ function GuidedFlowCanvasInner({
                 : undefined
             }
             maxZoom={1.2}
+            translateExtent={panExtent}
             nodesDraggable={allowNodeDrag}
             nodesConnectable={false}
             elementsSelectable={false}

@@ -30,6 +30,7 @@ import {
   clearMiddleNodes,
   createFlowGraphModel,
   deleteMiddleNode,
+  getInvalidFlowNodeIds,
   replaceInputBookend,
   replaceOutputBookend,
   getBranchAncestry,
@@ -1210,7 +1211,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         } else {
           return model
         }
-        return applyLayoutToModel(next, { relayoutBookends: true })
+        return applyLayoutToModel(next)
       })
       setSelectedNodeId(newNode.id)
       setConfigureGateActive(true)
@@ -1251,6 +1252,15 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       selectedNodeId === outputNode?.id ||
       selectedNodeId === scaffoldModel?.inputNode.id ||
       selectedNodeId === scaffoldModel?.outputNode.id)
+
+  const invalidNodeIds = useMemo(
+    () => (scaffoldModel ? getInvalidFlowNodeIds(scaffoldModel) : new Set<string>()),
+    [scaffoldModel],
+  )
+  const invalidConnectionMessage =
+    selectedNodeId != null && invalidNodeIds.has(selectedNodeId)
+      ? 'Invalid connection to the preceding node.'
+      : null
 
   const showInputChooser = !readOnly && activeStep === 'input' && inputNode == null
   const showInputCanvas = activeStep === 'input' && inputNode != null
@@ -1491,6 +1501,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             canSave={Boolean(inputNode && outputNode && selectedPanelHasChanges)}
             currentRun={currentRun}
             nodeOutputLookupSpec={nodeOutputLookupSpec}
+            invalidConnectionMessage={invalidConnectionMessage}
             showModal={showModal}
           />
         )}
