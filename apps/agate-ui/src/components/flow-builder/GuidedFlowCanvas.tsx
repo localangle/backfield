@@ -38,7 +38,6 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardDescription, CardTitle } from '@/components/ui/card'
 import { bookendPreviewEdge, withBookendPositions } from '@/lib/flowBuilderLayout'
 import {
   deriveEdges,
@@ -339,6 +338,7 @@ const SOLID_EDGE_MARKER = {
   width: 18,
   height: 18,
 }
+const EMPTY_NODE_ID_SET: ReadonlySet<string> = new Set()
 
 /** Scaffold edges omit handle ids so React Flow uses node sides (stable in guided compact layout). */
 function toGuidedScaffoldEdge(edge: {
@@ -391,13 +391,36 @@ function buildModelNodes(
   }))
 }
 
+function positionsEqual(
+  a: { x: number; y: number } | undefined,
+  b: { x: number; y: number } | undefined,
+): boolean {
+  return (a?.x ?? 0) === (b?.x ?? 0) && (a?.y ?? 0) === (b?.y ?? 0)
+}
+
+function nodeDataEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
+}
+
+function syncedNodeEqual(current: Node, next: Node, nextPosition: { x: number; y: number }): boolean {
+  return (
+    current.id === next.id &&
+    current.type === next.type &&
+    current.selected === next.selected &&
+    current.sourcePosition === next.sourcePosition &&
+    current.targetPosition === next.targetPosition &&
+    current.width === next.width &&
+    current.height === next.height &&
+    positionsEqual(current.position, nextPosition) &&
+    nodeDataEqual(current.data, next.data)
+  )
+}
+
 type GuidedFlowCanvasProps = {
   inputNode?: Node | null
   outputNode?: Node | null
   scaffoldModel?: FlowGraphModel | null
   readOnly?: boolean
-  showEmptyMiddleCta?: boolean
-  onEmptyMiddleCtaDismiss?: () => void
   allowAddNodes?: boolean
   allowNodeDrag?: boolean
   allowDeleteNodes?: boolean
@@ -424,8 +447,6 @@ function GuidedFlowCanvasInner({
   outputNode = null,
   scaffoldModel = null,
   readOnly = false,
-  showEmptyMiddleCta = false,
-  onEmptyMiddleCtaDismiss,
   allowAddNodes = false,
   allowNodeDrag = false,
   allowDeleteNodes = false,
@@ -444,7 +465,7 @@ function GuidedFlowCanvasInner({
   onNodePositionChange,
   onTidyLayout,
   tidyLayoutKey = 0,
-  exitingNodeIds = new Set(),
+  exitingNodeIds = EMPTY_NODE_ID_SET,
 }: GuidedFlowCanvasProps) {
   const { fitView, getNodes, getViewport, setCenter, setViewport } = useReactFlow()
   const updateNodeInternals = useUpdateNodeInternals()
@@ -790,18 +811,28 @@ function GuidedFlowCanvasInner({
       setNodes(nextModelNodes)
     } else {
       const modelNodeById = new Map(nextModelNodes.map((node) => [node.id, node]))
-      setNodes((current) =>
-        current.map((node) => {
+      setNodes((current) => {
+        let changed = current.length !== nextModelNodes.length
+        const nextNodes = current.map((node) => {
           const modelNode = modelNodeById.get(node.id)
-          if (!modelNode) return node
+          if (!modelNode) {
+            changed = true
+            return node
+          }
           const livePosition = liveNodePositionsRef.current.get(node.id)
+          const nextPosition = livePosition ?? node.position
+          if (syncedNodeEqual(node, modelNode, nextPosition)) {
+            return node
+          }
+          changed = true
           return {
             ...modelNode,
-            position: livePosition ?? node.position,
+            position: nextPosition,
             positionAbsolute: node.positionAbsolute,
           }
-        }),
-      )
+        })
+        return changed ? nextNodes : current
+      })
     }
     remeasureNodesRef.current(nextModelNodes.map((node) => node.id))
     if (viewportBeforeTopologyChange) {
@@ -976,9 +1007,6 @@ function GuidedFlowCanvasInner({
     return null
   }
 
-  const showScaffoldEmptyCta =
-    showEmptyMiddleCta && scaffoldModel != null && scaffoldModel.middleNodes.length === 0
-
   return (
     <div ref={containerRef} className="guided-flow-canvas relative h-full min-h-0">
       <GuidedFlowCanvasUiContext.Provider value={canvasUi}>
@@ -1024,30 +1052,6 @@ function GuidedFlowCanvasInner({
           </ReactFlow>
         </Suspense>
       </GuidedFlowCanvasUiContext.Provider>
-      {showScaffoldEmptyCta && (
-        <div
-          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 px-4 backdrop-blur-[1px]"
-          role="presentation"
-        >
-          <Card className="pointer-events-auto max-w-sm border-dashed bg-background p-6 text-center shadow-md">
-            <CardTitle id="empty-flow-cta-title" className="text-base font-medium">
-              Add your first step
-            </CardTitle>
-            <CardDescription className="mt-2 text-sm leading-relaxed">
-              Use the plus button on your content source to add a step that processes your content.
-            </CardDescription>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="mt-4"
-              onClick={() => onEmptyMiddleCtaDismiss?.()}
-            >
-              Got it
-            </Button>
-          </Card>
-        </div>
-      )}
       {!readOnly && scaffoldModel != null && onTidyLayout ? (
         <Button
           type="button"

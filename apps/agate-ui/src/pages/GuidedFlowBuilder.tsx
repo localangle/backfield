@@ -248,8 +248,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const [addChooserAnchor, setAddChooserAnchor] = useState<AddNodeChooserAnchor | null>(null)
   const [bookendSwapOpen, setBookendSwapOpen] = useState(false)
   const [bookendSwapKind, setBookendSwapKind] = useState<'input' | 'output'>('input')
-  /** After the first middle step is added or the empty-flow CTA is dismissed, do not show it again. */
-  const [firstStepIntroComplete, setFirstStepIntroComplete] = useState(false)
   const [resolvedFlowProject, setResolvedFlowProject] = useState<Project | null>(null)
   const [flowWorkspace, setFlowWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const [flowProjectLoading, setFlowProjectLoading] = useState(false)
@@ -518,14 +516,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
   const clearScaffold = useCallback(() => {
     setScaffoldModel(null)
-    setFirstStepIntroComplete(false)
   }, [])
-
-  useEffect(() => {
-    if ((scaffoldModel?.middleNodes.length ?? 0) > 0) {
-      setFirstStepIntroComplete(true)
-    }
-  }, [scaffoldModel?.middleNodes.length])
 
   useEffect(() => {
     if (activeStep !== 'scaffold' || !inputNode || !outputNode) return
@@ -1519,12 +1510,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
               <GuidedFlowCanvas
                 scaffoldModel={scaffoldModel}
                 readOnly={readOnly}
-                showEmptyMiddleCta={
-                  !readOnly &&
-                  scaffoldModel.middleNodes.length === 0 &&
-                  !firstStepIntroComplete
-                }
-                onEmptyMiddleCtaDismiss={() => setFirstStepIntroComplete(true)}
                 allowAddNodes={capabilities.allowAddNodes}
                 allowNodeDrag={capabilities.allowNodeDrag}
                 allowDeleteNodes={capabilities.allowDelete && !configureGateActive}
