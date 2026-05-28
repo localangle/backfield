@@ -5,7 +5,7 @@ const nodeMetadata = {
   "label": "Place Extract",
   "description": "Extract editorially relevant, geocodable place information from text using an LLM.",
   "category": "extraction",
-  "icon": "MapPin",
+  "icon": "Map",
   "color": "bg-purple-500",
   "requiredUpstreamNodes": [],
   "inputs": [

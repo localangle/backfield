@@ -5,7 +5,7 @@ const nodeMetadata = {
   "label": "Place Extract",
   "description": "Extract editorially relevant, geocodable place information from text using an LLM.",
   "category": "extraction",
-  "icon": "MapPin",
+  "icon": "Map",
   "color": "bg-purple-500",
   "requiredUpstreamNodes": [],
   "inputs": [
@@ -265,12 +265,6 @@ export default function PlaceExtractPanel({
 
   return (
     <>
-      <NodePanelTabGate tab="settings">
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Use the Models and Prompts tabs to tune how this step extracts places.
-        </p>
-      </NodePanelTabGate>
-
       <NodePanelTabGate tab="info">
         <div className="space-y-2">
           <Label className="text-sm font-medium">Input placeholders</Label>
@@ -305,9 +299,9 @@ export default function PlaceExtractPanel({
         </div>
       </NodePanelTabGate>
 
-      <NodePanelTabGate tab="models">
+      <NodePanelTabGate tab="settings">
         <div>
-          <Label className="text-sm font-medium">Model</Label>
+          <Label className="text-sm font-medium">Extraction model</Label>
           {editMode && setNodes ? (
             <>
               {(projectId == null || graphContext?.fetchProjectAiModels == null) && (
@@ -359,19 +353,26 @@ export default function PlaceExtractPanel({
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Set available models in your organization settings.
+              </p>
             </>
           ) : (
-            <div className="flex justify-between items-center p-2 bg-muted rounded mt-2">
-              <span className="text-muted-foreground">Model</span>
-              <span className="font-medium text-xs">{displayModelLabel}</span>
-            </div>
+            <>
+              <div className="flex justify-between items-center p-2 bg-muted rounded mt-2">
+                <span className="text-muted-foreground">Extraction model</span>
+                <span className="font-medium text-xs">{displayModelLabel}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Set available models in your organization settings.
+              </p>
+            </>
           )}
         </div>
       </NodePanelTabGate>
 
       <NodePanelTabGate tab="prompts">
-        <div className="space-y-4">
-          <div>
+        <div>
           <Label className="text-sm font-medium">Prompt</Label>
           {editMode && setNodes ? (
             <Textarea
@@ -394,49 +395,50 @@ export default function PlaceExtractPanel({
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-1">Edit extraction prompt.</p>
-          </div>
-
-          <div>
-          <Label className="text-sm font-medium">Output Format</Label>
-          <Textarea
-            readOnly
-            value={nodeMetadata.defaultParams?.output_format?.trim() || ''}
-            placeholder="Run node sync (apps/agate-ui) after changing prompts/_output_format.json"
-            className="mt-2 min-h-[120px] px-3 py-2 text-xs border border-input bg-muted/50 rounded-md font-mono cursor-default"
-            spellCheck={false}
-          />
-          <p className="text-xs text-muted-foreground mt-1">For reference only.</p>
-          </div>
         </div>
       </NodePanelTabGate>
 
       <NodePanelTabGate tab="outputs">
-        {latestData && latestData.locations && (
+        <div className="space-y-4">
           <div>
-            <Label className="text-sm font-medium">Latest run</Label>
-            <div className="mt-2 space-y-2">
-              <div className="text-xs text-muted-foreground">
-                <div>Places found: {latestData.locations.length}</div>
-              </div>
-
-              {latestData.locations.length > 0 && (
-                <div>
-                  <Label className="text-xs font-medium">Sample places</Label>
-                  <div className="mt-1 space-y-1 max-h-32 overflow-y-auto">
-                    {latestData.locations.slice(0, 3).map((location: any, index: number) => (
-                      <div key={index} className="text-xs p-2 bg-muted rounded">
-                        <div className="font-medium">{formatSamplePlaceTitle(location)}</div>
-                        {location.description && (
-                          <div className="text-muted-foreground">{location.description}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            <Label className="text-sm font-medium">Output format</Label>
+            <Textarea
+              readOnly
+              value={nodeMetadata.defaultParams?.output_format?.trim() || ''}
+              placeholder="Run node sync (apps/agate-ui) after changing prompts/_output_format.json"
+              className="mt-2 min-h-[120px] px-3 py-2 text-xs border border-input bg-muted/50 rounded-md font-mono cursor-default"
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground mt-1">For reference only.</p>
           </div>
-        )}
+
+          {latestData && latestData.locations && (
+            <div className="border-t pt-4">
+              <Label className="text-sm font-medium">Latest run</Label>
+              <div className="mt-2 space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  <div>Places found: {latestData.locations.length}</div>
+                </div>
+
+                {latestData.locations.length > 0 && (
+                  <div>
+                    <Label className="text-xs font-medium">Sample places</Label>
+                    <div className="mt-1 space-y-1 max-h-32 overflow-y-auto">
+                      {latestData.locations.slice(0, 3).map((location: any, index: number) => (
+                        <div key={index} className="text-xs p-2 bg-muted rounded">
+                          <div className="font-medium">{formatSamplePlaceTitle(location)}</div>
+                          {location.description && (
+                            <div className="text-muted-foreground">{location.description}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </NodePanelTabGate>
     </>
   )

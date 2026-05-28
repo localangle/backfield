@@ -57,7 +57,7 @@ import GuidedCompactNode, {
   GUIDED_COMPACT_NODE_HEIGHT,
   GUIDED_COMPACT_NODE_WIDTH,
 } from '@/components/flow-builder/GuidedCompactNode'
-import { ArrowLeftRight, GitBranch, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeftRight, GitBranch, Plus, Sparkles, Trash2 } from 'lucide-react'
 
 type NodeBottomHoverButtonProps = {
   ariaLabel: string
@@ -414,6 +414,8 @@ type GuidedFlowCanvasProps = {
   onSwapOutputBookend?: () => void
   onNodeClick?: (node: Node) => void
   onNodePositionChange?: (nodeId: string, position: { x: number; y: number }) => void
+  onTidyLayout?: () => void
+  tidyLayoutKey?: number
   exitingNodeIds?: ReadonlySet<string>
 }
 
@@ -440,6 +442,8 @@ function GuidedFlowCanvasInner({
   onSwapOutputBookend,
   onNodeClick,
   onNodePositionChange,
+  onTidyLayout,
+  tidyLayoutKey = 0,
   exitingNodeIds = new Set(),
 }: GuidedFlowCanvasProps) {
   const { fitView, getNodes, getViewport, setCenter, setViewport } = useReactFlow()
@@ -769,14 +773,20 @@ function GuidedFlowCanvasInner({
   )
 
   const prevGraphNodeIdsKeyRef = useRef(graphNodeIdsKey)
+  const prevTidyLayoutKeyRef = useRef(tidyLayoutKey)
   useLayoutEffect(() => {
     const topologyChanged = prevGraphNodeIdsKeyRef.current !== graphNodeIdsKey
+    const tidyLayoutChanged = prevTidyLayoutKeyRef.current !== tidyLayoutKey
     const viewportBeforeTopologyChange = topologyChanged ? getViewport() : null
     prevGraphNodeIdsKeyRef.current = graphNodeIdsKey
+    prevTidyLayoutKeyRef.current = tidyLayoutKey
 
     if (!topologyChanged && isDraggingRef.current) return
     const nextModelNodes = applySelectionToNodes(modelNodesRef.current)
-    if (topologyChanged) {
+    if (topologyChanged || tidyLayoutChanged) {
+      for (const node of nextModelNodes) {
+        liveNodePositionsRef.current.set(node.id, node.position)
+      }
       setNodes(nextModelNodes)
     } else {
       const modelNodeById = new Map(nextModelNodes.map((node) => [node.id, node]))
@@ -806,6 +816,7 @@ function GuidedFlowCanvasInner({
     nodesLayoutKey,
     restoreViewportAfterTopologyChange,
     setNodes,
+    tidyLayoutKey,
   ])
 
   useEffect(() => {
@@ -1037,6 +1048,19 @@ function GuidedFlowCanvasInner({
           </Card>
         </div>
       )}
+      {!readOnly && scaffoldModel != null && onTidyLayout ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="absolute bottom-28 left-3 z-20 h-9 w-9 bg-white shadow-sm"
+          onClick={onTidyLayout}
+          aria-label="Tidy graph layout"
+          title="Tidy graph layout"
+        >
+          <Sparkles className="h-4 w-4" />
+        </Button>
+      ) : null}
     </div>
   )
 }

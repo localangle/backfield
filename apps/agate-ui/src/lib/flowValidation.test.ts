@@ -178,7 +178,7 @@ describe('validateInputConnections', () => {
 })
 
 describe('validateGeocodeCatalogSelection', () => {
-  it('fails when cache is on without catalog', () => {
+  it('passes when cache is on without a Stylebook', () => {
     const result = validateGeocodeCatalogSelection([
       {
         id: 'g',
@@ -186,7 +186,7 @@ describe('validateGeocodeCatalogSelection', () => {
         data: { useCache: true },
       },
     ])
-    expect(result.ok).toBe(false)
+    expect(result.ok).toBe(true)
   })
 
   it('passes when cache is off', () => {

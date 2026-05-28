@@ -6,7 +6,7 @@ import { FlowTitleRow } from '@/components/flow-builder/FlowTitleRow'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Button } from '@/components/ui/button'
 import GuidedFlowBuilder, { type GuidedFlowBuilderHandle } from '@/pages/GuidedFlowBuilder'
-import { createRun, deleteGraph, getGraph, getRun, updateGraph, type Graph, type Run } from '@/lib/api'
+import { createRun, deleteGraph, getGraph, getProject, getRun, updateGraph, type Graph, type Run } from '@/lib/api'
 import { getInvalidFlowNodeIds, hydrateFromSpec } from '@/lib/flowGraphModel'
 import {
   buildProjectBreadcrumbItems,
@@ -238,8 +238,9 @@ export default function RunGraph() {
     if (!graph) return
 
     try {
+      const projectSlug = flowProject?.slug ?? (await getProject(graph.project_id)).slug
       await deleteGraph(graph.id)
-      navigate('/')
+      navigate(`/project/${encodeURIComponent(projectSlug)}`)
     } catch (error) {
       console.error('Failed to delete flow:', error)
       showModal({
@@ -252,7 +253,7 @@ export default function RunGraph() {
     } finally {
       setDeleteDialogOpen(false)
     }
-  }, [graph, navigate, showModal])
+  }, [flowProject?.slug, graph, navigate, showModal])
 
   if (loading && !graph) {
     return (

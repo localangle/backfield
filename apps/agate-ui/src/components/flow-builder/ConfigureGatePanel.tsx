@@ -27,6 +27,7 @@ type ConfigureGatePanelProps = {
   running?: boolean
   saving?: boolean
   canSave?: boolean
+  saved?: boolean
   currentRun?: Run | null
   nodeOutputLookupSpec?: NodeOutputLookupSpec | null
   invalidConnectionMessage?: string | null
@@ -57,6 +58,7 @@ export default function ConfigureGatePanel({
   running,
   saving = false,
   canSave = true,
+  saved = false,
   currentRun,
   nodeOutputLookupSpec,
   invalidConnectionMessage,
@@ -79,7 +81,7 @@ export default function ConfigureGatePanel({
         disabled={saving || !canSave}
         onClick={onSave}
       >
-        {saving ? 'Saving...' : 'Save changes'}
+        {saving ? 'Saving...' : saved && !canSave ? 'Saved' : 'Save changes'}
       </Button>
     ) : null
 

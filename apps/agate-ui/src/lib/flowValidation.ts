@@ -80,24 +80,10 @@ export function geocodeStylebookIdFromData(
   return Number.isFinite(n) ? n : null
 }
 
-/** Catalog required when Geocode cache is on (persisted as ``stylebook_id``). */
+/** Geocode cache can run with only project cache, or with an optional Stylebook. */
 export function validateGeocodeCatalogSelection(
   nodes: FlowGraphNode[],
 ): FlowValidationResult {
-  for (const node of nodes) {
-    if (node.type !== 'GeocodeAgent') continue
-    const d = node.data ?? {}
-    if (!d.useCache) continue
-    if (geocodeStylebookIdFromData(d) == null) {
-      return {
-        ok: false,
-        title: 'Catalog required',
-        description:
-          'Turn on catalog selection for Geocode: open each Geocode step with cache turned on and pick a catalog.',
-        severity: 'warning',
-      }
-    }
-  }
   return { ok: true }
 }
 

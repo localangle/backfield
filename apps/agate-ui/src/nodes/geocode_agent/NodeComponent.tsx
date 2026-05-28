@@ -2,9 +2,9 @@
 const nodeMetadata = {
   "type": "GeocodeAgent",
   "label": "Geocode Agent",
-  "icon": "MapPin",
+  "icon": "MapPinned",
   "color": "bg-teal-600",
-  "description": "Turns PlaceExtract output into map-ready locations: optional Stylebook cache, routing, then external geocoding. Pick routing, geographic reasoning, and evaluation models.",
+  "description": "Requires PlaceExtract output. Uses multiple geocoders to turn extracted locations into map-ready coordinates. Optionally use cache to reduce lookups and ensure consistency.",
   "category": "enrichment",
   "requiredUpstreamNodes": [
     "PlaceExtract"
@@ -33,7 +33,7 @@ const nodeMetadata = {
   "defaultParams": {
     "maxLocations": 100,
     "perLocationTimeout": 300,
-    "useCache": false,
+    "useCache": true,
     "stylebook_id": null,
     "stylebookApiUrl": "",
     "projectSlug": "",

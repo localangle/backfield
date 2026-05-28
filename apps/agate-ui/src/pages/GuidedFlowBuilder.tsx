@@ -39,6 +39,7 @@ import {
   insertAfter,
   insertBetween,
   modelToGraphSpec,
+  TIDY_LAYOUT_X_STEP,
   updateMiddleNode,
   toReactFlowNodes,
   updateNodePosition,
@@ -235,7 +236,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const [outputNode, setOutputNode] = useState<Node | null>(null)
   const [scaffoldModel, setScaffoldModel] = useState<FlowGraphModel | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [tidyLayoutKey, setTidyLayoutKey] = useState(0)
   const [dirtyPanelNodeIds, setDirtyPanelNodeIds] = useState<Set<string>>(new Set())
+  const [savedPanelNodeIds, setSavedPanelNodeIds] = useState<Set<string>>(new Set())
   const [exitingNodeIds, setExitingNodeIds] = useState<Set<string>>(new Set())
   const deleteAnimationTimersRef = useRef(new Map<string, ReturnType<typeof window.setTimeout>>())
   const [configureGateActive, setConfigureGateActive] = useState(false)
@@ -777,6 +780,12 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         for (const n of list) {
           if (previousById.get(n.id)?.data !== n.data) {
             setDirtyPanelNodeIds((prev) => new Set(prev).add(n.id))
+            setSavedPanelNodeIds((prev) => {
+              if (!prev.has(n.id)) return prev
+              const next = new Set(prev)
+              next.delete(n.id)
+              return next
+            })
           }
           if (n.id === scaffoldModel.inputNode.id) {
             setInputNode((prev) => (prev ? { ...prev, data: n.data } : prev))
@@ -806,6 +815,12 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       for (const n of list) {
         if (previousById.get(n.id)?.data !== n.data) {
           setDirtyPanelNodeIds((prev) => new Set(prev).add(n.id))
+          setSavedPanelNodeIds((prev) => {
+            if (!prev.has(n.id)) return prev
+            const next = new Set(prev)
+            next.delete(n.id)
+            return next
+          })
         }
         if (inputNode?.id === n.id) nextInput = n
         if (outputNode?.id === n.id) nextOutput = n
@@ -1058,6 +1073,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       next.delete(selectedNodeId)
       return next
     })
+    setSavedPanelNodeIds((prev) => new Set(prev).add(selectedNodeId))
   }, [handleSave, selectedNodeId])
 
   const buildSnapshot = useCallback(
@@ -1149,6 +1165,17 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [],
   )
 
+  const handleTidyLayout = useCallback(() => {
+    setAddChooserOpen(false)
+    setAddChooserAnchor(null)
+    setAddFromParentId(null)
+    setAddIntoEdge(null)
+    setScaffoldModel((model) =>
+      model ? applyLayoutToModel(model, { relayoutBookends: true, xStep: TIDY_LAYOUT_X_STEP }) : model,
+    )
+    setTidyLayoutKey((key) => key + 1)
+  }, [])
+
   const handleDeleteMiddleNode = useCallback(
     (nodeId: string) => {
       void (async () => {
@@ -1180,6 +1207,11 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
               next.delete(nodeId)
               return next
             })
+            setSavedPanelNodeIds((prev) => {
+              const next = new Set(prev)
+              next.delete(nodeId)
+              return next
+            })
             setExitingNodeIds((prev) => {
               const next = new Set(prev)
               next.delete(nodeId)
@@ -1202,6 +1234,11 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       return deleteMiddleNode(model, selectedNodeId)
     })
     setDirtyPanelNodeIds((prev) => {
+      const next = new Set(prev)
+      next.delete(selectedNodeId)
+      return next
+    })
+    setSavedPanelNodeIds((prev) => {
       const next = new Set(prev)
       next.delete(selectedNodeId)
       return next
@@ -1313,7 +1350,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   )
   const invalidConnectionMessage =
     selectedNodeId != null && invalidNodeIds.has(selectedNodeId)
-      ? 'Invalid connection to the preceding node.'
+      ? 'The upstream node is incompatible with this node type. Add a compatible node or delete this node to continue.'
       : null
 
   const showInputChooser = !readOnly && activeStep === 'input' && inputNode == null
@@ -1331,6 +1368,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     : undefined
   const showEditModeCue = !readOnly && (isRunVariant || existingGraphId != null)
   const selectedPanelHasChanges = selectedNodeId != null && dirtyPanelNodeIds.has(selectedNodeId)
+  const selectedPanelWasSaved = selectedNodeId != null && savedPanelNodeIds.has(selectedNodeId)
 
   const rootClassName = hideHeader
     ? `flex min-h-0 flex-1 flex-col ${className ?? ''}`
@@ -1504,6 +1542,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                 onNodePositionChange={
                   capabilities.allowNodeDrag ? handleNodePositionChange : undefined
                 }
+                onTidyLayout={!readOnly ? handleTidyLayout : undefined}
+                tidyLayoutKey={tidyLayoutKey}
               />
               {showRunPanel && onCloseRunPanel && (
                 <RunPanel
@@ -1554,6 +1594,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             running={running}
             saving={saving}
             canSave={Boolean(inputNode && outputNode && selectedPanelHasChanges)}
+            saved={selectedPanelWasSaved}
             currentRun={currentRun}
             nodeOutputLookupSpec={nodeOutputLookupSpec}
             invalidConnectionMessage={invalidConnectionMessage}

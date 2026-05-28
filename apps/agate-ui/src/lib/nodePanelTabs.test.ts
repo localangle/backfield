@@ -20,15 +20,19 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('S3Input', { hasRunOutput: true })).toEqual(['settings', 'outputs'])
   })
 
-  it('splits place extract configuration across settings, info, models, and prompts', () => {
-    expect(getNodePanelTabs('PlaceExtract')).toEqual(['settings', 'info', 'models', 'prompts'])
+  it('splits place extract configuration across settings, prompt, output, and info', () => {
+    expect(getNodePanelTabs('PlaceExtract')).toEqual(['settings', 'prompts', 'outputs', 'info'])
     expect(getNodePanelTabs('PlaceExtract', { hasRunOutput: true })).toEqual([
       'settings',
-      'info',
-      'models',
       'prompts',
       'outputs',
+      'info',
     ])
+  })
+
+  it('shows settings and models for geocode agent', () => {
+    expect(getNodePanelTabs('GeocodeAgent')).toEqual(['settings', 'models'])
+    expect(getNodePanelTabs('GeocodeAgent', { hasRunOutput: true })).toEqual(['settings', 'models'])
   })
 
   it('shows outputs only for JSON output when a run exists', () => {

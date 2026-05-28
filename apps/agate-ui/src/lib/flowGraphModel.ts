@@ -36,6 +36,8 @@ export const LAYOUT_INPUT_Y = BOOKEND_INPUT_POSITION.y
 export const LAYOUT_NODE_WIDTH = 200
 export const LAYOUT_X_GAP = 32
 export const LAYOUT_X_STEP = LAYOUT_NODE_WIDTH + LAYOUT_X_GAP
+export const TIDY_LAYOUT_X_GAP = 72
+export const TIDY_LAYOUT_X_STEP = LAYOUT_NODE_WIDTH + TIDY_LAYOUT_X_GAP
 export const LAYOUT_Y_STEP = 96
 export const LAYOUT_OUTPUT_MIN_X = BOOKEND_OUTPUT_POSITION.x
 
@@ -205,6 +207,12 @@ function outputAfterNodes(outputNode: FlowGraphNode, nodes: FlowGraphNode[]): Fl
   }
 }
 
+function shiftNeededAfterNode(insertedNode: FlowGraphNode, firstDownstreamNode: FlowGraphNode | null): number {
+  const downstreamX = firstDownstreamNode?.position?.x
+  if (downstreamX == null) return LAYOUT_X_STEP
+  return Math.max(LAYOUT_X_STEP, positionAfter(insertedNode) - downstreamX)
+}
+
 export function addSiblingBranch(
   model: FlowGraphModel,
   parentId: string,
@@ -253,12 +261,14 @@ export function insertAfter(
     position: newNode.position ?? positionForNewSerialNode(model, afterNodeId),
   }
   const shiftedIds = existingNext ? collectDownstreamMiddleNodeIds(model, existingNext) : new Set<string>()
+  const firstDownstreamNode = existingNext ? getNodeById(model, existingNext) : null
+  const downstreamShift = shiftNeededAfterNode(positionedNewNode, firstDownstreamNode)
   const middleNodes = model.middleNodes.map((node) =>
     shiftedIds.has(node.id)
       ? {
           ...node,
           position: {
-            x: (node.position?.x ?? 0) + LAYOUT_X_STEP,
+            x: (node.position?.x ?? 0) + downstreamShift,
             y: node.position?.y ?? LAYOUT_INPUT_Y,
           },
         }
@@ -309,12 +319,14 @@ export function insertBetween(
     position: newNode.position ?? positionForNewSerialNode(model, sourceId),
   }
   const shiftedIds = collectDownstreamMiddleNodeIds(model, targetId)
+  const firstDownstreamNode = getNodeById(model, targetId)
+  const downstreamShift = shiftNeededAfterNode(positionedNewNode, firstDownstreamNode)
   const middleNodes = model.middleNodes.map((node) =>
     shiftedIds.has(node.id)
       ? {
           ...node,
           position: {
-            x: (node.position?.x ?? 0) + LAYOUT_X_STEP,
+            x: (node.position?.x ?? 0) + downstreamShift,
             y: node.position?.y ?? LAYOUT_INPUT_Y,
           },
         }
@@ -484,11 +496,15 @@ function walkBranchLayout(
   })
 }
 
-export function assignLayoutPositions(model: FlowGraphModel): FlowGraphNode[] {
+export function assignLayoutPositions(
+  model: FlowGraphModel,
+  options?: { xStep?: number },
+): FlowGraphNode[] {
   const slots = assignLayoutSlots(model)
   const positioned: FlowGraphNode[] = []
   const originX = model.inputNode.position?.x ?? LAYOUT_INPUT_X
   const originY = model.inputNode.position?.y ?? LAYOUT_INPUT_Y
+  const xStep = options?.xStep ?? LAYOUT_X_STEP
 
   let maxDepth = 0
   for (const { depth } of slots.values()) {
@@ -506,12 +522,12 @@ export function assignLayoutPositions(model: FlowGraphModel): FlowGraphNode[] {
     if (!slot) {
       orphanDepth += 1
       return {
-        x: originX + orphanDepth * LAYOUT_X_STEP,
+        x: originX + orphanDepth * xStep,
         y: fallbackY,
       }
     }
     return {
-      x: originX + slot.depth * LAYOUT_X_STEP,
+      x: originX + slot.depth * xStep,
       y: originY + (slot.slot - slotCenter) * LAYOUT_Y_STEP,
     }
   }
@@ -528,7 +544,7 @@ export function assignLayoutPositions(model: FlowGraphModel): FlowGraphNode[] {
     })
   }
 
-  const outputX = originX + (maxDepth + 1) * LAYOUT_X_STEP
+  const outputX = originX + (maxDepth + 1) * xStep
   positioned.push({
     ...model.outputNode,
     position: { x: outputX, y: originY },
@@ -540,10 +556,10 @@ export function assignLayoutPositions(model: FlowGraphModel): FlowGraphNode[] {
 /** Recompute layout positions and persist them on the model nodes. */
 export function applyLayoutToModel(
   model: FlowGraphModel,
-  options?: { relayoutBookends?: boolean },
+  options?: { relayoutBookends?: boolean; xStep?: number },
 ): FlowGraphModel {
   const relayoutBookends = options?.relayoutBookends ?? false
-  const positioned = assignLayoutPositions(model)
+  const positioned = assignLayoutPositions(model, { xStep: options?.xStep })
   const byId = new Map(positioned.map((n) => [n.id, n.position]))
 
   const bookendInputPosition = (node: FlowGraphNode) => {

@@ -19,6 +19,7 @@ import {
   insertBetween,
   isMiddleNodeId,
   LAYOUT_NODE_WIDTH,
+  TIDY_LAYOUT_X_STEP,
   LAYOUT_X_GAP,
   LAYOUT_X_STEP,
   modelToGraphSpec,
@@ -195,6 +196,25 @@ describe('flowGraphModel parallel branches', () => {
       model.middleNodes.find((node) => node.id === 'place-1')?.position?.x ?? 0,
     )
   })
+
+  it('insertBetween expands cramped branch edges enough to prevent overlap', () => {
+    const geocode: FlowGraphNode = { id: 'geo-1', type: 'GeocodeAgent', data: {} }
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', geocode)
+    model = updateNodePosition(model, 'input-1', { x: 80, y: 120 })
+    model = updateNodePosition(model, 'geo-1', { x: 220, y: 120 })
+    model = updateNodePosition(model, 'output-1', { x: 452, y: 120 })
+
+    model = insertBetween(model, 'input-1', 'geo-1', place)
+
+    const inserted = model.middleNodes.find((node) => node.id === 'place-1')!
+    const shiftedGeocode = model.middleNodes.find((node) => node.id === 'geo-1')!
+    expect(inserted.position).toEqual({ x: 80 + LAYOUT_X_STEP, y: 120 })
+    expect(shiftedGeocode.position?.x).toBeGreaterThanOrEqual(inserted.position!.x + LAYOUT_X_STEP)
+    expect(model.outputNode.position?.x).toBeGreaterThanOrEqual(
+      shiftedGeocode.position!.x + LAYOUT_X_STEP,
+    )
+  })
 })
 
 describe('flowGraphModel layout', () => {
@@ -247,6 +267,28 @@ describe('flowGraphModel layout', () => {
     const tidied = applyLayoutToModel(model, { relayoutBookends: true })
     expect(tidied.inputNode.position).toEqual(auto.find((node) => node.id === 'input-1')?.position)
     expect(tidied.outputNode.position).toEqual(auto.find((node) => node.id === 'output-1')?.position)
+  })
+
+  it('applyLayoutToModel can use wider spacing for tidy layout', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const geocode: FlowGraphNode = { id: 'geo-1', type: 'GeocodeAgent', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = insertAfter(model, 'place-1', geocode)
+
+    const tidied = applyLayoutToModel(model, {
+      relayoutBookends: true,
+      xStep: TIDY_LAYOUT_X_STEP,
+    })
+
+    expect(tidied.middleNodes.find((node) => node.id === 'place-1')?.position?.x).toBe(
+      tidied.inputNode.position!.x + TIDY_LAYOUT_X_STEP,
+    )
+    expect(tidied.middleNodes.find((node) => node.id === 'geo-1')?.position?.x).toBe(
+      tidied.inputNode.position!.x + TIDY_LAYOUT_X_STEP * 2,
+    )
+    expect(tidied.outputNode.position?.x).toBe(
+      tidied.inputNode.position!.x + TIDY_LAYOUT_X_STEP * 3,
+    )
   })
 
   it('addSiblingBranch places the new node without moving existing nodes', () => {
@@ -322,6 +364,26 @@ describe('flowGraphModel layout', () => {
       y: 120,
     })
     expect(model.outputNode.position).toEqual({ x: 776, y: 120 })
+  })
+
+  it('insertAfter expands cramped downstream edges enough to prevent overlap', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const geocode: FlowGraphNode = { id: 'geo-1', type: 'GeocodeAgent', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = insertAfter(model, 'place-1', geocode)
+    model = updateNodePosition(model, 'place-1', { x: 312, y: 120 })
+    model = updateNodePosition(model, 'geo-1', { x: 450, y: 120 })
+    model = updateNodePosition(model, 'output-1', { x: 682, y: 120 })
+
+    model = insertAfter(model, 'place-1', { id: 'mid-1', type: 'PlaceExtract', data: {} })
+
+    const mid = model.middleNodes.find((node) => node.id === 'mid-1')!
+    const shiftedGeocode = model.middleNodes.find((node) => node.id === 'geo-1')!
+    expect(mid.position).toEqual({ x: 312 + LAYOUT_X_STEP, y: 120 })
+    expect(shiftedGeocode.position?.x).toBeGreaterThanOrEqual(mid.position!.x + LAYOUT_X_STEP)
+    expect(model.outputNode.position?.x).toBeGreaterThanOrEqual(
+      shiftedGeocode.position!.x + LAYOUT_X_STEP,
+    )
   })
 
   it('applyLayoutToModel preserves dragged middle positions unless relayoutBookends', () => {

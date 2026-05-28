@@ -200,7 +200,8 @@ export default function NodePanel({
         {nodeMeta?.description ? (
           <p className="text-sm text-muted-foreground leading-relaxed">{nodeMeta.description}</p>
         ) : null}
-        {'dependencyHelperText' in (nodeMeta ?? {}) &&
+        {nodeType !== 'GeocodeAgent' &&
+        'dependencyHelperText' in (nodeMeta ?? {}) &&
         typeof (nodeMeta as { dependencyHelperText?: string }).dependencyHelperText === 'string' ? (
           <p className="text-sm text-muted-foreground border-l-2 border-muted pl-3 leading-relaxed">
             {(nodeMeta as { dependencyHelperText: string }).dependencyHelperText}
