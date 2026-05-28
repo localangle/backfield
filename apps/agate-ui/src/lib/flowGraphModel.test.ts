@@ -174,6 +174,27 @@ describe('flowGraphModel parallel branches', () => {
     expect(model.serialLinks['place-1']).toBe('mid-1')
     expect(model.serialLinks['mid-1']).toBe('geo-1')
   })
+
+  it('inserts between a branch parent and child via insertBetween', () => {
+    const geocode: FlowGraphNode = { id: 'geo-1', type: 'GeocodeAgent', data: {} }
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', geocode)
+
+    model = insertBetween(model, 'input-1', 'geo-1', place)
+
+    expect(model.branchChildren['input-1']).toEqual(['place-1'])
+    expect(model.serialLinks['place-1']).toBe('geo-1')
+    expect(edgeSet(model)).toEqual(
+      new Set([
+        'input-1->place-1:branch',
+        'place-1->geo-1:serial',
+        'geo-1->output-1:tip',
+      ]),
+    )
+    expect(model.middleNodes.find((node) => node.id === 'geo-1')?.position?.x).toBeGreaterThan(
+      model.middleNodes.find((node) => node.id === 'place-1')?.position?.x ?? 0,
+    )
+  })
 })
 
 describe('flowGraphModel layout', () => {
@@ -366,12 +387,16 @@ describe('flowGraphModel deleteMiddleNode', () => {
   it('restores input as a tip when the only branch step is deleted', () => {
     const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
     let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = updateNodePosition(model, 'input-1', { x: 80, y: 120 })
+    model = updateNodePosition(model, 'place-1', { x: 312, y: 120 })
+    model = updateNodePosition(model, 'output-1', { x: 544, y: 120 })
     model = deleteMiddleNode(model, 'place-1')
 
     expect(model.branchChildren['input-1']).toBeUndefined()
     expect(getBranchTipIds(model)).toEqual(['input-1'])
     expect(model.middleNodes).toHaveLength(0)
     expect(edgeSet(model)).toEqual(new Set(['input-1->output-1:tip']))
+    expect(model.outputNode.position).toEqual({ x: 544, y: 120 })
   })
 
   it('clears serial link when deleting a leaf step on a branch', () => {

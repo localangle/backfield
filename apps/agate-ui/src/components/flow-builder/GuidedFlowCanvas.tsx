@@ -14,7 +14,10 @@ import { cn } from '@/lib/utils'
 import ReactFlow, {
   Background,
   BackgroundVariant,
+  BaseEdge,
   Controls,
+  EdgeLabelRenderer,
+  getSmoothStepPath,
   MarkerType,
   Position,
   ReactFlowProvider,
@@ -28,6 +31,8 @@ import ReactFlow, {
   type NodeDragHandler,
   type NodeProps,
   type NodeTypes,
+  type EdgeProps,
+  type EdgeTypes,
   type Viewport,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
@@ -52,7 +57,7 @@ import GuidedCompactNode, {
   GUIDED_COMPACT_NODE_HEIGHT,
   GUIDED_COMPACT_NODE_WIDTH,
 } from '@/components/flow-builder/GuidedCompactNode'
-import { ArrowLeftRight, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeftRight, GitBranch, Plus, Trash2 } from 'lucide-react'
 
 type NodeBottomHoverButtonProps = {
   ariaLabel: string
@@ -76,7 +81,7 @@ function NodeRightAddButton({
   onClick,
 }: {
   nodeSelected: boolean
-  onClick?: () => void
+  onClick?: (anchorRect: DOMRect) => void
 }) {
   return (
     <div className="pointer-events-auto absolute right-0 top-1/2 z-20 -translate-y-1/2 translate-x-1/2">
@@ -85,15 +90,16 @@ function NodeRightAddButton({
         size="icon"
         className={cn(
           nodeActionCircleClass(nodeSelected, 'md'),
-          'text-foreground hover:border-primary hover:bg-primary hover:text-primary-foreground hover:ring-primary/30',
+          'border-primary/30 bg-white text-primary ring-primary/20 hover:border-primary hover:bg-primary hover:text-primary-foreground hover:ring-primary/30',
         )}
-        aria-label="Add next step"
+        aria-label="Add another path"
+        title="Add another path"
         onClick={(event) => {
           event.stopPropagation()
-          onClick?.()
+          onClick?.(event.currentTarget.getBoundingClientRect())
         }}
       >
-        <Plus className="h-3.5 w-3.5" />
+        <GitBranch className="h-3.5 w-3.5" />
       </Button>
     </div>
   )
@@ -121,6 +127,63 @@ function NodeBottomHoverButton({
         {children}
       </Button>
     </div>
+  )
+}
+
+function GuidedAddEdge({
+  id,
+  source,
+  target,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  markerEnd,
+  style,
+}: EdgeProps) {
+  const { allowAddNodes, readOnly, callbacks } = useGuidedFlowCanvasUi()
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  })
+  const showAddButton = allowAddNodes && !readOnly && !!callbacks.current.onAddEdgeClick
+
+  return (
+    <>
+      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
+      {showAddButton ? (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          >
+            <Button
+              type="button"
+              size="icon"
+              aria-label="Insert step in this connection"
+              title="Insert step in this connection"
+              className="h-6 w-6 rounded-md border border-border bg-white text-muted-foreground shadow-sm ring-1 ring-border/60 hover:border-primary hover:bg-primary hover:text-primary-foreground hover:ring-primary/30"
+              onClick={(event) => {
+                event.stopPropagation()
+                callbacks.current.onAddEdgeClick?.(
+                  source,
+                  target,
+                  event.currentTarget.getBoundingClientRect(),
+                )
+              }}
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
   )
 }
 
@@ -187,7 +250,8 @@ function GuidedNodeShell({ NodeComponent, ...nodeProps }: GuidedNodeShellProps) 
     } as Node)
   }
 
-  const handleAddClick = () => callbacks.current.onAddNodeClick?.(nodeProps.id)
+  const handleAddClick = (anchorRect: DOMRect) =>
+    callbacks.current.onAddNodeClick?.(nodeProps.id, anchorRect)
   const handleDeleteClick = () => callbacks.current.onDeleteNodeClick?.(nodeProps.id)
   const handleSwapClick = isInputBookend
     ? () => callbacks.current.onSwapInputBookend?.()
@@ -253,6 +317,10 @@ const GUIDED_NODE_TYPES: NodeTypes = Object.fromEntries(
   ]),
 )
 
+const GUIDED_EDGE_TYPES: EdgeTypes = {
+  guidedAdd: GuidedAddEdge,
+}
+
 /** Matches NodePanel (`w-96`) so fitView leaves room when the side panel is open. */
 export const GUIDED_FLOW_NODE_PANEL_WIDTH_PX = 384
 
@@ -282,7 +350,7 @@ function toGuidedScaffoldEdge(edge: {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: 'smoothstep',
+    type: 'guidedAdd',
     animated: false,
     markerEnd: SOLID_EDGE_MARKER,
     style: SOLID_EDGE_STYLE,
@@ -339,7 +407,8 @@ type GuidedFlowCanvasProps = {
   outputBookendId?: string | null
   reserveRightPx?: number
   selectedNodeId?: string | null
-  onAddNodeClick?: (parentNodeId: string) => void
+  onAddNodeClick?: (parentNodeId: string, anchorRect: DOMRect) => void
+  onAddEdgeClick?: (sourceNodeId: string, targetNodeId: string, anchorRect: DOMRect) => void
   onDeleteNodeClick?: (nodeId: string) => void
   onSwapInputBookend?: () => void
   onSwapOutputBookend?: () => void
@@ -365,6 +434,7 @@ function GuidedFlowCanvasInner({
   reserveRightPx = 0,
   selectedNodeId = null,
   onAddNodeClick,
+  onAddEdgeClick,
   onDeleteNodeClick,
   onSwapInputBookend,
   onSwapOutputBookend,
@@ -391,6 +461,7 @@ function GuidedFlowCanvasInner({
 
   // Stable identity — see GUIDED_NODE_TYPES module-level definition above.
   const nodeTypes = GUIDED_NODE_TYPES
+  const edgeTypes = GUIDED_EDGE_TYPES
 
   /**
    * Latest callbacks for the node shell. Stored in a ref because we don't
@@ -401,6 +472,7 @@ function GuidedFlowCanvasInner({
   callbacksRef.current = {
     onNodeClick,
     onAddNodeClick,
+    onAddEdgeClick,
     onDeleteNodeClick,
     onSwapInputBookend,
     onSwapOutputBookend,
@@ -906,6 +978,7 @@ function GuidedFlowCanvasInner({
             onNodesChange={handleNodesChange}
             deleteKeyCode={null}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             defaultEdgeOptions={{
               type: 'smoothstep',
               animated: false,

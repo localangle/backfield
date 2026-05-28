@@ -1,19 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import {
   categoryHeading,
-  countScaffoldNodeTypes,
-  shouldShowChooserSearch,
   type CompatibleNodeEntry,
   type CompatibleNextNodesResult,
 } from '@/lib/nodeCompatibility'
@@ -23,24 +13,75 @@ type AddNodeChooserProps = {
   onOpenChange: (open: boolean) => void
   compatibility: CompatibleNextNodesResult
   onSelect: (type: string) => void
+  anchorRect: { top: number; right: number; bottom: number; left: number } | null
 }
 
 type FlatRow = CompatibleNodeEntry & { rowKey: string }
+type Group = { category: string; heading: string; rows: FlatRow[] }
 
-function groupRows(rows: FlatRow[]): Array<{ category: string; heading: string; rows: FlatRow[] }> {
+const MENU_WIDTH_PX = 420
+const MENU_MAX_HEIGHT_PX = 320
+const MENU_PLACEMENT_HEIGHT_PX = 160
+const MENU_GAP_PX = 8
+
+const SIMPLE_CATEGORY_LABELS: Record<string, string> = {
+  extraction: 'Extract',
+  enrichment: 'Enrich',
+  geography: 'Enrich',
+  filter: 'Transform',
+  review: 'Transform',
+  text: 'Transform',
+}
+
+const CATEGORY_ORDER = ['Extract', 'Enrich', 'Transform']
+
+function groupRows(rows: FlatRow[]): Group[] {
   const byCategory = new Map<string, FlatRow[]>()
   for (const row of rows) {
-    const list = byCategory.get(row.category) ?? []
+    const heading = SIMPLE_CATEGORY_LABELS[row.category] ?? categoryHeading(row.category)
+    const list = byCategory.get(heading) ?? []
     list.push(row)
-    byCategory.set(row.category, list)
+    byCategory.set(heading, list)
   }
   return [...byCategory.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([category, categoryRows]) => ({
-      category,
-      heading: categoryHeading(category),
+    .sort(([a], [b]) => {
+      const aIndex = CATEGORY_ORDER.indexOf(a)
+      const bIndex = CATEGORY_ORDER.indexOf(b)
+      if (aIndex !== -1 || bIndex !== -1) {
+        return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) -
+          (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex)
+      }
+      return a.localeCompare(b)
+    })
+    .map(([heading, categoryRows]) => ({
+      category: heading,
+      heading,
       rows: categoryRows,
     }))
+}
+
+function positionMenu(anchorRect: AddNodeChooserProps['anchorRect']): { left: number; top: number } {
+  if (!anchorRect || typeof window === 'undefined') return { left: 16, top: 16 }
+
+  const opensRight = anchorRect.right + MENU_GAP_PX + MENU_WIDTH_PX <= window.innerWidth - MENU_GAP_PX
+  const preferredLeft = opensRight
+    ? anchorRect.right + MENU_GAP_PX
+    : anchorRect.left - MENU_GAP_PX - MENU_WIDTH_PX
+  const left = Math.min(
+    Math.max(preferredLeft, MENU_GAP_PX),
+    Math.max(window.innerWidth - MENU_WIDTH_PX - MENU_GAP_PX, MENU_GAP_PX),
+  )
+  const opensBelow =
+    anchorRect.bottom + MENU_GAP_PX + MENU_PLACEMENT_HEIGHT_PX <= window.innerHeight - MENU_GAP_PX
+  const preferredTop = opensBelow
+    ? anchorRect.bottom + MENU_GAP_PX
+    : anchorRect.top - MENU_GAP_PX - MENU_PLACEMENT_HEIGHT_PX
+  const top = Math.min(
+    Math.max(preferredTop, MENU_GAP_PX),
+    Math.max(window.innerHeight - MENU_PLACEMENT_HEIGHT_PX - MENU_GAP_PX, MENU_GAP_PX),
+  )
+
+  return { left, top }
 }
 
 export default function AddNodeChooser({
@@ -48,10 +89,9 @@ export default function AddNodeChooser({
   onOpenChange,
   compatibility,
   onSelect,
+  anchorRect,
 }: AddNodeChooserProps) {
-  const [query, setQuery] = useState('')
-  const [highlightIndex, setHighlightIndex] = useState(0)
-  const listRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const allRows = useMemo<FlatRow[]>(() => {
     const enabled = compatibility.enabled.map((row) => ({ ...row, rowKey: `e-${row.type}` }))
@@ -59,142 +99,118 @@ export default function AddNodeChooser({
     return [...enabled, ...disabled]
   }, [compatibility])
 
-  const filteredRows = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return allRows
-    return allRows.filter(
-      (row) =>
-        row.label.toLowerCase().includes(q) ||
-        row.description.toLowerCase().includes(q) ||
-        row.type.toLowerCase().includes(q),
+  const grouped = useMemo(() => groupRows(allRows), [allRows])
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const menuPosition = useMemo(() => positionMenu(anchorRect), [anchorRect])
+
+  const activeGroup = useMemo<Group | null>(() => {
+    if (grouped.length === 0) return null
+    return grouped.find((group) => group.category === activeCategory) ?? grouped[0] ?? null
+  }, [activeCategory, grouped])
+
+  useEffect(() => {
+    if (!open) return
+    setActiveCategory((current) =>
+      current && grouped.some((group) => group.category === current)
+        ? current
+        : (grouped[0]?.category ?? null),
     )
-  }, [allRows, query])
-
-  const selectableRows = useMemo(
-    () => filteredRows.filter((row) => row.enabled),
-    [filteredRows],
-  )
-
-  const grouped = useMemo(() => groupRows(filteredRows), [filteredRows])
-  const showSearch = shouldShowChooserSearch(countScaffoldNodeTypes())
+  }, [grouped, open])
 
   useEffect(() => {
-    if (!open) {
-      setQuery('')
-      setHighlightIndex(0)
+    if (!open) return
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return
+      onOpenChange(false)
     }
-  }, [open])
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onOpenChange(false)
+      }
+    }
 
-  useEffect(() => {
-    setHighlightIndex(0)
-  }, [query])
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onOpenChange, open])
 
   const handleSelect = (type: string) => {
     onSelect(type)
     onOpenChange(false)
   }
 
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onOpenChange(false)
-      return
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      const pick = selectableRows[highlightIndex]
-      if (pick) handleSelect(pick.type)
-      return
-    }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      setHighlightIndex((i) => Math.min(i + 1, Math.max(selectableRows.length - 1, 0)))
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setHighlightIndex((i) => Math.max(i - 1, 0))
-    }
-  }
-
-  let selectableCursor = -1
+  if (!open) return null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-hidden p-0" hideCloseButton={false}>
-        <DialogHeader className="space-y-1 border-b px-4 py-4">
-          <DialogTitle>Add a step</DialogTitle>
-          <DialogDescription>Choose what happens next in your flow.</DialogDescription>
-          {showSearch && (
-            <div className="relative pt-2">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Search steps…"
-                className="pl-9"
-                aria-label="Search steps"
-              />
-            </div>
-          )}
-        </DialogHeader>
+    <div
+      ref={menuRef}
+      className="fixed z-50 flex max-h-[320px] w-[420px] overflow-hidden rounded-lg border bg-neutral-900 text-neutral-50 shadow-xl"
+      style={{ left: menuPosition.left, top: menuPosition.top }}
+      role="dialog"
+      aria-label="Add a step"
+    >
+      <div className="w-40 border-r border-white/10 p-2">
+        {grouped.length === 0 ? (
+          <p className="px-3 py-4 text-sm text-neutral-300">No steps are available yet.</p>
+        ) : (
+          grouped.map((group) => (
+            <button
+              key={group.category}
+              type="button"
+              className={cn(
+                'flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm transition-colors',
+                activeGroup?.category === group.category
+                  ? 'bg-black text-white'
+                  : 'text-neutral-200 hover:bg-white/10',
+              )}
+              onMouseEnter={() => setActiveCategory(group.category)}
+              onFocus={() => setActiveCategory(group.category)}
+              onClick={() => setActiveCategory(group.category)}
+            >
+              <span>{group.heading}</span>
+              <ChevronRight className="h-4 w-4 text-neutral-400" />
+            </button>
+          ))
+        )}
+      </div>
 
-        <div ref={listRef} className="max-h-[50vh] overflow-y-auto px-2 py-2" role="listbox">
-          {compatibility.enabled.length === 0 && compatibility.disabled.length === 0 && (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-              No steps are available to add here yet.
-            </p>
-          )}
+      <div className="max-h-[320px] min-w-0 flex-1 overflow-y-auto p-2">
+        {compatibility.enabled.length === 0 && compatibility.disabled.length > 0 && (
+          <p className="px-3 py-2 text-xs text-neutral-300">
+            Nothing can be added here yet. Disabled steps explain what this branch needs first.
+          </p>
+        )}
 
-          {compatibility.enabled.length === 0 && compatibility.disabled.length > 0 && (
-            <p className="px-3 py-3 text-sm text-muted-foreground">
-              Nothing can be added yet. Check the requirements below for what this branch needs
-              first.
-            </p>
-          )}
-
-          {grouped.map((group) => (
-            <div key={group.category} className="mb-3">
-              <p className="px-3 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {group.heading}
-              </p>
-              <div className="space-y-1">
-                {group.rows.map((row) => {
-                  const isSelectable = row.enabled
-                  if (isSelectable) selectableCursor += 1
-                  const isHighlighted = isSelectable && selectableCursor === highlightIndex
-
-                  return (
-                    <button
-                      key={row.rowKey}
-                      type="button"
-                      disabled={!row.enabled}
-                      onClick={() => row.enabled && handleSelect(row.type)}
-                      className={cn(
-                        'w-full rounded-md px-3 py-2 text-left transition-colors',
-                        row.enabled && 'hover:bg-muted',
-                        row.enabled && isHighlighted && 'bg-muted ring-1 ring-primary/30',
-                        !row.enabled && 'cursor-not-allowed opacity-60',
-                      )}
-                    >
-                      <span className="block text-sm font-medium">{row.label}</span>
-                      {row.description && (
-                        <span className="mt-0.5 block text-xs text-muted-foreground">
-                          {row.description}
-                        </span>
-                      )}
-                      {!row.enabled && row.reason && (
-                        <span className="mt-1 block text-xs text-destructive">{row.reason}</span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
+        {activeGroup ? (
+          <div className="space-y-1">
+            {activeGroup.rows.map((row) => (
+              <button
+                key={row.rowKey}
+                type="button"
+                disabled={!row.enabled}
+                onClick={() => row.enabled && handleSelect(row.type)}
+                className={cn(
+                  'w-full rounded-md px-3 py-2.5 text-left transition-colors',
+                  row.enabled && 'text-white hover:bg-white/10',
+                  !row.enabled && 'cursor-not-allowed text-neutral-500',
+                )}
+              >
+                <span className="block text-sm font-medium">{row.label}</span>
+                {!row.enabled && row.reason ? (
+                  <span className="mt-1 block text-xs text-amber-300/80">{row.reason}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="px-3 py-4 text-sm text-neutral-300">No steps are available yet.</p>
+        )}
+      </div>
+    </div>
   )
 }

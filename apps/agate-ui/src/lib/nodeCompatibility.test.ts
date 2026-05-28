@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getCompatibleNextNodes, resolveEdgeHandles, shouldShowChooserSearch } from './nodeCompatibility'
+import {
+  getCompatibleInsertNodes,
+  getCompatibleNextNodes,
+  resolveEdgeHandles,
+  shouldShowChooserSearch,
+} from './nodeCompatibility'
 
 describe('getCompatibleNextNodes', () => {
   it('enables Place Extract and disables Geocode from Text Input ancestry', () => {
@@ -28,6 +33,19 @@ describe('getCompatibleNextNodes', () => {
     const result = getCompatibleNextNodes('TextInput', ['TextInput'])
     const geocode = result.disabled.find((e) => e.type === 'GeocodeAgent')
     expect(geocode?.reason).toBe('Requires extracted places as input.')
+  })
+})
+
+describe('getCompatibleInsertNodes', () => {
+  it('enables Place Extract between Text Input and Geocode', () => {
+    const result = getCompatibleInsertNodes('TextInput', 'GeocodeAgent', ['TextInput'])
+    expect(result.enabled.map((e) => e.type)).toContain('PlaceExtract')
+  })
+
+  it('keeps invalid insert candidates disabled with a reason', () => {
+    const result = getCompatibleInsertNodes('TextInput', 'GeocodeAgent', ['TextInput'])
+    const geocode = result.disabled.find((e) => e.type === 'GeocodeAgent')
+    expect(geocode?.reason).toMatch(/extracted places/i)
   })
 })
 

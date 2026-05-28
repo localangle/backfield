@@ -95,7 +95,7 @@ export default function GuidedCompactNode({
           >
             {icon}
           </div>
-          <CardTitle className="truncate text-sm font-medium leading-none">{label}</CardTitle>
+          <CardTitle className="truncate text-sm font-medium leading-5">{label}</CardTitle>
         </CardHeader>
       </Card>
     </div>

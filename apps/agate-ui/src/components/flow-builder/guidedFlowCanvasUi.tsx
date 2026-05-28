@@ -9,7 +9,8 @@ import type { Node } from 'reactflow'
  */
 export type GuidedFlowCanvasCallbacks = {
   onNodeClick?: (node: Node) => void
-  onAddNodeClick?: (parentNodeId: string) => void
+  onAddNodeClick?: (parentNodeId: string, anchorRect: DOMRect) => void
+  onAddEdgeClick?: (sourceNodeId: string, targetNodeId: string, anchorRect: DOMRect) => void
   onDeleteNodeClick?: (nodeId: string) => void
   onSwapInputBookend?: () => void
   onSwapOutputBookend?: () => void

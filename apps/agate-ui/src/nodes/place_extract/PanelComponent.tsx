@@ -40,6 +40,7 @@ const nodeMetadata = {
 };
 
 import React, { useEffect, useMemo, useState } from 'react'
+import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
@@ -264,18 +265,14 @@ export default function PlaceExtractPanel({
 
   return (
     <>
-      <div className="space-y-4">
-        <div>
-          <Label className="text-sm font-medium">About</Label>
-          <p className="text-sm text-muted-foreground mt-1">{nodeMetadata.description}</p>
-          {nodeMetadata.dependencyHelperText ? (
-            <p className="text-sm text-muted-foreground mt-2 border-l-2 border-muted pl-3">
-              {nodeMetadata.dependencyHelperText}
-            </p>
-          ) : null}
-        </div>
+      <NodePanelTabGate tab="settings">
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Use the Models and Prompts tabs to tune how this step extracts places.
+        </p>
+      </NodePanelTabGate>
 
-        <div>
+      <NodePanelTabGate tab="info">
+        <div className="space-y-2">
           <Label className="text-sm font-medium">Input placeholders</Label>
           <p className="text-sm text-muted-foreground mt-1">
             Pull fields from upstream JSON into the prompt using these tokens:
@@ -306,78 +303,75 @@ export default function PlaceExtractPanel({
             </li>
           </ul>
         </div>
-      </div>
+      </NodePanelTabGate>
 
-      <div className="pt-4 border-t">
+      <NodePanelTabGate tab="models">
         <div>
-          <Label className="text-sm font-medium">Parameters</Label>
-        </div>
-
-        <div className="space-y-2 text-sm mt-2">
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Model</Label>
-            {editMode && setNodes ? (
-              <>
-                {(projectId == null || graphContext?.fetchProjectAiModels == null) && (
-                  <p className="text-xs text-muted-foreground">
-                    Save this flow under a project to choose models your organization enabled for
-                    this project.
+          <Label className="text-sm font-medium">Model</Label>
+          {editMode && setNodes ? (
+            <>
+              {(projectId == null || graphContext?.fetchProjectAiModels == null) && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Save this flow under a project to choose models your organization enabled for
+                  this project.
+                </p>
+              )}
+              {projectId != null && catalogLoading && (
+                <p className="text-xs text-muted-foreground mt-2">Loading models…</p>
+              )}
+              {catalogError != null && catalogError !== '' ? (
+                <p className="text-xs text-destructive mt-2">{catalogError}</p>
+              ) : null}
+              {!catalogLoading &&
+                !catalogError &&
+                projectId != null &&
+                graphContext?.fetchProjectAiModels != null &&
+                modelSelectOptions.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    No models available for this project yet. Ask an administrator to enable
+                    models for your organization, then turn them on for this project in project
+                    settings if needed.
                   </p>
                 )}
-                {projectId != null && catalogLoading && (
-                  <p className="text-xs text-muted-foreground">Loading models…</p>
-                )}
-                {catalogError != null && catalogError !== '' ? (
-                  <p className="text-xs text-destructive">{catalogError}</p>
-                ) : null}
-                {!catalogLoading &&
-                  !catalogError &&
-                  projectId != null &&
-                  graphContext?.fetchProjectAiModels != null &&
-                  modelSelectOptions.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      No models available for this project yet. Ask an administrator to enable
-                      models for your organization, then turn them on for this project in project
-                      settings if needed.
-                    </p>
-                  )}
-                {showInvalidPersisted && (
-                  <p className="text-xs text-muted-foreground">
-                    The saved model is no longer available. Choose another model below.
-                  </p>
-                )}
-                <Select
-                  value={radixSelectValue}
-                  onValueChange={handleModelChange}
-                  disabled={isDisabled || modelSelectOptions.length === 0}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Choose a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {showInvalidPersisted ? (
-                      <SelectItem disabled value={INVALID_SELECTION_VALUE}>
-                        Saved model unavailable
-                      </SelectItem>
-                    ) : null}
-                    {modelSelectOptions.map((m) => (
-                      <SelectItem key={`pe-${m.selectValue}`} value={m.selectValue}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </>
-            ) : (
-              <div className="flex justify-between items-center p-2 bg-muted rounded">
-                <span className="text-muted-foreground">Model</span>
-                <span className="font-medium text-xs">{displayModelLabel}</span>
-              </div>
-            )}
-          </div>
+              {showInvalidPersisted && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  The saved model is no longer available. Choose another model below.
+                </p>
+              )}
+              <Select
+                value={radixSelectValue}
+                onValueChange={handleModelChange}
+                disabled={isDisabled || modelSelectOptions.length === 0}
+              >
+                <SelectTrigger className="h-8 text-xs mt-2">
+                  <SelectValue placeholder="Choose a model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {showInvalidPersisted ? (
+                    <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                      Saved model unavailable
+                    </SelectItem>
+                  ) : null}
+                  {modelSelectOptions.map((m) => (
+                    <SelectItem key={`pe-${m.selectValue}`} value={m.selectValue}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          ) : (
+            <div className="flex justify-between items-center p-2 bg-muted rounded mt-2">
+              <span className="text-muted-foreground">Model</span>
+              <span className="font-medium text-xs">{displayModelLabel}</span>
+            </div>
+          )}
         </div>
+      </NodePanelTabGate>
 
-        <div className="pt-2">
+      <NodePanelTabGate tab="prompts">
+        <div className="space-y-4">
+          <div>
           <Label className="text-sm font-medium">Prompt</Label>
           {editMode && setNodes ? (
             <Textarea
@@ -400,9 +394,9 @@ export default function PlaceExtractPanel({
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-1">Edit extraction prompt.</p>
-        </div>
+          </div>
 
-        <div className="pt-2">
+          <div>
           <Label className="text-sm font-medium">Output Format</Label>
           <Textarea
             readOnly
@@ -412,35 +406,38 @@ export default function PlaceExtractPanel({
             spellCheck={false}
           />
           <p className="text-xs text-muted-foreground mt-1">For reference only.</p>
-        </div>
-      </div>
-
-      {latestData && latestData.locations && (
-        <div className="pt-4 border-t">
-          <Label className="text-sm font-medium">Latest run</Label>
-          <div className="mt-2 space-y-2">
-            <div className="text-xs text-muted-foreground">
-              <div>Places found: {latestData.locations.length}</div>
-            </div>
-
-            {latestData.locations.length > 0 && (
-              <div>
-                <Label className="text-xs font-medium">Sample places</Label>
-                <div className="mt-1 space-y-1 max-h-32 overflow-y-auto">
-                  {latestData.locations.slice(0, 3).map((location: any, index: number) => (
-                    <div key={index} className="text-xs p-2 bg-muted rounded">
-                      <div className="font-medium">{formatSamplePlaceTitle(location)}</div>
-                      {location.description && (
-                        <div className="text-muted-foreground">{location.description}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
-      )}
+      </NodePanelTabGate>
+
+      <NodePanelTabGate tab="outputs">
+        {latestData && latestData.locations && (
+          <div>
+            <Label className="text-sm font-medium">Latest run</Label>
+            <div className="mt-2 space-y-2">
+              <div className="text-xs text-muted-foreground">
+                <div>Places found: {latestData.locations.length}</div>
+              </div>
+
+              {latestData.locations.length > 0 && (
+                <div>
+                  <Label className="text-xs font-medium">Sample places</Label>
+                  <div className="mt-1 space-y-1 max-h-32 overflow-y-auto">
+                    {latestData.locations.slice(0, 3).map((location: any, index: number) => (
+                      <div key={index} className="text-xs p-2 bg-muted rounded">
+                        <div className="font-medium">{formatSamplePlaceTitle(location)}</div>
+                        {location.description && (
+                          <div className="text-muted-foreground">{location.description}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </NodePanelTabGate>
     </>
   )
 }

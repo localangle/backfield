@@ -286,10 +286,52 @@ export function insertBetween(
   targetId: string,
   newNode: FlowGraphNode,
 ): FlowGraphModel {
-  if (model.serialLinks[sourceId] !== targetId) {
-    throw new Error('Insert-between requires a serial edge from source to target')
+  if (model.serialLinks[sourceId] === targetId) {
+    return insertAfter(model, sourceId, newNode)
   }
-  return insertAfter(model, sourceId, newNode)
+
+  if (targetId === model.outputNode.id && getBranchTipIds(model).includes(sourceId)) {
+    return insertAfter(model, sourceId, newNode)
+  }
+
+  const branchChildren = model.branchChildren[sourceId] ?? []
+  if (!branchChildren.includes(targetId)) {
+    throw new Error('Insert-between requires an existing edge from source to target')
+  }
+
+  const serialLinks = { ...model.serialLinks, [newNode.id]: targetId }
+  const nextBranchChildren = {
+    ...model.branchChildren,
+    [sourceId]: branchChildren.map((childId) => (childId === targetId ? newNode.id : childId)),
+  }
+  const positionedNewNode = {
+    ...newNode,
+    position: newNode.position ?? positionForNewSerialNode(model, sourceId),
+  }
+  const shiftedIds = collectDownstreamMiddleNodeIds(model, targetId)
+  const middleNodes = model.middleNodes.map((node) =>
+    shiftedIds.has(node.id)
+      ? {
+          ...node,
+          position: {
+            x: (node.position?.x ?? 0) + LAYOUT_X_STEP,
+            y: node.position?.y ?? LAYOUT_INPUT_Y,
+          },
+        }
+      : node,
+  )
+  const shiftedNodesById = new Map(middleNodes.map((node) => [node.id, node]))
+  const downstreamNodes = [...shiftedIds]
+    .map((id) => shiftedNodesById.get(id))
+    .filter((node): node is FlowGraphNode => node != null)
+
+  return applyLayoutToModel({
+    ...model,
+    outputNode: outputAfterNodes(model.outputNode, [positionedNewNode, ...downstreamNodes]),
+    middleNodes: [...middleNodes, positionedNewNode],
+    branchChildren: nextBranchChildren,
+    serialLinks,
+  })
 }
 
 /** Remove a middle node and rewire branch children or serial links to the parent. */

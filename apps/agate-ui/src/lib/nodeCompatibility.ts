@@ -39,7 +39,7 @@ export function shouldShowChooserSearch(scaffoldNodeTypeCount: number): boolean 
 
 export function countScaffoldNodeTypes(): number {
   return nodeMetadata.filter(
-    (meta) => meta.enabled !== false && !isBookendType(String(meta.type)),
+    (meta) => (meta as { enabled?: boolean }).enabled !== false && !isBookendType(String(meta.type)),
   ).length
 }
 
@@ -160,6 +160,12 @@ function portFailureReason(parentMeta: NodeMetadataEntry, candidateMeta: NodeMet
   return `${candidateLabel} cannot use the data coming from ${parentLabel}. Add a different step in between.`
 }
 
+function downstreamFailureReason(candidateMeta: NodeMetadataEntry, targetMeta: NodeMetadataEntry): string {
+  const candidateLabel = candidateMeta.label ?? candidateMeta.type
+  const targetLabel = targetMeta.label ?? targetMeta.type
+  return `${targetLabel} cannot use the data coming from ${candidateLabel}. Choose a different step for this connection.`
+}
+
 function toEntry(
   meta: NodeMetadataEntry,
   enabled: boolean,
@@ -203,6 +209,59 @@ export function getCompatibleNextNodes(
 
     if (!parentOutputsCompatible(parentMeta, meta)) {
       disabled.push(toEntry(meta, false, portFailureReason(parentMeta, meta)))
+      continue
+    }
+
+    enabled.push(toEntry(meta, true, null))
+  }
+
+  enabled.sort((a, b) => a.label.localeCompare(b.label))
+  disabled.sort((a, b) => a.label.localeCompare(b.label))
+
+  return { enabled, disabled }
+}
+
+export function getCompatibleInsertNodes(
+  sourceType: string,
+  targetType: string,
+  sourceAncestryTypes: readonly string[],
+): CompatibleNextNodesResult {
+  const sourceMeta = nodeMetadata.find((m) => m.type === sourceType)
+  const targetMeta = nodeMetadata.find((m) => m.type === targetType)
+  if (!sourceMeta || !targetMeta) {
+    return { enabled: [], disabled: [] }
+  }
+
+  const enabled: CompatibleNodeEntry[] = []
+  const disabled: CompatibleNodeEntry[] = []
+  const ancestryWithSource = sourceAncestryTypes.includes(sourceType)
+    ? sourceAncestryTypes
+    : [...sourceAncestryTypes, sourceType]
+
+  for (const meta of nodeMetadata) {
+    if (isBookendType(meta.type)) continue
+    if ((meta as { enabled?: boolean }).enabled === false) continue
+
+    const candidateRequired = meta.requiredUpstreamNodes ?? []
+    if (!upstreamRequirementsMet(candidateRequired, ancestryWithSource)) {
+      disabled.push(toEntry(meta, false, upstreamFailureReason(meta, ancestryWithSource)))
+      continue
+    }
+
+    if (!parentOutputsCompatible(sourceMeta, meta)) {
+      disabled.push(toEntry(meta, false, portFailureReason(sourceMeta, meta)))
+      continue
+    }
+
+    if (!parentOutputsCompatible(meta, targetMeta)) {
+      disabled.push(toEntry(meta, false, downstreamFailureReason(meta, targetMeta)))
+      continue
+    }
+
+    const targetRequired = targetMeta.requiredUpstreamNodes ?? []
+    const targetAncestry = [...ancestryWithSource, meta.type]
+    if (!upstreamRequirementsMet(targetRequired, targetAncestry)) {
+      disabled.push(toEntry(meta, false, upstreamFailureReason(targetMeta, targetAncestry)))
       continue
     }
 

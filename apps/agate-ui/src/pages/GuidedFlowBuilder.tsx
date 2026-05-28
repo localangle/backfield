@@ -37,6 +37,7 @@ import {
   getNodeById,
   hydrateFromSpec,
   insertAfter,
+  insertBetween,
   modelToGraphSpec,
   updateMiddleNode,
   toReactFlowNodes,
@@ -50,7 +51,7 @@ import {
   STEP_CHOOSER_COPY,
   type FlowBuilderStep,
 } from '@/lib/flowBuilderSteps'
-import { getCompatibleNextNodes } from '@/lib/nodeCompatibility'
+import { getCompatibleInsertNodes, getCompatibleNextNodes } from '@/lib/nodeCompatibility'
 import { getGuidedFlowCapabilities } from '@/lib/guidedFlowCapabilities'
 import { captureGuidedFlowSnapshot, type GuidedFlowSnapshot } from '@/lib/guidedFlowSnapshot'
 import { nodeOutputLookupFromReactFlow } from '@/lib/nodeOutputs'
@@ -76,6 +77,18 @@ import { Save } from 'lucide-react'
 
 let nodeIdCounter = 0
 const nextNodeId = () => `node-${nodeIdCounter++}`
+
+type AddNodeChooserAnchor = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+type AddNodeInsertionEdge = {
+  sourceId: string
+  targetId: string
+}
 
 function syncNodeIdCounter(nodes: Array<{ id: string }>): void {
   let maxIdx = 0
@@ -228,6 +241,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const [configureGateActive, setConfigureGateActive] = useState(false)
   const [addChooserOpen, setAddChooserOpen] = useState(false)
   const [addFromParentId, setAddFromParentId] = useState<string | null>(null)
+  const [addIntoEdge, setAddIntoEdge] = useState<AddNodeInsertionEdge | null>(null)
+  const [addChooserAnchor, setAddChooserAnchor] = useState<AddNodeChooserAnchor | null>(null)
   const [bookendSwapOpen, setBookendSwapOpen] = useState(false)
   const [bookendSwapKind, setBookendSwapKind] = useState<'input' | 'output'>('input')
   /** After the first middle step is added or the empty-flow CTA is dismissed, do not show it again. */
@@ -549,7 +564,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       if (!canNavigateToStep(step, completedStepsReadonly)) return
       setActiveStep(step)
       setAddChooserOpen(false)
+      setAddChooserAnchor(null)
       setAddFromParentId(null)
+      setAddIntoEdge(null)
       if (step === 'input' && inputNode) {
         setSelectedNodeId(inputNode.id)
         setConfigureGateActive(!readOnly && !completedSteps.has('input'))
@@ -1096,11 +1113,34 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [buildSnapshot, handleSave, inputNode, outputNode, scaffoldModel, saving],
   )
 
-  const handleAddNodeClick = useCallback((parentNodeId: string) => {
+  const handleAddNodeClick = useCallback((parentNodeId: string, anchorRect: DOMRect) => {
     if (configureGateActive) return
     setAddFromParentId(parentNodeId)
+    setAddIntoEdge(null)
+    setAddChooserAnchor({
+      top: anchorRect.top,
+      right: anchorRect.right,
+      bottom: anchorRect.bottom,
+      left: anchorRect.left,
+    })
     setAddChooserOpen(true)
   }, [configureGateActive])
+
+  const handleAddEdgeClick = useCallback(
+    (sourceId: string, targetId: string, anchorRect: DOMRect) => {
+      if (configureGateActive) return
+      setAddFromParentId(null)
+      setAddIntoEdge({ sourceId, targetId })
+      setAddChooserAnchor({
+        top: anchorRect.top,
+        right: anchorRect.right,
+        bottom: anchorRect.bottom,
+        left: anchorRect.left,
+      })
+      setAddChooserOpen(true)
+    },
+    [configureGateActive],
+  )
 
   const handleNodePositionChange = useCallback(
     (nodeId: string, position: { x: number; y: number }) => {
@@ -1184,6 +1224,16 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     if (!scaffoldModel) {
       return { enabled: [], disabled: [] }
     }
+    if (addIntoEdge) {
+      const source = getNodeById(scaffoldModel, addIntoEdge.sourceId)
+      const target = getNodeById(scaffoldModel, addIntoEdge.targetId)
+      if (!source?.type || !target?.type) return { enabled: [], disabled: [] }
+      return getCompatibleInsertNodes(
+        source.type,
+        target.type,
+        getBranchAncestry(scaffoldModel, addIntoEdge.sourceId),
+      )
+    }
     const parentId = addFromParentId
     if (!parentId) {
       return { enabled: [], disabled: [] }
@@ -1191,7 +1241,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     const parent = getNodeById(scaffoldModel, parentId)
     if (!parent?.type) return { enabled: [], disabled: [] }
     return getCompatibleNextNodes(parent.type, getBranchAncestry(scaffoldModel, parentId))
-  }, [addFromParentId, scaffoldModel])
+  }, [addFromParentId, addIntoEdge, scaffoldModel])
 
   const handleAddNodeTypeSelect = useCallback(
     (type: string) => {
@@ -1204,7 +1254,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setScaffoldModel((model) => {
         if (!model) return model
         let next = model
-        if (addFromParentId === model.inputNode.id) {
+        if (addIntoEdge) {
+          next = insertBetween(model, addIntoEdge.sourceId, addIntoEdge.targetId, newNode)
+        } else if (addFromParentId === model.inputNode.id) {
           next = addSiblingBranch(model, addFromParentId, newNode)
         } else if (addFromParentId) {
           next = insertAfter(model, addFromParentId, newNode)
@@ -1216,9 +1268,11 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setSelectedNodeId(newNode.id)
       setConfigureGateActive(true)
       setAddChooserOpen(false)
+      setAddChooserAnchor(null)
       setAddFromParentId(null)
+      setAddIntoEdge(null)
     },
-    [addFromParentId, scaffoldModel, workspaceStylebookId],
+    [addFromParentId, addIntoEdge, scaffoldModel, workspaceStylebookId],
   )
 
   /**
@@ -1441,6 +1495,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                 reserveRightPx={sidePanelOpen ? 1 : 0}
                 selectedNodeId={selectedNodeId}
                 onAddNodeClick={capabilities.allowAddNodes ? handleAddNodeClick : undefined}
+                onAddEdgeClick={capabilities.allowAddNodes ? handleAddEdgeClick : undefined}
                 onDeleteNodeClick={
                   capabilities.allowDelete ? handleDeleteMiddleNode : undefined
                 }
@@ -1509,9 +1564,17 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
       <AddNodeChooser
         open={addChooserOpen && capabilities.allowAddNodes}
-        onOpenChange={setAddChooserOpen}
+        onOpenChange={(open) => {
+          setAddChooserOpen(open)
+          if (!open) {
+            setAddChooserAnchor(null)
+            setAddFromParentId(null)
+            setAddIntoEdge(null)
+          }
+        }}
         compatibility={addNodeCompatibility}
         onSelect={handleAddNodeTypeSelect}
+        anchorRect={addChooserAnchor}
       />
 
       <BookendSwapDialog

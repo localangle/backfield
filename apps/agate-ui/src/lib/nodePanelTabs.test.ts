@@ -20,10 +20,11 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('S3Input', { hasRunOutput: true })).toEqual(['settings', 'outputs'])
   })
 
-  it('splits place extract configuration across settings, models, and prompts', () => {
-    expect(getNodePanelTabs('PlaceExtract')).toEqual(['settings', 'models', 'prompts'])
+  it('splits place extract configuration across settings, info, models, and prompts', () => {
+    expect(getNodePanelTabs('PlaceExtract')).toEqual(['settings', 'info', 'models', 'prompts'])
     expect(getNodePanelTabs('PlaceExtract', { hasRunOutput: true })).toEqual([
       'settings',
+      'info',
       'models',
       'prompts',
       'outputs',
