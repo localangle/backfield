@@ -1,5 +1,5 @@
 import React from 'react'
-import { FileText, Tag, Zap, Database, Brain, Filter, MapPin, Package, Search, Sparkles, Braces, FileJson, Image, Eye, GitBranch, GitMerge, BarChart, Building2, User, Network, BookOpen } from 'lucide-react'
+import { FileText, Tag, Zap, Database, Brain, Filter, Map, MapPinned, Package, Search, Sparkles, Braces, FileJson, Image, Eye, GitBranch, GitMerge, BarChart, Building2, User, Network, BookOpen } from 'lucide-react'
 import { nodeMetadata } from '@/nodes/registry'
 import { getNodeIconColor as getNodeIconColorFromColors, getNodeBgColor as getNodeBgColorFromColors } from '@/lib/nodeColors'
 
@@ -11,7 +11,8 @@ const iconMap = {
   Database: Database,
   Brain: Brain,
   Filter: Filter,
-  MapPin: MapPin,
+  Map: Map,
+  MapPinned: MapPinned,
   Package: Package,
   Search: Search,
   Sparkles: Sparkles,

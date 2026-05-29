@@ -112,7 +112,7 @@ def _assert_starter_graph_matches_bootstrap(starter: dict[str, Any]) -> None:
             "Starter flow must not include JSON Output node; use GeocodeAgent → DBOutput only."
         )
     if not any(n.type == "DBOutput" for n in current.nodes):
-        raise RuntimeError("Starter flow must include a DBOutput (Stylebook Output) node.")
+        raise RuntimeError("Starter flow must include a DBOutput (Backfield Output) node.")
 
 
 def _assert_golden_run_result(result: object) -> dict[str, Any]:
@@ -127,7 +127,7 @@ def _assert_golden_run_result(result: object) -> dict[str, Any]:
         )
     if "stylebook_output" not in result:
         raise RuntimeError(
-            "Run result missing stylebook_output; golden path expects Stylebook Output "
+            "Run result missing stylebook_output; golden path expects Backfield Output "
             "(DBOutput) at the end of the starter flow."
         )
     so = result["stylebook_output"]

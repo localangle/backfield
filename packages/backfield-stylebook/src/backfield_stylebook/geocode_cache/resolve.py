@@ -245,7 +245,7 @@ def resolve_geocode_cache_strict_with_outcome(
     session: Session,
     *,
     project_id: int,
-    stylebook_id: int,
+    stylebook_id: int | None,
     location_text: str,
     location_type: str | None,
     components: dict[str, Any] | None = None,
@@ -258,7 +258,11 @@ def resolve_geocode_cache_strict_with_outcome(
     if not normalized:
         return GeocodeCacheStrictOutcome(None, False, False)
 
-    winners = _tier1_exact_winners(session, stylebook_id, normalized)
+    winners = (
+        _tier1_exact_winners(session, stylebook_id, normalized)
+        if stylebook_id is not None
+        else []
+    )
 
     if len(winners) > 1:
         return GeocodeCacheStrictOutcome(None, True, False)
@@ -327,7 +331,7 @@ def try_resolve_geocode_cache(
     session: Session,
     *,
     project_id: int,
-    stylebook_id: int,
+    stylebook_id: int | None,
     location_text: str,
     location_type: str | None,
     components: dict[str, Any] | None = None,
@@ -398,7 +402,7 @@ def materialize_canonical_match_dict(
 def build_geocode_cache_adjudication_candidates(
     session: Session,
     *,
-    stylebook_id: int,
+    stylebook_id: int | None,
     location_text: str,
     location_type: str | None,
     components: dict[str, Any] | None = None,
@@ -412,7 +416,7 @@ def build_geocode_cache_adjudication_candidates(
     """
     comps = components if isinstance(components, dict) else None
     normalized = normalize_substrate_cache_query(location_text)
-    if not normalized:
+    if not normalized or stylebook_id is None:
         return []
 
     winners = _tier1_exact_winners(session, stylebook_id, normalized)

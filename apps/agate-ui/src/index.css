@@ -79,3 +79,43 @@
   padding: 0.4rem;
 }
 
+/* Guided flow builder: edges are system-managed; hide handles without breaking layout. */
+.guided-flow-canvas .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+  min-width: 1px;
+  min-height: 1px;
+}
+
+/* Animate inner card only — handles stay on the stable outer shell. */
+@keyframes guidedNodeEnter {
+  from {
+    opacity: 0.35;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes guidedNodeExit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
+  }
+}
+
+.guided-flow-canvas .guided-node-enter {
+  animation: guidedNodeEnter 0.52s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.guided-flow-canvas .guided-node-exit {
+  animation: guidedNodeExit 0.44s cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+

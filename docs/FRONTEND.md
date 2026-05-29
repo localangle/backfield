@@ -36,18 +36,71 @@ See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) for the full cross-repo map. Adding a n
 
 ## Agate UI responsibilities
 
-- Render the flowbuilder and run experience.
+- Render the **guided flow builder** and run experience (`/flow/new`, `/flow/:id/edit`, `/flow/:id`).
 - Own browser-facing API access through `src/lib/api.ts`.
 - Consume generated node registry output from `src/nodes/registry.ts`.
 - Keep page and component code readable, explicit, and easy to scan.
-- **Stylebook Output — saved data policy:** The node panel owns the user setting for saved data reconciliation. Options are **Add Only** (“Adds new data from this flow without changing existing saved data.”), **Smart Merge** (“Updates data from this flow while preserving changes made by editors.”), and **Replace** (“Replaces existing saved data from this flow’s categories with this run’s results.”). The UI does not expose owned-domain overrides; backend/runtime inference is the source of truth.
-- **Re-run / Run Again — current flow + policy:** Before **Rerun** (single item, bulk selection on run detail, or synthetic `items/1`), Agate UI shows a `showConfirm` dialog (`apps/agate-ui/src/lib/rerunWarning.ts`) titled **Rerun item?** (or **Rerun items?** for bulk). The copy says the current saved version of the flow will run, names the flow when available, states the Stylebook Output policy, and says run-local review edits on the affected item(s) will be cleared. **Run Again** on run detail uses **Rerun all items?** with the same current-flow/policy summary. The dialog is destructive only when the policy is **Replace**.
+- **Backfield Output — saved data policy:** The node panel owns the user setting for saved data reconciliation. Options are **Add Only** (“Adds new data from this flow without changing existing saved data.”), **Smart Merge** (“Updates data from this flow while preserving changes made by editors.”), and **Replace** (“Replaces existing saved data from this flow’s categories with this run’s results.”). The UI does not expose owned-domain overrides; backend/runtime inference is the source of truth.
+- **Re-run / Run Again — current flow + policy:** Before **Rerun** (single item, bulk selection on run detail, or synthetic `items/1`), Agate UI shows a `showConfirm` dialog (`apps/agate-ui/src/lib/rerunWarning.ts`) titled **Rerun item?** (or **Rerun items?** for bulk). The copy says the current saved version of the flow will run, names the flow when available, states the Backfield Output policy, and says run-local review edits on the affected item(s) will be cleared. **Run Again** on run detail uses **Rerun all items?** with the same current-flow/policy summary. The dialog is destructive only when the policy is **Replace**.
 - **Run detail — S3 batch setup:** While `total_items` is still **0** but the UI shows a placeholder row (`isRunPreparingItems` in `runPreparingItems.ts`), the **Source** column reads **Preparing items ...** and the **No Items Processed** empty state is hidden until real `agate_processed_item` rows exist.
 - **Processed item Info tab:** **Item Information** shows story fields (**Source**, **URL**, **Headline**, **Author**, **Publication date**) as read-only text with a hover affordance; click a field to edit and save on the review overlay under `**article**` (merged over ingest input/output on load). Run timestamps and estimated AI cost sit below a divider; cost displays with two decimal places.
 - **Processed item detail tabs:** the run item page (`**/runs/{runId}/items/{itemId}**`) keeps the active tab in the URL as `**?tab=<id>**` (`info`, `places`, `people`, `organizations`, `events`, `works`, `images`, `meta`, `json`). Invalid or missing values fall back to `**places**` (batch items) or `**info**` (single-input runs). A legacy `**#<tab>**` fragment on first load is promoted to `**?tab=**` for sharing.
 - **Processed item JSON tab:** when the API returns **`reviewed_output`** (saved place or story review), the tab defaults to **Reviewed**; **Original** shows immutable run **`output`**. A single **Download** button exports whichever version is selected. When there is no reviewed output, only original output is shown.
 - **Processed item Review (run item):** On wide viewports the **Places** tab uses a **viewport-capped two-column band**—a **Review and edit places** heading and short instructions above **story text** on the left (scrolls inside the pane) and a **compact map + geocoded-places table** on the right so the main page rarely needs vertical scroll. **Geocoded places** render in a dense table (name, type, address, **Actions**) for every merged model and user-added row, including **needs review** places with no map geography. Selecting a row highlights the story and zooms the map when geometry exists. The name-column source pill shows **No geography** when the row has no drawable geometry (failed geocode, cleared geometry, region-mismatch QA without a pin); otherwise it reflects **`geocode.geocode_type`** (and **`confidence.source`** when present). Assigning or changing geography on the map saves **`geocode_type: manual`** and clears model QA flags on the overlay patch. **Open Stylebook place**, **Adopt for Stylebook** (only when server **`geometry_differs`** and the story place has saved geography), **Find on map** (shown for rows with no drawable geography), and **Remove from story** (removes the row from review, soft-deletes mentions for this article; when no other stories use the saved place, unlinks from the catalog and deletes the substrate without adding an empty **candidates** row) live in **Actions**. Use **Stylebook** in user-facing copy (not “catalog”). The black **Edit** button on a selected place opens explicit **Save** / **Cancel** in the map toolbar (upper right), with add/clear geography tools on the left; the geocoded-places table is hidden while editing and the map expands into that space. While editing, the right pane uses **Map** and **Place details** tabs so the map keeps full height; **Place details** edits label, type (PlaceExtract taxonomy dropdown), formatted address, mentions in story, and role in story. The review band is slightly taller while editing. Review-only rows save to the run overlay; persisted rows save via Stylebook API to the story place (same **Save** label). Linked persisted rows show a notice under the map that Stylebook does not change until adopt. The map and merge lane use **geocoded** place rows when present (see `docs/API.md` → merged baseline and review enrichment); the **Visualizations** tab does **not** repeat a second locations map for Geocode nodes.
-- **Processed item add place:** In the article pane, selecting story text shows a contextual **Add place** action and an accessible fallback button. The selected sentence or paragraph is locked into the right-side add inspector as the source passage; users can choose **Change selection** before saving. The text step requires **Place name**, **Type** (existing PlaceExtract taxonomy with human-readable labels), and **Mention in the story**. When the item has a linked saved story article (`article_id` from substrate context or upstream node output), continuing saves a normal story place through Stylebook API with no geography yet, appends a `locations.user_added` overlay row, refreshes the places list so the row appears as **Needs geography**, then opens the same map/details editor used by existing add/replace geography. When there is story text but no linked article (typical **JSON Output** runs without **Stylebook Output**), continuing saves the place in the review overlay only (same list and map editor flow; not added to the location catalog until a saved article exists). Map saves for user-added places write geometry into ``locations.user_added`` (and mirrored ``by_anchor`` for preview); reviewed JSON materializes those coordinates onto ``json_output.consolidated.places`` when that is the only places bucket on the item. **Finish later** is represented by closing/canceling the map edit and resuming later from **Find on map** in the places table.
+- **Processed item add place:** In the article pane, selecting story text shows a contextual **Add place** action and an accessible fallback button. The selected sentence or paragraph is locked into the right-side add inspector as the source passage; users can choose **Change selection** before saving. The text step requires **Place name**, **Type** (existing PlaceExtract taxonomy with human-readable labels), and **Mention in the story**. When the item has a linked saved story article (`article_id` from substrate context or upstream node output), continuing saves a normal story place through Stylebook API with no geography yet, appends a `locations.user_added` overlay row, refreshes the places list so the row appears as **Needs geography**, then opens the same map/details editor used by existing add/replace geography. When there is story text but no linked article (typical **JSON Output** runs without **Backfield Output**), continuing saves the place in the review overlay only (same list and map editor flow; not added to the location catalog until a saved article exists). Map saves for user-added places write geometry into ``locations.user_added`` (and mirrored ``by_anchor`` for preview); reviewed JSON materializes those coordinates onto ``json_output.consolidated.places`` when that is the only places bucket on the item. **Finish later** is represented by closing/canceling the map edit and resuming later from **Find on map** in the places table.
+
+## Guided flow builder (Agate UI)
+
+All create, edit, and run routes share one guided builder (`GuidedFlowBuilder.tsx` + `components/flow-builder/`). There is **no left node palette**, **no drag-to-connect**, and **no manual connection handles** on the canvas (`.guided-flow-canvas` hides React Flow handles in `index.css`).
+
+### Stepper and bookends
+
+- Three steps: **Choose an input** → **Choose an output** → **Build your flow** (`FlowStepper`, `flowBuilderSteps.ts`). On input/output steps the stepper is a compact text row (no card chrome). Each bookend chooser shows centered step copy with explainer text above the cards (`STEP_CHOOSER_COPY`: **Where will your input data come from?** / **Where would you like to save your output?**). On the scaffold step the stepper and page heading are hidden so the canvas uses the full height. Hover the source or destination node and use the swap control to open the bookend swap dialog (`BookendSwapDialog`) — middle steps stay in place when the new bookend type is compatible (`canReplaceInputBookend` / `canReplaceOutputBookend` in `flowGraphModel.ts`).
+- **New flows** (`/flow/new`) start on the input step; **edit** (`/flow/:id/edit`) and **run view** (`/flow/:id`) open on **Build your flow** with bookends already complete.
+- Input types: Text, JSON, S3. Output types: JSON Output, Backfield Output (`BookendChooser`, `flowBuilderDefaults.ts`).
+- **Continue** on each bookend step is gated until required fields pass (`ConfigureGatePanel` + `canContinueBookendNode`).
+- Changing a bookend **type** when middle steps exist shows a plain-language confirm via `useAppMessage`; confirm clears middle steps, cancel keeps the graph.
+
+### Scaffold (“+” chain)
+
+- Middle steps are added only via **+** on nodes (not on the output bookend) and **+** on serial edges (`GuidedFlowCanvas`, `AddNodeChooser`).
+- Compatibility filtering uses synced `nodeMetadata` (`nodeCompatibility.ts`: port types + transitive `requiredUpstreamNodes`).
+- **ConfigureGatePanel** opens after add; other **+** affordances stay disabled until **Continue**.
+- Parallel branches fan vertically; serial steps extend horizontally (`flowGraphModel.ts` layout). The canvas **auto-layouts** on add, delete, and load (with recenter), and nodes can be **dragged** to adjust positions; dragged positions persist on save. New steps still get auto positions; existing dragged nodes keep their placement unless a full bookend relayout runs.
+- Middle steps can be deleted with confirmation; the model rewires tips to output (`deleteMiddleNode`).
+- The **+** chooser lists compatible middle steps only (no search field in v1; the scaffold catalog is small enough to scan).
+
+### Run view vs edit
+
+- **Run view** (`RunGraph.tsx`) embeds the guided builder in **read-only** mode: stepper navigation and node panels work; **+**, delete, and bookend change are off until **Edit flow**.
+- **Run flow** starts a run without entering edit mode; run output appears in `NodePanel` / `RunPanel`.
+- **Node panel:** Right-hand configuration uses the shared shell and tab model documented in **[Agate nodes and node panels](#agate-nodes-and-node-panels)** below. JSON Output has no settings tab—only **Output** after a run. Numeric fields users type freely (for example S3 max files per run) use a plain text input, not browser number spinners.
+- **Edit flow** takes a snapshot; **Cancel** restores it; **Save** uses shared `validateGraphForSave` and `paramsForGraphSave`.
+
+### UX reference patterns
+
+Patterns borrowed from other products (behavioral parity, not visual clone):
+
+| Pattern | Reference | Backfield |
+|--------|-----------|-----------|
+| **+** on nodes | n8n | Node **+** adds the next step; hidden in read-only run view |
+| Node creator list | n8n | **+** chooser shows compatible steps only (no search in v1) |
+| Read-only hides add controls | n8n | `getGuidedFlowCapabilities({ readOnly })` |
+| Source / destination bookends first | Unstructured | Input → Output → Scaffold stepper |
+| **+** on DAG | Unstructured | Branch and serial **+** on guided canvas |
+| Valid layout before run | Unstructured | Save validation + single bookend rules |
+
+**Out of scope (v1):** Unstructured-style **“Build it For Me”** one-click preset workflows — consider a follow-up quick-start template slice.
+
+### Key modules
+
+| Module | Role |
+|--------|------|
+| `pages/GuidedFlowBuilder.tsx` | Orchestration: stepper, bookends, scaffold state, save, run embed |
+| `pages/RunGraph.tsx` | Run header, edit unlock, run polling; embeds guided builder |
+| `lib/flowGraphModel.ts` | Topology, layout, hydrate/save spec |
+| `lib/flowValidation.ts` | Shared save validation |
+| `lib/guidedFlowCapabilities.ts` | Read-only vs edit affordances |
 
 ## Auth and API bases (Agate UI)
 
@@ -95,16 +148,185 @@ See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) for the full cross-repo map. Adding a n
 - Keep storage keys and custom event names centralized and consistently prefixed.
 - Reuse shared UI patterns instead of duplicating similar behavior per page.
 
-## Node sync flow
+## Agate nodes and node panels
 
-- Source of truth lives in `packages/backfield-agate/src/agate_nodes`.
-- `apps/agate-ui/scripts/sync-nodes.js` copies UI files into `apps/agate-ui/src/nodes`.
-- The sync script also generates `src/nodes/registry.ts`.
-- Avoid hand-editing generated registry output unless the sync flow itself is changing.
-- The default Agate palette includes `TextInput`, `JSONInput`, `S3Input`, `PlaceExtract`, `GeocodeAgent`, and `Output`. `PlaceExtract` performs editorially relevant place extraction in a **single** LLM call; there is no separate Place Filter node.
-- **GeocodeAgent (catalog):** when **Use cache** is enabled, the panel requires a **catalog** selection (persisted as integer `**stylebook_id`** in node params, aligned with graph validation). New nodes dropped onto the canvas inherit the current project workspace’s catalog id when available; cache-off flows omit `**stylebook_id**`. Legacy `**stylebookId**` (camelCase) in saved graphs is still accepted for validation until edited.
-- **LLM model pickers** (`PlaceExtract`, `GeocodeAgent`, Stylebook Output adjudication when AI-assisted): dropdown options come only from Core API `**GET /v1/projects/{id}/ai-models/effective`** (via `fetchProjectAiModels` on the graph shell). Built-in preset model lists were removed from those panels—new nodes inherit empty model fields until the catalog loads and the panel assigns the first available row (or users pick explicitly). The trigger and list show the catalog `**name**` only (no appended technical id); persisted params still store `**provider_model_id**` / config id as today. `**GeocodeAgent**` exposes three picks: **routing** (post-cache strategy), **geographic reasoning** (external geocode prompts such as place search helpers and bbox estimation), and **evaluation** (ambiguous hit scoring plus consolidated **location** display lines). For **city**, **town**, **county**, and **state** rows, the display line stays at municipality/admin scope (e.g. `Chicago, IL`)—story neighborhoods are not inserted into city labels; use the separate neighborhood row for that geography.
-- **Project → Models tab:** uses `**GET …/ai-models/effective?include_disabled=true`** so editors can turn models off for this project (`**PUT …/availability**`) or paste a project-only provider key (`**PUT|DELETE …/credential-override**`). Worker LLM resolution prefers that stored key when present (`catalog_runtime.resolve_llm_auth_for_model_config`).
+Developer guide for adding or changing pipeline nodes in the guided flow builder. End-user copy rules still apply (**User-facing copy** above); this section is for implementers.
+
+### Where files live
+
+| Layer | Path | Edit here? |
+|-------|------|------------|
+| **Package (source of truth)** | `packages/backfield-agate/src/agate_nodes/<snake_case>/` | **Yes** — `metadata.json`, Python runtime (`node.py`, `runner.py`, …), `ui/*`, optional `prompts/` |
+| **Synced UI copies** | `apps/agate-ui/src/nodes/<snake_case>/` | **No** — overwritten by `npm run sync-nodes` |
+| **Generated registry** | `apps/agate-ui/src/nodes/registry.ts` | **No** — regenerated by sync |
+| **Panel shell (app-only)** | `apps/agate-ui/src/components/NodePanel.tsx`, `components/node-panel/*` | **Yes** — shared chrome, tabs, field helpers |
+| **Panel tab routing** | `apps/agate-ui/src/lib/nodePanelTabs.ts` | **Yes** — which tabs each node type shows |
+| **Shared panel helpers** | `apps/agate-ui/src/lib/nodePanelAiModel.ts`, `flowValidation.ts` (bookend types) | **Yes** — reuse before copying logic into a panel |
+| **Canvas chrome** | `apps/agate-ui/src/lib/nodeUtils.ts`, `nodeColors.ts` | **Yes** — icons and category colors from synced metadata |
+| **Guided builder** | `apps/agate-ui/src/pages/GuidedFlowBuilder.tsx`, `components/flow-builder/` | **Yes** — bookends, **+** chooser, configure gate |
+
+Runtime Python stays in the package; React panels are authored in `ui/` under the same folder so one PR can ship behavior + configuration UI. See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) (Agate nodes) and [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/skills/add-entity-type/SKILL.md) for full-stack node work.
+
+### Build and sync (`npm run sync-nodes`)
+
+From `apps/agate-ui`:
+
+```bash
+npm run sync-nodes
+```
+
+- **`predev`** and **`prebuild`** run sync automatically.
+- **`scripts/sync-nodes.js`** scans `packages/backfield-agate/src/agate_nodes/`, reads each `metadata.json`, and:
+  - Copies `ui/NodeComponent.tsx`, `ui/PanelComponent.tsx`, `ui/VisualizationComponent.tsx`, and other `ui/*.ts(x)` helpers (for example `json_input/ui/schemaExample.ts`) into `apps/agate-ui/src/nodes/<folder>/`.
+  - Inlines `prompt_file` / `output_format_file` from `defaultParams` into the generated registry metadata when those files exist.
+  - Injects a `nodeMetadata` constant into copied Node/Panel files when missing (so panels can read defaults without importing the registry).
+  - Writes **`src/nodes/registry.ts`** (`nodeMetadata`, lazy `nodeComponents`, `panelComponents`, `visualizationComponents`).
+
+**Commit rule:** after changing package `metadata.json` or `ui/`, run sync and commit **both** the package tree and regenerated `apps/agate-ui/src/nodes/` (and `registry.ts`).
+
+**Do not** hand-edit synced files under `apps/agate-ui/src/nodes/` except when you are changing the sync script itself.
+
+### `metadata.json` contract
+
+Each node folder includes a JSON descriptor consumed by the registry and compatibility layer:
+
+| Field | Purpose |
+|-------|---------|
+| `type` | React Flow / executor type string (PascalCase, e.g. `PlaceExtract`) |
+| `label` | User-facing name in panel header and chooser |
+| `icon` | Lucide icon name (see `iconMap` in `nodeUtils.ts`) |
+| `color` | Tailwind class on metadata (often `bg-*-500`); canvas/header also use **category** colors |
+| `description` | Short paragraph under the panel title (`NodePanel`) |
+| `category` | `input`, `output`, `extraction`, `enrichment`, … — drives `nodeColors.ts` |
+| `dependencyHelperText` | Optional left-border hint under the description (omit on `GeocodeAgent`; it uses custom copy) |
+| `requiredUpstreamNodes` | Transitive types required in branch ancestry (`nodeCompatibility.ts`) |
+| `inputs` / `outputs` | Port ids, labels, and types for wiring and handle resolution |
+| `defaultParams` | Initial node `data` in the graph editor |
+
+Bookend types for the guided builder are fixed in `flowValidation.ts`: input `TextInput` | `JSONInput` | `S3Input`; output `Output` | `DBOutput`. Middle steps are everything else enabled in metadata.
+
+### Canvas node (`ui/NodeComponent.tsx`)
+
+Patterns used by synced nodes (match existing nodes when adding one):
+
+- **React Flow** `NodeProps`, wrapped in `memo`.
+- **Card** width `w-[280px]`; selected state `ring-2 ring-primary`.
+- **Header:** `CardTitle` `text-sm font-medium`, icon in `w-6 h-6 rounded-full` with `getNodeBgColor(type)` and `getNodeIcon(type, 'h-4 w-4')`.
+- **Preview body:** muted inset (`bg-muted`, `text-sm text-muted-foreground`) — keep summaries short; full editing lives in the panel.
+- **Handles:** `Handle` with explicit `id` matching metadata port ids; positioned on the guided canvas edge (handles are hidden in CSS on `.guided-flow-canvas`; wiring is automatic).
+
+Icons and colors come from synced metadata via `getNodeIcon` / `getNodeBgColor` (`nodeColors.ts` maps `category` and known type sets to `text-*-500` / `bg-*-100`).
+
+### Side panel shell (`NodePanel.tsx`)
+
+The app owns the right drawer; panels only render inner content.
+
+| Element | Classes / behavior |
+|---------|-------------------|
+| Panel width | `w-96`, full height, `border-l`, `bg-background/95`, `backdrop-blur-sm` |
+| Header | `p-4 border-b`; icon `h-9 w-9 rounded-full` + title `font-semibold text-lg` |
+| Body scroll | `flex-1 overflow-y-auto p-4 space-y-4` |
+| Description | `text-sm text-muted-foreground leading-relaxed` from metadata |
+| Dependency hint | `text-sm text-muted-foreground border-l-2 border-muted pl-3` when `dependencyHelperText` is set |
+| Tabs | Shown when `getNodePanelTabs` returns more than one id; `TabsList` grid with `text-xs sm:text-sm` triggers |
+| Invalid connection | Amber callout above tabs when the builder passes `invalidConnectionMessage` |
+
+`NodePanel` loads the synced lazy panel from `panelComponents[selectedNode.type]` inside `NodePanelTabProvider` + `Suspense`.
+
+**`GraphPanelContext`** (passed from `GuidedFlowBuilder` / run view): `organizationId`, `projectId`, workspace Stylebook defaults, `fetchProjectAiModels(capabilities)`, and loading flags. Panels use this for org Stylebook lists and project AI model dropdowns—do not call Core API directly from panels except through existing helpers (`listOrgStylebooks`, `fetchProjectAiModels`).
+
+### Panel tabs
+
+Tab ids and labels are centralized:
+
+- **Registry:** `apps/agate-ui/src/lib/nodePanelTabs.ts` — `NodePanelTabId`, `NODE_PANEL_TAB_LABELS`, `getNodePanelTabs(type, { hasRunOutput })`.
+- **Gating:** each section in `PanelComponent.tsx` is wrapped in `<NodePanelTabGate tab="…">` from `components/node-panel/NodePanelTabContext.tsx` (renders children only when the active tab matches).
+
+| Node type | Tabs (no run) | Extra when run has output |
+|-----------|----------------|---------------------------|
+| TextInput, S3Input | Settings | Output |
+| JSONInput | Settings, Info | Output |
+| PlaceExtract | Settings, Prompt, Output, Info | (Output tab always listed) |
+| GeocodeAgent | Settings, Models | — |
+| DBOutput | Settings, Stylebook | — |
+| Output (JSON) | — | Output only |
+
+When adding a tab for a new node type, update `getNodePanelTabs` and add matching `NodePanelTabGate` blocks in the package `ui/PanelComponent.tsx`, then sync.
+
+### Typography and spacing (panel design system)
+
+Agate UI uses the app **Inter/system stack** via Tailwind and shadcn—nodes do not define custom fonts.
+
+| Role | Tailwind |
+|------|----------|
+| Panel title | `text-lg font-semibold` (shell) |
+| Tab triggers | `text-xs sm:text-sm` |
+| Field labels | `text-sm font-medium` — shadcn `Label` default; **do not** use `text-xs` or muted labels for primary fields |
+| Required fields | `FieldLabel` (`components/node-panel/FieldLabel.tsx`) — red `*` + screen-reader “(required)” |
+| Helper / hint under a field | `text-xs text-muted-foreground` |
+| Section intro (Info tab, empty states) | `text-sm text-muted-foreground leading-relaxed` |
+| Checkbox label beside control | `text-sm font-normal` |
+| Compact selects | `SelectTrigger` with `className="text-xs"` where vertical space is tight |
+
+**Layout inside a panel:**
+
+- Top-level tab content: `space-y-4` between sections.
+- Label + control group: `space-y-2`.
+- Lists inside a section: `space-y-1` or `space-y-2` with `text-xs text-muted-foreground` for bullets.
+
+### Colors and icons
+
+- **Header/canvas icon color:** `getNodeIconColor` / `getNodeBgColor` from `nodeColors.ts` (category-based).
+- **Metadata `icon`:** must exist in `iconMap` in `nodeUtils.ts` (extend the map when adding a new Lucide name).
+- **Metadata `color`:** retained on metadata for parity; category mapping is what most nodes use on the canvas.
+- **Destructive / validation:** `text-destructive` for load errors; invalid connection uses amber panel in the shell.
+
+Prefer **Stylebook** in user-facing panel strings, not “catalog,” except when referring to the AI model list loaded from the project (internal code may still say `catalogRows`).
+
+### `PanelComponent.tsx` patterns
+
+Author in `packages/backfield-agate/src/agate_nodes/<node>/ui/PanelComponent.tsx`.
+
+**Props:** declare only what the panel reads. `NodePanel` passes a common bundle, but TypeScript intersects panel prop types—avoid unused optional props on the interface.
+
+| Prop | Typical use |
+|------|-------------|
+| `node` | `node.id`, `node.data` |
+| `editMode` + `setNodes` | Required together for editable fields; `disabled = !(editMode && setNodes)` |
+| `graphContext` | Stylebook + AI model catalog |
+| `currentRun` + `nodeOutputLookupSpec` | Output tab previews (`getNodeOutputById`) |
+| `onChange` | Text input only — optional callback alongside `setNodes` |
+
+**Patching node data:**
+
+```tsx
+setNodes((nds) =>
+  nds.map((n) => (n.id === node.id ? { ...n, data: { ...n.data, field: value } } : n)),
+)
+```
+
+Merge defaults at the top: `const merged = { ...DEFAULTS, ...(node.data || {}) }`.
+
+**AI model selects** (`PlaceExtract`, `GeocodeAgent`, Backfield Output adjudication): use `apps/agate-ui/src/lib/nodePanelAiModel.ts` — `catalogToSelectOptions`, `resolvedAiModelSelectValue`, `hasExplicitAiModelChoice`, `INVALID_AI_MODEL_SELECTION_VALUE`, and per-node `AiModelFieldKeys` constants. Load rows via `graphContext.fetchProjectAiModels([...capabilities])`. Show catalog **name** only in the UI; persist `provider_model_id` and optional `*_ai_model_config_id`.
+
+**Stylebook id:** persist `stylebook_id` (snake_case). Read with `resolvedStylebookId` from `nodePanelAiModel.ts` (still accepts legacy `stylebookId` once).
+
+**GeocodeAgent:** when **Use cache** is on, require a Stylebook selection (`stylebook_id`). Cache-off omits `stylebook_id`. Three model picks: routing, geographic reasoning, evaluation (see product copy in the panel).
+
+**LLM catalog source:** Core `GET /v1/projects/{id}/ai-models/effective` only—no hard-coded model presets in panels. **Project → Models** tab uses `include_disabled=true` for admin availability (`docs/API.md`).
+
+### Checklist: new or changed node UI
+
+1. Add or update `packages/backfield-agate/src/agate_nodes/<snake_case>/` (`metadata.json`, Python, `ui/NodeComponent.tsx`, `ui/PanelComponent.tsx`).
+2. Register tabs in `nodePanelTabs.ts` if the panel has multiple sections.
+3. Reuse `nodePanelAiModel.ts` / `FieldLabel` / `NodePanelTabGate` instead of duplicating helpers.
+4. Extend `iconMap` in `nodeUtils.ts` if using a new icon name.
+5. Update `nodeCompatibility.ts` ports / `requiredUpstreamNodes` in metadata as needed.
+6. Run `npm run sync-nodes` from `apps/agate-ui`.
+7. Commit package **and** synced `apps/agate-ui/src/nodes/` output.
+8. Add or adjust vitest coverage when tab routing or validation behavior changes (`nodePanelTabs.test.ts`, `flowValidation.test.ts`, …).
+
+The default guided scaffold ships **PlaceExtract** and **GeocodeAgent** as middle steps; users add steps via the **+** chooser (no free-form palette).
 
 ## TypeScript expectations
 
@@ -116,6 +338,6 @@ See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) for the full cross-repo map. Adding a n
 
 - For new user-facing errors or confirmations, use `**useAppMessage**` (see **In-app messages** above), not browser dialogs.
 - If API contracts changed, update `src/lib/api.ts`.
-- If node metadata or node UI changed, rerun the node sync/build flow.
+- If node metadata or node UI changed, follow **[Agate nodes and node panels](#agate-nodes-and-node-panels)** (edit package `ui/`, run `npm run sync-nodes`, commit synced output).
 - If browser storage or custom events changed, keep prefixes and docs aligned.
 - If a page or component became large, split it into smaller readable pieces.

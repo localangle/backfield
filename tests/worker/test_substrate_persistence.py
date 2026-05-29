@@ -15,7 +15,11 @@ from backfield_db import (
 )
 from backfield_stylebook import assert_canonical_link_invariant
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_stylebook.canonical_link import (
+    CANONICAL_LINK_LINKED,
+    CANONICAL_LINK_PENDING,
+    CANONICAL_LINK_UNLINKED,
+)
 from sqlmodel import Session, SQLModel, col, create_engine, select
 from worker.substrate import _find_mention_span, persist_from_consolidated
 from worker.substrate.content.geography_reset import replace_machine_geography_for_article
@@ -2429,6 +2433,70 @@ def test_db_output_invalid_stylebook_id_raises() -> None:
             assert "DBOutput stylebook resolution failed" in str(exc)
         else:
             raise AssertionError("expected RuntimeError")
+
+
+def test_db_output_invalid_stylebook_id_skipped_when_matching_disabled() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(
+            session, org_slug="org-bad-sb-off", project_slug="proj-bad-sb-off"
+        )
+        session.add(AgateRun(id="run-bad-off", graph_id="graph-1", status="pending"))
+        session.commit()
+
+        consolidated = {
+            "text": "Hello Chicago.",
+            "places": {
+                "areas": {
+                    "states": [],
+                    "counties": [],
+                    "cities": [
+                        {
+                            "id": "city:1",
+                            "original_text": "Chicago",
+                            "location": "Chicago, IL",
+                            "type": "city",
+                            "geocode": {
+                                "geocode_type": "pelias",
+                                "result": {
+                                    "id": "pelias:abc",
+                                    "formatted_address": "Chicago, IL, USA",
+                                    "geometry": CHICAGO_POINT,
+                                },
+                            },
+                        }
+                    ],
+                    "neighborhoods": [],
+                    "regions": [],
+                    "other": [],
+                },
+                "points": [],
+                "needs_review": [],
+            },
+        }
+
+        result = persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-1",
+            run_id="run-bad-off",
+            consolidated=consolidated,
+            db_output_params={
+                "stylebook_matching_enabled": False,
+                "stylebook_id": 999_999,
+            },
+        )
+        session.commit()
+
+        assert result.article_id is not None
+        from backfield_db import SubstrateLocation
+
+        locs = session.exec(select(SubstrateLocation)).all()
+        assert len(locs) == 1
+        assert locs[0].canonical_link_status == CANONICAL_LINK_UNLINKED
+        assert locs[0].stylebook_location_canonical_id is None
 
 
 def test_persist_auto_apply_false_exact_alias_leaves_pending_with_suggestion() -> None:

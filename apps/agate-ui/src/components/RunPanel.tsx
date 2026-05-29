@@ -9,12 +9,28 @@ interface RunPanelProps {
   onClose: () => void
   running?: boolean
   currentRun?: Run | null
+  flowName?: string
+}
+
+function runCardTitle(status: string, flowName: string): string {
+  const name = flowName.trim() || 'Untitled flow'
+  switch (status) {
+    case 'running':
+    case 'pending':
+      return `Running ${name}`
+    case 'completed':
+    case 'completed_with_errors':
+      return `Completed ${name}`
+    default:
+      return name
+  }
 }
 
 export default function RunPanel({
   onClose,
   running,
   currentRun,
+  flowName = 'Untitled flow',
 }: RunPanelProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -51,12 +67,8 @@ export default function RunPanel({
 
   return (
     <div className="absolute top-0 right-0 h-full w-96 bg-background/95 backdrop-blur-sm border-l shadow-lg flex flex-col z-10 slide-in-from-right">
-      <div className="flex items-center justify-between p-4 border-b">
-        <div>
-          <h3 className="font-semibold text-lg">Flow Execution</h3>
-          <p className="text-sm text-muted-foreground">Run logs and outputs</p>
-        </div>
-        <Button variant="ghost" size="icon" onClick={onClose}>
+      <div className="flex items-center justify-end p-3 border-b">
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -67,7 +79,7 @@ export default function RunPanel({
             <CardContent className="pt-6">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm">Starting flow execution...</span>
+                <span className="text-sm">Starting {flowName.trim() || 'your flow'}…</span>
               </div>
             </CardContent>
           </Card>
@@ -75,55 +87,40 @@ export default function RunPanel({
 
         {currentRun && (
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Run #{currentRun.id}</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Link to={`/runs/${currentRun.id}`}>
-                    <Button variant="ghost" size="sm" className="h-6 px-2">
-                      <ExternalLink className="h-3 w-3 mr-1" />
-                      View Details
-                    </Button>
-                  </Link>
-                  <Badge variant="outline" className={getStatusColor(currentRun.status)}>
-                    <div className="flex items-center gap-1">
-                      {getStatusIcon(currentRun.status)}
-                      {formatStatusLabel(currentRun.status)}
-                    </div>
-                  </Badge>
-                </div>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-base">
+                  {runCardTitle(currentRun.status, flowName)}
+                </CardTitle>
+                <Badge variant="outline" className={getStatusColor(currentRun.status)}>
+                  <div className="flex items-center gap-1">
+                    {getStatusIcon(currentRun.status)}
+                    {formatStatusLabel(currentRun.status)}
+                  </div>
+                </Badge>
               </div>
               <CardDescription>
-                Started: {new Date(currentRun.created_at).toLocaleString()}
+                Started {new Date(currentRun.created_at).toLocaleString()}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Visit the run page to track status and review outputs.
+              </p>
+              <Button asChild className="w-full">
+                <Link to={`/runs/${currentRun.id}`}>
+                  Open run page
+                  <ExternalLink className="h-4 w-4 ml-2" />
+                </Link>
+              </Button>
+
               {currentRun.error && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                  <h4 className="text-sm font-medium text-red-800 mb-2">Error</h4>
-                  <p className="text-sm text-red-700 font-mono">{currentRun.error}</p>
-                </div>
-              )}
-
-              {currentRun.output && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Output</h4>
-                  <div className="p-3 bg-muted rounded-md">
-                    <pre className="text-xs overflow-auto max-h-64">
-                      {JSON.stringify(currentRun.output, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
-
-              {currentRun.input && Object.keys(currentRun.input).length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Input</h4>
-                  <div className="p-3 bg-muted rounded-md">
-                    <pre className="text-xs overflow-auto max-h-32">
-                      {JSON.stringify(currentRun.input, null, 2)}
-                    </pre>
-                  </div>
+                  <h4 className="text-sm font-medium text-red-800 mb-2">Something went wrong</h4>
+                  <p className="text-sm text-red-700">{currentRun.error}</p>
+                  <p className="text-xs text-red-600 mt-2">
+                    Open the run page for the full error details.
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -134,7 +131,8 @@ export default function RunPanel({
           <Card>
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground text-center">
-                Click "Run Flow" to execute this flow and see results here.
+                Click Run Flow to start. You&apos;ll see status here, then open the run page for
+                full logs and results.
               </p>
             </CardContent>
           </Card>

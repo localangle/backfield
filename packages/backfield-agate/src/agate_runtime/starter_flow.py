@@ -1,6 +1,6 @@
 """Canonical geocode starter graph.
 
-Topology: TextInput → PlaceExtract → GeocodeAgent → Stylebook Output (DBOutput).
+Topology: TextInput → PlaceExtract → GeocodeAgent → Backfield Output (DBOutput).
 """
 
 from __future__ import annotations
@@ -41,8 +41,9 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
                 id="n5",
                 type="DBOutput",
                 params={
+                    "stylebook_matching_enabled": True,
                     "stylebook_id": None,
-                    "canonicalization_mode": "rules",
+                    "canonicalization_mode": "ai_assisted",
                     "auto_apply_canonicalization": True,
                     "adjudication_model": "gpt-5-nano",
                 },

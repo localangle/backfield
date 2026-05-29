@@ -133,16 +133,19 @@ def persist_from_consolidated(
     ):
         # Compatibility for queued runs created before the policy moved onto DBOutput.
         policy = "replace"
-    try:
-        stylebook_id = resolve_effective_stylebook_id(
-            session,
-            project_id=project_id,
-            stylebook_id_override=settings.stylebook_id,
-        )
-    except LookupError:
+    if settings.stylebook_matching_enabled:
+        try:
+            stylebook_id = resolve_effective_stylebook_id(
+                session,
+                project_id=project_id,
+                stylebook_id_override=settings.stylebook_id,
+            )
+        except LookupError:
+            stylebook_id = None
+        except ValueError as exc:
+            raise RuntimeError(f"DBOutput stylebook resolution failed: {exc}") from exc
+    else:
         stylebook_id = None
-    except ValueError as exc:
-        raise RuntimeError(f"DBOutput stylebook resolution failed: {exc}") from exc
 
     replace_stats: ArticleGeographyReplaceStats | None = None
     if policy == "replace" and article.id is not None:

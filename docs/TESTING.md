@@ -29,6 +29,7 @@
   - `make smoke-s3-batch`: runs the worker S3 batch setup path with a deterministic fake S3 client and eager Celery execution, then asserts parent and item summaries.
   - `make smoke-place-geocode`: optional in-process PlaceExtract + GeocodeAgent corpus smoke (not part of CI).
   - `make smoke-place-geocode-stack`: optional single-run stack harness for the geocode starter path.
+  - **Guided flow builder (manual):** on a live stack, walk through create → parallel branch → edit bookend clear-middle → run from read-only view: `/flow/new` with Text Input → Place Extract → Geocode → JSON Output; add a parallel Place Extract branch from input; save; open `/flow/:id/edit`, change output type with middle steps present (confirm clear); open `/flow/:id`, **Run flow** without **Edit flow**, then **Edit flow** and confirm **+** / delete unlock. See `docs/FRONTEND.md` → **Guided flow builder**.
   Aggregate bundles:
   - `make smoke-fast`: `smoke-auth`, `smoke-agate-basic`, `smoke-stylebook-basic`
   - `make smoke-runtime`: `make smoke`, `make smoke-worker-async`
@@ -43,7 +44,7 @@
 
 ## Conventions
 
-- Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → Stylebook Output / `DBOutput`, no JSON Output node) as the canonical regression story; add tests when changing execution or handles.
+- Keep the **starter geocode pipeline** (TextInput → PlaceExtract → GeocodeAgent → Backfield Output / `DBOutput`, no JSON Output node) as the canonical regression story; add tests when changing execution or handles.
 - Places reconciliation policy changes should include focused worker tests for **Add Only**, **Smart Merge**, and **Replace** before relying on smoke tests. Cover stale machine-place removal, editor-touched place preservation, hard replacement cleanup, and the no-tombstone behavior for future re-adds.
 - Prefer a few high-signal tests over broad shallow coverage.
 - When adding nodes, add a focused unit test under `packages/backfield-agate/tests/`.

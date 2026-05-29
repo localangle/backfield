@@ -98,7 +98,7 @@ export default function ProjectDetailFlowsTab({
   return (
     <>
       <p className="text-sm text-muted-foreground mb-4">
-        Flows in this project. Open the editor to change the graph.
+        Flows in this project. Open a flow to view or run it.
       </p>
 
       {graphs.length === 0 ? (
@@ -129,13 +129,13 @@ export default function ProjectDetailFlowsTab({
                     >
                       <td
                         className="p-3 sm:p-4 cursor-pointer align-top"
-                        onClick={() => navigate(`/flow/${graph.id}/edit`)}
+                        onClick={() => navigate(`/flow/${graph.id}`)}
                       >
                         <div className="font-medium">{graph.name}</div>
                       </td>
                       <td
                         className="p-3 sm:p-4 text-muted-foreground cursor-pointer align-top hidden sm:table-cell whitespace-nowrap"
-                        onClick={() => navigate(`/flow/${graph.id}/edit`)}
+                        onClick={() => navigate(`/flow/${graph.id}`)}
                       >
                         {formatDateCentral(graph.created_at, { includeTime: false })}
                       </td>

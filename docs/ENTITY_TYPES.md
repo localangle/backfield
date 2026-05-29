@@ -148,6 +148,8 @@ One folder per node under `packages/backfield-agate/src/agate_nodes/<snake_case>
 
 `db_output` stays the generic persist node; entity logic lives in worker `substrate/`.
 
+Panel layout, tabs, typography, sync workflow, and shared helpers are documented in [`FRONTEND.md` → Agate nodes and node panels](FRONTEND.md#agate-nodes-and-node-panels).
+
 ## Layer checklist
 
 | Layer | full_stack | catalog_first | Typical paths |

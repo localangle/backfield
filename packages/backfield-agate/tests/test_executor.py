@@ -134,6 +134,20 @@ def test_s3_input_requires_bucket():
         run_s3_input({"bucket": "", "folder_path": ""}, {})
 
 
+def test_s3_input_strips_s3_uri_prefix_from_bucket():
+    from agate_runtime.nodes.s3_input import run_s3_input
+
+    client = MagicMock()
+    client.list_objects_v2.return_value = {"IsTruncated": False}
+
+    with patch("agate_nodes.s3_input.node._s3_client", return_value=client):
+        with pytest.raises(ValueError, match="No JSON objects"):
+            run_s3_input({"bucket": "s3://my-bucket", "folder_path": ""}, {})
+
+    client.list_objects_v2.assert_called_once()
+    assert client.list_objects_v2.call_args.kwargs["Bucket"] == "my-bucket"
+
+
 def test_s3_input_first_valid_json_file():
     """First JSON key with non-empty text wins; earlier invalid keys are skipped."""
     from agate_runtime.nodes.s3_input import run_s3_input

@@ -135,7 +135,7 @@ Legacy imports (`locations`, `canonical_policy`, …) work via shim modules; pre
 When adding a node that does **not** introduce a new Stylebook `EntityType`:
 
 1. Create `packages/backfield-agate/src/agate_nodes/<snake_case_name>/` with `metadata.json`, `node.py`, `ui/`
-2. Register in node catalog / sync flow per existing Backfield conventions
+2. Put panel/node React components under `ui/` in that package folder — **not** under `apps/agate-ui/src/nodes/`. Run `npm run sync-nodes` in `apps/agate-ui` to copy UI into the app and regenerate `src/nodes/registry.ts`.
 3. If the node writes to Postgres substrate, ensure graph output shape matches what `substrate/orchestration.py` expects, or extend orchestration deliberately (separate change)
 4. `db_output` remains the standard persist node for consolidated `places` (location domain today)
 

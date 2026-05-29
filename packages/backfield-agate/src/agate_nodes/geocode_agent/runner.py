@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _build_geocode_cache_bundle(
     project_id: int,
-    stylebook_id: int,
+    stylebook_id: int | None,
 ) -> dict[str, Callable[..., Any]]:
     """Return callables for strict resolve + adjudication candidates + canonical materialization."""
 
@@ -53,6 +53,8 @@ def _build_geocode_cache_bundle(
         location_type: str,
         components: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        if stylebook_id is None:
+            return []
         comps = components if isinstance(components, dict) else None
         with Session(get_engine()) as session:
             return build_geocode_cache_adjudication_candidates(
@@ -69,6 +71,8 @@ def _build_geocode_cache_bundle(
         location_text: str | None = None,
         components: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
+        if stylebook_id is None:
+            return None
         with Session(get_engine()) as session:
             return materialize_canonical_match_dict(
                 session,
@@ -93,10 +97,10 @@ def run_geocode_agent(params: dict[str, Any], inputs: dict[str, Any]) -> dict[st
     if raw_sid is None:
         raw_sid = params.get("stylebookId")
     use_cache = bool(params.get("useCache"))
-    if use_cache and raw_pid and raw_sid is not None and raw_sid != "":
+    if use_cache and raw_pid:
         try:
             pid = int(raw_pid)
-            sid = int(raw_sid)
+            sid = None if raw_sid is None or raw_sid == "" else int(raw_sid)
         except (TypeError, ValueError):
             logger.debug(
                 "Geocode DB cache skipped: invalid BACKFIELD_PROJECT_ID or stylebook id (%r, %r)",
@@ -104,16 +108,17 @@ def run_geocode_agent(params: dict[str, Any], inputs: dict[str, Any]) -> dict[st
                 raw_sid,
             )
         else:
-            from backfield_db import Stylebook
-            from backfield_db.session import get_engine
-            from sqlmodel import Session
+            if sid is not None:
+                from backfield_db import Stylebook
+                from backfield_db.session import get_engine
+                from sqlmodel import Session
 
-            with Session(get_engine()) as session:
-                sb = session.get(Stylebook, sid)
-            if sb is None:
-                raise ValueError(
-                    "This flow uses a catalog that no longer exists. "
-                    "Open the Geocode step and choose a catalog that is still available."
-                )
+                with Session(get_engine()) as session:
+                    sb = session.get(Stylebook, sid)
+                if sb is None:
+                    raise ValueError(
+                        "This flow uses a Stylebook that no longer exists. "
+                        "Open the Geocode step and choose a Stylebook that is still available."
+                    )
             ctx.metadata["geocode_cache_bundle"] = _build_geocode_cache_bundle(pid, sid)
     return run_geocode_agent_runtime(params, inputs, ctx)

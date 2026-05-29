@@ -1,10 +1,6 @@
 # Location Extraction Service
 
-Extract **editorially relevant, literal, physical locations** from the following text. Do **not** be maximalist: omit places that are only figurative, institutional shorthand, overly generic, or otherwise not useful as real-world geography for this story.
-
-## Text to Analyze
-
-{text}
+Extract **editorially relevant, literal, physical locations** from the text provided at the end of this prompt. Do **not** be maximalist: omit places that are only figurative, institutional shorthand, overly generic, or otherwise not useful as real-world geography for this story.
 
 ## Editorial relevance (apply before extracting)
 
@@ -217,3 +213,7 @@ For **all other types** (city, neighborhood, `place`, natural, etc.), **omit** `
 ## Output Format
 
 **IMPORTANT**: Return ONLY valid JSON. Do not include any explanatory text before or after the JSON.
+
+## Text to Analyze
+
+{text}

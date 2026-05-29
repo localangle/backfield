@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-type PageBreadcrumbItem = {
+export type PageBreadcrumbItem = {
   label: string
   to?: string
 }

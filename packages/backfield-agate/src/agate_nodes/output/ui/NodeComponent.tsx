@@ -6,7 +6,6 @@ import { getNodeIcon, getNodeLabel, getNodeBgColor } from '@/lib/nodeUtils'
 
 function OutputNode({ selected }: NodeProps) {
   const requiredUpstreamNodes = nodeMetadata?.requiredUpstreamNodes || []
-  const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
   const icon = getNodeIcon('Output', 'h-4 w-4')
   const bgColor = getNodeBgColor('Output')
 
@@ -45,7 +44,6 @@ function OutputNode({ selected }: NodeProps) {
               </div>
             </div>
           )}
-          {dependencyHelperText && <p className="text-xs text-muted-foreground mt-1">{dependencyHelperText}</p>}
         </div>
       </CardContent>
     </Card>

@@ -213,6 +213,21 @@ const nodeMetadata = ${JSON.stringify(metadata, null, 2)};
     // Add to visualizationComponents
     visualizationComponents[metadata.type] = `() => import('./${nodeFolder}/VisualizationComponent')`;
   }
+
+  // Copy additional UI helper modules (e.g. schemaExample.ts) from the node source ui/ folder.
+  if (fs.existsSync(uiPath)) {
+    const syncedComponentNames = new Set([
+      'NodeComponent.tsx',
+      'PanelComponent.tsx',
+      'VisualizationComponent.tsx',
+    ]);
+    for (const file of fs.readdirSync(uiPath)) {
+      if (!file.endsWith('.ts') && !file.endsWith('.tsx')) continue;
+      if (syncedComponentNames.has(file)) continue;
+      fs.copyFileSync(path.join(uiPath, file), path.join(targetNodeDir, file));
+      console.log(`Copied ${file} for ${metadata.type}`);
+    }
+  }
 }
 
 // Generate registry.ts
