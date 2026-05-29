@@ -2,10 +2,10 @@ import { MarkerType, type Edge, type Node } from 'reactflow'
 
 import { resolveEdgeHandles } from '@/lib/nodeCompatibility'
 
-/** Fixed bookend positions for the guided builder preview (one column step apart). */
+/** Fixed bookend positions for the guided builder preview. */
 export const BOOKEND_INPUT_POSITION = { x: 80, y: 120 }
-/** Matches {@link LAYOUT_X_STEP} in flowGraphModel — keep bookend preview spacing in sync. */
-export const BOOKEND_LAYOUT_X_STEP = 232
+/** Give the empty graph enough room for node action buttons between bookends. */
+export const BOOKEND_LAYOUT_X_STEP = 320
 export const BOOKEND_OUTPUT_POSITION = {
   x: BOOKEND_INPUT_POSITION.x + BOOKEND_LAYOUT_X_STEP,
   y: BOOKEND_INPUT_POSITION.y,

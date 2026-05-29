@@ -1,5 +1,4 @@
 import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
 type FieldLabelProps = {
@@ -9,10 +8,10 @@ type FieldLabelProps = {
   children: ReactNode
 }
 
-/** Compact panel field label; shows a red asterisk when `required` is true. */
+/** Panel field label with optional required asterisk; uses default Label typography. */
 export function FieldLabel({ htmlFor, required, className, children }: FieldLabelProps) {
   return (
-    <Label htmlFor={htmlFor} className={cn('text-xs text-muted-foreground', className)}>
+    <Label htmlFor={htmlFor} className={className}>
       {children}
       {required ? (
         <>

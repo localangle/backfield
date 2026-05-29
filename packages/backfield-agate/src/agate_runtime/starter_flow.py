@@ -41,6 +41,7 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
                 id="n5",
                 type="DBOutput",
                 params={
+                    "stylebook_matching_enabled": True,
                     "stylebook_id": None,
                     "canonicalization_mode": "ai_assisted",
                     "auto_apply_canonicalization": True,

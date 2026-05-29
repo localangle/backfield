@@ -11,7 +11,7 @@ const nodeMetadata = {
     {
       "id": "data",
       "label": "Any Data",
-      "type": "object",
+      "type": "any",
       "required": true
     }
   ],
@@ -33,6 +33,7 @@ const nodeMetadata = {
     }
   ],
   "defaultParams": {
+    "stylebook_matching_enabled": true,
     "stylebook_id": null,
     "canonicalization_mode": "ai_assisted",
     "reconciliation_policy": "smart_merge",

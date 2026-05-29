@@ -63,6 +63,13 @@ describe('resolveEdgeHandles', () => {
       targetHandle: 'data',
     })
   })
+
+  it('maps Text Input to Backfield Output on text → data', () => {
+    expect(resolveEdgeHandles('TextInput', 'DBOutput')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'data',
+    })
+  })
 })
 
 describe('chooser search threshold', () => {

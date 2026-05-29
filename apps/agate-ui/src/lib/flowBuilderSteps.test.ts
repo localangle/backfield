@@ -3,8 +3,10 @@ import { jsonInputInvalidNodeData } from '@/lib/jsonInputValidation'
 import {
   canContinueBookendNode,
   canNavigateToStep,
+  canSavePanelChanges,
   completedStepsForEdit,
   getInitialEditStep,
+  isPanelGateActive,
 } from './flowBuilderSteps'
 
 describe('canNavigateToStep', () => {
@@ -50,6 +52,7 @@ describe('canContinueBookendNode', () => {
   it('requires S3 bucket name', () => {
     expect(canContinueBookendNode({ type: 'S3Input', data: { bucket: '' } })).toBe(false)
     expect(canContinueBookendNode({ type: 'S3Input', data: { bucket: 'my-bucket' } })).toBe(true)
+    expect(canContinueBookendNode({ type: 'S3Input', data: { bucket: 's3://my-bucket' } })).toBe(true)
   })
 
   it('requires JSON object with string text field (may be empty)', () => {
@@ -74,7 +77,67 @@ describe('canContinueBookendNode', () => {
     expect(
       canContinueBookendNode({
         type: 'DBOutput',
-        data: { stylebook_id: null, canonicalization_mode: 'ai_assisted' },
+        data: {
+          stylebook_matching_enabled: true,
+          stylebook_id: null,
+          canonicalization_mode: 'ai_assisted',
+        },
+      }),
+    ).toBe(true)
+  })
+})
+
+describe('isPanelGateActive', () => {
+  it('keeps Continue/Cancel on wizard bookend steps when revisiting', () => {
+    expect(
+      isPanelGateActive({
+        readOnly: false,
+        configureGateActive: false,
+        activeStep: 'input',
+        isBookendSelected: true,
+      }),
+    ).toBe(true)
+    expect(
+      isPanelGateActive({
+        readOnly: false,
+        configureGateActive: false,
+        activeStep: 'output',
+        isBookendSelected: true,
+      }),
+    ).toBe(true)
+  })
+
+  it('uses Save on scaffold when the configure gate is cleared', () => {
+    expect(
+      isPanelGateActive({
+        readOnly: false,
+        configureGateActive: false,
+        activeStep: 'scaffold',
+        isBookendSelected: true,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('canSavePanelChanges', () => {
+  it('blocks server save on wizard bookend steps', () => {
+    expect(
+      canSavePanelChanges({
+        activeStep: 'input',
+        inputNode: {},
+        outputNode: null,
+        hasChanges: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('allows server save on scaffold when both bookends exist and the panel is dirty', () => {
+    expect(
+      canSavePanelChanges({
+        activeStep: 'scaffold',
+        inputNode: {},
+        outputNode: {},
+        hasChanges: true,
       }),
     ).toBe(true)
   })

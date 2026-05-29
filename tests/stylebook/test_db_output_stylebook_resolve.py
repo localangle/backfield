@@ -35,6 +35,12 @@ def test_db_output_resolve_unknown_project() -> None:
 def test_db_output_settings_default_to_smart_merge() -> None:
     settings = DbOutputCanonicalSettings.from_node_params({})
     assert settings.reconciliation_policy == "smart_merge"
+    assert settings.stylebook_matching_enabled is True
+
+
+def test_db_output_settings_stylebook_matching_can_be_disabled() -> None:
+    settings = DbOutputCanonicalSettings.from_node_params({"stylebook_matching_enabled": False})
+    assert settings.stylebook_matching_enabled is False
 
 
 def test_db_output_settings_validate_reconciliation_policy() -> None:

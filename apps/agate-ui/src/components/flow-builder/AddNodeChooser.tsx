@@ -19,7 +19,7 @@ type AddNodeChooserProps = {
 type FlatRow = CompatibleNodeEntry & { rowKey: string }
 type Group = { category: string; heading: string; rows: FlatRow[] }
 
-const MENU_WIDTH_PX = 420
+const MENU_WIDTH_PX = 300
 const MENU_MAX_HEIGHT_PX = 320
 const MENU_PLACEMENT_HEIGHT_PX = 160
 const MENU_GAP_PX = 8
@@ -149,12 +149,12 @@ export default function AddNodeChooser({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 flex max-h-[320px] w-[420px] overflow-hidden rounded-lg border bg-neutral-900 text-neutral-50 shadow-xl"
+      className="fixed z-50 flex max-h-[320px] w-[300px] overflow-hidden rounded-lg border bg-neutral-900 text-neutral-50 shadow-xl"
       style={{ left: menuPosition.left, top: menuPosition.top }}
       role="dialog"
       aria-label="Add a step"
     >
-      <div className="w-40 border-r border-white/10 p-2">
+      <div className="w-28 shrink-0 border-r border-white/10 p-2">
         {grouped.length === 0 ? (
           <p className="px-3 py-4 text-sm text-neutral-300">No steps are available yet.</p>
         ) : (

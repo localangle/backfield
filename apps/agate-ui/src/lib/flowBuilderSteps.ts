@@ -1,4 +1,5 @@
 import { isValidJsonInputData } from '@/lib/jsonInputValidation'
+import { isValidS3BucketName, s3BucketFieldError } from '@/lib/s3InputValidation'
 
 export type FlowBuilderStep = 'input' | 'output' | 'scaffold'
 
@@ -49,7 +50,7 @@ export type BookendNodeLike = {
 export function canContinueBookendNode(node: BookendNodeLike): boolean {
   if (node.type === 'S3Input') {
     const bucket = node.data?.bucket
-    return typeof bucket === 'string' && bucket.trim() !== ''
+    return typeof bucket === 'string' && isValidS3BucketName(bucket)
   }
   if (node.type === 'JSONInput') {
     return isValidJsonInputData(node.data)
@@ -64,7 +65,8 @@ export function canContinueMiddleNode(node: BookendNodeLike): boolean {
 
 export function bookendContinueHint(node: BookendNodeLike): string | null {
   if (node.type === 'S3Input' && !canContinueBookendNode(node)) {
-    return 'Enter the S3 bucket name before continuing.'
+    const bucket = typeof node.data?.bucket === 'string' ? node.data.bucket : ''
+    return s3BucketFieldError(bucket) ?? 'Enter the S3 bucket name before continuing.'
   }
   if (node.type === 'JSONInput' && !canContinueBookendNode(node)) {
     return 'Add valid JSON with a "text" field before continuing.'
@@ -79,4 +81,32 @@ export function getInitialEditStep(): FlowBuilderStep {
 
 export function completedStepsForEdit(): Set<FlowBuilderStep> {
   return new Set(['input', 'output'])
+}
+
+export function isWizardBookendStep(step: FlowBuilderStep): boolean {
+  return step === 'input' || step === 'output'
+}
+
+/** Continue/Cancel gate on wizard source/destination steps; configure gate elsewhere. */
+export function isPanelGateActive(options: {
+  readOnly: boolean
+  configureGateActive: boolean
+  activeStep: FlowBuilderStep
+  isBookendSelected: boolean
+}): boolean {
+  if (options.readOnly) return false
+  if (options.configureGateActive) return true
+  return isWizardBookendStep(options.activeStep) && options.isBookendSelected
+}
+
+/** Persist-to-server save is only available on the scaffold step once both bookends exist. */
+export function canSavePanelChanges(options: {
+  activeStep: FlowBuilderStep
+  inputNode: unknown
+  outputNode: unknown
+  hasChanges: boolean
+}): boolean {
+  if (!options.hasChanges) return false
+  if (isWizardBookendStep(options.activeStep)) return false
+  return Boolean(options.inputNode && options.outputNode)
 }

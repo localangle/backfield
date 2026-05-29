@@ -1,5 +1,13 @@
+import { useEffect, useState } from 'react'
+import { FieldLabel } from '@/components/node-panel/FieldLabel'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import {
+  normalizeS3BucketName,
+  normalizeS3FolderPath,
+  normalizeS3MaxFilesInput,
+  S3_DEFAULT_MAX_FILES,
+} from '@/lib/s3InputValidation'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 
 interface S3InputPanelProps {
@@ -20,118 +28,132 @@ export default function S3InputPanel({
   setNodes,
   nodeOutputLookupSpec,
 }: S3InputPanelProps) {
+  const [maxFilesText, setMaxFilesText] = useState(
+    () => String(node.data.max_files ?? S3_DEFAULT_MAX_FILES),
+  )
+
+  useEffect(() => {
+    setMaxFilesText(String(node.data.max_files ?? S3_DEFAULT_MAX_FILES))
+  }, [node.id])
+
   const rawOutputs = currentRun?.node_outputs as Record<string, unknown> | undefined
   const slice = rawOutputs
     ? (getNodeOutputById(rawOutputs, node.id, nodeOutputLookupSpec ?? undefined) as
         | Record<string, unknown>
         | undefined)
     : undefined
+
+  const bucketValue = String(node.data.bucket ?? '')
+
+  const patchBucket = (value: string) => {
+    if (!setNodes) return
+    setNodes((nds: any[]) =>
+      nds.map((n: any) => (n.id === node.id ? { ...n, data: { ...n.data, bucket: value } } : n)),
+    )
+  }
+
+  const normalizeBucketField = () => {
+    patchBucket(normalizeS3BucketName(String(node.data.bucket ?? '')))
+  }
+
+  const patchFolderPath = (value: string) => {
+    if (!setNodes) return
+    setNodes((nds: any[]) =>
+      nds.map((n: any) =>
+        n.id === node.id ? { ...n, data: { ...n.data, folder_path: value } } : n,
+      ),
+    )
+  }
+
+  const normalizeFolderPathField = () => {
+    patchFolderPath(normalizeS3FolderPath(String(node.data.folder_path ?? '')))
+  }
+
+  const commitMaxFilesField = () => {
+    const next = normalizeS3MaxFilesInput(maxFilesText)
+    setMaxFilesText(String(next))
+    if (!setNodes) return
+    setNodes((nds: any[]) =>
+      nds.map((n: any) => (n.id === node.id ? { ...n, data: { ...n.data, max_files: next } } : n)),
+    )
+  }
+
   return (
     <>
       <div className="space-y-3">
         <div>
-          <Label className="text-sm font-medium">Description</Label>
-          <p className="text-sm text-muted-foreground mt-1">
-            Load article text from JSON files in S3.
+          <FieldLabel htmlFor="bucket" required>
+            S3 bucket name
+          </FieldLabel>
+          {editMode && setNodes ? (
+            <Input
+              id="bucket"
+              value={node.data.bucket || ''}
+              onChange={(e) => patchBucket(e.target.value)}
+              onBlur={normalizeBucketField}
+              placeholder="my-bucket-name"
+              className="mt-1 text-xs font-mono"
+              required
+              aria-required
+            />
+          ) : (
+            <div className="mt-1 p-2 bg-muted rounded">
+              <span className="text-xs font-mono">
+                {normalizeS3BucketName(bucketValue) || 'Not configured'}
+              </span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-1">
+            The name of a S3 bucket your credentials can access. A leading{' '}
+            <span className="font-mono">s3://</span> is removed automatically.
           </p>
         </div>
-      </div>
 
-      <div className="pt-4 border-t">
         <div>
-          <Label className="text-sm font-medium">Parameters</Label>
+          <Label htmlFor="folder-path">Folder path</Label>
+          {editMode && setNodes ? (
+            <Input
+              id="folder-path"
+              value={node.data.folder_path || ''}
+              onChange={(e) => patchFolderPath(e.target.value)}
+              onBlur={normalizeFolderPathField}
+              placeholder="input/articles/"
+              className="mt-1 text-xs font-mono"
+            />
+          ) : (
+            <div className="mt-1 p-2 bg-muted rounded">
+              <span className="text-xs font-mono">
+                {normalizeS3FolderPath(String(node.data.folder_path ?? '')) || '(root)'}
+              </span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-1">
+            Optional prefix inside the bucket (for example{' '}
+            <span className="font-mono">input/</span>). A trailing slash is added automatically.
+          </p>
         </div>
 
-        <div className="space-y-3 mt-2">
-          <div>
-            <Label htmlFor="bucket" className="text-xs text-muted-foreground">
-              S3 bucket name
-            </Label>
-            {editMode && setNodes ? (
-              <Input
-                id="bucket"
-                value={node.data.bucket || ''}
-                onChange={(e) => {
-                  setNodes((nds: any[]) =>
-                    nds.map((n: any) =>
-                      n.id === node.id ? { ...n, data: { ...n.data, bucket: e.target.value } } : n,
-                    ),
-                  )
-                }}
-                placeholder="my-bucket-name"
-                className="mt-1 text-xs font-mono"
-              />
-            ) : (
-              <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs font-mono">{node.data.bucket || 'Not configured'}</span>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <Label htmlFor="folder-path" className="text-xs text-muted-foreground">
-              Folder path (optional)
-            </Label>
-            {editMode && setNodes ? (
-              <Input
-                id="folder-path"
-                value={node.data.folder_path || ''}
-                onChange={(e) => {
-                  setNodes((nds: any[]) =>
-                    nds.map((n: any) =>
-                      n.id === node.id
-                        ? { ...n, data: { ...n.data, folder_path: e.target.value } }
-                        : n,
-                    ),
-                  )
-                }}
-                placeholder="input/articles/"
-                className="mt-1 text-xs font-mono"
-              />
-            ) : (
-              <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs font-mono">{node.data.folder_path || '(root)'}</span>
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">
-              Optional prefix inside the bucket (for example <span className="font-mono">input/</span>
-              ).
-            </p>
-          </div>
-
-          <div>
-            <Label htmlFor="max-files" className="text-xs text-muted-foreground">
-              Max files per run
-            </Label>
-            {editMode && setNodes ? (
-              <Input
-                id="max-files"
-                type="number"
-                min={1}
-                max={10000}
-                value={node.data.max_files ?? 500}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10)
-                  const next = Number.isFinite(v) ? v : 500
-                  setNodes((nds: any[]) =>
-                    nds.map((n: any) =>
-                      n.id === node.id ? { ...n, data: { ...n.data, max_files: next } } : n,
-                    ),
-                  )
-                }}
-                className="mt-1 text-xs"
-              />
-            ) : (
-              <div className="mt-1 p-2 bg-muted rounded">
-                <span className="text-xs">{node.data.max_files ?? 500}</span>
-              </div>
-            )}
-          </div>
+        <div>
+          <Label htmlFor="max-files">Max files per run</Label>
+          {editMode && setNodes ? (
+            <Input
+              id="max-files"
+              inputMode="numeric"
+              value={maxFilesText}
+              onChange={(e) => setMaxFilesText(e.target.value)}
+              onBlur={commitMaxFilesField}
+              className="mt-1 text-xs"
+            />
+          ) : (
+            <div className="mt-1 p-2 bg-muted rounded">
+              <span className="text-xs">{node.data.max_files ?? S3_DEFAULT_MAX_FILES}</span>
+            </div>
+          )}
         </div>
       </div>
 
       {slice && typeof slice.total_files === 'number' && (
-        <div className="pt-4 border-t">
+        <div className="pt-4 border-t mt-4">
           <Label className="text-sm font-medium">Latest run</Label>
           <div className="mt-2 space-y-2">
             <div className="text-xs space-y-1">

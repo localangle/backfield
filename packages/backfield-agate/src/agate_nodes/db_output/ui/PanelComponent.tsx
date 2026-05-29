@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
+import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -24,6 +25,7 @@ interface DBOutputPanelProps {
 const INVALID_SELECTION_VALUE = '__bf_model_invalid__'
 
 const DEFAULTS = {
+  stylebook_matching_enabled: true,
   stylebook_id: null as number | null,
   canonicalization_mode: 'ai_assisted' as 'rules' | 'ai_assisted',
   reconciliation_policy: 'smart_merge' as 'add_only' | 'smart_merge' | 'replace',
@@ -32,7 +34,7 @@ const DEFAULTS = {
   adjudication_ai_model_config_id: null as string | null,
 }
 
-const WORKSPACE_DEFAULT_SELECT = '__workspace_default__'
+const ORG_DEFAULT_STYLEBOOK_SELECT = '__org_default_stylebook__'
 
 type UnifiedAiModelOption = {
   selectValue: string
@@ -85,6 +87,10 @@ function resolvedStylebookId(data: Record<string, unknown> | undefined): number 
   if (raw === null || raw === undefined || raw === '') return null
   const n = typeof raw === 'number' ? raw : Number(raw)
   return Number.isFinite(n) ? n : null
+}
+
+function yesNoSelectValue(flag: boolean): 'yes' | 'no' {
+  return flag ? 'yes' : 'no'
 }
 
 export default function DBOutputPanel({
@@ -237,12 +243,18 @@ export default function DBOutputPanel({
 
   const missingFromList = paramStylebookId != null && !stylebooks.some((s) => s.id === paramStylebookId)
 
-  const stylebookSelectValue =
-    paramStylebookId != null ? String(paramStylebookId) : WORKSPACE_DEFAULT_SELECT
+  const orgDefaultStylebook = stylebooks.find((sb) => sb.is_default)
+  const usesOrgDefault =
+    paramStylebookId == null ||
+    (orgDefaultStylebook != null && paramStylebookId === orgDefaultStylebook.id)
+
+  const stylebookSelectValue = usesOrgDefault
+    ? ORG_DEFAULT_STYLEBOOK_SELECT
+    : String(paramStylebookId)
 
   const handleStylebookSelect = (value: string) => {
     if (!setNodes) return
-    const nextId = value === WORKSPACE_DEFAULT_SELECT ? null : Number(value)
+    const nextId = value === ORG_DEFAULT_STYLEBOOK_SELECT ? null : Number(value)
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
         n.id === node.id ? { ...n, data: mergeData({ ...(n.data || {}), stylebook_id: nextId }) } : n,
@@ -250,17 +262,22 @@ export default function DBOutputPanel({
     )
   }
 
-  const defaultOptionLabel = graphContext?.workspaceStylebookName
-    ? `Workspace default (${graphContext.workspaceStylebookName})`
-    : 'Workspace default'
+  const defaultOptionLabel = orgDefaultStylebook?.name
+    ? `${orgDefaultStylebook.name} (Default)`
+    : 'Default'
+
+  const selectableStylebooks = orgDefaultStylebook
+    ? stylebooks.filter((sb) => sb.id !== orgDefaultStylebook.id)
+    : stylebooks
 
   const data = merged
+  const stylebookMatchingEnabled = Boolean(data.stylebook_matching_enabled)
   const aiAssisted = data.canonicalization_mode === 'ai_assisted'
 
   const catalogHint =
     (projectId == null || graphContext?.fetchProjectAiModels == null) && editMode ? (
       <p className="text-xs text-muted-foreground">
-        Save this flow under a project to choose adjudication models enabled for this project.
+        Save this flow under a project to choose decision models enabled for this project.
       </p>
     ) : null
 
@@ -277,159 +294,206 @@ export default function DBOutputPanel({
     ) : null
 
   return (
-    <div className="space-y-4">
-      <div>
-        <Label className="text-sm font-medium">Description</Label>
-        <p className="text-sm text-muted-foreground mt-1">
-          Persists geocoded places to substrate tables and applies Stylebook canonicalization
-          according to the options below.
-        </p>
-      </div>
+    <>
+      <NodePanelTabGate tab="settings">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="dbout-reconciliation">Update strategy</Label>
+            <Select
+              value={data.reconciliation_policy}
+              onValueChange={(value) =>
+                patch({
+                  reconciliation_policy: value as 'add_only' | 'smart_merge' | 'replace',
+                })
+              }
+              disabled={disabled}
+            >
+              <SelectTrigger id="dbout-reconciliation" className="text-xs">
+                <SelectValue placeholder="Choose how saved data is updated" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="add_only">Add Only</SelectItem>
+                <SelectItem value="smart_merge">Smart Merge</SelectItem>
+                <SelectItem value="replace">Replace</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {data.reconciliation_policy === 'add_only'
+                ? 'Adds new data from this flow without changing existing saved data.'
+                : data.reconciliation_policy === 'replace'
+                  ? 'Replaces existing saved data from this flow’s categories with this run’s results.'
+                  : 'Updates data from this flow while preserving changes made by editors.'}
+            </p>
+          </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="dbout-stylebook">Stylebook</Label>
-        <Select
-          value={stylebookSelectValue}
-          onValueChange={handleStylebookSelect}
-          disabled={disabled || orgId == null}
-        >
-          <SelectTrigger id="dbout-stylebook" className="text-xs">
-            <SelectValue placeholder="Choose a catalog" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={WORKSPACE_DEFAULT_SELECT}>{defaultOptionLabel}</SelectItem>
-            {missingFromList && paramStylebookId != null ? (
-              <SelectItem value={String(paramStylebookId)}>
-                {stylebooks.length === 0 && !stylebooksError
-                  ? `Saved selection (ID ${paramStylebookId})`
-                  : `Saved catalog unavailable (ID ${paramStylebookId})`}
-              </SelectItem>
-            ) : null}
-            {stylebooks.map((sb) => (
-              <SelectItem key={sb.id} value={String(sb.id)}>
-                {sb.name}
-                {sb.is_default ? ' (organization default)' : ''}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {orgId == null && (
-          <p className="text-xs text-muted-foreground">
-            Save the flow to a project (or open an existing project flow) to choose a catalog for
-            your organization.
+          <div className="space-y-2">
+            <Label htmlFor="dbout-stylebook-matching">Stylebook matching</Label>
+            <Select
+              value={yesNoSelectValue(stylebookMatchingEnabled)}
+              onValueChange={(value) => patch({ stylebook_matching_enabled: value === 'yes' })}
+              disabled={disabled}
+            >
+              <SelectTrigger id="dbout-stylebook-matching" className="text-xs">
+                <SelectValue placeholder="Choose whether to match with Stylebook" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">Yes</SelectItem>
+                <SelectItem value="no">No</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              When on, extracted places are linked to your Stylebook catalog. When off, results are
+              saved without catalog matching.
+            </p>
+          </div>
+        </div>
+      </NodePanelTabGate>
+
+      <NodePanelTabGate tab="stylebook">
+        {!stylebookMatchingEnabled ? (
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Turn on Stylebook matching in Settings to configure catalog matching.
           </p>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="dbout-stylebook">Stylebook</Label>
+              <Select
+                value={stylebookSelectValue}
+                onValueChange={handleStylebookSelect}
+                disabled={disabled || orgId == null}
+              >
+                <SelectTrigger id="dbout-stylebook" className="text-xs">
+                  <SelectValue placeholder="Choose a Stylebook" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ORG_DEFAULT_STYLEBOOK_SELECT}>{defaultOptionLabel}</SelectItem>
+                  {missingFromList && paramStylebookId != null ? (
+                    <SelectItem value={String(paramStylebookId)}>
+                      {stylebooks.length === 0 && !stylebooksError
+                        ? `Saved selection (ID ${paramStylebookId})`
+                        : `Saved Stylebook unavailable (ID ${paramStylebookId})`}
+                    </SelectItem>
+                  ) : null}
+                  {selectableStylebooks.map((sb) => (
+                    <SelectItem key={sb.id} value={String(sb.id)}>
+                      {sb.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {orgId == null && (
+                <p className="text-xs text-muted-foreground">
+                  Save the flow to a project (or open an existing project flow) to choose a Stylebook
+                  for your organization.
+                </p>
+              )}
+              {orgId != null && stylebooks.length === 0 && !stylebooksError && (
+                <p className="text-xs text-muted-foreground">Loading Stylebooks…</p>
+              )}
+              {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
+              <p className="text-xs text-muted-foreground">
+                Default uses your organization&apos;s default Stylebook. Choose another to match and
+                write against a different catalog.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dbout-mode">Matching strategy</Label>
+              <Select
+                value={data.canonicalization_mode}
+                onValueChange={(value) =>
+                  patch({ canonicalization_mode: value as 'rules' | 'ai_assisted' })
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger id="dbout-mode" className="text-xs">
+                  <SelectValue placeholder="Choose how to match" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rules">Rules-based</SelectItem>
+                  <SelectItem value="ai_assisted">AI Assisted</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {data.canonicalization_mode === 'rules'
+                  ? 'Reconcile entities with Stylebook without using LLMs. Less accurate but faster and cheaper.'
+                  : 'Use LLM to match entities with Stylebook entries. More accurate, especially in complex cases.'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dbout-model">Decision model</Label>
+              {aiAssisted ? (
+                <>
+                  {catalogHint}
+                  {projectId != null && catalogLoading && (
+                    <p className="text-xs text-muted-foreground">Loading models…</p>
+                  )}
+                  {catalogError ? <p className="text-xs text-destructive">{catalogError}</p> : null}
+                  {catalogEmptyHint}
+                  {showInvalidAdjPersisted ? (
+                    <p className="text-xs text-muted-foreground">
+                      The saved decision model is no longer available. Choose another model below.
+                    </p>
+                  ) : null}
+                  <Select
+                    value={adjRadixValue}
+                    onValueChange={handleAdjudicationModel}
+                    disabled={disabled || modelSelectOptions.length === 0}
+                  >
+                    <SelectTrigger id="dbout-model" className="text-xs">
+                      <SelectValue placeholder="Choose a model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {showInvalidAdjPersisted ? (
+                        <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                          Saved model unavailable
+                        </SelectItem>
+                      ) : null}
+                      {modelSelectOptions.map((m) => (
+                        <SelectItem key={`adj-${m.selectValue}`} value={m.selectValue}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Used to judge ambiguous catalog matches. Options come from this
+                    project&apos;s enabled models.
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Available when matching strategy is AI Assisted.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dbout-auto">Auto-apply matching</Label>
+              <Select
+                value={yesNoSelectValue(Boolean(data.auto_apply_canonicalization))}
+                onValueChange={(value) =>
+                  patch({ auto_apply_canonicalization: value === 'yes' })
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger id="dbout-auto" className="text-xs">
+                  <SelectValue placeholder="Choose whether to apply matches automatically" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yes">Yes</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                When set to No, items go to the Stylebook queue for human review.
+              </p>
+            </div>
+          </div>
         )}
-        {orgId != null && stylebooks.length === 0 && !stylebooksError && (
-          <p className="text-xs text-muted-foreground">Loading catalogs…</p>
-        )}
-        {stylebooksError && <p className="text-xs text-destructive">{stylebooksError}</p>}
-        <p className="text-xs text-muted-foreground">
-          When set, canonicalization targets this Stylebook (must belong to the project
-          organization). Workspace default uses the catalog configured for this flow&apos;s
-          workspace.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="dbout-reconciliation">Update strategy</Label>
-        <Select
-          value={data.reconciliation_policy}
-          onValueChange={(value) =>
-            patch({
-              reconciliation_policy: value as 'add_only' | 'smart_merge' | 'replace',
-            })
-          }
-          disabled={disabled}
-        >
-          <SelectTrigger id="dbout-reconciliation" className="text-xs">
-            <SelectValue placeholder="Choose how saved data is updated" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="add_only">Add Only</SelectItem>
-            <SelectItem value="smart_merge">Smart Merge</SelectItem>
-            <SelectItem value="replace">Replace</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          {data.reconciliation_policy === 'add_only'
-            ? 'Adds new data from this flow without changing existing saved data.'
-            : data.reconciliation_policy === 'replace'
-              ? 'Replaces existing saved data from this flow’s categories with this run’s results.'
-              : 'Updates data from this flow while preserving changes made by editors.'}
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="dbout-mode">Canonicalization strategy</Label>
-        <select
-          id="dbout-mode"
-          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          disabled={disabled}
-          value={data.canonicalization_mode}
-          onChange={(e) =>
-            patch({ canonicalization_mode: e.target.value as 'rules' | 'ai_assisted' })
-          }
-        >
-          <option value="rules">Rules-based</option>
-          <option value="ai_assisted">AI Assisted</option>
-        </select>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="dbout-model" className="text-xs">
-          Adjudication model (AI-assisted)
-        </Label>
-        {catalogHint}
-        {projectId != null && catalogLoading && (
-          <p className="text-xs text-muted-foreground">Loading models…</p>
-        )}
-        {catalogError ? <p className="text-xs text-destructive">{catalogError}</p> : null}
-        {catalogEmptyHint}
-        {showInvalidAdjPersisted ? (
-          <p className="text-xs text-muted-foreground">
-            The saved adjudication model is no longer available. Choose another model below.
-          </p>
-        ) : null}
-        <Select
-          value={adjRadixValue}
-          onValueChange={handleAdjudicationModel}
-          disabled={disabled || !aiAssisted || modelSelectOptions.length === 0}
-        >
-          <SelectTrigger id="dbout-model" className="text-xs">
-            <SelectValue placeholder="Choose a model" />
-          </SelectTrigger>
-          <SelectContent>
-            {showInvalidAdjPersisted ? (
-              <SelectItem disabled value={INVALID_SELECTION_VALUE}>
-                Saved model unavailable
-              </SelectItem>
-            ) : null}
-            {modelSelectOptions.map((m) => (
-              <SelectItem key={`adj-${m.selectValue}`} value={m.selectValue}>
-                {m.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          Used when AI-assisted canonicalization needs to judge ambiguous catalog matches. Options
-          come from this project&apos;s enabled models.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <input
-          id="dbout-auto"
-          type="checkbox"
-          className="h-4 w-4 rounded border-input"
-          disabled={disabled}
-          checked={Boolean(data.auto_apply_canonicalization)}
-          onChange={(e) => patch({ auto_apply_canonicalization: e.target.checked })}
-        />
-        <Label htmlFor="dbout-auto" className="text-sm font-normal cursor-pointer">
-          Auto-apply canonicalization (off = review queue with recommendations)
-        </Label>
-      </div>
-    </div>
+      </NodePanelTabGate>
+    </>
   )
 }

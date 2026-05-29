@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BOOKEND_OUTPUT_POSITION } from './flowBuilderLayout'
+import { BOOKEND_LAYOUT_X_STEP, BOOKEND_OUTPUT_POSITION } from './flowBuilderLayout'
 import {
   addSiblingBranch,
   applyLayoutToModel,
@@ -43,6 +43,15 @@ describe('flowGraphModel serial chain', () => {
     const model = bookends()
     expect(edgeSet(model)).toEqual(new Set(['input-1->output-1:tip']))
     expect(getBranchTipIds(model)).toEqual(['input-1'])
+  })
+
+  it('spaces empty bookends far enough apart for build controls', () => {
+    const positioned = assignLayoutPositions(bookends())
+    const input = positioned.find((node) => node.id === 'input-1')!
+    const output = positioned.find((node) => node.id === 'output-1')!
+
+    expect(output.position!.x - input.position!.x).toBe(BOOKEND_LAYOUT_X_STEP)
+    expect(BOOKEND_LAYOUT_X_STEP).toBeGreaterThan(LAYOUT_X_STEP)
   })
 
   it('adds PlaceExtract as a branch from input with tip wired to output', () => {
@@ -110,6 +119,14 @@ describe('flowGraphModel serial chain', () => {
     ])
   })
 
+  it('does not mark Backfield Output invalid when wired directly from Text Input', () => {
+    const model = createFlowGraphModel(
+      { id: 'input-1', type: 'TextInput', data: { text: 'hi' } },
+      { id: 'output-1', type: 'DBOutput', data: {} },
+    )
+    expect(getInvalidFlowNodeIds(model)).toEqual(new Set())
+  })
+
   it('marks a rewired Geocode step invalid when its Place Extract upstream is deleted', () => {
     const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
     const geocode: FlowGraphNode = { id: 'geo-1', type: 'GeocodeAgent', data: {} }
@@ -142,6 +159,18 @@ describe('flowGraphModel parallel branches', () => {
         'place-2->output-1:tip',
       ]),
     )
+  })
+
+  it('offsets parallel branches vertically when forking from a middle step', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const place2: FlowGraphNode = { id: 'place-2', type: 'PlaceExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = addSiblingBranch(model, 'place-1', place2)
+
+    const parent = model.middleNodes.find((node) => node.id === 'place-1')!
+    const forked = model.middleNodes.find((node) => node.id === 'place-2')!
+    expect(forked.position!.x).toBeGreaterThan(parent.position!.x)
+    expect(forked.position!.y).not.toBe(parent.position!.y)
   })
 
   it('keeps serial extension on one branch only when the other branch is parallel', () => {
@@ -340,8 +369,8 @@ describe('flowGraphModel layout', () => {
 
     expect(input.position).toEqual({ x: 20, y: 30 })
     expect(placeNode.position).toEqual({ x: 420, y: 330 })
-    expect(output.position).toEqual({ x: 900, y: 60 })
     expect(geo.position!.x - (placeNode.position!.x + LAYOUT_NODE_WIDTH)).toBe(LAYOUT_X_GAP)
+    expect(output.position!.x - (geo.position!.x + LAYOUT_NODE_WIDTH)).toBe(LAYOUT_X_GAP)
     expect(placeNode.position!.y).toBe(geo.position!.y)
   })
 
@@ -360,10 +389,10 @@ describe('flowGraphModel layout', () => {
       y: 120,
     })
     expect(model.middleNodes.find((node) => node.id === 'geo-1')?.position).toEqual({
-      x: 544,
+      x: 312 + LAYOUT_X_STEP,
       y: 120,
     })
-    expect(model.outputNode.position).toEqual({ x: 776, y: 120 })
+    expect(model.outputNode.position).toEqual({ x: 312 + LAYOUT_X_STEP * 2, y: 120 })
   })
 
   it('insertAfter expands cramped downstream edges enough to prevent overlap', () => {
@@ -458,7 +487,44 @@ describe('flowGraphModel deleteMiddleNode', () => {
     expect(getBranchTipIds(model)).toEqual(['input-1'])
     expect(model.middleNodes).toHaveLength(0)
     expect(edgeSet(model)).toEqual(new Set(['input-1->output-1:tip']))
-    expect(model.outputNode.position).toEqual({ x: 544, y: 120 })
+    expect(model.outputNode.position).toEqual({
+      x: 80 + LAYOUT_X_STEP,
+      y: 120,
+    })
+  })
+
+  it('collapses extended edges when canceling a newly added tip step', () => {
+    let model = bookends()
+    model = updateNodePosition(model, 'input-1', { x: 80, y: 120 })
+    model = updateNodePosition(model, 'output-1', { x: 80 + LAYOUT_X_STEP, y: 120 })
+    const beforeOutput = { ...model.outputNode.position! }
+
+    model = addSiblingBranch(model, 'input-1', { id: 'place-1', type: 'PlaceExtract', data: {} })
+    expect(model.outputNode.position!.x).toBeGreaterThan(beforeOutput!.x)
+
+    model = deleteMiddleNode(model, 'place-1')
+
+    expect(model.middleNodes).toHaveLength(0)
+    expect(model.outputNode.position).toEqual(beforeOutput)
+  })
+
+  it('pulls downstream nodes back when deleting a cramped serial insert', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const geocode: FlowGraphNode = { id: 'geo-1', type: 'GeocodeAgent', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = insertAfter(model, 'place-1', geocode)
+    model = updateNodePosition(model, 'place-1', { x: 312, y: 120 })
+    model = updateNodePosition(model, 'geo-1', { x: 450, y: 120 })
+    model = updateNodePosition(model, 'output-1', { x: 682, y: 120 })
+
+    model = insertAfter(model, 'place-1', { id: 'mid-1', type: 'PlaceExtract', data: {} })
+    const afterInsertOutput = model.outputNode.position!.x
+    expect(afterInsertOutput).toBeGreaterThan(682)
+
+    model = deleteMiddleNode(model, 'mid-1')
+
+    expect(model.middleNodes.map((node) => node.id)).toEqual(['place-1', 'geo-1'])
+    expect(model.outputNode.position!.x).toBeLessThan(afterInsertOutput)
   })
 
   it('clears serial link when deleting a leaf step on a branch', () => {

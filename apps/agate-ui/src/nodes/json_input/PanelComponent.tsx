@@ -98,9 +98,7 @@ export default function JSONInputPanel({
     <>
       <NodePanelTabGate tab="settings">
         <div className="space-y-2">
-          <Label htmlFor="node-json" className="text-xs text-muted-foreground">
-            JSON data (must include &quot;text&quot;)
-          </Label>
+          <Label htmlFor="node-json">JSON data (must include &quot;text&quot;)</Label>
           <Textarea
             id="node-json"
             value={jsonText}
@@ -121,9 +119,7 @@ export default function JSONInputPanel({
             example{' '}
             <span className="font-mono">{'{headline}'}</span>).
           </p>
-          <Label htmlFor="node-json-schema" className="text-xs text-muted-foreground">
-            Example shape
-          </Label>
+          <Label htmlFor="node-json-schema">Example shape</Label>
           <Textarea
             id="node-json-schema"
             readOnly
@@ -142,7 +138,7 @@ export default function JSONInputPanel({
               Fields in output: {Object.keys(slice).length}
             </div>
             <div>
-              <Label className="text-xs font-medium">Output preview</Label>
+              <Label>Output preview</Label>
               <div className="text-xs font-mono p-2 bg-muted rounded mt-1 max-h-48 overflow-y-auto">
                 {JSON.stringify(slice, null, 2)}
               </div>

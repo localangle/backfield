@@ -52,9 +52,7 @@ export default function TextInputPanel({
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="node-text" className="text-xs text-muted-foreground">
-        Input text
-      </Label>
+      <Label htmlFor="node-text">Input text</Label>
       <Textarea
         id="node-text"
         value={node.data.text || ''}

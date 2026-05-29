@@ -1,6 +1,10 @@
 import { INPUT_BOOKEND_TYPES, OUTPUT_BOOKEND_TYPES } from '@/lib/flowValidation'
 import { nodeMetadata } from '@/nodes/registry'
-import { BOOKEND_INPUT_POSITION, BOOKEND_OUTPUT_POSITION } from '@/lib/flowBuilderLayout'
+import {
+  BOOKEND_INPUT_POSITION,
+  BOOKEND_LAYOUT_X_STEP,
+  BOOKEND_OUTPUT_POSITION,
+} from '@/lib/flowBuilderLayout'
 import { getCompatibleNextNodes, resolveEdgeHandles } from '@/lib/nodeCompatibility'
 
 export type FlowGraphNode = {
@@ -34,7 +38,7 @@ export type FlowGraphModel = {
 export const LAYOUT_INPUT_X = BOOKEND_INPUT_POSITION.x
 export const LAYOUT_INPUT_Y = BOOKEND_INPUT_POSITION.y
 export const LAYOUT_NODE_WIDTH = 200
-export const LAYOUT_X_GAP = 32
+export const LAYOUT_X_GAP = 72
 export const LAYOUT_X_STEP = LAYOUT_NODE_WIDTH + LAYOUT_X_GAP
 export const TIDY_LAYOUT_X_GAP = 72
 export const TIDY_LAYOUT_X_STEP = LAYOUT_NODE_WIDTH + TIDY_LAYOUT_X_GAP
@@ -226,18 +230,26 @@ export function addSiblingBranch(
   }
 
   const existing = model.branchChildren[parentId] ?? []
+  const branchChildren = {
+    ...model.branchChildren,
+    [parentId]: [...existing, newNode.id],
+  }
+  const draftModel: FlowGraphModel = {
+    ...model,
+    middleNodes: [...model.middleNodes, newNode],
+    branchChildren,
+  }
+  const autoPosition = assignLayoutPositions(draftModel).find((node) => node.id === newNode.id)
+    ?.position
   const positionedNewNode = {
     ...newNode,
-    position: newNode.position ?? positionForNewSibling(model, parentId),
+    position: newNode.position ?? autoPosition ?? positionForNewSibling(model, parentId),
   }
   return applyLayoutToModel({
     ...model,
     outputNode: outputAfterNodes(model.outputNode, [positionedNewNode]),
     middleNodes: [...model.middleNodes, positionedNewNode],
-    branchChildren: {
-      ...model.branchChildren,
-      [parentId]: [...existing, newNode.id],
-    },
+    branchChildren,
   })
 }
 
@@ -408,12 +420,87 @@ export function deleteMiddleNode(model: FlowGraphModel, nodeId: string): FlowGra
 
   const middleNodes = model.middleNodes.filter((n) => n.id !== nodeId)
 
-  return applyLayoutToModel({
+  const nextModel: FlowGraphModel = {
     ...model,
     middleNodes,
     branchChildren,
     serialLinks,
+  }
+
+  return compactLayoutAfterDelete(model, nodeId, nextModel)
+}
+
+function minimumOutputXForModel(model: FlowGraphModel): number {
+  const originX = model.inputNode.position?.x ?? LAYOUT_INPUT_X
+  const tips = getBranchTipIds(model)
+  if (tips.length === 0) {
+    return originX + BOOKEND_LAYOUT_X_STEP
+  }
+  let minRequired = originX
+  for (const tipId of tips) {
+    const tip = getNodeById(model, tipId)
+    if (tip) {
+      minRequired = Math.max(minRequired, positionAfter(tip))
+    }
+  }
+  return minRequired
+}
+
+function applyHorizontalShift(
+  model: FlowGraphModel,
+  nodeIds: Set<string>,
+  deltaX: number,
+  options?: { includeOutput?: boolean },
+): FlowGraphModel {
+  const shiftPosition = (position: { x: number; y: number } | undefined) => ({
+    x: (position?.x ?? 0) + deltaX,
+    y: position?.y ?? LAYOUT_INPUT_Y,
   })
+
+  return {
+    ...model,
+    outputNode: options?.includeOutput
+      ? { ...model.outputNode, position: shiftPosition(model.outputNode.position) }
+      : model.outputNode,
+    middleNodes: model.middleNodes.map((node) =>
+      nodeIds.has(node.id) ? { ...node, position: shiftPosition(node.position) } : node,
+    ),
+  }
+}
+
+function compactLayoutAfterDelete(
+  modelBefore: FlowGraphModel,
+  deletedNodeId: string,
+  modelAfter: FlowGraphModel,
+): FlowGraphModel {
+  const deletedNode = modelBefore.middleNodes.find((node) => node.id === deletedNodeId)
+  if (!deletedNode) return modelAfter
+
+  const serialChild = modelBefore.serialLinks[deletedNodeId]
+  if (serialChild) {
+    const childBefore = getNodeById(modelBefore, serialChild)
+    const shift = shiftNeededAfterNode(deletedNode, childBefore)
+    if (shift <= 0) return modelAfter
+    const nodeIds = collectDownstreamMiddleNodeIds(modelAfter, serialChild)
+    return applyHorizontalShift(modelAfter, nodeIds, -shift, { includeOutput: true })
+  }
+
+  const minimumOutputX = minimumOutputXForModel(modelAfter)
+  const outputX = modelAfter.outputNode.position?.x ?? 0
+  if (outputX <= minimumOutputX + 0.5) {
+    return modelAfter
+  }
+
+  return {
+    ...modelAfter,
+    outputNode: {
+      ...modelAfter.outputNode,
+      position: {
+        x: minimumOutputX,
+        y: modelAfter.outputNode.position?.y ?? LAYOUT_INPUT_Y,
+      },
+    },
+  }
 }
 
 /** @deprecated Use insertAfter for serial extension or addSiblingBranch for parallel branches. */
@@ -504,7 +591,8 @@ export function assignLayoutPositions(
   const positioned: FlowGraphNode[] = []
   const originX = model.inputNode.position?.x ?? LAYOUT_INPUT_X
   const originY = model.inputNode.position?.y ?? LAYOUT_INPUT_Y
-  const xStep = options?.xStep ?? LAYOUT_X_STEP
+  const xStep =
+    options?.xStep ?? (model.middleNodes.length === 0 ? BOOKEND_LAYOUT_X_STEP : LAYOUT_X_STEP)
 
   let maxDepth = 0
   for (const { depth } of slots.values()) {

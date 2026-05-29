@@ -107,7 +107,7 @@ Legacy workspaces without a resolvable **`workspace.stylebook_id`** still surfac
 - Policy **defer** outcomes also emit **`canonical_suggestion.suggested_action: defer`** in review-only mode so the candidates table can highlight **Defer** like link/create suggestions. For **`private_place_or_residence`** deferrals with **auto-apply** enabled, the worker sets **`canonical_link_status`** to **waived** so the row leaves the open candidate queue without a manual defer.
 - Celery queue and worker name use `agate`.
 - Node metadata and optional node UI live in `packages/backfield-agate/src/agate_nodes`.
-- `apps/agate-ui/scripts/sync-nodes.js` copies node UI and generates the frontend registry.
+- `apps/agate-ui/scripts/sync-nodes.js` copies node UI from `packages/backfield-agate/src/agate_nodes/*/ui/` into `apps/agate-ui/src/nodes/` and generates the frontend registry. Edit node panels in the package tree, not the synced app copies.
 
 ## Design guidance
 

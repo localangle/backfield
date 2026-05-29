@@ -32,6 +32,8 @@ def _s3_client():
 def run_s3_input(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
     del inputs
     bucket = str(params.get("bucket") or "").strip()
+    if bucket.lower().startswith("s3://"):
+        bucket = bucket[5:].strip()
     folder_path = str(params.get("folder_path") or "").strip()
     if not bucket:
         raise ValueError(

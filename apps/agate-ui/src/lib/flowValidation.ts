@@ -1,4 +1,5 @@
 import { stripJsonInputEditorMarkers } from '@/lib/jsonInputValidation'
+import { isValidS3BucketName, normalizeS3BucketName, normalizeS3FolderPath, normalizeS3MaxFilesInput, S3_DEFAULT_MAX_FILES, s3BucketFieldError } from '@/lib/s3InputValidation'
 import { nodeMetadata } from '@/nodes/registry'
 
 /** Guided builder: exactly one of these per flow. */
@@ -87,6 +88,23 @@ export function validateGeocodeCatalogSelection(
   return { ok: true }
 }
 
+export function validateS3InputBuckets(nodes: FlowGraphNode[]): FlowValidationResult {
+  const invalid = nodes.filter(
+    (n) => n.type === 'S3Input' && !isValidS3BucketName(String(n.data?.bucket ?? '')),
+  )
+  if (invalid.length === 0) {
+    return { ok: true }
+  }
+
+  const bucket = String(invalid[0].data?.bucket ?? '')
+  return {
+    ok: false,
+    title: 'S3 bucket required',
+    description: s3BucketFieldError(bucket) ?? 'Fix the S3 bucket name before saving.',
+    severity: 'error',
+  }
+}
+
 export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown> {
   let raw = { ...(node.data ?? {}) }
   if (node.type === 'JSONInput') {
@@ -96,6 +114,14 @@ export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown>
     delete raw.stylebookId
     if (!raw.useCache) {
       delete raw.stylebook_id
+    }
+  }
+  if (node.type === 'S3Input') {
+    raw = {
+      ...raw,
+      bucket: normalizeS3BucketName(String(raw.bucket ?? '')),
+      folder_path: normalizeS3FolderPath(String(raw.folder_path ?? '')),
+      max_files: normalizeS3MaxFilesInput(String(raw.max_files ?? S3_DEFAULT_MAX_FILES)),
     }
   }
   return raw
@@ -222,6 +248,7 @@ export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
     validateFlowInputOutputRules,
     validateNoOrphans,
     validateInputConnections,
+    (g) => validateS3InputBuckets(g.nodes),
     (g) => validateGeocodeCatalogSelection(g.nodes),
   ]
 

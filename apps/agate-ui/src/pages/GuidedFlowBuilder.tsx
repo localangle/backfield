@@ -47,8 +47,10 @@ import {
 } from '@/lib/flowGraphModel'
 import {
   canNavigateToStep,
+  canSavePanelChanges,
   completedStepsForEdit,
   getInitialEditStep,
+  isPanelGateActive,
   STEP_CHOOSER_COPY,
   type FlowBuilderStep,
 } from '@/lib/flowBuilderSteps'
@@ -241,6 +243,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const [savedPanelNodeIds, setSavedPanelNodeIds] = useState<Set<string>>(new Set())
   const [exitingNodeIds, setExitingNodeIds] = useState<Set<string>>(new Set())
   const deleteAnimationTimersRef = useRef(new Map<string, ReturnType<typeof window.setTimeout>>())
+  const preAddLayoutSnapshotRef = useRef<{
+    outputPosition?: { x: number; y: number }
+    middlePositions: Map<string, { x: number; y: number }>
+  } | null>(null)
   const [configureGateActive, setConfigureGateActive] = useState(false)
   const [addChooserOpen, setAddChooserOpen] = useState(false)
   const [addFromParentId, setAddFromParentId] = useState<string | null>(null)
@@ -563,10 +569,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setAddIntoEdge(null)
       if (step === 'input' && inputNode) {
         setSelectedNodeId(inputNode.id)
-        setConfigureGateActive(!readOnly && !completedSteps.has('input'))
+        setConfigureGateActive(!readOnly)
       } else if (step === 'output' && outputNode) {
         setSelectedNodeId(outputNode.id)
-        setConfigureGateActive(!readOnly && !completedSteps.has('output'))
+        setConfigureGateActive(!readOnly)
       } else {
         setSelectedNodeId(null)
         setConfigureGateActive(false)
@@ -848,6 +854,13 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setInputNode((node) =>
         node && node.id === selectedNodeId ? { ...node, data: { ...node.data, text } } : node,
       )
+      setDirtyPanelNodeIds((prev) => new Set(prev).add(selectedNodeId))
+      setSavedPanelNodeIds((prev) => {
+        if (!prev.has(selectedNodeId)) return prev
+        const next = new Set(prev)
+        next.delete(selectedNodeId)
+        return next
+      })
     },
     [selectedNodeId],
   )
@@ -884,6 +897,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   }, [clearScaffold, resetStepsAfterOutput])
 
   const handleScaffoldContinue = useCallback(() => {
+    preAddLayoutSnapshotRef.current = null
     setConfigureGateActive(false)
     setSelectedNodeId(null)
   }, [])
@@ -1220,10 +1234,26 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
   const handleCancelMiddleNodeAdd = useCallback(() => {
     if (!selectedNodeId) return
+    const snapshot = preAddLayoutSnapshotRef.current
     setScaffoldModel((model) => {
       if (!model?.middleNodes.some((node) => node.id === selectedNodeId)) return model
-      return deleteMiddleNode(model, selectedNodeId)
+      let next = deleteMiddleNode(model, selectedNodeId)
+      if (snapshot) {
+        next = {
+          ...next,
+          outputNode: {
+            ...next.outputNode,
+            position: snapshot.outputPosition ?? next.outputNode.position,
+          },
+          middleNodes: next.middleNodes.map((node) => ({
+            ...node,
+            position: snapshot.middlePositions.get(node.id) ?? node.position,
+          })),
+        }
+      }
+      return next
     })
+    preAddLayoutSnapshotRef.current = null
     setDirtyPanelNodeIds((prev) => {
       const next = new Set(prev)
       next.delete(selectedNodeId)
@@ -1274,6 +1304,17 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const handleAddNodeTypeSelect = useCallback(
     (type: string) => {
       if (!scaffoldModel) return
+      preAddLayoutSnapshotRef.current = {
+        outputPosition: scaffoldModel.outputNode.position
+          ? { ...scaffoldModel.outputNode.position }
+          : undefined,
+        middlePositions: new Map(
+          scaffoldModel.middleNodes.map((node) => [
+            node.id,
+            { ...(node.position ?? { x: 0, y: 0 }) },
+          ]),
+        ),
+      }
       const newNode = {
         id: nextNodeId(),
         type,
@@ -1284,10 +1325,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         let next = model
         if (addIntoEdge) {
           next = insertBetween(model, addIntoEdge.sourceId, addIntoEdge.targetId, newNode)
-        } else if (addFromParentId === model.inputNode.id) {
-          next = addSiblingBranch(model, addFromParentId, newNode)
         } else if (addFromParentId) {
-          next = insertAfter(model, addFromParentId, newNode)
+          next = addSiblingBranch(model, addFromParentId, newNode)
         } else {
           return model
         }
@@ -1350,14 +1389,21 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const showOutputCanvas = activeStep === 'output' && outputNode != null
 
   // One rule: a node is clicked, the panel opens. The gate (Continue / Cancel
-  // footer) is orthogonal and reflects configureGateActive only.
+  // footer) is armed for fresh configure flows and for wizard source/destination
+  // steps when revisiting a bookend.
   const showNodePanel = selectedNode != null
-  const panelGateActive = !readOnly && configureGateActive
+  const panelGateActive = isPanelGateActive({
+    readOnly,
+    configureGateActive,
+    activeStep,
+    isBookendSelected,
+  })
   const sidePanelOpen = showNodePanel
   const canvasFrameStyle = sidePanelOpen
     ? { marginRight: GUIDED_FLOW_NODE_PANEL_WIDTH_PX }
     : undefined
   const showEditModeCue = !readOnly && (isRunVariant || existingGraphId != null)
+  const showCreateCancel = variant === 'create' && !readOnly
   const selectedPanelHasChanges = selectedNodeId != null && dirtyPanelNodeIds.has(selectedNodeId)
   const selectedPanelWasSaved = selectedNodeId != null && savedPanelNodeIds.has(selectedNodeId)
 
@@ -1371,6 +1417,20 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       : activeStep === 'output'
         ? handleOutputContinue
         : handleScaffoldContinue
+
+  const handleCancelCreateFlow = useCallback(async () => {
+    const hasProgress = inputNode != null || outputNode != null
+    if (hasProgress) {
+      const ok = await showConfirm('Changes to this flow will be lost.', {
+        title: 'Leave without saving?',
+        confirmLabel: 'Leave',
+        destructive: true,
+      })
+      if (!ok) return
+    }
+    const slug = resolvedFlowProject?.slug
+    navigate(slug ? `/project/${encodeURIComponent(slug)}` : '/')
+  }, [inputNode, navigate, outputNode, resolvedFlowProject?.slug, showConfirm])
 
   if (graphLoading) {
     return (
@@ -1406,13 +1466,25 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
               )}
             </div>
           </div>
-          <Button
-            onClick={() => void handleSave()}
-            disabled={saving || !inputNode || !outputNode}
-          >
-            <Save className="mr-2 h-4 w-4" />
-            {saving ? 'Saving…' : 'Save flow'}
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {showCreateCancel ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleCancelCreateFlow()}
+                disabled={flowProjectLoading}
+              >
+                Cancel
+              </Button>
+            ) : null}
+            <Button
+              onClick={() => void handleSave()}
+              disabled={saving || !inputNode || !outputNode}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {saving ? 'Saving…' : 'Save flow'}
+            </Button>
+          </div>
         </div>
       </div>
       )}
@@ -1510,15 +1582,19 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
               <GuidedFlowCanvas
                 scaffoldModel={scaffoldModel}
                 readOnly={readOnly}
-                allowAddNodes={capabilities.allowAddNodes}
+                allowAddNodes={capabilities.allowAddNodes && !configureGateActive}
                 allowNodeDrag={capabilities.allowNodeDrag}
                 allowDeleteNodes={capabilities.allowDelete && !configureGateActive}
                 deletableNodeIds={deletableNodeIds}
                 exitingNodeIds={exitingNodeIds}
                 reserveRightPx={sidePanelOpen ? 1 : 0}
                 selectedNodeId={selectedNodeId}
-                onAddNodeClick={capabilities.allowAddNodes ? handleAddNodeClick : undefined}
-                onAddEdgeClick={capabilities.allowAddNodes ? handleAddEdgeClick : undefined}
+                onAddNodeClick={
+                  capabilities.allowAddNodes && !configureGateActive ? handleAddNodeClick : undefined
+                }
+                onAddEdgeClick={
+                  capabilities.allowAddNodes && !configureGateActive ? handleAddEdgeClick : undefined
+                }
                 onDeleteNodeClick={
                   capabilities.allowDelete ? handleDeleteMiddleNode : undefined
                 }
@@ -1527,7 +1603,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                 onNodePositionChange={
                   capabilities.allowNodeDrag ? handleNodePositionChange : undefined
                 }
-                onTidyLayout={!readOnly ? handleTidyLayout : undefined}
+                onTidyLayout={!readOnly && existingGraphId != null ? handleTidyLayout : undefined}
                 tidyLayoutKey={tidyLayoutKey}
               />
               {showRunPanel && onCloseRunPanel && (
@@ -1578,7 +1654,12 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             }
             running={running}
             saving={saving}
-            canSave={Boolean(inputNode && outputNode && selectedPanelHasChanges)}
+            canSave={canSavePanelChanges({
+              activeStep,
+              inputNode,
+              outputNode,
+              hasChanges: selectedPanelHasChanges,
+            })}
             saved={selectedPanelWasSaved}
             currentRun={currentRun}
             nodeOutputLookupSpec={nodeOutputLookupSpec}

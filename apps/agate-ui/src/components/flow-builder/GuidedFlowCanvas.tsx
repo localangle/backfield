@@ -330,6 +330,7 @@ const FIT_DURATION_GRAPH_CHANGE_MS = 500
 const PANEL_VIEWPORT_DURATION_MS = 220
 const PANEL_SELECTED_NODE_ZOOM = 1.2
 const PAN_EXTENT_PADDING_PX = 1500
+const TIDY_BUTTON_ANIMATION_MS = 420
 
 const SOLID_EDGE_STYLE = { stroke: '#000000', strokeWidth: 1 }
 const SOLID_EDGE_MARKER = {
@@ -481,8 +482,10 @@ function GuidedFlowCanvasInner({
   const isFirstLayoutFitRef = useRef(true)
   const viewportBeforePanelOpenRef = useRef<Viewport | null>(null)
   const previousSelectedNodeIdRef = useRef<string | null>(selectedNodeId)
+  const tidyAnimationTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const [enteringNodeIds, setEnteringNodeIds] = useState<Set<string>>(() => new Set())
   const [exitingNodes, setExitingNodes] = useState<Map<string, Node>>(() => new Map())
+  const [tidyAnimating, setTidyAnimating] = useState(false)
 
   // Stable identity — see GUIDED_NODE_TYPES module-level definition above.
   const nodeTypes = GUIDED_NODE_TYPES
@@ -997,6 +1000,27 @@ function GuidedFlowCanvasInner({
     [getNodes, onNodePositionChange, remeasureNodes],
   )
 
+  const handleTidyButtonClick = useCallback(() => {
+    if (!onTidyLayout) return
+    onTidyLayout()
+    setTidyAnimating(true)
+    if (tidyAnimationTimerRef.current != null) {
+      window.clearTimeout(tidyAnimationTimerRef.current)
+    }
+    tidyAnimationTimerRef.current = window.setTimeout(() => {
+      setTidyAnimating(false)
+      tidyAnimationTimerRef.current = null
+    }, TIDY_BUTTON_ANIMATION_MS)
+  }, [onTidyLayout])
+
+  useEffect(() => {
+    return () => {
+      if (tidyAnimationTimerRef.current != null) {
+        window.clearTimeout(tidyAnimationTimerRef.current)
+      }
+    }
+  }, [])
+
   const handleInit = useCallback(() => {
     reactFlowInitializedRef.current = true
     remeasureNodes(modelNodes.map((node) => node.id))
@@ -1057,12 +1081,20 @@ function GuidedFlowCanvasInner({
           type="button"
           variant="outline"
           size="icon"
-          className="absolute bottom-28 left-3 z-20 h-9 w-9 bg-white shadow-sm"
-          onClick={onTidyLayout}
+          className={cn(
+            'absolute bottom-28 left-3 z-20 h-9 w-9 bg-white shadow-sm transition-all duration-300',
+            tidyAnimating && 'scale-105 border-primary/40 text-primary ring-2 ring-primary/15',
+          )}
+          onClick={handleTidyButtonClick}
           aria-label="Tidy graph layout"
           title="Tidy graph layout"
         >
-          <Sparkles className="h-4 w-4" />
+          <Sparkles
+            className={cn(
+              'h-4 w-4 transition-transform duration-300',
+              tidyAnimating && 'rotate-12 scale-110',
+            )}
+          />
         </Button>
       ) : null}
     </div>

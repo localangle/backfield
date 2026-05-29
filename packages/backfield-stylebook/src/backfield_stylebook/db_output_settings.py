@@ -17,6 +17,10 @@ ReconciliationPolicy = Literal["add_only", "smart_merge", "replace"]
 class DbOutputCanonicalSettings(BaseModel):
     """Canonicalization options persisted on the DBOutput node (params / React node.data)."""
 
+    stylebook_matching_enabled: bool = Field(
+        default=True,
+        description="When false, persist places without catalog linking or resolution.",
+    )
     stylebook_id: int | None = Field(
         default=None,
         description="When set, canonical policy uses this Stylebook (same org as project). "

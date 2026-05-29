@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  paramsForGraphSave,
   validateFlowInputOutputRules,
   validateGeocodeCatalogSelection,
   validateGraphForSave,
@@ -212,6 +213,28 @@ describe('validateGeocodeCatalogSelection', () => {
   })
 })
 
+describe('paramsForGraphSave', () => {
+  it('normalizes S3 folder_path to a single trailing slash', () => {
+    expect(
+      paramsForGraphSave({
+        id: 's3',
+        type: 'S3Input',
+        data: { bucket: 'b', folder_path: 'input/articles///' },
+      }).folder_path,
+    ).toBe('input/articles/')
+  })
+
+  it('normalizes S3 bucket by stripping s3:// on save', () => {
+    expect(
+      paramsForGraphSave({
+        id: 's3',
+        type: 'S3Input',
+        data: { bucket: 's3://my-bucket', folder_path: 'input/' },
+      }).bucket,
+    ).toBe('my-bucket')
+  })
+})
+
 describe('validateGraphForSave', () => {
   it('passes for a valid single-bookend starter graph', () => {
     const result = validateGraphForSave(
@@ -225,6 +248,19 @@ describe('validateGraphForSave', () => {
           { source: 'in', target: 'pe' },
           { source: 'pe', target: 'out' },
         ],
+      }),
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('passes for S3 Input when the bucket name includes s3://', () => {
+    const result = validateGraphForSave(
+      graph({
+        nodes: [
+          { id: 's3', type: 'S3Input', data: { bucket: 's3://my-bucket' } },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [{ source: 's3', target: 'out' }],
       }),
     )
     expect(result.ok).toBe(true)
