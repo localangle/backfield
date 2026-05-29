@@ -28,7 +28,7 @@ import OrganizationSelector from "@/components/OrganizationSelector"
 import WorkSelector from "@/components/WorkSelector"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
-import type { ConnectionsEntityType } from "@/lib/connectionsEntityTypes"
+import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
 

@@ -8,15 +8,16 @@ import {
   personPickerConfig,
   workPickerConfig,
 } from "@/lib/entityConfigs/connectionPickers"
+import { personConfig } from "@/lib/entityConfigs/person"
 import type { EntityConfig, EntityType } from "@/lib/entityTypes"
 import type { LucideIcon } from "lucide-react"
 import { BookOpen, Building2, MapPin, Users } from "lucide-react"
 
 export const ENTITY_REGISTRY: Record<EntityType, EntityConfig<unknown>> = {
-  location: locationPickerConfig,
-  person: personPickerConfig,
-  organization: organizationPickerConfig,
-  work: workPickerConfig,
+  location: locationPickerConfig as EntityConfig<unknown>,
+  person: personConfig as EntityConfig<unknown>,
+  organization: organizationPickerConfig as EntityConfig<unknown>,
+  work: workPickerConfig as EntityConfig<unknown>,
 }
 
 export interface EntityHomeCard {
@@ -42,6 +43,7 @@ export const ENTITY_HOME_CARDS: EntityHomeCard[] = [
     routeSegment: "people",
     icon: Users,
     description: "Canonical people",
+    canonicalFirst: true,
   },
   {
     entityType: "organization",

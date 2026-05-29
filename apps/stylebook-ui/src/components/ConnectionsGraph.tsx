@@ -11,7 +11,7 @@ import ReactFlow, {
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import type { Connection } from "@/lib/stylebook-api/connections"
-import type { ConnectionsEntityType } from "@/lib/connectionsEntityTypes"
+import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 
 const CENTER_X = 280
@@ -120,18 +120,18 @@ export default function ConnectionsGraph({
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
       const id = node.id
-      const match = id.match(/^(person|location|organization)-(\d+)$/)
+      const match = id.match(/^(person|location|organization|work)-(.+)$/)
       if (match) {
         const type = match[1] as ConnectionsEntityType
-        const numId = parseInt(match[2], 10)
+        const entityId = match[2]
         window.open(
-          getDetailUrl(type, numId, catalogBasePath, filterScopeSuffix),
+          getDetailUrl(type, entityId, catalogBasePath, filterScopeSuffix),
           "_blank",
           "noopener,noreferrer",
         )
       }
     },
-    [filterScopeSuffix, catalogBasePath]
+    [filterScopeSuffix, catalogBasePath],
   )
 
   if (connections.length === 0) {

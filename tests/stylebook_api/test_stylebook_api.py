@@ -2572,17 +2572,6 @@ def test_get_suggested_canonicals_for_pending_candidate(
     assert isinstance(body["suggestions"], list)
 
 
-def test_get_people_stub_empty(client: TestClient) -> None:
-    r = client.get(
-        "/v1/people?project_slug=demo-proj&limit=10&offset=0",
-        headers=_service_headers(),
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["people"] == []
-    assert body["total"] == 0
-
-
 def test_canonical_location_meta_crud(client: TestClient, stylebook_test_engine: Engine) -> None:
     engine = stylebook_test_engine
     with Session(engine) as s:

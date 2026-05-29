@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backfield_db import StylebookLocationCanonical
+from backfield_db import StylebookLocationCanonical, StylebookPersonCanonical
 from backfield_stylebook.entity_types import all_entity_types
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import HTTPException
@@ -58,16 +58,45 @@ def _location_display_name(
     return (row.label or "").strip() or None
 
 
+def _person_display_name(
+    session: Session,
+    *,
+    project_id: int,
+    person_canonical_id: str,
+    catalog_stylebook_id: int | None = None,
+) -> str | None:
+    try:
+        stylebook_id = (
+            int(catalog_stylebook_id)
+            if catalog_stylebook_id is not None
+            else resolve_stylebook_id_for_project_id(session, project_id)
+        )
+    except LookupError:
+        return None
+    row = session.exec(
+        select(StylebookPersonCanonical).where(
+            StylebookPersonCanonical.id == person_canonical_id,
+            StylebookPersonCanonical.stylebook_id == int(stylebook_id),
+        )
+    ).first()
+    if row is None:
+        return None
+    return (row.label or "").strip() or None
+
+
 def normalize_connection_entity_id(entity_type: str, entity_id: str | int | UUID) -> str:
     """Normalize API ids to the TEXT stored on ``stylebook_connections``."""
-    if entity_type == "location":
+    if entity_type in ("location", "person"):
         if isinstance(entity_id, UUID):
             return str(entity_id)
         s = str(entity_id).strip()
         try:
             UUID(s)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail="location entity_id must be a UUID") from e
+            raise HTTPException(
+                status_code=400,
+                detail=f"{entity_type} entity_id must be a UUID",
+            ) from e
         return s
     return str(int(entity_id))
 
@@ -85,6 +114,13 @@ def get_canonical_display_name(
             session,
             project_id=project_id,
             location_canonical_id=eid,
+            catalog_stylebook_id=catalog_stylebook_id,
+        )
+    if entity_type == "person":
+        return _person_display_name(
+            session,
+            project_id=project_id,
+            person_canonical_id=eid,
             catalog_stylebook_id=catalog_stylebook_id,
         )
     return None
