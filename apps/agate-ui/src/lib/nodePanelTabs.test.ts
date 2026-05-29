@@ -40,7 +40,7 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('Output', { hasRunOutput: true })).toEqual(['outputs'])
   })
 
-  it('shows settings only for backfield output', () => {
-    expect(getNodePanelTabs('DBOutput')).toEqual(['settings'])
+  it('shows settings and stylebook for backfield output', () => {
+    expect(getNodePanelTabs('DBOutput')).toEqual(['settings', 'stylebook'])
   })
 })

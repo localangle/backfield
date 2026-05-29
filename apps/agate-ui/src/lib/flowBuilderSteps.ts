@@ -11,12 +11,6 @@ export const STEP_HEADINGS: Record<FlowBuilderStep, string> = {
   scaffold: 'Build your flow',
 }
 
-export const STEP_DESCRIPTIONS: Record<FlowBuilderStep, string> = {
-  input: 'Choose how articles or content enter this flow.',
-  output: 'Choose where this flow saves its results.',
-  scaffold: 'Add steps between your source and destination.',
-}
-
 export const STEP_CHOOSER_COPY: Partial<
   Record<FlowBuilderStep, { title: string; description: string }>
 > = {

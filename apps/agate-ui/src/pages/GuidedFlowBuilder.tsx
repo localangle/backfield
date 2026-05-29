@@ -36,7 +36,6 @@ import {
   getBranchAncestry,
   getNodeById,
   hydrateFromSpec,
-  insertAfter,
   insertBetween,
   modelToGraphSpec,
   TIDY_LAYOUT_X_STEP,
@@ -581,101 +580,39 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [completedStepsReadonly, inputNode, outputNode, completedSteps, readOnly],
   )
 
-  const applyInputBookendSwap = useCallback(
-    (type: string, options?: { activeStepAfter?: FlowBuilderStep }) => {
-      if (!(INPUT_BOOKEND_TYPES as readonly string[]).includes(type)) return false
+  const applyBookendSwap = useCallback(
+    (
+      kind: 'input' | 'output',
+      type: string,
+      options?: { activeStepAfter?: FlowBuilderStep },
+    ) => {
+      const isInput = kind === 'input'
+      const allowedTypes = isInput ? INPUT_BOOKEND_TYPES : OUTPUT_BOOKEND_TYPES
+      if (!(allowedTypes as readonly string[]).includes(type)) return false
 
-      const id = inputNode?.id ?? nextNodeId()
-      const data = getInputBookendDefaultData(type) as Record<string, unknown>
-      const node: Node = { id, type, data, position: inputNode?.position ?? { x: 0, y: 0 } }
+      const currentBookend = isInput ? inputNode : outputNode
+      const otherBookend = isInput ? outputNode : inputNode
+      const setCurrentBookend = isInput ? setInputNode : setOutputNode
 
-      if (scaffoldModel && outputNode && inputNode) {
-        if (inputNode.type === type) {
-          setSelectedNodeId(id)
-          return true
-        }
-        const check = canReplaceInputBookend(scaffoldModel, type)
-        if (!check.ok) {
-          showModal({
-            title: 'Cannot change source',
-            description: check.reason,
-            type: 'warning',
-            confirmText: 'OK',
-            onConfirm: () => {},
-          })
-          return false
-        }
-        setInputNode(node)
-        setScaffoldModel((current) =>
-          current
-            ? applyLayoutToModel(replaceInputBookend(current, { type, data }), {
-                relayoutBookends: false,
-              })
-            : current,
-        )
-        setSelectedNodeId(id)
-        setConfigureGateActive(true)
-        if (options?.activeStepAfter) setActiveStep(options.activeStepAfter)
-        return true
-      }
-
-      setInputNode(node)
-      setSelectedNodeId(id)
-      setConfigureGateActive(true)
-      setActiveStep('input')
-
-      if (!outputNode) {
-        clearScaffold()
-        setCompletedSteps(resetStepsAfterInput)
-        return true
-      }
-
-      const outputBookend = {
-        id: outputNode.id,
-        type: outputNode.type ?? 'Output',
-        data: outputNode.data as Record<string, unknown>,
-      }
-      const inputBookend = { id, type, data }
-      setScaffoldModel((current) =>
-        applyLayoutToModel(
-          clearMiddleNodes({
-            ...(current ?? createFlowGraphModel(inputBookend, outputBookend)),
-            inputNode: inputBookend,
-            outputNode: outputBookend,
-          }),
-          { relayoutBookends: true },
-        ),
-      )
-      setCompletedSteps((prev) => new Set(prev).add('input'))
-      return true
-    },
-    [
-      inputNode,
-      outputNode,
-      scaffoldModel,
-      resetStepsAfterInput,
-      clearScaffold,
-      showModal,
-    ],
-  )
-
-  const applyOutputBookendSwap = useCallback(
-    (type: string, options?: { activeStepAfter?: FlowBuilderStep }) => {
-      if (!(OUTPUT_BOOKEND_TYPES as readonly string[]).includes(type)) return false
-
-      const id = outputNode?.id ?? nextNodeId()
-      const data = getOutputBookendDefaultData(type, workspaceStylebookId) as Record<string, unknown>
-      const node: Node = { id, type, data, position: outputNode?.position ?? { x: 0, y: 0 } }
+      const id = currentBookend?.id ?? nextNodeId()
+      const data = (
+        isInput
+          ? getInputBookendDefaultData(type)
+          : getOutputBookendDefaultData(type, workspaceStylebookId)
+      ) as Record<string, unknown>
+      const node: Node = { id, type, data, position: currentBookend?.position ?? { x: 0, y: 0 } }
 
       if (scaffoldModel && inputNode && outputNode) {
-        if (outputNode.type === type) {
+        if (currentBookend?.type === type) {
           setSelectedNodeId(id)
           return true
         }
-        const check = canReplaceOutputBookend(scaffoldModel, type)
+        const check = isInput
+          ? canReplaceInputBookend(scaffoldModel, type)
+          : canReplaceOutputBookend(scaffoldModel, type)
         if (!check.ok) {
           showModal({
-            title: 'Cannot change destination',
+            title: isInput ? 'Cannot change source' : 'Cannot change destination',
             description: check.reason,
             type: 'warning',
             confirmText: 'OK',
@@ -683,12 +620,15 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           })
           return false
         }
-        setOutputNode(node)
+        setCurrentBookend(node)
         setScaffoldModel((current) =>
           current
-            ? applyLayoutToModel(replaceOutputBookend(current, { type, data }), {
-                relayoutBookends: false,
-              })
+            ? applyLayoutToModel(
+                isInput
+                  ? replaceInputBookend(current, { type, data })
+                  : replaceOutputBookend(current, { type, data }),
+                { relayoutBookends: false },
+              )
             : current,
         )
         setSelectedNodeId(id)
@@ -697,23 +637,25 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         return true
       }
 
-      setOutputNode(node)
+      setCurrentBookend(node)
       setSelectedNodeId(id)
       setConfigureGateActive(true)
-      setActiveStep('output')
+      setActiveStep(kind)
 
-      if (!inputNode) {
+      if (!otherBookend) {
         clearScaffold()
-        setCompletedSteps(resetStepsAfterOutput)
+        setCompletedSteps(isInput ? resetStepsAfterInput : resetStepsAfterOutput)
         return true
       }
 
-      const inputBookend = {
-        id: inputNode.id,
-        type: inputNode.type ?? 'TextInput',
-        data: inputNode.data as Record<string, unknown>,
+      const newBookend = { id, type, data }
+      const existingBookend = {
+        id: otherBookend.id,
+        type: otherBookend.type ?? (isInput ? 'Output' : 'TextInput'),
+        data: otherBookend.data as Record<string, unknown>,
       }
-      const outputBookend = { id, type, data }
+      const inputBookend = isInput ? newBookend : existingBookend
+      const outputBookend = isInput ? existingBookend : newBookend
       setScaffoldModel((current) =>
         applyLayoutToModel(
           clearMiddleNodes({
@@ -724,6 +666,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           { relayoutBookends: true },
         ),
       )
+      if (isInput) {
+        setCompletedSteps((prev) => new Set(prev).add('input'))
+      }
       return true
     },
     [
@@ -731,10 +676,23 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       outputNode,
       scaffoldModel,
       workspaceStylebookId,
+      resetStepsAfterInput,
       resetStepsAfterOutput,
       clearScaffold,
       showModal,
     ],
+  )
+
+  const applyInputBookendSwap = useCallback(
+    (type: string, options?: { activeStepAfter?: FlowBuilderStep }) =>
+      applyBookendSwap('input', type, options),
+    [applyBookendSwap],
+  )
+
+  const applyOutputBookendSwap = useCallback(
+    (type: string, options?: { activeStepAfter?: FlowBuilderStep }) =>
+      applyBookendSwap('output', type, options),
+    [applyBookendSwap],
   )
 
   const handleInputTypeSelect = useCallback(
@@ -1197,36 +1155,32 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           },
         )
         if (!ok || !scaffoldModel) return
-        try {
-          setExitingNodeIds((prev) => new Set(prev).add(nodeId))
-          setSelectedNodeId(null)
-          setConfigureGateActive(false)
-          const timer = window.setTimeout(() => {
-            deleteAnimationTimersRef.current.delete(nodeId)
-            setScaffoldModel((current) => {
-              if (!current?.middleNodes.some((node) => node.id === nodeId)) return current
-              return deleteMiddleNode(current, nodeId)
-            })
-            setDirtyPanelNodeIds((prev) => {
-              const next = new Set(prev)
-              next.delete(nodeId)
-              return next
-            })
-            setSavedPanelNodeIds((prev) => {
-              const next = new Set(prev)
-              next.delete(nodeId)
-              return next
-            })
-            setExitingNodeIds((prev) => {
-              const next = new Set(prev)
-              next.delete(nodeId)
-              return next
-            })
-          }, GUIDED_NODE_EXIT_MS)
-          deleteAnimationTimersRef.current.set(nodeId, timer)
-        } catch (error) {
-          console.error('Failed to delete step:', error)
-        }
+        setExitingNodeIds((prev) => new Set(prev).add(nodeId))
+        setSelectedNodeId(null)
+        setConfigureGateActive(false)
+        const timer = window.setTimeout(() => {
+          deleteAnimationTimersRef.current.delete(nodeId)
+          setScaffoldModel((current) => {
+            if (!current?.middleNodes.some((node) => node.id === nodeId)) return current
+            return deleteMiddleNode(current, nodeId)
+          })
+          setDirtyPanelNodeIds((prev) => {
+            const next = new Set(prev)
+            next.delete(nodeId)
+            return next
+          })
+          setSavedPanelNodeIds((prev) => {
+            const next = new Set(prev)
+            next.delete(nodeId)
+            return next
+          })
+          setExitingNodeIds((prev) => {
+            const next = new Set(prev)
+            next.delete(nodeId)
+            return next
+          })
+        }, GUIDED_NODE_EXIT_MS)
+        deleteAnimationTimersRef.current.set(nodeId, timer)
       })()
     },
     [exitingNodeIds, scaffoldModel, showConfirm],
@@ -1623,10 +1577,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             selectedNode={selectedNode}
             gateActive={panelGateActive}
             onContinue={
-              panelGateActive
-                ? activeStep === 'scaffold' && isBookendSelected
-                  ? handleScaffoldBookendGateContinue
-                  : handleConfigureContinue
+              panelGateActive && activeStep === 'scaffold' && isBookendSelected
+                ? handleScaffoldBookendGateContinue
                 : handleConfigureContinue
             }
             onCancel={

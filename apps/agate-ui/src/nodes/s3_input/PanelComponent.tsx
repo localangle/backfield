@@ -35,9 +35,6 @@ import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 
 interface S3InputPanelProps {
   node: any
-  onChange?: (text: string) => void
-  onRun?: () => void
-  running?: boolean
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void

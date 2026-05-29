@@ -258,7 +258,11 @@ def resolve_geocode_cache_strict_with_outcome(
     if not normalized:
         return GeocodeCacheStrictOutcome(None, False, False)
 
-    winners = _tier1_exact_winners(session, stylebook_id, normalized) if stylebook_id is not None else []
+    winners = (
+        _tier1_exact_winners(session, stylebook_id, normalized)
+        if stylebook_id is not None
+        else []
+    )
 
     if len(winners) > 1:
         return GeocodeCacheStrictOutcome(None, True, False)

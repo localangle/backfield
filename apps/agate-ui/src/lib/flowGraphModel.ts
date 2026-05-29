@@ -1,4 +1,4 @@
-import { INPUT_BOOKEND_TYPES, OUTPUT_BOOKEND_TYPES } from '@/lib/flowValidation'
+import { isInputBookendType, isOutputBookendType } from '@/lib/flowValidation'
 import { nodeMetadata } from '@/nodes/registry'
 import {
   BOOKEND_INPUT_POSITION,
@@ -45,11 +45,6 @@ export const TIDY_LAYOUT_X_STEP = LAYOUT_NODE_WIDTH + TIDY_LAYOUT_X_GAP
 export const LAYOUT_Y_STEP = 96
 export const LAYOUT_OUTPUT_MIN_X = BOOKEND_OUTPUT_POSITION.x
 
-/** @deprecated Use LAYOUT_X_STEP */
-export const MIDDLE_NODE_X_START = 220
-/** @deprecated Use LAYOUT_X_STEP */
-export const MIDDLE_NODE_X_STEP = 140
-
 export function createFlowGraphModel(
   inputNode: FlowGraphNode,
   outputNode: FlowGraphNode,
@@ -63,22 +58,10 @@ export function createFlowGraphModel(
   }
 }
 
-export function isInputBookendType(type: string | undefined): boolean {
-  return type != null && (INPUT_BOOKEND_TYPES as readonly string[]).includes(type)
-}
-
-export function isOutputBookendType(type: string | undefined): boolean {
-  return type != null && (OUTPUT_BOOKEND_TYPES as readonly string[]).includes(type)
-}
-
 export function getNodeById(model: FlowGraphModel, nodeId: string): FlowGraphNode | null {
   if (model.inputNode.id === nodeId) return model.inputNode
   if (model.outputNode.id === nodeId) return model.outputNode
   return model.middleNodes.find((n) => n.id === nodeId) ?? null
-}
-
-export function getSerialChildId(model: FlowGraphModel, parentId: string): string | null {
-  return model.serialLinks[parentId] ?? null
 }
 
 function findSerialParentId(model: FlowGraphModel, childId: string): string | null {
@@ -503,15 +486,6 @@ function compactLayoutAfterDelete(
   }
 }
 
-/** @deprecated Use insertAfter for serial extension or addSiblingBranch for parallel branches. */
-export function addSerialChild(
-  model: FlowGraphModel,
-  parentId: string,
-  newNode: FlowGraphNode,
-): FlowGraphModel {
-  return insertAfter(model, parentId, newNode)
-}
-
 export function deriveEdges(model: FlowGraphModel): FlowGraphEdge[] {
   const edges: FlowGraphEdge[] = []
 
@@ -715,19 +689,6 @@ export function updateNodePosition(
     }
   }
   return model
-}
-
-export function updateMiddleNodeData(
-  model: FlowGraphModel,
-  nodeId: string,
-  data: Record<string, unknown>,
-): FlowGraphModel {
-  return {
-    ...model,
-    middleNodes: model.middleNodes.map((n) =>
-      n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n,
-    ),
-  }
 }
 
 export function updateMiddleNode(

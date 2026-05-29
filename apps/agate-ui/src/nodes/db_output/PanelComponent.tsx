@@ -43,7 +43,7 @@ const nodeMetadata = {
   }
 };
 
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import { Label } from '@/components/ui/label'
@@ -55,19 +55,20 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { listOrgStylebooks, type OrgStylebook } from '@/lib/core-api'
+import {
+  INVALID_AI_MODEL_SELECTION_VALUE as INVALID_SELECTION_VALUE,
+  catalogToSelectOptions,
+  hasExplicitAiModelChoice,
+  resolvedAiModelSelectValue,
+  resolvedStylebookId,
+} from '@/lib/nodePanelAiModel'
 
 interface DBOutputPanelProps {
   node: any
-  onChange?: (text: string) => void
-  onRun?: () => void
-  running?: boolean
-  currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
   graphContext?: GraphPanelContext
 }
-
-const INVALID_SELECTION_VALUE = '__bf_model_invalid__'
 
 const DEFAULTS = {
   stylebook_matching_enabled: true,
@@ -81,57 +82,20 @@ const DEFAULTS = {
 
 const ORG_DEFAULT_STYLEBOOK_SELECT = '__org_default_stylebook__'
 
-type UnifiedAiModelOption = {
-  selectValue: string
-  label: string
-  providerModelId: string
-  configId?: string
-}
-
-function catalogToSelectOptions(catalog: ProjectAiModelOption[]): UnifiedAiModelOption[] {
-  const out: UnifiedAiModelOption[] = []
-  const seen = new Set<string>()
-  for (const row of catalog) {
-    const sv = row.configId ?? row.providerModelId
-    if (sv === '' || seen.has(sv)) continue
-    seen.add(sv)
-    out.push({
-      selectValue: sv,
-      label: row.label,
-      providerModelId: row.providerModelId,
-      configId: row.configId,
-    })
-  }
-  return out
-}
+const ADJUDICATION_MODEL_KEYS = {
+  configIdKey: 'adjudication_ai_model_config_id',
+  modelKey: 'adjudication_model',
+} as const
 
 function resolvedAdjudicationSelectValue(
   params: Record<string, unknown>,
   catalog: ProjectAiModelOption[],
 ): string {
-  const cfg = params.adjudication_ai_model_config_id
-  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
-  const model = String(params.adjudication_model ?? '')
-  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
-  if (hit?.configId) return hit.configId
-  return model.trim()
+  return resolvedAiModelSelectValue(params, catalog, ADJUDICATION_MODEL_KEYS)
 }
 
 function hasExplicitAdjudicationChoice(data: Record<string, unknown>): boolean {
-  const cfg = data.adjudication_ai_model_config_id
-  if (typeof cfg === 'string' && cfg.trim() !== '') return true
-  const m = data.adjudication_model
-  return typeof m === 'string' && m.trim() !== ''
-}
-
-function resolvedStylebookId(data: Record<string, unknown> | undefined): number | null {
-  const d = data || {}
-  const snake = d.stylebook_id
-  const camel = d.stylebookId
-  const raw = snake !== undefined && snake !== null ? snake : camel
-  if (raw === null || raw === undefined || raw === '') return null
-  const n = typeof raw === 'number' ? raw : Number(raw)
-  return Number.isFinite(n) ? n : null
+  return hasExplicitAiModelChoice(data, ADJUDICATION_MODEL_KEYS)
 }
 
 function yesNoSelectValue(flag: boolean): 'yes' | 'no' {

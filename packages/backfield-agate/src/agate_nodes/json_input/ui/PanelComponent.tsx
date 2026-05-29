@@ -11,9 +11,6 @@ import { JSON_INPUT_SCHEMA_EXAMPLE } from './schemaExample'
 
 interface JSONInputPanelProps {
   node: any
-  onChange?: (jsonData: unknown) => void
-  onRun?: () => void
-  running?: boolean
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void

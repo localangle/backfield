@@ -3,7 +3,6 @@ import {
   getCompatibleInsertNodes,
   getCompatibleNextNodes,
   resolveEdgeHandles,
-  shouldShowChooserSearch,
 } from './nodeCompatibility'
 
 describe('getCompatibleNextNodes', () => {
@@ -69,12 +68,5 @@ describe('resolveEdgeHandles', () => {
       sourceHandle: 'text',
       targetHandle: 'data',
     })
-  })
-})
-
-describe('chooser search threshold', () => {
-  it('defers search until the scaffold catalog exceeds eight node types', () => {
-    expect(shouldShowChooserSearch(8)).toBe(false)
-    expect(shouldShowChooserSearch(9)).toBe(true)
   })
 })

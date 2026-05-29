@@ -26,9 +26,6 @@ interface TextInputPanelProps {
   node: any
   /** Optional callback fired alongside setNodes — kept so callers can react to edits. */
   onChange?: (text: string) => void
-  onRun?: () => void
-  running?: boolean
-  currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
 }

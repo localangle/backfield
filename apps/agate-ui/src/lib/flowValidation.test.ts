@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   paramsForGraphSave,
   validateFlowInputOutputRules,
-  validateGeocodeCatalogSelection,
   validateGraphForSave,
   validateInputConnections,
   validateNoOrphans,
@@ -174,41 +173,6 @@ describe('validateInputConnections', () => {
         ],
       }),
     )
-    expect(result.ok).toBe(true)
-  })
-})
-
-describe('validateGeocodeCatalogSelection', () => {
-  it('passes when cache is on without a Stylebook', () => {
-    const result = validateGeocodeCatalogSelection([
-      {
-        id: 'g',
-        type: 'GeocodeAgent',
-        data: { useCache: true },
-      },
-    ])
-    expect(result.ok).toBe(true)
-  })
-
-  it('passes when cache is off', () => {
-    const result = validateGeocodeCatalogSelection([
-      {
-        id: 'g',
-        type: 'GeocodeAgent',
-        data: { useCache: false },
-      },
-    ])
-    expect(result.ok).toBe(true)
-  })
-
-  it('passes when cache is on with stylebook_id', () => {
-    const result = validateGeocodeCatalogSelection([
-      {
-        id: 'g',
-        type: 'GeocodeAgent',
-        data: { useCache: true, stylebook_id: 42 },
-      },
-    ])
     expect(result.ok).toBe(true)
   })
 })

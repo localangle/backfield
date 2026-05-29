@@ -39,69 +39,43 @@ const nodeMetadata = {
   }
 };
 
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-
-const INVALID_SELECTION_VALUE = '__bf_model_invalid__'
+import {
+  INVALID_AI_MODEL_SELECTION_VALUE as INVALID_SELECTION_VALUE,
+  catalogToSelectOptions,
+  hasExplicitAiModelChoice,
+  resolvedAiModelSelectValue,
+} from '@/lib/nodePanelAiModel'
 
 const DEFAULTS = {
   model: '',
   aiModelConfigId: null as string | null,
 }
 
-type UnifiedAiModelOption = {
-  selectValue: string
-  label: string
-  providerModelId: string
-  configId?: string
-}
-
-function catalogToSelectOptions(catalog: ProjectAiModelOption[]): UnifiedAiModelOption[] {
-  const out: UnifiedAiModelOption[] = []
-  const seen = new Set<string>()
-  for (const row of catalog) {
-    const sv = row.configId ?? row.providerModelId
-    if (sv === '' || seen.has(sv)) continue
-    seen.add(sv)
-    out.push({
-      selectValue: sv,
-      label: row.label,
-      providerModelId: row.providerModelId,
-      configId: row.configId,
-    })
-  }
-  return out
-}
+const MODEL_KEYS = {
+  configIdKey: 'aiModelConfigId',
+  modelKey: 'model',
+} as const
 
 function resolvedModelSelectValue(
   params: Record<string, unknown>,
   catalog: ProjectAiModelOption[],
 ): string {
-  const cfg = params.aiModelConfigId
-  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
-  const model = String(params.model ?? '')
-  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
-  if (hit?.configId) return hit.configId
-  return model.trim()
+  return resolvedAiModelSelectValue(params, catalog, MODEL_KEYS)
 }
 
 function hasExplicitModelChoice(data: Record<string, unknown>): boolean {
-  const cfg = data.aiModelConfigId
-  if (typeof cfg === 'string' && cfg.trim() !== '') return true
-  const model = data.model
-  return typeof model === 'string' && model.trim() !== ''
+  return hasExplicitAiModelChoice(data, MODEL_KEYS)
 }
 
 interface PlaceExtractPanelProps {
   node: any
-  onChange?: (text: string) => void
-  onRun?: () => void
-  running?: boolean
   currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void

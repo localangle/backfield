@@ -57,35 +57,16 @@ function formatNodeList(nodes: FlowGraphNode[]): string {
   return nodes.map((n) => nodeDisplayLabel(n.type)).join(', ')
 }
 
-function isInputNodeType(type: string | undefined): boolean {
+export function isInputNodeType(type: string | undefined): boolean {
   return type != null && (INPUT_NODE_TYPES as readonly string[]).includes(type)
 }
 
-function isInputBookendType(type: string | undefined): boolean {
+export function isInputBookendType(type: string | undefined): boolean {
   return type != null && (INPUT_BOOKEND_TYPES as readonly string[]).includes(type)
 }
 
-function isOutputBookendType(type: string | undefined): boolean {
+export function isOutputBookendType(type: string | undefined): boolean {
   return type != null && (OUTPUT_BOOKEND_TYPES as readonly string[]).includes(type)
-}
-
-export function geocodeStylebookIdFromData(
-  data: Record<string, unknown> | undefined,
-): number | null {
-  if (!data) return null
-  const snake = data.stylebook_id
-  const camel = data.stylebookId
-  const raw = snake !== undefined && snake !== null ? snake : camel
-  if (raw === null || raw === undefined || raw === '') return null
-  const n = typeof raw === 'number' ? raw : Number(raw)
-  return Number.isFinite(n) ? n : null
-}
-
-/** Geocode cache can run with only project cache, or with an optional Stylebook. */
-export function validateGeocodeCatalogSelection(
-  nodes: FlowGraphNode[],
-): FlowValidationResult {
-  return { ok: true }
 }
 
 export function validateS3InputBuckets(nodes: FlowGraphNode[]): FlowValidationResult {
@@ -249,7 +230,6 @@ export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
     validateNoOrphans,
     validateInputConnections,
     (g) => validateS3InputBuckets(g.nodes),
-    (g) => validateGeocodeCatalogSelection(g.nodes),
   ]
 
   for (const check of checks) {

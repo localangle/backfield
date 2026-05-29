@@ -48,10 +48,9 @@ const nodeMetadata = {
   }
 };
 
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
-import type { NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
 import { listOrgStylebooks, type OrgStylebook } from '@/lib/core-api'
 import {
@@ -61,8 +60,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  INVALID_AI_MODEL_SELECTION_VALUE as INVALID_SELECTION_VALUE,
+  catalogToSelectOptions,
+  hasExplicitAiModelChoice,
+  resolvedAiModelSelectValue,
+  resolvedStylebookId,
+} from '@/lib/nodePanelAiModel'
 
-const INVALID_SELECTION_VALUE = '__bf_model_invalid__'
 const NO_STYLEBOOK_VALUE = '__bf_no_stylebook__'
 
 const DEFAULTS = {
@@ -82,108 +87,59 @@ const DEFAULTS = {
   useCacheLlmAdjudicationOnMissRecall: false,
 }
 
-type UnifiedAiModelOption = {
-  selectValue: string
-  label: string
-  providerModelId: string
-  configId?: string
-}
+const EVALUATION_MODEL_KEYS = {
+  configIdKey: 'evaluationAiModelConfigId',
+  modelKey: 'evaluationModel',
+} as const
 
-function catalogToSelectOptions(catalog: ProjectAiModelOption[]): UnifiedAiModelOption[] {
-  const out: UnifiedAiModelOption[] = []
-  const seen = new Set<string>()
-  for (const row of catalog) {
-    const sv = row.configId ?? row.providerModelId
-    if (sv === '' || seen.has(sv)) continue
-    seen.add(sv)
-    out.push({
-      selectValue: sv,
-      label: row.label,
-      providerModelId: row.providerModelId,
-      configId: row.configId,
-    })
-  }
-  return out
-}
+const ROUTER_MODEL_KEYS = {
+  configIdKey: 'routerAiModelConfigId',
+  modelKey: 'routerModel',
+} as const
+
+const GEOGRAPHIC_REASONING_MODEL_KEYS = {
+  configIdKey: 'geographicReasoningAiModelConfigId',
+  modelKey: 'geographicReasoningModel',
+} as const
 
 function resolvedEvaluationSelectValue(
   params: Record<string, unknown>,
   catalog: ProjectAiModelOption[],
 ): string {
-  const cfg = params.evaluationAiModelConfigId
-  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
-  const model = String(params.evaluationModel ?? '')
-  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
-  if (hit?.configId) return hit.configId
-  return model.trim()
+  return resolvedAiModelSelectValue(params, catalog, EVALUATION_MODEL_KEYS)
 }
 
 function resolvedRouterSelectValue(
   params: Record<string, unknown>,
   catalog: ProjectAiModelOption[],
 ): string {
-  const cfg = params.routerAiModelConfigId
-  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
-  const model = String(params.routerModel ?? '')
-  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
-  if (hit?.configId) return hit.configId
-  return model.trim()
+  return resolvedAiModelSelectValue(params, catalog, ROUTER_MODEL_KEYS)
 }
 
 function hasExplicitEvaluationChoice(data: Record<string, unknown>): boolean {
-  const cfg = data.evaluationAiModelConfigId
-  if (typeof cfg === 'string' && cfg.trim() !== '') return true
-  const m = data.evaluationModel
-  return typeof m === 'string' && m.trim() !== ''
+  return hasExplicitAiModelChoice(data, EVALUATION_MODEL_KEYS)
 }
 
 function hasExplicitRouterChoice(data: Record<string, unknown>): boolean {
-  const cfg = data.routerAiModelConfigId
-  if (typeof cfg === 'string' && cfg.trim() !== '') return true
-  const m = data.routerModel
-  return typeof m === 'string' && m.trim() !== ''
+  return hasExplicitAiModelChoice(data, ROUTER_MODEL_KEYS)
 }
 
 function resolvedGeographicReasoningSelectValue(
   params: Record<string, unknown>,
   catalog: ProjectAiModelOption[],
 ): string {
-  const cfg = params.geographicReasoningAiModelConfigId
-  if (typeof cfg === 'string' && cfg.trim() !== '') return cfg.trim()
-  const model = String(params.geographicReasoningModel ?? '')
-  const hit = catalog.find((r) => r.providerModelId === model && r.configId)
-  if (hit?.configId) return hit.configId
-  return model.trim()
+  return resolvedAiModelSelectValue(params, catalog, GEOGRAPHIC_REASONING_MODEL_KEYS)
 }
 
 function hasExplicitGeographicReasoningChoice(data: Record<string, unknown>): boolean {
-  const cfg = data.geographicReasoningAiModelConfigId
-  if (typeof cfg === 'string' && cfg.trim() !== '') return true
-  const m = data.geographicReasoningModel
-  return typeof m === 'string' && m.trim() !== ''
+  return hasExplicitAiModelChoice(data, GEOGRAPHIC_REASONING_MODEL_KEYS)
 }
 
 interface GeocodeAgentPanelProps {
   node: any
-  onChange?: (text: string) => void
-  onRun?: () => void
-  running?: boolean
-  currentRun?: any
   editMode?: boolean
   setNodes?: (nodes: any) => void
   graphContext?: GraphPanelContext
-  nodeOutputLookupSpec?: NodeOutputLookupSpec | null
-}
-
-/** Prefer canonical ``stylebook_id``; legacy persisted ``stylebookId`` is still read once. */
-function resolvedStylebookId(data: Record<string, unknown> | undefined): number | null {
-  const d = data || {}
-  const snake = d.stylebook_id
-  const camel = d.stylebookId
-  const raw = snake !== undefined && snake !== null ? snake : camel
-  if (raw === null || raw === undefined || raw === '') return null
-  const n = typeof raw === 'number' ? raw : Number(raw)
-  return Number.isFinite(n) ? n : null
 }
 
 export default function GeocodeAgentPanel({

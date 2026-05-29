@@ -1,5 +1,9 @@
 import { nodeMetadata } from '@/nodes/registry'
-import { INPUT_BOOKEND_TYPES, OUTPUT_BOOKEND_TYPES } from '@/lib/flowValidation'
+import {
+  INPUT_NODE_TYPES,
+  isInputBookendType,
+  isOutputBookendType,
+} from '@/lib/flowValidation'
 
 export type NodeMetadataEntry = (typeof nodeMetadata)[number]
 
@@ -17,8 +21,6 @@ export type CompatibleNextNodesResult = {
   disabled: CompatibleNodeEntry[]
 }
 
-const INPUT_NODE_TYPES = [...INPUT_BOOKEND_TYPES, 'APIInput', 'DBInput'] as const
-
 const CATEGORY_HEADINGS: Record<string, string> = {
   extraction: 'Extract information',
   enrichment: 'Enrich and refine',
@@ -30,25 +32,8 @@ const CATEGORY_HEADINGS: Record<string, string> = {
   input: 'Input',
 }
 
-/** Show search in the "+" chooser when the scaffold node catalog exceeds this count. */
-export const CHOOSER_SEARCH_NODE_THRESHOLD = 8
-
-export function shouldShowChooserSearch(scaffoldNodeTypeCount: number): boolean {
-  return scaffoldNodeTypeCount > CHOOSER_SEARCH_NODE_THRESHOLD
-}
-
-export function countScaffoldNodeTypes(): number {
-  return nodeMetadata.filter(
-    (meta) => (meta as { enabled?: boolean }).enabled !== false && !isBookendType(String(meta.type)),
-  ).length
-}
-
 function isBookendType(type: string): boolean {
-  return (
-    (INPUT_BOOKEND_TYPES as readonly string[]).includes(type) ||
-    (OUTPUT_BOOKEND_TYPES as readonly string[]).includes(type) ||
-    type === 'S3Output'
-  )
+  return isInputBookendType(type) || isOutputBookendType(type) || type === 'S3Output'
 }
 
 export function categoryHeading(category: string): string {
