@@ -19,6 +19,7 @@ from stylebook_api.routers import (
     stylebook_bundle_jobs,
     stylebook_canonicals,
     stylebook_permissions,
+    stylebook_person_canonicals,
     stylebooks,
     taxonomy,
     ui_stubs,
@@ -58,6 +59,7 @@ app.include_router(imports.stylebook_router)
 app.include_router(candidates.router)
 app.include_router(meta.router)
 app.include_router(stylebook_canonicals.router)
+app.include_router(stylebook_person_canonicals.router)
 app.include_router(stylebook_permissions.router)
 app.include_router(connections.connections_router, prefix="/v1/connections")
 app.include_router(connections.locations_connections_router)

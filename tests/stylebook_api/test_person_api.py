@@ -5,6 +5,7 @@ from __future__ import annotations
 from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
+    Stylebook,
     StylebookConnection,
     StylebookLocationCanonical,
     StylebookPersonAlias,
@@ -63,6 +64,35 @@ def test_list_canonical_people_empty(client: TestClient) -> None:
     body = r.json()
     assert body["canonicals"] == []
     assert body["total"] == 0
+
+
+def test_list_canonical_people_stylebook_scoped(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        stylebook = s.get(Stylebook, sb_id)
+        assert stylebook is not None
+        s.add(
+            StylebookPersonCanonical(
+                stylebook_id=sb_id,
+                label="Governor Example",
+                slug="governor-example",
+                status="active",
+            )
+        )
+        s.commit()
+        slug = str(stylebook.slug)
+
+    r = editor_client.get(
+        f"/v1/stylebooks/{slug}/canonical-people?limit=10&offset=0",
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["canonicals"][0]["label"] == "Governor Example"
 
 
 def test_person_candidates_lists_unlinked_substrate(
