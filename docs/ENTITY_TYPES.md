@@ -14,7 +14,7 @@ When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/s
 | Type | Slug (`EntityType`) | Status |
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
-| Person | `person` | Stub — planned via add-entity-type skill |
+| Person | `person` | Schema, Stylebook persist, API/UI; worker ingest (issue 04) |
 | Organization | `organization` | Stub — planned via add-entity-type skill |
 | Work | `work` | Stub — planned via add-entity-type skill |
 
@@ -91,7 +91,10 @@ apps/worker/src/worker/
         upsert.py
         mentions.py
         span.py
-      person/                # stub
+      person/
+        handler.py           # people persist loop
+        upsert.py
+        mentions.py
       organization/          # stub
       work/                  # stub
     canonical/

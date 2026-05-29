@@ -20,6 +20,7 @@ from worker.substrate.content.geography_reset import (
 )
 from worker.substrate.entities.location.handler import LocationPersistHandler  # noqa: F401
 from worker.substrate.entities.location.span import _find_mention_span
+from worker.substrate.entities.person.handler import PersonPersistHandler  # noqa: F401
 from worker.substrate.entities.registry import (
     DomainReconciliationSummary,
     PersistContext,
@@ -28,6 +29,8 @@ from worker.substrate.entities.registry import (
 )
 
 logger = logging.getLogger(__name__)
+
+_HANDLER_DISPATCH_ORDER: tuple[str, ...] = ("places", "people")
 
 __all__ = [
     "persist_from_consolidated",
@@ -44,12 +47,35 @@ class PersistResult:
     disposed_substrates: int
     replace_stats: ArticleGeographyReplaceStats | None
     reconciliation_summary: DomainReconciliationSummary
+    domain_summaries: tuple[DomainReconciliationSummary, ...] = ()
 
     def __iter__(self):
         yield self.article_id
         yield self.retired_mentions
         yield self.disposed_substrates
         yield self.replace_stats
+
+
+def _active_handler_keys(consolidated: dict[str, Any]) -> tuple[str, ...]:
+    active: list[str] = []
+    places = consolidated.get("places")
+    if isinstance(places, dict):
+        active.append("places")
+    people = consolidated.get("people")
+    if isinstance(people, list):
+        active.append("people")
+    return tuple(key for key in _HANDLER_DISPATCH_ORDER if key in active)
+
+
+def _primary_reconciliation_summary(
+    summaries: tuple[DomainReconciliationSummary, ...],
+) -> DomainReconciliationSummary:
+    if not summaries:
+        raise RuntimeError("persist_from_consolidated produced no domain summaries")
+    for summary in summaries:
+        if summary.domain == "places":
+            return summary
+    return summaries[0]
 
 
 def persist_from_consolidated(
@@ -62,10 +88,10 @@ def persist_from_consolidated(
     db_output_params: dict[str, Any] | None = None,
     replace_machine_geography: bool = False,
 ) -> PersistResult:
-    places = consolidated.get("places")
-    if not isinstance(places, dict):
+    active_keys = _active_handler_keys(consolidated)
+    if not active_keys:
         raise RuntimeError(
-            "DBOutput persistence requires consolidated['places'] (GeocodeAgent output)"
+            "DBOutput persistence requires consolidated['places'] and/or consolidated['people']"
         )
 
     article = _upsert_article(
@@ -99,7 +125,7 @@ def persist_from_consolidated(
         stylebook_id = None
 
     replace_stats: ArticleGeographyReplaceStats | None = None
-    if policy == "replace" and article.id is not None:
+    if "places" in active_keys and policy == "replace" and article.id is not None:
         replace_stats = replace_machine_geography_for_article(
             session,
             project_id=int(project_id),
@@ -115,10 +141,6 @@ def persist_from_consolidated(
                 replace_stats.substrates_disposed,
             )
 
-    handler = get_persist_handler("places")
-    if handler is None:
-        raise RuntimeError("Location persist handler is not registered")
-
     ctx = PersistContext(
         project_id=int(project_id),
         graph_id=graph_id,
@@ -131,12 +153,38 @@ def persist_from_consolidated(
         stylebook_id=stylebook_id,
         replace_stats=replace_stats,
     )
-    handler_result = handler.persist(session, ctx)
 
+    domain_summaries: list[DomainReconciliationSummary] = []
+    retired_mentions = 0
+    disposed_substrates = 0
+
+    for key in active_keys:
+        handler = get_persist_handler(key)
+        if handler is None:
+            raise RuntimeError(f"{key} persist handler is not registered")
+        handler_result = handler.persist(session, ctx)
+        summary = handler_result.summary
+        if key == "places" and replace_stats is not None:
+            summary = DomainReconciliationSummary(
+                policy=summary.policy,
+                domain=summary.domain,
+                added=summary.added,
+                updated=summary.updated,
+                skipped=summary.skipped,
+                removed=replace_stats.mentions_cleared,
+                preserved=summary.preserved,
+                disposed=replace_stats.substrates_disposed,
+            )
+        domain_summaries.append(summary)
+        retired_mentions += handler_result.retired_mentions
+        disposed_substrates += handler_result.disposed_substrates
+
+    summaries_tuple = tuple(domain_summaries)
     return PersistResult(
         article_id=int(article.id),
-        retired_mentions=handler_result.retired_mentions,
-        disposed_substrates=handler_result.disposed_substrates,
+        retired_mentions=retired_mentions,
+        disposed_substrates=disposed_substrates,
         replace_stats=replace_stats,
-        reconciliation_summary=handler_result.summary,
+        reconciliation_summary=_primary_reconciliation_summary(summaries_tuple),
+        domain_summaries=summaries_tuple,
     )

@@ -1,4 +1,5 @@
-"""Reserved for person substrate ingest (catalog_first until extraction ships).
+"""Worker substrate ingest for person entities."""
 
-See docs/ENTITY_TYPES.md and .cursor/skills/add-entity-type/SKILL.md.
-"""
+from worker.substrate.entities.person.handler import PersonPersistHandler  # noqa: F401
+
+__all__ = ["PersonPersistHandler"]

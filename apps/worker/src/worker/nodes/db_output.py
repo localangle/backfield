@@ -49,6 +49,9 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         substrates_disposed = persist_result.disposed_substrates
         replace_stats = persist_result.replace_stats
         reconciliation_summary = persist_result.reconciliation_summary.as_dict()
+        domain_summaries = [
+            summary.as_dict() for summary in persist_result.domain_summaries
+        ] or [reconciliation_summary]
         clear_replace_article_geography_flags(
             session,
             run_id=run_id,
@@ -80,7 +83,7 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         "disposed_substrate_count": substrates_disposed,
         "reconciliation": {
             "policy": reconciliation_summary["policy"],
-            "domains": [reconciliation_summary],
+            "domains": domain_summaries,
         },
         "message": message,
     }
