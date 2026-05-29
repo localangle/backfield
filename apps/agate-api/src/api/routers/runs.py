@@ -14,9 +14,11 @@ from api.deps import get_auth, get_session
 from api.processed_item import (
     OverlayGeometryValidationError,
     build_merged_locations_lane,
+    build_merged_people_lane,
     build_processed_item_article_context,
     build_reviewed_output,
     enrich_merged_locations_for_review,
+    enrich_merged_people_for_review,
     validate_processed_item_overlay_geometry,
 )
 from backfield_auth.gate import require_project_access, visible_project_ids
@@ -144,8 +146,11 @@ class ProcessedItemDetailOut(BaseModel):
     reviewed_output: dict[str, Any] | None = None
     #: Single merged lane: model + user places with provenance (see ``docs/API.md``).
     merged_locations: list[dict[str, Any]] = Field(default_factory=list)
+    #: Single merged lane: model + user people with provenance (see ``docs/API.md``).
+    merged_people: list[dict[str, Any]] = Field(default_factory=list)
     #: Overlay patches whose anchor no longer exists in current model output.
     stale_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
+    stale_people_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
     #: Resolved article body/headline for the item (see ``docs/API.md``).
     article_context: ArticleContextOut
 
@@ -647,6 +652,9 @@ def _detail_from_agate_processed_row(
     merged_locations, stale_overlay_entries = build_merged_locations_lane(
         output=output_obj, overlay=overlay_obj
     )
+    merged_people, stale_people_overlay_entries = build_merged_people_lane(
+        output=output_obj, overlay=overlay_obj
+    )
 
     article_ctx_dict = build_processed_item_article_context(
         session, project_id=project_id, input_obj=input_obj, result_obj=output_obj
@@ -659,6 +667,13 @@ def _detail_from_agate_processed_row(
         run_id=row.run_id,
         article_id=article_ctx_dict.get("article_id"),
         merged_locations=merged_locations,
+    )
+    merged_people = enrich_merged_people_for_review(
+        session,
+        project_id=project_id,
+        run_id=row.run_id,
+        article_id=article_ctx_dict.get("article_id"),
+        merged_people=merged_people,
     )
 
     rid = row.id
@@ -686,6 +701,8 @@ def _detail_from_agate_processed_row(
         reviewed_output=reviewed_output_obj,
         merged_locations=merged_locations,
         stale_overlay_entries=stale_overlay_entries,
+        merged_people=merged_people,
+        stale_people_overlay_entries=stale_people_overlay_entries,
         article_context=article_ctx,
     )
 
@@ -745,6 +762,9 @@ def _maybe_detail_whole_graph_run(
     merged_locations, stale_overlay_entries = build_merged_locations_lane(
         output=output_obj, overlay=None
     )
+    merged_people, stale_people_overlay_entries = build_merged_people_lane(
+        output=output_obj, overlay=None
+    )
 
     project_id = _graph_project_id(session, run.graph_id)
     article_ctx_dict = build_processed_item_article_context(
@@ -758,6 +778,13 @@ def _maybe_detail_whole_graph_run(
         run_id=run.id,
         article_id=article_ctx_dict.get("article_id"),
         merged_locations=merged_locations,
+    )
+    merged_people = enrich_merged_people_for_review(
+        session,
+        project_id=project_id,
+        run_id=run.id,
+        article_id=article_ctx_dict.get("article_id"),
+        merged_people=merged_people,
     )
 
     return ProcessedItemDetailOut(
@@ -782,6 +809,8 @@ def _maybe_detail_whole_graph_run(
         reviewed_output=None,
         merged_locations=merged_locations,
         stale_overlay_entries=stale_overlay_entries,
+        merged_people=merged_people,
+        stale_people_overlay_entries=stale_people_overlay_entries,
         article_context=article_ctx,
     )
 

@@ -14,10 +14,17 @@ from backfield_db import (
     SubstratePersonMention,
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
+from backfield_stylebook.entities.person.persist import (
+    requeue_substrate_after_story_remove,
+    unlink_substrate_from_canonical,
+)
+from backfield_stylebook.entities.person.types import (
+    PERSON_NATURE_VALUES,
+    person_identity_fingerprint,
+)
 from backfield_stylebook.people import (
     create_standalone_canonical,
     link_substrate_to_canonical_atomic,
-    unlink_substrate_from_canonical,
 )
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -595,3 +602,174 @@ def link_substrate_to_canonical_route(
         raise HTTPException(status_code=409, detail=msg) from e
     session.commit()
     return LinkCanonicalResponse(changed=changed)
+
+
+def _normalize_person_name(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
+class SubstratePersonResponse(BaseModel):
+    id: int
+    name: str
+    title: str | None = None
+    affiliation: str | None = None
+    public_figure: bool = False
+    person_type: str | None = None
+    status: str
+    canonical_link_status: str | None = None
+    stylebook_person_canonical_id: str | None = None
+
+
+class PatchSubstratePersonBody(BaseModel):
+    name: str | None = None
+    title: str | None = None
+    affiliation: str | None = None
+    public_figure: bool | None = None
+    person_type: str | None = None
+    role_in_story: str | None = None
+    nature: str | None = None
+    nature_secondary_tags: list[str] | None = None
+
+
+@router.patch("/people/{person_id}", response_model=SubstratePersonResponse)
+def patch_substrate_person(
+    person_id: int,
+    body: PatchSubstratePersonBody,
+    project_slug: str = Query(...),
+    article_id: int | None = Query(None, ge=1),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> SubstratePersonResponse:
+    """Update a substrate person (and optional article mention editorial fields)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    person = session.get(SubstratePerson, person_id)
+    if person is None or int(person.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name cannot be empty")
+        person.name = name
+        person.normalized_name = _normalize_person_name(name)
+    if body.title is not None:
+        person.title = body.title.strip() or None
+    if body.affiliation is not None:
+        person.affiliation = body.affiliation.strip() or None
+    if body.public_figure is not None:
+        person.public_figure = bool(body.public_figure)
+    if body.person_type is not None:
+        person.person_type = body.person_type.strip() or None
+
+    person.identity_fingerprint = person_identity_fingerprint(
+        normalized_name=str(person.normalized_name),
+        title=person.title,
+        affiliation=person.affiliation,
+    )
+    session.add(person)
+
+    if article_id is not None:
+        mention = session.exec(
+            select(SubstratePersonMention).where(
+                SubstratePersonMention.article_id == article_id,
+                SubstratePersonMention.person_id == person_id,
+                col(SubstratePersonMention.deleted).is_(False),
+            )
+        ).first()
+        if mention is not None:
+            if body.role_in_story is not None:
+                mention.role_in_story = body.role_in_story.strip() or None
+            if body.nature is not None:
+                nature = body.nature.strip().lower()
+                mention.nature = nature if nature in PERSON_NATURE_VALUES else "other"
+            if body.nature_secondary_tags is not None:
+                tags = [
+                    t.strip().lower()
+                    for t in body.nature_secondary_tags
+                    if isinstance(t, str) and t.strip()
+                ]
+                mention.nature_secondary_tags_json = [
+                    t for t in tags if t in PERSON_NATURE_VALUES
+                ] or None
+            mention.edited = True
+            session.add(mention)
+
+    session.commit()
+    session.refresh(person)
+    return SubstratePersonResponse(
+        id=int(person.id),  # type: ignore[arg-type]
+        name=str(person.name),
+        title=person.title,
+        affiliation=person.affiliation,
+        public_figure=bool(person.public_figure),
+        person_type=person.person_type,
+        status=str(person.status),
+        canonical_link_status=str(person.canonical_link_status or ""),
+        stylebook_person_canonical_id=person.stylebook_person_canonical_id,
+    )
+
+
+@router.delete("/people/{person_id}")
+def delete_substrate_person(
+    person_id: int,
+    project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
+    article_id: int | None = Query(None, ge=1),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> dict[str, Any]:
+    """Soft-delete story mentions; remove substrate row when no active mentions remain."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    person = session.get(SubstratePerson, person_id)
+    if person is None or int(person.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    mention_filters: list[ColumnElement[bool]] = [
+        SubstratePersonMention.person_id == person_id,
+        SubstratePersonMention.deleted == False,  # noqa: E712
+    ]
+    if article_id is not None:
+        mention_filters.append(SubstratePersonMention.article_id == article_id)
+
+    mentions = session.exec(select(SubstratePersonMention).where(*mention_filters)).all()
+    for mention in mentions:
+        mention.deleted = True
+        session.add(mention)
+    session.flush()
+
+    remaining = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstratePersonMention)
+            .where(
+                SubstratePersonMention.person_id == person_id,
+                SubstratePersonMention.deleted == False,  # noqa: E712
+            )
+        )
+        or 0
+    )
+
+    person_deleted = False
+    candidates_created = 0
+    stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+    if remaining == 0:
+        if requeue_substrate_after_story_remove(
+            session,
+            stylebook_id=stylebook_id,
+            person=person,
+            provenance="agate_review_delete",
+        ):
+            candidates_created = 1
+        session.delete(person)
+        person_deleted = True
+
+    session.commit()
+    return {
+        "message": "deleted",
+        "mentions_removed": len(mentions),
+        "person_deleted": person_deleted,
+        "candidates_created": candidates_created,
+    }
+

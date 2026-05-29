@@ -65,6 +65,22 @@ export function normalizeOverlay(
     ? removed.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
     : []
   out.locations = loc
+  const peopleRaw = out.people
+  if (peopleRaw && typeof peopleRaw === 'object' && !Array.isArray(peopleRaw)) {
+    const people = peopleRaw as Record<string, unknown>
+    const byPeople = people.by_anchor
+    people.by_anchor =
+      typeof byPeople === 'object' && byPeople !== null && !Array.isArray(byPeople)
+        ? { ...(byPeople as Record<string, unknown>) }
+        : {}
+    const uaPeople = people.user_added
+    people.user_added = Array.isArray(uaPeople) ? [...uaPeople] : []
+    const removedPeople = people.removed_anchors
+    people.removed_anchors = Array.isArray(removedPeople)
+      ? removedPeople.filter((a): a is string => typeof a === 'string' && a.trim().length > 0)
+      : []
+    out.people = people
+  }
   return out
 }
 
@@ -285,4 +301,67 @@ export function isApiConflictError(error: unknown): boolean {
     return false
   }
   return /\b409\b/.test(error.message)
+}
+
+function ensurePeople(draft: Record<string, unknown>): Record<string, unknown> {
+  if (!draft.people || typeof draft.people !== 'object' || Array.isArray(draft.people)) {
+    draft.people = {
+      by_anchor: {},
+      user_added: [],
+      removed_anchors: [],
+    }
+  }
+  const people = draft.people as Record<string, unknown>
+  if (!people.by_anchor || typeof people.by_anchor !== 'object' || Array.isArray(people.by_anchor)) {
+    people.by_anchor = {}
+  }
+  if (!Array.isArray(people.user_added)) {
+    people.user_added = []
+  }
+  if (!Array.isArray(people.removed_anchors)) {
+    people.removed_anchors = []
+  }
+  return people
+}
+
+/** Overlay patch that removes a person from review. */
+export function buildRemovePersonOverlayPatch(
+  draft: Record<string, unknown>,
+  anchor: string,
+  source: 'model' | 'user',
+): Record<string, unknown> {
+  const next = cloneJson(draft) as Record<string, unknown>
+  const people = ensurePeople(next)
+  if (source === 'user') {
+    const ua = people.user_added as unknown[]
+    people.user_added = ua.filter((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return true
+      return (row as { id?: unknown }).id !== anchor
+    })
+  } else {
+    const removed = people.removed_anchors as string[]
+    if (!removed.includes(anchor)) {
+      removed.push(anchor)
+    }
+    const by = people.by_anchor as Record<string, unknown>
+    delete by[anchor]
+  }
+  return next
+}
+
+/** Shallow-merge a person field patch into ``people.by_anchor[anchor]``. */
+export function applyPersonAnchorPatch(
+  draft: Record<string, unknown>,
+  anchor: string,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = cloneJson(normalizeOverlay(draft)) as Record<string, unknown>
+  const people = ensurePeople(next)
+  const by = people.by_anchor as Record<string, unknown>
+  const cur = by[anchor]
+  by[anchor] =
+    typeof cur === 'object' && cur !== null && !Array.isArray(cur)
+      ? { ...(cur as Record<string, unknown>), ...patch }
+      : { ...patch }
+  return next
 }

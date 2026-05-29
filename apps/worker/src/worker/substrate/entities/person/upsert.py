@@ -129,6 +129,9 @@ def _upsert_person(
         "run_id": run_id,
         "people_bucket": bucket,
     }
+    raw_entry_id = entry.get("id") or entry.get("mention_id")
+    if raw_entry_id is not None and str(raw_entry_id).strip():
+        details["raw_entry_id"] = str(raw_entry_id).strip()
 
     person = session.exec(
         select(SubstratePerson).where(

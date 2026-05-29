@@ -14,7 +14,7 @@ When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/s
 | Type | Slug (`EntityType`) | Status |
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
-| Person | `person` | Schema, Stylebook persist, API/UI, worker ingest, PersonExtract node |
+| Person | `person` | Full stack including PersonExtract node and Agate people review tab |
 | Organization | `organization` | Stub — planned via add-entity-type skill |
 | Work | `work` | Stub — planned via add-entity-type skill |
 
@@ -163,7 +163,7 @@ apps/agate-ui/src/lib/review/
     location/
 ```
 
-Non-location tabs are placeholders until per-type issue 06.
+Non-location tabs: **People** review is implemented (issue 06); other entity tabs remain placeholders.
 
 ### Agate nodes
 

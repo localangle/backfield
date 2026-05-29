@@ -74,7 +74,11 @@ class PersonPersistHandler:
         skipped = 0
         preserved = 0
 
-        for bucket, entry in _iter_people_entries(people):
+        for idx, (bucket, entry) in enumerate(_iter_people_entries(people)):
+            anchor = entry.get("id") or entry.get("mention_id")
+            if not (isinstance(anchor, str) and str(anchor).strip()):
+                anchor = f"stylebook_output:{idx}"
+                entry["id"] = anchor
             upserted = _upsert_person(
                 session,
                 project_id=ctx.project_id,

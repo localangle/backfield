@@ -177,11 +177,28 @@ Geometry follows **GeoJSON** types **`Point`**, **`Polygon`**, and **`MultiPolyg
 
 **Immutability:** **`output`** and **`node_outputs`** are not modified by merge; they remain the worker/model truth. **`overlay`** continues to echo the stored overlay blob.
 
+## Processed item people overlay (v1)
+
+People review uses the same overlay PATCH transport as locations. Overlay JSON may include:
+
+- **`people.by_anchor`**: anchor string → shallow patch on the matching model person object (`name`, `title`, `affiliation`, `type`, `role_in_story`, `nature`, `public_figure`, …).
+- **`people.removed_anchors`**: hide model rows by anchor.
+- **`people.user_added`**: optional manual rows with ids **`user_person:*`**.
+
+**GET additive fields:**
+
+- **`merged_people`**: array of `{ "anchor", "source", "node_id", "index_in_node", "stale", "person", "mention_occurrences", … }`. Baseline is built from one canonical node carrying **`people`** (priority: **`stylebook_output`** → **`DBOutput`**; excludes **`PersonExtract`** when a persist node is present). Enrichment may add **`persisted_person_id`**, **`stylebook_person_canonical_id`**, **`canonical_link_status`**, and **`stylebook_link`**.
+- **`stale_people_overlay_entries`**: orphan **`by_anchor`** keys after rerun.
+
+**Stylebook substrate saves from review:** **`PATCH /v1/people/{person_id}?project_slug=…&article_id=…`** updates substrate person fields and mention editorial fields; **`DELETE /v1/people/{person_id}?project_slug=…&article_id=…`** soft-deletes story mentions and removes the substrate row when no active mentions remain.
+
+People overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.people`** (and **`consolidated.people`** when present).
+
 ## Reviewed output (v1)
 
-When overlay PATCH carries review content (location patches, user-added places, removed anchors, or **`article`** field edits), Agate API **materializes** a full node-output document into **`agate_processed_item.reviewed_output_json`** on the same request. **`GET …/items/{item_id}`** and successful overlay PATCH responses include **`reviewed_output`** (parsed JSON) when present; otherwise the field is **`null`** and clients use **`output`** only.
+When overlay PATCH carries review content (location or people patches, user-added rows, removed anchors, or **`article`** field edits), Agate API **materializes** a full node-output document into **`agate_processed_item.reviewed_output_json`** on the same request. **`GET …/items/{item_id}`** and successful overlay PATCH responses include **`reviewed_output`** (parsed JSON) when present; otherwise the field is **`null`** and clients use **`output`** only.
 
-- **Shape:** Same top-level keys as **`output`** / **`result_json`** (for example **`geocode_agent`**, **`json_output`**, **`stylebook_output`**). Location review is applied to the canonical geocoded node’s **`places`** bucket and copied to every node payload’s **`consolidated.places`** when present (so JSON Output flows stay aligned). **`overlay.article`** keys (`publication`, `headline`, `url`, `author`, `pub_date`) are shallow-merged onto each node payload’s **`consolidated`** object when present, and onto hoisted DBOutput-style payloads (for example **`stylebook_output`** with top-level article fields and **`places`**).
+- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket; people review updates **`stylebook_output.people`** (and **`consolidated.people`** when present). **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
 - **Lifecycle:** Cleared with **`overlay_json`** on item rerun. Not written when overlay has no review content (for example metadata-only keys with no location or article edits).
 - **Non-effects:** Does not update **`result_json`**, geocode cache, substrate tables, or Stylebook canonicals. DBOutput and worker execution continue to read immutable model output unless product later adds an explicit persist-from-reviewed path.
 
