@@ -4,13 +4,19 @@ from __future__ import annotations
 
 from backfield_db import (
     BackfieldProject,
+    BackfieldProjectMembership,
+    BackfieldUser,
     BackfieldWorkspace,
     Stylebook,
     StylebookConnection,
     StylebookLocationCanonical,
     StylebookPersonAlias,
     StylebookPersonCanonical,
+    StylebookPersonMeta,
+    SubstrateArticle,
     SubstratePerson,
+    SubstratePersonMention,
+    SubstratePersonMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_LINKED,
@@ -335,3 +341,110 @@ def test_location_person_connection_roundtrip(
     with Session(stylebook_test_engine) as s:
         row = s.get(StylebookConnection, conn_id)
         assert row is None
+
+
+def test_canonical_person_mentions_and_stylebook_meta(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        stylebook = s.get(Stylebook, sb_id)
+        assert stylebook is not None
+        slug = str(stylebook.slug)
+        canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Mentioned Person",
+            slug="mentioned-person",
+            status="active",
+        )
+        s.add(canon)
+        art = SubstrateArticle(
+            project_id=int(proj.id),
+            headline="City council vote",
+            text="Mayor Jane Doe spoke at the meeting.",
+            url="https://example.com/council",
+            deleted=False,
+        )
+        s.add(art)
+        s.commit()
+        s.refresh(canon)
+        s.refresh(art)
+        cid = str(canon.id)
+        aid = int(art.id)  # type: ignore[arg-type]
+        person = SubstratePerson(
+            project_id=int(proj.id),
+            name="Jane Doe",
+            normalized_name="jane doe",
+            identity_fingerprint="fp-mention-person-1",
+            stylebook_person_canonical_id=cid,
+            canonical_link_status=CANONICAL_LINK_LINKED,
+            status="active",
+        )
+        s.add(person)
+        s.commit()
+        s.refresh(person)
+        pid = int(person.id)  # type: ignore[arg-type]
+        mention = SubstratePersonMention(
+            article_id=aid,
+            person_id=pid,
+            nature="official",
+            role_in_story="Spoke at meeting",
+            deleted=False,
+        )
+        s.add(mention)
+        s.commit()
+        s.refresh(mention)
+        mid = int(mention.id)  # type: ignore[arg-type]
+        s.add(
+            SubstratePersonMentionOccurrence(
+                person_mention_id=mid,
+                mention_text="Mayor Jane Doe",
+                quote_text="Mayor Jane Doe spoke",
+                start_char=0,
+                end_char=15,
+            )
+        )
+        s.add(
+            StylebookPersonMeta(
+                project_id=int(proj.id),
+                stylebook_person_canonical_id=cid,
+                meta_type="note",
+                data_json={"source": "test"},
+            )
+        )
+        s.commit()
+
+        editor = s.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "editor@example.com")
+        ).one()
+        s.add(
+            BackfieldProjectMembership(
+                project_id=int(proj.id),
+                user_id=int(editor.id),  # type: ignore[arg-type]
+                role="editor",
+            )
+        )
+        s.commit()
+
+    r_mentions = editor_client.get(
+        f"/v1/stylebooks/{slug}/canonical-people/{cid}/mentions?project=demo-proj",
+    )
+    assert r_mentions.status_code == 200
+    body = r_mentions.json()
+    assert body["canonical_person_id"] == cid
+    assert body["total"] == 1
+    assert len(body["mentions"]) == 1
+    row = body["mentions"][0]
+    assert row["substrate_person_id"] == pid
+    assert row["mention_nature"] == "official"
+    assert row["description"] == "Spoke at meeting"
+    assert row["original_text"] == "Mayor Jane Doe"
+
+    r_meta = editor_client.get(
+        f"/v1/stylebooks/{slug}/canonical-people/{cid}/meta",
+    )
+    assert r_meta.status_code == 200
+    assert r_meta.json()["count"] == 1
+    assert r_meta.json()["meta"][0]["meta_type"] == "note"

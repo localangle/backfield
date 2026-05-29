@@ -534,7 +534,11 @@ export interface RunEstimatedAiCost {
   estimated_total: string
   incomplete_estimate: boolean
   attempt_count: number
-  node_breakdown: Array<{ node_id: string | null; estimated_total: string }>
+  node_breakdown: Array<{
+    node_id: string | null
+    node_type?: string | null
+    estimated_total: string
+  }>
 }
 
 export async function getRunEstimatedAiCost(runId: string): Promise<RunEstimatedAiCost> {

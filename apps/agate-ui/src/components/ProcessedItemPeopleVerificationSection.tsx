@@ -8,13 +8,11 @@ import {
   ProcessedItemArticleBody,
   type ArticleTextSelection,
 } from '@/components/ProcessedItemArticleBody'
-import { PeopleTable } from '@/components/PeopleTable'
-import { PersonEditForm } from '@/components/PersonEditForm'
+import { ProcessedItemPeopleEditor } from '@/components/ProcessedItemPeopleEditor'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Graph, ProcessedItem } from '@/lib/api'
-import { getProcessedItem, patchProcessedItemOverlay } from '@/lib/api'
+import { patchProcessedItemOverlay } from '@/lib/api'
 import {
   stylebookPeopleCandidatesHref,
   stylebookPersonCanonicalDetailHref,
@@ -24,7 +22,7 @@ import {
   findAllMentionOccurrencesInArticle,
   resolveEvidenceSpansInArticle,
 } from '@/lib/review/content/evidenceSpan'
-import { readMentionOccurrencesFromRow } from '@/lib/review/entities/location/mentionOccurrences'
+import { readMentionOccurrencesFromRow, recomputeOccurrenceSpans } from '@/lib/review/entities/location/mentionOccurrences'
 import { resolveProcessedItemArticleId } from '@/lib/review/entities/location/reviewRow'
 import {
   buildPersonEditOverlayPatch,
@@ -36,8 +34,9 @@ import {
   getMergedRowAnchor,
   getMergedRowPersistedPersonId,
   getMergedRowStylebookPersonCanonicalId,
-  isMergedRowLinkedToStylebook,
+  personDisplayName,
   readPersonFromRow,
+  resolveStylebookSlugForLinkedRow,
 } from '@/lib/review/entities/person/reviewRow'
 import {
   appendUserAddedPersonToOverlay,
@@ -77,11 +76,13 @@ export function ProcessedItemPeopleVerificationSection({
     normalizeOverlay(item.overlay),
   )
   const [saving, setSaving] = useState(false)
+  const [personEditing, setPersonEditing] = useState(false)
   const [selectedAnchor, setSelectedAnchor] = useState<string | null>(null)
   const [fieldsDraft, setFieldsDraft] = useState<PersonEditFields | undefined>(undefined)
   const [fieldsBaseline, setFieldsBaseline] = useState<PersonEditFields | undefined>(undefined)
   const [addPersonMode, setAddPersonMode] = useState(false)
   const [addPersonSelection, setAddPersonSelection] = useState<ArticleTextSelection | null>(null)
+  const [awaitingAddPersonReselection, setAwaitingAddPersonReselection] = useState(false)
   const [articleTextSelection, setArticleTextSelection] = useState<ArticleTextSelection | null>(null)
   const lastItemSyncKeyRef = useRef('')
 
@@ -89,10 +90,6 @@ export function ProcessedItemPeopleVerificationSection({
     () => !overlaysStructurallyEqual(baselineOverlay, draftOverlay),
     [baselineOverlay, draftOverlay],
   )
-
-  useEffect(() => {
-    onVerificationDirtyChange?.(dirty)
-  }, [dirty, onVerificationDirtyChange])
 
   const syncKey = `${runId}:${item.id}:${item.overlay_version}`
   useEffect(() => {
@@ -157,21 +154,31 @@ export function ProcessedItemPeopleVerificationSection({
   const persistAddPersonToStylebook = (articleId ?? 0) > 0
   const article = item.article_context
 
-  useEffect(() => {
-    if (!selectedRow) {
-      setFieldsDraft(undefined)
-      setFieldsBaseline(undefined)
-      return
-    }
-    const fields = readPersonEditFields(readPersonFromRow(selectedRow))
-    setFieldsDraft(fields)
-    setFieldsBaseline(fields)
-  }, [selectedRow?.anchor])
-
   const fieldsDirty =
+    personEditing &&
     fieldsDraft !== undefined &&
     fieldsBaseline !== undefined &&
     !personEditFieldsEqual(fieldsDraft, fieldsBaseline)
+
+  const personEditDirty = fieldsDirty || dirty
+
+  useEffect(() => {
+    onVerificationDirtyChange?.(personEditDirty)
+  }, [personEditDirty, onVerificationDirtyChange])
+
+  const cancelPersonEdit = useCallback(() => {
+    setPersonEditing(false)
+    setFieldsDraft(undefined)
+    setFieldsBaseline(undefined)
+  }, [])
+
+  const startPersonEdit = useCallback(() => {
+    if (!selectedRow) return
+    const fields = readPersonEditFields(readPersonFromRow(selectedRow))
+    setFieldsBaseline(fields)
+    setFieldsDraft(fields)
+    setPersonEditing(true)
+  }, [selectedRow])
 
   const storyHighlightResult = useMemo(() => {
     const body = typeof article?.body === 'string' ? article.body : ''
@@ -239,25 +246,87 @@ export function ProcessedItemPeopleVerificationSection({
     return findAllMentionOccurrencesInArticle(body, needles)
   }, [article?.body, displayMergedRows])
 
-  const selectPersonAnchor = useCallback((anchor: string) => {
-    setAddPersonMode(false)
-    setAddPersonSelection(null)
-    setSelectedAnchor(anchor)
-  }, [])
+  const mentionSpanHits = useMemo(() => {
+    const body = typeof article?.body === 'string' ? article.body : ''
+    if (!body) return []
+    return buildOccurrenceSpanHits(
+      body,
+      displayMergedRows
+        .map((row) => {
+          const anchor = getMergedRowAnchor(row)
+          if (!anchor) return null
+          const occs = readMentionOccurrencesFromRow({
+            location: readPersonFromRow(row),
+            mention_occurrences: row.mention_occurrences,
+          })
+          return {
+            anchor,
+            occurrences: recomputeOccurrenceSpans(body, occs),
+          }
+        })
+        .filter(
+          (entry): entry is { anchor: string; occurrences: ReturnType<typeof recomputeOccurrenceSpans> } =>
+            entry !== null,
+        ),
+    )
+  }, [article?.body, displayMergedRows])
+
+  const personLabelsByAnchor = useMemo(() => {
+    const labels: Record<string, string> = {}
+    for (const row of displayMergedRows) {
+      const anchor = getMergedRowAnchor(row)
+      if (!anchor) continue
+      labels[anchor] = personDisplayName(row)
+    }
+    return labels
+  }, [displayMergedRows])
+
+  const selectPersonAnchor = useCallback(
+    (anchor: string) => {
+      if (personEditing) {
+        cancelPersonEdit()
+      }
+      setAddPersonMode(false)
+      setAddPersonSelection(null)
+      setSelectedAnchor(anchor)
+    },
+    [personEditing, cancelPersonEdit],
+  )
+
+  const handleUnselect = useCallback(() => {
+    if (personEditing) {
+      cancelPersonEdit()
+    }
+    setSelectedAnchor(null)
+  }, [personEditing, cancelPersonEdit])
 
   const handleBeginAddPerson = useCallback((selection: ArticleTextSelection) => {
     setAddPersonMode(false)
     setSelectedAnchor(null)
     setAddPersonSelection(selection)
+    setAwaitingAddPersonReselection(false)
     setArticleTextSelection(null)
   }, [])
 
   const exitAddPersonMode = useCallback(() => {
     setAddPersonMode(false)
+    setAwaitingAddPersonReselection(false)
     setArticleTextSelection(null)
     const sel = window.getSelection()
     sel?.removeAllRanges()
   }, [])
+
+  const addPersonWorkflowActive = addPersonMode || addPersonSelection !== null
+
+  const articleInteractionMode = useMemo(() => {
+    if (addPersonSelection && !awaitingAddPersonReselection) {
+      return 'locked' as const
+    }
+    if (addPersonMode || awaitingAddPersonReselection) {
+      return 'select-passage' as const
+    }
+    return 'normal' as const
+  }, [addPersonSelection, awaitingAddPersonReselection, addPersonMode])
 
   useEffect(() => {
     if (!addPersonMode) return
@@ -267,6 +336,12 @@ export function ProcessedItemPeopleVerificationSection({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [addPersonMode, exitAddPersonMode])
+
+  useEffect(() => {
+    if (!selectedAnchor) return
+    const rowEl = document.getElementById(`people-row-${selectedAnchor}`)
+    rowEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [selectedAnchor])
 
   const handleAddPersonCreated = useCallback(
     async (payload: AddPersonWorkflowCreatedPayload) => {
@@ -289,13 +364,14 @@ export function ProcessedItemPeopleVerificationSection({
         const updated = await patchProcessedItemOverlay(
           runId,
           item.id,
-          { overlay: nextOverlay },
+          nextOverlay,
           item.overlay_version ?? 0,
         )
         onItemUpdated(updated)
         setBaselineOverlay(normalizeOverlay(updated.overlay))
         setDraftOverlay(normalizeOverlay(updated.overlay))
         setAddPersonSelection(null)
+        setAwaitingAddPersonReselection(false)
         setAddPersonMode(false)
         setSelectedAnchor(payload.anchor)
         showMessage('Person added to this review.', { title: 'People review' })
@@ -308,24 +384,28 @@ export function ProcessedItemPeopleVerificationSection({
     [draftOverlay, runId, item.id, item.overlay_version, onItemUpdated, showError, showMessage],
   )
 
-  const handleSave = useCallback(async () => {
-    if (saving) return
+  const handleSavePersonEdit = useCallback(async (): Promise<boolean> => {
+    if (saving || !selectedAnchor || !selectedRow || fieldsDraft === undefined) {
+      return false
+    }
+    const projectSlug =
+      typeof catalogProjectSlug === 'string' && catalogProjectSlug.trim()
+        ? catalogProjectSlug.trim()
+        : ''
+    const persistedId = getMergedRowPersistedPersonId(selectedRow)
     setSaving(true)
     try {
-      let nextOverlay = draftOverlay
-      if (selectedAnchor && fieldsDraft) {
-        nextOverlay = applyPersonAnchorPatch(
-          nextOverlay,
-          selectedAnchor,
-          buildPersonEditOverlayPatch(fieldsDraft),
-        )
-        setDraftOverlay(nextOverlay)
-      }
-      const persistedId = selectedRow ? getMergedRowPersistedPersonId(selectedRow) : null
-      if (persistedId && fieldsDraft && catalogProjectSlug) {
+      const fragment = buildPersonEditOverlayPatch(fieldsDraft)
+      if (persistedId !== null) {
+        if (!projectSlug) {
+          showError('This project does not have a slug configured for saving people.', {
+            title: 'Could not save',
+          })
+          return false
+        }
         await updateSavedPerson(
           persistedId,
-          catalogProjectSlug,
+          projectSlug,
           {
             name: fieldsDraft.name,
             title: fieldsDraft.title,
@@ -338,16 +418,58 @@ export function ProcessedItemPeopleVerificationSection({
           articleId,
         )
       }
+      const nextOverlay = applyPersonAnchorPatch(draftOverlay, selectedAnchor, fragment)
       const updated = await patchProcessedItemOverlay(
         runId,
         item.id,
-        { overlay: nextOverlay },
+        nextOverlay,
         item.overlay_version ?? 0,
       )
       onItemUpdated(updated)
-      setBaselineOverlay(normalizeOverlay(updated.overlay))
-      setDraftOverlay(normalizeOverlay(updated.overlay))
-      if (fieldsDraft) setFieldsBaseline(fieldsDraft)
+      const normalized = normalizeOverlay(updated.overlay)
+      setBaselineOverlay(normalized)
+      setDraftOverlay(normalized)
+      setFieldsBaseline(fieldsDraft)
+      cancelPersonEdit()
+      return true
+    } catch {
+      showError('We could not save your changes. Check your connection and try again.', {
+        title: 'Could not save',
+      })
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }, [
+    saving,
+    selectedAnchor,
+    selectedRow,
+    fieldsDraft,
+    catalogProjectSlug,
+    articleId,
+    draftOverlay,
+    runId,
+    item.id,
+    item.overlay_version,
+    onItemUpdated,
+    showError,
+    cancelPersonEdit,
+  ])
+
+  const saveOverlayReview = useCallback(async () => {
+    if (saving || !dirty) return
+    setSaving(true)
+    try {
+      const updated = await patchProcessedItemOverlay(
+        runId,
+        item.id,
+        draftOverlay,
+        item.overlay_version ?? 0,
+      )
+      onItemUpdated(updated)
+      const normalized = normalizeOverlay(updated.overlay)
+      setBaselineOverlay(normalized)
+      setDraftOverlay(normalized)
       showMessage('Review saved', { title: 'People review' })
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Save failed', { title: 'People review' })
@@ -356,12 +478,8 @@ export function ProcessedItemPeopleVerificationSection({
     }
   }, [
     saving,
+    dirty,
     draftOverlay,
-    selectedAnchor,
-    fieldsDraft,
-    selectedRow,
-    catalogProjectSlug,
-    articleId,
     runId,
     item.id,
     item.overlay_version,
@@ -372,7 +490,7 @@ export function ProcessedItemPeopleVerificationSection({
 
   const handleOpenStylebook = useCallback(
     (row: Record<string, unknown>) => {
-      if (dirty || fieldsDirty) {
+      if (dirty || fieldsDirty || personEditing) {
         showError('Save your review changes before opening Stylebook.', { title: 'People review' })
         return
       }
@@ -387,46 +505,76 @@ export function ProcessedItemPeopleVerificationSection({
         : stylebookPeopleCandidatesHref(slug, catalogProjectSlug)
       window.open(href, '_blank', 'noopener,noreferrer')
     },
-    [dirty, fieldsDirty, catalogStylebookSlug, catalogProjectSlug, showError],
+    [dirty, fieldsDirty, personEditing, catalogStylebookSlug, catalogProjectSlug, showError],
   )
 
   const handleDeletePerson = useCallback(
     async (row: Record<string, unknown>) => {
       const anchor = getMergedRowAnchor(row)
       if (!anchor) return
-      const ok = await showConfirm('Remove this person from the story review?', {
-        title: 'Remove person',
-        confirmLabel: 'Remove',
-      })
+      const label = personDisplayName(row)
+      const ok = await showConfirm(
+        `Remove “${label}” from this story? Mentions for this article will be removed. If no other stories use this saved person, they will be unlinked from your catalog and removed.`,
+        {
+          title: 'Remove person from story',
+          confirmLabel: 'Remove from story',
+          cancelLabel: 'Cancel',
+          destructive: true,
+        },
+      )
       if (!ok) return
+
+      if (personEditing) {
+        cancelPersonEdit()
+      }
+
+      const source = row.source === 'user' ? 'user' : 'model'
+      const nextOverlay = buildRemovePersonOverlayPatch(draftOverlay, anchor, source)
+      const projectSlug =
+        typeof catalogProjectSlug === 'string' && catalogProjectSlug.trim()
+          ? catalogProjectSlug.trim()
+          : ''
+      const persistedId = getMergedRowPersistedPersonId(row)
+      const stylebookSlug = resolveStylebookSlugForLinkedRow(row, catalogStylebookSlug)
+
       setSaving(true)
       try {
-        const source = row.source === 'user' ? 'user' : 'model'
-        const nextOverlay = buildRemovePersonOverlayPatch(draftOverlay, anchor, source)
-        const persistedId = getMergedRowPersistedPersonId(row)
-        if (persistedId && catalogProjectSlug) {
-          await deleteSavedPerson(persistedId, catalogProjectSlug, articleId)
+        if (persistedId && projectSlug) {
+          await deleteSavedPerson(persistedId, projectSlug, articleId, stylebookSlug)
         }
         const updated = await patchProcessedItemOverlay(
           runId,
           item.id,
-          { overlay: nextOverlay },
+          nextOverlay,
           item.overlay_version ?? 0,
         )
         onItemUpdated(updated)
-        setBaselineOverlay(normalizeOverlay(updated.overlay))
-        setDraftOverlay(normalizeOverlay(updated.overlay))
-        if (selectedAnchor === anchor) setSelectedAnchor(null)
-      } catch (err) {
-        showError(err instanceof Error ? err.message : 'Remove failed', { title: 'People review' })
+        const normalized = normalizeOverlay(updated.overlay)
+        setBaselineOverlay(normalized)
+        setDraftOverlay(normalized)
+        if (selectedAnchor === anchor) {
+          setSelectedAnchor(null)
+        }
+        showMessage(
+          'The person was removed from this story. If they were linked in your catalog, check Stylebook candidates to link them again.',
+          { title: 'Person removed' },
+        )
+      } catch (e) {
+        showError(
+          e instanceof Error ? e.message : 'We could not delete this person. Try again.',
+          { title: 'Remove person' },
+        )
       } finally {
         setSaving(false)
       }
     },
     [
       showConfirm,
+      personEditing,
+      cancelPersonEdit,
       draftOverlay,
       catalogProjectSlug,
+      catalogStylebookSlug,
       articleId,
       runId,
       item.id,
@@ -434,18 +582,11 @@ export function ProcessedItemPeopleVerificationSection({
       onItemUpdated,
       selectedAnchor,
       showError,
+      showMessage,
     ],
   )
 
-  const refreshItem = useCallback(async () => {
-    const updated = await getProcessedItem(runId, item.id)
-    onItemUpdated(updated)
-  }, [runId, item.id, onItemUpdated])
-
-  const linkedReadOnly =
-    selectedRow !== null && isMergedRowLinkedToStylebook(selectedRow) && !fieldsDirty
-
-  const canAddPerson = Boolean(article?.body?.trim()) && !addPersonSelection
+  const canAddPerson = Boolean(article?.body?.trim()) && !addPersonWorkflowActive
 
   return (
     <div className="space-y-4">
@@ -453,7 +594,7 @@ export function ProcessedItemPeopleVerificationSection({
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Review and edit people</h2>
           <p className="text-sm text-muted-foreground">
-            Select a person to highlight their mentions in the story and edit details.
+            Select a person to highlight their mentions, then choose Edit person to change details.
           </p>
         </div>
         {canAddPerson ? (
@@ -480,11 +621,11 @@ export function ProcessedItemPeopleVerificationSection({
         ) : null}
       </div>
 
-      {(dirty || fieldsDirty) && (
+      {(dirty || fieldsDirty) && !personEditing && (
         <Alert>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>You have unsaved people review changes.</span>
-            <Button type="button" size="sm" disabled={saving} onClick={() => void handleSave()}>
+            <Button type="button" size="sm" disabled={saving} onClick={() => void saveOverlayReview()}>
               Save review
             </Button>
           </AlertDescription>
@@ -494,7 +635,9 @@ export function ProcessedItemPeopleVerificationSection({
       <div
         className={cn(
           'grid min-h-0 gap-4 lg:grid-cols-2 lg:items-stretch',
-          addPersonSelection ? 'h-[min(52rem,calc(100dvh-10rem))]' : 'h-[min(44rem,calc(100dvh-12rem))]',
+          addPersonSelection || personEditing
+            ? 'h-[min(52rem,calc(100dvh-10rem))]'
+            : 'h-[min(44rem,calc(100dvh-12rem))]',
         )}
       >
         <div
@@ -511,12 +654,14 @@ export function ProcessedItemPeopleVerificationSection({
             </p>
           ) : article?.body?.trim() ? (
             <>
-              {addPersonMode ? (
+              {(addPersonMode || awaitingAddPersonReselection) ? (
                 <p
                   className="mb-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-sm text-foreground"
                   role="status"
                 >
-                  Highlight the passage in the story that supports this person.
+                  {awaitingAddPersonReselection
+                    ? 'Highlight a new passage in the story for this person.'
+                    : 'Highlight the passage in the story that supports this person.'}
                 </p>
               ) : null}
               <ProcessedItemArticleBody
@@ -524,14 +669,23 @@ export function ProcessedItemPeopleVerificationSection({
                 ambientHighlights={ambientHighlightRanges}
                 highlights={activeStoryHighlightRanges}
                 scrollWhenKey={selectedAnchor}
+                mentionSpanHits={mentionSpanHits}
+                placeLabels={personLabelsByAnchor}
+                interactionMode={articleInteractionMode}
+                onSelectPlace={
+                  addPersonWorkflowActive ? undefined : selectPersonAnchor
+                }
+                mentionChoicePrompt="Which person?"
                 onTextSelectionChange={(selection) => {
-                  if (addPersonSelection) return
+                  if (addPersonSelection && !awaitingAddPersonReselection) return
                   setArticleTextSelection(selection)
-                  if (addPersonMode && selection) {
+                  if ((addPersonMode || awaitingAddPersonReselection) && selection) {
                     handleBeginAddPerson(selection)
                   }
                 }}
-                className={addPersonMode ? 'cursor-text' : undefined}
+                className={
+                  addPersonMode || awaitingAddPersonReselection ? 'cursor-text' : undefined
+                }
               />
               {selectedAnchor &&
               storyHighlightRanges.length === 0 &&
@@ -554,13 +708,16 @@ export function ProcessedItemPeopleVerificationSection({
             articleId={articleId ?? 0}
             persistToStylebook={persistAddPersonToStylebook}
             selection={addPersonSelection}
+            awaitingNewSelection={awaitingAddPersonReselection}
             onChangeSelection={() => {
-              setAddPersonSelection(null)
+              setAwaitingAddPersonReselection(true)
               setArticleTextSelection(null)
-              setAddPersonMode(true)
+              const sel = window.getSelection()
+              sel?.removeAllRanges()
             }}
             onCancel={() => {
               setAddPersonSelection(null)
+              setAwaitingAddPersonReselection(false)
               setArticleTextSelection(null)
               setAddPersonMode(false)
             }}
@@ -570,70 +727,23 @@ export function ProcessedItemPeopleVerificationSection({
             onError={(message, title) => showError(message, { title })}
           />
         ) : (
-          <div className="min-h-0 space-y-4 overflow-y-auto">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2">
-                <CardTitle className="text-base">People</CardTitle>
-                <Button type="button" variant="outline" size="sm" onClick={() => void refreshItem()}>
-                  Refresh
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <PeopleTable
-                  rows={displayMergedRows}
-                  selectedAnchor={selectedAnchor}
-                  onSelectAnchor={selectPersonAnchor}
-                  onOpenStylebook={handleOpenStylebook}
-                  onDeletePerson={(row) => void handleDeletePerson(row)}
-                  deleteDisabled={saving}
-                />
-              </CardContent>
-            </Card>
-
-            {selectedRow && fieldsDraft ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Edit person</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {linkedReadOnly ? (
-                    <p className="text-sm text-muted-foreground">
-                      This person is linked to a Stylebook canonical. Open Stylebook to edit the
-                      catalog record.
-                    </p>
-                  ) : null}
-                  <PersonEditForm
-                    fields={fieldsDraft}
-                    disabled={saving || linkedReadOnly}
-                    onChange={setFieldsDraft}
-                  />
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={saving || !fieldsDirty}
-                      onClick={() => fieldsBaseline && setFieldsDraft(fieldsBaseline)}
-                    >
-                      Reset
-                    </Button>
-                    <Button
-                      type="button"
-                      disabled={saving || (!fieldsDirty && !dirty)}
-                      onClick={() => void handleSave()}
-                    >
-                      Save
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardContent className={cn('py-10 text-center text-sm text-muted-foreground')}>
-                  Select a person to edit details.
-                </CardContent>
-              </Card>
-            )}
-          </div>
+          <ProcessedItemPeopleEditor
+            personEditing={personEditing}
+            selectedAnchor={selectedAnchor}
+            selectedRow={selectedRow}
+            rows={displayMergedRows}
+            fieldsDraft={fieldsDraft}
+            fieldsDirty={fieldsDirty}
+            saving={saving}
+            onSelectAnchor={selectPersonAnchor}
+            onOpenStylebook={handleOpenStylebook}
+            onStartEdit={startPersonEdit}
+            onCancelEdit={cancelPersonEdit}
+            onSaveEdit={() => void handleSavePersonEdit()}
+            onDeletePerson={(row) => void handleDeletePerson(row)}
+            onUnselect={handleUnselect}
+            onFieldsChange={setFieldsDraft}
+          />
         )}
       </div>
     </div>

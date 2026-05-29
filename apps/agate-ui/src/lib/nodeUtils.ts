@@ -74,7 +74,7 @@ export type GraphSpecNode = {
 export function getNodeStepDisplayName(
   nodes: GraphSpecNode[] | undefined,
   nodeId: string | null | undefined,
-  options?: { wholeFlowLabel?: string }
+  options?: { wholeFlowLabel?: string; nodeType?: string | null }
 ): string {
   const flowLabel = options?.wholeFlowLabel ?? 'Flow'
   if (nodeId == null || nodeId === '') {
@@ -82,6 +82,10 @@ export function getNodeStepDisplayName(
   }
   const node = nodes?.find((n) => n.id === nodeId)
   if (!node) {
+    const trackedType = options?.nodeType?.trim()
+    if (trackedType) {
+      return getNodeLabel(trackedType)
+    }
     return nodeId
   }
   const p = node.params ?? {}

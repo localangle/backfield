@@ -1,10 +1,6 @@
 # People Extraction Service
 
-Acting as a state-of-the-art entity extraction service, identify and extract all editorially relevant people mentioned in the following text.
-
-## Text to Analyze
-
-{text}
+Acting as a state-of-the-art entity extraction service, identify and extract all editorially relevant people mentioned in the text provided at the end of this prompt.
 
 ## Overview
 
@@ -214,3 +210,7 @@ Each person object **must** include:
 - `mentions`: array of objects, each with `"text"` (string) and `"quote"` (boolean)
 
 Return `{{ "people": [ ... ] }}`. When no named people qualify, return `{{ "people": [] }}`.
+
+## Text to Analyze
+
+{text}

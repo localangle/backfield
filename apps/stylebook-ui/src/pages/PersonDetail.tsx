@@ -1,22 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   deleteCanonicalPerson,
   getCanonicalPerson,
+  getCanonicalPersonMentions,
+  listCanonicalLinkedPersonSubstrates,
   listCanonicalPersonTypes,
   patchCanonicalPerson,
+  unlinkPersonSubstrateFromCanonical,
   type CanonicalPerson,
+  type LinkedPersonMention,
+  type LinkedPersonSubstrateItem,
 } from "@/lib/api"
 import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
+import { personNatureBadgeClass, personNatureDisplayLabel } from "@/lib/personMentionNature"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
+import { PersonCanonicalLinkModal } from "@/components/PersonCanonicalLinkModal"
+import PersonMetaTab from "@/components/PersonMetaTab"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
@@ -26,6 +35,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -34,7 +51,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import ConnectionsSection from "@/components/ConnectionsSection"
+import { cn } from "@/lib/utils"
 import { Loader2, Trash2 } from "lucide-react"
+
+function mentionArticleDisplayTitle(m: LinkedPersonMention): string {
+  const trimmed = (m.article_headline ?? "").trim()
+  if (trimmed.length > 0) return trimmed
+  return `Article ${m.article_id}`
+}
+
+function mentionArticleHref(m: LinkedPersonMention): string | null {
+  const u = (m.article_url ?? "").trim()
+  return u.length > 0 ? u : null
+}
 
 export default function PersonDetail() {
   const { showError } = useAppMessage()
@@ -49,8 +78,14 @@ export default function PersonDetail() {
   const canEdit = useCanEditStylebook()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const evidenceProjectSlug = projectFilterSlug || ""
+
   const [person, setPerson] = useState<CanonicalPerson | null>(null)
+  const [substrates, setSubstrates] = useState<LinkedPersonSubstrateItem[]>([])
+  const [mentions, setMentions] = useState<LinkedPersonMention[]>([])
   const [loading, setLoading] = useState(true)
+  const [substratesLoading, setSubstratesLoading] = useState(false)
+  const [mentionsLoading, setMentionsLoading] = useState(false)
   const [editing, setEditing] = useState(false)
   const [label, setLabel] = useState("")
   const [title, setTitle] = useState("")
@@ -61,6 +96,8 @@ export default function PersonDetail() {
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
+  const [moveSubstrate, setMoveSubstrate] = useState<LinkedPersonSubstrateItem | null>(null)
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/people/canonical`
@@ -75,13 +112,13 @@ export default function PersonDetail() {
   )
 
   const loadPerson = useCallback(
-    async (canonicalId: string, sbSlug: string) => {
+    async (canonicalId: string, sbSlug: string, quiet = false) => {
       try {
-        setLoading(true)
+        if (!quiet) setLoading(true)
         const row = await getCanonicalPerson(
           canonicalId,
           sbSlug,
-          projectFilterSlug || undefined,
+          evidenceProjectSlug || undefined,
         )
         setPerson(row)
         setLabel(row.label)
@@ -91,18 +128,80 @@ export default function PersonDetail() {
         setPublicFigure(row.public_figure)
       } catch (e) {
         console.error(e)
-        setPerson(null)
+        if (!quiet) setPerson(null)
       } finally {
-        setLoading(false)
+        if (!quiet) setLoading(false)
       }
     },
-    [projectFilterSlug],
+    [evidenceProjectSlug],
+  )
+
+  const loadSubstrates = useCallback(
+    async (canonicalId: string, sbSlug: string, quiet = false) => {
+      if (!quiet) setSubstratesLoading(true)
+      try {
+        const r = await listCanonicalLinkedPersonSubstrates(
+          canonicalId,
+          sbSlug,
+          evidenceProjectSlug || undefined,
+        )
+        setSubstrates(r.substrates)
+      } catch {
+        setSubstrates([])
+      } finally {
+        if (!quiet) setSubstratesLoading(false)
+      }
+    },
+    [evidenceProjectSlug],
+  )
+
+  const loadMentions = useCallback(
+    async (canonicalId: string, sbSlug: string, quiet = false) => {
+      if (!quiet) setMentionsLoading(true)
+      try {
+        const m = await getCanonicalPersonMentions(
+          canonicalId,
+          sbSlug,
+          500,
+          0,
+          undefined,
+          "desc",
+          evidenceProjectSlug || undefined,
+        )
+        setMentions(m.mentions)
+      } catch {
+        setMentions([])
+      } finally {
+        if (!quiet) setMentionsLoading(false)
+      }
+    },
+    [evidenceProjectSlug],
+  )
+
+  const refreshCanonicalPage = useCallback(
+    async (quiet = false) => {
+      if (!id || !stylebookSlug) return
+      await loadPerson(id, stylebookSlug, true)
+      await loadSubstrates(id, stylebookSlug, quiet)
+      await loadMentions(id, stylebookSlug, quiet)
+    },
+    [id, stylebookSlug, loadPerson, loadSubstrates, loadMentions],
   )
 
   useEffect(() => {
     if (!id || !stylebookSlug) return
     void loadPerson(id, stylebookSlug)
   }, [id, stylebookSlug, loadPerson])
+
+  useEffect(() => {
+    if (!id || !stylebookSlug) return
+    void loadSubstrates(id, stylebookSlug)
+  }, [id, stylebookSlug, loadSubstrates])
+
+  useEffect(() => {
+    if (!id || !stylebookSlug) return
+    void loadMentions(id, stylebookSlug)
+  }, [id, stylebookSlug, loadMentions])
 
   useEffect(() => {
     if (!stylebookSlug) return
@@ -115,6 +214,34 @@ export default function PersonDetail() {
       }
     })()
   }, [stylebookSlug])
+
+  const mentionsBySubstrateId = useMemo(() => {
+    const map = new Map<number, LinkedPersonMention[]>()
+    for (const row of mentions) {
+      const sid = row.substrate_person_id
+      if (!map.has(sid)) map.set(sid, [])
+      map.get(sid)!.push(row)
+    }
+    return map
+  }, [mentions])
+
+  const tableLoading = substratesLoading || mentionsLoading
+
+  async function handleUnlinkSubstrate(sub: LinkedPersonSubstrateItem) {
+    if (!sub.project_slug) {
+      showError("Missing project for this linked person.")
+      return
+    }
+    setUnlinkingId(sub.id)
+    try {
+      await unlinkPersonSubstrateFromCanonical(sub.id, sub.project_slug)
+      await refreshCanonicalPage(true)
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Unlink failed")
+    } finally {
+      setUnlinkingId(null)
+    }
+  }
 
   async function handleSave() {
     if (!person || !stylebookSlug) return
@@ -135,10 +262,10 @@ export default function PersonDetail() {
           person_type: personType.trim() || null,
           public_figure: publicFigure,
         },
-        projectFilterSlug || undefined,
+        evidenceProjectSlug || undefined,
       )
       setEditing(false)
-      await loadPerson(person.id, stylebookSlug)
+      await refreshCanonicalPage(true)
     } catch (e) {
       console.error(e)
       showError("Failed to save person")
@@ -318,13 +445,173 @@ export default function PersonDetail() {
         </CardContent>
       </Card>
 
+      <Card className="relative z-10">
+        <CardHeader>
+          <CardTitle>Mentions</CardTitle>
+          <CardDescription>
+            Article mentions are grouped by linked person. Unlink or reassign people below.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {tableLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading…
+            </div>
+          ) : substrates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No linked mentions.</p>
+          ) : (
+            <div className="w-full overflow-x-auto">
+              <Table className="w-full min-w-[56rem]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[26%] min-w-[9rem]">Person / article</TableHead>
+                    <TableHead className="w-[6.5rem] min-w-[5.5rem]">Nature</TableHead>
+                    <TableHead className="w-[10rem] min-w-[10rem]">Role in story</TableHead>
+                    <TableHead className="min-w-[18rem]">Quoted text</TableHead>
+                    <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {substrates.map((s) => {
+                    const group = mentionsBySubstrateId.get(s.id) ?? []
+                    return (
+                      <Fragment key={`group-${s.id}`}>
+                        <TableRow className="bg-muted/50 border-t">
+                          <TableCell colSpan={4} className="align-top py-3">
+                            <div className="font-medium min-w-0 break-words">{s.name}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground break-words">
+                              <Badge variant="outline" className="font-normal">
+                                Project: {s.project_name}
+                              </Badge>
+                              {(s.person_type || "").trim()
+                                ? placeExtractTypeLabel(s.person_type!)
+                                : "—"}
+                              {s.title ? (
+                                <>
+                                  <span className="text-muted-foreground/70">·</span>
+                                  {s.title}
+                                </>
+                              ) : null}
+                              {s.affiliation ? (
+                                <>
+                                  <span className="text-muted-foreground/70">·</span>
+                                  {s.affiliation}
+                                </>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="relative z-10 shrink-0"
+                                disabled={unlinkingId === s.id}
+                                onClick={() => setMoveSubstrate(s)}
+                              >
+                                Move…
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                className="relative z-10 shrink-0"
+                                disabled={unlinkingId === s.id}
+                                onClick={() => void handleUnlinkSubstrate(s)}
+                              >
+                                {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {group.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="pl-8 text-sm text-muted-foreground py-2">
+                              No article mentions for this person.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          group.map((m) => {
+                            const articleHref = mentionArticleHref(m)
+                            const articleLabel = mentionArticleDisplayTitle(m)
+                            return (
+                              <TableRow key={m.mention_id} className="hover:bg-muted/30">
+                                <TableCell className="pl-8 align-top min-w-0">
+                                  <div className="flex items-start gap-1 min-w-0">
+                                    <span
+                                      className="text-muted-foreground select-none shrink-0 pt-0.5"
+                                      aria-hidden
+                                    >
+                                      ↳
+                                    </span>
+                                    <div className="min-w-0">
+                                      {articleHref ? (
+                                        <a
+                                          href={articleHref}
+                                          className="font-medium text-primary hover:underline break-words"
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          title={articleLabel}
+                                        >
+                                          {articleLabel}
+                                        </a>
+                                      ) : (
+                                        <span className="font-medium break-words" title={articleLabel}>
+                                          {articleLabel}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="align-top py-3">
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "font-medium shadow-none",
+                                      personNatureBadgeClass(m.mention_nature ?? ""),
+                                    )}
+                                  >
+                                    {personNatureDisplayLabel(m.mention_nature ?? "")}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-muted-foreground text-sm align-top max-w-[10rem] break-words leading-snug">
+                                  {m.description ?? "—"}
+                                </TableCell>
+                                <TableCell className="min-w-0 text-sm align-top break-words leading-relaxed">
+                                  {m.original_text ?? "—"}
+                                </TableCell>
+                                <TableCell className="align-top" />
+                              </TableRow>
+                            )
+                          })
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {stylebookSlug ? (
-        <ConnectionsSection
-          entityType="person"
-          entityId={person.id}
-          stylebookSlug={stylebookSlug}
-          entityDisplayName={person.label}
-        />
+        <>
+          <PersonMetaTab
+            personId={person.id}
+            stylebookSlug={stylebookSlug}
+            onMetaUpdated={() => void loadPerson(person.id, stylebookSlug, true)}
+          />
+
+          <ConnectionsSection
+            entityType="person"
+            entityId={person.id}
+            stylebookSlug={stylebookSlug}
+            entityDisplayName={person.label}
+          />
+        </>
       ) : null}
 
       <Dialog open={deleteOpen} onOpenChange={(open) => !deleting && setDeleteOpen(open)}>
@@ -346,6 +633,19 @@ export default function PersonDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {moveSubstrate ? (
+        <PersonCanonicalLinkModal
+          open={moveSubstrate !== null}
+          onOpenChange={(o) => {
+            if (!o) setMoveSubstrate(null)
+          }}
+          projectSlug={moveSubstrate.project_slug}
+          substratePersonId={moveSubstrate.id}
+          title="Move linked person to another canonical"
+          onDone={() => void refreshCanonicalPage(true)}
+        />
+      ) : null}
     </div>
   )
 }

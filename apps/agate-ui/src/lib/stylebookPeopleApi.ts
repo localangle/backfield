@@ -50,12 +50,22 @@ export async function deleteSavedPerson(
   personId: number,
   projectSlug: string,
   articleId?: number | null,
-): Promise<void> {
+  stylebookSlug?: string | null,
+): Promise<{
+  message: string
+  mentions_removed: number
+  person_deleted: boolean
+  candidates_created?: number
+}> {
   const params = new URLSearchParams({ project_slug: projectSlug })
+  const slug = typeof stylebookSlug === 'string' ? stylebookSlug.trim() : ''
+  if (slug) {
+    params.set('stylebook_slug', slug)
+  }
   if (typeof articleId === 'number' && articleId > 0) {
     params.set('article_id', String(articleId))
   }
-  await stylebookJsonFetch(`/v1/people/${personId}?${params.toString()}`, {
+  return stylebookJsonFetch(`/v1/people/${personId}?${params.toString()}`, {
     method: 'DELETE',
   })
 }

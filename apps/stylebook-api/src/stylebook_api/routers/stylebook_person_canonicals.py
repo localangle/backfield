@@ -8,8 +8,10 @@ from uuid import UUID
 from backfield_db import (
     BackfieldProject,
     StylebookPersonCanonical,
+    SubstrateArticle,
     SubstratePerson,
     SubstratePersonMention,
+    SubstratePersonMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.entities.person.persist import create_standalone_canonical
@@ -27,6 +29,7 @@ from stylebook_api.entities.person.people import (
     PatchCanonicalPersonBody,
     _escape_ilike_metacharacters,
 )
+from stylebook_api.mention_serialization import article_fields_for_linked_mention
 from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import (
     optional_project_filter_to_ids,
@@ -171,6 +174,59 @@ class LinkedPersonSubstrateItem(BaseModel):
 
 class LinkedPersonSubstratesResponse(BaseModel):
     substrates: list[LinkedPersonSubstrateItem]
+
+
+class LinkedPersonMention(BaseModel):
+    substrate_person_id: int
+    mention_id: int
+    article_id: int
+    article_headline: str | None = None
+    article_url: str | None = None
+    original_text: str | None = None
+    mention_nature: str | None = None
+    description: str | None = None
+    person_name: str
+    person_type: str | None = None
+    title: str | None = None
+    affiliation: str | None = None
+    created_at: str | None = None
+
+
+class PersonMentionsResponse(BaseModel):
+    canonical_person_id: str
+    canonical_name: str
+    mentions: list[LinkedPersonMention]
+    total: int
+    limit: int
+    offset: int
+
+
+def _first_occurrence_mention_text_by_person_mention_id(
+    session: Session, mention_ids: list[int]
+) -> dict[int, str]:
+    if not mention_ids:
+        return {}
+    rows = session.exec(
+        select(SubstratePersonMentionOccurrence)
+        .where(
+            col(SubstratePersonMentionOccurrence.person_mention_id).in_(mention_ids),
+            SubstratePersonMentionOccurrence.suppressed == False,  # noqa: E712
+        )
+        .order_by(
+            col(SubstratePersonMentionOccurrence.person_mention_id),
+            col(SubstratePersonMentionOccurrence.occurrence_order).asc().nulls_last(),
+            col(SubstratePersonMentionOccurrence.id),
+        )
+    ).all()
+    out: dict[int, str] = {}
+    for occ in rows:
+        mid = int(occ.person_mention_id)
+        if mid in out:
+            continue
+        txt = (occ.mention_text or "").strip()
+        if txt:
+            out[mid] = txt
+    return out
 
 
 @router.get(
@@ -556,4 +612,112 @@ def list_canonical_linked_substrates(
             )
             for person, project_row in rows
         ]
+    )
+
+
+@router.get(
+    "/{stylebook_slug}/canonical-people/{canonical_id}/mentions",
+    response_model=PersonMentionsResponse,
+)
+def list_canonical_person_mentions(
+    stylebook_slug: str,
+    canonical_id: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to filter mentions (default: all visible projects).",
+    ),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    sort: str | None = Query(None, description="article | created_at (default)"),
+    sort_direction: str = Query("desc", description="asc or desc"),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PersonMentionsResponse:
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    canon = session.get(StylebookPersonCanonical, canonical_id)
+    if canon is None or int(canon.stylebook_id) != int(sb.id):
+        raise HTTPException(status_code=404, detail="Canonical person not found")
+
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=int(sb.organization_id),
+    )
+
+    base_where: list[ColumnElement[bool]] = [
+        SubstratePerson.stylebook_person_canonical_id == str(canon.id),
+        col(SubstratePerson.project_id).in_(project_ids),
+        SubstratePersonMention.deleted == False,  # noqa: E712
+        col(SubstrateArticle.project_id).in_(project_ids),
+        SubstrateArticle.deleted == False,  # noqa: E712
+    ]
+
+    total = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstratePersonMention)
+            .join(SubstrateArticle, SubstrateArticle.id == SubstratePersonMention.article_id)
+            .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+            .where(*base_where)
+        )
+        or 0
+    )
+
+    descending = sort_direction.strip().lower() != "asc"
+    if sort == "article":
+        headline_sort = col(SubstrateArticle.headline)
+        order_by = headline_sort.desc() if descending else headline_sort.asc()
+    else:
+        ts = col(SubstratePersonMention.updated_at)
+        order_by = ts.desc() if descending else ts.asc()
+
+    triples = list(
+        session.exec(
+            select(SubstratePersonMention, SubstrateArticle, SubstratePerson)
+            .join(SubstrateArticle, SubstrateArticle.id == SubstratePersonMention.article_id)
+            .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+            .where(*base_where)
+            .order_by(order_by)
+            .offset(offset)
+            .limit(limit)
+        ).all()
+    )
+    mention_ids = [int(m.id) for m, _, _ in triples if m.id is not None]  # type: ignore[union-attr]
+    texts = _first_occurrence_mention_text_by_person_mention_id(session, mention_ids)
+
+    mentions_out: list[LinkedPersonMention] = []
+    for mention, article, person in triples:
+        mid = int(mention.id)  # type: ignore[arg-type]
+        aid = int(article.id)  # type: ignore[arg-type]
+        created = mention.created_at
+        pid_sub = int(person.id)  # type: ignore[arg-type]
+        ah, au = article_fields_for_linked_mention(article)
+        mentions_out.append(
+            LinkedPersonMention(
+                substrate_person_id=pid_sub,
+                mention_id=mid,
+                article_id=aid,
+                article_headline=ah,
+                article_url=au,
+                original_text=texts.get(mid),
+                mention_nature=mention.nature,
+                description=mention.role_in_story,
+                person_name=str(person.name),
+                person_type=person.person_type,
+                title=(person.title or "").strip() or None,
+                affiliation=(person.affiliation or "").strip() or None,
+                created_at=created.isoformat() if created else None,
+            )
+        )
+
+    return PersonMentionsResponse(
+        canonical_person_id=str(canon.id),
+        canonical_name=str(canon.label),
+        mentions=mentions_out,
+        total=total,
+        limit=limit,
+        offset=offset,
     )

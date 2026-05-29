@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,6 +41,8 @@ export interface AddPlaceWorkflowPanelProps {
   /** When false, the place is stored in the review overlay only (no Stylebook row). */
   persistToStylebook: boolean
   selection: ArticleTextSelection
+  /** When true, the user is picking a new story passage; form fields stay as-is. */
+  awaitingNewSelection?: boolean
   onChangeSelection: () => void
   onCancel: () => void
   onCreated: (payload: AddPlaceWorkflowCreatedPayload) => void
@@ -53,6 +55,7 @@ export function AddPlaceWorkflowPanel({
   articleId,
   persistToStylebook,
   selection,
+  awaitingNewSelection = false,
   onChangeSelection,
   onCancel,
   onCreated,
@@ -63,12 +66,33 @@ export function AddPlaceWorkflowPanel({
   const [mentionText, setMentionText] = useState(() => selection.text.trim())
   const [roleInStory, setRoleInStory] = useState('')
   const [saving, setSaving] = useState(false)
+  const previousSelectionRef = useRef(selection)
+
+  useEffect(() => {
+    const previous = previousSelectionRef.current
+    if (
+      previous.start === selection.start &&
+      previous.end === selection.end &&
+      previous.text === selection.text
+    ) {
+      return
+    }
+    setMentionText((current) => {
+      const previousDefault = previous.text.trim()
+      if (current.trim() === previousDefault) {
+        return selection.text.trim()
+      }
+      return current
+    })
+    previousSelectionRef.current = selection
+  }, [selection])
 
   const typeOptions = useMemo(
     () => sortPlaceExtractTypeOptions(PLACE_EXTRACT_LOCATION_TYPES),
     [],
   )
   const ready =
+    !awaitingNewSelection &&
     label.trim().length > 0 &&
     locationType.trim().length > 0 &&
     mentionText.trim().length > 0 &&
@@ -165,7 +189,13 @@ export function AddPlaceWorkflowPanel({
             </Button>
           </div>
           <p className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap text-sm text-foreground">
-            {selection.text}
+            {awaitingNewSelection ? (
+              <span className="text-muted-foreground">
+                Highlight a new passage in the story to replace this selection.
+              </span>
+            ) : (
+              selection.text
+            )}
           </p>
         </div>
 

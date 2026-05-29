@@ -182,6 +182,90 @@ def test_project_estimated_ai_cost_includes_model_breakdown(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_run_estimated_ai_cost_node_breakdown_includes_node_type(tmp_path):
+    database_path = tmp_path / "agate-run-ai-cost.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    try:
+        client = TestClient(
+            app,
+            headers={"Authorization": "Bearer backfield-dev"},
+        )
+        project = client.post(
+            "/projects",
+            json={"name": "Run AI Cost", "slug": "run-ai-cost"},
+        ).json()
+        graph = client.post(
+            "/graphs",
+            json={
+                "name": "People flow",
+                "project_id": project["id"],
+                "spec": {
+                    "name": "people_flow",
+                    "nodes": [
+                        {
+                            "id": "n1",
+                            "type": "TextInput",
+                            "params": {"text": "Hello"},
+                            "position": {"x": 0, "y": 0},
+                        },
+                        {
+                            "id": "n2",
+                            "type": "PersonExtract",
+                            "params": {},
+                            "position": {"x": 200, "y": 0},
+                        },
+                    ],
+                    "edges": [],
+                },
+            },
+        ).json()
+
+        with Session(engine) as s:
+            run = _insert_pending_run(s, graph["id"])
+            s.add(
+                BackfieldAiCallRecord(
+                    project_id=project["id"],
+                    run_id=run.id,
+                    node_id="node-0",
+                    node_type="PersonExtract",
+                    provider="openai",
+                    provider_model_id="gpt-5-nano",
+                    status="succeeded",
+                    estimated_cost=Decimal("0.004"),
+                    currency="USD",
+                )
+            )
+            s.commit()
+            run_id = run.id
+
+        response = client.get(f"/runs/{run_id}/estimated-ai-cost")
+
+        assert response.status_code == 200
+        assert response.json()["node_breakdown"] == [
+            {
+                "node_id": "node-0",
+                "node_type": "PersonExtract",
+                "estimated_total": "0.004000000000",
+            }
+        ]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_projects_require_auth(tmp_path):
     """Unauthenticated requests to protected routes return 401."""
     database_path = tmp_path / "agate-noauth.db"

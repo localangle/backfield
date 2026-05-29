@@ -25,6 +25,10 @@ export interface ProcessedItemArticleBodyProps {
   placeLabels?: Record<string, string>
   /** Select a geocoded place from a story mention click. */
   onSelectPlace?: (anchor: string) => void
+  /** When ``select-passage``, only text selection works. When ``locked``, the story pane is read-only. */
+  interactionMode?: 'normal' | 'select-passage' | 'locked'
+  /** Disambiguation menu heading when one span maps to several anchors. */
+  mentionChoicePrompt?: string
   /** Report ordinary text selections so callers can start an add workflow. */
   onTextSelectionChange?: (selection: ArticleTextSelection | null) => void
   activeTextSelection?: ArticleTextSelection | null
@@ -50,12 +54,14 @@ function MentionDisambiguationMenu({
   anchors,
   labels,
   position,
+  prompt,
   onSelect,
   onClose,
 }: {
   anchors: string[]
   labels: Record<string, string>
   position: { x: number; y: number }
+  prompt: string
   onSelect: (anchor: string) => void
   onClose: () => void
 }) {
@@ -83,11 +89,11 @@ function MentionDisambiguationMenu({
     <div
       ref={menuRef}
       role="menu"
-      aria-label="Choose place"
+      aria-label={prompt}
       className="fixed z-[200] min-w-[11rem] max-w-[16rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
       style={{ left: position.x, top: position.y }}
     >
-      <p className="px-2 py-1 text-[11px] font-medium text-muted-foreground">Which place?</p>
+      <p className="px-2 py-1 text-[11px] font-medium text-muted-foreground">{prompt}</p>
       {anchors.map((anchor) => (
         <button
           key={anchor}
@@ -185,6 +191,8 @@ export function ProcessedItemArticleBody({
   mentionSpanHits = [],
   placeLabels = {},
   onSelectPlace,
+  interactionMode = 'normal',
+  mentionChoicePrompt = 'Which place?',
   onTextSelectionChange,
   activeTextSelection = null,
   onAddPlaceFromSelection,
@@ -194,6 +202,8 @@ export function ProcessedItemArticleBody({
   const firstSelectedMarkRef = useRef<HTMLElement>(null)
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [disambiguation, setDisambiguation] = useState<DisambiguationMenuState | null>(null)
+  const mentionSelectionEnabled = interactionMode === 'normal' || interactionMode === 'select-passage'
+  const mentionClickHandler = mentionSelectionEnabled ? onSelectPlace : undefined
 
   const tieredRanges = useMemo(
     () => mergeTieredHighlightRanges(ambientHighlights, highlights),
@@ -214,7 +224,7 @@ export function ProcessedItemArticleBody({
   }
 
   const readTextSelection = () => {
-    if (!onTextSelectionChange) return
+    if (!onTextSelectionChange || !mentionSelectionEnabled) return
     const root = bodyRef.current
     const sel = window.getSelection()
     if (!root || !sel || sel.rangeCount === 0 || sel.isCollapsed) {
@@ -288,7 +298,7 @@ export function ProcessedItemArticleBody({
         key={`${tier}-${start}-${end}`}
         tier={tier}
         anchors={anchors}
-        onSelectPlace={onSelectPlace}
+        onSelectPlace={mentionClickHandler}
         onOpenDisambiguation={openDisambiguation}
         markRef={isFirstSelected ? firstSelectedMarkRef : undefined}
       >
@@ -323,7 +333,8 @@ export function ProcessedItemArticleBody({
           anchors={disambiguation.anchors}
           labels={placeLabels}
           position={{ x: disambiguation.x, y: disambiguation.y }}
-          onSelect={(anchor) => onSelectPlace?.(anchor)}
+          prompt={mentionChoicePrompt}
+          onSelect={(anchor) => mentionClickHandler?.(anchor)}
           onClose={() => setDisambiguation(null)}
         />
       ) : null}

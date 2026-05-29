@@ -47,6 +47,18 @@ export function normalizeOverlay(
     return cloneJson(base)
   }
   const out = cloneJson(overlay) as Record<string, unknown>
+  // Recover mistaken double-wrap from early people-review PATCH calls ({ overlay: { people: … } }).
+  const nested = out.overlay
+  if (
+    !out.people &&
+    nested &&
+    typeof nested === 'object' &&
+    !Array.isArray(nested) &&
+    (Object.prototype.hasOwnProperty.call(nested, 'people') ||
+      Object.prototype.hasOwnProperty.call(nested, 'locations'))
+  ) {
+    return normalizeOverlay(nested as Record<string, unknown>)
+  }
   const locRaw = out.locations
   if (!locRaw || typeof locRaw !== 'object' || Array.isArray(locRaw)) {
     out.locations = cloneJson(base.locations)

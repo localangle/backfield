@@ -7,7 +7,6 @@
   "icon": "User",
   "color": "bg-indigo-500",
   "requiredUpstreamNodes": [],
-  "dependencyHelperText": "Requires text input or JSON with a \"text\" field.",
   "inputs": [
     {
       "id": "text",

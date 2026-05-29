@@ -12,9 +12,6 @@ import {
 import { personNatureBadgeClass, personNatureDisplayLabel } from '@/lib/personMentionNature'
 import {
   getMergedRowAnchor,
-  getMergedRowCanonicalLinkStatus,
-  getMergedRowStylebookLink,
-  isMergedRowLinkedToStylebook,
   personDisplayName,
   readPersonFromRow,
 } from '@/lib/review/entities/person/reviewRow'
@@ -24,12 +21,14 @@ import { ChevronDown, ChevronRight, ExternalLink, Trash2 } from 'lucide-react'
 function PersonNatureBadges({ nature }: { nature: string }) {
   if (!nature.trim()) return null
   return (
-    <Badge
-      variant="outline"
-      className={cn('font-medium shadow-none text-[11px]', personNatureBadgeClass(nature))}
-    >
-      {personNatureDisplayLabel(nature)}
-    </Badge>
+    <div className="flex flex-wrap gap-1.5">
+      <Badge
+        variant="outline"
+        className={cn('w-fit font-medium shadow-none text-[11px]', personNatureBadgeClass(nature))}
+      >
+        {personNatureDisplayLabel(nature)}
+      </Badge>
+    </div>
   )
 }
 
@@ -63,127 +62,156 @@ export function PeopleTable({
 
   if (rows.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
-        No people were extracted for this story.
-      </p>
+      <p className="text-xs text-muted-foreground">No people were extracted for this story.</p>
     )
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-8" />
-          <TableHead>Name</TableHead>
-          <TableHead>Title</TableHead>
-          <TableHead>Affiliation</TableHead>
-          <TableHead>Link</TableHead>
-          <TableHead className="w-[88px]">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => {
-          const anchor = getMergedRowAnchor(row)
-          const person = readPersonFromRow(row)
-          const name = personDisplayName(row)
-          const title = typeof person.title === 'string' ? person.title : ''
-          const affiliation = typeof person.affiliation === 'string' ? person.affiliation : ''
-          const nature = typeof person.nature === 'string' ? person.nature : ''
-          const role = typeof person.role_in_story === 'string' ? person.role_in_story : ''
-          const linked = isMergedRowLinkedToStylebook(row)
-          const linkStatus = getMergedRowCanonicalLinkStatus(row)
-          const linkLabel = getMergedRowStylebookLink(row)?.label
-          const expanded = expandedAnchors.has(anchor)
-          const selected = selectedAnchor === anchor
-          return (
-            <Fragment key={anchor}>
-              <TableRow
-                id={`people-row-${anchor}`}
-                className={cn('cursor-pointer', selected && 'bg-primary/10')}
-                onClick={() => onSelectAnchor(anchor)}
-              >
-                <TableCell className="p-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      toggleExpanded(anchor)
-                    }}
-                  >
-                    {expanded ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4" />
-                    )}
-                  </Button>
-                </TableCell>
-                <TableCell className="font-medium">{name}</TableCell>
-                <TableCell className="text-muted-foreground">{title || '—'}</TableCell>
-                <TableCell className="text-muted-foreground">{affiliation || '—'}</TableCell>
-                <TableCell>
-                  {linked ? (
-                    <span className="text-xs text-green-700">{linkLabel ?? 'Linked'}</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      {linkStatus === 'pending' ? 'Needs review' : 'Unlinked'}
-                    </span>
+    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-md border">
+      <Table className="w-full table-fixed">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="h-7 w-7 px-1 py-0" aria-label="Expand row" />
+            <TableHead className="h-7 w-[32%] px-2 py-0 text-[11px] font-medium">Name</TableHead>
+            <TableHead className="h-7 w-[22%] px-2 py-0 text-[11px] font-medium">Title</TableHead>
+            <TableHead className="h-7 px-2 py-0 text-[11px] font-medium">Affiliation</TableHead>
+            <TableHead className="h-7 w-[5rem] px-1 py-0 text-right text-[11px] font-medium">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, idx) => {
+            const anchor = getMergedRowAnchor(row)
+            const person = readPersonFromRow(row)
+            const name = personDisplayName(row)
+            const title = typeof person.title === 'string' ? person.title.trim() : ''
+            const affiliation = typeof person.affiliation === 'string' ? person.affiliation.trim() : ''
+            const nature = typeof person.nature === 'string' ? person.nature : ''
+            const role = typeof person.role_in_story === 'string' ? person.role_in_story.trim() : ''
+            const canExpand = Boolean(nature.trim() || role)
+            const expanded = Boolean(anchor && expandedAnchors.has(anchor))
+            const selected = selectedAnchor === anchor
+            const titleLabel = title || '—'
+            const affiliationLabel = affiliation || '—'
+
+            return (
+              <Fragment key={anchor || `person-${idx}`}>
+                <TableRow
+                  id={anchor ? `people-row-${anchor}` : undefined}
+                  tabIndex={0}
+                  data-state={selected ? 'selected' : undefined}
+                  className={cn(
+                    'cursor-pointer text-xs',
+                    selected && 'bg-primary/10 hover:bg-primary/10',
                   )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
-                    {onOpenStylebook ? (
-                      <Button
+                  onClick={() => {
+                    if (anchor) onSelectAnchor(anchor)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      if (anchor) onSelectAnchor(anchor)
+                    }
+                  }}
+                >
+                  <TableCell className="w-7 px-1 py-1.5 align-middle">
+                    {canExpand && anchor ? (
+                      <button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        title="Open in Stylebook"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-expanded={expanded}
+                        aria-label={expanded ? 'Collapse details' : 'Expand details'}
                         onClick={(e) => {
                           e.stopPropagation()
-                          onOpenStylebook(row)
+                          toggleExpanded(anchor)
                         }}
                       >
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                    {onDeletePerson ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive"
-                        disabled={deleteDisabled}
-                        title="Remove from story"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onDeletePerson(row)
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                  </div>
-                </TableCell>
-              </TableRow>
-              {expanded ? (
-                <TableRow className="bg-muted/30 hover:bg-muted/30">
-                  <TableCell colSpan={6} className="py-3">
-                    <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <PersonNatureBadges nature={nature} />
-                      {role ? (
-                        <span className="text-muted-foreground">{role}</span>
+                        {expanded ? (
+                          <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="inline-block h-6 w-6" aria-hidden />
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className="min-w-0 px-2 py-1.5 align-middle font-medium"
+                    title={name}
+                  >
+                    <span className="block truncate leading-snug">{name}</span>
+                  </TableCell>
+                  <TableCell
+                    className="truncate px-2 py-1.5 align-middle text-muted-foreground"
+                    title={titleLabel}
+                  >
+                    {titleLabel}
+                  </TableCell>
+                  <TableCell
+                    className="min-w-0 truncate px-2 py-1.5 align-middle text-muted-foreground"
+                    title={affiliationLabel}
+                  >
+                    {affiliationLabel}
+                  </TableCell>
+                  <TableCell
+                    className="w-[5rem] px-1 py-1.5 align-middle"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-end gap-0.5">
+                      {onOpenStylebook ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7 shrink-0"
+                          aria-label="Open in Stylebook"
+                          title="Open in Stylebook"
+                          onClick={() => onOpenStylebook(row)}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                        </Button>
+                      ) : null}
+                      {onDeletePerson ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
+                          aria-label="Remove person from story"
+                          title="Remove from story"
+                          disabled={deleteDisabled}
+                          onClick={() => onDeletePerson(row)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                        </Button>
+                      ) : null}
+                      {!onOpenStylebook && !onDeletePerson ? (
+                        <span className="px-1 text-[10px] text-muted-foreground" aria-hidden>
+                          —
+                        </span>
                       ) : null}
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : null}
-            </Fragment>
-          )
-        })}
-      </TableBody>
-    </Table>
+                {expanded && canExpand ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={5} className="bg-muted/25 px-3 py-2">
+                      <div className="flex flex-col gap-2">
+                        <PersonNatureBadges nature={nature} />
+                        {role ? (
+                          <p className="text-xs leading-relaxed text-muted-foreground">{role}</p>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </Fragment>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div>
   )
 }

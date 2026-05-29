@@ -76,6 +76,7 @@ def _celery_queue() -> str:
 
 class AiCostNodeBreakdown(BaseModel):
     node_id: str | None
+    node_type: str | None = None
     estimated_total: Decimal
 
 
@@ -1169,7 +1170,7 @@ def get_run_estimated_ai_cost(
     rows = list(session.exec(stmt).all())
     total = Decimal("0")
     incomplete = False
-    by_node: dict[str | None, Decimal] = {}
+    by_node: dict[str | None, tuple[Decimal, str | None]] = {}
     currency = "USD"
     for row in rows:
         currency = str(row.currency or "USD")
@@ -1180,12 +1181,15 @@ def get_run_estimated_ai_cost(
         if row.cost_estimate_incomplete:
             incomplete = True
         nk = row.node_id
-        prev = by_node.get(nk, Decimal("0"))
-        by_node[nk] = prev + (row.estimated_cost or Decimal("0"))
+        prev_cost, prev_type = by_node.get(nk, (Decimal("0"), None))
+        node_type = row.node_type or prev_type
+        by_node[nk] = (prev_cost + (row.estimated_cost or Decimal("0")), node_type)
 
     breakdown = [
-        AiCostNodeBreakdown(node_id=k, estimated_total=v)
-        for k, v in sorted(by_node.items(), key=lambda kv: (kv[0] is None, str(kv[0])))
+        AiCostNodeBreakdown(node_id=k, node_type=node_type, estimated_total=cost)
+        for k, (cost, node_type) in sorted(
+            by_node.items(), key=lambda kv: (kv[0] is None, str(kv[0]))
+        )
     ]
 
     return RunEstimatedAiCostOut(

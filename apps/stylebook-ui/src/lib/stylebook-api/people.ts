@@ -161,6 +161,53 @@ export async function listCanonicalLinkedPersonSubstrates(
   )
 }
 
+export interface LinkedPersonMention {
+  substrate_person_id: number
+  mention_id: number
+  article_id: number
+  article_headline?: string | null
+  article_url?: string | null
+  original_text?: string | null
+  mention_nature?: string | null
+  description?: string | null
+  person_name?: string | null
+  person_type?: string | null
+  title?: string | null
+  affiliation?: string | null
+  created_at?: string | null
+}
+
+export interface PersonMentionsResponse {
+  canonical_person_id: string
+  canonical_name: string
+  mentions: LinkedPersonMention[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export async function getCanonicalPersonMentions(
+  canonicalId: string,
+  stylebookSlug: string,
+  limit: number = 50,
+  offset: number = 0,
+  _sort?: string,
+  sortDirection: "asc" | "desc" = "desc",
+  projectFilterSlug?: string,
+): Promise<PersonMentionsResponse> {
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+    offset: offset.toString(),
+    sort_direction: sortDirection,
+  })
+  if (projectFilterSlug) params.set("project", projectFilterSlug)
+  return stylebookJsonFetch<PersonMentionsResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(
+      canonicalId,
+    )}/mentions?${params}`,
+  )
+}
+
 export async function unlinkPersonSubstrateFromCanonical(
   substratePersonId: number,
   projectSlug: string,

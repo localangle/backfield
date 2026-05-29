@@ -35,6 +35,19 @@ describe('normalizeOverlay', () => {
     })
     expect(Array.isArray((o.locations as { user_added: unknown[] }).user_added)).toBe(true)
   })
+
+  it('unwraps mistaken double-wrapped overlay payload', () => {
+    const o = normalizeOverlay({
+      overlay: {
+        people: {
+          by_anchor: {},
+          user_added: [],
+          removed_anchors: ['p1'],
+        },
+      },
+    })
+    expect((o.people as { removed_anchors: string[] }).removed_anchors).toEqual(['p1'])
+  })
 })
 
 describe('overlaysStructurallyEqual', () => {
