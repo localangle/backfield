@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import patch
+
+from agate_runtime import execute_graph
+from agate_runtime.starter_flow import starter_people_flow_graph_spec
 from backfield_db import (
     AgateRun,
     SubstratePerson,
@@ -220,3 +225,112 @@ def test_people_reingest_retires_stale_system_mentions() -> None:
             )
         ).all()
         assert len(active_mentions) == 1
+
+
+def _mock_people_demo_json() -> str:
+    return json.dumps(
+        {
+            "people": [
+                {
+                    "name": "John Smith",
+                    "title": "Mayor",
+                    "affiliation": "Chicago",
+                    "public_figure": True,
+                    "type": "politician",
+                    "role_in_story": "Announced park initiative",
+                    "nature": "official",
+                    "nature_secondary_tags": [],
+                    "mentions": [
+                        {
+                            "text": "Mayor John Smith of Chicago announced a new park initiative.",
+                            "quote": False,
+                        }
+                    ],
+                },
+                {
+                    "name": "Jane Doe",
+                    "title": "",
+                    "affiliation": "",
+                    "public_figure": False,
+                    "type": "community member",
+                    "role_in_story": "Resident supporting the plan",
+                    "nature": "affected",
+                    "nature_secondary_tags": ["source"],
+                    "mentions": [
+                        {
+                            "text": "Jane Doe, a local resident, said she supports the plan.",
+                            "quote": False,
+                        }
+                    ],
+                },
+                {
+                    "name": "Robert Lee",
+                    "title": "",
+                    "affiliation": "",
+                    "public_figure": False,
+                    "type": "other",
+                    "role_in_story": "Arrested in vandalism case",
+                    "nature": "suspect",
+                    "nature_secondary_tags": [],
+                    "mentions": [
+                        {
+                            "text": "Police arrested Robert Lee in connection with vandalism.",
+                            "quote": False,
+                        }
+                    ],
+                },
+                {
+                    "name": "Maria Garcia",
+                    "title": "",
+                    "affiliation": "",
+                    "public_figure": False,
+                    "type": "other",
+                    "role_in_story": "Witnessed vandalism",
+                    "nature": "witness",
+                    "nature_secondary_tags": [],
+                    "mentions": [
+                        {"text": "Maria Garcia witnessed the incident.", "quote": False}
+                    ],
+                },
+            ]
+        }
+    )
+
+
+def test_person_extract_pipeline_persist_to_substrate() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-pe2", project_slug="proj-pe2")
+        session.add(AgateRun(id="run-pe2", graph_id="graph-pe2", status="pending"))
+        session.commit()
+
+        spec = starter_people_flow_graph_spec()
+        with patch(
+            "agate_nodes.person_extract.node_port.call_llm",
+            return_value=_mock_people_demo_json(),
+        ):
+            out = execute_graph(spec)
+        body = out["stylebook_output"]
+        assert body["success"] is True
+        assert len(body["people"]) >= 4
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-pe2",
+            run_id="run-pe2",
+            consolidated=body,
+            db_output_params={"auto_apply_canonicalization": False},
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        people = session.exec(select(SubstratePerson)).all()
+        assert len(people) >= 4
+        mentions = session.exec(select(SubstratePersonMention)).all()
+        assert len(mentions) >= 4
+        natures = {m.nature for m in mentions if m.nature}
+        assert "official" in natures
+        assert "witness" in natures
+        assert "suspect" in natures

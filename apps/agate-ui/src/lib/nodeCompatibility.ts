@@ -78,6 +78,7 @@ export function resolveEdgeHandles(
       const preferred =
         compatible.find((output) => output.id === 'locations') ??
         compatible.find((output) => output.id === 'places') ??
+        compatible.find((output) => output.id === 'people') ??
         compatible.find((output) => output.type === 'array' || output.type === 'object') ??
         compatible[compatible.length - 1]
       return { sourceHandle: preferred.id, targetHandle: input.id }

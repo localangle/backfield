@@ -1,0 +1,36 @@
+{
+  "people": [
+    {
+      "name": "John Smith",
+      "title": "Mayor",
+      "affiliation": "City of Chicago",
+      "public_figure": true,
+      "type": "politician",
+      "role_in_story": "Announced a new park initiative",
+      "nature": "official",
+      "nature_secondary_tags": [],
+      "mentions": [
+        {
+          "text": "Mayor John Smith announced a new park initiative Monday.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "Jane Doe",
+      "title": "",
+      "affiliation": "",
+      "public_figure": false,
+      "type": "community member",
+      "role_in_story": "Local resident supporting the plan",
+      "nature": "affected",
+      "nature_secondary_tags": ["source"],
+      "mentions": [
+        {
+          "text": "Jane Doe, a local resident, said she supports the plan.",
+          "quote": false
+        }
+      ]
+    }
+  ]
+}

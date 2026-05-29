@@ -14,7 +14,7 @@ When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/s
 | Type | Slug (`EntityType`) | Status |
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
-| Person | `person` | Schema, Stylebook persist, API/UI; worker ingest (issue 04) |
+| Person | `person` | Schema, Stylebook persist, API/UI, worker ingest, PersonExtract node |
 | Organization | `organization` | Stub — planned via add-entity-type skill |
 | Work | `work` | Stub — planned via add-entity-type skill |
 
@@ -168,6 +168,8 @@ Non-location tabs are placeholders until per-type issue 06.
 ### Agate nodes
 
 One folder per node under `packages/backfield-agate/src/agate_nodes/<snake_case>/`.
+
+Current extract nodes: `place_extract`, `person_extract`. Run `npm run sync-nodes` in `apps/agate-ui` after adding or changing node UI/metadata.
 
 `db_output` stays the generic persist node; entity logic lives in worker `substrate/`.
 

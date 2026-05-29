@@ -29,6 +29,8 @@
   - `make smoke-s3-batch`: runs the worker S3 batch setup path with a deterministic fake S3 client and eager Celery execution, then asserts parent and item summaries.
   - `make smoke-place-geocode`: optional in-process PlaceExtract + GeocodeAgent corpus smoke (not part of CI).
   - `make smoke-place-geocode-stack`: optional single-run stack harness for the geocode starter path.
+  - `make smoke-people`: optional in-process PersonExtract + DBOutput smoke with mocked LLM (not part of CI).
+  - `make smoke-people-stack`: optional stack harness for the **People starter** graph (`starter_people_flow_graph_spec`).
   - **Guided flow builder (manual):** on a live stack, walk through create → parallel branch → edit bookend clear-middle → run from read-only view: `/flow/new` with Text Input → Place Extract → Geocode → JSON Output; add a parallel Place Extract branch from input; save; open `/flow/:id/edit`, change output type with middle steps present (confirm clear); open `/flow/:id`, **Run flow** without **Edit flow**, then **Edit flow** and confirm **+** / delete unlock. See `docs/FRONTEND.md` → **Guided flow builder**.
   Aggregate bundles:
   - `make smoke-fast`: `smoke-auth`, `smoke-agate-basic`, `smoke-stylebook-basic`
@@ -59,7 +61,7 @@
   - `tests/stylebook_api/` — Stylebook API tests (`stylebook_api` app). `**POST /v1/geocode/resolve`** requires auth (service Bearer, session, or `bfk_`), matching production `resolve_auth` behavior. Substrate ↔ canonical editorial routes (`**GET /v1/candidates/{id}/suggested-canonicals**`, `**POST /v1/locations/{id}/link-canonical**`, `**POST /v1/locations/{id}/unlink-canonical**`, `**GET /v1/canonical-locations/{id}/linked-substrates**`) are covered here as well.
   - `tests/stylebook/` — Stylebook-domain pure tests (for example canonical fuzzy-match scoring without Postgres). **Trigram retrieval** against a live Postgres DB is covered by running `**make migrate`** on Compose and exercising ingest/worker paths locally; CI SQLite runs use the dialect fallback only.
   - `tests/contracts/` — cross-cutting structural checks (schema prefixes, indexes, shared runtime contracts) that are not tied to a single HTTP app.
-  - `tests/smoke/` — smoke harnesses and shared helpers. Most lanes run against the live stack (`smoke_auth.py`, `smoke_agate_basic.py`, `golden_path_stack.py`, `smoke_stylebook_basic.py`, `smoke_worker_async.py`, `smoke_stylebook_editorial.py`, `smoke_stylebook_import_export.py`); `smoke_s3_batch.py` is an in-process worker-path harness; `place_geocode_smoke.py` remains the optional PlaceExtract + GeocodeAgent corpus runner. These scripts are invoked via `make`, not pytest collection.
+  - `tests/smoke/` — smoke harnesses and shared helpers. Most lanes run against the live stack (`smoke_auth.py`, `smoke_agate_basic.py`, `golden_path_stack.py`, `smoke_stylebook_basic.py`, `smoke_worker_async.py`, `smoke_stylebook_editorial.py`, `smoke_stylebook_import_export.py`); `smoke_s3_batch.py` is an in-process worker-path harness; `place_geocode_smoke.py` and `smoke_people_stack.py` remain optional extract-path corpus runners. These scripts are invoked via `make`, not pytest collection.
 - Shared pytest defaults for these tests live in `tests/conftest.py` at the repo `tests/` root.
 - Add new FastAPI integration tests under the folder that matches the app; add new structural or schema-wide assertions under `tests/contracts/`.
 

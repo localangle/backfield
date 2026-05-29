@@ -2,7 +2,7 @@
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE)
 
-.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack stylebook-ui-build
+.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack stylebook-ui-build
 
 help:
 	@echo "Backfield"
@@ -29,6 +29,8 @@ help:
 	@echo "  make smoke-slower - Editorial + import + S3 batch smoke bundle"
 	@echo "  make smoke-place-geocode - In-process PlaceExtract + GeocodeAgent corpus (not CI)"
 	@echo "  make smoke-place-geocode-stack - Same script --via-agate-api (enqueue one graph run)"
+	@echo "  make smoke-people - In-process PersonExtract + DBOutput demo (not CI)"
+	@echo "  make smoke-people-stack - Same script --via-agate-api (People starter graph)"
 	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
 
 bootstrap:
@@ -128,6 +130,12 @@ smoke-place-geocode:
 
 smoke-place-geocode-stack:
 	uv run python -u tests/smoke/place_geocode_smoke.py --via-agate-api
+
+smoke-people:
+	uv run python -u tests/smoke/smoke_people_stack.py
+
+smoke-people-stack:
+	uv run python -u tests/smoke/smoke_people_stack.py --via-agate-api
 
 stylebook-ui-build:
 	cd packages/backfield-ui && npm ci
