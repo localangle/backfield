@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appendUserAddedPersonToOverlay,
   appendUserAddedPlaceToOverlay,
   applyDescriptionPatch,
   buildRemovePlaceOverlayPatch,
   buildUserAddedOverlayRow,
+  buildUserAddedPersonOverlayRow,
   deepSortKeys,
   emptyOverlay,
   getLocationDescription,
@@ -195,5 +197,48 @@ describe('buildRemovePlaceOverlayPatch', () => {
     const next = buildRemovePlaceOverlayPatch(draft, 'user_place:u1', 'user')
     const loc = next.locations as { user_added: unknown[] }
     expect(loc.user_added).toEqual([])
+  })
+})
+
+describe('buildUserAddedPersonOverlayRow', () => {
+  it('builds a people.user_added row with mention occurrences', () => {
+    const row = buildUserAddedPersonOverlayRow({
+      anchor: 'user_person:42',
+      name: 'Jane Doe',
+      personType: 'politician',
+      title: 'Mayor',
+      affiliation: 'City',
+      nature: 'official',
+      mentionText: 'Mayor Jane Doe',
+      quoteText: 'Mayor Jane Doe announced',
+      startChar: 0,
+      endChar: 14,
+      roleInStory: 'Policy lead',
+    })
+    expect(row.id).toBe('user_person:42')
+    const person = row.person as Record<string, unknown>
+    expect(person.name).toBe('Jane Doe')
+    expect(person.type).toBe('politician')
+    const occurrences = person.mention_occurrences as unknown[]
+    expect(occurrences).toHaveLength(1)
+    expect((occurrences[0] as Record<string, unknown>).start_char).toBe(0)
+  })
+})
+
+describe('appendUserAddedPersonToOverlay', () => {
+  it('appends people.user_added rows', () => {
+    const draft = normalizeOverlay({})
+    const row = buildUserAddedPersonOverlayRow({
+      anchor: 'user_person:1',
+      name: 'A',
+      personType: 'other',
+      mentionText: 'A',
+      quoteText: 'A',
+      startChar: 0,
+      endChar: 1,
+    })
+    const next = appendUserAddedPersonToOverlay(draft, row)
+    const people = next.people as { user_added: unknown[] }
+    expect(people.user_added).toHaveLength(1)
   })
 })

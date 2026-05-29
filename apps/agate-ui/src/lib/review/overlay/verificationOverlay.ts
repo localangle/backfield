@@ -365,3 +365,70 @@ export function applyPersonAnchorPatch(
       : { ...patch }
   return next
 }
+
+export type UserAddedPersonOverlayInput = {
+  anchor: string
+  name: string
+  personType: string
+  title?: string
+  affiliation?: string
+  nature?: string
+  publicFigure?: boolean
+  mentionText: string
+  quoteText: string
+  startChar: number
+  endChar: number
+  roleInStory?: string
+}
+
+/** Build a ``people.user_added`` row for reviewed-output materialization. */
+export function buildUserAddedPersonOverlayRow(
+  input: UserAddedPersonOverlayInput,
+): Record<string, unknown> {
+  const person: Record<string, unknown> = {
+    name: input.name.trim(),
+    type: input.personType.trim(),
+    title: input.title?.trim() || '',
+    affiliation: input.affiliation?.trim() || '',
+    nature: input.nature?.trim() || 'other',
+    public_figure: Boolean(input.publicFigure),
+    mentions: [{ text: input.mentionText.trim() }],
+    mention_occurrences: [
+      {
+        mention_text: input.mentionText.trim(),
+        quote_text: input.quoteText.trim(),
+        start_char: input.startChar,
+        end_char: input.endChar,
+        occurrence_order: 0,
+        suppressed: false,
+        source_kind: 'manual_add',
+      },
+    ],
+  }
+  if (input.roleInStory?.trim()) {
+    person.role_in_story = input.roleInStory.trim()
+  }
+  return {
+    id: input.anchor,
+    person,
+  }
+}
+
+/** Append or replace a user-added person row on the draft overlay. */
+export function appendUserAddedPersonToOverlay(
+  draft: Record<string, unknown>,
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = cloneJson(normalizeOverlay(draft)) as Record<string, unknown>
+  const people = ensurePeople(next)
+  const anchor = typeof row.id === 'string' ? row.id : ''
+  const ua = people.user_added as unknown[]
+  const rest = anchor
+    ? ua.filter((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return true
+        return (entry as { id?: unknown }).id !== anchor
+      })
+    : ua
+  people.user_added = [...rest, row]
+  return next
+}

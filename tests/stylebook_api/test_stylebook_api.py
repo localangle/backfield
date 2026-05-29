@@ -21,6 +21,9 @@ from backfield_db import (
     SubstrateLocation,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
+    SubstratePerson,
+    SubstratePersonMention,
+    SubstratePersonMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_LINKED,
@@ -1313,6 +1316,83 @@ def test_create_location_from_article_evidence(
         ).one()
         assert occurrence.source_kind == "manual_add"
         assert occurrence.mention_text == "Lincoln School"
+        assert occurrence.quote_text == text[start:end]
+        assert occurrence.start_char == start
+        assert occurrence.end_char == end
+
+
+def test_create_person_from_article_evidence(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        text = "Mayor Jane Doe announced a new policy at city hall."
+        art = SubstrateArticle(
+            project_id=pid,
+            headline="Policy announcement",
+            text=text,
+            url="https://example.com/add-person",
+            deleted=False,
+        )
+        s.add(art)
+        s.commit()
+        s.refresh(art)
+        aid = int(art.id)  # type: ignore[arg-type]
+
+    start = text.index("Mayor Jane Doe")
+    end = start + len("Mayor Jane Doe")
+    r = client.post(
+        "/v1/people/from-article-evidence?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "article_id": aid,
+            "run_id": "run-456",
+            "name": "Jane Doe",
+            "person_type": "politician",
+            "title": "Mayor",
+            "affiliation": "City of Example",
+            "nature": "official",
+            "mention_text": "Mayor Jane Doe",
+            "quote_text": text[start:end],
+            "start_char": start,
+            "end_char": end,
+            "role_in_story": "Announced policy",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["anchor"].startswith("user_person:")
+    person_id = int(body["person"]["id"])
+    assert body["person"]["name"] == "Jane Doe"
+    assert body["person"]["person_type"] == "politician"
+    assert body["person"]["canonical_link_status"] == CANONICAL_LINK_PENDING
+
+    with Session(engine) as s:
+        person = s.get(SubstratePerson, person_id)
+        assert person is not None
+        assert person.status == "active"
+        assert person.source_kind == "manual_add"
+        assert person.source_details_json["run_id"] == "run-456"
+        assert person.source_details_json["raw_entry_id"] == body["anchor"]
+        mention = s.exec(
+            select(SubstratePersonMention).where(
+                SubstratePersonMention.person_id == person_id,
+                SubstratePersonMention.article_id == aid,
+            )
+        ).one()
+        assert mention.added is True
+        assert mention.source_kind == "manual_add"
+        assert mention.nature == "official"
+        assert mention.role_in_story == "Announced policy"
+        occurrence = s.exec(
+            select(SubstratePersonMentionOccurrence).where(
+                SubstratePersonMentionOccurrence.person_mention_id == int(mention.id)
+            )
+        ).one()
+        assert occurrence.source_kind == "manual_add"
+        assert occurrence.mention_text == "Mayor Jane Doe"
         assert occurrence.quote_text == text[start:end]
         assert occurrence.start_char == start
         assert occurrence.end_char == end

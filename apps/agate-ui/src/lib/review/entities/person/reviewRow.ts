@@ -47,6 +47,14 @@ export function isMergedRowLinkedToStylebook(row: Record<string, unknown>): bool
   return getMergedRowStylebookPersonCanonicalId(row) !== null
 }
 
+export function newUserPersonId(): string {
+  const u =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return `user_person:${u}`
+}
+
 export function isReviewOnlyMergedPersonRow(row: Record<string, unknown>): boolean {
   return getMergedRowPersistedPersonId(row) === null
 }

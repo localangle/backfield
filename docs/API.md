@@ -192,6 +192,8 @@ People review uses the same overlay PATCH transport as locations. Overlay JSON m
 
 **Stylebook substrate saves from review:** **`PATCH /v1/people/{person_id}?project_slug=…&article_id=…`** updates substrate person fields and mention editorial fields; **`DELETE /v1/people/{person_id}?project_slug=…&article_id=…`** soft-deletes story mentions and removes the substrate row when no active mentions remain.
 
+**Saved person from article evidence:** **`POST /v1/people/from-article-evidence?project_slug=…`** creates a project-scoped saved person plus its first article mention in one transaction. Body: **`article_id`**, **`run_id`**, **`name`**, **`mention_text`**, **`quote_text`**, **`start_char`**, **`end_char`**, optional **`person_type`**, **`title`**, **`affiliation`**, **`public_figure`**, **`nature`**, **`role_in_story`**. Validates quote offsets against project article text; returns substrate person fields, **`mention_id`**, **`occurrence_id`**, and **`anchor`** (`**user_person:<person_id>**`). Agate Review appends a matching **`people.user_added`** overlay row.
+
 People overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.people`** (and **`consolidated.people`** when present).
 
 ## Reviewed output (v1)

@@ -59,3 +59,49 @@ export async function deleteSavedPerson(
     method: 'DELETE',
   })
 }
+
+export type CreateSavedPersonFromArticleEvidenceBody = {
+  article_id: number
+  run_id: string
+  name: string
+  mention_text: string
+  quote_text: string
+  start_char: number
+  end_char: number
+  person_type?: string | null
+  title?: string | null
+  affiliation?: string | null
+  public_figure?: boolean
+  nature?: string | null
+  role_in_story?: string | null
+}
+
+export type CreatedSavedPersonFromArticleEvidence = {
+  person: {
+    id: number
+    name: string
+    title: string | null
+    affiliation: string | null
+    public_figure: boolean
+    person_type: string | null
+    status: string
+    canonical_link_status: string | null
+    stylebook_person_canonical_id: string | null
+  }
+  mention_id: number
+  occurrence_id: number
+  anchor: string
+}
+
+export async function createSavedPersonFromArticleEvidence(
+  projectSlug: string,
+  body: CreateSavedPersonFromArticleEvidenceBody,
+): Promise<CreatedSavedPersonFromArticleEvidence> {
+  return stylebookJsonFetch(
+    `/v1/people/from-article-evidence?project_slug=${encodeURIComponent(projectSlug)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  )
+}

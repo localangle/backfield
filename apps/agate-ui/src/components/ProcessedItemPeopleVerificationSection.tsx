@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AddPersonWorkflowPanel,
+  type AddPersonWorkflowCreatedPayload,
+} from '@/components/AddPersonWorkflowPanel'
 import { useAppMessage } from '@/components/AppMessageProvider'
-import { ProcessedItemArticleBody } from '@/components/ProcessedItemArticleBody'
+import {
+  ProcessedItemArticleBody,
+  type ArticleTextSelection,
+} from '@/components/ProcessedItemArticleBody'
 import { PeopleTable } from '@/components/PeopleTable'
 import { PersonEditForm } from '@/components/PersonEditForm'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -13,7 +20,13 @@ import {
   stylebookPersonCanonicalDetailHref,
 } from '@/lib/platformUrls'
 import {
-  applyPersonEditFields,
+  buildOccurrenceSpanHits,
+  findAllMentionOccurrencesInArticle,
+  resolveEvidenceSpansInArticle,
+} from '@/lib/review/content/evidenceSpan'
+import { readMentionOccurrencesFromRow } from '@/lib/review/entities/location/mentionOccurrences'
+import { resolveProcessedItemArticleId } from '@/lib/review/entities/location/reviewRow'
+import {
   buildPersonEditOverlayPatch,
   personEditFieldsEqual,
   readPersonEditFields,
@@ -26,15 +39,17 @@ import {
   isMergedRowLinkedToStylebook,
   readPersonFromRow,
 } from '@/lib/review/entities/person/reviewRow'
-import { resolveProcessedItemArticleId } from '@/lib/review/entities/location/reviewRow'
 import {
+  appendUserAddedPersonToOverlay,
   applyPersonAnchorPatch,
   buildRemovePersonOverlayPatch,
+  buildUserAddedPersonOverlayRow,
   normalizeOverlay,
   overlaysStructurallyEqual,
 } from '@/lib/review/overlay/verificationOverlay'
 import { deleteSavedPerson, updateSavedPerson } from '@/lib/stylebookPeopleApi'
 import { cn } from '@/lib/utils'
+import { Plus } from 'lucide-react'
 
 export interface ProcessedItemPeopleVerificationSectionProps {
   runId: string
@@ -65,6 +80,9 @@ export function ProcessedItemPeopleVerificationSection({
   const [selectedAnchor, setSelectedAnchor] = useState<string | null>(null)
   const [fieldsDraft, setFieldsDraft] = useState<PersonEditFields | undefined>(undefined)
   const [fieldsBaseline, setFieldsBaseline] = useState<PersonEditFields | undefined>(undefined)
+  const [addPersonMode, setAddPersonMode] = useState(false)
+  const [addPersonSelection, setAddPersonSelection] = useState<ArticleTextSelection | null>(null)
+  const [articleTextSelection, setArticleTextSelection] = useState<ArticleTextSelection | null>(null)
   const lastItemSyncKeyRef = useRef('')
 
   const dirty = useMemo(
@@ -136,6 +154,7 @@ export function ProcessedItemPeopleVerificationSection({
     [item],
   )
 
+  const persistAddPersonToStylebook = (articleId ?? 0) > 0
   const article = item.article_context
 
   useEffect(() => {
@@ -153,6 +172,141 @@ export function ProcessedItemPeopleVerificationSection({
     fieldsDraft !== undefined &&
     fieldsBaseline !== undefined &&
     !personEditFieldsEqual(fieldsDraft, fieldsBaseline)
+
+  const storyHighlightResult = useMemo(() => {
+    const body = typeof article?.body === 'string' ? article.body : ''
+    if (!selectedAnchor) {
+      return resolveEvidenceSpansInArticle(body, undefined)
+    }
+    const row = displayMergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
+    if (!row) {
+      return resolveEvidenceSpansInArticle(body, undefined)
+    }
+    const occurrences = readMentionOccurrencesFromRow({
+      location: readPersonFromRow(row),
+      mention_occurrences: row.mention_occurrences,
+    })
+    const active = occurrences.filter((o) => !o.suppressed && o.mentionText.trim())
+    if (active.length > 0 && body) {
+      const ranges = buildOccurrenceSpanHits(body, [
+        {
+          anchor: selectedAnchor,
+          occurrences: active.map((o) => ({
+            clientId: o.clientId,
+            mentionText: o.mentionText,
+            startChar: o.startChar,
+            endChar: o.endChar,
+            suppressed: o.suppressed,
+          })),
+        },
+      ]).map(({ start, end }) => ({ start, end }))
+      if (ranges.length > 0) {
+        return { kind: 'ranges' as const, ranges }
+      }
+    }
+    return resolveEvidenceSpansInArticle(body, readPersonFromRow(row))
+  }, [article?.body, selectedAnchor, displayMergedRows])
+
+  const storyHighlightRanges =
+    storyHighlightResult.kind === 'ranges' ? storyHighlightResult.ranges : []
+
+  const activeStoryHighlightRanges = useMemo(
+    () =>
+      addPersonSelection
+        ? [
+            ...storyHighlightRanges,
+            { start: addPersonSelection.start, end: addPersonSelection.end },
+          ]
+        : storyHighlightRanges,
+    [addPersonSelection, storyHighlightRanges],
+  )
+
+  const ambientHighlightRanges = useMemo(() => {
+    const body = typeof article?.body === 'string' ? article.body : ''
+    if (!body.trim()) return []
+    const needles: string[] = []
+    for (const row of displayMergedRows) {
+      const occs = readMentionOccurrencesFromRow({
+        location: readPersonFromRow(row),
+        mention_occurrences: row.mention_occurrences,
+      })
+      for (const occ of occs) {
+        if (!occ.suppressed && occ.mentionText.trim()) {
+          needles.push(occ.mentionText.trim())
+        }
+      }
+    }
+    return findAllMentionOccurrencesInArticle(body, needles)
+  }, [article?.body, displayMergedRows])
+
+  const selectPersonAnchor = useCallback((anchor: string) => {
+    setAddPersonMode(false)
+    setAddPersonSelection(null)
+    setSelectedAnchor(anchor)
+  }, [])
+
+  const handleBeginAddPerson = useCallback((selection: ArticleTextSelection) => {
+    setAddPersonMode(false)
+    setSelectedAnchor(null)
+    setAddPersonSelection(selection)
+    setArticleTextSelection(null)
+  }, [])
+
+  const exitAddPersonMode = useCallback(() => {
+    setAddPersonMode(false)
+    setArticleTextSelection(null)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+  }, [])
+
+  useEffect(() => {
+    if (!addPersonMode) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitAddPersonMode()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [addPersonMode, exitAddPersonMode])
+
+  const handleAddPersonCreated = useCallback(
+    async (payload: AddPersonWorkflowCreatedPayload) => {
+      const userAddedRow = buildUserAddedPersonOverlayRow({
+        anchor: payload.anchor,
+        name: payload.name,
+        personType: payload.personType,
+        title: payload.title,
+        affiliation: payload.affiliation,
+        nature: payload.nature,
+        publicFigure: payload.publicFigure,
+        mentionText: payload.mentionText,
+        quoteText: payload.selection.text,
+        startChar: payload.selection.start,
+        endChar: payload.selection.end,
+        roleInStory: payload.roleInStory,
+      })
+      const nextOverlay = appendUserAddedPersonToOverlay(draftOverlay, userAddedRow)
+      try {
+        const updated = await patchProcessedItemOverlay(
+          runId,
+          item.id,
+          { overlay: nextOverlay },
+          item.overlay_version ?? 0,
+        )
+        onItemUpdated(updated)
+        setBaselineOverlay(normalizeOverlay(updated.overlay))
+        setDraftOverlay(normalizeOverlay(updated.overlay))
+        setAddPersonSelection(null)
+        setAddPersonMode(false)
+        setSelectedAnchor(payload.anchor)
+        showMessage('Person added to this review.', { title: 'People review' })
+      } catch (err) {
+        showError(err instanceof Error ? err.message : 'Could not save person.', {
+          title: 'People review',
+        })
+      }
+    },
+    [draftOverlay, runId, item.id, item.overlay_version, onItemUpdated, showError, showMessage],
+  )
 
   const handleSave = useCallback(async () => {
     if (saving) return
@@ -194,7 +348,7 @@ export function ProcessedItemPeopleVerificationSection({
       setBaselineOverlay(normalizeOverlay(updated.overlay))
       setDraftOverlay(normalizeOverlay(updated.overlay))
       if (fieldsDraft) setFieldsBaseline(fieldsDraft)
-      showMessage('Review saved', { variant: 'success' })
+      showMessage('Review saved', { title: 'People review' })
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Save failed', { title: 'People review' })
     } finally {
@@ -291,8 +445,41 @@ export function ProcessedItemPeopleVerificationSection({
   const linkedReadOnly =
     selectedRow !== null && isMergedRowLinkedToStylebook(selectedRow) && !fieldsDirty
 
+  const canAddPerson = Boolean(article?.body?.trim()) && !addPersonSelection
+
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Review and edit people</h2>
+          <p className="text-sm text-muted-foreground">
+            Select a person to highlight their mentions in the story and edit details.
+          </p>
+        </div>
+        {canAddPerson ? (
+          <Button
+            type="button"
+            variant={addPersonMode ? 'secondary' : 'default'}
+            size="sm"
+            onClick={() => {
+              if (addPersonSelection) return
+              if (articleTextSelection) {
+                handleBeginAddPerson(articleTextSelection)
+                return
+              }
+              if (addPersonMode) {
+                exitAddPersonMode()
+                return
+              }
+              setAddPersonMode(true)
+            }}
+          >
+            {addPersonMode ? null : <Plus className="mr-2 h-4 w-4" />}
+            {addPersonMode ? 'Cancel adding person' : 'Add person'}
+          </Button>
+        ) : null}
+      </div>
+
       {(dirty || fieldsDirty) && (
         <Alert>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
@@ -304,80 +491,150 @@ export function ProcessedItemPeopleVerificationSection({
         </Alert>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="min-h-[320px]">
-          <CardHeader>
-            <CardTitle className="text-base">Story</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ProcessedItemArticleBody body={article?.body ?? ''} highlights={[]} />
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <CardTitle className="text-base">People</CardTitle>
-              <Button type="button" variant="outline" size="sm" onClick={() => void refreshItem()}>
-                Refresh
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <PeopleTable
-                rows={displayMergedRows}
-                selectedAnchor={selectedAnchor}
-                onSelectAnchor={setSelectedAnchor}
-                onOpenStylebook={handleOpenStylebook}
-                onDeletePerson={(row) => void handleDeletePerson(row)}
-                deleteDisabled={saving}
+      <div
+        className={cn(
+          'grid min-h-0 gap-4 lg:grid-cols-2 lg:items-stretch',
+          addPersonSelection ? 'h-[min(52rem,calc(100dvh-10rem))]' : 'h-[min(44rem,calc(100dvh-12rem))]',
+        )}
+      >
+        <div
+          className={cn(
+            'min-h-0 overflow-y-auto rounded-md border p-2.5 text-sm',
+            addPersonMode
+              ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
+              : 'border-border bg-muted/30',
+          )}
+        >
+          {article?.resolution === 'none' && !article?.body?.trim() ? (
+            <p className="text-sm text-muted-foreground">
+              No article text is available for this item yet.
+            </p>
+          ) : article?.body?.trim() ? (
+            <>
+              {addPersonMode ? (
+                <p
+                  className="mb-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-sm text-foreground"
+                  role="status"
+                >
+                  Highlight the passage in the story that supports this person.
+                </p>
+              ) : null}
+              <ProcessedItemArticleBody
+                body={article.body}
+                ambientHighlights={ambientHighlightRanges}
+                highlights={activeStoryHighlightRanges}
+                scrollWhenKey={selectedAnchor}
+                onTextSelectionChange={(selection) => {
+                  if (addPersonSelection) return
+                  setArticleTextSelection(selection)
+                  if (addPersonMode && selection) {
+                    handleBeginAddPerson(selection)
+                  }
+                }}
+                className={addPersonMode ? 'cursor-text' : undefined}
               />
-            </CardContent>
-          </Card>
-
-          {selectedRow && fieldsDraft ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Edit person</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {linkedReadOnly ? (
-                  <p className="text-sm text-muted-foreground">
-                    This person is linked to a Stylebook canonical. Open Stylebook to edit the
-                    catalog record.
-                  </p>
-                ) : null}
-                <PersonEditForm
-                  fields={fieldsDraft}
-                  disabled={saving || linkedReadOnly}
-                  onChange={setFieldsDraft}
-                />
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={saving || !fieldsDirty}
-                    onClick={() => fieldsBaseline && setFieldsDraft(fieldsBaseline)}
-                  >
-                    Reset
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={saving || (!fieldsDirty && !dirty)}
-                    onClick={() => void handleSave()}
-                  >
-                    Save
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              {selectedAnchor &&
+              storyHighlightRanges.length === 0 &&
+              storyHighlightResult.kind === 'none' &&
+              article.body.trim().length > 0 ? (
+                <p className="mt-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">
+                  No matching passage was found in this story for this person.
+                </p>
+              ) : null}
+            </>
           ) : (
-            <Card>
-              <CardContent className={cn('py-10 text-center text-sm text-muted-foreground')}>
-                Select a person to edit details.
-              </CardContent>
-            </Card>
+            <p className="text-sm text-muted-foreground">No story text is available for this item yet.</p>
           )}
         </div>
+
+        {addPersonSelection ? (
+          <AddPersonWorkflowPanel
+            projectSlug={catalogProjectSlug?.trim() ?? ''}
+            runId={runId}
+            articleId={articleId ?? 0}
+            persistToStylebook={persistAddPersonToStylebook}
+            selection={addPersonSelection}
+            onChangeSelection={() => {
+              setAddPersonSelection(null)
+              setArticleTextSelection(null)
+              setAddPersonMode(true)
+            }}
+            onCancel={() => {
+              setAddPersonSelection(null)
+              setArticleTextSelection(null)
+              setAddPersonMode(false)
+            }}
+            onCreated={(createdPayload) => {
+              void handleAddPersonCreated(createdPayload)
+            }}
+            onError={(message, title) => showError(message, { title })}
+          />
+        ) : (
+          <div className="min-h-0 space-y-4 overflow-y-auto">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
+                <CardTitle className="text-base">People</CardTitle>
+                <Button type="button" variant="outline" size="sm" onClick={() => void refreshItem()}>
+                  Refresh
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <PeopleTable
+                  rows={displayMergedRows}
+                  selectedAnchor={selectedAnchor}
+                  onSelectAnchor={selectPersonAnchor}
+                  onOpenStylebook={handleOpenStylebook}
+                  onDeletePerson={(row) => void handleDeletePerson(row)}
+                  deleteDisabled={saving}
+                />
+              </CardContent>
+            </Card>
+
+            {selectedRow && fieldsDraft ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Edit person</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {linkedReadOnly ? (
+                    <p className="text-sm text-muted-foreground">
+                      This person is linked to a Stylebook canonical. Open Stylebook to edit the
+                      catalog record.
+                    </p>
+                  ) : null}
+                  <PersonEditForm
+                    fields={fieldsDraft}
+                    disabled={saving || linkedReadOnly}
+                    onChange={setFieldsDraft}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={saving || !fieldsDirty}
+                      onClick={() => fieldsBaseline && setFieldsDraft(fieldsBaseline)}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={saving || (!fieldsDirty && !dirty)}
+                      onClick={() => void handleSave()}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className={cn('py-10 text-center text-sm text-muted-foreground')}>
+                  Select a person to edit details.
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
