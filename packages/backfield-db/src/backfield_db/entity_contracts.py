@@ -1,8 +1,9 @@
 """Documented shared column contracts for substrate and Stylebook entity tables.
 
 Concrete SQLModel tables keep per-entity FK column names (for example
-``stylebook_location_canonical_id``). These tuples document the shared shape
-new types should follow; tests assert location models satisfy the contracts.
+``stylebook_location_canonical_id`` / ``stylebook_person_canonical_id``). These tuples
+document the shared shape new types should follow; tests assert location and person
+models satisfy the contracts.
 """
 
 from __future__ import annotations
