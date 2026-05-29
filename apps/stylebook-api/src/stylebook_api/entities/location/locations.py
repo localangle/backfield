@@ -18,10 +18,6 @@ from backfield_db import (
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.locations import create_standalone_canonical
 from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_stylebook.resolve import (
-    STYLEBOOK_SLUG_NOT_IN_ORG,
-    resolve_effective_stylebook_id_for_project,
-)
 from backfield_stylebook.substrate_canonical_link_actions import (
     finalize_substrate_after_article_scoped_remove,
     link_substrate_to_canonical_atomic,
@@ -37,6 +33,7 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.helpers.project_scope import project_by_slug, require_stylebook_id
 from stylebook_api.mention_occurrences import replace_mention_occurrences_for_article
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
@@ -51,10 +48,15 @@ _ALLOWED_CANONICAL_LIST_TYPE_FILTER = frozenset(PLACE_EXTRACT_LOCATION_TYPES)
 
 
 def _project_by_slug(session: Session, slug: str) -> BackfieldProject:
-    row = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return row
+    return project_by_slug(session, slug)
+
+
+def _require_stylebook_id(
+    session: Session,
+    project: BackfieldProject,
+    stylebook_slug: str | None = None,
+) -> int:
+    return require_stylebook_id(session, project, stylebook_slug=stylebook_slug)
 
 
 def _normalize_name(name: str) -> str:
@@ -200,26 +202,6 @@ class PatchCanonicalGeometryBody(BaseModel):
     """Set GeoJSON geometry, or null to clear the canonical pin/footprint."""
 
     geometry_json: dict[str, Any] | None  # required field; use explicit JSON null to clear
-
-
-def _require_stylebook_id(
-    session: Session,
-    project: BackfieldProject,
-    stylebook_slug: str | None = None,
-) -> int:
-    try:
-        return resolve_effective_stylebook_id_for_project(
-            session, project, stylebook_slug=stylebook_slug
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except LookupError as e:
-        if str(e) == STYLEBOOK_SLUG_NOT_IN_ORG:
-            raise HTTPException(
-                status_code=404,
-                detail="No catalog matches that name in your organization.",
-            ) from e
-        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 def _persist_new_catalog_canonical(

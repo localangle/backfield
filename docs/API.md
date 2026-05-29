@@ -65,6 +65,8 @@ Companion service for geocode, canonical locations, and Stylebook UI (typically 
 
 **Route modules:** Cross-cutting routers under `[apps/stylebook-api/src/stylebook_api/routers/](../apps/stylebook-api/src/stylebook_api/routers/)` (`stylebooks.py`, `geocode.py`, `connections.py`, `imports.py`, `stylebook_canonicals.py`, `ui_stubs.py`, …). **Location entity** routes under `[apps/stylebook-api/src/stylebook_api/entities/location/](../apps/stylebook-api/src/stylebook_api/entities/location/)` (`locations.py`, `candidates.py`, `meta.py`). HTTP paths are unchanged.
 
+**Future entity types** (person, organization, work): per-type routers under `stylebook_api/entities/<type>/` follow `/v1/<plural>`, `/v1/<plural>/candidates`, and meta under canonical id. Shared helpers live in `stylebook_api/helpers/project_scope.py` and `pagination.py`. Entity slugs and consolidated JSON keys are defined in `backfield_stylebook.entity_types`.
+
 ## Authentication
 
 All routes except `GET /health` and `GET /nodes/metadata` require authentication:

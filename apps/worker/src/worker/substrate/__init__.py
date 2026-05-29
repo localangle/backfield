@@ -2,12 +2,14 @@
 
 from worker.substrate.entities.location.span import _find_mention_span
 from worker.substrate.orchestration import (
+    DomainReconciliationSummary,
     PersistResult,
     PlacesReconciliationSummary,
     persist_from_consolidated,
 )
 
 __all__ = [
+    "DomainReconciliationSummary",
     "PersistResult",
     "PlacesReconciliationSummary",
     "_find_mention_span",

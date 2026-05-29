@@ -23,6 +23,16 @@ from backfield_stylebook.entities.location.persist import (
     refresh_aliases_for_linked_location,
     sync_substrate_location_into_stylebook,
 )
+from backfield_stylebook.entity_types import (
+    EntityMeta,
+    EntityType,
+    all_entity_types,
+    compute_identity_fingerprint,
+    consolidated_key_for,
+    entity_meta,
+    entity_type_from_consolidated_key,
+    normalize_entity_name,
+)
 from backfield_stylebook.full_bundle import (
     ALLOWED_MANIFEST_SCHEMA_VERSIONS,
     BUNDLE_SCHEMA_VERSION,
@@ -78,6 +88,14 @@ __all__ = [
     "count_stylebook_usage_in_graphs",
     "create_stylebook",
     "delete_stylebook",
+    "EntityMeta",
+    "EntityType",
+    "all_entity_types",
+    "compute_identity_fingerprint",
+    "consolidated_key_for",
+    "entity_meta",
+    "entity_type_from_consolidated_key",
+    "normalize_entity_name",
     "export_stylebook_bundle",
     "ensure_default_stylebook_for_organization",
     "iter_stylebook_refs_from_spec_dict",

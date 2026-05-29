@@ -13,7 +13,8 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
-from stylebook_api.entities.location.locations import _project_by_slug, _require_stylebook_id
+from stylebook_api.helpers.pagination import empty_page_metadata
+from stylebook_api.helpers.project_scope import project_by_slug, require_stylebook_id
 
 router = APIRouter(prefix="/v1", tags=["stylebook-ui-stubs"])
 
@@ -32,11 +33,11 @@ def get_stats(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> StatsOut:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     z = {"canonical_count": 0, "candidate_count": 0}
     try:
-        stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+        stylebook_id = require_stylebook_id(session, proj, stylebook_slug)
     except HTTPException as e:
         if e.status_code == 400:
             return StatsOut(locations=z, people=z, organizations=z, works=z)
@@ -72,14 +73,13 @@ def agent_types(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> list[dict[str, Any]]:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     return []
 
 
 def _empty_page(*, limit: int, offset: int) -> tuple[int, int, bool, bool]:
-    page = (offset // limit) + 1 if limit > 0 else 1
-    return page, limit, False, False
+    return empty_page_metadata(limit=limit, offset=offset)
 
 
 class PaginatedPeopleStub(BaseModel):
@@ -119,7 +119,7 @@ def list_people_stub(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedPeopleStub:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
     return PaginatedPeopleStub(
@@ -135,7 +135,7 @@ def list_organizations_stub(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedOrganizationsStub:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
     return PaginatedOrganizationsStub(
@@ -151,7 +151,7 @@ def list_works_stub(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedWorksStub:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
     return PaginatedWorksStub(page=page, per_page=limit, has_next=has_next, has_prev=has_prev)

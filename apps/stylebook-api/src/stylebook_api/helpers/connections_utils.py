@@ -5,11 +5,12 @@ from __future__ import annotations
 from uuid import UUID
 
 from backfield_db import StylebookLocationCanonical
+from backfield_stylebook.entity_types import all_entity_types
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-CONNECTION_ENTITY_TYPES = ("person", "location", "organization", "work")
+CONNECTION_ENTITY_TYPES = all_entity_types()
 
 ALLOWED_CONNECTION_PAIRS = (
     ("location", "person"),

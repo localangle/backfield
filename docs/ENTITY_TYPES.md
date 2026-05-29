@@ -7,71 +7,95 @@ Backfield organizes persistence, catalog, API, and review code along two axes:
 
 Article is **content only**. It is not a Stylebook `EntityType` (see [`apps/stylebook-ui/src/lib/entityTypes.ts`](../apps/stylebook-ui/src/lib/entityTypes.ts)). Runtime flow and package boundaries are described in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-When adding a type or pipeline node, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/skills/add-entity-type/SKILL.md).
+When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/skills/add-entity-type/SKILL.md) — an interactive interview that produces `prd/<slug>/prd.md` and implementation issues.
 
 ## Stylebook entity types
 
 | Type | Slug (`EntityType`) | Status |
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
-| Person | `person` | UI stub; default **catalog_first** for new work |
-| Organization | `organization` | UI stub; default **catalog_first** |
-| Work | `work` | UI stub; default **catalog_first** |
+| Person | `person` | Stub — planned via add-entity-type skill |
+| Organization | `organization` | Stub — planned via add-entity-type skill |
+| Work | `work` | Stub — planned via add-entity-type skill |
 
 Folder names in Python packages use these slugs (`location`, not `place`). Pipeline JSON may still use `places` in Geocode output; that is product vocabulary, not package naming.
 
-## Templates for new types
+Registry source of truth: `packages/backfield-stylebook/src/backfield_stylebook/entity_types.py`.
 
-### `full_stack`
+## Issue 00 — shared foundation
 
-Use when the type appears in **article text** and must round-trip through ingest, catalog, and (when needed) Agate review—like location today.
+Before adding a new type, ensure **Issue 00** scaffolding is merged:
 
-Includes:
+| Marker | Path |
+|--------|------|
+| Entity registry + fingerprint | `backfield_stylebook/entity_types.py` |
+| Persist domain dispatch | `worker/substrate/entities/registry.py` |
+| Shared field docs | `docs/DATABASE.md` → **Shared entity fields** |
+| UI entity registry | `apps/stylebook-ui/src/lib/entityRegistry.ts` |
 
-- Database: `substrate_<entity>` (+ mentions/occurrences as needed), `stylebook_<entity>_canonical` (+ aliases/meta)
-- `apps/worker/src/worker/substrate/entities/<type>/` and a hook from `substrate/orchestration.py`
-- `packages/backfield-stylebook/src/backfield_stylebook/entities/<type>/` (Phase 03 target layout)
-- `apps/stylebook-api/src/stylebook_api/entities/<type>/` (Phase 03)
-- Optional: Agate node under `packages/backfield-agate/src/agate_nodes/`, `apps/agate-api/src/api/processed_item/entities/<type>/`
+Foundation is **refactor-only**: no new entity tables; location behavior unchanged.
 
-### `catalog_first`
+## Adding a new type (default pipeline)
 
-Use when shipping **Stylebook catalog + API + UI** before extraction exists.
+**Profile:** `extract_and_persist` — always include an extract node in the plan.
 
-Includes:
+```
+TextInput → <Type>Extract → DBOutput → substrate → Stylebook
+```
 
-- Stylebook tables, `backfield_stylebook/entities/<type>/`, stylebook-api router, `stylebook-ui` `entityConfigs/<type>.ts`
-- Reserved `worker/substrate/entities/<type>/` stub (`__init__.py` with docstring only)
-- **No** orchestration hook until a pipeline node persists the type
-- **No** `processed_item` review package until product needs it
+**Location exception:** `PlaceExtract → GeocodeAgent → DBOutput` (enrichment node is location-only).
 
-Default for **person**, **organization**, and **work** unless an extraction node ships in the same sprint.
+**Agate review** is always in the plan as a **late issue** (after extract + ingest smoke).
+
+### Consolidated JSON keys
+
+Keys follow **`EntityType` slug** pluralization (not Agate tab names):
+
+| Slug | Consolidated key |
+|------|------------------|
+| `location` | `places` (legacy) |
+| `person` | `people` |
+| `organization` | `organizations` |
+| `work` | `works` |
+
+### Canonical ID policy
+
+All **new** canonical types use **UUID string** primary keys from day one.
+
+### Per-type issue order
+
+| Issue | Slice |
+|-------|-------|
+| 01 | Type-specific schema (migration) |
+| 02 | `backfield_stylebook/entities/<type>/` |
+| 03 | stylebook-api + stylebook-ui |
+| 04 | Worker substrate + orchestration handler |
+| 05 | `<Type>Extract` node + smoke graph |
+| 06 | Agate review tab |
+
+See [`DATABASE.md`](DATABASE.md) for shared substrate and Stylebook column contracts.
 
 ## Directory conventions by layer
 
-### Worker (current — Phase 02)
+### Worker (current)
 
 ```
 apps/worker/src/worker/
   substrate/
-    __init__.py              # persist_from_consolidated, PersistResult, …
+    __init__.py
     orchestration.py
-    common.py
-    content/
-      article.py
-      geography_reset.py
     entities/
+      registry.py            # PersistDomainHandler dispatch
       location/
+        handler.py           # places persist loop
         upsert.py
         mentions.py
         span.py
       person/                # stub
-      organization/        # stub
+      organization/          # stub
       work/                  # stub
     canonical/
       adjudication.py
-  flags/
-    replace_geography.py
   nodes/db_output.py
 ```
 
@@ -81,107 +105,76 @@ Public entrypoint: `from worker.substrate import persist_from_consolidated`
 
 ```
 packages/backfield-stylebook/src/backfield_stylebook/
-  canonical/                 # policy, link, retrieval, slug, substrate_link_actions, …
+  entity_types.py            # slug registry, consolidated keys, fingerprint
+  canonical/
   entities/
     location/
       persist.py
       types.py
-  geocode_cache/             # fingerprint, resolve, sanity
+  geocode_cache/
 ```
-
-Top-level shim modules (`canonical_policy.py`, `locations.py`, …) re-export from the new paths for one release; prefer `backfield_stylebook.canonical.*`, `entities.location.*`, and `geocode_cache.*` in new code.
 
 ### stylebook-api (current)
 
 ```
 apps/stylebook-api/src/stylebook_api/
+  helpers/
+    project_scope.py
+    pagination.py
   entities/
     location/
-      locations.py           # /v1/locations, saved places, …
+      locations.py           # /v1/locations (unchanged)
       candidates.py          # /v1/candidates*
-      meta.py                # canonical location meta
-  routers/                   # health, stylebooks, geocode, imports, connections, …
+      meta.py
 ```
 
-HTTP paths are unchanged (`/v1/locations`, `/v1/candidates`, etc.).
+Location HTTP paths are unchanged. Future types use `/v1/<plural>`, `/v1/<plural>/candidates`, meta under canonical id — see [`API.md`](API.md).
+
+### stylebook-ui (current)
+
+```
+apps/stylebook-ui/src/lib/
+  entityTypes.ts
+  entityRegistry.ts          # EntityConfig + home cards
+  entityConfigs/
+    connectionPickers.ts
+```
+
+Location catalog pages remain under `src/pages/Locations*.tsx`; per-type issues add config-driven surfaces.
 
 ### agate-api processed_item (current)
 
 ```
 apps/agate-api/src/api/processed_item/
-  __init__.py                  # re-exports for routers/runs.py
-  content/
-    article_context.py
   entities/
     location/
-      locations_merge.py
-      review_enrichment.py
   overlay/
-    validate.py
-    reviewed_output.py
-  mention_occurrences.py       # shared until other entity mentions exist
+  mention_occurrences.py
 ```
-
-Import via `api.processed_item` package or explicit submodules.
 
 ### Agate UI review library (current)
 
 ```
 apps/agate-ui/src/lib/review/
-  content/                   # article fields, tabs, display title, source label, evidence spans
   entities/
-    location/                # place geometry, edit fields, mention occurrences, review row helpers
-  overlay/
-    verificationOverlay.ts   # overlay state for verification tab
+    location/
 ```
 
-React components under `src/components/ProcessedItem*` keep their names; they import from `@/lib/review/…`.
+Non-location tabs are placeholders until per-type issue 06.
 
 ### Agate nodes
 
-One folder per node under `packages/backfield-agate/src/agate_nodes/<snake_case>/`:
-
-- `node.py` (or `node_port.py` / `runner.py`)
-- `metadata.json`
-- `ui/` (React panels)
-- `prompts/` when LLM-backed
+One folder per node under `packages/backfield-agate/src/agate_nodes/<snake_case>/`.
 
 `db_output` stays the generic persist node; entity logic lives in worker `substrate/`.
-
-Panel layout, tabs, typography, sync workflow, and shared helpers are documented in [`FRONTEND.md` → Agate nodes and node panels](FRONTEND.md#agate-nodes-and-node-panels).
-
-## Layer checklist
-
-| Layer | full_stack | catalog_first | Typical paths |
-|-------|------------|---------------|---------------|
-| Database | Substrate + mention tables + canonical tables | Canonical (+ connections) only | `packages/backfield-db`, Alembic |
-| backfield-stylebook | `entities/<type>/` | Same | `packages/backfield-stylebook/src/backfield_stylebook/` |
-| Worker | `substrate/entities/<type>/` + `orchestration.py` hook | Stub package only | `apps/worker/src/worker/substrate/` |
-| stylebook-api | `entities/<type>/` router | Same | `apps/stylebook-api/src/stylebook_api/` |
-| stylebook-ui | `entityConfigs/<type>.ts` | Same | `apps/stylebook-ui/src/lib/entityConfigs/` |
-| Agate nodes | New node folder | Skip | `packages/backfield-agate/src/agate_nodes/` |
-| agate-api review | `processed_item/entities/<type>/` | Skip until review needed | `apps/agate-api/src/api/processed_item/` |
-| Tests | Per layer | Per layer | `tests/worker/`, `tests/stylebook/`, `tests/stylebook_api/`, `tests/agate_api/` |
-| Docs | `DATABASE.md`, `API.md`, `FRONTEND.md`, this file | Same | `docs/` |
 
 ## Naming rules
 
 - **Python package folders:** `location`, `person`, `organization`, `work` (match `EntityType`).
 - **Database tables:** Do not rename `substrate_*` or `stylebook_location_*` in layout-only refactors.
-- **Filenames inside typed packages:** Avoid `substrate_` and `processed_item_` prefixes; the directory is the namespace (`upsert.py`, not `substrate_location.py`).
-- **Pipeline / review JSON:** May keep legacy keys (`places`, etc.); do not rename product payloads in organization refactors.
-
-## Import and re-export policy
-
-| Package | Policy |
-|---------|--------|
-| **worker** | Few external importers; update call sites in the same PR as file moves. Public API: `worker.substrate` package `__init__.py`. |
-| **backfield-stylebook** | **Shim modules** at legacy top-level names (`canonical_policy.py`, `locations.py`, …) re-export from `canonical/`, `entities/location/`, and `geocode_cache/`. Package `__init__.py` uses new paths. Prefer new paths in new code. |
-| **stylebook-api / agate-api** | Update router imports and tests; **no HTTP URL changes** in layout phases. |
+- **Pipeline / review JSON:** May keep legacy keys (`places`, etc.).
 
 ## Validation
-
-After any layer change:
 
 ```bash
 make lint

@@ -36,6 +36,24 @@ Do **not** run multiple services that each invoke `alembic upgrade` on startup f
 - `backfield_ai_default_model_role` — default model role assignment scoped to exactly one organization or one project. Partial unique indexes enforce one assignment per `(organization_id, role)` or `(project_id, role)`.
 - `backfield_ai_call_record` — one execution attempt to call an AI model. Records project, optional Agate run/processed-item/node context, resolved provider/model snapshot metadata, token usage, estimated Decimal/Numeric cost, ``cost_estimate_source`` (for example `litellm` when the dollar amount comes from LiteLLM’s calculator, `manual` if Backfield derives cost from token counts × configured rates, `unavailable` when no response was priced), currency, incomplete-estimate flag, latency, request id, and safe error metadata. Prompt and response content are intentionally not stored. On the Celery worker, `run_id`, React Flow `node_id` / node type, batch `processed_item_id` (when applicable), and pinned `model_config_id` (when the caller passes a catalog id through `agate_utils.llm.call_llm`) are populated for traced LiteLLM completions.
 
+### Shared entity fields
+
+New entity types (person, organization, work, …) follow the same **substrate trio** and **Stylebook canonical trio** as location. Per-entity FK column names differ (`stylebook_person_canonical_id`, `person_id`, …); shared shapes are documented in `packages/backfield-db/src/backfield_db/entity_contracts.py` and tested against location models today.
+
+**Substrate entity** (`substrate_<type>`): `project_id`, `name`, `normalized_name`, `status`, nullable Stylebook canonical FK, `canonical_link_status`, `canonical_review_reasons_json`, optional `external_source` / `external_id`, `identity_fingerprint`, `source_kind`, `source_details_json`, `created_at`, `updated_at`, plus type-specific columns (location adds PostGIS geometry, geocode fields, …).
+
+**Substrate mention** (`substrate_<type>_mention`): one row per `(article_id, <type>_id)` with editorial flags (`needs_review`, `added`, `edited`, `deleted`), provenance JSON, optional `role_in_story` / `nature`, `created_at`, `updated_at`.
+
+**Substrate mention occurrence** (`substrate_<type>_mention_occurrence`): evidence spans (`mention_text`, `quote_text`, offsets, `labels_json`, `suppressed`, …).
+
+**Stylebook canonical** (`stylebook_<type>_canonical`): **`id` is a UUID string** for all **new** types (same as location after revision **`019_stylebook_loc_canon_uuid`**). Shared columns: `stylebook_id`, `label`, `slug` (unique per Stylebook), `status`, timestamps, plus type-specific catalog fields.
+
+**Stylebook alias** and **meta**: alias rows (`alias_text`, `normalized_alias`, `provenance`, `suppressed`); meta rows (`meta_type`, `data_json`, soft `added` / `edited` / `deleted`).
+
+**Consolidated JSON keys** (Agate `DBOutput` merge): derived from entity slug in `backfield_stylebook.entity_types` — e.g. `person` → `people`, `location` → `places` (legacy). Types without Agate review tabs use the same key rule.
+
+**Identity fingerprint:** `backfield_stylebook.entity_types.compute_identity_fingerprint` hashes normalized name plus type-specific inputs for dedupe across ingests (location may keep geocode-specific fingerprint paths until unified).
+
 ### Shared content and locations (`substrate_*`)
 
 - `substrate_article` — project-scoped content item for stateful ingestion. Uses a project-scoped external identity hierarchy with `(project_id, url)` as the fallback uniqueness rule. `source_run_id` stores the executing `agate_run.id` (UUID string) when the row is produced from an Agate worker run.

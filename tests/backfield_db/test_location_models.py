@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from backfield_db import (
+    StylebookLocationAlias,
+    StylebookLocationCanonical,
+    StylebookLocationMeta,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationCache,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_db.entity_contracts import model_has_fields
 from sqlalchemy import UniqueConstraint
 
 
@@ -82,3 +86,90 @@ def test_location_defaults_use_independent_json_containers() -> None:
         location_mention_id=2,
         mention_text="Chicago",
     ).labels_json == []
+
+
+def test_location_models_satisfy_shared_entity_contracts() -> None:
+    shared_substrate_entity = (
+        "project_id",
+        "name",
+        "normalized_name",
+        "status",
+        "stylebook_location_canonical_id",
+        "canonical_link_status",
+        "canonical_review_reasons_json",
+        "external_source",
+        "external_id",
+        "identity_fingerprint",
+        "source_kind",
+        "source_details_json",
+        "created_at",
+        "updated_at",
+    )
+    assert model_has_fields(SubstrateLocation, shared_substrate_entity)
+
+    shared_mention = (
+        "article_id",
+        "location_id",
+        "role_in_story",
+        "nature",
+        "nature_secondary_tags_json",
+        "needs_review",
+        "review_data_json",
+        "added",
+        "edited",
+        "deleted",
+        "source_kind",
+        "source_details_json",
+        "created_at",
+        "updated_at",
+    )
+    assert model_has_fields(SubstrateLocationMention, shared_mention)
+
+    shared_occurrence = (
+        "location_mention_id",
+        "source_kind",
+        "source_details_json",
+        "mention_text",
+        "quote_text",
+        "start_char",
+        "end_char",
+        "occurrence_order",
+        "labels_json",
+        "suppressed",
+        "created_at",
+        "updated_at",
+    )
+    assert model_has_fields(SubstrateLocationMentionOccurrence, shared_occurrence)
+
+    shared_canonical = (
+        "stylebook_id",
+        "label",
+        "slug",
+        "status",
+        "created_at",
+        "updated_at",
+    )
+    assert model_has_fields(StylebookLocationCanonical, shared_canonical)
+
+    shared_alias = (
+        "location_canonical_id",
+        "alias_text",
+        "normalized_alias",
+        "provenance",
+        "suppressed",
+        "created_at",
+        "updated_at",
+    )
+    assert model_has_fields(StylebookLocationAlias, shared_alias)
+
+    shared_meta = (
+        "project_id",
+        "stylebook_location_canonical_id",
+        "meta_type",
+        "data_json",
+        "added",
+        "edited",
+        "deleted",
+        "created_at",
+    )
+    assert model_has_fields(StylebookLocationMeta, shared_meta)

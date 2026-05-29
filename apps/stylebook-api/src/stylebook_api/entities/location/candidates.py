@@ -37,7 +37,12 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
-from stylebook_api.entities.location.locations import _project_by_slug, _require_stylebook_id
+from stylebook_api.helpers.project_scope import (
+    project_by_slug as _project_by_slug,
+)
+from stylebook_api.helpers.project_scope import (
+    require_stylebook_id as _require_stylebook_id,
+)
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 
 router = APIRouter(prefix="/v1", tags=["location-candidates"])

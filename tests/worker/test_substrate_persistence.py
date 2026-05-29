@@ -694,7 +694,7 @@ def test_reconciliation_failure_rolls_back_prior_saved_places(monkeypatch) -> No
             raise RuntimeError("simulated mention failure")
 
         monkeypatch.setattr(
-            "worker.substrate.orchestration._upsert_mention_and_occurrence",
+            "worker.substrate.entities.location.handler._upsert_mention_and_occurrence",
             fail_mention,
         )
 
