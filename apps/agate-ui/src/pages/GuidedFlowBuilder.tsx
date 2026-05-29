@@ -1611,6 +1611,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                   onClose={onCloseRunPanel}
                   running={running}
                   currentRun={currentRun}
+                  flowName={graphName}
                 />
               )}
             </div>

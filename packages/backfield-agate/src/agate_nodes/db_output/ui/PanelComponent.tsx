@@ -342,8 +342,8 @@ export default function DBOutputPanel({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              When on, extracted places are linked to your Stylebook catalog. When off, results are
-              saved without catalog matching.
+              When on, extracted places are linked to your Stylebook. When off, results are saved but
+              not linked to Stylebook.
             </p>
           </div>
         </div>
