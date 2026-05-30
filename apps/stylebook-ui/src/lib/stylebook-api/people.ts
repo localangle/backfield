@@ -46,7 +46,7 @@ export interface PaginatedCanonicalPersonResponse {
   has_prev: boolean
 }
 
-export type CanonicalPersonListSort = "label" | "recent"
+export type CanonicalPersonListSort = "sort_key" | "recent"
 
 export type CanonicalPersonListFilters = {
   minMentions?: number
@@ -71,8 +71,8 @@ export async function listCanonicalPeople(
   if (typeFilter && typeFilter !== "all") params.append("type_filter", typeFilter)
   const minMentions = options?.minMentions ?? 0
   if (minMentions > 0) params.append("min_mentions", String(minMentions))
-  const sort = options?.sort ?? "label"
-  if (sort !== "label") params.append("sort", sort)
+  const sort = options?.sort ?? "sort_key"
+  if (sort !== "sort_key") params.append("sort", sort)
   if (options?.publicFigure === true) params.append("public_figure", "true")
   if (options?.publicFigure === false) params.append("public_figure", "false")
   if (options?.nature && options.nature !== "all") params.append("nature", options.nature)
@@ -271,6 +271,7 @@ export async function patchCanonicalPerson(
     affiliation?: string | null
     person_type?: string | null
     public_figure?: boolean
+    sort_key?: string | null
   },
   projectFilterSlug?: string,
 ): Promise<CanonicalPerson> {

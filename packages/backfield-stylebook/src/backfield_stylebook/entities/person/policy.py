@@ -134,11 +134,28 @@ def rank_person_canonical_recall_matches(
     return out
 
 
-def _should_defer_person(*, people_bucket: str, person: SubstratePerson) -> bool:
-    if people_bucket == "needs_review":
-        return True
-    st = str(person.status or "")
-    return st in ("needs_review", "failed")
+def _pick_link_canonical_id(
+    session: Session,
+    *,
+    stylebook_id: int,
+    person: SubstratePerson,
+    candidate_ids: list[str] | None = None,
+) -> str | None:
+    """Best ranked canonical id for a link suggestion, optionally limited to candidates."""
+    allowed = set(candidate_ids) if candidate_ids else None
+    ranked = rank_person_canonical_recall_matches(
+        session,
+        stylebook_id=stylebook_id,
+        person=person,
+        limit=24,
+    )
+    for cid, _label in ranked:
+        if allowed is not None and cid not in allowed:
+            continue
+        return cid
+    if allowed and candidate_ids:
+        return candidate_ids[0]
+    return None
 
 
 def decide_person_canonical_persist_plan(
@@ -149,14 +166,10 @@ def decide_person_canonical_persist_plan(
     people_bucket: str = "ready",
     auto_apply_canonicalization: bool = False,
 ) -> CanonicalPersistPlan:
-    """Decide link, materialize, or defer for a substrate person row."""
+    """Decide link or materialize for a substrate person row (no defer recommendations)."""
+    _ = people_bucket
+    _ = auto_apply_canonicalization
     reasons: list[dict[str, Any]] = []
-    if _should_defer_person(people_bucket=people_bucket, person=person):
-        reasons.append({"code": "deferred_review", "people_bucket": people_bucket})
-        return CanonicalPersistPlan(
-            decision=CanonicalPersistDecision.DEFER,
-            resolution_reasons=tuple(reasons),
-        )
 
     by_identity = find_existing_person_canonical_id_by_identity(
         session, stylebook_id=stylebook_id, person=person
@@ -186,49 +199,33 @@ def decide_person_canonical_persist_plan(
         )
         alias_hits = [str(row) for row in session.exec(stmt).all() if row is not None]
 
-    if len(alias_hits) == 1:
-        cid = alias_hits[0]
-        canon = session.get(StylebookPersonCanonical, cid)
-        if canon is not None and person_title_affiliation_match(person, canon):
-            reasons.append({"code": "linked_exact_alias", "canonical_id": cid})
+    if alias_hits:
+        link_id = _pick_link_canonical_id(
+            session,
+            stylebook_id=stylebook_id,
+            person=person,
+            candidate_ids=alias_hits,
+        )
+        if link_id is not None:
+            canon = session.get(StylebookPersonCanonical, link_id)
+            if canon is not None and person_title_affiliation_match(person, canon):
+                reasons.append({"code": "linked_exact_alias", "canonical_id": link_id})
+            else:
+                reasons.append(
+                    {
+                        "code": "linked_alias_recall",
+                        "canonical_id": link_id,
+                        "alias_match_count": len(alias_hits),
+                    }
+                )
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,
-                existing_canonical_id=cid,
+                existing_canonical_id=link_id,
                 resolution_reasons=tuple(reasons),
             )
-        reasons.append(
-            {
-                "code": "ambiguous_canonical_match",
-                "recall_canonical_ids": alias_hits,
-                "note": "alias_match_identity_mismatch",
-            }
-        )
-        return CanonicalPersistPlan(
-            decision=CanonicalPersistDecision.DEFER,
-            resolution_reasons=tuple(reasons),
-        )
 
-    if len(alias_hits) > 1:
-        reasons.append(
-            {
-                "code": "ambiguous_canonical_match",
-                "recall_canonical_ids": alias_hits,
-            }
-        )
-        return CanonicalPersistPlan(
-            decision=CanonicalPersistDecision.DEFER,
-            resolution_reasons=tuple(reasons),
-        )
-
-    if auto_apply_canonicalization:
-        reasons.append({"code": "materialized_new_canonical"})
-        return CanonicalPersistPlan(
-            decision=CanonicalPersistDecision.MATERIALIZE_NEW,
-            resolution_reasons=tuple(reasons),
-        )
-
-    reasons.append({"code": "pending_manual_review"})
+    reasons.append({"code": "materialized_new_canonical"})
     return CanonicalPersistPlan(
-        decision=CanonicalPersistDecision.DEFER,
+        decision=CanonicalPersistDecision.MATERIALIZE_NEW,
         resolution_reasons=tuple(reasons),
     )

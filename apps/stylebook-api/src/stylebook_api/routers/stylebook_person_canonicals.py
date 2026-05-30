@@ -249,7 +249,13 @@ def list_canonical_people(
         description="Filter to canonicals with at least one linked mention of this nature.",
     ),
     min_mentions: int = Query(0, ge=0, le=1_000_000),
-    sort: Literal["label", "recent"] = Query("label"),
+    sort: Literal["sort_key", "recent", "label"] = Query(
+        "sort_key",
+        description=(
+            "sort_key (default): last-name order; recent: latest linked activity; "
+            "label is a legacy alias for sort_key."
+        ),
+    ),
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),

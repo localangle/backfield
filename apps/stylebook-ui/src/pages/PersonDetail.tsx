@@ -26,7 +26,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -34,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -53,6 +53,15 @@ import {
 import ConnectionsSection from "@/components/ConnectionsSection"
 import { cn } from "@/lib/utils"
 import { Loader2, Trash2 } from "lucide-react"
+
+function derivePersonSortKey(label: string, explicit?: string | null): string {
+  const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ")
+  const fromExplicit = explicit != null ? normalize(explicit) : ""
+  if (fromExplicit) return fromExplicit
+  const parts = label.trim().split(/\s+/)
+  if (parts.length >= 2) return normalize(parts[parts.length - 1]!)
+  return normalize(parts[0] ?? "")
+}
 
 function mentionArticleDisplayTitle(m: LinkedPersonMention): string {
   const trimmed = (m.article_headline ?? "").trim()
@@ -92,6 +101,7 @@ export default function PersonDetail() {
   const [affiliation, setAffiliation] = useState("")
   const [personType, setPersonType] = useState("")
   const [publicFigure, setPublicFigure] = useState(false)
+  const [sortKey, setSortKey] = useState("")
   const [types, setTypes] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -126,6 +136,7 @@ export default function PersonDetail() {
         setAffiliation(row.affiliation ?? "")
         setPersonType(row.person_type ?? "")
         setPublicFigure(row.public_figure)
+        setSortKey(row.sort_key ?? derivePersonSortKey(row.label))
       } catch (e) {
         console.error(e)
         if (!quiet) setPerson(null)
@@ -261,6 +272,7 @@ export default function PersonDetail() {
           affiliation: affiliation.trim() || null,
           person_type: personType.trim() || null,
           public_figure: publicFigure,
+          sort_key: sortKey.trim() || null,
         },
         evidenceProjectSlug || undefined,
       )
@@ -272,6 +284,15 @@ export default function PersonDetail() {
     } finally {
       setSaving(false)
     }
+  }
+
+  function resetEditFieldsFromPerson(row: CanonicalPerson) {
+    setLabel(row.label)
+    setTitle(row.title ?? "")
+    setAffiliation(row.affiliation ?? "")
+    setPersonType(row.person_type ?? "")
+    setPublicFigure(row.public_figure)
+    setSortKey(row.sort_key ?? derivePersonSortKey(row.label))
   }
 
   async function handleDelete() {
@@ -331,44 +352,57 @@ export default function PersonDetail() {
         <CardHeader>
           <CardTitle>Details</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           {editing ? (
             <>
-              <div className="space-y-2">
-                <Label htmlFor="person-label">Name</Label>
+              <div className="space-y-1">
+                <Label htmlFor="person-label" className="text-xs font-medium">
+                  Name
+                </Label>
                 <Input
                   id="person-label"
+                  className="h-8 text-xs"
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
                   disabled={!canEdit || saving}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="person-title">Title</Label>
-                <Input
-                  id="person-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  disabled={!canEdit || saving}
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor="person-title" className="text-xs font-medium">
+                    Title
+                  </Label>
+                  <Input
+                    id="person-title"
+                    className="h-8 text-xs"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    disabled={!canEdit || saving}
+                  />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor="person-affiliation" className="text-xs font-medium">
+                    Affiliation
+                  </Label>
+                  <Input
+                    id="person-affiliation"
+                    className="h-8 text-xs"
+                    value={affiliation}
+                    onChange={(e) => setAffiliation(e.target.value)}
+                    disabled={!canEdit || saving}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="person-affiliation">Affiliation</Label>
-                <Input
-                  id="person-affiliation"
-                  value={affiliation}
-                  onChange={(e) => setAffiliation(e.target.value)}
-                  disabled={!canEdit || saving}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Type</Label>
+              <div className="space-y-1">
+                <Label htmlFor="person-type" className="text-xs font-medium">
+                  Type
+                </Label>
                 <Select
                   value={personType || "none"}
                   onValueChange={(v) => setPersonType(v === "none" ? "" : v)}
                   disabled={!canEdit || saving}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="person-type" className="h-8 text-xs">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -381,20 +415,44 @@ export default function PersonDetail() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="person-public-figure"
-                  checked={publicFigure}
-                  onCheckedChange={(v) => setPublicFigure(v === true)}
-                  disabled={!canEdit || saving}
-                />
-                <Label htmlFor="person-public-figure">Public figure</Label>
+              <div className="grid grid-cols-2 items-end gap-2">
+                <div className="flex items-center gap-2 pb-1">
+                  <Label htmlFor="person-public-figure" className="shrink-0 text-xs font-medium">
+                    Public figure
+                  </Label>
+                  <Switch
+                    id="person-public-figure"
+                    checked={publicFigure}
+                    onCheckedChange={setPublicFigure}
+                    disabled={!canEdit || saving}
+                  />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <Label htmlFor="person-sort-key" className="text-xs font-medium">
+                    Sort key
+                  </Label>
+                  <Input
+                    id="person-sort-key"
+                    className="h-8 text-xs"
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value)}
+                    disabled={!canEdit || saving}
+                    placeholder="Last name"
+                  />
+                </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-1">
                 <Button onClick={() => void handleSave()} disabled={!canEdit || saving}>
                   {saving ? "Saving…" : "Save"}
                 </Button>
-                <Button variant="outline" onClick={() => setEditing(false)} disabled={saving}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    resetEditFieldsFromPerson(person)
+                    setEditing(false)
+                  }}
+                  disabled={saving}
+                >
                   Cancel
                 </Button>
               </div>
@@ -424,6 +482,11 @@ export default function PersonDetail() {
                 <span className="text-muted-foreground">Public figure:</span>{" "}
                 {person.public_figure ? "Yes" : "No"}
               </div>
+              {person.sort_key ? (
+                <div>
+                  <span className="text-muted-foreground">Sort key:</span> {person.sort_key}
+                </div>
+              ) : null}
               <div>
                 <span className="text-muted-foreground">Status:</span> {person.status}
               </div>

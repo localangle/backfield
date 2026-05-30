@@ -227,7 +227,7 @@ def test_decide_person_canonical_persist_plan_links_exact_identity() -> None:
         assert plan.existing_canonical_id == str(canon.id)
 
 
-def test_decide_person_defer_when_alias_matches_but_identity_differs() -> None:
+def test_decide_person_links_when_alias_matches_but_title_differs() -> None:
     engine = _engine()
     with Session(engine) as session:
         sb_id, pid = _seed_stylebook(session)
@@ -259,7 +259,32 @@ def test_decide_person_defer_when_alias_matches_but_identity_differs() -> None:
         session.refresh(person)
 
         plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
-        assert plan.decision == CanonicalPersistDecision.DEFER
+        assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert plan.existing_canonical_id == str(canon.id)
+
+
+def test_decide_person_materializes_when_no_canonical_match() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed_stylebook(session)
+        person = SubstratePerson(
+            project_id=pid,
+            name="New Person",
+            normalized_name="new person",
+            title="Mayor",
+            affiliation="Springfield",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        plan = decide_person_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            person=person,
+            auto_apply_canonicalization=False,
+        )
+        assert plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW
 
 
 def test_link_substrate_to_canonical_atomic_is_idempotent() -> None:

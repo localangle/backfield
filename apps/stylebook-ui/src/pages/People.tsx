@@ -43,7 +43,9 @@ function parseCanonicalListSearchParams(sp: URLSearchParams) {
   const typeRaw = sp.get("type") ?? ""
   const typeFilter = typeRaw && typeRaw !== "all" ? typeRaw : "all"
   const typeFilterParam = typeFilter === "all" ? undefined : typeFilter
-  const sortBy: CanonicalPersonListSort = sp.get("sort") === "recent" ? "recent" : "label"
+  const sortRaw = sp.get("sort")
+  const sortBy: CanonicalPersonListSort =
+    sortRaw === "recent" ? "recent" : "sort_key"
   const publicFigureRaw = sp.get("public_figure") ?? "all"
   const titleFilter = (sp.get("title") ?? "").trim()
   const affiliationFilter = (sp.get("affiliation") ?? "").trim()
@@ -250,7 +252,7 @@ export default function People() {
     (value: CanonicalPersonListSort) => {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev)
-        if (value === "label") next.delete("sort")
+        if (value === "sort_key") next.delete("sort")
         else next.set("sort", "recent")
         next.delete("page")
         return next
@@ -264,7 +266,7 @@ export default function People() {
     q?: string,
     page: number = 1,
     tf?: string,
-    listSort: CanonicalPersonListSort = "label",
+    listSort: CanonicalPersonListSort = "sort_key",
     publicFigure?: boolean,
   ) => {
     try {
@@ -435,7 +437,7 @@ export default function People() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="label">Name (A–Z)</SelectItem>
+                    <SelectItem value="sort_key">Last name (A–Z)</SelectItem>
                     <SelectItem value="recent">Recently active</SelectItem>
                   </SelectContent>
                 </Select>
