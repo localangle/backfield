@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_stylebook.entities.person.types import PERSON_NATURE_VALUES
+from backfield_stylebook.entities.person.types import PERSON_NATURE_VALUES, derive_person_sort_key
 
 from agate_nodes.person_extract.person_schemas import ExtractedPerson, PersonMention
 
@@ -85,6 +85,15 @@ def _parse_mentions(entry: dict[str, Any]) -> list[PersonMention]:
     return mentions
 
 
+def _sort_key_from_entry(entry: dict[str, Any], name: str) -> str | None:
+    explicit = _optional_text(entry.get("sort_key"))
+    name_raw = entry.get("name")
+    name_last: str | None = None
+    if isinstance(name_raw, dict):
+        name_last = _optional_text(name_raw.get("last"))
+    return derive_person_sort_key(name, explicit=explicit, name_last=name_last)
+
+
 def person_from_llm_entry(entry: dict[str, Any]) -> ExtractedPerson:
     if not isinstance(entry, dict):
         raise ValueError("person entry must be an object")
@@ -102,6 +111,7 @@ def person_from_llm_entry(entry: dict[str, Any]) -> ExtractedPerson:
         affiliation=affiliation,
         public_figure=bool(entry.get("public_figure")),
         type=person_type,
+        sort_key=_sort_key_from_entry(entry, name),
         role_in_story=role,
         nature=nature,
         nature_secondary_tags=secondary,

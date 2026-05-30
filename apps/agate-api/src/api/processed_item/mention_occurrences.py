@@ -14,8 +14,13 @@ def _strip_text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def occurrence_dict_from_model_mention(text: str, *, order: int) -> dict[str, Any]:
-    return {
+def occurrence_dict_from_model_mention(
+    text: str,
+    *,
+    order: int,
+    is_quote: bool = False,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {
         "mention_text": text,
         "start_char": None,
         "end_char": None,
@@ -23,25 +28,31 @@ def occurrence_dict_from_model_mention(text: str, *, order: int) -> dict[str, An
         "suppressed": False,
         "source_kind": "model",
     }
+    if is_quote:
+        out["is_quote"] = True
+    return out
 
 
 def occurrences_from_place_dict(place: dict[str, Any]) -> list[dict[str, Any]]:
     """Build occurrence payloads from frozen model ``mentions`` / ``original_text``."""
     raw_mentions = place.get("mentions")
-    texts: list[str] = []
+    texts: list[tuple[str, bool]] = []
     if isinstance(raw_mentions, list):
         for i, item in enumerate(raw_mentions):
             if isinstance(item, dict):
                 t = _strip_text(item.get("text"))
                 if t:
-                    texts.append(t)
+                    texts.append((t, bool(item.get("quote"))))
             elif isinstance(item, str) and item.strip():
-                texts.append(item.strip())
+                texts.append((item.strip(), False))
     if not texts:
         ot = _strip_text(place.get("original_text"))
         if ot:
-            texts = [ot]
-    return [occurrence_dict_from_model_mention(t, order=i) for i, t in enumerate(texts)]
+            texts = [(ot, False)]
+    return [
+        occurrence_dict_from_model_mention(t, order=i, is_quote=is_quote)
+        for i, (t, is_quote) in enumerate(texts)
+    ]
 
 
 def occurrence_dict_from_db(row: SubstrateLocationMentionOccurrence) -> dict[str, Any]:
@@ -57,6 +68,9 @@ def occurrence_dict_from_db(row: SubstrateLocationMentionOccurrence) -> dict[str
     quote_text = _strip_text(row.quote_text)
     if quote_text:
         out["quote_text"] = quote_text
+    labels = getattr(row, "labels_json", None)
+    if isinstance(labels, list) and "quote" in labels:
+        out["is_quote"] = True
     return out
 
 

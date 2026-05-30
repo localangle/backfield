@@ -19,6 +19,7 @@ from backfield_stylebook.entities.person.policy import (
     find_existing_person_canonical_id_by_alias,
     rank_person_canonical_recall_matches,
 )
+from backfield_stylebook.entities.person.types import derive_person_sort_key
 
 
 def _slugify_person_label(label: str) -> str:
@@ -70,11 +71,13 @@ def _normalize_alias_text(text: str) -> str:
 
 
 def _mirror_fields_from_substrate(person: SubstratePerson) -> dict[str, Any]:
+    sort_key = person.sort_key or derive_person_sort_key(person.name)
     return {
         "title": person.title,
         "affiliation": person.affiliation,
         "public_figure": bool(person.public_figure),
         "person_type": person.person_type,
+        "sort_key": sort_key,
     }
 
 
@@ -185,12 +188,14 @@ def create_standalone_canonical(
     affiliation: str | None = None,
     public_figure: bool = False,
     person_type: str | None = None,
+    sort_key: str | None = None,
     provenance: str = "stylebook_ui_manual",
 ) -> StylebookPersonCanonical:
     clean = label.strip()
     if not clean:
         raise ValueError("label is required")
     slug = allocate_unique_person_canonical_slug(session, stylebook_id=stylebook_id, label=clean)
+    resolved_sort_key = derive_person_sort_key(clean, explicit=sort_key)
     canon = StylebookPersonCanonical(
         stylebook_id=stylebook_id,
         label=clean,
@@ -199,6 +204,7 @@ def create_standalone_canonical(
         affiliation=(affiliation or "").strip() or None,
         public_figure=public_figure,
         person_type=(person_type or "").strip() or None,
+        sort_key=resolved_sort_key,
         primary_substrate_person_id=None,
         status="active",
     )

@@ -24,6 +24,32 @@ def normalize_person_text(value: str | None) -> str:
     return " ".join(str(value).strip().lower().split())
 
 
+def normalize_person_sort_key(value: str | None) -> str | None:
+    cleaned = normalize_person_text(value)
+    return cleaned or None
+
+
+def derive_person_sort_key(
+    display_name: str | None,
+    *,
+    explicit: str | None = None,
+    name_last: str | None = None,
+) -> str | None:
+    """Lowercase last-name (or sole token) used for person list ordering."""
+    explicit_norm = normalize_person_sort_key(explicit)
+    if explicit_norm:
+        return explicit_norm
+    last_norm = normalize_person_sort_key(name_last)
+    if last_norm:
+        return last_norm
+    if display_name and display_name.strip():
+        parts = display_name.strip().split()
+        if len(parts) >= 2:
+            return normalize_person_sort_key(parts[-1])
+        return normalize_person_sort_key(parts[0])
+    return None
+
+
 def person_identity_fingerprint(
     *,
     normalized_name: str,

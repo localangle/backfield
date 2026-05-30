@@ -24,6 +24,7 @@ def test_person_from_llm_entry_flat_name() -> None:
         }
     )
     assert person.name == "Jane Doe"
+    assert person.sort_key == "doe"
     assert person.nature == "official"
     assert person.nature_secondary_tags == ["source"]
     assert person.type == "politician"
@@ -39,6 +40,20 @@ def test_person_from_llm_entry_accepts_legacy_name_object() -> None:
         }
     )
     assert person.name == "John Smith"
+    assert person.sort_key == "smith"
+
+
+def test_person_from_llm_entry_uses_explicit_sort_key() -> None:
+    person = person_from_llm_entry(
+        {
+            "name": "Jane Doe",
+            "sort_key": "custom",
+            "role_in_story": "Mentioned",
+            "nature": "other",
+            "mentions": [{"text": "Jane Doe was there.", "quote": False}],
+        }
+    )
+    assert person.sort_key == "custom"
 
 
 def test_person_from_llm_entry_invalid_nature_becomes_other() -> None:

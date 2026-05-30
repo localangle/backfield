@@ -415,6 +415,11 @@ class StylebookPersonCanonical(SQLModel, table=True):
             "stylebook_id",
             "public_figure",
         ),
+        Index(
+            "ix_stylebook_person_canonical_stylebook_sort_key",
+            "stylebook_id",
+            "sort_key",
+        ),
     )
 
     id: str = Field(default_factory=_uuid, primary_key=True)
@@ -428,6 +433,7 @@ class StylebookPersonCanonical(SQLModel, table=True):
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     person_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    sort_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     primary_substrate_person_id: int | None = Field(
         default=None,
         foreign_key="substrate_person.id",
@@ -1136,6 +1142,11 @@ class SubstratePerson(SQLModel, table=True):
             "public_figure",
         ),
         Index(
+            "idx_substrate_person_project_sort_key",
+            "project_id",
+            "sort_key",
+        ),
+        Index(
             "ix_substrate_person_project_canonical",
             "project_id",
             "stylebook_person_canonical_id",
@@ -1158,6 +1169,7 @@ class SubstratePerson(SQLModel, table=True):
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     person_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    sort_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     status: str = Field(
         default="provisional",
         sa_column=Column(Text, nullable=False, server_default="provisional"),

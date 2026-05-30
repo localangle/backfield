@@ -7,7 +7,7 @@ export type EvidenceSpanReason = 'empty_body' | 'no_evidence' | 'not_in_story' |
 
 export type EvidenceSpanRange = { start: number; end: number }
 
-export type TieredHighlightRange = EvidenceSpanRange & { tier: 'ambient' | 'selected' }
+export type TieredHighlightRange = EvidenceSpanRange & { tier: 'ambient' | 'selected' | 'quote' }
 
 /** Character range in the article with one or more geocoded place anchors. */
 export type MentionSpanHit = EvidenceSpanRange & { anchors: string[] }
@@ -116,27 +116,33 @@ export function findAllMentionOccurrencesInArticle(
   return matches.sort((a, b) => a.start - b.start)
 }
 
-/** Merge ambient + selected spans; selected wins where both apply. */
+/** Merge ambient + selected + quote spans; quote wins over selected, selected wins over ambient. */
 export function mergeTieredHighlightRanges(
   ambient: EvidenceSpanRange[],
   selected: EvidenceSpanRange[],
+  quote: EvidenceSpanRange[] = [],
 ): TieredHighlightRange[] {
-  type Ev = { pos: number; dSel: number; dAmb: number }
+  type Ev = { pos: number; dSel: number; dAmb: number; dQuote: number }
   const events: Ev[] = []
   for (const r of ambient) {
     if (r.start < 0 || r.end <= r.start) continue
-    events.push({ pos: r.start, dSel: 0, dAmb: 1 })
-    events.push({ pos: r.end, dSel: 0, dAmb: -1 })
+    events.push({ pos: r.start, dSel: 0, dAmb: 1, dQuote: 0 })
+    events.push({ pos: r.end, dSel: 0, dAmb: -1, dQuote: 0 })
   }
   for (const r of selected) {
     if (r.start < 0 || r.end <= r.start) continue
-    events.push({ pos: r.start, dSel: 1, dAmb: 0 })
-    events.push({ pos: r.end, dSel: -1, dAmb: 0 })
+    events.push({ pos: r.start, dSel: 1, dAmb: 0, dQuote: 0 })
+    events.push({ pos: r.end, dSel: -1, dAmb: 0, dQuote: 0 })
+  }
+  for (const r of quote) {
+    if (r.start < 0 || r.end <= r.start) continue
+    events.push({ pos: r.start, dSel: 0, dAmb: 0, dQuote: 1 })
+    events.push({ pos: r.end, dSel: 0, dAmb: 0, dQuote: -1 })
   }
   events.sort((a, b) => {
     if (a.pos !== b.pos) return a.pos - b.pos
-    const aEnd = a.dSel < 0 || a.dAmb < 0
-    const bEnd = b.dSel < 0 || b.dAmb < 0
+    const aEnd = a.dSel < 0 || a.dAmb < 0 || a.dQuote < 0
+    const bEnd = b.dSel < 0 || b.dAmb < 0 || b.dQuote < 0
     if (aEnd !== bEnd) return aEnd ? -1 : 1
     return 0
   })
@@ -144,9 +150,11 @@ export function mergeTieredHighlightRanges(
   const out: TieredHighlightRange[] = []
   let sel = 0
   let amb = 0
+  let quoteCount = 0
   let cursor = 0
 
-  const tierAt = (): 'ambient' | 'selected' | null => {
+  const tierAt = (): 'ambient' | 'selected' | 'quote' | null => {
+    if (quoteCount > 0) return 'quote'
     if (sel > 0) return 'selected'
     if (amb > 0) return 'ambient'
     return null
@@ -160,6 +168,7 @@ export function mergeTieredHighlightRanges(
     cursor = e.pos
     sel += e.dSel
     amb += e.dAmb
+    quoteCount += e.dQuote
   }
 
   return out

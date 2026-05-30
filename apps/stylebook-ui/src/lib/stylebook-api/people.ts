@@ -9,6 +9,7 @@ export interface CanonicalPerson {
   affiliation?: string | null
   public_figure: boolean
   person_type?: string | null
+  sort_key?: string | null
   status: string
   linked_substrate_count: number
   mention_count: number
@@ -24,6 +25,7 @@ export interface Person {
   affiliation?: string | null
   public_figure: boolean
   person_type?: string | null
+  sort_key?: string | null
   status: string
   created_by_user_id?: number
   created_at: string

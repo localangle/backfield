@@ -33,6 +33,7 @@ export async function updateSavedPerson(
     role_in_story?: string | null
     nature?: string | null
     public_figure?: boolean | null
+    sort_key?: string | null
   },
   articleId?: number | null,
 ): Promise<void> {

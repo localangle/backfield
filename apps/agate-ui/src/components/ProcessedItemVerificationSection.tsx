@@ -829,8 +829,9 @@ export function ProcessedItemVerificationSection({
     [geometryEditing, cancelGeometryEdit],
   )
 
-  const exitAddPlaceMode = useCallback(() => {
+  const cancelAddPlaceWorkflow = useCallback(() => {
     setAddPlaceMode(false)
+    setAddPlaceSelection(null)
     setAwaitingAddPlaceReselection(false)
     setArticleTextSelection(null)
     const sel = window.getSelection()
@@ -850,13 +851,13 @@ export function ProcessedItemVerificationSection({
   }, [addPlaceSelection, awaitingAddPlaceReselection, addPlaceMode])
 
   useEffect(() => {
-    if (!addPlaceMode) return
+    if (!addPlaceWorkflowActive || addPlaceSelection) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') exitAddPlaceMode()
+      if (e.key === 'Escape') cancelAddPlaceWorkflow()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [addPlaceMode, exitAddPlaceMode])
+  }, [addPlaceWorkflowActive, addPlaceSelection, cancelAddPlaceWorkflow])
 
   const handleAddPlaceCreated = useCallback(
     async (payload: AddPlaceWorkflowCreatedPayload) => {
@@ -961,7 +962,7 @@ export function ProcessedItemVerificationSection({
                   addPlaceMode ? undefined : 'bg-black text-white hover:bg-black/90',
                 )}
                 variant={addPlaceMode ? 'outline' : 'default'}
-                disabled={addPlaceWorkflowActive}
+                disabled={addPlaceSelection !== null}
                 onClick={() => {
                   if (addPlaceSelection) return
                   if (articleTextSelection) {
@@ -969,14 +970,14 @@ export function ProcessedItemVerificationSection({
                     return
                   }
                   if (addPlaceMode) {
-                    exitAddPlaceMode()
+                    cancelAddPlaceWorkflow()
                     return
                   }
                   setAddPlaceMode(true)
                 }}
               >
                 {addPlaceMode ? null : <Plus className="mr-2 h-4 w-4" />}
-                {addPlaceMode ? 'Cancel adding place' : 'Add place'}
+                {addPlaceMode ? 'Cancel' : 'Add place'}
               </Button>
             </div>
           ) : null}
@@ -1005,14 +1006,33 @@ export function ProcessedItemVerificationSection({
               ) : article?.body?.trim() ? (
                 <>
                   {addPlaceMode || awaitingAddPlaceReselection ? (
-                    <p
-                      className="mb-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-sm text-foreground"
+                    <div
+                      className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2"
                       role="status"
                     >
-                      {awaitingAddPlaceReselection
-                        ? 'Highlight a new passage in the story for this place.'
-                        : 'Highlight the passage in the story that supports this place.'}
-                    </p>
+                      <p className="text-sm text-foreground">
+                        {awaitingAddPlaceReselection
+                          ? 'Highlight a new passage in the story for this place.'
+                          : 'Highlight the passage in the story that supports this place.'}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 shrink-0 px-2"
+                        onClick={() => {
+                          if (awaitingAddPlaceReselection) {
+                            setAwaitingAddPlaceReselection(false)
+                            setArticleTextSelection(null)
+                            window.getSelection()?.removeAllRanges()
+                            return
+                          }
+                          cancelAddPlaceWorkflow()
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   ) : null}
                   <ProcessedItemArticleBody
                     body={article.body}
@@ -1066,12 +1086,7 @@ export function ProcessedItemVerificationSection({
                 const sel = window.getSelection()
                 sel?.removeAllRanges()
               }}
-              onCancel={() => {
-                setAddPlaceSelection(null)
-                setAwaitingAddPlaceReselection(false)
-                setArticleTextSelection(null)
-                setAddPlaceMode(false)
-              }}
+              onCancel={cancelAddPlaceWorkflow}
               onCreated={(createdPayload) => {
                 void handleAddPlaceCreated(createdPayload)
               }}

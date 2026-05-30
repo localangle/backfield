@@ -15,6 +15,7 @@ from backfield_db import (
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.entities.person.persist import create_standalone_canonical
+from backfield_stylebook.entities.person.types import derive_person_sort_key
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal
@@ -27,6 +28,7 @@ from stylebook_api.entities.person.people import (
     CreateCanonicalPersonBody,
     PaginatedCanonicalPersonResponse,
     PatchCanonicalPersonBody,
+    _canonical_list_sort_key,
     _escape_ilike_metacharacters,
 )
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
@@ -154,8 +156,8 @@ def _activity_order_columns(*, project_ids: list[int]) -> tuple[Any, ...]:
         (coalesced > canon_updated, coalesced),
         else_=canon_updated,
     )
-    label_lower = func.lower(col(StylebookPersonCanonical.label))
-    return (activity.desc(), label_lower.asc(), col(StylebookPersonCanonical.id).asc())
+    sort_key_col = _canonical_list_sort_key()
+    return (activity.desc(), sort_key_col.asc(), col(StylebookPersonCanonical.id).asc())
 
 
 class LinkedPersonSubstrateItem(BaseModel):
@@ -286,6 +288,7 @@ def list_canonical_people(
 
     label_lower = func.lower(col(StylebookPersonCanonical.label))
     label_col = col(StylebookPersonCanonical.label)
+    sort_key_col = _canonical_list_sort_key()
     q_text = (q or "").strip()
     if sort == "recent":
         order_by = _activity_order_columns(project_ids=project_ids)
@@ -301,11 +304,11 @@ def list_canonical_people(
         order_by = (
             rank.asc(),
             func.length(label_col).asc(),
-            label_lower.asc(),
+            sort_key_col.asc(),
             col(StylebookPersonCanonical.id).asc(),
         )
     else:
-        order_by = (label_lower.asc(), col(StylebookPersonCanonical.id).asc())
+        order_by = (sort_key_col.asc(), col(StylebookPersonCanonical.id).asc())
 
     rows = list(
         session.exec(
@@ -418,6 +421,7 @@ def create_canonical_person(
         affiliation=body.affiliation,
         public_figure=body.public_figure,
         person_type=body.person_type,
+        sort_key=body.sort_key,
         provenance="stylebook_ui_manual",
     )
     session.commit()
@@ -489,6 +493,10 @@ def patch_canonical_person(
             canon.affiliation = s if s else None
     if "public_figure" in updates and updates["public_figure"] is not None:
         canon.public_figure = bool(updates["public_figure"])
+    if "sort_key" in updates:
+        canon.sort_key = derive_person_sort_key(canon.label, explicit=updates["sort_key"])
+    elif "label" in updates and updates["label"] is not None:
+        canon.sort_key = derive_person_sort_key(canon.label)
 
     session.add(canon)
     session.commit()

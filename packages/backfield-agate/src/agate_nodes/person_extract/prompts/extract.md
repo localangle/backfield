@@ -173,6 +173,10 @@ Optional array of additional values from the same vocabulary when a secondary ro
 
 Optional category when evident (e.g. `politician`, `athlete`, `community member`, `law enforcement`). Omit or use empty string when unclear.
 
+### sort_key
+
+Lowercase **last name** used for alphabetical sorting (e.g. `"doe"` for Jane Doe, `"smith"` for John Smith). When the person has only one name token, use that token. Omit only when no name is available; the system can derive this from `name` when missing.
+
 ### mentions
 
 Every instance (sentence or paragraph) where the person appears or is referred to by pronoun. Include:
@@ -204,6 +208,7 @@ Each person object **must** include:
 - `affiliation`: string — institution or organization if mentioned
 - `public_figure`: boolean
 - `type`: string — optional person category when evident
+- `sort_key`: string — lowercase last name (or sole name token) for sorting
 - `role_in_story`: string
 - `nature`: string — one vocabulary value listed above
 - `nature_secondary_tags`: array of strings (same vocabulary; often empty)

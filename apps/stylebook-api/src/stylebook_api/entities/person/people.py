@@ -22,6 +22,7 @@ from backfield_stylebook.entities.person.persist import (
 )
 from backfield_stylebook.entities.person.types import (
     PERSON_NATURE_VALUES,
+    derive_person_sort_key,
     person_identity_fingerprint,
 )
 from backfield_stylebook.people import (
@@ -107,6 +108,13 @@ def _linked_substrate_counts(
     return out
 
 
+def _canonical_list_sort_key():
+    return func.coalesce(
+        func.lower(col(StylebookPersonCanonical.sort_key)),
+        func.lower(col(StylebookPersonCanonical.label)),
+    )
+
+
 class CanonicalPersonResponse(BaseModel):
     """One ``stylebook_person_canonical`` row (not a substrate person)."""
 
@@ -117,6 +125,7 @@ class CanonicalPersonResponse(BaseModel):
     affiliation: str | None = None
     public_figure: bool = False
     person_type: str | None = None
+    sort_key: str | None = None
     status: str
     linked_substrate_count: int = 0
     mention_count: int = 0
@@ -139,6 +148,7 @@ class CanonicalPersonResponse(BaseModel):
             affiliation=canon.affiliation,
             public_figure=bool(canon.public_figure),
             person_type=canon.person_type,
+            sort_key=canon.sort_key,
             status=str(canon.status),
             linked_substrate_count=linked_substrate_count,
             mention_count=mention_count,
@@ -164,6 +174,7 @@ class CreateCanonicalPersonBody(BaseModel):
     title: str | None = None
     affiliation: str | None = None
     public_figure: bool = False
+    sort_key: str | None = None
 
 
 class PatchCanonicalPersonBody(BaseModel):
@@ -172,6 +183,7 @@ class PatchCanonicalPersonBody(BaseModel):
     title: str | None = None
     affiliation: str | None = None
     public_figure: bool | None = None
+    sort_key: str | None = None
 
 
 class LinkedSubstrateItem(BaseModel):
@@ -206,10 +218,12 @@ def _persist_new_catalog_canonical(
     title: str | None = None,
     affiliation: str | None = None,
     public_figure: bool = False,
+    sort_key: str | None = None,
     stylebook_slug: str | None = None,
 ) -> CanonicalPersonResponse:
     """Insert canonical + primary alias; no substrate row."""
     stylebook_id = _require_stylebook_id(session, project, stylebook_slug)
+    resolved_sort_key = derive_person_sort_key(label, explicit=sort_key)
     canon = create_standalone_canonical(
         session,
         stylebook_id=stylebook_id,
@@ -218,6 +232,7 @@ def _persist_new_catalog_canonical(
         affiliation=affiliation,
         public_figure=public_figure,
         person_type=person_type,
+        sort_key=resolved_sort_key,
         provenance="stylebook_ui_manual",
     )
     session.commit()
@@ -289,6 +304,7 @@ def list_canonical_people(
 
     label_lower = func.lower(col(StylebookPersonCanonical.label))
     label_col = col(StylebookPersonCanonical.label)
+    sort_key_col = _canonical_list_sort_key()
     if q_text:
         q_lower = q_text.lower()
         esc = _escape_ilike_metacharacters(q_text)
@@ -301,11 +317,11 @@ def list_canonical_people(
         order_by = (
             rank.asc(),
             func.length(label_col).asc(),
-            label_lower.asc(),
+            sort_key_col.asc(),
             col(StylebookPersonCanonical.id).asc(),
         )
     else:
-        order_by = (label_lower.asc(), col(StylebookPersonCanonical.id).asc())
+        order_by = (sort_key_col.asc(), col(StylebookPersonCanonical.id).asc())
 
     list_stmt = (
         select(StylebookPersonCanonical)
@@ -381,6 +397,7 @@ def create_canonical_person(
         title=body.title,
         affiliation=body.affiliation,
         public_figure=body.public_figure,
+        sort_key=body.sort_key,
         stylebook_slug=stylebook_slug,
     )
 
@@ -434,7 +451,10 @@ def list_canonical_linked_substrates(
                 SubstratePerson.project_id == int(proj.id),
                 SubstratePerson.stylebook_person_canonical_id == str(canonical_id),
             )
-            .order_by(col(SubstratePerson.name))
+            .order_by(
+                func.coalesce(col(SubstratePerson.sort_key), col(SubstratePerson.name)).asc(),
+                col(SubstratePerson.id).asc(),
+            )
         ).all()
     )
     return LinkedSubstratesResponse(
@@ -495,6 +515,10 @@ def patch_canonical_person(
             canon.affiliation = s if s else None
     if "public_figure" in updates and updates["public_figure"] is not None:
         canon.public_figure = bool(updates["public_figure"])
+    if "sort_key" in updates:
+        canon.sort_key = derive_person_sort_key(canon.label, explicit=updates["sort_key"])
+    elif "label" in updates and updates["label"] is not None:
+        canon.sort_key = derive_person_sort_key(canon.label)
     session.add(canon)
     session.commit()
     session.refresh(canon)
@@ -617,6 +641,7 @@ class SubstratePersonResponse(BaseModel):
     affiliation: str | None = None
     public_figure: bool = False
     person_type: str | None = None
+    sort_key: str | None = None
     status: str
     canonical_link_status: str | None = None
     stylebook_person_canonical_id: str | None = None
@@ -628,6 +653,7 @@ class PatchSubstratePersonBody(BaseModel):
     affiliation: str | None = None
     public_figure: bool | None = None
     person_type: str | None = None
+    sort_key: str | None = None
     role_in_story: str | None = None
     nature: str | None = None
     nature_secondary_tags: list[str] | None = None
@@ -712,6 +738,7 @@ def create_person_from_article_evidence(
         affiliation=affiliation,
         public_figure=bool(body.public_figure),
         person_type=person_type,
+        sort_key=derive_person_sort_key(name),
         status="active",
         canonical_link_status=CANONICAL_LINK_PENDING,
         source_kind="manual_add",
@@ -776,6 +803,7 @@ def create_person_from_article_evidence(
             affiliation=person.affiliation,
             public_figure=bool(person.public_figure),
             person_type=person.person_type,
+            sort_key=person.sort_key,
             status=str(person.status),
             canonical_link_status=str(person.canonical_link_status or ""),
             stylebook_person_canonical_id=person.stylebook_person_canonical_id,
@@ -808,6 +836,9 @@ def patch_substrate_person(
             raise HTTPException(status_code=400, detail="name cannot be empty")
         person.name = name
         person.normalized_name = _normalize_person_name(name)
+        person.sort_key = derive_person_sort_key(name, explicit=body.sort_key)
+    elif body.sort_key is not None:
+        person.sort_key = derive_person_sort_key(person.name, explicit=body.sort_key)
     if body.title is not None:
         person.title = body.title.strip() or None
     if body.affiliation is not None:
@@ -859,6 +890,7 @@ def patch_substrate_person(
         affiliation=person.affiliation,
         public_figure=bool(person.public_figure),
         person_type=person.person_type,
+        sort_key=person.sort_key,
         status=str(person.status),
         canonical_link_status=str(person.canonical_link_status or ""),
         stylebook_person_canonical_id=person.stylebook_person_canonical_id,

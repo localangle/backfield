@@ -43,6 +43,10 @@ from stylebook_api.mention_serialization import article_fields_for_linked_mentio
 router = APIRouter(prefix="/v1/people", tags=["person-candidates"])
 
 
+def _substrate_list_sort_key():
+    return func.coalesce(col(SubstratePerson.sort_key), col(SubstratePerson.normalized_name))
+
+
 class PaginatedCandidatesResponse(BaseModel):
     candidates: list[dict[str, Any]]
     total: int
@@ -258,7 +262,7 @@ def _list_open_candidates(
     stmt = (
         select(SubstratePerson)
         .where(*filters)
-        .order_by(col(SubstratePerson.normalized_name).asc(), col(SubstratePerson.id).asc())
+        .order_by(_substrate_list_sort_key().asc(), col(SubstratePerson.id).asc())
         .offset(offset)
         .limit(limit)
     )
@@ -287,7 +291,7 @@ def _list_deferred_candidates(
     stmt = (
         select(SubstratePerson)
         .where(*filters)
-        .order_by(col(SubstratePerson.normalized_name).asc(), col(SubstratePerson.id).asc())
+        .order_by(_substrate_list_sort_key().asc(), col(SubstratePerson.id).asc())
         .offset(offset)
         .limit(limit)
     )

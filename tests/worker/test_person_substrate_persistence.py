@@ -85,6 +85,7 @@ def test_persist_people_writes_substrate_mention_occurrence() -> None:
         assert person.affiliation == "City of Chicago"
         assert person.public_figure is True
         assert person.person_type == "politician"
+        assert person.sort_key == "smith"
         assert person.identity_fingerprint
         assert person.canonical_link_status == CANONICAL_LINK_PENDING
 

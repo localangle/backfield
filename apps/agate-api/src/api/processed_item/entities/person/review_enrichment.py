@@ -215,6 +215,7 @@ def _person_payload_from_substrate(person: SubstratePerson) -> dict[str, Any]:
         "affiliation": person.affiliation,
         "public_figure": bool(person.public_figure),
         "type": person.person_type,
+        "sort_key": person.sort_key,
     }
 
 

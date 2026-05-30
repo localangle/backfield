@@ -24,6 +24,7 @@ from backfield_stylebook.entities.person.policy import (
 )
 from backfield_stylebook.entities.person.types import (
     PERSON_NATURE_VALUES,
+    derive_person_sort_key,
     normalize_person_text,
     person_identity_fingerprint,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "assert_canonical_link_invariant",
     "create_standalone_canonical",
     "decide_person_canonical_persist_plan",
+    "derive_person_sort_key",
     "find_existing_person_canonical_id_by_alias",
     "find_existing_person_canonical_id_by_identity",
     "link_substrate_to_canonical_atomic",

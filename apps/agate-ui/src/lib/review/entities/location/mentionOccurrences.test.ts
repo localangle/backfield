@@ -35,6 +35,27 @@ describe('readMentionOccurrencesFromRow', () => {
     expect(occs[0]?.mentionText).toBe('Buying a new suit at Carsons for an interview.')
   })
 
+  it('reads quote flag from model mentions', () => {
+    const occs = readMentionOccurrencesFromRow({
+      location: {
+        mentions: [
+          { text: 'Jane Doe spoke at the rally.', quote: false },
+          { text: '"We need change," Jane Doe said.', quote: true },
+        ],
+      },
+    })
+    expect(occs).toHaveLength(2)
+    expect(occs[0]?.isQuote).toBeUndefined()
+    expect(occs[1]?.isQuote).toBe(true)
+  })
+
+  it('reads is_quote from API mention_occurrences', () => {
+    const occs = readMentionOccurrencesFromRow({
+      mention_occurrences: [{ mention_text: 'She said it plainly.', is_quote: true, occurrence_order: 0 }],
+    })
+    expect(occs[0]?.isQuote).toBe(true)
+  })
+
   it('keeps user-reviewed occurrences even when they differ from model text', () => {
     const occs = readMentionOccurrencesFromRow({
       location: {

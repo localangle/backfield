@@ -18,6 +18,7 @@ class ExtractedPerson(BaseModel):
     affiliation: str | None = None
     public_figure: bool = False
     type: str | None = None
+    sort_key: str | None = None
     role_in_story: str | None = None
     nature: str | None = None
     nature_secondary_tags: list[str] = Field(default_factory=list)

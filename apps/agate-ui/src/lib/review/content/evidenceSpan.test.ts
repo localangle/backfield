@@ -105,6 +105,22 @@ describe('mergeTieredHighlightRanges', () => {
       { start: 18, end: 20, tier: 'ambient' },
     ])
   })
+
+  it('prefers quote tier over selected overlap', () => {
+    expect(
+      mergeTieredHighlightRanges(
+        [{ start: 10, end: 20 }],
+        [{ start: 12, end: 18 }],
+        [{ start: 14, end: 16 }],
+      ),
+    ).toEqual([
+      { start: 10, end: 12, tier: 'ambient' },
+      { start: 12, end: 14, tier: 'selected' },
+      { start: 14, end: 16, tier: 'quote' },
+      { start: 16, end: 18, tier: 'selected' },
+      { start: 18, end: 20, tier: 'ambient' },
+    ])
+  })
 })
 
 describe('resolveEvidenceSpanInArticle (continued)', () => {

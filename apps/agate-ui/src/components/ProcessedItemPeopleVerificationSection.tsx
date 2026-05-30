@@ -22,7 +22,7 @@ import {
   findAllMentionOccurrencesInArticle,
   resolveEvidenceSpansInArticle,
 } from '@/lib/review/content/evidenceSpan'
-import { readMentionOccurrencesFromRow, recomputeOccurrenceSpans } from '@/lib/review/entities/location/mentionOccurrences'
+import { readMentionOccurrencesFromRow, recomputeOccurrenceSpans, resolveOccurrenceSpansInArticle, type MentionOccurrenceDraft } from '@/lib/review/entities/location/mentionOccurrences'
 import { resolveProcessedItemArticleId } from '@/lib/review/entities/location/reviewRow'
 import {
   buildPersonEditOverlayPatch,
@@ -84,6 +84,7 @@ export function ProcessedItemPeopleVerificationSection({
   const [addPersonSelection, setAddPersonSelection] = useState<ArticleTextSelection | null>(null)
   const [awaitingAddPersonReselection, setAwaitingAddPersonReselection] = useState(false)
   const [articleTextSelection, setArticleTextSelection] = useState<ArticleTextSelection | null>(null)
+  const [selectedOccurrenceClientId, setSelectedOccurrenceClientId] = useState<string | null>(null)
   const lastItemSyncKeyRef = useRef('')
 
   const dirty = useMemo(
@@ -170,65 +171,163 @@ export function ProcessedItemPeopleVerificationSection({
     setPersonEditing(false)
     setFieldsDraft(undefined)
     setFieldsBaseline(undefined)
+    setSelectedOccurrenceClientId(null)
+    setArticleTextSelection(null)
   }, [])
 
   const startPersonEdit = useCallback(() => {
     if (!selectedRow) return
-    const fields = readPersonEditFields(readPersonFromRow(selectedRow))
+    const fields = readPersonEditFields(readPersonFromRow(selectedRow), selectedRow)
     setFieldsBaseline(fields)
     setFieldsDraft(fields)
+    setSelectedOccurrenceClientId(null)
+    setArticleTextSelection(null)
     setPersonEditing(true)
   }, [selectedRow])
 
   const storyHighlightResult = useMemo(() => {
     const body = typeof article?.body === 'string' ? article.body : ''
     if (!selectedAnchor) {
-      return resolveEvidenceSpansInArticle(body, undefined)
+      return { mentionRanges: [] as Array<{ start: number; end: number }>, quoteRanges: [] as Array<{ start: number; end: number }> }
     }
     const row = displayMergedRows.find((r) => getMergedRowAnchor(r) === selectedAnchor)
     if (!row) {
-      return resolveEvidenceSpansInArticle(body, undefined)
+      return { mentionRanges: [], quoteRanges: [] }
     }
-    const occurrences = readMentionOccurrencesFromRow({
-      location: readPersonFromRow(row),
-      mention_occurrences: row.mention_occurrences,
-    })
-    const active = occurrences.filter((o) => !o.suppressed && o.mentionText.trim())
-    if (active.length > 0 && body) {
-      const ranges = buildOccurrenceSpanHits(body, [
-        {
-          anchor: selectedAnchor,
-          occurrences: active.map((o) => ({
-            clientId: o.clientId,
-            mentionText: o.mentionText,
-            startChar: o.startChar,
-            endChar: o.endChar,
-            suppressed: o.suppressed,
-          })),
-        },
-      ]).map(({ start, end }) => ({ start, end }))
-      if (ranges.length > 0) {
-        return { kind: 'ranges' as const, ranges }
+    const occurrences =
+      personEditing && fieldsDraft
+        ? fieldsDraft.occurrences
+        : readMentionOccurrencesFromRow({
+            location: readPersonFromRow(row),
+            mention_occurrences: row.mention_occurrences,
+          })
+    const selectedOccurrence =
+      !personEditing && selectedOccurrenceClientId != null
+        ? occurrences.find((o) => o.clientId === selectedOccurrenceClientId && !o.suppressed)
+        : null
+    if (selectedOccurrence && body) {
+      const span = resolveOccurrenceSpansInArticle(body, selectedOccurrence)
+      if (span) {
+        if (selectedOccurrence.isQuote) {
+          return { mentionRanges: [], quoteRanges: [span] }
+        }
+        return { mentionRanges: [span], quoteRanges: [] }
       }
     }
-    return resolveEvidenceSpansInArticle(body, readPersonFromRow(row))
-  }, [article?.body, selectedAnchor, displayMergedRows])
+    const active = recomputeOccurrenceSpans(
+      body,
+      occurrences.filter((o) => !o.suppressed && o.mentionText.trim()),
+    )
+    if (active.length > 0 && body) {
+      const mentionRanges: Array<{ start: number; end: number }> = []
+      const quoteRanges: Array<{ start: number; end: number }> = []
+      for (const occ of active) {
+        const span = resolveOccurrenceSpansInArticle(body, occ)
+        if (!span) continue
+        if (occ.isQuote) {
+          quoteRanges.push(span)
+        } else {
+          mentionRanges.push(span)
+        }
+      }
+      if (mentionRanges.length > 0 || quoteRanges.length > 0) {
+        return { mentionRanges, quoteRanges }
+      }
+    }
+    if (personEditing && fieldsDraft) {
+      return { mentionRanges: [], quoteRanges: [] }
+    }
+    const fallback = resolveEvidenceSpansInArticle(body, readPersonFromRow(row))
+    if (fallback.kind === 'ranges') {
+      return { mentionRanges: fallback.ranges, quoteRanges: [] }
+    }
+    return { mentionRanges: [], quoteRanges: [] }
+  }, [
+    article?.body,
+    selectedAnchor,
+    displayMergedRows,
+    personEditing,
+    fieldsDraft,
+    selectedOccurrenceClientId,
+  ])
 
-  const storyHighlightRanges =
-    storyHighlightResult.kind === 'ranges' ? storyHighlightResult.ranges : []
+  const storyMentionHighlightRanges = storyHighlightResult.mentionRanges
+  const storyQuoteHighlightRanges = storyHighlightResult.quoteRanges
 
-  const activeStoryHighlightRanges = useMemo(
+  const editableOccurrenceClientIds = useMemo(() => {
+    if (!personEditing || !fieldsDraft || !article?.body?.trim()) return undefined
+    const withSpans = recomputeOccurrenceSpans(
+      article.body,
+      fieldsDraft.occurrences.filter((o) => !o.suppressed),
+    )
+    const map: Record<string, string> = {}
+    for (const occ of withSpans) {
+      if (occ.startChar === null || occ.endChar === null) continue
+      map[`${occ.startChar}:${occ.endChar}`] = occ.clientId
+    }
+    return map
+  }, [personEditing, fieldsDraft, article?.body])
+
+  const addOccurrenceFromSelection = useCallback(
+    (selection: ArticleTextSelection, kind: 'mention' | 'quote') => {
+      if (!fieldsDraft) return
+      const maxOrder = fieldsDraft.occurrences.reduce(
+        (max, occ) => Math.max(max, occ.occurrenceOrder),
+        -1,
+      )
+      const clientId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `occ-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+      const trimmed = selection.text.trim()
+      const nextOccurrence: MentionOccurrenceDraft = {
+        clientId,
+        mentionText: trimmed,
+        quoteText: trimmed,
+        isQuote: kind === 'quote',
+        startChar: selection.start,
+        endChar: selection.end,
+        occurrenceOrder: maxOrder + 1,
+        suppressed: false,
+      }
+      setFieldsDraft({
+        ...fieldsDraft,
+        occurrences: [...fieldsDraft.occurrences, nextOccurrence],
+      })
+      setSelectedOccurrenceClientId(clientId)
+      setArticleTextSelection(null)
+      window.getSelection()?.removeAllRanges()
+    },
+    [fieldsDraft],
+  )
+
+  const removeOccurrenceClientId = useCallback(
+    (clientId: string) => {
+      if (!fieldsDraft) return
+      setSelectedOccurrenceClientId(null)
+      setFieldsDraft({
+        ...fieldsDraft,
+        occurrences: fieldsDraft.occurrences.map((occ) =>
+          occ.clientId === clientId ? { ...occ, suppressed: true } : occ,
+        ),
+      })
+    },
+    [fieldsDraft],
+  )
+
+  const activeStoryMentionHighlightRanges = useMemo(
     () =>
       addPersonSelection
         ? [
-            ...storyHighlightRanges,
+            ...storyMentionHighlightRanges,
             { start: addPersonSelection.start, end: addPersonSelection.end },
           ]
-        : storyHighlightRanges,
-    [addPersonSelection, storyHighlightRanges],
+        : storyMentionHighlightRanges,
+    [addPersonSelection, storyMentionHighlightRanges],
   )
 
   const ambientHighlightRanges = useMemo(() => {
+    if (personEditing) return []
     const body = typeof article?.body === 'string' ? article.body : ''
     if (!body.trim()) return []
     const needles: string[] = []
@@ -244,21 +343,28 @@ export function ProcessedItemPeopleVerificationSection({
       }
     }
     return findAllMentionOccurrencesInArticle(body, needles)
-  }, [article?.body, displayMergedRows])
+  }, [article?.body, displayMergedRows, personEditing])
 
   const mentionSpanHits = useMemo(() => {
     const body = typeof article?.body === 'string' ? article.body : ''
     if (!body) return []
+    const rows =
+      personEditing && selectedAnchor
+        ? displayMergedRows.filter((row) => getMergedRowAnchor(row) === selectedAnchor)
+        : displayMergedRows
     return buildOccurrenceSpanHits(
       body,
-      displayMergedRows
+      rows
         .map((row) => {
           const anchor = getMergedRowAnchor(row)
           if (!anchor) return null
-          const occs = readMentionOccurrencesFromRow({
-            location: readPersonFromRow(row),
-            mention_occurrences: row.mention_occurrences,
-          })
+          const occs =
+            personEditing && fieldsDraft && anchor === selectedAnchor
+              ? fieldsDraft.occurrences
+              : readMentionOccurrencesFromRow({
+                  location: readPersonFromRow(row),
+                  mention_occurrences: row.mention_occurrences,
+                })
           return {
             anchor,
             occurrences: recomputeOccurrenceSpans(body, occs),
@@ -269,17 +375,21 @@ export function ProcessedItemPeopleVerificationSection({
             entry !== null,
         ),
     )
-  }, [article?.body, displayMergedRows])
+  }, [article?.body, displayMergedRows, personEditing, fieldsDraft, selectedAnchor])
 
   const personLabelsByAnchor = useMemo(() => {
     const labels: Record<string, string> = {}
-    for (const row of displayMergedRows) {
+    const rows =
+      personEditing && selectedAnchor
+        ? displayMergedRows.filter((row) => getMergedRowAnchor(row) === selectedAnchor)
+        : displayMergedRows
+    for (const row of rows) {
       const anchor = getMergedRowAnchor(row)
       if (!anchor) continue
       labels[anchor] = personDisplayName(row)
     }
     return labels
-  }, [displayMergedRows])
+  }, [displayMergedRows, personEditing, selectedAnchor])
 
   const selectPersonAnchor = useCallback(
     (anchor: string) => {
@@ -308,8 +418,9 @@ export function ProcessedItemPeopleVerificationSection({
     setArticleTextSelection(null)
   }, [])
 
-  const exitAddPersonMode = useCallback(() => {
+  const cancelAddPersonWorkflow = useCallback(() => {
     setAddPersonMode(false)
+    setAddPersonSelection(null)
     setAwaitingAddPersonReselection(false)
     setArticleTextSelection(null)
     const sel = window.getSelection()
@@ -329,13 +440,13 @@ export function ProcessedItemPeopleVerificationSection({
   }, [addPersonSelection, awaitingAddPersonReselection, addPersonMode])
 
   useEffect(() => {
-    if (!addPersonMode) return
+    if (!addPersonWorkflowActive || addPersonSelection) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') exitAddPersonMode()
+      if (e.key === 'Escape') cancelAddPersonWorkflow()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [addPersonMode, exitAddPersonMode])
+  }, [addPersonWorkflowActive, addPersonSelection, cancelAddPersonWorkflow])
 
   useEffect(() => {
     if (!selectedAnchor) return
@@ -395,7 +506,12 @@ export function ProcessedItemPeopleVerificationSection({
     const persistedId = getMergedRowPersistedPersonId(selectedRow)
     setSaving(true)
     try {
-      const fragment = buildPersonEditOverlayPatch(fieldsDraft)
+      const body = typeof article?.body === 'string' ? article.body : ''
+      const occurrencesWithSpans = body
+        ? recomputeOccurrenceSpans(body, fieldsDraft.occurrences)
+        : fieldsDraft.occurrences
+      const fieldsForSave = { ...fieldsDraft, occurrences: occurrencesWithSpans }
+      const fragment = buildPersonEditOverlayPatch(fieldsForSave)
       if (persistedId !== null) {
         if (!projectSlug) {
           showError('This project does not have a slug configured for saving people.', {
@@ -414,6 +530,7 @@ export function ProcessedItemPeopleVerificationSection({
             role_in_story: fieldsDraft.roleInStory,
             nature: fieldsDraft.nature,
             public_figure: fieldsDraft.publicFigure,
+            sort_key: fieldsDraft.sortKey.trim() || null,
           },
           articleId,
         )
@@ -429,7 +546,7 @@ export function ProcessedItemPeopleVerificationSection({
       const normalized = normalizeOverlay(updated.overlay)
       setBaselineOverlay(normalized)
       setDraftOverlay(normalized)
-      setFieldsBaseline(fieldsDraft)
+      setFieldsBaseline(fieldsForSave)
       cancelPersonEdit()
       return true
     } catch {
@@ -447,6 +564,7 @@ export function ProcessedItemPeopleVerificationSection({
     fieldsDraft,
     catalogProjectSlug,
     articleId,
+    article?.body,
     draftOverlay,
     runId,
     item.id,
@@ -586,7 +704,7 @@ export function ProcessedItemPeopleVerificationSection({
     ],
   )
 
-  const canAddPerson = Boolean(article?.body?.trim()) && !addPersonWorkflowActive
+  const hasArticleBody = Boolean(article?.body?.trim())
 
   return (
     <div className="space-y-4">
@@ -597,11 +715,12 @@ export function ProcessedItemPeopleVerificationSection({
             Select a person to highlight their mentions, then choose Edit person to change details.
           </p>
         </div>
-        {canAddPerson ? (
+        {hasArticleBody ? (
           <Button
             type="button"
-            variant={addPersonMode ? 'secondary' : 'default'}
+            variant={addPersonMode ? 'outline' : 'default'}
             size="sm"
+            disabled={addPersonSelection !== null}
             onClick={() => {
               if (addPersonSelection) return
               if (articleTextSelection) {
@@ -609,14 +728,14 @@ export function ProcessedItemPeopleVerificationSection({
                 return
               }
               if (addPersonMode) {
-                exitAddPersonMode()
+                cancelAddPersonWorkflow()
                 return
               }
               setAddPersonMode(true)
             }}
           >
             {addPersonMode ? null : <Plus className="mr-2 h-4 w-4" />}
-            {addPersonMode ? 'Cancel adding person' : 'Add person'}
+            {addPersonMode ? 'Cancel' : 'Add person'}
           </Button>
         ) : null}
       </div>
@@ -643,7 +762,7 @@ export function ProcessedItemPeopleVerificationSection({
         <div
           className={cn(
             'min-h-0 overflow-y-auto rounded-md border p-2.5 text-sm',
-            addPersonMode
+            addPersonMode || personEditing
               ? 'border-primary/50 bg-primary/5 ring-2 ring-primary/20'
               : 'border-border bg-muted/30',
           )}
@@ -654,26 +773,79 @@ export function ProcessedItemPeopleVerificationSection({
             </p>
           ) : article?.body?.trim() ? (
             <>
-              {(addPersonMode || awaitingAddPersonReselection) ? (
+              {personEditing ? (
                 <p
                   className="mb-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-sm text-foreground"
                   role="status"
                 >
-                  {awaitingAddPersonReselection
-                    ? 'Highlight a new passage in the story for this person.'
-                    : 'Highlight the passage in the story that supports this person.'}
+                  Highlight to add a mention or quote. Hover and click X to remove.
                 </p>
+              ) : null}
+              {(addPersonMode || awaitingAddPersonReselection) ? (
+                <div
+                  className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2"
+                  role="status"
+                >
+                  <p className="text-sm text-foreground">
+                    {awaitingAddPersonReselection
+                      ? 'Highlight a new passage in the story for this person.'
+                      : 'Highlight the passage in the story that supports this person.'}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 px-2"
+                    onClick={() => {
+                      if (awaitingAddPersonReselection) {
+                        setAwaitingAddPersonReselection(false)
+                        setArticleTextSelection(null)
+                        window.getSelection()?.removeAllRanges()
+                        return
+                      }
+                      cancelAddPersonWorkflow()
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : null}
+              {(selectedAnchor && !addPersonMode && (personEditing || storyMentionHighlightRanges.length > 0 || storyQuoteHighlightRanges.length > 0)) ? (
+                <div
+                  className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground"
+                  role="note"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="inline-block h-3 w-6 rounded-sm border border-transparent bg-amber-200/90 dark:bg-amber-500/40"
+                    />
+                    Mention
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="inline-block h-3 w-6 rounded-sm border border-transparent bg-sky-200/90 dark:bg-sky-500/40"
+                    />
+                    Quote
+                  </span>
+                </div>
               ) : null}
               <ProcessedItemArticleBody
                 body={article.body}
                 ambientHighlights={ambientHighlightRanges}
-                highlights={activeStoryHighlightRanges}
-                scrollWhenKey={selectedAnchor}
+                highlights={activeStoryMentionHighlightRanges}
+                quoteHighlights={storyQuoteHighlightRanges}
+                scrollWhenKey={
+                  selectedAnchor
+                    ? `${selectedAnchor}:${selectedOccurrenceClientId ?? ''}`
+                    : null
+                }
                 mentionSpanHits={mentionSpanHits}
                 placeLabels={personLabelsByAnchor}
                 interactionMode={articleInteractionMode}
                 onSelectPlace={
-                  addPersonWorkflowActive ? undefined : selectPersonAnchor
+                  addPersonWorkflowActive || personEditing ? undefined : selectPersonAnchor
                 }
                 mentionChoicePrompt="Which person?"
                 onTextSelectionChange={(selection) => {
@@ -683,13 +855,28 @@ export function ProcessedItemPeopleVerificationSection({
                     handleBeginAddPerson(selection)
                   }
                 }}
+                activeTextSelection={personEditing ? articleTextSelection : null}
+                onAddOccurrenceFromSelection={
+                  personEditing ? addOccurrenceFromSelection : undefined
+                }
+                editableOccurrenceClientIds={editableOccurrenceClientIds}
+                selectedOccurrenceClientId={selectedOccurrenceClientId}
+                onSelectOccurrenceClientId={
+                  personEditing ? setSelectedOccurrenceClientId : undefined
+                }
+                onRemoveOccurrenceClientId={
+                  personEditing ? removeOccurrenceClientId : undefined
+                }
                 className={
-                  addPersonMode || awaitingAddPersonReselection ? 'cursor-text' : undefined
+                  addPersonMode || awaitingAddPersonReselection || personEditing
+                    ? 'cursor-text'
+                    : undefined
                 }
               />
               {selectedAnchor &&
-              storyHighlightRanges.length === 0 &&
-              storyHighlightResult.kind === 'none' &&
+              !personEditing &&
+              storyMentionHighlightRanges.length === 0 &&
+              storyQuoteHighlightRanges.length === 0 &&
               article.body.trim().length > 0 ? (
                 <p className="mt-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">
                   No matching passage was found in this story for this person.
@@ -715,12 +902,7 @@ export function ProcessedItemPeopleVerificationSection({
               const sel = window.getSelection()
               sel?.removeAllRanges()
             }}
-            onCancel={() => {
-              setAddPersonSelection(null)
-              setAwaitingAddPersonReselection(false)
-              setArticleTextSelection(null)
-              setAddPersonMode(false)
-            }}
+            onCancel={cancelAddPersonWorkflow}
             onCreated={(createdPayload) => {
               void handleAddPersonCreated(createdPayload)
             }}

@@ -17,6 +17,7 @@ from backfield_stylebook.canonical.policy import CanonicalPersistDecision
 from backfield_stylebook.entities.person import (
     allocate_unique_person_canonical_slug,
     decide_person_canonical_persist_plan,
+    derive_person_sort_key,
     link_substrate_to_canonical_atomic,
     link_to_existing_canonical,
     materialize_new_canonical_and_link,
@@ -81,6 +82,7 @@ def test_materialize_new_canonical_and_link_mirrors_fields() -> None:
             project_id=pid,
             name="John Smith",
             normalized_name="john smith",
+            sort_key="smith",
             title="Mayor",
             affiliation="City of Chicago",
             public_figure=True,
@@ -110,6 +112,7 @@ def test_materialize_new_canonical_and_link_mirrors_fields() -> None:
         assert canon.affiliation == "City of Chicago"
         assert canon.public_figure is True
         assert canon.person_type == "politician"
+        assert canon.sort_key == "smith"
         aliases = session.exec(
             select(StylebookPersonAlias).where(
                 StylebookPersonAlias.person_canonical_id == str(canon.id)
@@ -339,3 +342,10 @@ def test_rank_canonical_suggestions_prefers_exact_alias() -> None:
         )
         assert ranked
         assert ranked[0][0] == str(exact.id)
+
+
+def test_derive_person_sort_key_uses_last_name() -> None:
+    assert derive_person_sort_key("Jane Doe") == "doe"
+    assert derive_person_sort_key("Madonna") == "madonna"
+    assert derive_person_sort_key("Jane Doe", explicit="Custom") == "custom"
+    assert derive_person_sort_key("Jane Doe", name_last="Doe") == "doe"

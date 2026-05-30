@@ -132,8 +132,7 @@ export function ProcessedItemPeopleEditor({
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-1.5">
           {linkedStylebook ? (
             <p className="text-xs text-muted-foreground">
-              This person is linked to Stylebook. Changes here update this story&apos;s saved
-              person; the catalog record does not change from this tab.
+              Edits here do not affect this person&apos;s canonical record in Stylebook.
             </p>
           ) : null}
           {reviewOnly ? (
@@ -143,7 +142,21 @@ export function ProcessedItemPeopleEditor({
             </p>
           ) : null}
           {fieldsDraft ? (
-            <PersonEditForm fields={fieldsDraft} disabled={saving} onChange={onFieldsChange} />
+            <>
+              <p className="text-xs text-muted-foreground">
+                {fieldsDraft.occurrences.filter((o) => !o.suppressed && !o.isQuote).length} mention
+                {fieldsDraft.occurrences.filter((o) => !o.suppressed && !o.isQuote).length !== 1
+                  ? 's'
+                  : ''}
+                ,{' '}
+                {fieldsDraft.occurrences.filter((o) => !o.suppressed && o.isQuote).length} quote
+                {fieldsDraft.occurrences.filter((o) => !o.suppressed && o.isQuote).length !== 1
+                  ? 's'
+                  : ''}{' '}
+                in the story. Edit them in the story pane.
+              </p>
+              <PersonEditForm fields={fieldsDraft} disabled={saving} onChange={onFieldsChange} />
+            </>
           ) : null}
         </div>
       ) : (

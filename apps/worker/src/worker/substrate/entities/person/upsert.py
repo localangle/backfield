@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstratePerson
-from backfield_stylebook.entities.person.types import person_identity_fingerprint
+from backfield_stylebook.entities.person.types import (
+    derive_person_sort_key,
+    person_identity_fingerprint,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -68,6 +71,11 @@ def _fetch_substrate_person_after_unique_violation(
     ).first()
 
 
+def _sort_key_from_entry(entry: dict[str, Any], display_name: str) -> str | None:
+    explicit = _optional_text(entry.get("sort_key"))
+    return derive_person_sort_key(display_name, explicit=explicit)
+
+
 def _apply_substrate_person_merge(
     person: SubstratePerson,
     *,
@@ -77,6 +85,7 @@ def _apply_substrate_person_merge(
     affiliation: str | None,
     public_figure: bool,
     person_type: str | None,
+    sort_key: str | None,
     status: str,
     fingerprint: str,
     details: dict[str, Any],
@@ -88,6 +97,7 @@ def _apply_substrate_person_merge(
     person.affiliation = affiliation
     person.public_figure = public_figure
     person.person_type = person_type or person.person_type
+    person.sort_key = sort_key
     person.status = status
     person.identity_fingerprint = fingerprint
     person.source_kind = "person_extract"
@@ -117,6 +127,7 @@ def _upsert_person(
     affiliation = _optional_text(entry.get("affiliation"))
     public_figure = bool(entry.get("public_figure"))
     person_type = _person_type_from_entry(entry)
+    sort_key = _sort_key_from_entry(entry, display_name)
     fingerprint = person_identity_fingerprint(
         normalized_name=normalized,
         title=title,
@@ -149,6 +160,7 @@ def _upsert_person(
             affiliation=affiliation,
             public_figure=public_figure,
             person_type=person_type,
+            sort_key=sort_key,
             status=status,
             identity_fingerprint=fingerprint,
             source_kind="person_extract",
@@ -177,6 +189,7 @@ def _upsert_person(
                 affiliation=affiliation,
                 public_figure=public_figure,
                 person_type=person_type,
+                sort_key=sort_key,
                 status=status,
                 fingerprint=fingerprint,
                 details=details,
@@ -198,6 +211,7 @@ def _upsert_person(
         affiliation=affiliation,
         public_figure=public_figure,
         person_type=person_type,
+        sort_key=sort_key,
         status=status,
         fingerprint=fingerprint,
         details=details,
