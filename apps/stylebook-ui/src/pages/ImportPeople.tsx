@@ -52,8 +52,6 @@ type PersonPreview = {
 const MAPPING_FIELDS: { key: keyof PersonCsvFieldMappings; label: string; required?: boolean }[] = [
   { key: "label", label: "Name" },
   { key: "full_name", label: "Full name (alternative to name)" },
-  { key: "first_name", label: "First name" },
-  { key: "last_name", label: "Last name" },
   { key: "title", label: "Title" },
   { key: "affiliation", label: "Affiliation" },
   { key: "person_type", label: "Type" },

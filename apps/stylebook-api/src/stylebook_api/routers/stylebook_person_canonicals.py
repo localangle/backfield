@@ -536,7 +536,7 @@ def delete_canonical_person(
     sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
-    require_org_admin(session, auth)
+    require_org_admin(session, auth, int(sb.organization_id))
     try:
         canon_uuid = UUID(canonical_id)
     except ValueError as e:
