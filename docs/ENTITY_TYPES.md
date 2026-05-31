@@ -44,7 +44,7 @@ Implementation hub: [`packages/backfield-stylebook/src/backfield_stylebook/full_
 
 1. **Schema (issue 01):** `stylebook_<type>_canonical` table + migration.
 2. **Persist (issue 02):** `create_standalone_canonical`, slug allocator, export dict helper (`<type>_canonical_to_export_dict`).
-3. **Manual create + list UI (issue 03):** `Create<Type>.tsx` using `CreateCanonicalShell` + `createCanonicalFormClasses` (see [`FRONTEND.md`](FRONTEND.md)), list **Create** button, `POST …/canonical-<type>`.
+3. **Manual create + list UI (issue 03):** `Create<Type>.tsx` using `CreateCanonicalShell` + `createCanonicalFormClasses` (see [`FRONTEND.md`](FRONTEND.md)), list **Create** button, `POST …/canonical-<type>`, canonical list page with standard filters (`**q**`, type, project scope, `**min_mentions**`, sort, pagination in URL — see [`FRONTEND.md`](FRONTEND.md) → **Canonical list URL state**).
 4. **CSV import (issue 03+):** `Csv<Type>Importer`, analyze/run routes, `Import<Type>` wizard (non-geographic types use CSV only).
 5. **Bundle transfer (same issue or follow-up):** export iterator + import row handler + manifest kind constant; extend tests in `tests/stylebook/test_full_bundle_roundtrip.py`.
 6. **Docs:** Update this table, [`API.md`](API.md), [`OPERATIONS.md`](OPERATIONS.md) bundle bullets.

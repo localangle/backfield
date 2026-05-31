@@ -75,7 +75,7 @@ Ask in this order (skip N/A):
 7. **Consolidated JSON key** — Confirm registry entry (default: plural of slug; `location` → `places` is legacy only)
 8. **Extract output shape** — Per-entity and per-mention fields the `<Type>Extract` node must emit
 9. **Mention fields** — Shared vs type-specific (`role_in_story`, `nature`, review flags)
-10. **Stylebook UI** — List columns, filters, candidate clustering behavior
+10. **Stylebook UI** — List columns, filters (include **Minimum mentions** + project scope + URL query sync per [`FRONTEND.md`](../../docs/FRONTEND.md)), candidate clustering behavior
 11. **API quirks** — Anything beyond standard list / detail / candidates / meta
 12. **Agate review tab** — Enabled? List vs edit vs link-to-Stylebook actions (planned in late issue)
 13. **Connection pairs** — New allowed edges in `stylebook_connections` (see `connections_utils.py`)
@@ -134,7 +134,7 @@ Break the PRD into issues via [`prd-to-issues`](../prd-to-issues/SKILL.md). Stan
 |-------|-------|------------|
 | **01** | Type-specific schema (Alembic migration) | Issue 00 foundation |
 | **02** | `backfield_stylebook/entities/<type>/` persist + link | 01 |
-| **03** | stylebook-api routers + stylebook-ui `entityConfigs/<type>.ts` | 02 |
+| **03** | stylebook-api routers + stylebook-ui `entityConfigs/<type>.ts` + canonical list page (`<Type>s.tsx` or equivalent) with standard list filters including `min_mentions` | 02 |
 | **04** | Worker `substrate/entities/<type>/` + orchestration handler registration | 01 |
 | **05** | `<Type>Extract` Agate node + smoke graph | 04 |
 | **06** | Agate review (agate-api + agate-ui tab) | 05 |

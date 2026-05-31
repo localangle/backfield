@@ -49,8 +49,9 @@ function parseCanonicalListSearchParams(sp: URLSearchParams) {
   const publicFigureRaw = sp.get("public_figure") ?? "all"
   const titleFilter = (sp.get("title") ?? "").trim()
   const affiliationFilter = (sp.get("affiliation") ?? "").trim()
+  const minMentions = Math.max(0, parseInt(sp.get("min_mentions") ?? "0", 10) || 0)
   const page = Math.max(1, parseInt(sp.get("page") ?? "1", 10) || 1)
-  return { q, typeFilter, typeFilterParam, sortBy, publicFigureRaw, titleFilter, affiliationFilter, page }
+  return { q, typeFilter, typeFilterParam, sortBy, publicFigureRaw, titleFilter, affiliationFilter, minMentions, page }
 }
 
 export default function People() {
@@ -76,6 +77,7 @@ export default function People() {
     publicFigureRaw,
     titleFilter,
     affiliationFilter,
+    minMentions,
     page: currentPage,
   } = listArgs
 
@@ -261,6 +263,19 @@ export default function People() {
     [setSearchParams],
   )
 
+  const setMinMentionsParam = useCallback(
+    (n: number) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        if (n <= 0) next.delete("min_mentions")
+        else next.set("min_mentions", String(n))
+        next.delete("page")
+        return next
+      })
+    },
+    [setSearchParams],
+  )
+
   const loadCanonicals = async (
     slug: string,
     q?: string,
@@ -268,6 +283,9 @@ export default function People() {
     tf?: string,
     listSort: CanonicalPersonListSort = "sort_key",
     publicFigure?: boolean,
+    mentionsMin: number = 0,
+    title?: string,
+    affiliation?: string,
   ) => {
     try {
       setLoading(true)
@@ -279,7 +297,13 @@ export default function People() {
         offset,
         tf,
         projectFilterSlug || undefined,
-        { sort: listSort, publicFigure },
+        {
+          sort: listSort,
+          publicFigure,
+          minMentions: mentionsMin,
+          title,
+          affiliation,
+        },
       )
       setCanonicals(data.canonicals)
       setTotal(data.total)
@@ -301,6 +325,9 @@ export default function People() {
       typeFilterParam,
       sortBy,
       publicFigureFilter,
+      minMentions,
+      titleFilter || undefined,
+      affiliationFilter || undefined,
     )
   }, [
     currentPage,
@@ -310,22 +337,10 @@ export default function People() {
     projectFilterSlug,
     sortBy,
     publicFigureFilter,
+    minMentions,
     titleFilter,
     affiliationFilter,
   ])
-
-  const filteredCanonicals = useMemo(() => {
-    let rows = canonicals
-    if (titleFilter) {
-      const needle = titleFilter.toLowerCase()
-      rows = rows.filter((c) => (c.title ?? "").toLowerCase().includes(needle))
-    }
-    if (affiliationFilter) {
-      const needle = affiliationFilter.toLowerCase()
-      rows = rows.filter((c) => (c.affiliation ?? "").toLowerCase().includes(needle))
-    }
-    return rows
-  }, [canonicals, titleFilter, affiliationFilter])
 
   return (
     <div className="container mx-auto p-6">
@@ -434,6 +449,26 @@ export default function People() {
                 </Select>
               </div>
               <div>
+                <Label htmlFor="min-mentions">Minimum mentions</Label>
+                <Input
+                  id="min-mentions"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={minMentions === 0 ? "" : String(minMentions)}
+                  placeholder="0"
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    if (raw === "") {
+                      setMinMentionsParam(0)
+                      return
+                    }
+                    const n = parseInt(raw, 10)
+                    if (!Number.isNaN(n) && n >= 0) setMinMentionsParam(n)
+                  }}
+                />
+              </div>
+              <div>
                 <Label>Sort by</Label>
                 <Select
                   value={sortBy}
@@ -457,7 +492,7 @@ export default function People() {
             <div className="flex justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : filteredCanonicals.length === 0 ? (
+          ) : canonicals.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-muted-foreground">
                 No canonical people in this Stylebook yet
@@ -487,7 +522,7 @@ export default function People() {
                 </div>
               )}
               <div className="grid gap-4">
-                {filteredCanonicals.map((c) => (
+                {canonicals.map((c) => (
                   <Card key={c.id}>
                     <CardHeader>
                       <div className="flex items-start justify-between">
@@ -598,6 +633,9 @@ export default function People() {
                     typeFilterParam,
                     sortBy,
                     publicFigureFilter,
+                    minMentions,
+                    titleFilter || undefined,
+                    affiliationFilter || undefined,
                   )
                 } catch (error) {
                   console.error("Failed to delete canonical person:", error)

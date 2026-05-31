@@ -73,6 +73,12 @@ def test_list_canonical_people_empty(client: TestClient) -> None:
     assert body["total"] == 0
 
 
+def test_stylebook_canonical_people_min_mentions(editor_client: TestClient) -> None:
+    r = editor_client.get("/v1/stylebooks/default/canonical-people?min_mentions=1")
+    assert r.status_code == 200
+    assert r.json().get("canonicals") == []
+
+
 def test_list_canonical_people_stylebook_scoped(
     editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
@@ -100,6 +106,45 @@ def test_list_canonical_people_stylebook_scoped(
     body = r.json()
     assert body["total"] == 1
     assert body["canonicals"][0]["label"] == "Governor Example"
+
+
+def test_stylebook_canonical_people_title_filter(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        stylebook = s.get(Stylebook, sb_id)
+        assert stylebook is not None
+        s.add(
+            StylebookPersonCanonical(
+                stylebook_id=sb_id,
+                label="Jane Doe",
+                slug="jane-doe",
+                title="Mayor",
+                status="active",
+            )
+        )
+        s.add(
+            StylebookPersonCanonical(
+                stylebook_id=sb_id,
+                label="John Smith",
+                slug="john-smith",
+                title="CEO",
+                status="active",
+            )
+        )
+        s.commit()
+        slug = str(stylebook.slug)
+
+    r = editor_client.get(
+        f"/v1/stylebooks/{slug}/canonical-people?title_filter=Mayor",
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert [row["label"] for row in body["canonicals"]] == ["Jane Doe"]
 
 
 def test_person_candidates_lists_unlinked_substrate(

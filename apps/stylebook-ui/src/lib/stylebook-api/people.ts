@@ -52,6 +52,10 @@ export type CanonicalPersonListFilters = {
   minMentions?: number
   sort?: CanonicalPersonListSort
   publicFigure?: boolean
+  /** Case-insensitive substring match on canonical title. */
+  title?: string
+  /** Case-insensitive substring match on canonical affiliation. */
+  affiliation?: string
   /** Editorial mention nature filter when supported by the API. */
   nature?: string
 }
@@ -75,6 +79,10 @@ export async function listCanonicalPeople(
   if (sort !== "sort_key") params.append("sort", sort)
   if (options?.publicFigure === true) params.append("public_figure", "true")
   if (options?.publicFigure === false) params.append("public_figure", "false")
+  const title = options?.title?.trim()
+  if (title) params.append("title_filter", title)
+  const affiliation = options?.affiliation?.trim()
+  if (affiliation) params.append("affiliation_filter", affiliation)
   if (options?.nature && options.nature !== "all") params.append("nature", options.nature)
   params.append("limit", limit.toString())
   params.append("offset", offset.toString())

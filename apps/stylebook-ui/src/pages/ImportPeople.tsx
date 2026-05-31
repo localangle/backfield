@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { parseCsvRows } from "@/lib/parseCsv"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { AlertCircle, CheckCircle2, Loader2, Trash2 } from "lucide-react"
 
@@ -50,8 +51,7 @@ type PersonPreview = {
 }
 
 const MAPPING_FIELDS: { key: keyof PersonCsvFieldMappings; label: string; required?: boolean }[] = [
-  { key: "label", label: "Name" },
-  { key: "full_name", label: "Full name (alternative to name)" },
+  { key: "label", label: "Name", required: true },
   { key: "title", label: "Title" },
   { key: "affiliation", label: "Affiliation" },
   { key: "person_type", label: "Type" },
@@ -59,21 +59,11 @@ const MAPPING_FIELDS: { key: keyof PersonCsvFieldMappings; label: string; requir
   { key: "sort_key", label: "Sort key" },
 ]
 
-function parseCsvRows(csvContent: string): Record<string, string>[] {
-  const lines = csvContent.split(/\r?\n/).filter((line) => line.trim())
-  if (lines.length === 0) return []
-  const headers = lines[0]!.split(",").map((h) => h.trim().replace(/^"|"$/g, ""))
-  const rows: Record<string, string>[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const values = lines[i]!.split(",").map((v) => v.trim().replace(/^"|"$/g, ""))
-    const row: Record<string, string> = {}
-    headers.forEach((header, idx) => {
-      row[header] = values[idx] ?? ""
-    })
-    if (Object.values(row).some((v) => v.trim())) rows.push(row)
-  }
-  return rows
-}
+const CSV_PASTE_PLACEHOLDER = [
+  "name,title,affiliation,type,public_figure,sort_key",
+  'Daniel La Spata,Alderman,"1st Ward, Chicago",Politician,true,La Spata',
+  "Jane Doe,Mayor,City Hall,official,true,Doe",
+].join("\n")
 
 function suggestFieldMappings(columns: string[]): PersonCsvFieldMappings {
   const suggestions: PersonCsvFieldMappings = {}
@@ -86,12 +76,9 @@ function suggestFieldMappings(columns: string[]): PersonCsvFieldMappings {
       suggestions.last_name = col
     }
     if (
-      !suggestions.full_name &&
-      (lower === "name" || lower === "full_name" || lower.includes("full"))
+      !suggestions.label &&
+      (lower === "name" || lower === "label" || lower === "full_name")
     ) {
-      suggestions.full_name = col
-    }
-    if (!suggestions.label && lower === "label") {
       suggestions.label = col
     }
     if (!suggestions.title && (lower === "title" || lower.includes("job"))) {
@@ -133,8 +120,6 @@ function derivePreviewLabel(
 ): string {
   const label = readMappedValue(row, mappings, "label")
   if (label) return label
-  const fullName = readMappedValue(row, mappings, "full_name")
-  if (fullName) return fullName
   const first = readMappedValue(row, mappings, "first_name")
   const last = readMappedValue(row, mappings, "last_name")
   if (first && last) return `${first} ${last}`.trim()
@@ -375,7 +360,7 @@ export default function ImportPeople() {
                 <Textarea
                   value={csvText}
                   onChange={(e) => setCsvText(e.target.value)}
-                  placeholder={"name,title,affiliation\nJane Doe,Mayor,City Hall"}
+                  placeholder={CSV_PASTE_PLACEHOLDER}
                   className="mt-2 min-h-[240px] font-mono text-sm"
                   disabled={!canEdit}
                 />
@@ -444,6 +429,7 @@ export default function ImportPeople() {
                       <TableHead>Title</TableHead>
                       <TableHead>Affiliation</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead>Sort key</TableHead>
                       <TableHead>Public figure</TableHead>
                       <TableHead className="w-16" />
                     </TableRow>
@@ -458,6 +444,7 @@ export default function ImportPeople() {
                         <TableCell>{preview.title || "—"}</TableCell>
                         <TableCell>{preview.affiliation || "—"}</TableCell>
                         <TableCell>{preview.person_type || "—"}</TableCell>
+                        <TableCell>{preview.sort_key || "—"}</TableCell>
                         <TableCell>{preview.public_figure ? "Yes" : "No"}</TableCell>
                         <TableCell>
                           <Button

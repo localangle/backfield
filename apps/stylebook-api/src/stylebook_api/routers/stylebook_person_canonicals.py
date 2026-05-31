@@ -97,6 +97,8 @@ def _canonical_filters(
     type_filter: str | None,
     public_figure: bool | None,
     nature: str | None,
+    title_filter: str | None = None,
+    affiliation_filter: str | None = None,
     project_ids: list[int],
 ) -> list[ColumnElement[bool]]:
     filters: list[ColumnElement[bool]] = [StylebookPersonCanonical.stylebook_id == stylebook_id]
@@ -111,6 +113,14 @@ def _canonical_filters(
             filters.append(col(StylebookPersonCanonical.person_type) == tf)
     if public_figure is not None:
         filters.append(StylebookPersonCanonical.public_figure == public_figure)
+    title_text = (title_filter or "").strip()
+    if title_text:
+        esc = _escape_ilike_metacharacters(title_text)
+        filters.append(col(StylebookPersonCanonical.title).ilike(f"%{esc}%", escape="\\"))
+    affiliation_text = (affiliation_filter or "").strip()
+    if affiliation_text:
+        esc = _escape_ilike_metacharacters(affiliation_text)
+        filters.append(col(StylebookPersonCanonical.affiliation).ilike(f"%{esc}%", escape="\\"))
     if nature is not None:
         nf = nature.strip()
         if nf:
@@ -244,6 +254,14 @@ def list_canonical_people(
     q: str | None = None,
     type_filter: str | None = Query(None),
     public_figure: bool | None = Query(None),
+    title_filter: str | None = Query(
+        None,
+        description="Case-insensitive substring match on title.",
+    ),
+    affiliation_filter: str | None = Query(
+        None,
+        description="Case-insensitive substring match on affiliation.",
+    ),
     nature: str | None = Query(
         None,
         description="Filter to canonicals with at least one linked mention of this nature.",
@@ -278,6 +296,8 @@ def list_canonical_people(
         type_filter=type_filter,
         public_figure=public_figure,
         nature=nature,
+        title_filter=title_filter,
+        affiliation_filter=affiliation_filter,
         project_ids=project_ids,
     )
     if min_mentions > 0:
