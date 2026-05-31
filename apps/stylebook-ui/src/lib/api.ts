@@ -68,11 +68,16 @@ export {
 } from "@/lib/stylebook-api/stats-stub"
 
 export {
+  type AnalyzeCsvResponse,
   type AnalyzeGeoJsonResponse,
+  analyzeImportCsvPeople,
   analyzeImportGeoJson,
+  type ImportCsvResponse,
   type ImportGeoJsonMetaPropertyMapping,
   type ImportGeoJsonResponse,
+  importCsvPeople,
   importGeoJson,
+  type PersonCsvFieldMappings,
 } from "@/lib/stylebook-api/imports"
 export {
   type AcceptPersonCandidateBody,

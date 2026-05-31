@@ -248,6 +248,7 @@ export async function createCanonicalPerson(
     affiliation?: string | null
     person_type?: string | null
     public_figure?: boolean
+    sort_key?: string | null
   },
   projectFilterSlug?: string,
 ): Promise<CanonicalPerson> {

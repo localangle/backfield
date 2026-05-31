@@ -23,7 +23,9 @@ import LocationCandidates from "@/pages/LocationCandidates"
 import People from "@/pages/People"
 import PersonCandidates from "@/pages/PersonCandidates"
 import PersonDetail from "@/pages/PersonDetail"
+import CreatePerson from "@/pages/CreatePerson"
 import ImportLocations from "@/pages/ImportLocations"
+import ImportPeople from "@/pages/ImportPeople"
 import StubPage from "@/pages/StubPage"
 
 function ProtectedLayout() {
@@ -165,6 +167,14 @@ export default function App() {
               element={<LegacyPersonCanonicalDetailRedirect />}
             />
             <Route
+              path="/people/create"
+              element={<LegacyStylebookNavigate tail="/people/create" />}
+            />
+            <Route
+              path="/import/people"
+              element={<LegacyStylebookNavigate tail="/import/people" />}
+            />
+            <Route
               path="/organizations/candidates"
               element={<LegacyStylebookNavigate tail="/organizations/candidates" />}
             />
@@ -184,6 +194,8 @@ export default function App() {
               <Route path="people/candidates" element={<PersonCandidates />} />
               <Route path="people/canonical" element={<People />} />
               <Route path="people/canonical/:id" element={<PersonDetail />} />
+              <Route path="people/create" element={<CreatePerson />} />
+              <Route path="import/people" element={<ImportPeople />} />
               <Route
                 path="organizations/candidates"
                 element={<StubPage title="Organization candidates" />}

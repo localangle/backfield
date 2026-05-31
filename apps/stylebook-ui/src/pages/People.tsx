@@ -344,6 +344,12 @@ export default function People() {
           <Link to={`${catalogBasePath}/people/candidates${filterScopeSuffix}`}>
             <Button variant="outline">Candidates</Button>
           </Link>
+          <Link to={`${catalogBasePath}/people/create${filterScopeSuffix}`}>
+            <Button variant="outline">Create</Button>
+          </Link>
+          <Link to={`${catalogBasePath}/import/people${filterScopeSuffix}`}>
+            <Button variant="outline">Import</Button>
+          </Link>
         </div>
       </div>
 

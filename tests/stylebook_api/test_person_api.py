@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from backfield_db import (
     BackfieldProject,
     BackfieldProjectMembership,
@@ -448,3 +449,127 @@ def test_canonical_person_mentions_and_stylebook_meta(
     assert r_meta.status_code == 200
     assert r_meta.json()["count"] == 1
     assert r_meta.json()["meta"][0]["meta_type"] == "note"
+
+
+def test_stylebook_scoped_csv_people_import_requires_editor(member_client: TestClient) -> None:
+    r = member_client.post(
+        "/v1/stylebooks/default/import/csv/people/analyze",
+        json={"csv_data": "label\nJane Doe\n"},
+    )
+    assert r.status_code == 403
+
+
+def test_import_csv_people_analyze_returns_columns(editor_client: TestClient) -> None:
+    csv_data = "full_name,title,affiliation\nJane Doe,Mayor,City Hall\nJohn Smith,CEO,Acme\n"
+    r = editor_client.post(
+        "/v1/stylebooks/default/import/csv/people/analyze",
+        json={"csv_data": csv_data},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["row_count"] == 2
+    assert body["available_columns"] == ["affiliation", "full_name", "title"]
+    assert body["sample_row"]["full_name"] == "Jane Doe"
+
+
+def test_import_csv_people_analyze_rejects_malformed(editor_client: TestClient) -> None:
+    r = editor_client.post(
+        "/v1/stylebooks/default/import/csv/people/analyze",
+        json={"csv_data": ""},
+    )
+    assert r.status_code == 400
+
+
+def test_import_csv_people_creates_canonicals(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    csv_data = (
+        "full_name,title,affiliation,public_figure,person_type,sort_key\n"
+        "Jane Doe,Mayor,City Hall,true,official,doe\n"
+        "John Smith,CEO,Acme Corp,false,individual,smith\n"
+    )
+    r = editor_client.post(
+        "/v1/stylebooks/default/import/csv/people",
+        json={
+            "csv_data": csv_data,
+            "field_mappings": {
+                "full_name": "full_name",
+                "title": "title",
+                "affiliation": "affiliation",
+                "public_figure": "public_figure",
+                "person_type": "person_type",
+                "sort_key": "sort_key",
+            },
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total_rows"] == 2
+    assert body["created_count"] == 2
+    assert body["failed_count"] == 0
+    labels = {row["label"] for row in body["created"]}
+    assert labels == {"Jane Doe", "John Smith"}
+
+    with Session(stylebook_test_engine) as s:
+        people = s.exec(select(StylebookPersonCanonical)).all()
+        assert len(people) == 2
+        jane = next(p for p in people if p.label == "Jane Doe")
+        assert jane.title == "Mayor"
+        assert jane.affiliation == "City Hall"
+        assert jane.public_figure is True
+        assert jane.person_type == "official"
+        assert jane.sort_key == "doe"
+        substrates = s.exec(select(SubstratePerson)).all()
+        assert substrates == []
+
+
+def test_import_csv_people_partial_failure(
+    editor_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stylebook_api.imports.csv_people as csv_people_mod
+
+    original = csv_people_mod.create_standalone_canonical
+    calls = {"n": 0}
+
+    def _flaky_create(*args: object, **kwargs: object) -> object:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise ValueError("simulated row failure")
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(csv_people_mod, "create_standalone_canonical", _flaky_create)
+
+    csv_data = "full_name\nAlice One\nBob Two\nCarol Three\n"
+    r = editor_client.post(
+        "/v1/stylebooks/default/import/csv/people",
+        json={"csv_data": csv_data, "field_mappings": {"full_name": "full_name"}},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["created_count"] == 2
+    assert body["failed_count"] == 1
+    assert len(body["failed"]) == 1
+    assert body["failed"][0]["row_index"] == 1
+
+
+def test_import_csv_people_duplicate_labels_create_two(
+    editor_client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    csv_data = "full_name\nJane Doe\nJane Doe\n"
+    r = editor_client.post(
+        "/v1/stylebooks/default/import/csv/people",
+        json={"csv_data": csv_data, "field_mappings": {"full_name": "full_name"}},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["created_count"] == 2
+    ids = {row["canonical_id"] for row in body["created"]}
+    assert len(ids) == 2
+
+    with Session(stylebook_test_engine) as s:
+        people = s.exec(
+            select(StylebookPersonCanonical).where(StylebookPersonCanonical.label == "Jane Doe")
+        ).all()
+        assert len(people) == 2
+        slugs = {p.slug for p in people}
+        assert len(slugs) == 2

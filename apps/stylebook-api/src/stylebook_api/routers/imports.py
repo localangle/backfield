@@ -23,6 +23,13 @@ from stylebook_api.helpers.project_scope import (
 from stylebook_api.helpers.project_scope import (
     require_stylebook_id as _require_stylebook_id,
 )
+from stylebook_api.imports.csv_models import (
+    AnalyzeCsvResponse,
+    ImportCsvAnalyzeRequest,
+    ImportCsvRequest,
+    ImportCsvResponse,
+)
+from stylebook_api.imports.csv_people import CsvPeopleImporter
 from stylebook_api.imports.registry import get_importer, register_importer
 from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import require_stylebook_by_slug_in_auth_org
@@ -366,6 +373,7 @@ class _GeoJsonLocationsImporter:
 
 
 register_importer(_GeoJsonLocationsImporter())
+register_importer(CsvPeopleImporter())
 
 
 @router.post("/geojson/analyze", response_model=AnalyzeGeoJSONResponse)
@@ -616,5 +624,52 @@ def import_geojson_stylebook(
         failed_count=len(failed),
         created=created,
         failed=failed,
+    )
+
+
+@stylebook_router.post(
+    "/{stylebook_slug}/import/csv/people/analyze",
+    response_model=AnalyzeCsvResponse,
+)
+def analyze_csv_people_stylebook(
+    stylebook_slug: str,
+    payload: ImportCsvAnalyzeRequest = Body(...),
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> AnalyzeCsvResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    if request is None:
+        raise HTTPException(status_code=500, detail="request missing")
+    _enforce_request_size_limit(request, approx_payload={"csv_data": payload.csv_data})
+    _ = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    imp = get_importer("csv", "people")
+    return imp.analyze(payload=payload, request=request)
+
+
+@stylebook_router.post(
+    "/{stylebook_slug}/import/csv/people",
+    response_model=ImportCsvResponse,
+)
+def import_csv_people_stylebook(
+    stylebook_slug: str,
+    payload: ImportCsvRequest = Body(...),
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> ImportCsvResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    if request is None:
+        raise HTTPException(status_code=500, detail="request missing")
+    _enforce_request_size_limit(request, approx_payload={"csv_data": payload.csv_data})
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    imp = get_importer("csv", "people")
+    return imp.run(
+        stylebook_id=int(sb.id),
+        payload=payload,
+        session=session,
+        request=request,
     )
 

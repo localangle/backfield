@@ -14,11 +14,13 @@ When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/s
 | Type | Slug (`EntityType`) | Status |
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
-| Person | `person` | Full stack including PersonExtract node and Agate people review tab |
+| Person | `person` | Full stack including PersonExtract node, Agate people review tab, Stylebook manual create + CSV import |
 | Organization | `organization` | Stub — planned via add-entity-type skill |
 | Work | `work` | Stub — planned via add-entity-type skill |
 
 Folder names in Python packages use these slugs (`location`, not `place`). Pipeline JSON may still use `places` in Geocode output; that is product vocabulary, not package naming.
+
+**Catalog create/import:** locations use GeoJSON import; non-geographic types use CSV import via the shared `stylebook_api/imports/` registry (`csv` + entity slug). Person CSV import and manual create ship today; organization and work CSV importers register when those entity types are added (`add-entity-type` skill).
 
 Registry source of truth: `packages/backfield-stylebook/src/backfield_stylebook/entity_types.py`.
 
