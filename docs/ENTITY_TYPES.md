@@ -14,15 +14,42 @@ When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/s
 | Type | Slug (`EntityType`) | Status |
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
-| Person | `person` | Full stack including PersonExtract node, Agate people review tab, Stylebook manual create + CSV import |
+| Person | `person` | Full stack including PersonExtract node, Agate people review tab, Stylebook manual create, CSV import, and bundle export/import |
 | Organization | `organization` | Stub — planned via add-entity-type skill |
 | Work | `work` | Stub — planned via add-entity-type skill |
 
 Folder names in Python packages use these slugs (`location`, not `place`). Pipeline JSON may still use `places` in Geocode output; that is product vocabulary, not package naming.
 
-**Catalog create/import:** locations use GeoJSON import; non-geographic types use CSV import via the shared `stylebook_api/imports/` registry (`csv` + entity slug). Person CSV import and manual create ship today; organization and work CSV importers register when those entity types are added (`add-entity-type` skill).
+**Catalog create / import / export:** Stylebook catalog rows can be added manually, bulk-imported, or copied via org-admin ZIP bundles. See **Stylebook catalog transfer** below. Registry for CSV importers: `stylebook_api/imports/` (`csv` + entity slug).
 
 Registry source of truth: `packages/backfield-stylebook/src/backfield_stylebook/entity_types.py`.
+
+## Stylebook catalog transfer (create, import, export)
+
+Org-admin **Export** / **Import** (Agate **Manage stylebooks**, `worker.tasks.export_stylebook_bundle` / `import_stylebook_bundle`) copies **canonical rows only** — no aliases, meta, connections, substrate, or candidate queues. New UUIDs are assigned on import.
+
+Implementation hub: [`packages/backfield-stylebook/src/backfield_stylebook/full_bundle.py`](../packages/backfield-stylebook/src/backfield_stylebook/full_bundle.py). Manifest **`schema_version`** is **3** for new exports; import accepts **1**, **2**, or **3**.
+
+| Concern | Location | Person | Organization / work (future) |
+|---------|----------|--------|------------------------------|
+| **Manual create (UI)** | `…/locations/create` → `POST …/canonical-locations` or legacy `POST /v1/locations` | `…/people/create` → `POST …/canonical-people` | Add `…/<type>/create` + stylebook-scoped POST when schema exists |
+| **Bulk import format** | GeoJSON (`POST …/import/geojson/…`) | CSV (`POST …/import/csv/people/…`) | CSV via `stylebook_api/imports/csv_<type>.py` + registry `(csv, <plural>)` |
+| **Import registry** | `(geojson, locations)` → `_GeoJsonLocationsImporter` | `(csv, people)` → `CsvPeopleImporter` | Register `(csv, organizations)` / `(csv, works)` after `add-entity-type` |
+| **Bundle export shard** | `canonicals/locations/part-*.jsonl`, manifest `kind: canonical_location` | `canonicals/people/part-*.jsonl`, manifest `kind: canonical_person` | Add `canonicals/<type>/…`, `kind: canonical_<type>`, `_iter_*_canonicals`, `_import_*_row` |
+| **Bundle import** | Handles `kind: canonical` (legacy v1/v2) and `canonical_location` | Handles `kind: canonical_person` | Extend `_import_shard_rows` dispatch + `importable_kinds` |
+| **Standalone persist helper** | `backfield_stylebook.locations.create_standalone_canonical` | `backfield_stylebook.entities.person.persist.create_standalone_canonical` | Same pattern under `entities/<type>/persist.py` |
+| **Provenance strings** | `stylebook_ui_manual`, `stylebook_ui_import_geojson` | `stylebook_ui_manual`, `stylebook_ui_import_csv` | Follow `{surface}_manual` / `{surface}_import_csv` |
+
+**Checklist when adding a new entity type:**
+
+1. **Schema (issue 01):** `stylebook_<type>_canonical` table + migration.
+2. **Persist (issue 02):** `create_standalone_canonical`, slug allocator, export dict helper (`<type>_canonical_to_export_dict`).
+3. **Manual create + list UI (issue 03):** Create page, list **Create** button, `POST …/canonical-<type>`.
+4. **CSV import (issue 03+):** `Csv<Type>Importer`, analyze/run routes, `Import<Type>` wizard (non-geographic types use CSV only).
+5. **Bundle transfer (same issue or follow-up):** export iterator + import row handler + manifest kind constant; extend tests in `tests/stylebook/test_full_bundle_roundtrip.py`.
+6. **Docs:** Update this table, [`API.md`](API.md), [`OPERATIONS.md`](OPERATIONS.md) bundle bullets.
+
+**Not in bundle v3:** primary substrate FKs are cleared on export/import; editor must re-link substrate rows in target orgs separately.
 
 ## Issue 00 — shared foundation
 
