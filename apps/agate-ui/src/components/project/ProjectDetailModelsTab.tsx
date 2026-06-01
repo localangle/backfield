@@ -20,6 +20,7 @@ import {
   putProjectAiModelCredentialOverride,
   type ProjectEffectiveAiModelRow,
 } from '@/lib/core-api'
+import { modelKindLabel, normalizeModelKind } from '@/lib/ai-model-catalog-ui'
 import { Loader2 } from 'lucide-react'
 
 function isAzureStyleModel(row: ProjectEffectiveAiModelRow): boolean {
@@ -180,6 +181,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Badge variant="outline">{modelKindLabel(normalizeModelKind(row.model_kind))}</Badge>
             {override ? <OverriddenBadge /> : <Badge variant="success">Configured</Badge>}
           </div>
         </div>

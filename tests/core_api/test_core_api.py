@@ -1082,6 +1082,38 @@ def test_project_ai_models_workspace_toggle_and_project_key(
     assert cred_del.json()["project_credential_override_configured"] is False
 
 
+def test_project_effective_models_include_embedding_catalog_rows(
+    client: TestClient,
+) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "projembed@example.com", "password": "projembed-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "projembed@example.com", "password": "projembed-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    created = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={"curated_id": "openai:text-embedding-3-small", "name": "Embed for project"},
+    )
+    assert created.status_code == 200
+    cfg_id = created.json()["id"]
+    assert created.json()["model_kind"] == "embedding"
+
+    listed = client.get("/v1/projects/1/ai-models/effective?include_disabled=true")
+    assert listed.status_code == 200
+    embed = next((r for r in listed.json() if r["id"] == cfg_id), None)
+    assert embed is not None
+    assert embed["model_kind"] == "embedding"
+    assert embed["project_enabled"] is True
+
+    filtered = client.get("/v1/projects/1/ai-models/effective?capabilities=text")
+    assert filtered.status_code == 200
+    assert all(r["id"] != cfg_id for r in filtered.json())
+
+
 def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
     client.post(
         "/v1/bootstrap/first-user",

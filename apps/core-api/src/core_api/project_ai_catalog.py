@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from backfield_ai.constants import (
+    AI_MODEL_KIND_EMBEDDING,
+    AI_MODEL_KIND_GENERATIVE,
     PROJECT_AI_DEFAULT_ROLES,
     is_project_model_override_integration_key,
     project_model_override_integration_key,
@@ -91,6 +93,11 @@ def _effective_row_from_parts(
     )
 
 
+ALLOWED_PROJECT_MODEL_KINDS: frozenset[str] = frozenset(
+    {AI_MODEL_KIND_GENERATIVE, AI_MODEL_KIND_EMBEDDING}
+)
+
+
 def list_project_effective_models(
     session: Session,
     project_id: int,
@@ -104,7 +111,7 @@ def list_project_effective_models(
         .where(
             BackfieldAiModelConfig.organization_id == org_id,
             col(BackfieldAiModelConfig.status) == "active",
-            col(BackfieldAiModelConfig.model_kind) == "generative",
+            col(BackfieldAiModelConfig.model_kind).in_(ALLOWED_PROJECT_MODEL_KINDS),
         )
         .order_by(col(BackfieldAiModelConfig.name))
     ).all()
@@ -179,10 +186,10 @@ def set_project_model_credential_override(
 ) -> ProjectEffectiveAiModelOut:
     org_id = _project_org_id(session, project_id)
     cfg = get_org_model_config(session, organization_id=org_id, config_id=model_config_id)
-    if str(cfg.status) != "active" or str(cfg.model_kind) != "generative":
+    if str(cfg.status) != "active" or str(cfg.model_kind) not in ALLOWED_PROJECT_MODEL_KINDS:
         raise HTTPException(
             status_code=400,
-            detail="Only active generative models support project credentials.",
+            detail="Only active generative or embedding models support project credentials.",
         )
 
     lm = effective_litellm_model_row(
