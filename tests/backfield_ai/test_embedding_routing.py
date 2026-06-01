@@ -1,0 +1,97 @@
+"""Embedding routing: LiteLLM batch helper and catalog kind guards."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+from backfield_ai.constants import AI_MODEL_KIND_EMBEDDING, AI_MODEL_KIND_GENERATIVE
+from backfield_ai.embeddings import (
+    EmbeddingConfigurationError,
+    EmbeddingModelKindError,
+    assert_model_config_is_embedding,
+    embed_texts_sync,
+)
+
+
+class _Cfg:
+    def __init__(self, *, model_kind: str, config_id: str = "cfg-1") -> None:
+        self.id = config_id
+        self.model_kind = model_kind
+
+
+def test_assert_model_config_is_embedding_rejects_generative() -> None:
+    with pytest.raises(EmbeddingModelKindError):
+        assert_model_config_is_embedding(_Cfg(model_kind=AI_MODEL_KIND_GENERATIVE))
+
+
+def test_embed_texts_sync_requires_non_empty_batch() -> None:
+    with pytest.raises(EmbeddingConfigurationError, match="At least one text"):
+        embed_texts_sync(
+            litellm_model="openai/text-embedding-3-small",
+            texts=[],
+            api_key="sk-test",
+        )
+
+
+@patch("backfield_ai.embeddings.litellm.embedding")
+def test_embed_texts_sync_returns_vectors(mock_embedding: MagicMock) -> None:
+    item0 = MagicMock(index=0, embedding=[0.1, 0.2])
+    item1 = MagicMock(index=1, embedding=[0.3, 0.4])
+    resp = MagicMock(data=[item1, item0], usage=MagicMock(prompt_tokens=4, total_tokens=4))
+    mock_embedding.return_value = resp
+
+    result = embed_texts_sync(
+        litellm_model="openai/text-embedding-3-small",
+        texts=["hello", "world"],
+        api_key="sk-test",
+        timeout=30.0,
+    )
+
+    assert result.batch_error is None
+    assert result.dimensions == 2
+    assert len(result.items) == 2
+    assert result.items[0].vector == [0.1, 0.2]
+    assert result.items[1].vector == [0.3, 0.4]
+    mock_embedding.assert_called_once()
+    call_kwargs = mock_embedding.call_args.kwargs
+    assert call_kwargs["model"] == "openai/text-embedding-3-small"
+    assert call_kwargs["input"] == ["hello", "world"]
+    assert call_kwargs["api_key"] == "sk-test"
+
+
+@patch("backfield_ai.embeddings.litellm.embedding")
+def test_embed_texts_sync_parses_dict_shaped_response_items(mock_embedding: MagicMock) -> None:
+    mock_embedding.return_value = {
+        "data": [{"index": 0, "embedding": [0.5, 0.6]}],
+        "usage": {"prompt_tokens": 2, "total_tokens": 2},
+    }
+
+    result = embed_texts_sync(
+        litellm_model="text-embedding-3-small",
+        texts=["hello"],
+        api_key="sk-test",
+    )
+
+    assert result.batch_error is None
+    assert result.items[0].vector == [0.5, 0.6]
+    assert result.dimensions == 2
+
+
+@patch("backfield_ai.embeddings.litellm.embedding")
+def test_embed_texts_sync_surfaces_provider_failure(mock_embedding: MagicMock) -> None:
+    mock_embedding.side_effect = RuntimeError("rate limited")
+
+    result = embed_texts_sync(
+        litellm_model="openai/text-embedding-3-small",
+        texts=["hello"],
+        api_key="sk-test",
+    )
+
+    assert result.batch_error == "rate limited"
+    assert result.items[0].vector is None
+    assert result.items[0].error_code == "provider"
+
+
+def test_assert_model_config_accepts_embedding_kind() -> None:
+    assert_model_config_is_embedding(_Cfg(model_kind=AI_MODEL_KIND_EMBEDDING))

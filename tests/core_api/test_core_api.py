@@ -1138,7 +1138,7 @@ def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
     assert r_list_meta.status_code == 403
 
 
-def test_ai_models_embedding_kind_rejected_for_now(client: TestClient) -> None:
+def test_ai_models_embedding_curated_create(client: TestClient) -> None:
     client.post(
         "/v1/bootstrap/first-user",
         json={"email": "embedadmin@example.com", "password": "embedadmin-secret-9"},
@@ -1148,16 +1148,48 @@ def test_ai_models_embedding_kind_rejected_for_now(client: TestClient) -> None:
         json={"email": "embedadmin@example.com", "password": "embedadmin-secret-9"},
     )
     org_id = client.get("/v1/auth/me").json()["organization_id"]
-    r = client.post(
+
+    curated = client.get(f"/v1/organizations/{org_id}/ai-models/curated-options")
+    assert curated.status_code == 200
+    embed_opts = [o for o in curated.json() if o.get("model_kind") == "embedding"]
+    assert {o["curated_id"] for o in embed_opts} >= {
+        "openai:text-embedding-3-small",
+        "openai:text-embedding-3-large",
+    }
+
+    mismatch = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "curated_id": "openai:text-embedding-3-small",
+            "name": "Emb mismatch",
+            "model_kind": "generative",
+        },
+    )
+    assert mismatch.status_code == 400
+
+    created = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={
+            "curated_id": "openai:text-embedding-3-small",
+            "name": "Semantic small",
+        },
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body["model_kind"] == "embedding"
+    assert body["capabilities"] == ["embedding"]
+    assert body["provider"] == "openai"
+    assert body["provider_model_id"] == "text-embedding-3-small"
+
+    bad_caps = client.post(
         f"/v1/organizations/{org_id}/ai-models",
         json={
             "curated_id": "openai:gpt-5-nano",
-            "name": "Emb",
-            "capabilities": ["text"],
-            "model_kind": "embedding",
+            "name": "Gen with embed cap",
+            "capabilities": ["text", "embedding"],
         },
     )
-    assert r.status_code == 400
+    assert bad_caps.status_code == 400
 
 
 def test_integration_secrets_unified_catalog_requires_auth(client: TestClient) -> None:

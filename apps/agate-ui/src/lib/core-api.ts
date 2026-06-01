@@ -120,6 +120,7 @@ export interface CuratedAiModelOption {
   provider: string
   provider_model_id: string
   label: string
+  model_kind?: string
   capabilities: string[]
   input_token_price?: string | number | null
   output_token_price?: string | number | null
