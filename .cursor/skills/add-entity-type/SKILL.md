@@ -15,7 +15,7 @@ Use this skill when adding a **canonical entity type** (person, organization, wo
 
 **Read first:**
 
-1. [`docs/ENTITY_TYPES.md`](../../docs/ENTITY_TYPES.md) — layout, Issue 00 foundation, issue order
+1. [`docs/ENTITY_TYPES.md`](../../docs/ENTITY_TYPES.md) — layout, Issue 00 foundation, issue order, **Per-type implementation patterns** (required shell vs opt-in)
 2. [`docs/DATABASE.md`](../../docs/DATABASE.md) — shared field contracts
 3. [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) — package boundaries
 4. **agate-ai-platform** sibling repo — copy-then-adapt per `AGENTS.md`
@@ -59,7 +59,7 @@ Use when foundation markers are missing (first time on a clone, or pre-foundatio
 ### Interview rules
 
 - **One question at a time.** Wait for an answer before the next question.
-- **~12–14 questions** total; skip when defaults apply.
+- **~14–16 questions** total; skip when defaults apply.
 - Resolve dependencies in order; do not accept vague “it depends” without resolving each branch.
 
 ### Question script
@@ -80,6 +80,10 @@ Ask in this order (skip N/A):
 12. **Agate review tab** — Enabled? List vs edit vs link-to-Stylebook actions (planned in late issue)
 13. **Connection pairs** — New allowed edges in `stylebook_connections` (see `connections_utils.py`)
 14. **Smoke acceptance** — Minimal demo text and success criteria for extract → DBOutput → substrate
+15. **Canonical auto-link strategy** — Tier-1 identity fields for `LINK_EXISTING`, defer rules, whether recall list is required for suggestions (see ENTITY_TYPES → **Required shell** decision table; copy location vs person policy shape)
+16. **Opt-in ingest/review** — Any of: LLM adjudication (`ai_assisted`), extract review routing (waive vs flag queue), variant-name recall/catalog search (person `name_match` pattern). Default **none** unless the PRD needs them.
+
+After the interview, record decisions in the PRD and map opt-ins to issues **02** (policy/recall), **04** (worker adjudication), **05** (extract review), **03** (link modal search).
 
 ### Pipeline profile
 
@@ -122,6 +126,8 @@ After the interview, write `prd/<slug>/prd.md` using [`write-a-prd`](../write-a-
 - **Stylebook UI** (columns, filters, sections)
 - **Agate review tab** behavior
 - **Connection pairs** to add
+- **Canonical auto-link** (tier-1 fields, defer reasons, `canonicalization_mode`)
+- **Opt-in patterns** (LLM adjudication, extract review codes, variant-name search) — reference ENTITY_TYPES **Opt-in** table
 - **Issue ordering** (see below)
 
 ---
@@ -160,6 +166,25 @@ Replace `<type>` with the entity slug. Prefer new paths over legacy shims.
 | agate-api review | `api/processed_item/entities/location/` |
 | agate-ui review | `apps/agate-ui/src/lib/review/entities/location/` |
 
+### Layer reference (person — `extract_and_persist`)
+
+Use for organization/work and other non-location types. Waive rows marked opt-in unless the PRD enables them.
+
+| Layer | Person reference |
+|-------|------------------|
+| DB models | `SubstratePerson*`, `StylebookPerson*` in `backfield_db` |
+| Policy + recall | `backfield_stylebook/entities/person/policy.py`, `recall.py` |
+| Opt-in name overlap | `entities/person/name_match.py` |
+| Opt-in extract review | `entities/person/review.py` |
+| Persist + suggestions | `entities/person/persist.py` |
+| Worker | `worker/substrate/entities/person/handler.py`; opt-in `adjudication.py` |
+| stylebook-api | `stylebook_api/entities/person/` (`people.py`, `candidates.py`, `meta.py`) |
+| stylebook-ui | `PersonCandidates.tsx`, `PersonCanonicalLinkModal.tsx`, `People.tsx`, `PersonDetail.tsx` |
+| Extract node | `agate_nodes/person_extract/` |
+| agate-api review | `api/processed_item/entities/person/` |
+| agate-ui review | `apps/agate-ui/src/lib/review/entities/person/` |
+| Tests | See ENTITY_TYPES → **Tests per issue** (`tests/stylebook/test_person_*.py`, etc.) |
+
 ---
 
 ## Add a pipeline node only (no new EntityType)
@@ -188,4 +213,4 @@ After cross-service runtime changes:
 make smoke
 ```
 
-See `docs/TESTING.md` for layer-focused tests.
+See `docs/TESTING.md` for the command ladder; per-issue test file expectations are in [`docs/ENTITY_TYPES.md`](../../docs/ENTITY_TYPES.md) → **Tests per issue**.

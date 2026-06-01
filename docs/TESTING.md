@@ -65,6 +65,10 @@
 - Shared pytest defaults for these tests live in `tests/conftest.py` at the repo `tests/` root.
 - Add new FastAPI integration tests under the folder that matches the app; add new structural or schema-wide assertions under `tests/contracts/`.
 
+### New entity types
+
+When adding a Stylebook entity type, follow the **Tests per issue** table in [`ENTITY_TYPES.md`](ENTITY_TYPES.md) → **Per-type implementation patterns** (which `tests/stylebook/test_<type>_*.py`, `tests/stylebook_api/test_<type>_api.py`, and worker tests to add per issue 01–06). This doc keeps the global `make lint` / `make test` / `make smoke` ladder only.
+
 ## CI suggestion
 
 ```bash
