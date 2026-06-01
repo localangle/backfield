@@ -47,6 +47,10 @@ from backfield_db.models import (  # noqa: F401
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_db.semantic_document_models import (  # noqa: F401
+    SubstrateLocationSemanticDocument,
+    SubstratePersonSemanticDocument,
+)
 
 config = context.config
 if config.config_file_name is not None:

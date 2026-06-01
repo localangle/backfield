@@ -65,6 +65,8 @@ New entity types (person, organization, work, …) follow the same **substrate t
 - `substrate_person` — durable shared person entity row. Shared substrate columns plus **`title`**, **`affiliation`**, **`public_figure`**, **`person_type`** (extract JSON field `type`), and optional **`sort_key`** (lowercase last name for list ordering). Optional **`stylebook_person_canonical_id`** (UUID FK), **`canonical_link_status`**, **`identity_fingerprint`** (normalized name + title + affiliation). Indexes mirror location: project + canonical, project + link status, project + type, project + public figure, project + sort key, pending-queue partial index on Postgres.
 - `substrate_person_mention` — one aggregate article-to-person association per `(article_id, person_id)` with **`role_in_story`**, **`nature`** (person editorial role: `subject`, `source`, `expert`, `official`, `witness`, `affected`, `victim`, `suspect`, `participant`, `observer`, `context`, `other`), optional **`nature_secondary_tags_json`**, and review/provenance fields.
 - `substrate_person_mention_occurrence` — evidence spans for a person mention aggregate (`mention_text`, optional `quote_text`, offsets, labels, provenance).
+- `substrate_person_semantic_document` — occurrence-level semantic index row for person evidence (`search_text`, `source_hash`, `active` / `stale`, embedding status and metadata, pgvector **`embedding`**). Unique per **`person_mention_occurrence_id`**. Nullable **`stylebook_person_canonical_id`**. Organization/work semantic tables follow the same pattern when those types have occurrence tables.
+- `substrate_location_semantic_document` — same shape for location occurrences (unique **`location_mention_occurrence_id`**).
 
 ### Stylebook (`stylebook_*`)
 
@@ -130,6 +132,8 @@ Revision **`035_reviewed_output_json`** adds nullable **`reviewed_output_json`**
 Revision **`036_person_schema`** adds the person **substrate trio** (`substrate_person`, mentions, occurrences) and **Stylebook trio** (`stylebook_person_canonical`, alias, meta) with UUID canonical ids, slug uniqueness per Stylebook, fingerprint uniqueness per project, and queue-oriented indexes aligned with location.
 
 Revision **`037_person_sort_key`** adds optional **`sort_key`** (lowercase last name) on **`substrate_person`** and **`stylebook_person_canonical`**, plus `(project_id, sort_key)` / `(stylebook_id, sort_key)` indexes for list ordering.
+
+Revision **`038_substrate_semantic_docs`** enables **`vector`** on Postgres (requires the pgvector extension in the server image—same operational posture as **`pg_trgm`** in **`014`**), and adds **`substrate_person_semantic_document`** and **`substrate_location_semantic_document`**: one row per mention occurrence, **`search_text`** / **`source_hash`**, **`active`** / **`stale`**, embedding status and metadata, and nullable pgvector **`embedding`**. Non-Postgres migration paths store **`embedding`** as plain text.
 
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 

@@ -38,6 +38,10 @@ from backfield_db.models import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_db.semantic_document_models import (
+    SubstrateLocationSemanticDocument,
+    SubstratePersonSemanticDocument,
+)
 from backfield_db.session import get_engine, get_session_factory, get_session_generator, init_db
 
 __all__ = [
@@ -76,9 +80,11 @@ __all__ = [
     "SubstrateLocationCache",
     "SubstrateLocationMention",
     "SubstrateLocationMentionOccurrence",
+    "SubstrateLocationSemanticDocument",
     "SubstratePerson",
     "SubstratePersonMention",
     "SubstratePersonMentionOccurrence",
+    "SubstratePersonSemanticDocument",
     "get_engine",
     "get_session_factory",
     "get_session_generator",

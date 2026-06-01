@@ -6,7 +6,10 @@ x-shared-env: &shared-env
 
 services:
   postgres:
-    image: postgis/postgis:16-3.4
+    build:
+      context: .
+      dockerfile: postgres/Dockerfile
+    image: backfield-postgres:16-3.4-pgvector
     environment:
       POSTGRES_DB: backfield
       POSTGRES_USER: postgres
