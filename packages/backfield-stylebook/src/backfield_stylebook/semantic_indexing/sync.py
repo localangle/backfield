@@ -10,8 +10,8 @@ from backfield_stylebook.semantic_indexing.builders import (
     semantic_builder_supported,
 )
 from backfield_stylebook.semantic_indexing.contracts import SemanticBuilderEntityType
-from backfield_stylebook.semantic_indexing.location_sync import sync_location_semantic_documents
-from backfield_stylebook.semantic_indexing.person_sync import sync_person_semantic_documents
+from backfield_stylebook.semantic_indexing.location import sync_location_semantic_documents
+from backfield_stylebook.semantic_indexing.person import sync_person_semantic_documents
 from backfield_stylebook.semantic_indexing.sync_contract import (
     SemanticSyncResult,
     SemanticSyncScope,

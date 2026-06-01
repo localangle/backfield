@@ -7,11 +7,11 @@ from backfield_stylebook.semantic_indexing.contracts import (
     SUPPORTED_SEMANTIC_BUILDER_ENTITY_TYPES,
     SemanticDocumentUnsupportedType,
 )
-from backfield_stylebook.semantic_indexing.location_builder import (
+from backfield_stylebook.semantic_indexing.location import (
     build_location_occurrence_document,
     build_location_occurrence_documents,
 )
-from backfield_stylebook.semantic_indexing.person_builder import (
+from backfield_stylebook.semantic_indexing.person import (
     build_person_occurrence_document,
     build_person_occurrence_documents,
 )

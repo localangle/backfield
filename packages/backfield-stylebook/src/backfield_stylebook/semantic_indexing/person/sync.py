@@ -6,20 +6,18 @@ from backfield_db import SubstratePersonSemanticDocument
 from backfield_db.semantic_indexing import SEMANTIC_EMBEDDING_STATUS_PENDING
 from sqlmodel import Session, select
 
+from backfield_stylebook.semantic_indexing.common.article import load_article_source
 from backfield_stylebook.semantic_indexing.contracts import (
     SemanticDocumentBuildSkip,
     SemanticDocumentDraft,
 )
-from backfield_stylebook.semantic_indexing.loaders import (
-    load_article_source,
-    load_person_sync_bundles,
-)
-from backfield_stylebook.semantic_indexing.person_builder import build_person_occurrence_document
+from backfield_stylebook.semantic_indexing.person.builder import build_occurrence_document
+from backfield_stylebook.semantic_indexing.person.loader import load_sync_bundles
 from backfield_stylebook.semantic_indexing.sync_apply import apply_semantic_document_sync
 from backfield_stylebook.semantic_indexing.sync_contract import SemanticSyncSummary
 
 
-def sync_person_semantic_documents(
+def sync_semantic_documents(
     session: Session,
     *,
     project_id: int,
@@ -29,12 +27,12 @@ def sync_person_semantic_documents(
     if article is None:
         return SemanticSyncSummary(entity_type="person")
 
-    bundles = load_person_sync_bundles(session, article_id=article_id)
+    bundles = load_sync_bundles(session, article_id=article_id)
     expected: dict[int, SemanticDocumentDraft] = {}
     inactive: set[int] = set()
 
     for person, mention, occurrence, canonical in bundles:
-        result = build_person_occurrence_document(
+        result = build_occurrence_document(
             project_id=project_id,
             article=article,
             person=person,

@@ -1,8 +1,9 @@
-"""Deterministic location occurrence semantic document builder."""
+"""Deterministic person occurrence semantic document builder."""
 
 from __future__ import annotations
 
-from backfield_stylebook.semantic_indexing.article_context import extract_article_context_snippet
+from backfield_stylebook.semantic_indexing.common.article import ArticleSource
+from backfield_stylebook.semantic_indexing.common.context import extract_article_context_snippet
 from backfield_stylebook.semantic_indexing.contracts import (
     DEFAULT_DOCUMENT_KIND,
     SKIP_ARTICLE_DELETED,
@@ -13,25 +14,24 @@ from backfield_stylebook.semantic_indexing.contracts import (
     SemanticDocumentSourceKey,
 )
 from backfield_stylebook.semantic_indexing.hashing import compute_semantic_source_hash
+from backfield_stylebook.semantic_indexing.person.sources import (
+    PersonCanonicalSource,
+    PersonEntitySource,
+    PersonMentionSource,
+    PersonOccurrenceSource,
+)
 from backfield_stylebook.semantic_indexing.search_text import (
     append_joined_line,
     append_labeled_line,
     join_search_text,
 )
-from backfield_stylebook.semantic_indexing.sources import (
-    ArticleSource,
-    LocationCanonicalSource,
-    LocationEntitySource,
-    LocationMentionSource,
-    LocationOccurrenceSource,
-)
 
 
-def location_occurrence_indexable(
+def occurrence_indexable(
     *,
     article: ArticleSource,
-    mention: LocationMentionSource,
-    occurrence: LocationOccurrenceSource,
+    mention: PersonMentionSource,
+    occurrence: PersonOccurrenceSource,
 ) -> str | None:
     if article.deleted:
         return SKIP_ARTICLE_DELETED
@@ -42,29 +42,31 @@ def location_occurrence_indexable(
     return None
 
 
-def _location_hash_payload(
+def _hash_payload(
     *,
     article: ArticleSource,
-    location: LocationEntitySource,
-    canonical: LocationCanonicalSource | None,
-    mention: LocationMentionSource,
-    occurrence: LocationOccurrenceSource,
+    person: PersonEntitySource,
+    canonical: PersonCanonicalSource | None,
+    mention: PersonMentionSource,
+    occurrence: PersonOccurrenceSource,
     article_context: str | None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
-        "entity_type": "location",
+        "entity_type": "person",
         "document_kind": DEFAULT_DOCUMENT_KIND,
         "occurrence_id": occurrence.id,
         "article": {
             "id": article.id,
             "headline": article.headline,
         },
-        "location": {
-            "id": location.id,
-            "name": location.name,
-            "location_type": location.location_type,
-            "formatted_address": location.formatted_address,
-            "stylebook_location_canonical_id": location.stylebook_location_canonical_id,
+        "person": {
+            "id": person.id,
+            "name": person.name,
+            "title": person.title,
+            "affiliation": person.affiliation,
+            "person_type": person.person_type,
+            "public_figure": person.public_figure,
+            "stylebook_person_canonical_id": person.stylebook_person_canonical_id,
         },
         "mention": {
             "id": mention.id,
@@ -87,36 +89,40 @@ def _location_hash_payload(
         payload["canonical"] = {
             "id": canonical.id,
             "label": canonical.label,
-            "location_type": canonical.location_type,
-            "formatted_address": canonical.formatted_address,
+            "title": canonical.title,
+            "affiliation": canonical.affiliation,
+            "person_type": canonical.person_type,
         }
     return payload
 
 
-def _assemble_location_search_text(
+def _assemble_search_text(
     *,
     article: ArticleSource,
-    location: LocationEntitySource,
-    canonical: LocationCanonicalSource | None,
-    mention: LocationMentionSource,
-    occurrence: LocationOccurrenceSource,
+    person: PersonEntitySource,
+    canonical: PersonCanonicalSource | None,
+    mention: PersonMentionSource,
+    occurrence: PersonOccurrenceSource,
     article_context: str | None,
 ) -> str:
     lines: list[str] = []
     append_labeled_line(lines, "Article", article.headline)
-    append_labeled_line(lines, "Location", location.name)
+    append_labeled_line(lines, "Person", person.name)
     if canonical is not None:
-        append_labeled_line(lines, "Canonical location", canonical.label)
+        append_labeled_line(lines, "Canonical person", canonical.label)
+    append_labeled_line(lines, "Title", person.title or (canonical.title if canonical else None))
     append_labeled_line(
         lines,
-        "Location type",
-        location.location_type or (canonical.location_type if canonical else None),
+        "Affiliation",
+        person.affiliation or (canonical.affiliation if canonical else None),
     )
     append_labeled_line(
         lines,
-        "Formatted address",
-        location.formatted_address or (canonical.formatted_address if canonical else None),
+        "Person type",
+        person.person_type or (canonical.person_type if canonical else None),
     )
+    if person.public_figure:
+        lines.append("Public figure: yes")
     append_labeled_line(lines, "Role in story", mention.role_in_story)
     append_labeled_line(lines, "Nature", mention.nature)
     append_joined_line(lines, "Secondary nature tags", mention.nature_secondary_tags)
@@ -128,19 +134,19 @@ def _assemble_location_search_text(
     return join_search_text(lines)
 
 
-def build_location_occurrence_document(
+def build_occurrence_document(
     *,
     project_id: int,
     article: ArticleSource,
-    location: LocationEntitySource,
-    mention: LocationMentionSource,
-    occurrence: LocationOccurrenceSource,
-    canonical: LocationCanonicalSource | None = None,
+    person: PersonEntitySource,
+    mention: PersonMentionSource,
+    occurrence: PersonOccurrenceSource,
+    canonical: PersonCanonicalSource | None = None,
 ) -> SemanticDocumentDraft | SemanticDocumentBuildSkip:
-    skip = location_occurrence_indexable(article=article, mention=mention, occurrence=occurrence)
+    skip = occurrence_indexable(article=article, mention=mention, occurrence=occurrence)
     if skip is not None:
         return SemanticDocumentBuildSkip(
-            entity_type="location",
+            entity_type="person",
             occurrence_id=occurrence.id,
             reason=skip,
         )
@@ -150,23 +156,23 @@ def build_location_occurrence_document(
         start_char=occurrence.start_char,
         end_char=occurrence.end_char,
     )
-    hash_payload = _location_hash_payload(
+    hash_payload = _hash_payload(
         article=article,
-        location=location,
+        person=person,
         canonical=canonical,
         mention=mention,
         occurrence=occurrence,
         article_context=article_context,
     )
-    search_text = _assemble_location_search_text(
+    search_text = _assemble_search_text(
         article=article,
-        location=location,
+        person=person,
         canonical=canonical,
         mention=mention,
         occurrence=occurrence,
         article_context=article_context,
     )
-    source_key = SemanticDocumentSourceKey(entity_type="location", occurrence_id=occurrence.id)
+    source_key = SemanticDocumentSourceKey(entity_type="person", occurrence_id=occurrence.id)
     return SemanticDocumentDraft(
         source_key=source_key,
         document_kind=DEFAULT_DOCUMENT_KIND,
@@ -174,25 +180,26 @@ def build_location_occurrence_document(
         source_hash=compute_semantic_source_hash(hash_payload),
         project_id=project_id,
         article_id=article.id,
-        entity_id=location.id,
+        entity_id=person.id,
         mention_id=mention.id,
         occurrence_id=occurrence.id,
     )
 
 
-def build_location_occurrence_documents(
+def build_occurrence_documents(
     *,
     project_id: int,
     bundles: list[
         tuple[
             ArticleSource,
-            LocationEntitySource,
-            LocationMentionSource,
-            LocationOccurrenceSource,
-            LocationCanonicalSource | None,
+            PersonEntitySource,
+            PersonMentionSource,
+            PersonOccurrenceSource,
+            PersonCanonicalSource | None,
         ]
     ],
 ) -> list[SemanticDocumentDraft | SemanticDocumentBuildSkip]:
+    """Build documents for many occurrences with deterministic ordering."""
     ordered = sorted(
         bundles,
         key=lambda row: (
@@ -201,12 +208,12 @@ def build_location_occurrence_documents(
         ),
     )
     results: list[SemanticDocumentDraft | SemanticDocumentBuildSkip] = []
-    for article, location, mention, occurrence, canonical in ordered:
+    for article, person, mention, occurrence, canonical in ordered:
         results.append(
-            build_location_occurrence_document(
+            build_occurrence_document(
                 project_id=project_id,
                 article=article,
-                location=location,
+                person=person,
                 mention=mention,
                 occurrence=occurrence,
                 canonical=canonical,
