@@ -18,7 +18,7 @@ from backfield_stylebook.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_stylebook.canonical.match_score import _loose_key
-from backfield_stylebook.canonical.policy import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_stylebook.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
 from backfield_stylebook.canonical.slug import allocate_unique_canonical_slug
 
 

@@ -8,6 +8,11 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 from backfield_db import StylebookLocationCanonical, SubstrateLocation
+from backfield_stylebook.canonical.plan_types import (
+    ADJUDICATION_LINK_MIN_CONFIDENCE,
+    CanonicalPersistDecision,
+    CanonicalPersistPlan,
+)
 from backfield_stylebook.canonical_jurisdiction import (
     district_identity_from_components,
     district_identity_key,
@@ -17,15 +22,10 @@ from backfield_stylebook.canonical_link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
 )
-from backfield_stylebook.canonical_policy import (
-    CanonicalPersistDecision,
-    CanonicalPersistPlan,
+from backfield_stylebook.entities.location.policy import (
     substrate_may_materialize_canonical_after_recall,
 )
 from sqlmodel import Session, select
-
-# LLM must assert definitive same-place identity; below this we keep review / materialize.
-ADJUDICATION_LINK_MIN_CONFIDENCE = 0.9
 
 
 def _recall_context_for_adjudication(

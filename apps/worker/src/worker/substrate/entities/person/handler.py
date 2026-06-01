@@ -12,9 +12,13 @@ from backfield_stylebook.entities.person.persist import (
     apply_canonical_persist_plan_review_only,
     refresh_aliases_for_linked_person,
 )
-from backfield_stylebook.entities.person.policy import decide_person_canonical_persist_plan
+from backfield_stylebook.entities.person.policy import (
+    decide_person_canonical_persist_plan,
+    plan_requires_llm_person_canonical_adjudication,
+)
 from sqlmodel import Session, col, select
 
+from worker.substrate.entities.person.adjudication import adjudicate_ambiguous_person_plan_with_llm
 from worker.substrate.entities.person.mentions import (
     _upsert_mention_and_occurrence,
     dispose_orphan_substrates_after_retired_mentions,
@@ -125,6 +129,19 @@ class PersonPersistHandler:
                     people_bucket=bucket,
                     auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
                 )
+                if (
+                    ctx.settings.canonicalization_mode == "ai_assisted"
+                    and plan_requires_llm_person_canonical_adjudication(plan, person)
+                ):
+                    adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
+                    plan = adjudicate_ambiguous_person_plan_with_llm(
+                        session,
+                        plan=plan,
+                        person=person,
+                        stylebook_id=ctx.stylebook_id,
+                        model=adj_model,
+                        model_config_id=ctx.settings.adjudication_ai_model_config_id,
+                    )
                 if ctx.settings.auto_apply_canonicalization:
                     apply_canonical_persist_plan(
                         session,

@@ -122,6 +122,7 @@ apps/worker/src/worker/
         span.py
       person/
         handler.py           # people persist loop
+        adjudication.py      # ai_assisted LLM pick among recalled canonicals
         upsert.py
         mentions.py
       organization/          # stub
@@ -139,10 +140,17 @@ Public entrypoint: `from worker.substrate import persist_from_consolidated`
 packages/backfield-stylebook/src/backfield_stylebook/
   entity_types.py            # slug registry, consolidated keys, fingerprint
   canonical/
+    plan_types.py            # CanonicalPersistDecision, CanonicalPersistPlan (shared)
   entities/
     location/
+      policy.py              # decide_location_canonical_persist_plan
       persist.py
       types.py
+    person/
+      policy.py
+      recall.py
+      review.py
+      persist.py
   geocode_cache/
 ```
 

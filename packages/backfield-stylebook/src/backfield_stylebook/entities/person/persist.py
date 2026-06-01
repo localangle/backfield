@@ -14,9 +14,10 @@ from backfield_stylebook.canonical.link import (
     CANONICAL_LINK_UNLINKED,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.canonical.policy import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_stylebook.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
 from backfield_stylebook.entities.person.policy import (
     find_existing_person_canonical_id_by_alias,
+    plan_has_ambiguous_person_canonical_match,
     rank_person_canonical_recall_matches,
 )
 from backfield_stylebook.entities.person.review import (
@@ -269,8 +270,9 @@ def materialize_new_canonical_and_link(
 
 
 def _canonical_suggestion_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
-    if plan.decision == CanonicalPersistDecision.DEFER and plan_includes_flag_person_review(
-        plan.resolution_reasons
+    if plan.decision == CanonicalPersistDecision.DEFER and (
+        plan_includes_flag_person_review(plan.resolution_reasons)
+        or plan_has_ambiguous_person_canonical_match(plan)
     ):
         return None
     if (

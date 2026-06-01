@@ -227,7 +227,7 @@ def test_decide_person_canonical_persist_plan_links_exact_identity() -> None:
         assert plan.existing_canonical_id == str(canon.id)
 
 
-def test_decide_person_links_when_alias_matches_but_title_differs() -> None:
+def test_decide_person_defers_when_alias_matches_but_affiliation_differs() -> None:
     engine = _engine()
     with Session(engine) as session:
         sb_id, pid = _seed_stylebook(session)
@@ -259,8 +259,20 @@ def test_decide_person_links_when_alias_matches_but_title_differs() -> None:
         session.refresh(person)
 
         plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
-        assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
-        assert plan.existing_canonical_id == str(canon.id)
+        assert plan.decision == CanonicalPersistDecision.DEFER
+        codes = [
+            str(r.get("code"))
+            for r in plan.resolution_reasons
+            if isinstance(r, dict)
+        ]
+        assert "ambiguous_person_canonical_match" in codes
+        recall = next(
+            r.get("recall_canonical_ids")
+            for r in plan.resolution_reasons
+            if isinstance(r, dict) and r.get("code") == "ambiguous_person_canonical_match"
+        )
+        assert isinstance(recall, list)
+        assert str(canon.id) in [str(x) for x in recall]
 
 
 def test_decide_person_materializes_when_no_canonical_match() -> None:

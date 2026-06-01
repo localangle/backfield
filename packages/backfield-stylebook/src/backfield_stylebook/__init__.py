@@ -7,13 +7,7 @@ from backfield_stylebook.canonical.link import (
     CANONICAL_LINK_UNLINKED,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.canonical.policy import (
-    CanonicalPersistDecision,
-    CanonicalPersistPlan,
-    decide_canonical_persist_plan,
-    find_existing_canonical_id_by_alias,
-    rank_scored_canonical_recall_matches,
-)
+from backfield_stylebook.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
 from backfield_stylebook.entities.location.persist import (
     apply_canonical_persist_plan,
     assert_canonical_link_invariant,
@@ -22,6 +16,12 @@ from backfield_stylebook.entities.location.persist import (
     materialize_new_canonical_and_link,
     refresh_aliases_for_linked_location,
     sync_substrate_location_into_stylebook,
+)
+from backfield_stylebook.entities.location.policy import (
+    decide_canonical_persist_plan,
+    decide_location_canonical_persist_plan,
+    find_existing_canonical_id_by_alias,
+    rank_scored_canonical_recall_matches,
 )
 from backfield_stylebook.entities.person import (
     apply_canonical_persist_plan as apply_person_canonical_persist_plan,
@@ -102,6 +102,7 @@ __all__ = [
     "create_standalone_canonical",
     "create_standalone_person_canonical",
     "decide_canonical_persist_plan",
+    "decide_location_canonical_persist_plan",
     "decide_person_canonical_persist_plan",
     "STYLEBOOK_NODE_PARAM_KEY",
     "StylebookGraphRefsError",

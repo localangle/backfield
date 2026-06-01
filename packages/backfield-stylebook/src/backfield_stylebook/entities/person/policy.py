@@ -1,15 +1,19 @@
-"""Person canonical persist policy: alias/identity match, defer, materialize."""
+"""Person canonical persist policy: tier-1 identity, recall defer, materialize."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from backfield_db import StylebookPersonAlias, StylebookPersonCanonical, SubstratePerson
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
-from backfield_stylebook.canonical.policy import (
+from backfield_stylebook.canonical.plan_types import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
+)
+from backfield_stylebook.entities.person.recall import (
+    PERSON_RECALL_DEFAULT_LIMIT,
+    retrieve_person_canonical_candidates,
 )
 from backfield_stylebook.entities.person.review import (
     REVIEW_HANDLING_AUTO_DEFER,
@@ -19,6 +23,8 @@ from backfield_stylebook.entities.person.review import (
     review_reason_dict,
 )
 from backfield_stylebook.entities.person.types import normalize_person_text
+
+AMBIGUOUS_PERSON_CANONICAL_MATCH = "ambiguous_person_canonical_match"
 
 
 def find_existing_person_canonical_id_by_alias(
@@ -50,6 +56,36 @@ def find_existing_person_canonical_id_by_alias(
     return str(canon.id)
 
 
+def person_name_matches_canonical(
+    person: SubstratePerson,
+    canon: StylebookPersonCanonical,
+) -> bool:
+    norm = normalize_person_text(person.normalized_name or person.name)
+    if not norm:
+        return False
+    label_norm = normalize_person_text(canon.label)
+    if label_norm == norm:
+        return True
+    return label_norm == normalize_person_text(person.name)
+
+
+def person_affiliation_matches_canonical(
+    person: SubstratePerson,
+    canon: StylebookPersonCanonical,
+) -> bool:
+    return normalize_person_text(canon.affiliation) == normalize_person_text(person.affiliation)
+
+
+def person_strong_identity_matches_canonical(
+    person: SubstratePerson,
+    canon: StylebookPersonCanonical,
+) -> bool:
+    """Tier-1 auto-link: exact normalized name (or label) + affiliation (title ignored)."""
+    return person_name_matches_canonical(person, canon) and person_affiliation_matches_canonical(
+        person, canon
+    )
+
+
 def person_title_affiliation_match(
     person: SubstratePerson,
     canon: StylebookPersonCanonical,
@@ -63,13 +99,71 @@ def person_identity_matches_canonical(
     person: SubstratePerson,
     canon: StylebookPersonCanonical,
 ) -> bool:
-    """True when label + title + affiliation all match substrate identity."""
-    name_ok = normalize_person_text(canon.label) == normalize_person_text(
-        person.name
-    ) or normalize_person_text(canon.label) == normalize_person_text(person.normalized_name)
-    if not name_ok:
+    """Full identity including title (used where stricter matching is required)."""
+    if not person_name_matches_canonical(person, canon):
         return False
     return person_title_affiliation_match(person, canon)
+
+
+def find_existing_person_canonical_id_by_strong_identity(
+    session: Session,
+    *,
+    stylebook_id: int,
+    person: SubstratePerson,
+) -> str | None:
+    """Single canonical match on name + affiliation within a Stylebook."""
+    matches = _strong_identity_canonical_ids(session, stylebook_id=stylebook_id, person=person)
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def _strong_identity_canonical_ids(
+    session: Session,
+    *,
+    stylebook_id: int,
+    person: SubstratePerson,
+) -> list[str]:
+    norm = normalize_person_text(person.normalized_name or person.name)
+    if not norm:
+        return []
+    matches: list[str] = []
+    seen: set[str] = set()
+
+    alias_stmt = (
+        select(StylebookPersonCanonical)
+        .join(
+            StylebookPersonAlias,
+            StylebookPersonAlias.person_canonical_id == StylebookPersonCanonical.id,
+        )
+        .where(
+            StylebookPersonCanonical.stylebook_id == stylebook_id,
+            StylebookPersonAlias.normalized_alias == norm,
+            StylebookPersonAlias.suppressed.is_(False),
+        )
+    )
+    for canon in session.exec(alias_stmt).all():
+        if canon.id is None:
+            continue
+        if person_strong_identity_matches_canonical(person, canon):
+            cid = str(canon.id)
+            if cid not in seen:
+                seen.add(cid)
+                matches.append(cid)
+
+    label_stmt = select(StylebookPersonCanonical).where(
+        StylebookPersonCanonical.stylebook_id == stylebook_id,
+    )
+    for canon in session.exec(label_stmt).all():
+        if canon.id is None:
+            continue
+        if not person_strong_identity_matches_canonical(person, canon):
+            continue
+        cid = str(canon.id)
+        if cid not in seen:
+            seen.add(cid)
+            matches.append(cid)
+    return matches
 
 
 def find_existing_person_canonical_id_by_identity(
@@ -78,19 +172,10 @@ def find_existing_person_canonical_id_by_identity(
     stylebook_id: int,
     person: SubstratePerson,
 ) -> str | None:
-    """Exact identity match on label + title + affiliation within a Stylebook."""
-    stmt = select(StylebookPersonCanonical).where(
-        StylebookPersonCanonical.stylebook_id == stylebook_id,
+    """Backward-compatible alias for tier-1 strong identity (name + affiliation)."""
+    return find_existing_person_canonical_id_by_strong_identity(
+        session, stylebook_id=stylebook_id, person=person
     )
-    matches: list[str] = []
-    for canon in session.exec(stmt).all():
-        if canon.id is None:
-            continue
-        if person_identity_matches_canonical(person, canon):
-            matches.append(str(canon.id))
-    if len(matches) == 1:
-        return matches[0]
-    return None
 
 
 def rank_person_canonical_recall_matches(
@@ -98,47 +183,15 @@ def rank_person_canonical_recall_matches(
     *,
     stylebook_id: int,
     person: SubstratePerson,
-    limit: int = 24,
+    limit: int = PERSON_RECALL_DEFAULT_LIMIT,
 ) -> list[tuple[str, str]]:
-    """Ranked ``(canonical_id, label)`` by alias/name overlap and identity field agreement."""
-    norm = str(person.normalized_name).strip()
-    if not norm:
-        return []
-    title_norm = normalize_person_text(person.title)
-    aff_norm = normalize_person_text(person.affiliation)
-    stmt = (
-        select(StylebookPersonCanonical)
-        .where(StylebookPersonCanonical.stylebook_id == stylebook_id)
-        .order_by(col(StylebookPersonCanonical.label).asc())
-        .limit(max(limit * 3, 48))
+    """Ranked ``(canonical_id, label)`` for UI suggestions (delegates to recall module)."""
+    return retrieve_person_canonical_candidates(
+        session,
+        stylebook_id=stylebook_id,
+        person=person,
+        limit=limit,
     )
-    scored: list[tuple[int, str, str]] = []
-    for canon in session.exec(stmt).all():
-        if canon.id is None:
-            continue
-        score = 0
-        label_norm = normalize_person_text(canon.label)
-        if label_norm == norm:
-            score += 100
-        elif norm in label_norm or label_norm in norm:
-            score += 40
-        if title_norm and normalize_person_text(canon.title) == title_norm:
-            score += 20
-        if aff_norm and normalize_person_text(canon.affiliation) == aff_norm:
-            score += 20
-        if score > 0:
-            scored.append((score, str(canon.id), str(canon.label)))
-    scored.sort(key=lambda row: (-row[0], row[2].lower()))
-    out: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for _score, cid, label in scored:
-        if cid in seen:
-            continue
-        out.append((cid, label))
-        seen.add(cid)
-        if len(out) >= limit:
-            break
-    return out
 
 
 def _pick_link_canonical_id(
@@ -154,7 +207,7 @@ def _pick_link_canonical_id(
         session,
         stylebook_id=stylebook_id,
         person=person,
-        limit=24,
+        limit=PERSON_RECALL_DEFAULT_LIMIT,
     )
     for cid, _label in ranked:
         if allowed is not None and cid not in allowed:
@@ -177,6 +230,39 @@ def _review_defer_plan(person: SubstratePerson) -> CanonicalPersistPlan | None:
     )
 
 
+def _ambiguous_person_defer_plan(
+    *,
+    recall: list[tuple[str, str]],
+    best_canonical_id: str | None = None,
+) -> CanonicalPersistPlan:
+    recall_ids = [cid for cid, _ in recall[:PERSON_RECALL_DEFAULT_LIMIT]]
+    reason: dict[str, Any] = {
+        "code": AMBIGUOUS_PERSON_CANONICAL_MATCH,
+        "recall_canonical_ids": recall_ids,
+    }
+    if best_canonical_id is not None:
+        reason["best_canonical_id"] = str(best_canonical_id)
+    return CanonicalPersistPlan(
+        decision=CanonicalPersistDecision.DEFER,
+        resolution_reasons=(reason,),
+    )
+
+
+def plan_has_ambiguous_person_canonical_match(plan: CanonicalPersistPlan) -> bool:
+    for r in plan.resolution_reasons:
+        if isinstance(r, dict) and str(r.get("code") or "") == AMBIGUOUS_PERSON_CANONICAL_MATCH:
+            return True
+    return False
+
+
+def plan_requires_llm_person_canonical_adjudication(
+    plan: CanonicalPersistPlan,
+    person: SubstratePerson,
+) -> bool:
+    _ = person
+    return plan_has_ambiguous_person_canonical_match(plan)
+
+
 def decide_person_canonical_persist_plan(
     session: Session,
     *,
@@ -185,70 +271,47 @@ def decide_person_canonical_persist_plan(
     people_bucket: str = "ready",
     auto_apply_canonicalization: bool = False,
 ) -> CanonicalPersistPlan:
-    """Decide link, materialize, or defer (review routing) for a substrate person row."""
+    """Decide link, materialize, or defer for a substrate person row.
+
+    Tier-1 auto-link uses exact normalized name + affiliation only (title is soft in recall/LLM).
+    Substrate dedupe fingerprints may still include title; tier-1 criteria are narrower.
+    """
     _ = people_bucket
     _ = auto_apply_canonicalization
     review_plan = _review_defer_plan(person)
     if review_plan is not None:
         return review_plan
 
-    reasons: list[dict[str, Any]] = []
-
-    by_identity = find_existing_person_canonical_id_by_identity(
+    strong_matches = _strong_identity_canonical_ids(
         session, stylebook_id=stylebook_id, person=person
     )
-    if by_identity is not None:
-        reasons.append({"code": "linked_exact_identity", "canonical_id": by_identity})
+    if len(strong_matches) == 1:
+        cid = strong_matches[0]
         return CanonicalPersistPlan(
             decision=CanonicalPersistDecision.LINK_EXISTING,
-            existing_canonical_id=by_identity,
-            resolution_reasons=tuple(reasons),
+            existing_canonical_id=cid,
+            resolution_reasons=(
+                {
+                    "code": "linked_exact_identity",
+                    "canonical_id": cid,
+                    "match_basis": "name_and_affiliation",
+                },
+            ),
         )
+    if len(strong_matches) > 1:
+        recall = [(cid, "") for cid in strong_matches]
+        return _ambiguous_person_defer_plan(recall=recall, best_canonical_id=strong_matches[0])
 
-    alias_hits: list[str] = []
-    norm = str(person.normalized_name).strip()
-    if norm:
-        stmt = (
-            select(StylebookPersonCanonical.id)
-            .join(
-                StylebookPersonAlias,
-                StylebookPersonAlias.person_canonical_id == StylebookPersonCanonical.id,
-            )
-            .where(
-                StylebookPersonCanonical.stylebook_id == stylebook_id,
-                StylebookPersonAlias.normalized_alias == norm,
-                StylebookPersonAlias.suppressed.is_(False),
-            )
-        )
-        alias_hits = [str(row) for row in session.exec(stmt).all() if row is not None]
-
-    if alias_hits:
-        link_id = _pick_link_canonical_id(
-            session,
-            stylebook_id=stylebook_id,
-            person=person,
-            candidate_ids=alias_hits,
-        )
-        if link_id is not None:
-            canon = session.get(StylebookPersonCanonical, link_id)
-            if canon is not None and person_title_affiliation_match(person, canon):
-                reasons.append({"code": "linked_exact_alias", "canonical_id": link_id})
-            else:
-                reasons.append(
-                    {
-                        "code": "linked_alias_recall",
-                        "canonical_id": link_id,
-                        "alias_match_count": len(alias_hits),
-                    }
-                )
-            return CanonicalPersistPlan(
-                decision=CanonicalPersistDecision.LINK_EXISTING,
-                existing_canonical_id=link_id,
-                resolution_reasons=tuple(reasons),
-            )
-
-    reasons.append({"code": "materialized_new_canonical"})
-    return CanonicalPersistPlan(
-        decision=CanonicalPersistDecision.MATERIALIZE_NEW,
-        resolution_reasons=tuple(reasons),
+    recall = retrieve_person_canonical_candidates(
+        session,
+        stylebook_id=stylebook_id,
+        person=person,
+        limit=PERSON_RECALL_DEFAULT_LIMIT,
     )
+    if not recall:
+        return CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.MATERIALIZE_NEW,
+            resolution_reasons=({"code": "materialized_new_canonical"},),
+        )
+
+    return _ambiguous_person_defer_plan(recall=recall, best_canonical_id=recall[0][0])

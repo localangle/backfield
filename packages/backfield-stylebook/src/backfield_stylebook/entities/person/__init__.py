@@ -20,8 +20,11 @@ from backfield_stylebook.entities.person.policy import (
     decide_person_canonical_persist_plan,
     find_existing_person_canonical_id_by_alias,
     find_existing_person_canonical_id_by_identity,
+    plan_has_ambiguous_person_canonical_match,
+    plan_requires_llm_person_canonical_adjudication,
     rank_person_canonical_recall_matches,
 )
+from backfield_stylebook.entities.person.recall import retrieve_person_canonical_candidates
 from backfield_stylebook.entities.person.types import (
     PERSON_NATURE_VALUES,
     derive_person_sort_key,
@@ -46,7 +49,10 @@ __all__ = [
     "normalize_person_text",
     "person_identity_fingerprint",
     "rank_canonical_suggestions_for_substrate",
+    "plan_has_ambiguous_person_canonical_match",
+    "plan_requires_llm_person_canonical_adjudication",
     "rank_person_canonical_recall_matches",
+    "retrieve_person_canonical_candidates",
     "refresh_aliases_for_linked_person",
     "requeue_substrate_after_story_remove",
     "sync_substrate_person_into_stylebook",

@@ -7,8 +7,8 @@ from typing import Any
 
 from backfield_db import SubstrateLocationMention
 from backfield_stylebook.canonical_link import CANONICAL_LINK_UNLINKED
-from backfield_stylebook.canonical_policy import (
-    decide_canonical_persist_plan,
+from backfield_stylebook.entities.location.policy import (
+    decide_location_canonical_persist_plan,
     plan_requires_llm_canonical_adjudication,
 )
 from backfield_stylebook.locations import (
@@ -111,7 +111,7 @@ class LocationPersistHandler:
                     provenance="substrate_ingest",
                 )
             elif ctx.stylebook_id is not None:
-                plan = decide_canonical_persist_plan(
+                plan = decide_location_canonical_persist_plan(
                     session,
                     stylebook_id=ctx.stylebook_id,
                     places_bucket=bucket,
