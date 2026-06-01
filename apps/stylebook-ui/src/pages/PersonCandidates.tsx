@@ -11,11 +11,10 @@ import {
   getPersonCandidateContext,
   linkPersonSubstrateToCanonical,
   listPersonCandidates,
-  listPersonCandidateTypes,
   type PersonCandidate,
   type PersonCandidateContextResponse,
 } from "@/lib/api"
-import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
+import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { PersonCanonicalLinkModal } from "@/components/PersonCanonicalLinkModal"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -108,14 +107,10 @@ export default function PersonCandidates() {
   const [status, setStatus] = useState<"open" | "deferred">("open")
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
-  const [typeFilter, setTypeFilter] = useState<string>("all")
-  const [needsReviewOnly, setNeedsReviewOnly] = useState(false)
   const filterKey = useMemo(
-    () =>
-      `${projectSlug}|${stylebookSlug}|${status}|${debouncedQuery}|${typeFilter}|${needsReviewOnly}`,
-    [projectSlug, stylebookSlug, status, debouncedQuery, typeFilter, needsReviewOnly],
+    () => `${projectSlug}|${stylebookSlug}|${status}|${debouncedQuery}`,
+    [projectSlug, stylebookSlug, status, debouncedQuery],
   )
-  const [types, setTypes] = useState<string[]>([])
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
   const [deferringId, setDeferringId] = useState<number | null>(null)
   const [linkModalId, setLinkModalId] = useState<number | null>(null)
@@ -136,11 +131,6 @@ export default function PersonCandidates() {
     candidateLabel: string
   } | null>(null)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
-
-  const orderedTypeFilterOptions = useMemo(
-    () => sortReviewQueueTypeFilterOptions(types),
-    [types],
-  )
 
   const listTotalPages = useMemo(
     () => Math.max(1, Math.ceil(listTotal / REVIEW_QUEUE_PAGE_SIZE)),
@@ -185,31 +175,16 @@ export default function PersonCandidates() {
     return () => window.clearTimeout(t)
   }, [query])
 
-  useEffect(() => {
-    if (!projectSlug) return
-    void (async () => {
-      try {
-        const res = await listPersonCandidateTypes(projectSlug, status)
-        setTypes(res.types)
-      } catch {
-        setTypes([])
-      }
-    })()
-  }, [projectSlug, status])
-
   const refreshListQuiet = useCallback(async () => {
     if (!projectSlug) return
     setError(null)
-    const type_filter = typeFilter === "all" ? undefined : typeFilter
     const q = debouncedQuery.trim() || undefined
     const offset = (listPage - 1) * REVIEW_QUEUE_PAGE_SIZE
     try {
       const res = await listPersonCandidates(projectSlug, status, {
         limit: REVIEW_QUEUE_PAGE_SIZE,
         offset,
-        type_filter,
         q,
-        needs_review: status === "open" && needsReviewOnly ? true : undefined,
       })
       setListTotal(res.total)
       setCandidates(res.candidates)
@@ -221,7 +196,7 @@ export default function PersonCandidates() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed")
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, needsReviewOnly])
+  }, [projectSlug, status, debouncedQuery, listPage])
 
   useEffect(() => {
     if (!projectSlug) return
@@ -229,16 +204,13 @@ export default function PersonCandidates() {
     void (async () => {
       setLoading(true)
       setError(null)
-      const type_filter = typeFilter === "all" ? undefined : typeFilter
       const q = debouncedQuery.trim() || undefined
       const offset = (listPage - 1) * REVIEW_QUEUE_PAGE_SIZE
       try {
         const res = await listPersonCandidates(projectSlug, status, {
           limit: REVIEW_QUEUE_PAGE_SIZE,
           offset,
-          type_filter,
           q,
-          needs_review: status === "open" && needsReviewOnly ? true : undefined,
         })
         if (cancelled) return
         setListTotal(res.total)
@@ -267,7 +239,7 @@ export default function PersonCandidates() {
     return () => {
       cancelled = true
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen, needsReviewOnly])
+  }, [projectSlug, status, debouncedQuery, listPage, listFetchGen])
 
   function openCreateModal(c: PersonCandidate) {
     setCreateModalId(c.id)
@@ -472,42 +444,12 @@ export default function PersonCandidates() {
               placeholder="Search name…"
             />
           </div>
-          <div className="flex flex-wrap gap-4 items-end justify-between">
-            <div className="w-full max-w-xs">
-              <Label>Type</Label>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {orderedTypeFilterOptions.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {placeExtractTypeLabel(t)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              <span>Loading…</span>
             </div>
-            {status === "open" ? (
-              <div className="flex items-center gap-2 pb-2">
-                <Checkbox
-                  id="person-needs-review-only"
-                  checked={needsReviewOnly}
-                  onCheckedChange={(v) => setNeedsReviewOnly(v === true)}
-                />
-                <Label htmlFor="person-needs-review-only" className="font-normal cursor-pointer">
-                  Flagged for identity review only
-                </Label>
-              </div>
-            ) : null}
-            {loading && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground pb-2">
-                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                <span>Loading…</span>
-              </div>
-            )}
-          </div>
+          ) : null}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="overflow-hidden rounded-md border">
