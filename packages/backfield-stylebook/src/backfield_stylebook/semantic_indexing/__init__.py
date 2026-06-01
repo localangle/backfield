@@ -19,6 +19,16 @@ from backfield_stylebook.semantic_indexing.contracts import (
     SemanticDocumentSourceKey,
     SemanticDocumentUnsupportedType,
 )
+from backfield_stylebook.semantic_indexing.sync import (
+    sync_semantic_documents_for_article,
+    sync_semantic_documents_for_entity_type,
+    sync_semantic_documents_for_scope,
+)
+from backfield_stylebook.semantic_indexing.sync_contract import (
+    SemanticSyncResult,
+    SemanticSyncScope,
+    SemanticSyncSummary,
+)
 
 __all__ = [
     "DEFAULT_DOCUMENT_KIND",
@@ -30,10 +40,16 @@ __all__ = [
     "SemanticDocumentDraft",
     "SemanticDocumentSourceKey",
     "SemanticDocumentUnsupportedType",
+    "SemanticSyncResult",
+    "SemanticSyncScope",
+    "SemanticSyncSummary",
     "build_location_occurrence_document",
     "build_location_occurrence_documents",
     "build_person_occurrence_document",
     "build_person_occurrence_documents",
     "semantic_builder_supported",
+    "sync_semantic_documents_for_article",
+    "sync_semantic_documents_for_entity_type",
+    "sync_semantic_documents_for_scope",
     "unsupported_semantic_builder_type",
 ]
