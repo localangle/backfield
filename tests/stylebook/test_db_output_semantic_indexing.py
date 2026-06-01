@@ -8,6 +8,7 @@ from backfield_stylebook.semantic_indexing.db_output import (
     semantic_entity_types_for_consolidated_domains,
     sync_semantic_documents_after_db_output,
 )
+from backfield_stylebook.semantic_indexing.embedding_contract import EmbeddingRunSummary
 from backfield_stylebook.semantic_indexing.sync_contract import (
     SemanticSyncResult,
     SemanticSyncSummary,
@@ -60,6 +61,24 @@ def test_build_semantic_indexing_summary_failed() -> None:
     assert summary["status"] == "failed"
     assert summary["error"] == "provider timeout"
     assert summary["domains"] == []
+
+
+def test_build_semantic_indexing_summary_with_embedding_partial() -> None:
+    sync_result = SemanticSyncResult(
+        summaries=(SemanticSyncSummary(entity_type="person", created=1, pending=1),)
+    )
+    embedding = EmbeddingRunSummary(
+        status="not_configured",
+        pending=1,
+        error="No embedding model configured.",
+    )
+    summary = build_semantic_indexing_summary(
+        enabled=True,
+        sync_result=sync_result,
+        embedding=embedding,
+    )
+    assert summary["status"] == "partial"
+    assert summary["embedding"]["status"] == "not_configured"
 
 
 def test_sync_semantic_documents_after_db_output_no_supported_domains() -> None:

@@ -8,6 +8,7 @@ from typing import Any
 from sqlmodel import Session
 
 from backfield_stylebook.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_stylebook.semantic_indexing.embedding_contract import EmbeddingRunSummary
 from backfield_stylebook.semantic_indexing.sync import sync_semantic_documents_for_article
 from backfield_stylebook.semantic_indexing.sync_contract import SemanticSyncResult
 
@@ -55,6 +56,7 @@ def build_semantic_indexing_summary(
     enabled: bool,
     sync_result: SemanticSyncResult | None = None,
     error: str | None = None,
+    embedding: EmbeddingRunSummary | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compact semantic indexing summary for Backfield Output results."""
     if not enabled:
@@ -67,11 +69,30 @@ def build_semantic_indexing_summary(
             "domains": [],
         }
     domains = [summary.as_dict() for summary in (sync_result.summaries if sync_result else ())]
-    return {
+    out: dict[str, Any] = {
         "enabled": True,
         "status": "succeeded",
         "domains": domains,
     }
+    if embedding is not None:
+        if isinstance(embedding, EmbeddingRunSummary):
+            out["embedding"] = embedding.as_dict()
+        else:
+            out["embedding"] = embedding
+        out["status"] = _combined_semantic_indexing_status(out["status"], out["embedding"])
+    return out
+
+
+def _combined_semantic_indexing_status(
+    sync_status: str,
+    embedding_summary: dict[str, Any],
+) -> str:
+    if sync_status == "failed":
+        return "failed"
+    emb_status = str(embedding_summary.get("status") or "")
+    if emb_status in ("failed", "partial", "not_configured"):
+        return "partial"
+    return sync_status
 
 
 def run_semantic_indexing_for_db_output(
@@ -80,6 +101,7 @@ def run_semantic_indexing_for_db_output(
     project_id: int,
     article_id: int,
     consolidated_domain_keys: tuple[str, ...],
+    embedding: EmbeddingRunSummary | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run semantic sync after substrate persistence; warn instead of raising."""
     try:
@@ -98,4 +120,8 @@ def run_semantic_indexing_for_db_output(
             exc_info=True,
         )
         return build_semantic_indexing_summary(enabled=True, error=str(exc))
-    return build_semantic_indexing_summary(enabled=True, sync_result=sync_result)
+    return build_semantic_indexing_summary(
+        enabled=True,
+        sync_result=sync_result,
+        embedding=embedding,
+    )

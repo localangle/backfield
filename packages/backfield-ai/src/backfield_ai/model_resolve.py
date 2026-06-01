@@ -5,12 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from backfield_db import (
+    BackfieldAiDefaultModelRole,
     BackfieldAiModelConfig,
     BackfieldAiProjectModelOverride,
     BackfieldProject,
 )
 from sqlmodel import Session, select
 
+from backfield_ai.constants import AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING
+from backfield_ai.embeddings import EmbeddingConfigurationError
 from backfield_ai.litellm_model import effective_litellm_model_row
 
 
@@ -119,4 +122,52 @@ def resolve_place_extract_litellm_model(
         litellm_model=cfg.litellm_model,
         provider=str(cfg.provider),
         provider_model_id=str(cfg.provider_model_id),
+    )
+
+
+def resolve_semantic_embedding_model_config_id(
+    session: Session,
+    project_id: int,
+) -> str:
+    """Resolve the project or organization default embedding model for semantic indexing."""
+    proj = session.get(BackfieldProject, project_id)
+    if proj is None:
+        raise EmbeddingConfigurationError("Project not found.")
+    org_id = int(proj.organization_id)
+
+    project_role = session.exec(
+        select(BackfieldAiDefaultModelRole).where(
+            BackfieldAiDefaultModelRole.project_id == project_id,
+            BackfieldAiDefaultModelRole.role == AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+        )
+    ).first()
+    if project_role is not None:
+        config_id = str(project_role.model_config_id)
+        _load_enabled_org_config(
+            session,
+            organization_id=org_id,
+            project_id=project_id,
+            config_id=config_id,
+        )
+        return config_id
+
+    org_role = session.exec(
+        select(BackfieldAiDefaultModelRole).where(
+            BackfieldAiDefaultModelRole.organization_id == org_id,
+            BackfieldAiDefaultModelRole.role == AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+        )
+    ).first()
+    if org_role is not None:
+        config_id = str(org_role.model_config_id)
+        _load_enabled_org_config(
+            session,
+            organization_id=org_id,
+            project_id=project_id,
+            config_id=config_id,
+        )
+        return config_id
+
+    raise EmbeddingConfigurationError(
+        "No embedding model configured. Assign a default semantic.embedding model "
+        "for this project or organization.",
     )
