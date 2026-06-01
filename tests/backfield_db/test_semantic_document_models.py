@@ -51,7 +51,6 @@ def test_semantic_document_defaults() -> None:
     assert row.embedding_status == SEMANTIC_EMBEDDING_STATUS_PENDING
     assert row.active is True
     assert row.stale is False
-    assert row.stylebook_person_canonical_id is None
     assert row.embedding is None
 
 
@@ -59,7 +58,6 @@ def test_semantic_document_project_lookup_indexes() -> None:
     person_indexes = _index_names(SubstratePersonSemanticDocument)
     assert "idx_substrate_person_sem_doc_project_article" in person_indexes
     assert "idx_substrate_person_sem_doc_project_person" in person_indexes
-    assert "idx_substrate_person_sem_doc_project_canonical" in person_indexes
     assert "idx_substrate_person_sem_doc_project_status" in person_indexes
     assert "idx_substrate_person_sem_doc_project_active" in person_indexes
 
@@ -79,7 +77,6 @@ def test_semantic_document_foreign_keys_to_substrate_chain() -> None:
     assert ("person_id", "substrate_person.id") in fk_targets
     assert ("person_mention_id", "substrate_person_mention.id") in fk_targets
     assert ("person_mention_occurrence_id", "substrate_person_mention_occurrence.id") in fk_targets
-    assert ("stylebook_person_canonical_id", "stylebook_person_canonical.id") in fk_targets
 
 
 def test_embedding_column_uses_pgvector_on_postgres() -> None:

@@ -32,7 +32,6 @@ def _create_person_semantic_document_table() -> None:
         sa.Column("project_id", sa.Integer(), nullable=False),
         sa.Column("article_id", sa.Integer(), nullable=False),
         sa.Column("person_id", sa.Integer(), nullable=False),
-        sa.Column("stylebook_person_canonical_id", sa.Text(), nullable=True),
         sa.Column("person_mention_id", sa.Integer(), nullable=False),
         sa.Column("person_mention_occurrence_id", sa.Integer(), nullable=False),
         sa.Column(
@@ -84,11 +83,6 @@ def _create_person_semantic_document_table() -> None:
             name="substrate_person_sem_doc_person_id_fkey",
         ),
         sa.ForeignKeyConstraint(
-            ["stylebook_person_canonical_id"],
-            ["stylebook_person_canonical.id"],
-            name="substrate_person_sem_doc_canonical_id_fkey",
-        ),
-        sa.ForeignKeyConstraint(
             ["person_mention_id"],
             ["substrate_person_mention.id"],
             name="substrate_person_sem_doc_mention_id_fkey",
@@ -120,11 +114,6 @@ def _create_person_semantic_document_table() -> None:
         ["person_id"],
     )
     op.create_index(
-        "ix_substrate_person_sem_doc_stylebook_person_canonical_id",
-        "substrate_person_semantic_document",
-        ["stylebook_person_canonical_id"],
-    )
-    op.create_index(
         "ix_substrate_person_sem_doc_person_mention_id",
         "substrate_person_semantic_document",
         ["person_mention_id"],
@@ -150,11 +139,6 @@ def _create_person_semantic_document_table() -> None:
         ["project_id", "person_id"],
     )
     op.create_index(
-        "idx_substrate_person_sem_doc_project_canonical",
-        "substrate_person_semantic_document",
-        ["project_id", "stylebook_person_canonical_id"],
-    )
-    op.create_index(
         "idx_substrate_person_sem_doc_project_status",
         "substrate_person_semantic_document",
         ["project_id", "embedding_status", "active"],
@@ -173,7 +157,6 @@ def _create_location_semantic_document_table() -> None:
         sa.Column("project_id", sa.Integer(), nullable=False),
         sa.Column("article_id", sa.Integer(), nullable=False),
         sa.Column("location_id", sa.Integer(), nullable=False),
-        sa.Column("stylebook_location_canonical_id", sa.Text(), nullable=True),
         sa.Column("location_mention_id", sa.Integer(), nullable=False),
         sa.Column("location_mention_occurrence_id", sa.Integer(), nullable=False),
         sa.Column(
@@ -225,11 +208,6 @@ def _create_location_semantic_document_table() -> None:
             name="substrate_location_sem_doc_location_id_fkey",
         ),
         sa.ForeignKeyConstraint(
-            ["stylebook_location_canonical_id"],
-            ["stylebook_location_canonical.id"],
-            name="substrate_location_sem_doc_canonical_id_fkey",
-        ),
-        sa.ForeignKeyConstraint(
             ["location_mention_id"],
             ["substrate_location_mention.id"],
             name="substrate_location_sem_doc_mention_id_fkey",
@@ -261,11 +239,6 @@ def _create_location_semantic_document_table() -> None:
         ["location_id"],
     )
     op.create_index(
-        "ix_substrate_location_sem_doc_stylebook_location_canonical_id",
-        "substrate_location_semantic_document",
-        ["stylebook_location_canonical_id"],
-    )
-    op.create_index(
         "ix_substrate_location_sem_doc_location_mention_id",
         "substrate_location_semantic_document",
         ["location_mention_id"],
@@ -289,11 +262,6 @@ def _create_location_semantic_document_table() -> None:
         "idx_substrate_location_sem_doc_project_location",
         "substrate_location_semantic_document",
         ["project_id", "location_id"],
-    )
-    op.create_index(
-        "idx_substrate_location_sem_doc_project_canonical",
-        "substrate_location_semantic_document",
-        ["project_id", "stylebook_location_canonical_id"],
     )
     op.create_index(
         "idx_substrate_location_sem_doc_project_status",

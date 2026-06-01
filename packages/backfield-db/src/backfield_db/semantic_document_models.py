@@ -3,6 +3,9 @@
 V1 creates concrete tables for entity types with durable mention occurrence rows today:
 person and location. When organization/work gain ``substrate_*_mention_occurrence`` tables,
 add matching ``substrate_<type>_semantic_document`` models using the same column pattern.
+
+Stylebook canonical ids are **not** stored on semantic rows; resolve them at query time via
+``person_id`` / ``location_id`` joins to ``substrate_person`` / ``substrate_location``.
 """
 
 from __future__ import annotations
@@ -42,11 +45,6 @@ class SubstratePersonSemanticDocument(SQLModel, table=True):
             "person_id",
         ),
         Index(
-            "idx_substrate_person_sem_doc_project_canonical",
-            "project_id",
-            "stylebook_person_canonical_id",
-        ),
-        Index(
             "idx_substrate_person_sem_doc_project_status",
             "project_id",
             "embedding_status",
@@ -64,11 +62,6 @@ class SubstratePersonSemanticDocument(SQLModel, table=True):
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
     article_id: int = Field(foreign_key="substrate_article.id", index=True)
     person_id: int = Field(foreign_key="substrate_person.id", index=True)
-    stylebook_person_canonical_id: str | None = Field(
-        default=None,
-        foreign_key="stylebook_person_canonical.id",
-        index=True,
-    )
     person_mention_id: int = Field(foreign_key="substrate_person_mention.id", index=True)
     person_mention_occurrence_id: int = Field(
         foreign_key="substrate_person_mention_occurrence.id",
@@ -137,11 +130,6 @@ class SubstrateLocationSemanticDocument(SQLModel, table=True):
             "location_id",
         ),
         Index(
-            "idx_substrate_location_sem_doc_project_canonical",
-            "project_id",
-            "stylebook_location_canonical_id",
-        ),
-        Index(
             "idx_substrate_location_sem_doc_project_status",
             "project_id",
             "embedding_status",
@@ -159,11 +147,6 @@ class SubstrateLocationSemanticDocument(SQLModel, table=True):
     project_id: int = Field(foreign_key="backfield_project.id", index=True)
     article_id: int = Field(foreign_key="substrate_article.id", index=True)
     location_id: int = Field(foreign_key="substrate_location.id", index=True)
-    stylebook_location_canonical_id: str | None = Field(
-        default=None,
-        foreign_key="stylebook_location_canonical.id",
-        index=True,
-    )
     location_mention_id: int = Field(foreign_key="substrate_location_mention.id", index=True)
     location_mention_occurrence_id: int = Field(
         foreign_key="substrate_location_mention_occurrence.id",
