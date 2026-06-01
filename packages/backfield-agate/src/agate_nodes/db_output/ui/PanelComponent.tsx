@@ -33,6 +33,7 @@ const DEFAULTS = {
   auto_apply_canonicalization: true,
   adjudication_model: '',
   adjudication_ai_model_config_id: null as string | null,
+  semantic_indexing_enabled: false,
 }
 
 const ORG_DEFAULT_STYLEBOOK_SELECT = '__org_default_stylebook__'
@@ -236,6 +237,7 @@ export default function DBOutputPanel({
 
   const data = merged
   const stylebookMatchingEnabled = Boolean(data.stylebook_matching_enabled)
+  const semanticIndexingEnabled = Boolean(data.semantic_indexing_enabled)
   const aiAssisted = data.canonicalization_mode === 'ai_assisted'
 
   const catalogHint =
@@ -308,6 +310,29 @@ export default function DBOutputPanel({
             <p className="text-xs text-muted-foreground">
               When on, extracted entities are linked to your Stylebook. When off, results are saved but
               not linked to Stylebook.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="dbout-semantic-indexing">Semantic search</Label>
+            <Select
+              value={yesNoSelectValue(semanticIndexingEnabled)}
+              onValueChange={(value) =>
+                patch({ semantic_indexing_enabled: value === 'yes' })
+              }
+              disabled={disabled}
+            >
+              <SelectTrigger id="dbout-semantic-indexing" className="text-xs">
+                <SelectValue placeholder="Choose whether to prepare saved mentions for search" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">Yes</SelectItem>
+                <SelectItem value="no">No</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              When on, saved mentions and quotes are prepared for semantic search across stories.
+              When off, results are saved without building a search index.
             </p>
           </div>
         </div>

@@ -50,6 +50,11 @@ def test_db_output_settings_validate_reconciliation_policy() -> None:
     assert settings.reconciliation_policy == "add_only"
 
 
+def test_db_output_settings_semantic_indexing_defaults_off() -> None:
+    settings = DbOutputCanonicalSettings.from_node_params({})
+    assert settings.semantic_indexing_enabled is False
+
+
 def test_db_output_delegates_override_to_shared_resolver() -> None:
     engine = _engine()
     with Session(engine) as session:

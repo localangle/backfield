@@ -6,6 +6,11 @@ import os
 from typing import Any
 
 from agate_runtime.output_node import consolidated_body_from_dboutput
+from backfield_stylebook.db_output_settings import DbOutputCanonicalSettings
+from backfield_stylebook.semantic_indexing.db_output import (
+    build_semantic_indexing_summary,
+    run_semantic_indexing_for_db_output,
+)
 from sqlmodel import Session
 
 from worker.flags.replace_geography import clear_replace_article_geography_flags
@@ -31,6 +36,8 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
     processed_item_id = int(item_id_raw) if item_id_raw.isdigit() else None
 
     body = consolidated_body_from_dboutput(params, inputs)
+    node_params = params if isinstance(params, dict) else None
+    settings = DbOutputCanonicalSettings.from_node_params(node_params)
 
     from backfield_db.session import get_engine
 
@@ -52,6 +59,17 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         domain_summaries = [
             summary.as_dict() for summary in persist_result.domain_summaries
         ] or [reconciliation_summary]
+
+        if settings.semantic_indexing_enabled:
+            semantic_indexing = run_semantic_indexing_for_db_output(
+                session,
+                project_id=project_id,
+                article_id=article_id,
+                consolidated_domain_keys=persist_result.consolidated_domain_keys,
+            )
+        else:
+            semantic_indexing = build_semantic_indexing_summary(enabled=False)
+
         clear_replace_article_geography_flags(
             session,
             run_id=run_id,
@@ -85,5 +103,6 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
             "policy": reconciliation_summary["policy"],
             "domains": domain_summaries,
         },
+        "semantic_indexing": semantic_indexing,
         "message": message,
     }

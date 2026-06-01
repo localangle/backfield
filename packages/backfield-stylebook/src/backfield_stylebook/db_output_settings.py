@@ -40,6 +40,11 @@ class DbOutputCanonicalSettings(BaseModel):
         default=None,
         description="Optional Backfield AI catalog row id for credentials / LiteLLM routing.",
     )
+    semantic_indexing_enabled: bool = Field(
+        default=False,
+        description="When true, Backfield Output synchronizes semantic search documents "
+        "after substrate persistence.",
+    )
 
     @model_validator(mode="before")
     @classmethod

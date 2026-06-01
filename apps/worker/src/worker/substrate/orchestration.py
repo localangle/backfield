@@ -48,6 +48,7 @@ class PersistResult:
     replace_stats: ArticleGeographyReplaceStats | None
     reconciliation_summary: DomainReconciliationSummary
     domain_summaries: tuple[DomainReconciliationSummary, ...] = ()
+    consolidated_domain_keys: tuple[str, ...] = ()
 
     def __iter__(self):
         yield self.article_id
@@ -187,4 +188,5 @@ def persist_from_consolidated(
         replace_stats=replace_stats,
         reconciliation_summary=_primary_reconciliation_summary(summaries_tuple),
         domain_summaries=summaries_tuple,
+        consolidated_domain_keys=active_keys,
     )
