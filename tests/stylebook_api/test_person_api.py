@@ -73,6 +73,40 @@ def test_list_canonical_people_empty(client: TestClient) -> None:
     assert body["total"] == 0
 
 
+def test_list_canonical_people_token_search_ronald_finds_ron_wyden(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        s.add(
+            StylebookPersonCanonical(
+                stylebook_id=sb_id,
+                label="Ron Wyden",
+                slug="ron-wyden",
+                status="active",
+            )
+        )
+        s.add(
+            StylebookPersonCanonical(
+                stylebook_id=sb_id,
+                label="Unrelated Person",
+                slug="unrelated-person",
+                status="active",
+            )
+        )
+        s.commit()
+
+    r = client.get(
+        "/v1/canonical-people?project_slug=demo-proj&q=Ronald%20L.%20Wyden&limit=10",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    labels = [row["label"] for row in r.json()["canonicals"]]
+    assert "Ron Wyden" in labels
+
+
 def test_stylebook_canonical_people_min_mentions(editor_client: TestClient) -> None:
     r = editor_client.get("/v1/stylebooks/default/canonical-people?min_mentions=1")
     assert r.status_code == 200

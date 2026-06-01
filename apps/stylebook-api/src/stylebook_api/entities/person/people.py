@@ -9,6 +9,7 @@ from uuid import UUID
 from backfield_auth.gate import require_project_access
 from backfield_db import (
     BackfieldProject,
+    StylebookPersonAlias,
     StylebookPersonCanonical,
     SubstrateArticle,
     SubstratePerson,
@@ -16,6 +17,10 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
+from backfield_stylebook.entities.person.name_match import (
+    score_person_name_overlap,
+    significant_search_tokens,
+)
 from backfield_stylebook.entities.person.persist import (
     requeue_substrate_after_story_remove,
     unlink_substrate_from_canonical,
@@ -31,7 +36,7 @@ from backfield_stylebook.people import (
 )
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import case, exists, literal
+from sqlalchemy import case, exists, literal, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
@@ -45,6 +50,36 @@ router = APIRouter(prefix="/v1", tags=["people"])
 def _escape_ilike_metacharacters(s: str) -> str:
     """Escape ``%`` and ``_`` for SQL ``ILIKE`` patterns (use with ``escape='\\\\'``)."""
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _apply_person_catalog_q_filter(
+    filters: list[ColumnElement[bool]],
+    q_text: str,
+) -> bool:
+    """Append catalog search predicates. Returns True when token OR search (re-rank in Python)."""
+    tokens = significant_search_tokens(q_text)
+    if not tokens:
+        esc = _escape_ilike_metacharacters(q_text)
+        filters.append(col(StylebookPersonCanonical.label).ilike(f"%{esc}%", escape="\\"))
+        return False
+    label_parts: list[ColumnElement[bool]] = []
+    alias_parts: list[ColumnElement[bool]] = []
+    for tok in tokens:
+        esc = _escape_ilike_metacharacters(tok)
+        pat = f"%{esc}%"
+        label_parts.append(col(StylebookPersonCanonical.label).ilike(pat, escape="\\"))
+        alias_parts.append(col(StylebookPersonAlias.normalized_alias).ilike(pat, escape="\\"))
+    alias_exists = exists(
+        select(literal(1))
+        .select_from(StylebookPersonAlias)
+        .where(
+            StylebookPersonAlias.person_canonical_id == StylebookPersonCanonical.id,
+            StylebookPersonAlias.suppressed.is_(False),
+            or_(*alias_parts),
+        )
+    )
+    filters.append(or_(*label_parts, alias_exists))
+    return True
 
 
 def _project_by_slug(session: Session, slug: str) -> BackfieldProject:
@@ -284,10 +319,9 @@ def list_canonical_people(
 
     filters: list[ColumnElement[bool]] = [StylebookPersonCanonical.stylebook_id == stylebook_id]
     q_text = (q or "").strip()
+    token_catalog_search = False
     if q_text:
-        esc = _escape_ilike_metacharacters(q_text)
-        term = f"%{esc}%"
-        filters.append(col(StylebookPersonCanonical.label).ilike(term, escape="\\"))
+        token_catalog_search = _apply_person_catalog_q_filter(filters, q_text)
     if type_filter is not None:
         tf = type_filter.strip()
         if tf:
@@ -323,14 +357,27 @@ def list_canonical_people(
     else:
         order_by = (sort_key_col.asc(), col(StylebookPersonCanonical.id).asc())
 
+    fetch_offset = offset
+    fetch_limit = limit
+    if token_catalog_search:
+        fetch_offset = 0
+        fetch_limit = min(max(offset + limit * 4, limit * 4), 200)
     list_stmt = (
         select(StylebookPersonCanonical)
         .where(*filters)
         .order_by(*order_by)
-        .offset(offset)
-        .limit(limit)
+        .offset(fetch_offset)
+        .limit(fetch_limit)
     )
     rows = list(session.exec(list_stmt).all())
+    if token_catalog_search and q_text:
+        rows.sort(
+            key=lambda row: (
+                -score_person_name_overlap(q_text, str(row.label)),
+                str(row.label).lower(),
+            )
+        )
+        rows = rows[offset : offset + limit]
     cids = [str(r.id) for r in rows if r.id is not None]
     mc = _mention_counts_by_canonical(session, project_id=project_id, canonical_ids=cids)
     lc = _linked_substrate_counts(session, project_id=project_id, canonical_ids=cids)

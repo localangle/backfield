@@ -120,6 +120,7 @@ export default function PersonCandidates() {
   const [deferringId, setDeferringId] = useState<number | null>(null)
   const [linkModalId, setLinkModalId] = useState<number | null>(null)
   const [linkModalInitialCanonicalId, setLinkModalInitialCanonicalId] = useState<string | null>(null)
+  const [linkModalSearchQuery, setLinkModalSearchQuery] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [contextById, setContextById] = useState<Record<number, PersonCandidateContextResponse>>({})
   const [contextLoadingId, setContextLoadingId] = useState<number | null>(null)
@@ -631,6 +632,7 @@ export default function PersonCandidates() {
                                   }
                                   setLinkModalId(c.id)
                                   setLinkModalInitialCanonicalId(null)
+                                  setLinkModalSearchQuery((c.suggested_name ?? "").trim() || null)
                                 }}
                               >
                                 {linkingSuggestedId === c.id ? (
@@ -728,11 +730,13 @@ export default function PersonCandidates() {
           if (!o) {
             setLinkModalId(null)
             setLinkModalInitialCanonicalId(null)
+            setLinkModalSearchQuery(null)
           }
         }}
         projectSlug={projectSlug}
         substratePersonId={linkModalId}
         initialCanonicalId={linkModalInitialCanonicalId}
+        initialSearchQuery={linkModalSearchQuery}
         title="Link candidate to person"
         onLinked={({ id, label }) => {
           setLinkedToast({

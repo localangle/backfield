@@ -55,9 +55,19 @@ export function PersonCanonicalLinkModal(props: {
   onLinked?: (canonical: { id: string; label: string }) => void
   title?: string
   initialCanonicalId?: string | null
+  /** Pre-fills catalog search when the modal opens (e.g. candidate display name). */
+  initialSearchQuery?: string | null
 }) {
-  const { open, onOpenChange, projectSlug, substratePersonId, onDone, title, initialCanonicalId } =
-    props
+  const {
+    open,
+    onOpenChange,
+    projectSlug,
+    substratePersonId,
+    onDone,
+    title,
+    initialCanonicalId,
+    initialSearchQuery,
+  } = props
   const stylebookLabel = useSelectedStylebookLabel()
   const [suggestions, setSuggestions] = useState<SuggestedPersonCanonicalItem[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
@@ -79,8 +89,13 @@ export function PersonCanonicalLinkModal(props: {
       setInitialCanonExtra(null)
       setLinkedCanonicalId(null)
       setLinkedMetaLoaded(false)
+      return
     }
-  }, [open])
+    const prefill = (initialSearchQuery ?? "").trim()
+    if (prefill) {
+      setSearchQ(prefill)
+    }
+  }, [open, initialSearchQuery])
 
   useEffect(() => {
     if (!open || substratePersonId == null || !projectSlug) {
