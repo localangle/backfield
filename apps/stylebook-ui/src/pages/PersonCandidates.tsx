@@ -109,9 +109,11 @@ export default function PersonCandidates() {
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false)
   const filterKey = useMemo(
-    () => `${projectSlug}|${stylebookSlug}|${status}|${debouncedQuery}|${typeFilter}`,
-    [projectSlug, stylebookSlug, status, debouncedQuery, typeFilter],
+    () =>
+      `${projectSlug}|${stylebookSlug}|${status}|${debouncedQuery}|${typeFilter}|${needsReviewOnly}`,
+    [projectSlug, stylebookSlug, status, debouncedQuery, typeFilter, needsReviewOnly],
   )
   const [types, setTypes] = useState<string[]>([])
   const [acceptingId, setAcceptingId] = useState<number | null>(null)
@@ -206,6 +208,7 @@ export default function PersonCandidates() {
         offset,
         type_filter,
         q,
+        needs_review: status === "open" && needsReviewOnly ? true : undefined,
       })
       setListTotal(res.total)
       setCandidates(res.candidates)
@@ -217,7 +220,7 @@ export default function PersonCandidates() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed")
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter, listPage])
+  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, needsReviewOnly])
 
   useEffect(() => {
     if (!projectSlug) return
@@ -234,6 +237,7 @@ export default function PersonCandidates() {
           offset,
           type_filter,
           q,
+          needs_review: status === "open" && needsReviewOnly ? true : undefined,
         })
         if (cancelled) return
         setListTotal(res.total)
@@ -262,7 +266,7 @@ export default function PersonCandidates() {
     return () => {
       cancelled = true
     }
-  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen])
+  }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen, needsReviewOnly])
 
   function openCreateModal(c: PersonCandidate) {
     setCreateModalId(c.id)
@@ -484,6 +488,18 @@ export default function PersonCandidates() {
                 </SelectContent>
               </Select>
             </div>
+            {status === "open" ? (
+              <div className="flex items-center gap-2 pb-2">
+                <Checkbox
+                  id="person-needs-review-only"
+                  checked={needsReviewOnly}
+                  onCheckedChange={(v) => setNeedsReviewOnly(v === true)}
+                />
+                <Label htmlFor="person-needs-review-only" className="font-normal cursor-pointer">
+                  Flagged for identity review only
+                </Label>
+              </div>
+            ) : null}
             {loading && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground pb-2">
                 <Loader2 className="h-4 w-4 animate-spin shrink-0" />

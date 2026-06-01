@@ -11,6 +11,13 @@ from backfield_stylebook.canonical.policy import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
 )
+from backfield_stylebook.entities.person.review import (
+    REVIEW_HANDLING_AUTO_DEFER,
+    REVIEW_HANDLING_FLAG,
+    default_review_message,
+    review_context_from_source_details,
+    review_reason_dict,
+)
 from backfield_stylebook.entities.person.types import normalize_person_text
 
 
@@ -158,6 +165,18 @@ def _pick_link_canonical_id(
     return None
 
 
+def _review_defer_plan(person: SubstratePerson) -> CanonicalPersistPlan | None:
+    details = person.source_details_json if isinstance(person.source_details_json, dict) else {}
+    handling, code, message = review_context_from_source_details(details)
+    if handling not in (REVIEW_HANDLING_AUTO_DEFER, REVIEW_HANDLING_FLAG) or not code:
+        return None
+    msg = message or default_review_message(code)
+    return CanonicalPersistPlan(
+        decision=CanonicalPersistDecision.DEFER,
+        resolution_reasons=(review_reason_dict(code=code, message=msg),),
+    )
+
+
 def decide_person_canonical_persist_plan(
     session: Session,
     *,
@@ -166,9 +185,13 @@ def decide_person_canonical_persist_plan(
     people_bucket: str = "ready",
     auto_apply_canonicalization: bool = False,
 ) -> CanonicalPersistPlan:
-    """Decide link or materialize for a substrate person row (no defer recommendations)."""
+    """Decide link, materialize, or defer (review routing) for a substrate person row."""
     _ = people_bucket
     _ = auto_apply_canonicalization
+    review_plan = _review_defer_plan(person)
+    if review_plan is not None:
+        return review_plan
+
     reasons: list[dict[str, Any]] = []
 
     by_identity = find_existing_person_canonical_id_by_identity(

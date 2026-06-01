@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+PersonReviewHandling = Literal["none", "flag_review", "auto_defer"]
 
 
 class PersonMention(BaseModel):
@@ -23,3 +27,7 @@ class ExtractedPerson(BaseModel):
     nature: str | None = None
     nature_secondary_tags: list[str] = Field(default_factory=list)
     mentions: list[PersonMention] = Field(default_factory=list)
+    review_handling: PersonReviewHandling = "none"
+    review_reason_code: str | None = None
+    review_message: str | None = None
+    needs_review: bool = False

@@ -10,6 +10,7 @@
       "role_in_story": "Announced a new park initiative",
       "nature": "official",
       "nature_secondary_tags": [],
+      "review_handling": "none",
       "mentions": [
         {
           "text": "Mayor John Smith announced a new park initiative Monday.",
@@ -18,18 +19,41 @@
       ]
     },
     {
-      "name": "Jane Doe",
+      "name": "Buddy",
       "title": "",
       "affiliation": "",
       "public_figure": false,
-      "type": "community member",
-      "sort_key": "doe",
-      "role_in_story": "Local resident supporting the plan",
-      "nature": "affected",
-      "nature_secondary_tags": ["source"],
+      "type": "",
+      "sort_key": "buddy",
+      "role_in_story": "Family dog mentioned in the story",
+      "nature": "other",
+      "nature_secondary_tags": [],
+      "review_handling": "auto_defer",
+      "review_reason_code": "animal",
+      "review_message": "Identified as an animal",
       "mentions": [
         {
-          "text": "Jane Doe, a local resident, said she supports the plan.",
+          "text": "The family dog Buddy was unharmed.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "Prince",
+      "title": "",
+      "affiliation": "",
+      "public_figure": true,
+      "type": "musician",
+      "sort_key": "prince",
+      "role_in_story": "Referenced by stage name only",
+      "nature": "subject",
+      "nature_secondary_tags": [],
+      "review_handling": "flag_review",
+      "review_reason_code": "stage_name_or_alias",
+      "review_message": "Stage name or alias — confirm full identity before linking",
+      "mentions": [
+        {
+          "text": "Prince performed at the venue last year.",
           "quote": false
         }
       ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backfield_stylebook.entities.person.review import finalize_review_fields_from_entry
 from backfield_stylebook.entities.person.types import PERSON_NATURE_VALUES, derive_person_sort_key
 
 from agate_nodes.person_extract.person_schemas import ExtractedPerson, PersonMention
@@ -105,7 +106,7 @@ def person_from_llm_entry(entry: dict[str, Any]) -> ExtractedPerson:
     nature = _normalize_nature(entry.get("nature"))
     secondary = _parse_nature_secondary_tags(entry)
     mentions = _parse_mentions(entry)
-    return ExtractedPerson(
+    person = ExtractedPerson(
         name=name,
         title=title,
         affiliation=affiliation,
@@ -117,3 +118,7 @@ def person_from_llm_entry(entry: dict[str, Any]) -> ExtractedPerson:
         nature_secondary_tags=secondary,
         mentions=mentions,
     )
+    payload = person.model_dump()
+    # Keep LLM review fields from ``entry`` when the model still has defaults.
+    payload.update(finalize_review_fields_from_entry({**payload, **entry}))
+    return ExtractedPerson(**payload)

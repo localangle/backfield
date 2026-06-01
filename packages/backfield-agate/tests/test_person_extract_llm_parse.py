@@ -80,6 +80,38 @@ def test_person_from_llm_entry_requires_mentions() -> None:
         )
 
 
+def test_person_from_llm_entry_merges_review_and_first_name_heuristic() -> None:
+    person = person_from_llm_entry(
+        {
+            "name": "Maria",
+            "role_in_story": "Quoted briefly",
+            "nature": "source",
+            "review_handling": "none",
+            "mentions": [{"text": "Maria said she agreed.", "quote": True}],
+        }
+    )
+    assert person.review_handling == "flag_review"
+    assert person.review_reason_code == "first_name_only"
+    assert person.needs_review is True
+
+
+def test_person_from_llm_entry_preserves_animal_auto_defer() -> None:
+    person = person_from_llm_entry(
+        {
+            "name": "Buddy",
+            "role_in_story": "Family dog",
+            "nature": "other",
+            "review_handling": "auto_defer",
+            "review_reason_code": "animal",
+            "review_message": "Identified as an animal",
+            "mentions": [{"text": "Buddy was unharmed.", "quote": False}],
+        }
+    )
+    assert person.review_handling == "auto_defer"
+    assert person.review_reason_code == "animal"
+    assert person.needs_review is False
+
+
 def test_extracted_person_serializes_for_worker() -> None:
     person = ExtractedPerson(
         name="Sam Rivera",

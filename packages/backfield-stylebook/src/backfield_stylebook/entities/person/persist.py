@@ -19,6 +19,10 @@ from backfield_stylebook.entities.person.policy import (
     find_existing_person_canonical_id_by_alias,
     rank_person_canonical_recall_matches,
 )
+from backfield_stylebook.entities.person.review import (
+    plan_includes_auto_waive_person_review,
+    plan_includes_flag_person_review,
+)
 from backfield_stylebook.entities.person.types import derive_person_sort_key
 
 
@@ -265,6 +269,10 @@ def materialize_new_canonical_and_link(
 
 
 def _canonical_suggestion_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
+    if plan.decision == CanonicalPersistDecision.DEFER and plan_includes_flag_person_review(
+        plan.resolution_reasons
+    ):
+        return None
     if (
         plan.decision == CanonicalPersistDecision.LINK_EXISTING
         and plan.existing_canonical_id is not None
@@ -282,6 +290,8 @@ def _canonical_suggestion_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any
             "suggested_action": "materialize_new",
         }
     if plan.decision == CanonicalPersistDecision.DEFER:
+        if plan_includes_auto_waive_person_review(plan.resolution_reasons):
+            return None
         return {
             "code": "canonical_suggestion",
             "source": "rules_plan",
@@ -325,7 +335,12 @@ def apply_canonical_persist_plan(
     reasons = [dict(r) for r in plan.resolution_reasons]
     if plan.decision == CanonicalPersistDecision.DEFER:
         person.stylebook_person_canonical_id = None
-        person.canonical_link_status = CANONICAL_LINK_PENDING
+        if auto_apply_canonicalization and plan_includes_auto_waive_person_review(
+            plan.resolution_reasons
+        ):
+            person.canonical_link_status = CANONICAL_LINK_WAIVED
+        else:
+            person.canonical_link_status = CANONICAL_LINK_PENDING
         person.canonical_review_reasons_json = reasons
         session.add(person)
         return

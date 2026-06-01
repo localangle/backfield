@@ -7,6 +7,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstratePerson
+from backfield_stylebook.entities.person.review import (
+    entry_people_bucket as _entry_people_bucket,
+)
+from backfield_stylebook.entities.person.review import (
+    finalize_review_fields_from_entry,
+)
 from backfield_stylebook.entities.person.types import (
     derive_person_sort_key,
     person_identity_fingerprint,
@@ -25,12 +31,7 @@ class PersonUpsertResult:
 
 
 def _people_bucket_for_entry(entry: dict[str, Any]) -> str:
-    if entry.get("needs_review") is True:
-        return "needs_review"
-    status = entry.get("status")
-    if isinstance(status, str) and status.strip().lower() == "needs_review":
-        return "needs_review"
-    return "ready"
+    return _entry_people_bucket(entry)
 
 
 def _display_name_for_person_entry(entry: dict[str, Any]) -> str:
@@ -135,10 +136,16 @@ def _upsert_person(
     )
 
     status = "needs_review" if bucket == "needs_review" else "provisional"
+    review_fields = finalize_review_fields_from_entry(entry)
     details = {
         "graph_id": graph_id,
         "run_id": run_id,
         "people_bucket": bucket,
+        **{
+            k: review_fields[k]
+            for k in ("review_handling", "review_reason_code", "review_message")
+            if review_fields.get(k) is not None
+        },
     }
     raw_entry_id = entry.get("id") or entry.get("mention_id")
     if raw_entry_id is not None and str(raw_entry_id).strip():

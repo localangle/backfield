@@ -61,6 +61,12 @@ Do not extract:
 - Only extract if a specific name (first name, last name, or full name) is provided in the article
 - Crowds or groups ("residents said…") should never be extracted, even if they are quoted
 
+### Families, groups, and other collectives
+
+- **Do not extract families, households, dynasties, or other collectives as a single person**, even when named (e.g. "the Sackler family," "the Kennedy family," "the Smith family").
+- Only extract **individual people** with their own names. If the article names specific members (e.g. "Richard Sackler and his cousin David Sackler"), extract each named individual separately — not a record for "Sackler family."
+- Couples or pairs described together without individual names ("the couple," "the parents") are not people unless a specific person's name is given.
+
 ## Person Identification Rules
 
 ### 1. Names Required
@@ -133,6 +139,14 @@ Use common sense and contextual clues.
 
 The complete name as a **flat string** on first mention (e.g. `"Jane Doe"`). **Must be an actual name** (first name, last name, or full name). Do not use generic titles like "the mayor" or "a store owner" — only extract when a name is provided.
 
+**Do not include honorifics, courtesy titles, or post-nominals in `name`.** Put those in `title` when they describe the person's role, or omit them when they are only salutations.
+
+- Strip from `name`: `Gov.`, `Dr.`, `Mr.`, `Mrs.`, `Ms.`, `Mx.`, `Prof.`, `Rev.`, `Sen.`, `Rep.`, `Atty.`, `Gen.`, `Sgt.`, `Officer`, `Judge`, `President` (when used only as honorific before a name), `Jr.`, `Sr.`, `II`, `III`, `Ph.D.`, `M.D.`, and similar.
+- `"Gov. J.B. Pritzker"` → `name`: `"J.B. Pritzker"` (or the full form used in the article without `Gov.`); `title`: include `Governor` if that is their role in the story.
+- `"Dr. Jane Doe"` → `name`: `"Jane Doe"`.
+- **Initials:** write initials **without periods** in `name` (e.g. `"PT Barnum"`, `"JB Pritzker"`, `"JFK"` — not `"P.T. Barnum"`, `"J.B. Pritzker"`).
+- If the article uses only a surname after introduction (`"Pritzker said…"`), use the fullest name form established earlier in the text for `name`.
+
 ### title
 
 The person's role or position **only**—the job title, role, or descriptor. Include both **official titles** (Mayor, Superintendent, Police Chief, Professor) and **informal or role-based titles** (shortstop, advocate, spokesperson, team captain, store owner, witness).
@@ -147,7 +161,13 @@ The title should be the role/position alone (e.g., "Owner", "Mayor", "Spokespers
 
 ### affiliation
 
-The institution or organization tied to the title or role. Example: "Chicago Public Schools," "University of Minnesota," "Billiards on Broadway." Do not repeat this in the title field.
+The institution or organization tied to the title or role. Write affiliations **the way a newspaper would in AP style**: use the **fullest clear name** readers would recognize, not internal shorthand unless the story itself uses only that form.
+
+- **Expand acronyms and nicknames** when you can confidently identify the full name from context: `ACLU` → `American Civil Liberties Union`; `CPS` → `Chicago Public Schools` when the story clearly means the school district.
+- **Sports teams and brands:** prefer the conventional full team or organization name (`Boston Red Sox`, not `Sox`; `Green Bay Packers`, not `Packers`) unless the article consistently uses a shorter form as the official style for that entity.
+- **Government and agencies:** use the formal or commonly published name (`U.S. Department of Homeland Security`, `Chicago Police Department`).
+- Do not repeat the person's job title in `affiliation`; keep role in `title` and organization in `affiliation`.
+- If no organization is stated or implied, use an empty string.
 
 ### public_figure
 
@@ -198,6 +218,22 @@ Do not combine sentences; each mention is separate.
 ]
 ```
 
+## Review routing (canonical linking)
+
+For each extracted person, set review fields so Stylebook can route the candidate queue:
+
+| Situation | `review_handling` | `review_reason_code` | Typical `review_message` |
+|-----------|-------------------|----------------------|--------------------------|
+| Child (minor) | `auto_defer` | `child` | Identified as a child |
+| Animal (named pet, etc.) | `auto_defer` | `animal` | Identified as an animal |
+| Stage name, nickname, or alias without a clear legal/full name (e.g. "Prince", "Hurting Heart in Georgia") | `flag_review` | `stage_name_or_alias` | Short explanation |
+| First name only in the article (no surname or full name elsewhere) | `flag_review` | `first_name_only` | Short explanation |
+| Normal named person with full identity | `none` | omit or empty | omit |
+
+- Use `auto_defer` only for **children** and **animals** (these are auto-removed from the linking queue when auto-apply is on).
+- Use `flag_review` for **aliases** and **first-name-only** mentions — they stay in the **open** queue for editors; do not use `auto_defer` for those.
+- When `review_handling` is `none`, omit `review_reason_code` and `review_message` (or use empty strings).
+
 ## Output Format
 
 **IMPORTANT**: Return ONLY valid JSON. Do not include any explanatory text before or after the JSON.
@@ -213,6 +249,9 @@ Each person object **must** include:
 - `nature`: string — one vocabulary value listed above
 - `nature_secondary_tags`: array of strings (same vocabulary; often empty)
 - `mentions`: array of objects, each with `"text"` (string) and `"quote"` (boolean)
+- `review_handling`: string — `none`, `flag_review`, or `auto_defer` (see Review routing above)
+- `review_reason_code`: string — when handling is not `none`: `child`, `animal`, `stage_name_or_alias`, or `first_name_only`
+- `review_message`: string — short editor-facing explanation when handling is not `none`
 
 Return `{{ "people": [ ... ] }}`. When no named people qualify, return `{{ "people": [] }}`.
 
