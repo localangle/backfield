@@ -6,15 +6,22 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 import litellm
 from backfield_db import BackfieldAiModelConfig, BackfieldProject
 from sqlmodel import Session
 
-from backfield_ai.constants import AI_MODEL_KIND_EMBEDDING
+from backfield_ai.constants import (
+    AI_MODEL_KIND_EMBEDDING,
+    COST_ESTIMATE_SOURCE_UNAVAILABLE,
+    DEFAULT_AI_CURRENCY,
+)
+from backfield_ai.cost_estimate import litellm_estimated_cost_from_response
 from backfield_ai.credentials import organization_llm_api_keys
 from backfield_ai.litellm_model import effective_litellm_model_row
+from backfield_ai.tracking_context import persist_llm_attempt
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +51,10 @@ class LiteLLMEmbeddingBatchResult:
     items: list[EmbeddingItemResult]
     prompt_tokens: int | None
     total_tokens: int | None
+    estimated_cost: Decimal | None
+    currency: str
+    cost_estimate_incomplete: bool
+    cost_estimate_source: str
     latency_ms: int
     batch_error: str | None = None
     raw_response: Any | None = None
@@ -129,6 +140,56 @@ def _vectors_from_embedding_response(resp: Any, *, expected_count: int) -> list[
 EMBEDDING_CONNECTION_TEST_TEXT = "Connection test for organization embedding model."
 
 
+def _embedding_cost_fields(
+    *,
+    resp: Any | None,
+    litellm_model: str,
+    prompt_tokens: int | None,
+    total_tokens: int | None,
+) -> tuple[Decimal | None, str, bool, str]:
+    est_cost, cost_incomplete, cost_source, currency = litellm_estimated_cost_from_response(
+        resp,
+        litellm_model=litellm_model,
+    )
+    if prompt_tokens is None and total_tokens is None:
+        cost_incomplete = True
+    return est_cost, currency, cost_incomplete, cost_source
+
+
+def _persist_embedding_attempt_if_tracked(
+    result: LiteLLMEmbeddingBatchResult,
+    *,
+    model_config_id: str | None,
+) -> None:
+    status = "succeeded" if result.batch_error is None else "failed"
+    err_type: str | None = None
+    err_msg: str | None = None
+    if result.batch_error:
+        err_type = "EmbeddingBatchError"
+        err_msg = result.batch_error[:2000]
+    snap = {"provider": result.provider, "provider_model_id": result.provider_model_id}
+    persist_llm_attempt(
+        provider=result.provider,
+        provider_model_id=result.provider_model_id,
+        status=status,
+        attempt_number=1,
+        model_config_id=model_config_id,
+        model_config_snapshot_json=snap,
+        prompt_tokens=result.prompt_tokens,
+        completion_tokens=None,
+        total_tokens=result.total_tokens,
+        estimated_cost=result.estimated_cost,
+        currency=result.currency,
+        cost_estimate_incomplete=result.cost_estimate_incomplete,
+        latency_ms=result.latency_ms,
+        provider_request_id=None,
+        error_type=err_type,
+        error_message=err_msg,
+        cost_estimate_source=result.cost_estimate_source,
+        model_kind=AI_MODEL_KIND_EMBEDDING,
+    )
+
+
 def embed_texts_sync(
     *,
     litellm_model: str,
@@ -136,6 +197,8 @@ def embed_texts_sync(
     api_key: str | None,
     api_base: str | None = None,
     timeout: float = 120.0,
+    model_config_id: str | None = None,
+    track_attempt: bool = True,
 ) -> LiteLLMEmbeddingBatchResult:
     """Embed a batch of strings via LiteLLM (no Backfield-level retries)."""
     if not texts:
@@ -165,7 +228,7 @@ def embed_texts_sync(
         latency_ms = int((time.perf_counter() - t0) * 1000)
         msg = str(exc)[:2000]
         logger.warning("LiteLLM embedding failed for model=%s: %s", lm, msg)
-        return LiteLLMEmbeddingBatchResult(
+        result = LiteLLMEmbeddingBatchResult(
             litellm_model=lm,
             provider=provider,
             provider_model_id=provider_model_id,
@@ -181,10 +244,17 @@ def embed_texts_sync(
             ],
             prompt_tokens=None,
             total_tokens=None,
+            estimated_cost=None,
+            currency=DEFAULT_AI_CURRENCY,
+            cost_estimate_incomplete=True,
+            cost_estimate_source=COST_ESTIMATE_SOURCE_UNAVAILABLE,
             latency_ms=latency_ms,
             batch_error=msg,
             raw_response=None,
         )
+        if track_attempt:
+            _persist_embedding_attempt_if_tracked(result, model_config_id=model_config_id)
+        return result
 
     latency_ms = int((time.perf_counter() - t0) * 1000)
     try:
@@ -192,7 +262,14 @@ def embed_texts_sync(
     except EmbeddingConfigurationError as exc:
         msg = str(exc)[:2000]
         logger.warning("LiteLLM embedding response parse failed for model=%s: %s", lm, msg)
-        return LiteLLMEmbeddingBatchResult(
+        pt, tt = _usage_from_embedding_response(resp)
+        est_cost, currency, cost_incomplete, cost_source = _embedding_cost_fields(
+            resp=resp,
+            litellm_model=lm,
+            prompt_tokens=pt,
+            total_tokens=tt,
+        )
+        result = LiteLLMEmbeddingBatchResult(
             litellm_model=lm,
             provider=provider,
             provider_model_id=provider_model_id,
@@ -206,15 +283,28 @@ def embed_texts_sync(
                 )
                 for i in range(len(texts))
             ],
-            prompt_tokens=None,
-            total_tokens=None,
+            prompt_tokens=pt,
+            total_tokens=tt,
+            estimated_cost=est_cost,
+            currency=currency,
+            cost_estimate_incomplete=cost_incomplete,
+            cost_estimate_source=cost_source,
             latency_ms=latency_ms,
             batch_error=msg,
             raw_response=resp,
         )
+        if track_attempt:
+            _persist_embedding_attempt_if_tracked(result, model_config_id=model_config_id)
+        return result
     pt, tt = _usage_from_embedding_response(resp)
     dims = len(vectors[0]) if vectors else None
-    return LiteLLMEmbeddingBatchResult(
+    est_cost, currency, cost_incomplete, cost_source = _embedding_cost_fields(
+        resp=resp,
+        litellm_model=lm,
+        prompt_tokens=pt,
+        total_tokens=tt,
+    )
+    result = LiteLLMEmbeddingBatchResult(
         litellm_model=lm,
         provider=provider,
         provider_model_id=provider_model_id,
@@ -225,10 +315,17 @@ def embed_texts_sync(
         ],
         prompt_tokens=pt,
         total_tokens=tt,
+        estimated_cost=est_cost,
+        currency=currency,
+        cost_estimate_incomplete=cost_incomplete,
+        cost_estimate_source=cost_source,
         latency_ms=latency_ms,
         batch_error=None,
         raw_response=resp,
     )
+    if track_attempt:
+        _persist_embedding_attempt_if_tracked(result, model_config_id=model_config_id)
+    return result
 
 
 def _api_key_for_catalog_provider(
@@ -317,4 +414,5 @@ def embed_texts_for_model_config(
         api_key=api_key,
         api_base=api_base,
         timeout=timeout,
+        model_config_id=model_config_id.strip(),
     )

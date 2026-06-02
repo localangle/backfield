@@ -40,6 +40,10 @@ def test_embed_semantic_search_query_returns_vector(
         items=[EmbeddingItemResult(index=0, vector=[0.1, 0.2, 0.3])],
         prompt_tokens=1,
         total_tokens=1,
+        estimated_cost=None,
+        currency="USD",
+        cost_estimate_incomplete=True,
+        cost_estimate_source="unavailable",
         latency_ms=1,
     )
 

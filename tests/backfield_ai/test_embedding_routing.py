@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+import litellm
 import pytest
-from backfield_ai.constants import AI_MODEL_KIND_EMBEDDING, AI_MODEL_KIND_GENERATIVE
+from backfield_ai.constants import (
+    AI_MODEL_KIND_EMBEDDING,
+    AI_MODEL_KIND_GENERATIVE,
+    COST_ESTIMATE_SOURCE_LITELLM,
+)
 from backfield_ai.embeddings import (
     EmbeddingConfigurationError,
     EmbeddingModelKindError,
@@ -95,3 +101,25 @@ def test_embed_texts_sync_surfaces_provider_failure(mock_embedding: MagicMock) -
 
 def test_assert_model_config_accepts_embedding_kind() -> None:
     assert_model_config_is_embedding(_Cfg(model_kind=AI_MODEL_KIND_EMBEDDING))
+
+
+@patch("backfield_ai.embeddings.litellm.embedding")
+def test_embed_texts_sync_estimates_cost_via_litellm(
+    mock_embedding: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    item0 = MagicMock(index=0, embedding=[0.1, 0.2])
+    resp = MagicMock(data=[item0], usage=MagicMock(prompt_tokens=2, total_tokens=2))
+    mock_embedding.return_value = resp
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.00002)
+
+    result = embed_texts_sync(
+        litellm_model="openai/text-embedding-3-small",
+        texts=["hello"],
+        api_key="sk-test",
+        track_attempt=False,
+    )
+
+    assert result.estimated_cost == Decimal("0.00002")
+    assert result.cost_estimate_source == COST_ESTIMATE_SOURCE_LITELLM
+    assert result.cost_estimate_incomplete is False

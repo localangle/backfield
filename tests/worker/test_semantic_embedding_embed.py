@@ -40,6 +40,10 @@ def test_embed_pending_batches_provider_calls(
         ],
         prompt_tokens=10,
         total_tokens=10,
+        estimated_cost=None,
+        currency="USD",
+        cost_estimate_incomplete=True,
+        cost_estimate_source="unavailable",
         latency_ms=5,
         batch_error=None,
     )
