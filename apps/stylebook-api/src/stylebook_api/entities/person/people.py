@@ -34,6 +34,7 @@ from backfield_stylebook.people import (
     create_standalone_canonical,
     link_substrate_to_canonical_atomic,
 )
+from backfield_stylebook.semantic_indexing.cleanup import delete_semantic_documents_for_person
 from backfield_stylebook.semantic_indexing.reindex import (
     person_patch_affects_semantic_index,
     person_patch_entity_fields_changed,
@@ -1070,6 +1071,11 @@ def delete_substrate_person(
             provenance="agate_review_delete",
         ):
             candidates_created = 1
+        delete_semantic_documents_for_person(
+            session,
+            person_id=person_id,
+            project_id=int(proj.id),
+        )
         session.delete(person)
         person_deleted = True
 

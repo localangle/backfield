@@ -18,6 +18,7 @@ from backfield_stylebook.entities.location.policy import (
     find_existing_canonical_id_by_alias,
     rank_scored_canonical_recall_matches,
 )
+from backfield_stylebook.semantic_indexing.cleanup import delete_semantic_documents_for_location
 
 
 def rank_canonical_suggestions_for_substrate(
@@ -179,6 +180,11 @@ def dispose_orphan_substrate_without_requeue(
         location.stylebook_location_canonical_id = None
         session.add(location)
 
+    delete_semantic_documents_for_location(
+        session,
+        location_id=int(location.id),
+        project_id=int(location.project_id),
+    )
     session.delete(location)
 
 

@@ -12,7 +12,9 @@ from backfield_db import (
     SubstratePerson,
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
+    SubstratePersonSemanticDocument,
 )
+from backfield_db.semantic_indexing import SEMANTIC_EMBEDDING_STATUS_PENDING
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from sqlmodel import Session, SQLModel, col, create_engine, select
 from worker.substrate import persist_from_consolidated
@@ -200,6 +202,31 @@ def test_people_reingest_retires_stale_system_mentions() -> None:
             select(SubstratePerson).where(SubstratePerson.normalized_name == "john doe")
         ).one()
         old_john_id = int(old_john.id)  # type: ignore[arg-type]
+        john_mention = session.exec(
+            select(SubstratePersonMention).where(
+                SubstratePersonMention.person_id == old_john_id,
+                SubstratePersonMention.deleted == False,  # noqa: E712
+            )
+        ).one()
+        john_occ = session.exec(
+            select(SubstratePersonMentionOccurrence).where(
+                SubstratePersonMentionOccurrence.person_mention_id == int(john_mention.id)
+            )
+        ).first()
+        assert john_occ is not None
+        session.add(
+            SubstratePersonSemanticDocument(
+                project_id=project_id,
+                article_id=int(john_mention.article_id),
+                person_id=old_john_id,
+                person_mention_id=int(john_mention.id),
+                person_mention_occurrence_id=int(john_occ.id),
+                search_text="John Doe",
+                source_hash="hash-john-sem",
+                embedding_status=SEMANTIC_EMBEDDING_STATUS_PENDING,
+            )
+        )
+        session.commit()
 
         _, retired, disposed, _ = persist_from_consolidated(
             session,

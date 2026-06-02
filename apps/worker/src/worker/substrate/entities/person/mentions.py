@@ -17,6 +17,7 @@ from backfield_stylebook.canonical.link import (
 from backfield_stylebook.entities.person.persist import unlink_substrate_from_canonical
 from backfield_stylebook.entities.person.types import PERSON_NATURE_VALUES
 from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
+from backfield_stylebook.semantic_indexing.cleanup import delete_semantic_documents_for_person
 from sqlalchemy import func
 from sqlmodel import Session, col, select
 
@@ -224,6 +225,11 @@ def _dispose_orphan_substrate_without_requeue(
         person.stylebook_person_canonical_id = None
         session.add(person)
 
+    delete_semantic_documents_for_person(
+        session,
+        person_id=int(person.id),
+        project_id=int(person.project_id),
+    )
     session.delete(person)
 
 
