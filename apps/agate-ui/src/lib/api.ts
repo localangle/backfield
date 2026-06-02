@@ -44,9 +44,13 @@ export interface ProjectStats {
   /** Runs with status ``failed`` (includes cancelled runs). */
   runs_failed: number
   median_duration_ms_per_run: number | null
+  min_duration_ms_per_run?: number | null
+  max_duration_ms_per_run?: number | null
   median_duration_ms_per_item: number | null
   /** Median tracked LLM spend per succeeded run. */
   median_estimated_ai_cost_per_run?: string | number | null
+  min_estimated_ai_cost_per_run?: string | number | null
+  max_estimated_ai_cost_per_run?: string | number | null
   median_estimated_ai_cost_currency?: string | null
   median_estimated_ai_cost_incomplete?: boolean
 }

@@ -203,8 +203,12 @@ class ProjectStatsOut(BaseModel):
     runs_in_progress: int = 0
     runs_failed: int = 0
     median_duration_ms_per_run: float | None = None
+    min_duration_ms_per_run: float | None = None
+    max_duration_ms_per_run: float | None = None
     median_duration_ms_per_item: float | None = None
     median_estimated_ai_cost_per_run: Decimal | None = None
+    min_estimated_ai_cost_per_run: Decimal | None = None
+    max_estimated_ai_cost_per_run: Decimal | None = None
     median_estimated_ai_cost_currency: str | None = None
     median_estimated_ai_cost_incomplete: bool = False
 
@@ -267,6 +271,30 @@ def _median_decimal(values: list[Decimal]) -> Decimal | None:
     if not values:
         return None
     return Decimal(str(statistics.median([float(v) for v in values])))
+
+
+def _min_ms(durations_ms: list[float]) -> float | None:
+    if not durations_ms:
+        return None
+    return float(min(durations_ms))
+
+
+def _max_ms(durations_ms: list[float]) -> float | None:
+    if not durations_ms:
+        return None
+    return float(max(durations_ms))
+
+
+def _min_decimal(values: list[Decimal]) -> Decimal | None:
+    if not values:
+        return None
+    return min(values)
+
+
+def _max_decimal(values: list[Decimal]) -> Decimal | None:
+    if not values:
+        return None
+    return max(values)
 
 
 def _median_terminal_processed_item_duration_ms(
@@ -382,6 +410,8 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
             ms = 0.0
         dur_success.append(ms)
     median_run_duration = _median_ms(dur_success)
+    min_run_duration = _min_ms(dur_success)
+    max_run_duration = _max_ms(dur_success)
 
     median_item_duration = _median_terminal_processed_item_duration_ms(session, succeeded_ids)
     if median_item_duration is None:
@@ -393,6 +423,8 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         session, pid, succeeded_frozen
     )
     median_ai = _median_decimal(per_run_costs)
+    min_ai = _min_decimal(per_run_costs)
+    max_ai = _max_decimal(per_run_costs)
 
     return ProjectStatsOut(
         total_runs=total_runs,
@@ -401,8 +433,12 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         runs_in_progress=runs_in_progress,
         runs_failed=runs_failed,
         median_duration_ms_per_run=median_run_duration,
+        min_duration_ms_per_run=min_run_duration,
+        max_duration_ms_per_run=max_run_duration,
         median_duration_ms_per_item=median_item_duration,
         median_estimated_ai_cost_per_run=median_ai,
+        min_estimated_ai_cost_per_run=min_ai,
+        max_estimated_ai_cost_per_run=max_ai,
         median_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
         median_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
     )

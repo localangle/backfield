@@ -53,6 +53,30 @@ function formatCurrencySummary(
   return formatter.format(truncated)
 }
 
+function StatMinMaxRange({
+  rows,
+}: {
+  rows: { label: string; value: string }[]
+}) {
+  if (rows.length === 0) return null
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <p className="text-xs text-muted-foreground">Range</p>
+      <div className="mt-2 space-y-2">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="flex items-center justify-between gap-3 text-sm"
+          >
+            <span className="min-w-0 text-muted-foreground">{row.label}</span>
+            <span className="shrink-0 font-medium tabular-nums">{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function ProjectDetailPage() {
   const navigate = useNavigate()
   const { organizationId, isOrgAdmin } = useAuth()
@@ -498,6 +522,27 @@ export default function ProjectDetailPage() {
                     ) : null}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">Among completed runs</p>
+                  {stats.min_estimated_ai_cost_per_run != null &&
+                  stats.max_estimated_ai_cost_per_run != null ? (
+                    <StatMinMaxRange
+                      rows={[
+                        {
+                          label: 'Min',
+                          value: formatCurrencySummary(
+                            stats.min_estimated_ai_cost_per_run,
+                            stats.median_estimated_ai_cost_currency || 'USD',
+                          ),
+                        },
+                        {
+                          label: 'Max',
+                          value: formatCurrencySummary(
+                            stats.max_estimated_ai_cost_per_run,
+                            stats.median_estimated_ai_cost_currency || 'USD',
+                          ),
+                        },
+                      ]}
+                    />
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -520,6 +565,21 @@ export default function ProjectDetailPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 Wall time per completed run
               </p>
+              {stats.min_duration_ms_per_run != null &&
+              stats.max_duration_ms_per_run != null ? (
+                <StatMinMaxRange
+                  rows={[
+                    {
+                      label: 'Min',
+                      value: formatDurationMs(stats.min_duration_ms_per_run),
+                    },
+                    {
+                      label: 'Max',
+                      value: formatDurationMs(stats.max_duration_ms_per_run),
+                    },
+                  ]}
+                />
+              ) : null}
             </CardContent>
           </Card>
         </div>
