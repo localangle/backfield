@@ -6,7 +6,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom"
-import { HelpCircle, Settings } from "lucide-react"
+import { ChevronDown, ChevronRight, HelpCircle, Settings } from "lucide-react"
 import {
   AgateProductMark,
   ShellProductBrand,
@@ -23,7 +23,13 @@ import {
   type OrgStylebookRow,
 } from "@/lib/stylebook-api/orgStylebooks"
 import { fetchStylebookPermissions } from "@/lib/stylebook-api/permissions"
-import { agateUiOrigin, helpHref } from "@/lib/platformUrls"
+import {
+  agateProjectHref,
+  agateUiOrigin,
+  agateWorkspaceHref,
+  helpHref,
+} from "@/lib/platformUrls"
+import { hasWorkspaceAccess } from "@/lib/workspace-access"
 import { StylebookEditProvider } from "@/lib/stylebookEditContext"
 import { StylebookScopeProvider } from "@/lib/stylebookScopeContext"
 import {
@@ -48,6 +54,20 @@ function defaultWorkflowProjectSlug(projects: Project[]): string {
   return preferred?.slug ?? projects[0]?.slug ?? ""
 }
 
+const STORAGE_WORKSPACES_EXPANDED = "stylebook-sidebar-workspaces-expanded"
+
+function readExpandedWorkspaceSlugs(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_WORKSPACES_EXPANDED)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((slug): slug is string => typeof slug === "string"))
+  } catch {
+    return new Set()
+  }
+}
+
 interface LayoutProps {
   children: ReactNode
   headerContent?: ReactNode
@@ -66,7 +86,30 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const [stylebooks, setStylebooks] = useState<OrgStylebookRow[]>([])
   const [canEditStylebook, setCanEditStylebook] = useState(false)
   const [orgId, setOrgId] = useState<number | null>(null)
+  const [expandedWorkspaceSlugs, setExpandedWorkspaceSlugs] = useState<Set<string>>(
+    readExpandedWorkspaceSlugs,
+  )
   const navigate = useNavigate()
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_WORKSPACES_EXPANDED,
+        JSON.stringify([...expandedWorkspaceSlugs]),
+      )
+    } catch {
+      /* ignore */
+    }
+  }, [expandedWorkspaceSlugs])
+
+  const toggleWorkspaceExpanded = useCallback((workspaceSlug: string) => {
+    setExpandedWorkspaceSlugs((prev) => {
+      const next = new Set(prev)
+      if (next.has(workspaceSlug)) next.delete(workspaceSlug)
+      else next.add(workspaceSlug)
+      return next
+    })
+  }, [])
 
   /** Matches catalogNavigation: workflow scope from `project_scope` or `project`. */
   const workflowProjectSlug =
@@ -137,16 +180,62 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   }, [workflowProjectSlug, workspaceRows])
 
   useEffect(() => {
+    const slugsToExpand = new Set<string>()
+    if (activeWorkspaceSlug) slugsToExpand.add(activeWorkspaceSlug)
+    if (workflowProjectSlug) {
+      for (const ws of workspaceRows) {
+        if (ws.projects.some((p) => p.slug === workflowProjectSlug)) {
+          slugsToExpand.add(ws.slug)
+        }
+      }
+    }
+    if (slugsToExpand.size === 0) return
+    setExpandedWorkspaceSlugs((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      for (const slug of slugsToExpand) {
+        if (!next.has(slug)) {
+          next.add(slug)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [activeWorkspaceSlug, workflowProjectSlug, workspaceRows])
+
+  const workspaceAccess = hasWorkspaceAccess(workspaceRows, isOrgAdmin)
+
+  useEffect(() => {
     fetchProjects()
       .then(setProjects)
       .catch((err) => console.error("Failed to fetch projects:", err))
   }, [])
 
-  useEffect(() => {
-    void listMyWorkspaces()
-      .then(setWorkspaceRows)
-      .catch((err) => console.error("Failed to fetch workspaces:", err))
+  const loadWorkspaces = useCallback(async () => {
+    try {
+      const rows = await listMyWorkspaces()
+      setWorkspaceRows(rows)
+    } catch (err) {
+      console.error("Failed to fetch workspaces:", err)
+      setWorkspaceRows([])
+    }
   }, [])
+
+  useEffect(() => {
+    void loadWorkspaces()
+  }, [loadWorkspaces, location.pathname])
+
+  useEffect(() => {
+    const onChanged = () => {
+      void loadWorkspaces()
+    }
+    window.addEventListener("agate:projects-changed", onChanged)
+    window.addEventListener("agate:workspaces-changed", onChanged)
+    return () => {
+      window.removeEventListener("agate:projects-changed", onChanged)
+      window.removeEventListener("agate:workspaces-changed", onChanged)
+    }
+  }, [loadWorkspaces])
 
   useEffect(() => {
     void fetchMe()
@@ -214,13 +303,22 @@ export default function Layout({ children, headerContent }: LayoutProps) {
   const sectionTitleClass =
     "flex items-center gap-2 px-2 py-2 text-xs font-medium text-muted-foreground"
 
-  const agateWorkspaceRowClass = (active: boolean) =>
+  const workspaceRowClass = (active: boolean) =>
     cn(
       "rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      "flex w-full min-w-0 items-center px-2 py-2 text-left",
+      "flex w-full min-w-0 items-center gap-1 px-2 py-2 text-left font-medium",
       active
         ? "bg-accent text-accent-foreground"
         : "text-foreground hover:bg-muted/60",
+    )
+
+  const projectUnderWorkspaceClass = (active: boolean) =>
+    cn(
+      "rounded-md text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      "flex w-full min-w-0 items-center py-1.5 pr-2 pl-7 text-left",
+      active
+        ? "bg-accent font-medium text-accent-foreground"
+        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
     )
 
   const stylebookRowClass = (active: boolean) =>
@@ -319,21 +417,91 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                 )}
 
                 {(expanded ? workspaceRows : []).map((ws) => {
-                  const wsActive = activeWorkspaceSlug === ws.slug
-                  const href = `${agateBase}/workspace/${encodeURIComponent(ws.slug)}`
+                  const workspaceExpanded = expandedWorkspaceSlugs.has(ws.slug)
+                  const wsContainsActiveProject = ws.projects.some(
+                    (p) => p.slug === workflowProjectSlug,
+                  )
+                  const wsHighlighted =
+                    activeWorkspaceSlug === ws.slug || wsContainsActiveProject
+                  const projectsSorted = [...ws.projects].sort((a, b) =>
+                    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+                  )
+                  const projectsPanelId = `sidebar-workspace-projects-${ws.slug}`
                   return (
-                    <a
+                    <div
                       key={`${ws.slug}-${ws.id}`}
-                      href={href}
-                      title={ws.name}
-                      aria-label={`Open workspace ${ws.name} in Agate`}
-                      aria-current={wsActive ? "page" : undefined}
-                      className={agateWorkspaceRowClass(wsActive)}
+                      className="flex flex-col gap-0.5"
                     >
-                      <span className="min-w-0 truncate">{ws.name}</span>
-                    </a>
+                      <div
+                        className={cn(
+                          workspaceRowClass(wsHighlighted),
+                          "gap-0 p-0",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          title={workspaceExpanded ? "Collapse" : "Expand"}
+                          aria-label={`${workspaceExpanded ? "Collapse" : "Expand"} ${ws.name}`}
+                          aria-expanded={workspaceExpanded}
+                          aria-controls={projectsPanelId}
+                          onClick={() => toggleWorkspaceExpanded(ws.slug)}
+                          className={cn(
+                            "inline-flex h-9 w-8 shrink-0 items-center justify-center rounded-md",
+                            "hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          )}
+                        >
+                          {workspaceExpanded ? (
+                            <ChevronDown
+                              className="h-4 w-4 shrink-0 opacity-70"
+                              aria-hidden
+                            />
+                          ) : (
+                            <ChevronRight
+                              className="h-4 w-4 shrink-0 opacity-70"
+                              aria-hidden
+                            />
+                          )}
+                        </button>
+                        <a
+                          href={agateWorkspaceHref(ws.slug)}
+                          title={ws.name}
+                          aria-label={`Open workspace ${ws.name} in Agate`}
+                          className={cn(
+                            "min-w-0 flex-1 truncate py-2 pr-2",
+                            "hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md",
+                          )}
+                        >
+                          {ws.name}
+                        </a>
+                      </div>
+                      {workspaceExpanded ? (
+                        <div id={projectsPanelId} className="flex flex-col gap-0.5">
+                          {projectsSorted.map((p) => {
+                            const pActive = workflowProjectSlug === p.slug
+                            return (
+                              <a
+                                key={`${ws.slug}-p-${p.id}`}
+                                href={agateProjectHref(p.slug)}
+                                title={p.name}
+                                aria-label={`Open project ${p.name} in Agate`}
+                                aria-current={pActive ? "true" : undefined}
+                                className={projectUnderWorkspaceClass(pActive)}
+                              >
+                                <span className="min-w-0 truncate">{p.name}</span>
+                              </a>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
                   )
                 })}
+
+                {!workspaceAccess && expanded ? (
+                  <div className="px-2 py-1.5 text-sm text-muted-foreground select-none">
+                    No workspaces available
+                  </div>
+                ) : null}
 
                 {sortedStylebooks.length > 0 ? (
                   <>

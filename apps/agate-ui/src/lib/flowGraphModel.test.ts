@@ -555,6 +555,16 @@ describe('flowGraphModel hydrate and edit helpers', () => {
     expect(swapped.branchChildren['input-1']).toEqual(['place-1'])
   })
 
+  it('canReplaceInputBookend allows JSON Input with extract steps attached', () => {
+    const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
+    const person: FlowGraphNode = { id: 'person-1', type: 'PersonExtract', data: {} }
+    let model = addSiblingBranch(bookends(), 'input-1', place)
+    model = addSiblingBranch(model, 'input-1', person)
+
+    expect(canReplaceInputBookend(model, 'JSONInput').ok).toBe(true)
+    expect(canReplaceInputBookend(model, 'TextInput').ok).toBe(true)
+  })
+
   it('canReplaceOutputBookend checks tip compatibility', () => {
     const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
     const model = addSiblingBranch(bookends(), 'input-1', place)

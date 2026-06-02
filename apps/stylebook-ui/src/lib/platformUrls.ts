@@ -23,3 +23,15 @@ export function helpHref(): string {
   }
   return `${agateUiOrigin()}/help`
 }
+
+/** Agate SPA project home (flows, runs, settings). */
+export function agateProjectHref(projectSlug: string): string {
+  const base = agateUiOrigin().replace(/\/$/, '')
+  return `${base}/project/${encodeURIComponent(projectSlug)}`
+}
+
+/** Agate SPA workspace hub. */
+export function agateWorkspaceHref(workspaceSlug: string): string {
+  const base = agateUiOrigin().replace(/\/$/, '')
+  return `${base}/workspace/${encodeURIComponent(workspaceSlug)}`
+}

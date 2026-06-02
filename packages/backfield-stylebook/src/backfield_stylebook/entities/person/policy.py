@@ -263,6 +263,19 @@ def plan_requires_llm_person_canonical_adjudication(
     return plan_has_ambiguous_person_canonical_match(plan)
 
 
+def person_may_materialize_canonical_after_recall(person: SubstratePerson) -> bool:
+    """True when ``MATERIALIZE_NEW`` is allowed after LLM declines linking recalled canonicals.
+
+    Mirrors location ``substrate_may_materialize_canonical_after_recall``: blocked when
+    PersonExtract review routing would defer (flag/auto-defer), or when identity text is empty.
+    """
+    if _review_defer_plan(person) is not None:
+        return False
+    if not normalize_person_text(person.normalized_name or person.name):
+        return False
+    return True
+
+
 def decide_person_canonical_persist_plan(
     session: Session,
     *,

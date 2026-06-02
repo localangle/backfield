@@ -129,7 +129,7 @@ Every new `extract_and_persist` type should ship the same **canonical ingest + e
 |----------------------------|-----------------|---------------------|
 | `LINK_EXISTING` | Tier-1 strong identity match (type-specific normalized fields) | Set substrate `stylebook_<type>_canonical_id`, refresh aliases |
 | `DEFER` | Ambiguous recall, policy block, or review-only ingest | `canonical_link_status=pending`; store `canonical_review_reasons_json` |
-| `MATERIALIZE_NEW` | No safe link; rules mode allows new catalog row | Create canonical + link (often after empty recall only) |
+| `MATERIALIZE_NEW` | No safe link; policy allows new catalog row | Create canonical + link (empty recall in rules mode; **person**/**location** `ai_assisted` may materialize after LLM declines recall when defer gates do not apply) |
 
 | Type | Tier-1 auto-link inputs | Defer when |
 |------|-------------------------|------------|
@@ -144,7 +144,7 @@ Every new `extract_and_persist` type should ship the same **canonical ingest + e
 
 | Pattern | When to enable | Person reference | Notes |
 |---------|----------------|------------------|-------|
-| **LLM canonical adjudication** | Ambiguous recall under `ai_assisted` | [`worker/…/person/adjudication.py`](../apps/worker/src/worker/substrate/entities/person/adjudication.py), handler hook after policy `DEFER` | Link only if model confidence ≥ `ADJUDICATION_LINK_MIN_CONFIDENCE` (0.9); non-empty recall → pending, not `MATERIALIZE_NEW` |
+| **LLM canonical adjudication** | Ambiguous recall under `ai_assisted` | [`worker/…/person/adjudication.py`](../apps/worker/src/worker/substrate/entities/person/adjudication.py), handler hook after policy `DEFER` | Link only if model confidence ≥ `ADJUDICATION_LINK_MIN_CONFIDENCE` (0.9); declined link → `MATERIALIZE_NEW` when `person_may_materialize_canonical_after_recall` (blocked by PersonExtract `flag_review` / `auto_defer`) |
 | **Extract review routing** | Extract emits review codes (waive vs flag queue) | [`entities/person/review.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/person/review.py) | PersonExtract: `child` / `animal` → waive when `auto_apply_canonicalization`; `stage_name_or_alias` / `first_name_only` → open pending + `needs_review` on mentions |
 | **Variant-name recall / search** | Display names vary (formal vs nickname, middle initials) | [`entities/person/name_match.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/person/name_match.py), recall + catalog `q` token OR | Organizations may use legal name vs DBA; skip for types with stable unique codes |
 

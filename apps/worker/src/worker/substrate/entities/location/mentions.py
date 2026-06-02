@@ -10,6 +10,7 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_db.text_sanitize import strip_nul_bytes
 from backfield_stylebook.substrate_canonical_link_actions import (
     dispose_orphan_substrate_without_requeue,
 )
@@ -284,7 +285,7 @@ def _upsert_mention_and_occurrence(
             location_mention_id=int(mention.id),
             source_kind="system_extraction",
             source_details_json=source_details,
-            mention_text=mention_text,
+            mention_text=strip_nul_bytes(mention_text),
             quote_text=None,
             start_char=span[0] if span else None,
             end_char=span[1] if span else None,

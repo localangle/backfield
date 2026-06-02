@@ -12,6 +12,7 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_db.text_sanitize import strip_nul_bytes, strip_nul_bytes_optional
 from sqlmodel import Session, col, select
 
 EntityKind = Literal["location", "person"]
@@ -87,7 +88,7 @@ def replace_mention_occurrences_for_article(
         text = raw.get("mention_text") or raw.get("text")
         if not isinstance(text, str) or not text.strip():
             continue
-        mention_text = text.strip()
+        mention_text = strip_nul_bytes(text.strip())
         start_raw = raw.get("start_char")
         end_raw = raw.get("end_char")
         start: int | None = int(start_raw) if isinstance(start_raw, int) else None
@@ -103,7 +104,9 @@ def replace_mention_occurrences_for_article(
             source_kind="user_review",
             source_details_json={"source": "agate_review"},
             mention_text=mention_text,
-            quote_text=raw.get("quote_text") if isinstance(raw.get("quote_text"), str) else None,
+            quote_text=strip_nul_bytes_optional(
+                raw.get("quote_text") if isinstance(raw.get("quote_text"), str) else None
+            ),
             start_char=start,
             end_char=end,
             occurrence_order=order,
@@ -171,10 +174,14 @@ def replace_person_mention_occurrences_for_article(
         text = raw.get("mention_text") or raw.get("text")
         if not isinstance(text, str) or not text.strip():
             continue
-        mention_text = text.strip()
+        mention_text = strip_nul_bytes(text.strip())
         is_quote = bool(raw.get("is_quote"))
         quote_raw = raw.get("quote_text")
-        quote_text = quote_raw.strip() if isinstance(quote_raw, str) and quote_raw.strip() else None
+        quote_text = (
+            strip_nul_bytes(quote_raw.strip())
+            if isinstance(quote_raw, str) and quote_raw.strip()
+            else None
+        )
         if is_quote and quote_text is None:
             quote_text = mention_text
         start_raw = raw.get("start_char")

@@ -13,7 +13,10 @@ from backfield_stylebook.canonical.plan_types import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
 )
-from backfield_stylebook.entities.person.policy import AMBIGUOUS_PERSON_CANONICAL_MATCH
+from backfield_stylebook.entities.person.policy import (
+    AMBIGUOUS_PERSON_CANONICAL_MATCH,
+    person_may_materialize_canonical_after_recall,
+)
 from sqlmodel import Session, select
 
 
@@ -66,7 +69,7 @@ def adjudicate_ambiguous_person_plan_with_llm(
     model: str,
     model_config_id: str | None = None,
 ) -> CanonicalPersistPlan:
-    """LLM pick among recalled person canonicals; low confidence stays deferred for review."""
+    """LLM pick among recalled person canonicals; declined link may materialize when allowed."""
     ctx = _recall_context_for_adjudication(plan)
     if ctx is None:
         return plan
@@ -151,6 +154,11 @@ def adjudicate_ambiguous_person_plan_with_llm(
             "min_confidence_for_link": ADJUDICATION_LINK_MIN_CONFIDENCE,
         }
         merged = tuple(list(plan.resolution_reasons) + [extra])
+        if person_may_materialize_canonical_after_recall(person):
+            return CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.MATERIALIZE_NEW,
+                resolution_reasons=merged,
+            )
         return CanonicalPersistPlan(
             decision=CanonicalPersistDecision.DEFER,
             resolution_reasons=merged,

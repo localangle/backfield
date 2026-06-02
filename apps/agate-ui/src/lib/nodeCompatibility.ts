@@ -44,6 +44,9 @@ function typesCompatible(outputType: string, inputType: string): boolean {
   if (inputType === 'any' || outputType === 'any') return true
   if (outputType === inputType) return true
   if (inputType === 'object' && (outputType === 'object' || outputType === 'array')) return true
+  // JSONInput (and similar) emit article-shaped objects on the text port; extract nodes
+  // declare string but resolve body text from object.text at runtime (see executor tests).
+  if (inputType === 'string' && outputType === 'object') return true
   return false
 }
 

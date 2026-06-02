@@ -16,6 +16,7 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_db.text_sanitize import strip_nul_bytes
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.entities.person.name_match import (
     score_person_name_overlap,
@@ -806,8 +807,8 @@ def create_person_from_article_evidence(
     require_project_access(session, auth, int(proj.id))
 
     name = body.name.strip()
-    mention_text = body.mention_text.strip()
-    quote_text = body.quote_text.strip()
+    mention_text = strip_nul_bytes(body.mention_text.strip())
+    quote_text = strip_nul_bytes(body.quote_text.strip())
     run_id = body.run_id.strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")

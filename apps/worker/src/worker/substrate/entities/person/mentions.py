@@ -9,6 +9,7 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
+from backfield_db.text_sanitize import strip_nul_bytes
 from backfield_stylebook.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
@@ -328,12 +329,13 @@ def _upsert_mention_and_occurrence(
         _spans_for_entry_mentions(article_text=article_text, entry=entry)
     ):
         labels: list[str] = ["quote"] if is_quote else []
+        clean_text = strip_nul_bytes(mention_text)
         occurrence = SubstratePersonMentionOccurrence(
             person_mention_id=int(mention.id),  # type: ignore[arg-type]
             source_kind="system_extraction",
             source_details_json=source_details,
-            mention_text=mention_text,
-            quote_text=mention_text if is_quote else None,
+            mention_text=clean_text,
+            quote_text=clean_text if is_quote else None,
             start_char=span[0] if span else None,
             end_char=span[1] if span else None,
             occurrence_order=order,

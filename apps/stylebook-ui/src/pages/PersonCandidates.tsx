@@ -59,6 +59,10 @@ import {
   X,
 } from "lucide-react"
 
+/** Fixed toast auto-dismiss + fade-out (matches ``transition-opacity duration-300``). */
+const CANDIDATE_TOAST_AUTO_DISMISS_MS = 3000
+const CANDIDATE_TOAST_FADE_MS = 300
+
 const REVIEW_QUEUE_PAGE_SIZE = 100
 
 function suggestedRowAction(c: PersonCandidate): "link" | "create_new" | "defer" | null {
@@ -125,12 +129,38 @@ export default function PersonCandidates() {
   const [createAffiliationDraft, setCreateAffiliationDraft] = useState("")
   const [createPublicFigure, setCreatePublicFigure] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [createdToast, setCreatedToast] = useState<{
+    canonicalLabel: string
+    canonicalId: string
+  } | null>(null)
+  const [createdToastLeaving, setCreatedToastLeaving] = useState(false)
   const [linkedToast, setLinkedToast] = useState<{
     canonicalId: string
     canonicalLabel: string
     candidateLabel: string
   } | null>(null)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!createdToast) {
+      setCreatedToastLeaving(false)
+      return
+    }
+    setCreatedToastLeaving(false)
+    const timeouts = { main: 0 as number, fade: undefined as number | undefined }
+    timeouts.main = window.setTimeout(() => {
+      setCreatedToastLeaving(true)
+      timeouts.fade = window.setTimeout(() => {
+        setCreatedToast(null)
+        setCreatedToastLeaving(false)
+      }, CANDIDATE_TOAST_FADE_MS)
+    }, CANDIDATE_TOAST_AUTO_DISMISS_MS)
+
+    return () => {
+      window.clearTimeout(timeouts.main)
+      if (timeouts.fade !== undefined) window.clearTimeout(timeouts.fade)
+    }
+  }, [createdToast])
 
   const listTotalPages = useMemo(
     () => Math.max(1, Math.ceil(listTotal / REVIEW_QUEUE_PAGE_SIZE)),
@@ -267,7 +297,7 @@ export default function PersonCandidates() {
     setAcceptingId(createModalId)
     setError(null)
     try {
-      await acceptPersonCandidate(projectSlug, createModalId, {
+      const acceptRes = await acceptPersonCandidate(projectSlug, createModalId, {
         create_new: true,
         label,
         title: createTitleDraft.trim() || null,
@@ -277,6 +307,14 @@ export default function PersonCandidates() {
       })
       await refreshListQuiet()
       closeCreateModal()
+      const cid = acceptRes.stylebook_person_canonical_id
+      if (typeof cid !== "string" || !cid.trim()) {
+        setError(
+          "Person was created, but the server did not return its id. Reload the page to open the new catalog entry.",
+        )
+        return
+      }
+      setCreatedToast({ canonicalLabel: label, canonicalId: cid.trim() })
     } catch (e) {
       setError(e instanceof Error ? e.message : "Accept failed")
     } finally {
@@ -350,6 +388,46 @@ export default function PersonCandidates() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
+      {createdToast ? (
+        <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
+          <div
+            role="status"
+            className={cn(
+              "rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15 transition-opacity duration-300",
+              createdToastLeaving ? "opacity-0" : "opacity-100",
+            )}
+          >
+            <div className="flex items-start gap-3 p-4 pr-2">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
+              <div className="flex min-w-0 max-w-[min(28rem,calc(100vw-5.5rem))] flex-col gap-1.5">
+                <div className="text-sm font-semibold leading-none">Person created</div>
+                <div className="text-sm text-muted-foreground">
+                  Saved as{" "}
+                  <Link
+                    to={`${catalogBasePath}/people/canonical/${createdToast.canonicalId}${filterScopeSuffix}`}
+                    className="font-medium text-foreground underline-offset-4 hover:underline break-words"
+                  >
+                    {createdToast.canonicalLabel}
+                  </Link>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="-mr-1 -mt-1 h-8 w-8 shrink-0"
+                onClick={() => {
+                  setCreatedToastLeaving(false)
+                  setCreatedToast(null)
+                }}
+                aria-label="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {linkedToast ? (
         <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
           <div className="rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15 p-4 flex items-start gap-3">

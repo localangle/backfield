@@ -15,6 +15,7 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_db.text_sanitize import strip_nul_bytes
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.locations import create_standalone_canonical
 from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
@@ -1073,8 +1074,8 @@ def create_location_from_article_evidence(
 
     label = body.label.strip()
     location_type = body.location_type.strip()
-    mention_text = body.mention_text.strip()
-    quote_text = body.quote_text.strip()
+    mention_text = strip_nul_bytes(body.mention_text.strip())
+    quote_text = strip_nul_bytes(body.quote_text.strip())
     run_id = body.run_id.strip()
     if not label:
         raise HTTPException(status_code=400, detail="label is required")
