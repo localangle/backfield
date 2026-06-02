@@ -27,6 +27,7 @@ import {
   normalizeModelKind,
   SEMANTIC_EMBEDDING_DEFAULT_ROLE,
 } from '@/lib/ai-model-catalog-ui'
+import { dispatchProjectAiModelsChanged } from '@/lib/projectAiModelsEvents'
 import { partitionProjectModelsByKind } from '@/lib/project-models-ui'
 import { Loader2 } from 'lucide-react'
 
@@ -108,6 +109,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           modelConfigId,
         )
         setSemanticDefaultModelId(modelConfigId)
+        dispatchProjectAiModelsChanged(projectId)
       } catch (e) {
         console.error(e)
         showError('We could not set the semantic search default. Try again.')
@@ -132,6 +134,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           soleId,
         )
         setSemanticDefaultModelId(soleId)
+        dispatchProjectAiModelsChanged(projectId)
       } catch (e) {
         console.error(e)
       } finally {
@@ -172,6 +175,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
         enabledEmbeddings,
         semanticDefaultModelId,
       )
+      dispatchProjectAiModelsChanged(projectId)
     } catch (e) {
       console.error(e)
       showError('We could not update this model. Try again.')
@@ -270,7 +274,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Badge variant="outline">{modelKindLabel(normalizeModelKind(row.model_kind))}</Badge>
             {isDefault && options?.showSemanticDefaultToggle ? (
-              <Badge variant="secondary">Semantic search default</Badge>
+              <Badge variant="secondary">Default</Badge>
             ) : null}
             {override ? <OverriddenBadge /> : <Badge variant="success">Configured</Badge>}
           </div>
@@ -280,32 +284,6 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             ? 'This project uses its own provider key for this model.'
             : 'This project uses your organization’s saved credential for this model.'}
         </p>
-        {options?.showSemanticDefaultToggle && row.project_enabled ? (
-          <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2">
-            <Switch
-              id={`model-${row.id}-semantic-default`}
-              checked={isDefault}
-              disabled={busy || lockDefaultOn}
-              onCheckedChange={(checked) => {
-                if (checked) void setSemanticDefault(row.id)
-              }}
-              aria-label={
-                isDefault
-                  ? 'Default embedding model for semantic search'
-                  : 'Set as default embedding model for semantic search'
-              }
-            />
-            <Label
-              htmlFor={`model-${row.id}-semantic-default`}
-              className="text-sm font-normal cursor-pointer"
-            >
-              Default for semantic search
-            </Label>
-            {lockDefaultOn ? (
-              <span className="text-xs text-muted-foreground">(only embedding model enabled)</span>
-            ) : null}
-          </div>
-        ) : null}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Switch
@@ -320,6 +298,23 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             </Label>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
+            {options?.showSemanticDefaultToggle && row.project_enabled ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={
+                  isDefault ? 'border-black bg-black text-white hover:bg-black/90' : undefined
+                }
+                disabled={busy || isDefault}
+                aria-pressed={isDefault}
+                onClick={() => {
+                  if (!isDefault) void setSemanticDefault(row.id)
+                }}
+              >
+                Default
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -327,7 +322,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
               disabled={busy}
               onClick={() => openCredentialDialog(row)}
             >
-              {override ? 'Update project key' : 'Use project key'}
+              Override credentials
             </Button>
             {override ? (
               <Button
@@ -342,6 +337,9 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             ) : null}
           </div>
         </div>
+        {lockDefaultOn ? (
+          <p className="text-xs text-muted-foreground">Only embedding model enabled for this project.</p>
+        ) : null}
       </div>
     )
   }

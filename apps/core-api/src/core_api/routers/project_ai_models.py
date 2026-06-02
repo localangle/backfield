@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from backfield_ai.model_resolve import semantic_embedding_configured
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from core_api.authz import require_project_access
@@ -22,6 +24,25 @@ from core_api.project_ai_catalog import (
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+class SemanticIndexingConfiguredOut(BaseModel):
+    configured: bool
+
+
+@router.get(
+    "/{project_id}/semantic-indexing-configured",
+    response_model=SemanticIndexingConfiguredOut,
+)
+def get_project_semantic_indexing_configured(
+    project_id: int,
+    session: Session = Depends(get_session),
+    auth: dict = Depends(get_auth),
+) -> SemanticIndexingConfiguredOut:
+    require_project_access(session, auth, project_id)
+    return SemanticIndexingConfiguredOut(
+        configured=semantic_embedding_configured(session, project_id),
+    )
 
 
 @router.get("/{project_id}/ai-models/effective", response_model=list[ProjectEffectiveAiModelOut])

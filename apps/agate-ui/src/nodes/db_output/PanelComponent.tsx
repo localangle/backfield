@@ -44,7 +44,7 @@ const nodeMetadata = {
   }
 };
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import { Label } from '@/components/ui/label'
@@ -56,6 +56,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { listOrgStylebooks, type OrgStylebook } from '@/lib/core-api'
+import { isProjectSemanticIndexingConfigured } from '@/lib/semanticIndexingAvailability'
+import {
+  PROJECT_AI_MODELS_CHANGED_EVENT,
+  type ProjectAiModelsChangedDetail,
+} from '@/lib/projectAiModelsEvents'
 import {
   INVALID_AI_MODEL_SELECTION_VALUE as INVALID_SELECTION_VALUE,
   catalogToSelectOptions,
@@ -127,6 +132,9 @@ export default function DBOutputPanel({
   const [catalogRows, setCatalogRows] = useState<ProjectAiModelOption[]>([])
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [semanticIndexingConfigured, setSemanticIndexingConfigured] = useState<boolean | null>(
+    null,
+  )
 
   useEffect(() => {
     if (!orgId) {
@@ -180,6 +188,46 @@ export default function DBOutputPanel({
       cancelled = true
     }
   }, [projectId, graphContext?.fetchProjectAiModels])
+
+  const refreshSemanticIndexingConfigured = useCallback(() => {
+    if (projectId == null) {
+      setSemanticIndexingConfigured(null)
+      return
+    }
+    void isProjectSemanticIndexingConfigured(projectId)
+      .then((configured) => {
+        setSemanticIndexingConfigured(configured)
+      })
+      .catch(() => {
+        setSemanticIndexingConfigured(false)
+      })
+  }, [projectId])
+
+  useEffect(() => {
+    refreshSemanticIndexingConfigured()
+  }, [refreshSemanticIndexingConfigured])
+
+  useEffect(() => {
+    if (projectId == null) return
+
+    const onModelsChanged = (event: Event) => {
+      const detail = (event as CustomEvent<ProjectAiModelsChangedDetail>).detail
+      if (detail?.projectId === projectId) {
+        refreshSemanticIndexingConfigured()
+      }
+    }
+
+    const onWindowFocus = () => {
+      refreshSemanticIndexingConfigured()
+    }
+
+    window.addEventListener(PROJECT_AI_MODELS_CHANGED_EVENT, onModelsChanged)
+    window.addEventListener('focus', onWindowFocus)
+    return () => {
+      window.removeEventListener(PROJECT_AI_MODELS_CHANGED_EVENT, onModelsChanged)
+      window.removeEventListener('focus', onWindowFocus)
+    }
+  }, [projectId, refreshSemanticIndexingConfigured])
 
   const mergeData = (base: Record<string, unknown>) => {
     const out = {
@@ -284,7 +332,14 @@ export default function DBOutputPanel({
   const data = merged
   const stylebookMatchingEnabled = Boolean(data.stylebook_matching_enabled)
   const semanticIndexingEnabled = Boolean(data.semantic_indexing_enabled)
+  const semanticIndexingAvailable = semanticIndexingConfigured === true
   const aiAssisted = data.canonicalization_mode === 'ai_assisted'
+
+  useEffect(() => {
+    if (!semanticIndexingAvailable && semanticIndexingEnabled) {
+      patch({ semantic_indexing_enabled: false })
+    }
+  }, [semanticIndexingAvailable, semanticIndexingEnabled])
 
   const catalogHint =
     (projectId == null || graphContext?.fetchProjectAiModels == null) && editMode ? (
@@ -360,13 +415,13 @@ export default function DBOutputPanel({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="dbout-semantic-indexing">Semantic search</Label>
+            <Label htmlFor="dbout-semantic-indexing">Semantic indexing</Label>
             <Select
-              value={yesNoSelectValue(semanticIndexingEnabled)}
+              value={yesNoSelectValue(semanticIndexingEnabled && semanticIndexingAvailable)}
               onValueChange={(value) =>
                 patch({ semantic_indexing_enabled: value === 'yes' })
               }
-              disabled={disabled}
+              disabled={disabled || !semanticIndexingAvailable}
             >
               <SelectTrigger id="dbout-semantic-indexing" className="text-xs">
                 <SelectValue placeholder="Choose whether to prepare saved mentions for search" />
@@ -376,10 +431,20 @@ export default function DBOutputPanel({
                 <SelectItem value="no">No</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              When on, saved mentions and quotes are prepared for semantic search across stories.
-              When off, results are saved without building a search index.
-            </p>
+            {semanticIndexingAvailable ? (
+              <p className="text-xs text-muted-foreground">
+                When on, saved mentions are indexed for semantic search across stories.
+              </p>
+            ) : projectId == null ? (
+              <p className="text-xs text-muted-foreground">
+                Save this flow under a project to use semantic indexing.
+              </p>
+            ) : semanticIndexingConfigured === false ? (
+              <p className="text-xs text-muted-foreground">
+                Enable an embedding model for this project in Models and set a default for semantic
+                indexing before turning this on.
+              </p>
+            ) : null}
           </div>
         </div>
       </NodePanelTabGate>

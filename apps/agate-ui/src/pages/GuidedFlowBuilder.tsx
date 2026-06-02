@@ -1036,15 +1036,17 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
   const handlePanelSave = useCallback(async (): Promise<void> => {
     if (!selectedNodeId) return
+    const nodeId = selectedNodeId
     const saved = await handleSave({ stayInEditMode: true })
     if (!saved) return
+    dismissActiveNodePanel()
     setDirtyPanelNodeIds((prev) => {
       const next = new Set(prev)
-      next.delete(selectedNodeId)
+      next.delete(nodeId)
       return next
     })
-    setSavedPanelNodeIds((prev) => new Set(prev).add(selectedNodeId))
-  }, [handleSave, selectedNodeId])
+    setSavedPanelNodeIds((prev) => new Set(prev).add(nodeId))
+  }, [handleSave, selectedNodeId, dismissActiveNodePanel])
 
   const buildSnapshot = useCallback(
     (): GuidedFlowSnapshot =>

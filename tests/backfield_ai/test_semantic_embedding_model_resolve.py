@@ -5,13 +5,18 @@ from __future__ import annotations
 import pytest
 from backfield_ai.constants import AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING, AI_MODEL_KIND_EMBEDDING
 from backfield_ai.embeddings import EmbeddingConfigurationError
-from backfield_ai.model_resolve import resolve_semantic_embedding_model_config_id
+from backfield_ai.model_resolve import (
+    resolve_semantic_embedding_model_config_id,
+    semantic_embedding_configured,
+)
 from backfield_db import (
     BackfieldAiDefaultModelRole,
     BackfieldAiModelConfig,
+    BackfieldAiProjectModelOverride,
     BackfieldOrganization,
     BackfieldProject,
 )
+from sqlmodel import select
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -77,3 +82,213 @@ def test_resolve_semantic_embedding_model_missing_raises() -> None:
 
         with pytest.raises(EmbeddingConfigurationError, match="No embedding model configured"):
             resolve_semantic_embedding_model_config_id(session, int(proj.id))
+
+
+def test_semantic_embedding_configured_false_without_default() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-emb-cfg0")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        proj = BackfieldProject(
+            name="P",
+            slug="p-emb-cfg0",
+            organization_id=int(org.id),  # type: ignore[arg-type]
+        )
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+
+        assert semantic_embedding_configured(session, project_id) is False
+
+
+def test_semantic_embedding_configured_false_when_project_default_disabled() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-emb-cfg-off")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        org_id = int(org.id)  # type: ignore[arg-type]
+        cfg = BackfieldAiModelConfig(
+            id="emb-off",
+            organization_id=org_id,
+            name="Embed",
+            provider="openai",
+            provider_model_id="text-embedding-3-small",
+            model_kind=AI_MODEL_KIND_EMBEDDING,
+            capabilities_json=["embedding"],
+        )
+        session.add(cfg)
+        proj = BackfieldProject(name="P", slug="p-emb-off", organization_id=org_id)
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+        session.add(
+            BackfieldAiDefaultModelRole(
+                project_id=project_id,
+                organization_id=None,
+                role=AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+                model_config_id="emb-off",
+            )
+        )
+        session.add(
+            BackfieldAiProjectModelOverride(
+                project_id=project_id,
+                model_config_id="emb-off",
+                enabled=False,
+            )
+        )
+        session.commit()
+
+        assert semantic_embedding_configured(session, project_id) is False
+
+
+def test_semantic_embedding_configured_true_with_enabled_default() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-emb-cfg-on")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        org_id = int(org.id)  # type: ignore[arg-type]
+        cfg = BackfieldAiModelConfig(
+            id="emb-on",
+            organization_id=org_id,
+            name="Embed",
+            provider="openai",
+            provider_model_id="text-embedding-3-small",
+            model_kind=AI_MODEL_KIND_EMBEDDING,
+            capabilities_json=["embedding"],
+        )
+        session.add(cfg)
+        proj = BackfieldProject(name="P", slug="p-emb-on", organization_id=org_id)
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+        session.add(
+            BackfieldAiDefaultModelRole(
+                project_id=project_id,
+                organization_id=None,
+                role=AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+                model_config_id="emb-on",
+            )
+        )
+        session.commit()
+
+        assert semantic_embedding_configured(session, project_id) is True
+
+
+def test_resolve_semantic_embedding_uses_sole_enabled_when_default_points_off() -> None:
+    """Project default may still reference a model turned off for this project."""
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-emb-sole")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        org_id = int(org.id)  # type: ignore[arg-type]
+        cfg_off = BackfieldAiModelConfig(
+            id="emb-off-default",
+            organization_id=org_id,
+            name="Embed off",
+            provider="openai",
+            provider_model_id="text-embedding-3-small",
+            model_kind=AI_MODEL_KIND_EMBEDDING,
+            capabilities_json=["embedding"],
+        )
+        cfg_on = BackfieldAiModelConfig(
+            id="emb-on-sole",
+            organization_id=org_id,
+            name="Embed on",
+            provider="openai",
+            provider_model_id="text-embedding-3-large",
+            model_kind=AI_MODEL_KIND_EMBEDDING,
+            capabilities_json=["embedding"],
+        )
+        session.add(cfg_off)
+        session.add(cfg_on)
+        proj = BackfieldProject(name="P", slug="p-emb-sole", organization_id=org_id)
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+        session.add(
+            BackfieldAiDefaultModelRole(
+                project_id=project_id,
+                organization_id=None,
+                role=AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+                model_config_id="emb-off-default",
+            )
+        )
+        session.add(
+            BackfieldAiProjectModelOverride(
+                project_id=project_id,
+                model_config_id="emb-off-default",
+                enabled=False,
+            )
+        )
+        session.commit()
+
+        assert (
+            resolve_semantic_embedding_model_config_id(session, project_id) == "emb-on-sole"
+        )
+        assert semantic_embedding_configured(session, project_id) is True
+
+
+def test_resolve_semantic_embedding_after_default_re_enabled() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-emb-reon")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        org_id = int(org.id)  # type: ignore[arg-type]
+        cfg = BackfieldAiModelConfig(
+            id="emb-reon",
+            organization_id=org_id,
+            name="Embed",
+            provider="openai",
+            provider_model_id="text-embedding-3-small",
+            model_kind=AI_MODEL_KIND_EMBEDDING,
+            capabilities_json=["embedding"],
+        )
+        session.add(cfg)
+        proj = BackfieldProject(name="P", slug="p-emb-reon", organization_id=org_id)
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+        session.add(
+            BackfieldAiDefaultModelRole(
+                project_id=project_id,
+                organization_id=None,
+                role=AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+                model_config_id="emb-reon",
+            )
+        )
+        session.add(
+            BackfieldAiProjectModelOverride(
+                project_id=project_id,
+                model_config_id="emb-reon",
+                enabled=False,
+            )
+        )
+        session.commit()
+        assert semantic_embedding_configured(session, project_id) is False
+
+        ovr = session.exec(
+            select(BackfieldAiProjectModelOverride).where(
+                BackfieldAiProjectModelOverride.project_id == project_id,
+            )
+        ).one()
+        ovr.enabled = True
+        session.add(ovr)
+        session.commit()
+
+        assert resolve_semantic_embedding_model_config_id(session, project_id) == "emb-reon"
+        assert semantic_embedding_configured(session, project_id) is True

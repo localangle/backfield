@@ -1114,6 +1114,50 @@ def test_project_effective_models_include_embedding_catalog_rows(
     assert all(r["id"] != cfg_id for r in filtered.json())
 
 
+def test_project_semantic_indexing_configured_reflects_availability_toggle(
+    client: TestClient,
+) -> None:
+    client.post(
+        "/v1/bootstrap/first-user",
+        json={"email": "projsemb@example.com", "password": "projsemb-secret-9"},
+    )
+    client.post(
+        "/v1/auth/login",
+        json={"email": "projsemb@example.com", "password": "projsemb-secret-9"},
+    )
+    org_id = client.get("/v1/auth/me").json()["organization_id"]
+    created = client.post(
+        f"/v1/organizations/{org_id}/ai-models",
+        json={"curated_id": "openai:text-embedding-3-small", "name": "Embed semantic"},
+    )
+    assert created.status_code == 200
+    cfg_id = created.json()["id"]
+
+    put_default = client.put(
+        "/v1/projects/1/ai-model-defaults/semantic.embedding",
+        json={"model_config_id": cfg_id},
+    )
+    assert put_default.status_code == 200
+
+    ready = client.get("/v1/projects/1/semantic-indexing-configured")
+    assert ready.status_code == 200
+    assert ready.json()["configured"] is True
+
+    off = client.put(f"/v1/projects/1/ai-models/{cfg_id}/availability", json={"enabled": False})
+    assert off.status_code == 200
+
+    not_ready = client.get("/v1/projects/1/semantic-indexing-configured")
+    assert not_ready.status_code == 200
+    assert not_ready.json()["configured"] is False
+
+    on_again = client.put(f"/v1/projects/1/ai-models/{cfg_id}/availability", json={"enabled": True})
+    assert on_again.status_code == 200
+
+    ready_again = client.get("/v1/projects/1/semantic-indexing-configured")
+    assert ready_again.status_code == 200
+    assert ready_again.json()["configured"] is True
+
+
 def test_ai_models_member_cannot_mutate_catalog(client: TestClient) -> None:
     client.post(
         "/v1/bootstrap/first-user",

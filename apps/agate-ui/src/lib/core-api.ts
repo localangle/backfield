@@ -379,6 +379,12 @@ export async function fetchProjectAiModelDefaults(
   return jsonFetch(`/v1/projects/${projectId}/ai-model-defaults`)
 }
 
+export async function fetchProjectSemanticIndexingConfigured(
+  projectId: number,
+): Promise<{ configured: boolean }> {
+  return jsonFetch(`/v1/projects/${projectId}/semantic-indexing-configured`)
+}
+
 export async function putProjectAiModelDefaultRole(
   projectId: number,
   role: string,
