@@ -50,6 +50,17 @@ def _coerce_embedding_vector(raw: object | None) -> list[float] | None:
         return None
     if isinstance(raw, list):
         return [float(x) for x in raw]
+    # pgvector on Postgres often returns numpy.ndarray via SQLAlchemy.
+    tolist = getattr(raw, "tolist", None)
+    if callable(tolist):
+        try:
+            parsed = tolist()
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, list):
+            return [float(x) for x in parsed]
+    if isinstance(raw, tuple):
+        return [float(x) for x in raw]
     if isinstance(raw, str):
         text = raw.strip()
         if not text:

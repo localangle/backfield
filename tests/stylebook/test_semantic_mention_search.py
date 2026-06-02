@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from backfield_stylebook.semantic_indexing.search import (
+    _coerce_embedding_vector,
     cosine_similarity,
     search_person_semantic_mentions,
 )
@@ -17,6 +20,20 @@ from tests.stylebook.test_semantic_mention_search_fixtures import (
 
 def test_cosine_similarity_identical_vectors_score_one() -> None:
     assert cosine_similarity([1.0, 0.0], [1.0, 0.0]) == 1.0
+
+
+def test_coerce_embedding_vector_accepts_ndarray_like() -> None:
+    class _FakeNdarray:
+        def tolist(self) -> list[float]:
+            return [1.0, 0.0]
+
+    assert _coerce_embedding_vector(_FakeNdarray()) == [1.0, 0.0]
+
+
+def test_coerce_embedding_vector_accepts_numpy_ndarray() -> None:
+    np = pytest.importorskip("numpy")
+    arr = np.array([1.0, 0.0], dtype=np.float32)
+    assert _coerce_embedding_vector(arr) == [1.0, 0.0]
 
 
 def test_search_person_semantic_mentions_orders_by_score_and_excludes_pending() -> None:
