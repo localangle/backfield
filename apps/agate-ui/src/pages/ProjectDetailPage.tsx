@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -64,6 +71,11 @@ export default function ProjectDetailPage() {
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
   const keysSettingsRef = useRef<ProjectSettingsHandle>(null)
   const workspaceSectionRef = useRef<HTMLDivElement>(null)
+  const workspaceTabPanelRef = useRef<HTMLDivElement>(null)
+  /** Workspace section offset from top of <main> (px); preserved across tab switches. */
+  const workspaceScrollAnchorRef = useRef<number | null>(null)
+  /** Previous tab panel height (px); prevents collapse to a short loading state on switch. */
+  const workspaceTabPanelMinHeightRef = useRef<number | null>(null)
   const [aiCost, setAiCost] = useState<ProjectEstimatedAiCost | null>(null)
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const reload = useCallback(async () => {
@@ -102,32 +114,110 @@ export default function ProjectDetailPage() {
     }
   }, [slug, reload])
 
-  /** After switching tabs, clamp main scroll so a tall tab (e.g. Models) cannot leave Integrations scrolled into empty space. */
-  useEffect(() => {
+  const captureWorkspaceScrollAnchor = useCallback(() => {
     const section = workspaceSectionRef.current
-    if (!section) return
-    const scrollEl = section.closest('main')
-    if (!(scrollEl instanceof HTMLElement)) return
-
-    const clampScroll = () => {
-      const mainRect = scrollEl.getBoundingClientRect()
-      const sectionRect = section.getBoundingClientRect()
-      const delta = sectionRect.top - mainRect.top
-      if (Math.abs(delta) > 4) {
-        scrollEl.scrollTop += delta
+    const main = section?.closest('main')
+    const panel = workspaceTabPanelRef.current
+    if (!(section instanceof HTMLElement) || !(main instanceof HTMLElement)) return
+    workspaceScrollAnchorRef.current =
+      section.getBoundingClientRect().top - main.getBoundingClientRect().top
+    if (panel instanceof HTMLElement) {
+      const panelHeight = panel.getBoundingClientRect().height
+      if (panelHeight > 0) {
+        workspaceTabPanelMinHeightRef.current = panelHeight
       }
-      const maxTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight)
-      scrollEl.scrollTop = Math.min(scrollEl.scrollTop, maxTop)
     }
-    let outer = 0
-    let inner = 0
-    outer = requestAnimationFrame(() => {
-      clampScroll()
-      inner = requestAnimationFrame(clampScroll)
+  }, [])
+
+  const handleWorkspaceTabChange = useCallback((value: string) => {
+    setWorkspaceTab(value)
+  }, [])
+
+  const handleWorkspaceTabsPointerDownCapture = useCallback(() => {
+    captureWorkspaceScrollAnchor()
+  }, [captureWorkspaceScrollAnchor])
+
+  const handleWorkspaceTabsKeyDownCapture = useCallback(
+    (event: KeyboardEvent) => {
+      const { key } = event
+      if (
+        key === 'ArrowLeft' ||
+        key === 'ArrowRight' ||
+        key === 'Home' ||
+        key === 'End'
+      ) {
+        captureWorkspaceScrollAnchor()
+      }
+    },
+    [captureWorkspaceScrollAnchor],
+  )
+
+  /**
+   * Keep the workspace block anchored in the viewport when tab content height changes.
+   * Models stays stable because it always mounts tall inline settings; other tabs briefly
+   * collapse to a short loading state unless we hold the previous panel min-height.
+   */
+  useLayoutEffect(() => {
+    const targetOffset = workspaceScrollAnchorRef.current
+    if (targetOffset == null) return
+
+    const section = workspaceSectionRef.current
+    const main = section?.closest('main')
+    const panel = workspaceTabPanelRef.current
+    if (
+      !(section instanceof HTMLElement) ||
+      !(main instanceof HTMLElement) ||
+      !(panel instanceof HTMLElement)
+    ) {
+      return
+    }
+
+    const minHeight = workspaceTabPanelMinHeightRef.current
+    if (minHeight != null && minHeight > 0) {
+      panel.style.minHeight = `${Math.ceil(minHeight)}px`
+    }
+
+    const alignWorkspaceSection = () => {
+      const anchor = workspaceScrollAnchorRef.current
+      if (anchor == null) return
+      const currentOffset =
+        section.getBoundingClientRect().top - main.getBoundingClientRect().top
+      const delta = currentOffset - anchor
+      if (Math.abs(delta) > 1) {
+        main.scrollTop += delta
+      }
+    }
+
+    const releasePanelMinHeight = () => {
+      panel.style.minHeight = ''
+      workspaceTabPanelMinHeightRef.current = null
+      alignWorkspaceSection()
+    }
+
+    alignWorkspaceSection()
+
+    let resizeDebounce = 0
+    const resizeObserver = new ResizeObserver(() => {
+      alignWorkspaceSection()
+      window.clearTimeout(resizeDebounce)
+      resizeDebounce = window.setTimeout(releasePanelMinHeight, 120)
     })
+    resizeObserver.observe(panel)
+
+    let rafInner = 0
+    const rafOuter = requestAnimationFrame(() => {
+      alignWorkspaceSection()
+      rafInner = requestAnimationFrame(alignWorkspaceSection)
+    })
+
+    resizeDebounce = window.setTimeout(releasePanelMinHeight, 120)
+
     return () => {
-      cancelAnimationFrame(outer)
-      cancelAnimationFrame(inner)
+      cancelAnimationFrame(rafOuter)
+      cancelAnimationFrame(rafInner)
+      window.clearTimeout(resizeDebounce)
+      resizeObserver.disconnect()
+      panel.style.minHeight = ''
     }
   }, [workspaceTab])
 
@@ -492,7 +582,9 @@ export default function ProjectDetailPage() {
         </div>
         <Tabs
           value={workspaceTab}
-          onValueChange={setWorkspaceTab}
+          onValueChange={handleWorkspaceTabChange}
+          onPointerDownCapture={handleWorkspaceTabsPointerDownCapture}
+          onKeyDownCapture={handleWorkspaceTabsKeyDownCapture}
           className="w-full min-w-0"
         >
           <TabsList className="grid w-full max-w-none grid-cols-2 gap-1 h-auto p-1 sm:grid-cols-3 lg:grid-cols-5">
@@ -508,11 +600,18 @@ export default function ProjectDetailPage() {
             <TabsTrigger value="integrations" className="w-full">
               Integrations
             </TabsTrigger>
-            <TabsTrigger value="keys" className="w-full col-span-2 sm:col-span-1 lg:col-span-1">
+            <TabsTrigger
+              value="keys"
+              className="w-full col-span-2 sm:col-span-1 lg:col-span-1"
+            >
               API
             </TabsTrigger>
           </TabsList>
-          <div className="mt-6 w-full min-w-0" role="tabpanel">
+          <div
+            ref={workspaceTabPanelRef}
+            className="mt-6 w-full min-w-0 [overflow-anchor:none]"
+            role="tabpanel"
+          >
             {workspaceTab === 'flows' ? (
               <ProjectDetailFlowsTab
                 projectId={project.id}
