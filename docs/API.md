@@ -236,6 +236,10 @@ When overlay PATCH carries review content (location or people patches, user-adde
 
 When semantic search is off, **`status`** is **`not_enabled`** and the Agate UI omits the row from the Item Information card.
 
+## Manual edit semantic re-index (v1)
+
+Stylebook manual edit routes that change fields included in semantic documents enqueue **`worker.tasks.reindex_semantic_documents`** after the mutation commits. The worker reuses the same sync builders and batched embedding path as Backfield Output. API responses are not blocked on embedding completion; provider failures leave affected rows in a retryable failed/pending state while the edit remains saved.
+
 ## Processed item → Stylebook handoff (interim, Issue 7)
 
 - **Save before navigation:** Agate UI must **`PATCH`** the processed item overlay (or confirm the user stays) before opening Stylebook when there are unsaved overlay edits. There is no server-side “handoff” mutation in this slice.

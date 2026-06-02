@@ -22,7 +22,7 @@ import {
   findAllMentionOccurrencesInArticle,
   resolveEvidenceSpansInArticle,
 } from '@/lib/review/content/evidenceSpan'
-import { readMentionOccurrencesFromRow, recomputeOccurrenceSpans, resolveOccurrenceSpansInArticle, type MentionOccurrenceDraft } from '@/lib/review/entities/location/mentionOccurrences'
+import { readMentionOccurrencesFromRow, recomputeOccurrenceSpans, resolveOccurrenceSpansInArticle, buildOccurrencesOverlayPayload, type MentionOccurrenceDraft } from '@/lib/review/entities/location/mentionOccurrences'
 import { resolveProcessedItemArticleId } from '@/lib/review/entities/location/reviewRow'
 import {
   buildPersonEditOverlayPatch,
@@ -46,7 +46,7 @@ import {
   normalizeOverlay,
   overlaysStructurallyEqual,
 } from '@/lib/review/overlay/verificationOverlay'
-import { deleteSavedPerson, updateSavedPerson } from '@/lib/stylebookPeopleApi'
+import { deleteSavedPerson, replaceSavedPersonMentionOccurrences, updateSavedPerson } from '@/lib/stylebookPeopleApi'
 import { cn } from '@/lib/utils'
 import { Plus } from 'lucide-react'
 
@@ -534,6 +534,14 @@ export function ProcessedItemPeopleVerificationSection({
           },
           articleId,
         )
+        if (articleId !== null) {
+          await replaceSavedPersonMentionOccurrences(
+            persistedId,
+            projectSlug,
+            articleId,
+            buildOccurrencesOverlayPayload(occurrencesWithSpans) as any,
+          )
+        }
       }
       const nextOverlay = applyPersonAnchorPatch(draftOverlay, selectedAnchor, fragment)
       const updated = await patchProcessedItemOverlay(

@@ -23,15 +23,14 @@ from sqlmodel import Session
 logger = logging.getLogger(__name__)
 
 
-def embed_pending_semantic_documents_for_db_output(
+def embed_pending_semantic_documents(
     session: Session,
     *,
     project_id: int,
     article_id: int,
-    consolidated_domain_keys: tuple[str, ...],
+    entity_types: tuple[str, ...],
 ) -> EmbeddingRunSummary:
     """Batch-embed pending semantic documents for one article scope."""
-    entity_types = semantic_entity_types_for_consolidated_domains(consolidated_domain_keys)
     pending = collect_pending_semantic_documents(
         session,
         project_id=project_id,
@@ -133,3 +132,20 @@ def embed_pending_semantic_documents_for_db_output(
         summary.status = "succeeded"
 
     return summary
+
+
+def embed_pending_semantic_documents_for_db_output(
+    session: Session,
+    *,
+    project_id: int,
+    article_id: int,
+    consolidated_domain_keys: tuple[str, ...],
+) -> EmbeddingRunSummary:
+    """Batch-embed pending semantic documents after Backfield Output."""
+    entity_types = semantic_entity_types_for_consolidated_domains(consolidated_domain_keys)
+    return embed_pending_semantic_documents(
+        session,
+        project_id=project_id,
+        article_id=article_id,
+        entity_types=entity_types,
+    )

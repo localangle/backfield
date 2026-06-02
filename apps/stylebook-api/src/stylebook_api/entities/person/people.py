@@ -34,8 +34,12 @@ from backfield_stylebook.people import (
     create_standalone_canonical,
     link_substrate_to_canonical_atomic,
 )
+from backfield_stylebook.semantic_indexing.reindex import (
+    person_patch_affects_semantic_index,
+    person_patch_entity_fields_changed,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case, exists, literal, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
@@ -43,6 +47,11 @@ from sqlmodel import Session, col, func, select
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.helpers.project_scope import project_by_slug, require_stylebook_id
+from stylebook_api.mention_occurrences import replace_person_mention_occurrences_for_article
+from stylebook_api.semantic_reindex import (
+    enqueue_semantic_reindex,
+    enqueue_semantic_reindex_for_entity,
+)
 
 router = APIRouter(prefix="/v1", tags=["people"])
 
@@ -642,6 +651,12 @@ def unlink_substrate_from_canonical_route(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     session.commit()
+    enqueue_semantic_reindex_for_entity(
+        session,
+        project_id=int(proj.id),
+        entity_type="person",
+        entity_id=person_id,
+    )
     return {"message": "unlinked"}
 
 
@@ -674,6 +689,12 @@ def link_substrate_to_canonical_route(
             raise HTTPException(status_code=400, detail=msg) from e
         raise HTTPException(status_code=409, detail=msg) from e
     session.commit()
+    enqueue_semantic_reindex_for_entity(
+        session,
+        project_id=int(proj.id),
+        entity_type="person",
+        entity_id=person_id,
+    )
     return LinkCanonicalResponse(changed=changed)
 
 
@@ -704,6 +725,46 @@ class PatchSubstratePersonBody(BaseModel):
     role_in_story: str | None = None
     nature: str | None = None
     nature_secondary_tags: list[str] | None = None
+
+
+def _maybe_enqueue_person_reindex_after_patch(
+    session: Session,
+    *,
+    project_id: int,
+    person_id: int,
+    article_id: int | None,
+    body: PatchSubstratePersonBody,
+) -> None:
+    if not person_patch_affects_semantic_index(body):
+        return
+    if article_id is not None:
+        enqueue_semantic_reindex_for_entity(
+            session,
+            project_id=project_id,
+            entity_type="person",
+            entity_id=person_id,
+            article_id=article_id,
+        )
+    elif person_patch_entity_fields_changed(body):
+        enqueue_semantic_reindex_for_entity(
+            session,
+            project_id=project_id,
+            entity_type="person",
+            entity_id=person_id,
+        )
+
+
+def _enqueue_person_reindex_for_articles(
+    *,
+    project_id: int,
+    article_ids: set[int],
+) -> None:
+    for aid in sorted(article_ids):
+        enqueue_semantic_reindex(
+            project_id=project_id,
+            article_id=aid,
+            entity_type="person",
+        )
 
 
 class CreatePersonFromArticleEvidenceBody(BaseModel):
@@ -838,6 +899,11 @@ def create_person_from_article_evidence(
     )
     session.add(occurrence)
     session.commit()
+    enqueue_semantic_reindex(
+        project_id=int(proj.id),
+        article_id=body.article_id,
+        entity_type="person",
+    )
     session.refresh(person)
     session.refresh(mention)
     session.refresh(occurrence)
@@ -929,6 +995,13 @@ def patch_substrate_person(
             session.add(mention)
 
     session.commit()
+    _maybe_enqueue_person_reindex_after_patch(
+        session,
+        project_id=int(proj.id),
+        person_id=person_id,
+        article_id=article_id,
+        body=body,
+    )
     session.refresh(person)
     return SubstratePersonResponse(
         id=int(person.id),  # type: ignore[arg-type]
@@ -968,6 +1041,7 @@ def delete_substrate_person(
         mention_filters.append(SubstratePersonMention.article_id == article_id)
 
     mentions = session.exec(select(SubstratePersonMention).where(*mention_filters)).all()
+    article_ids = {int(mention.article_id) for mention in mentions}
     for mention in mentions:
         mention.deleted = True
         session.add(mention)
@@ -1000,10 +1074,99 @@ def delete_substrate_person(
         person_deleted = True
 
     session.commit()
+    _enqueue_person_reindex_for_articles(
+        project_id=int(proj.id),
+        article_ids=article_ids,
+    )
     return {
         "message": "deleted",
         "mentions_removed": len(mentions),
         "person_deleted": person_deleted,
         "candidates_created": candidates_created,
     }
+
+
+class PersonMentionOccurrenceIn(BaseModel):
+    id: int | None = None
+    client_id: str | None = None
+    mention_text: str = Field(min_length=1)
+    quote_text: str | None = None
+    start_char: int | None = None
+    end_char: int | None = None
+    occurrence_order: int | None = None
+    suppressed: bool = False
+    is_quote: bool = False
+
+
+class PersonMentionOccurrenceOut(BaseModel):
+    id: int
+    mention_text: str
+    quote_text: str | None = None
+    start_char: int | None = None
+    end_char: int | None = None
+    occurrence_order: int | None = None
+    suppressed: bool
+    source_kind: str
+
+
+class ReplacePersonMentionOccurrencesIn(BaseModel):
+    occurrences: list[PersonMentionOccurrenceIn] = Field(default_factory=list, max_length=50)
+
+
+class ReplacePersonMentionOccurrencesResponse(BaseModel):
+    occurrences: list[PersonMentionOccurrenceOut]
+
+
+@router.put(
+    "/people/{person_id}/mention-occurrences",
+    response_model=ReplacePersonMentionOccurrencesResponse,
+)
+def replace_person_mention_occurrences(
+    person_id: int,
+    body: ReplacePersonMentionOccurrencesIn,
+    project_slug: str = Query(...),
+    article_id: int = Query(..., ge=1),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> ReplacePersonMentionOccurrencesResponse:
+    """Replace all active mention occurrences for one article+person (Agate Review)."""
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    person = session.get(SubstratePerson, person_id)
+    if person is None or int(person.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Person not found")
+    article = session.get(SubstrateArticle, article_id)
+    if article is None or int(article.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    payload = [o.model_dump() for o in body.occurrences]
+    created = replace_person_mention_occurrences_for_article(
+        session,
+        article_id=article_id,
+        person_id=person_id,
+        occurrences_in=payload,
+    )
+    session.commit()
+    enqueue_semantic_reindex(
+        project_id=int(proj.id),
+        article_id=article_id,
+        entity_type="person",
+    )
+    out: list[PersonMentionOccurrenceOut] = []
+    for row in created:
+        if row.id is None:
+            continue
+        out.append(
+            PersonMentionOccurrenceOut(
+                id=int(row.id),
+                mention_text=str(row.mention_text),
+                quote_text=row.quote_text,
+                start_char=row.start_char,
+                end_char=row.end_char,
+                occurrence_order=row.occurrence_order,
+                suppressed=bool(row.suppressed),
+                source_kind=str(row.source_kind),
+            )
+        )
+    return ReplacePersonMentionOccurrencesResponse(occurrences=out)
 

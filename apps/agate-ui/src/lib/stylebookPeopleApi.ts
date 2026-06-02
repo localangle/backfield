@@ -47,6 +47,37 @@ export async function updateSavedPerson(
   })
 }
 
+export type PersonMentionOccurrencePayload = {
+  id?: number
+  client_id?: string
+  mention_text: string
+  quote_text?: string
+  start_char?: number | null
+  end_char?: number | null
+  occurrence_order?: number
+  suppressed?: boolean
+  is_quote?: boolean
+}
+
+export async function replaceSavedPersonMentionOccurrences(
+  personId: number,
+  projectSlug: string,
+  articleId: number,
+  occurrences: PersonMentionOccurrencePayload[],
+): Promise<{ occurrences: Array<{ id: number; mention_text: string }> }> {
+  const params = new URLSearchParams({
+    project_slug: projectSlug,
+    article_id: String(Math.trunc(articleId)),
+  })
+  return stylebookJsonFetch(
+    `/v1/people/${personId}/mention-occurrences?${params.toString()}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ occurrences }),
+    },
+  )
+}
+
 export async function deleteSavedPerson(
   personId: number,
   projectSlug: string,
