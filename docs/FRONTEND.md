@@ -80,6 +80,7 @@ All create, edit, and run routes share one guided builder (`GuidedFlowBuilder.ts
 - **Run flow** starts a run without entering edit mode; run output appears in `NodePanel` / `RunPanel`.
 - **Node panel:** Right-hand configuration uses the shared shell and tab model documented in **[Agate nodes and node panels](#agate-nodes-and-node-panels)** below. JSON Output has no settings tab—only **Output** after a run. Numeric fields users type freely (for example S3 max files per run) use a plain text input, not browser number spinners.
 - **Edit flow** takes a snapshot; **Cancel** restores it; **Save** uses shared `validateGraphForSave` and `paramsForGraphSave`.
+- **Save** (header **Save flow** / **Save changes**, or the node panel **Save changes** footer) closes the active node panel after a successful save so the canvas is unobstructed.
 
 ### UX reference patterns
 

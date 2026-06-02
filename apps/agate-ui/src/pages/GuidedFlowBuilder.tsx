@@ -905,6 +905,11 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     onSwapOutputBookend: capabilities.allowBookendEdit ? handleChangeOutputDestination : undefined,
   }
 
+  const dismissActiveNodePanel = useCallback(() => {
+    setSelectedNodeId(null)
+    setConfigureGateActive(false)
+  }, [])
+
   const handleSave = useCallback(async (options?: { stayInEditMode?: boolean }): Promise<boolean> => {
     if (!inputNode || !outputNode) {
       showModal({
@@ -1000,6 +1005,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           navigate(`/flow/${graph.id}`)
         }
       }
+      dismissActiveNodePanel()
       return true
     } catch (error) {
       console.error('Failed to save graph:', error)
@@ -1025,6 +1031,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     navigate,
     showModal,
     onSaved,
+    dismissActiveNodePanel,
   ])
 
   const handlePanelSave = useCallback(async (): Promise<void> => {
@@ -1590,10 +1597,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                     ? handleCancelMiddleNodeAdd
                     : undefined
             }
-            onClose={() => {
-              setSelectedNodeId(null)
-              setConfigureGateActive(false)
-            }}
+            onClose={dismissActiveNodePanel}
             onSave={() => void handlePanelSave()}
             onTextChange={activeStep === 'input' ? handleTextInputChange : undefined}
             setNodes={setNodes}
