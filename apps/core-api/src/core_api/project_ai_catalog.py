@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from backfield_ai.constants import (
+    AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
     AI_MODEL_KIND_EMBEDDING,
     AI_MODEL_KIND_GENERATIVE,
     PROJECT_AI_DEFAULT_ROLES,
@@ -332,7 +333,15 @@ def put_project_default_role(
     rkey = role.strip()
     if rkey not in PROJECT_AI_DEFAULT_ROLES:
         raise HTTPException(status_code=400, detail="Unsupported default role")
-    get_org_model_config(session, organization_id=org_id, config_id=model_config_id)
+    cfg = get_org_model_config(session, organization_id=org_id, config_id=model_config_id)
+    if (
+        rkey == AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING
+        and str(cfg.model_kind) != AI_MODEL_KIND_EMBEDDING
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="The semantic search default must be an embedding model.",
+        )
 
     existing = session.exec(
         select(BackfieldAiDefaultModelRole).where(

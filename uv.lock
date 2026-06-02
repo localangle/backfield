@@ -3161,6 +3161,7 @@ name = "stylebook-api"
 version = "0.1.0"
 source = { editable = "apps/stylebook-api" }
 dependencies = [
+    { name = "backfield-ai" },
     { name = "backfield-auth" },
     { name = "backfield-db" },
     { name = "backfield-stylebook" },
@@ -3174,6 +3175,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "backfield-ai", editable = "packages/backfield-ai" },
     { name = "backfield-auth", editable = "packages/backfield-auth" },
     { name = "backfield-db", editable = "packages/backfield-db" },
     { name = "backfield-stylebook", editable = "packages/backfield-stylebook" },

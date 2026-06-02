@@ -368,6 +368,31 @@ export async function deleteProjectAiModelCredentialOverride(
   )
 }
 
+export interface ProjectAiModelDefaultRole {
+  role: string
+  model_config_id: string
+}
+
+export async function fetchProjectAiModelDefaults(
+  projectId: number,
+): Promise<ProjectAiModelDefaultRole[]> {
+  return jsonFetch(`/v1/projects/${projectId}/ai-model-defaults`)
+}
+
+export async function putProjectAiModelDefaultRole(
+  projectId: number,
+  role: string,
+  modelConfigId: string,
+): Promise<ProjectAiModelDefaultRole> {
+  return jsonFetch(
+    `/v1/projects/${projectId}/ai-model-defaults/${encodeURIComponent(role)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ model_config_id: modelConfigId }),
+    },
+  )
+}
+
 export async function listOrgWorkspaces(
   orgId: number,
 ): Promise<WorkspaceWithProjects[]> {
