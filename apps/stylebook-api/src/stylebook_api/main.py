@@ -16,6 +16,7 @@ from stylebook_api.routers import (
     geocode,
     health,
     imports,
+    semantic_mention_search,
     stylebook_bundle_jobs,
     stylebook_canonicals,
     stylebook_permissions,
@@ -66,4 +67,5 @@ app.include_router(connections.locations_connections_router)
 app.include_router(people.router)
 app.include_router(person_candidates.router)
 app.include_router(person_meta.router)
+app.include_router(semantic_mention_search.router)
 app.include_router(ui_stubs.router)
