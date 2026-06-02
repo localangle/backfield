@@ -2,6 +2,16 @@
  * Agate API client — Backfield agate-api.
  */
 
+import {
+  normalizeProcessedItemSemanticIndexing,
+  type ProcessedItemSemanticIndexing,
+} from '@/lib/review/content/semanticIndexingDisplay'
+
+export type {
+  ProcessedItemSemanticIndexing,
+  ProcessedItemSemanticIndexingStatus,
+} from '@/lib/review/content/semanticIndexingDisplay'
+
 /** Agate API base. Default `/api/agate` uses Vite dev proxy to the Agate service (same-origin cookies). */
 export const API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -133,6 +143,8 @@ export interface ProcessedItem {
   /** Materialized model output + overlay for JSON export; absent when no review saved. */
   reviewed_output?: Record<string, unknown> | null
   article_context?: ArticleContext
+  /** Compact semantic search indexing status from Backfield Output. */
+  semantic_indexing?: ProcessedItemSemanticIndexing
 }
 
 export interface Run {
@@ -585,6 +597,7 @@ interface RawProcessedItemDetail {
   stale_overlay_entries?: Array<Record<string, unknown>>
   stale_people_overlay_entries?: Array<Record<string, unknown>>
   article_context?: unknown
+  semantic_indexing?: unknown
 }
 
 function _normalizeArticleContext(raw: unknown): ArticleContext {
@@ -674,6 +687,7 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
         ? raw.reviewed_output
         : null,
     article_context: _normalizeArticleContext(raw.article_context),
+    semantic_indexing: normalizeProcessedItemSemanticIndexing(raw.semantic_indexing),
   }
 }
 

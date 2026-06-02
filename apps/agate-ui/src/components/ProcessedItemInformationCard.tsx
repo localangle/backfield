@@ -15,8 +15,29 @@ import {
 } from '@/lib/review/content/articleFields'
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/review/content/sourceDisplay'
 import { formatDateCentral } from '@/lib/utils'
+import {
+  formatSemanticIndexingDetail,
+  semanticIndexingStatusLabel,
+  shouldShowSemanticIndexingSummary,
+} from '@/lib/review/content/semanticIndexingDisplay'
 import { CheckCircle, Clock, ExternalLink, FileText, Loader2, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+function getSemanticIndexingStatusColor(status: string) {
+  switch (status) {
+    case 'succeeded':
+      return 'text-green-700 dark:text-green-400'
+    case 'partial':
+      return 'text-amber-700 dark:text-amber-400'
+    case 'failed':
+      return 'text-red-700 dark:text-red-400'
+    case 'running':
+    case 'pending':
+      return 'text-blue-700 dark:text-blue-400'
+    default:
+      return 'text-muted-foreground'
+  }
+}
 
 function getStatusColor(status: string) {
   switch (status) {
@@ -242,6 +263,8 @@ export function ProcessedItemInformationCard({
   )
 
   const editable = !item.synthetic
+  const semanticIndexing = item.semantic_indexing
+  const showSemanticIndexing = shouldShowSemanticIndexingSummary(semanticIndexing)
 
   return (
     <Card>
@@ -329,6 +352,29 @@ export function ProcessedItemInformationCard({
                 </p>
               ) : null}
             </div>
+            {showSemanticIndexing && semanticIndexing ? (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Semantic search</label>
+                <p
+                  className={cn(
+                    'text-sm mt-0.5',
+                    getSemanticIndexingStatusColor(semanticIndexing.status),
+                  )}
+                >
+                  {semanticIndexingStatusLabel(semanticIndexing.status)}
+                </p>
+                {formatSemanticIndexingDetail(semanticIndexing) ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatSemanticIndexingDetail(semanticIndexing)}
+                  </p>
+                ) : null}
+                {semanticIndexing.indexed_at ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Last indexed {formatDateCentral(semanticIndexing.indexed_at)}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </CardContent>

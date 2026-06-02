@@ -223,6 +223,19 @@ When overlay PATCH carries review content (location or people patches, user-adde
 
 **Transport note (Backfield v1):** **`agate-api`** reads **`substrate_article`** in-process from the shared Postgres session after normal project access checks. A future **core-api** HTTP read proxy may replace the transport without changing this JSON shape.
 
+## Processed item semantic indexing (v1)
+
+**`GET /runs/{id}/items/{item_id}`** and overlay **`PATCH`** responses include **`semantic_indexing`**, a compact summary derived from Backfield Output (**``stylebook_output.semantic_indexing``**) and, when an article id is known, active **`substrate_*_semantic_document`** rows for that story.
+
+- **`status`**: **`not_enabled`**, **`pending`**, **`running`**, **`succeeded`**, **`partial`**, or **`failed`**. Item **`status`** (succeeded/failed badge) is unchanged when semantic indexing warns or partially fails.
+- **`enabled`**: whether semantic search was turned on for Backfield Output on this run.
+- **`document_count`**, **`indexed_count`**, **`pending_count`**, **`failed_count`**: small operational counts for the item’s article scope.
+- **`indexed_at`**: latest **`embedded_at`** across active semantic documents when available; otherwise the item **`updated_at`** when indexing completed.
+- **`embedding_model`**: provider/model label when embeddings were written.
+- **`error`**: optional warning or failure message from sync/embedding (does not fail the processed item).
+
+When semantic search is off, **`status`** is **`not_enabled`** and the Agate UI omits the row from the Item Information card.
+
 ## Processed item → Stylebook handoff (interim, Issue 7)
 
 - **Save before navigation:** Agate UI must **`PATCH`** the processed item overlay (or confirm the user stays) before opening Stylebook when there are unsaved overlay edits. There is no server-side “handoff” mutation in this slice.

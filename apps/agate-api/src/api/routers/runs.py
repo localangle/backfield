@@ -30,6 +30,9 @@ from backfield_db import (
     BackfieldProjectSecret,
 )
 from backfield_db.crypto import decrypt_secret
+from backfield_stylebook.semantic_indexing.processed_item import (
+    build_processed_item_semantic_indexing_summary,
+)
 from celery import Celery
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -120,6 +123,27 @@ class ArticleContextOut(BaseModel):
     reason: str | None = None
 
 
+class ProcessedItemSemanticIndexingOut(BaseModel):
+    """Compact semantic indexing status for processed item detail."""
+
+    status: Literal[
+        "not_enabled",
+        "pending",
+        "running",
+        "succeeded",
+        "partial",
+        "failed",
+    ]
+    enabled: bool = False
+    document_count: int = 0
+    indexed_count: int = 0
+    pending_count: int = 0
+    failed_count: int = 0
+    indexed_at: datetime | None = None
+    embedding_model: str | None = None
+    error: str | None = None
+
+
 class ProcessedItemDetailOut(BaseModel):
     """Single processed item for run detail / item drill-down."""
 
@@ -154,6 +178,8 @@ class ProcessedItemDetailOut(BaseModel):
     stale_people_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
     #: Resolved article body/headline for the item (see ``docs/API.md``).
     article_context: ArticleContextOut
+    #: Semantic search indexing status from Backfield Output (see ``docs/API.md``).
+    semantic_indexing: ProcessedItemSemanticIndexingOut
 
 
 class ProcessedItemOverlayPatchIn(BaseModel):
@@ -199,6 +225,26 @@ class RunOut(BaseModel):
 def _graph_project_id(session: Session, graph_id: str) -> int:
     g = session.get(AgateGraph, graph_id)
     return g.project_id if g else 0
+
+
+def _processed_item_semantic_indexing(
+    session: Session,
+    *,
+    project_id: int,
+    item_status: str,
+    output_obj: dict[str, Any] | None,
+    article_id: int | None,
+    item_updated_at: datetime,
+) -> ProcessedItemSemanticIndexingOut:
+    summary = build_processed_item_semantic_indexing_summary(
+        session,
+        project_id=project_id,
+        item_status=item_status,
+        result_obj=output_obj,
+        article_id=article_id,
+        item_updated_at=item_updated_at,
+    )
+    return ProcessedItemSemanticIndexingOut.model_validate(summary)
 
 
 def _rollup_ai_costs_for_run(
@@ -677,6 +723,15 @@ def _detail_from_agate_processed_row(
         merged_people=merged_people,
     )
 
+    semantic_indexing = _processed_item_semantic_indexing(
+        session,
+        project_id=project_id,
+        item_status=row.status,
+        output_obj=output_obj,
+        article_id=article_ctx_dict.get("article_id"),
+        item_updated_at=row.updated_at,
+    )
+
     rid = row.id
     if rid is None:
         raise HTTPException(404, "Processed item not found")
@@ -705,6 +760,7 @@ def _detail_from_agate_processed_row(
         merged_people=merged_people,
         stale_people_overlay_entries=stale_people_overlay_entries,
         article_context=article_ctx,
+        semantic_indexing=semantic_indexing,
     )
 
 
@@ -788,6 +844,15 @@ def _maybe_detail_whole_graph_run(
         merged_people=merged_people,
     )
 
+    semantic_indexing = _processed_item_semantic_indexing(
+        session,
+        project_id=project_id,
+        item_status=st,
+        output_obj=output_obj,
+        article_id=article_ctx_dict.get("article_id"),
+        item_updated_at=run.updated_at,
+    )
+
     return ProcessedItemDetailOut(
         id=1,
         run_id=run.id,
@@ -813,6 +878,7 @@ def _maybe_detail_whole_graph_run(
         merged_people=merged_people,
         stale_people_overlay_entries=stale_people_overlay_entries,
         article_context=article_ctx,
+        semantic_indexing=semantic_indexing,
     )
 
 
