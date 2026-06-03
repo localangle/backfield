@@ -22,15 +22,11 @@ import {
   placeExtractTypeLabel,
   sortReviewQueueTypeFilterOptions,
 } from "@/lib/place-extract-type-label"
-import {
-  CANDIDATE_TOAST_AUTO_DISMISS_MS,
-  CANDIDATE_TOAST_FADE_MS,
-} from "@/lib/candidateQueueToast"
-import {
-  pickCreateLinkNudge,
-  rankCandidatesByLabelSimilarity,
-} from "@/lib/candidateQueueSimilarity"
+import { pickCreateLinkNudge } from "@/lib/candidateQueueSimilarity"
+import { useCandidateQueueToasts } from "@/lib/useCandidateQueueToasts"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
+import { CandidateQueueCreatedToast } from "@/components/CandidateQueueCreatedToast"
+import { CandidateQueueLinkedToast } from "@/components/CandidateQueueLinkedToast"
 import { CreateCanonicalLinkNudgeAlert } from "@/components/CreateCanonicalLinkNudgeAlert"
 import { PotentialCandidateLinksDialog } from "@/components/PotentialCandidateLinksDialog"
 import { Button } from "@/components/ui/button"
@@ -69,16 +65,7 @@ import {
   CandidateReviewReasons,
   candidateReviewLines,
 } from "@/components/CandidateReviewReasons"
-import {
-  CheckCircle2,
-  ChevronRight,
-  Clock,
-  Link2,
-  Loader2,
-  PlusCircle,
-  StickyNote,
-  X,
-} from "lucide-react"
+import { ChevronRight, Clock, Link2, Loader2, PlusCircle, StickyNote, X } from "lucide-react"
 
 /** Row action aligned with `canonical_suggestion.suggested_action` from the API. */
 function suggestedRowAction(c: Candidate): "link" | "create_new" | "defer" | null {
@@ -153,30 +140,10 @@ export default function LocationCandidates() {
   const [createModalLocationType, setCreateModalLocationType] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const [createdToast, setCreatedToast] = useState<{
-    canonicalLabel: string
-    canonicalId: string
-  } | null>(null)
-  /** Same query as “show similar candidates”: open queue + q + limit 100, ranked top 5. */
-  const [toastFollowupLoading, setToastFollowupLoading] = useState(false)
-  const [toastFollowupError, setToastFollowupError] = useState<string | null>(null)
-  const [toastFollowupRows, setToastFollowupRows] = useState<Candidate[]>([])
-  const [potentialLinksOpen, setPotentialLinksOpen] = useState(false)
-  /** Opacity transition before clearing `createdToast` after auto-dismiss timer. */
-  const [canonicalCreatedToastLeaving, setCanonicalCreatedToastLeaving] = useState(false)
-  const [toastLinkBusyId, setToastLinkBusyId] = useState<number | null>(null)
-  const [toastLinkError, setToastLinkError] = useState<string | null>(null)
   const [createLinkNudge, setCreateLinkNudge] = useState<{
     canonicalId: string
     label: string
   } | null>(null)
-  const [linkedToast, setLinkedToast] = useState<{
-    canonicalId: string
-    canonicalLabel: string
-    candidateLabel: string
-  } | null>(null)
-  /** Opacity transition before clearing ``linkedToast`` after auto-dismiss timer. */
-  const [linkedToastLeaving, setLinkedToastLeaving] = useState(false)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
 
   useEffect(() => {
@@ -329,6 +296,36 @@ export default function LocationCandidates() {
     }
   }, [projectSlug, status, debouncedQuery, typeFilter, listPage])
 
+  const fetchOpenLocationCandidatesForLabel = useCallback(
+    async (label: string) => {
+      if (!projectSlug) return []
+      const res = await listCandidates(projectSlug, "open", false, {
+        limit: 100,
+        offset: 0,
+        q: label,
+      })
+      return res.candidates
+    },
+    [projectSlug],
+  )
+
+  const queueToasts = useCandidateQueueToasts<Candidate>({
+    projectSlug,
+    fetchOpenCandidatesForLabel: fetchOpenLocationCandidatesForLabel,
+    getCandidateLabel: (c) => c.suggested_name ?? "",
+    mapFollowupRow: (c) => ({
+      rowKey: c.id,
+      location: c.suggested_name || "—",
+      typeLabel: c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—",
+      address: c.suggested_formatted_address || "—",
+    }),
+    linkCandidateToCanonical: async (c, canonicalId) => {
+      if (!projectSlug) return
+      await linkSubstrateToCanonical(c.id, projectSlug, canonicalId)
+    },
+    onAfterToastLink: refreshListQuiet,
+  })
+
   // Initial + filter/pagination changes. `listFetchGen` bumps when filters change so we never fetch
   // a stale page with new filters (see filterKey effect above).
   useEffect(() => {
@@ -375,90 +372,6 @@ export default function LocationCandidates() {
       cancelled = true
     }
   }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen])
-
-  const prefetchToastFollowupCandidates = useCallback(async () => {
-    const label = createdToast?.canonicalLabel?.trim()
-    if (!projectSlug || !label) return
-    setToastFollowupLoading(true)
-    setToastFollowupError(null)
-    try {
-      const res = await listCandidates(projectSlug, "open", false, {
-        limit: 100,
-        offset: 0,
-        q: label,
-      })
-      const ranked = rankCandidatesByLabelSimilarity(
-        res.candidates,
-        label,
-        (c) => c.suggested_name ?? "",
-      ).slice(0, 5)
-      setToastFollowupRows(ranked)
-    } catch (e) {
-      setToastFollowupError(e instanceof Error ? e.message : "Couldn't load candidates")
-      setToastFollowupRows([])
-    } finally {
-      setToastFollowupLoading(false)
-    }
-  }, [projectSlug, createdToast?.canonicalLabel])
-
-  useEffect(() => {
-    if (!createdToast || !projectSlug) {
-      setToastFollowupRows([])
-      setToastFollowupLoading(false)
-      setToastFollowupError(null)
-      setPotentialLinksOpen(false)
-      setToastLinkBusyId(null)
-      setToastLinkError(null)
-      return
-    }
-    void prefetchToastFollowupCandidates()
-  }, [createdToast, projectSlug, prefetchToastFollowupCandidates])
-
-  useEffect(() => {
-    if (!createdToast) {
-      setCanonicalCreatedToastLeaving(false)
-      return
-    }
-    setCanonicalCreatedToastLeaving(false)
-    if (toastFollowupLoading || toastFollowupRows.length > 0) {
-      return
-    }
-
-    const timeouts = { main: 0 as number, fade: undefined as number | undefined }
-    timeouts.main = window.setTimeout(() => {
-      setCanonicalCreatedToastLeaving(true)
-      timeouts.fade = window.setTimeout(() => {
-        setCreatedToast(null)
-        setCanonicalCreatedToastLeaving(false)
-      }, CANDIDATE_TOAST_FADE_MS)
-    }, CANDIDATE_TOAST_AUTO_DISMISS_MS)
-
-    return () => {
-      window.clearTimeout(timeouts.main)
-      if (timeouts.fade !== undefined) window.clearTimeout(timeouts.fade)
-    }
-  }, [createdToast, toastFollowupLoading, toastFollowupRows.length])
-
-  useEffect(() => {
-    if (!linkedToast) {
-      setLinkedToastLeaving(false)
-      return
-    }
-    setLinkedToastLeaving(false)
-    const timeouts = { main: 0 as number, fade: undefined as number | undefined }
-    timeouts.main = window.setTimeout(() => {
-      setLinkedToastLeaving(true)
-      timeouts.fade = window.setTimeout(() => {
-        setLinkedToast(null)
-        setLinkedToastLeaving(false)
-      }, CANDIDATE_TOAST_FADE_MS)
-    }, CANDIDATE_TOAST_AUTO_DISMISS_MS)
-
-    return () => {
-      window.clearTimeout(timeouts.main)
-      if (timeouts.fade !== undefined) window.clearTimeout(timeouts.fade)
-    }
-  }, [linkedToast])
 
   function defaultNewCanonicalLabel(c: Candidate): string {
     const fromName = (c.suggested_name ?? "").trim()
@@ -515,26 +428,11 @@ export default function LocationCandidates() {
         )
         return
       }
-      setCreatedToast({ canonicalLabel: name, canonicalId: cid })
+      queueToasts.created.show({ canonicalLabel: name, canonicalId: cid })
     } catch (e) {
       setError(e instanceof Error ? e.message : "Accept failed")
     } finally {
       setAcceptingId(null)
-    }
-  }
-
-  async function linkToastCandidateToNewCanonical(c: Candidate) {
-    if (!projectSlug || !createdToast) return
-    setToastLinkError(null)
-    setToastLinkBusyId(c.id)
-    try {
-      await linkSubstrateToCanonical(c.id, projectSlug, createdToast.canonicalId)
-      setToastFollowupRows((rows) => rows.filter((r) => r.id !== c.id))
-      await refreshListQuiet()
-    } catch (e) {
-      setToastLinkError(e instanceof Error ? e.message : "Link failed")
-    } finally {
-      setToastLinkBusyId(null)
     }
   }
 
@@ -553,7 +451,7 @@ export default function LocationCandidates() {
       } catch {
         // ignore; fall back to id
       }
-      setLinkedToast({
+      queueToasts.linked.show({
         canonicalId: cid,
         canonicalLabel: canonLabel,
         candidateLabel: (c.suggested_name ?? "").trim() || `Location ${c.id}`,
@@ -628,110 +526,29 @@ export default function LocationCandidates() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {createdToast ? (
-        <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
-          <div
-            role="status"
-            className={cn(
-              "rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15 transition-opacity duration-300",
-              canonicalCreatedToastLeaving ? "opacity-0" : "opacity-100",
-            )}
-          >
-            <div className="flex items-start gap-3 p-4 pr-2">
-              <CheckCircle2
-                className="mt-0.5 h-5 w-5 shrink-0 text-primary"
-                aria-hidden
-              />
-              <div className="flex min-w-0 max-w-[min(28rem,calc(100vw-5.5rem))] flex-col gap-2">
-                <div className="text-sm font-semibold leading-none">Canonical created</div>
-                <div className="text-sm text-muted-foreground">
-                  Saved as{" "}
-                  <Link
-                    to={`${catalogBasePath}/locations/canonical/${createdToast.canonicalId}${filterScopeSuffix}`}
-                    className="font-medium text-foreground underline-offset-4 hover:underline break-words"
-                  >
-                    {createdToast.canonicalLabel}
-                  </Link>
-                </div>
-                {toastFollowupLoading ? (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground pt-0.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
-                    <span>Checking the open queue for related locations…</span>
-                  </div>
-                ) : null}
-                {toastFollowupError && !toastFollowupLoading ? (
-                  <p className="text-xs text-destructive">{toastFollowupError}</p>
-                ) : null}
-                {!toastFollowupLoading && toastFollowupRows.length > 0 ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="mt-1 w-full shrink-0 self-start sm:w-auto"
-                    onClick={() => setPotentialLinksOpen(true)}
-                  >
-                    Potential links found
-                  </Button>
-                ) : null}
-              </div>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="-mr-1 -mt-1 h-8 w-8 shrink-0"
-                onClick={() => {
-                  setCanonicalCreatedToastLeaving(false)
-                  setCreatedToast(null)
-                }}
-                aria-label="Dismiss"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
+      {queueToasts.created.isVisible && queueToasts.created.payload ? (
+        <CandidateQueueCreatedToast
+          title="Canonical created"
+          canonicalHref={`${catalogBasePath}/locations/canonical/${queueToasts.created.payload.canonicalId}${filterScopeSuffix}`}
+          canonicalLabel={queueToasts.created.payload.canonicalLabel}
+          leaving={queueToasts.created.leaving}
+          followupCheckingMessage="Checking the open queue for related locations…"
+          followupLoading={queueToasts.followup.loading}
+          followupError={queueToasts.followup.error}
+          hasPotentialLinks={queueToasts.followup.hasMatches}
+          onOpenPotentialLinks={queueToasts.followup.openPotentialLinks}
+          onDismiss={queueToasts.created.dismissNow}
+        />
       ) : null}
-      {linkedToast ? (
-        <div className="fixed bottom-6 right-6 z-50 w-max max-w-[calc(100vw-3rem)]">
-          <div
-            role="status"
-            className={cn(
-              "rounded-xl border border-primary/25 bg-card text-card-foreground shadow-xl ring-2 ring-primary/15 transition-opacity duration-300",
-              linkedToastLeaving ? "opacity-0" : "opacity-100",
-            )}
-          >
-            <div className="flex items-start gap-3 p-4 pr-2">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden />
-              <div className="flex min-w-0 max-w-[min(28rem,calc(100vw-5.5rem))] flex-col gap-1.5">
-                <div className="text-sm font-semibold leading-none">Linked to canonical</div>
-                <div className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground break-words">
-                    {linkedToast.candidateLabel}
-                  </span>{" "}
-                  →{" "}
-                  <Link
-                    to={`${catalogBasePath}/locations/canonical/${linkedToast.canonicalId}${filterScopeSuffix}`}
-                    className="font-medium text-foreground underline-offset-4 hover:underline break-words"
-                  >
-                    {linkedToast.canonicalLabel}
-                  </Link>
-                </div>
-              </div>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="-mr-1 -mt-1 h-8 w-8 shrink-0"
-                onClick={() => {
-                  setLinkedToastLeaving(false)
-                  setLinkedToast(null)
-                }}
-                aria-label="Dismiss"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
+      {queueToasts.linked.isVisible && queueToasts.linked.payload ? (
+        <CandidateQueueLinkedToast
+          title="Linked to canonical"
+          candidateLabel={queueToasts.linked.payload.candidateLabel}
+          canonicalHref={`${catalogBasePath}/locations/canonical/${queueToasts.linked.payload.canonicalId}${filterScopeSuffix}`}
+          canonicalLabel={queueToasts.linked.payload.canonicalLabel}
+          leaving={queueToasts.linked.leaving}
+          onDismiss={queueToasts.linked.dismissNow}
+        />
       ) : null}
       <div className="flex justify-between items-center">
         <div className="min-w-0">
@@ -1199,7 +1016,7 @@ export default function LocationCandidates() {
         initialCanonicalId={linkModalInitialCanonicalId}
         title="Link candidate to canonical"
         onLinked={({ id, label }) => {
-          setLinkedToast({
+          queueToasts.linked.show({
             canonicalId: id,
             canonicalLabel: label,
             candidateLabel:
@@ -1295,31 +1112,8 @@ export default function LocationCandidates() {
       </Dialog>
 
       <PotentialCandidateLinksDialog
-        open={potentialLinksOpen}
-        onOpenChange={(open) => {
-          setPotentialLinksOpen(open)
-          if (!open) {
-            setToastLinkError(null)
-            setToastLinkBusyId(null)
-          }
-        }}
-        canonicalLabel={createdToast?.canonicalLabel ?? ""}
+        {...queueToasts.potentialLinksDialog}
         candidateNounPlural="locations"
-        loading={toastFollowupLoading}
-        error={toastLinkError ?? toastFollowupError}
-        rows={toastFollowupRows.map((c) => ({
-          rowKey: c.id,
-          location: c.suggested_name || "—",
-          typeLabel: c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—",
-          address: c.suggested_formatted_address || "—",
-        }))}
-        busyKey={toastLinkBusyId}
-        linkDisabled={!createdToast}
-        onLink={(rowKey) => {
-          const c = toastFollowupRows.find((x) => x.id === rowKey)
-          if (c) void linkToastCandidateToNewCanonical(c)
-        }}
-        onRefresh={() => void prefetchToastFollowupCandidates()}
         linkActionLabel="Link this candidate to the new canonical"
         primaryColumnLabel="Location"
       />
