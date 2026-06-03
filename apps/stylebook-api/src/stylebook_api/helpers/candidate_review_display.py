@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backfield_stylebook.entities.location.review_display import deferred_policy_display_message
+
 _SKIP_LIST_DISPLAY_CODES: frozenset[str] = frozenset(
     {
         "canonical_suggestion",
@@ -13,8 +15,8 @@ _SKIP_LIST_DISPLAY_CODES: frozenset[str] = frozenset(
 )
 
 _DEFAULT_CODE_MESSAGES: dict[str, str] = {
-    "ambiguous_canonical_match": "Several catalog locations could match this place.",
-    "ambiguous_person_canonical_match": "Several catalog people could match this person.",
+    "ambiguous_canonical_match": "Several Stylebook locations could match this place.",
+    "ambiguous_person_canonical_match": "Several Stylebook people could match this person.",
     "child": "Identified as a child",
     "animal": "Identified as an animal",
     "stage_name_or_alias": "Stage name or alias — confirm full identity before linking",
@@ -51,19 +53,22 @@ def _line_for_reason(item: dict[str, Any]) -> str | None:
             return rationale.strip()
         outcome = str(item.get("outcome") or "").strip()
         if outcome == "no_high_confidence_link":
-            return "No confident catalog match for this mention."
+            return "No confident Stylebook match for this mention."
         if outcome == "district_key_mismatch_coerced":
-            return "District identity does not match the recalled catalog entry."
+            return "District identity does not match the recalled Stylebook entry."
         if outcome == "link_existing":
-            return "Ingest suggested linking to an existing catalog entry."
+            return "Ingest suggested linking to an existing Stylebook entry."
         return None
 
     if code in ("ambiguous_canonical_match", "ambiguous_person_canonical_match"):
         ids = item.get("recall_canonical_ids")
         if isinstance(ids, list) and len(ids) > 0:
             noun = "locations" if code == "ambiguous_canonical_match" else "people"
-            return f"Several catalog {noun} could match ({len(ids)} recalled)."
+            return f"Several Stylebook {noun} could match ({len(ids)} recalled)."
         return _DEFAULT_CODE_MESSAGES.get(code)
+
+    if code == "deferred_policy":
+        return deferred_policy_display_message(item)
 
     return _DEFAULT_CODE_MESSAGES.get(code)
 

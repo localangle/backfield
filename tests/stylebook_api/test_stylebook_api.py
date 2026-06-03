@@ -1061,7 +1061,7 @@ def test_open_candidate_lists_canonical_review_lines(
     assert r.status_code == 200
     cand = r.json()["candidates"][0]
     assert cand["canonical_review_lines"] == [
-        "Several catalog locations could match (2 recalled).",
+        "Several Stylebook locations could match (2 recalled).",
         "Not the same place as recalled entries.",
     ]
 

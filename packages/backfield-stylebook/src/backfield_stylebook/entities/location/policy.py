@@ -21,6 +21,7 @@ from backfield_stylebook.canonical.jurisdiction import (
     point_in_geojson_bbox,
     strict_canonical_gates_enabled,
 )
+from backfield_stylebook.entities.location.review_display import deferred_policy_display_message
 from backfield_stylebook.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
@@ -666,7 +667,11 @@ def decide_location_canonical_persist_plan(
             )
         return CanonicalPersistPlan(
             decision=CanonicalPersistDecision.DEFER,
-            resolution_reasons=defer_reason_payload(places_bucket=places_bucket, location=location),
+            resolution_reasons=defer_reason_payload(
+                places_bucket=places_bucket,
+                location=location,
+                entry=entry,
+            ),
         )
 
     preflight = _substrate_preflight_strict_gates(session, location=location, entry=entry)
@@ -844,6 +849,7 @@ def decide_location_canonical_persist_plan(
         resolution_reasons=defer_reason_payload(
             places_bucket=places_bucket,
             location=location,
+            entry=entry,
             extra_context={
                 "fuzzy_best_score": float(best_score) if recall_canonical_ids else None,
                 "fuzzy_recall_canonical_ids": list(recall_canonical_ids[:24])
@@ -884,6 +890,7 @@ def defer_reason_payload(
     *,
     places_bucket: str,
     location: SubstrateLocation,
+    entry: dict[str, Any] | None = None,
     extra_context: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """Structured reasons for ``canonical_review_reasons_json`` when deferring."""
@@ -893,10 +900,15 @@ def defer_reason_payload(
         "substrate_status": str(location.status or ""),
         "location_type": location.location_type,
     }
+    if isinstance(entry, dict):
+        qa = entry.get("geocode_qa_code")
+        if isinstance(qa, str) and qa.strip():
+            d["geocode_qa_code"] = qa.strip()
     if extra_context:
         for k, v in extra_context.items():
             if v is not None:
                 d[k] = v
+    d["message"] = deferred_policy_display_message(d)
     return (d,)
 
 
