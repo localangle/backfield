@@ -24,9 +24,11 @@ import {
 } from "@/lib/place-extract-type-label"
 import { pickCreateLinkNudge } from "@/lib/candidateQueueSimilarity"
 import { useCandidateQueueToasts } from "@/lib/useCandidateQueueToasts"
+import { useCandidateQueueInlineNote } from "@/lib/useCandidateQueueInlineNote"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { CandidateQueueCreatedToast } from "@/components/CandidateQueueCreatedToast"
 import { CandidateQueueLinkedToast } from "@/components/CandidateQueueLinkedToast"
+import { CandidateQueueInlineNote } from "@/components/CandidateQueueInlineNote"
 import { CreateCanonicalLinkNudgeAlert } from "@/components/CreateCanonicalLinkNudgeAlert"
 import { PotentialCandidateLinksDialog } from "@/components/PotentialCandidateLinksDialog"
 import { Button } from "@/components/ui/button"
@@ -57,7 +59,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
 import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
@@ -132,9 +133,6 @@ export default function LocationCandidates() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [contextById, setContextById] = useState<Record<number, CandidateContextResponse>>({})
   const [contextLoadingId, setContextLoadingId] = useState<number | null>(null)
-  const [noteSavingId, setNoteSavingId] = useState<number | null>(null)
-  const [noteEditingId, setNoteEditingId] = useState<number | null>(null)
-  const [noteDraftById, setNoteDraftById] = useState<Record<number, string>>({})
   const [createModalId, setCreateModalId] = useState<number | null>(null)
   const [createCanonicalDraft, setCreateCanonicalDraft] = useState("")
   const [createModalLocationType, setCreateModalLocationType] = useState("")
@@ -326,6 +324,27 @@ export default function LocationCandidates() {
     onAfterToastLink: refreshListQuiet,
   })
 
+  const saveCandidateNote = useCallback(
+    async (candidateId: number, note: string | null) => {
+      if (!projectSlug) return
+      setError(null)
+      try {
+        await updateCandidateNote(projectSlug, candidateId, note)
+        setContextById((prev) => {
+          const existing = prev[candidateId]
+          if (!existing) return prev
+          return { ...prev, [candidateId]: { ...existing, note } }
+        })
+        await refreshListQuiet()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to save note")
+      }
+    },
+    [projectSlug, refreshListQuiet],
+  )
+
+  const candidateNotes = useCandidateQueueInlineNote({ onSave: saveCandidateNote })
+
   // Initial + filter/pagination changes. `listFetchGen` bumps when filters change so we never fetch
   // a stale page with new filters (see filterKey effect above).
   useEffect(() => {
@@ -492,35 +511,6 @@ export default function LocationCandidates() {
       setError(e instanceof Error ? e.message : "Failed to load context")
     } finally {
       setContextLoadingId(null)
-    }
-  }
-
-  function openInlineNoteEditor(c: Candidate, initialText: string) {
-    setNoteEditingId(c.id)
-    setNoteDraftById((prev) => {
-      if (prev[c.id] !== undefined) return prev
-      return { ...prev, [c.id]: initialText }
-    })
-  }
-
-  async function saveInlineNote(candidateId: number) {
-    if (!projectSlug) return
-    const raw = noteDraftById[candidateId] ?? ""
-    const draft = raw.trim()
-    setNoteSavingId(candidateId)
-    setError(null)
-    try {
-      await updateCandidateNote(projectSlug, candidateId, draft ? draft : null)
-      setContextById((prev) => {
-        const existing = prev[candidateId]
-        if (!existing) return prev
-        return { ...prev, [candidateId]: { ...existing, note: draft ? draft : null } }
-      })
-      await refreshListQuiet()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save note")
-    } finally {
-      setNoteSavingId(null)
     }
   }
 
@@ -909,75 +899,29 @@ export default function LocationCandidates() {
                                   </ul>
                                 )}
                               </div>
-                              <div className="border-t border-border/60 pt-3 mt-3">
-                                <div className="text-sm font-medium">Note</div>
-                                {noteEditingId === c.id ? (
-                                  <div className="mt-2 space-y-2">
-                                    <Textarea
-                                      rows={4}
-                                      value={noteDraftById[c.id] ?? ""}
-                                      disabled={
-                                        acceptingId === c.id ||
-                                        deferringId === c.id ||
-                                        noteSavingId === c.id
-                                      }
-                                      onChange={(e) =>
-                                        setNoteDraftById((prev) => ({
-                                          ...prev,
-                                          [c.id]: e.target.value,
-                                        }))
-                                      }
-                                      onKeyDown={(e) => {
-                                        if (
-                                          e.key === "Enter" &&
-                                          (e.metaKey || e.ctrlKey) &&
-                                          noteSavingId !== c.id
-                                        ) {
-                                          e.preventDefault()
-                                          setNoteEditingId(null)
-                                          void saveInlineNote(c.id)
-                                        } else if (e.key === "Escape") {
-                                          e.preventDefault()
-                                          setNoteEditingId(null)
-                                        }
-                                      }}
-                                      onBlur={() => {
-                                        setNoteEditingId(null)
-                                        void saveInlineNote(c.id)
-                                      }}
-                                      autoFocus
-                                      placeholder="Add a brief note…"
-                                    />
-                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                      <StickyNote className="h-3.5 w-3.5" aria-hidden />
-                                      <span>Click outside to save. Cmd/Ctrl+Enter saves.</span>
-                                      {noteSavingId === c.id ? <span>Saving…</span> : null}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className={cn(
-                                      "mt-2 w-full rounded-md border border-border/60 bg-background/60 p-3 text-left text-sm transition-colors",
-                                      "hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                                    )}
-                                    disabled={
-                                      acceptingId === c.id ||
-                                      deferringId === c.id ||
-                                      noteSavingId === c.id
-                                    }
-                                    onClick={() => openInlineNoteEditor(c, savedNoteText)}
-                                  >
-                                    {savedNoteText ? (
-                                      <p className="whitespace-pre-wrap">{savedNoteText}</p>
-                                    ) : (
-                                      <p className="text-muted-foreground italic">
-                                        Click to add a note…
-                                      </p>
-                                    )}
-                                  </button>
-                                )}
-                              </div>
+                              <CandidateQueueInlineNote
+                                candidateId={c.id}
+                                savedNoteText={savedNoteText}
+                                isEditing={candidateNotes.noteEditingId === c.id}
+                                draft={candidateNotes.noteDraftById[c.id] ?? ""}
+                                saving={candidateNotes.noteSavingId === c.id}
+                                disabled={
+                                  acceptingId === c.id ||
+                                  deferringId === c.id ||
+                                  linkingSuggestedId === c.id
+                                }
+                                onOpenEditor={() =>
+                                  candidateNotes.openInlineNoteEditor(c.id, savedNoteText)
+                                }
+                                onDraftChange={(value) =>
+                                  candidateNotes.setNoteDraftById((prev) => ({
+                                    ...prev,
+                                    [c.id]: value,
+                                  }))
+                                }
+                                onSave={() => void candidateNotes.saveInlineNote(c.id)}
+                                onCancelEdit={() => candidateNotes.setNoteEditingId(null)}
+                              />
                             </div>
                           </TableCell>
                         </TableRow>

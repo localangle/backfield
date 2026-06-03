@@ -12,13 +12,16 @@ import {
   getSuggestedPersonCanonicals,
   linkPersonSubstrateToCanonical,
   listPersonCandidates,
+  updatePersonCandidateNote,
   type PersonCandidate,
   type PersonCandidateContextResponse,
 } from "@/lib/api"
 import { pickCreateLinkNudge } from "@/lib/candidateQueueSimilarity"
 import { useCandidateQueueToasts } from "@/lib/useCandidateQueueToasts"
+import { useCandidateQueueInlineNote } from "@/lib/useCandidateQueueInlineNote"
 import { CandidateQueueCreatedToast } from "@/components/CandidateQueueCreatedToast"
 import { CandidateQueueLinkedToast } from "@/components/CandidateQueueLinkedToast"
+import { CandidateQueueInlineNote } from "@/components/CandidateQueueInlineNote"
 import { CreateCanonicalLinkNudgeAlert } from "@/components/CreateCanonicalLinkNudgeAlert"
 import { PotentialCandidateLinksDialog } from "@/components/PotentialCandidateLinksDialog"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
@@ -236,6 +239,27 @@ export default function PersonCandidates() {
     },
     onAfterToastLink: refreshListQuiet,
   })
+
+  const saveCandidateNote = useCallback(
+    async (candidateId: number, note: string | null) => {
+      if (!projectSlug) return
+      setError(null)
+      try {
+        await updatePersonCandidateNote(projectSlug, candidateId, note)
+        setContextById((prev) => {
+          const existing = prev[candidateId]
+          if (!existing) return prev
+          return { ...prev, [candidateId]: { ...existing, note } }
+        })
+        await refreshListQuiet()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to save note")
+      }
+    },
+    [projectSlug, refreshListQuiet],
+  )
+
+  const candidateNotes = useCandidateQueueInlineNote({ onSave: saveCandidateNote })
 
   useEffect(() => {
     if (!projectSlug) return
@@ -583,6 +607,7 @@ export default function PersonCandidates() {
                   </TableRow>
                 ) : (
                   candidates.map((c) => {
+                    const savedNoteText = String(contextById[c.id]?.note ?? c.note ?? "").trim()
                     const rowSug = suggestedRowAction(c)
                     const rowSugLabel = suggestedActionShortLabel(c)
                     const suggestedCanonicalId =
@@ -621,7 +646,10 @@ export default function PersonCandidates() {
                                 </Button>
                                 <span className="min-w-0 break-words">{c.suggested_name || "—"}</span>
                                 {c.note ? (
-                                  <StickyNote className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  <StickyNote
+                                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                    aria-label="Has a note"
+                                  />
                                 ) : null}
                               </div>
                               {rowSugLabel ? (
@@ -701,28 +729,55 @@ export default function PersonCandidates() {
                         </TableRow>
                         {expandedId === c.id && (
                           <TableRow>
-                            <TableCell colSpan={5} className="bg-muted/30">
-                              <div className="py-2 space-y-2">
-                                <div className="text-sm font-medium">Context</div>
-                                {contextLoadingId === c.id ? (
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Loading…
-                                  </div>
-                                ) : (contextById[c.id]?.examples?.length ?? 0) === 0 ? (
-                                  <div className="text-sm text-muted-foreground">No article examples found.</div>
-                                ) : (
-                                  <ul className="space-y-1 text-sm">
-                                    {contextById[c.id].examples.map((ex) => (
-                                      <li key={ex.article_id}>
-                                        <span className="text-muted-foreground">
-                                          {ex.article_headline ?? `Article ${ex.article_id}`}:
-                                        </span>{" "}
-                                        {ex.text}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
+                            <TableCell colSpan={5} className="bg-muted/30 min-w-0">
+                              <div className="space-y-3 py-2 break-words [overflow-wrap:anywhere]">
+                                <div>
+                                  <div className="text-sm font-medium">Context</div>
+                                  {contextLoadingId === c.id ? (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      Loading…
+                                    </div>
+                                  ) : (contextById[c.id]?.examples?.length ?? 0) === 0 ? (
+                                    <div className="text-sm text-muted-foreground py-1">
+                                      No article examples found.
+                                    </div>
+                                  ) : (
+                                    <ul className="mt-1 space-y-1">
+                                      {contextById[c.id].examples.map((ex) => (
+                                        <li key={ex.article_id} className="text-sm">
+                                          <span className="text-muted-foreground">
+                                            {ex.article_headline ?? `Article ${ex.article_id}`}:
+                                          </span>{" "}
+                                          <span>{ex.text}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                                <CandidateQueueInlineNote
+                                  candidateId={c.id}
+                                  savedNoteText={savedNoteText}
+                                  isEditing={candidateNotes.noteEditingId === c.id}
+                                  draft={candidateNotes.noteDraftById[c.id] ?? ""}
+                                  saving={candidateNotes.noteSavingId === c.id}
+                                  disabled={
+                                    acceptingId === c.id ||
+                                    deferringId === c.id ||
+                                    linkingSuggestedId === c.id
+                                  }
+                                  onOpenEditor={() =>
+                                    candidateNotes.openInlineNoteEditor(c.id, savedNoteText)
+                                  }
+                                  onDraftChange={(value) =>
+                                    candidateNotes.setNoteDraftById((prev) => ({
+                                      ...prev,
+                                      [c.id]: value,
+                                    }))
+                                  }
+                                  onSave={() => void candidateNotes.saveInlineNote(c.id)}
+                                  onCancelEdit={() => candidateNotes.setNoteEditingId(null)}
+                                />
                               </div>
                             </TableCell>
                           </TableRow>
