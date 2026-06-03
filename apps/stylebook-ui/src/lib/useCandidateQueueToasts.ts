@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { LinkPickTableRow } from "@/components/LinkPickTable"
 import { rankCandidatesByLabelSimilarity } from "@/lib/candidateQueueSimilarity"
 import {
@@ -41,7 +41,15 @@ export function useCandidateQueueToasts<TCandidate extends { id: number }>({
   const [toastLinkBusyId, setToastLinkBusyId] = useState<number | null>(null)
   const [toastLinkError, setToastLinkError] = useState<string | null>(null)
 
+  const fetchOpenCandidatesRef = useRef(fetchOpenCandidatesForLabel)
+  const getCandidateLabelRef = useRef(getCandidateLabel)
+  fetchOpenCandidatesRef.current = fetchOpenCandidatesForLabel
+  getCandidateLabelRef.current = getCandidateLabel
+
+  const followupPrefetchKeyRef = useRef<string | null>(null)
+
   const clearFollowupState = useCallback(() => {
+    followupPrefetchKeyRef.current = null
     setToastFollowupRows([])
     setToastFollowupLoading(false)
     setToastFollowupError(null)
@@ -50,17 +58,24 @@ export function useCandidateQueueToasts<TCandidate extends { id: number }>({
     setToastLinkTarget(null)
   }, [])
 
-  const prefetchToastFollowupCandidates = useCallback(async () => {
+  const prefetchToastFollowupCandidates = useCallback(async (force = false) => {
     const label = toastLinkTarget?.canonicalLabel?.trim()
-    if (!projectSlug || !label) return
+    const canonicalId = toastLinkTarget?.canonicalId?.trim()
+    if (!projectSlug || !label || !canonicalId) return
+
+    const prefetchKey = `${projectSlug}|${canonicalId}|${label}`
+    if (!force && followupPrefetchKeyRef.current === prefetchKey) {
+      return
+    }
+    followupPrefetchKeyRef.current = prefetchKey
+
     setToastFollowupLoading(true)
     setToastFollowupError(null)
     try {
-      const rows = await fetchOpenCandidatesForLabel(label)
-      const ranked = rankCandidatesByLabelSimilarity(rows, label, getCandidateLabel).slice(
-        0,
-        TOAST_FOLLOWUP_RANK_TOP,
-      )
+      const rows = await fetchOpenCandidatesRef.current(label)
+      const ranked = rankCandidatesByLabelSimilarity(rows, label, (row) =>
+        getCandidateLabelRef.current(row),
+      ).slice(0, TOAST_FOLLOWUP_RANK_TOP)
       setToastFollowupRows(ranked)
     } catch (e) {
       setToastFollowupError(e instanceof Error ? e.message : "Couldn't load candidates")
@@ -68,11 +83,15 @@ export function useCandidateQueueToasts<TCandidate extends { id: number }>({
     } finally {
       setToastFollowupLoading(false)
     }
-  }, [projectSlug, toastLinkTarget?.canonicalLabel, fetchOpenCandidatesForLabel, getCandidateLabel])
+  }, [projectSlug, toastLinkTarget?.canonicalId, toastLinkTarget?.canonicalLabel])
+
+  const followupCanonicalId = toastLinkTarget?.canonicalId
+  const followupCanonicalLabel = toastLinkTarget?.canonicalLabel
 
   useEffect(() => {
-    if (!toastLinkTarget || !projectSlug) {
+    if (!followupCanonicalId || !followupCanonicalLabel || !projectSlug) {
       if (!potentialLinksOpen) {
+        followupPrefetchKeyRef.current = null
         setToastFollowupRows([])
         setToastFollowupLoading(false)
         setToastFollowupError(null)
@@ -82,10 +101,12 @@ export function useCandidateQueueToasts<TCandidate extends { id: number }>({
       return
     }
     void prefetchToastFollowupCandidates()
-  }, [toastLinkTarget, projectSlug, potentialLinksOpen, prefetchToastFollowupCandidates])
+    // Only re-run when the new-canonical follow-up target changes (not when callbacks re-render).
+  }, [followupCanonicalId, followupCanonicalLabel, projectSlug, prefetchToastFollowupCandidates])
 
   const showCreated = useCallback(
     (target: CandidateQueueToastCanonical) => {
+      followupPrefetchKeyRef.current = null
       setToastLinkTarget(target)
       created.show(target)
     },
@@ -95,6 +116,7 @@ export function useCandidateQueueToasts<TCandidate extends { id: number }>({
   const dismissCreatedNow = useCallback(() => {
     created.dismissNow()
     if (!potentialLinksOpen) {
+      followupPrefetchKeyRef.current = null
       setToastFollowupRows([])
       setToastFollowupLoading(false)
       setToastFollowupError(null)
@@ -145,7 +167,7 @@ export function useCandidateQueueToasts<TCandidate extends { id: number }>({
       const row = toastFollowupRows.find((r) => r.id === rowKey)
       if (row) void linkToastCandidate(row)
     },
-    onRefresh: () => void prefetchToastFollowupCandidates(),
+    onRefresh: () => void prefetchToastFollowupCandidates(true),
   }
 
   return {
