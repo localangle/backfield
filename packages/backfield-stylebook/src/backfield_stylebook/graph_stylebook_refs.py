@@ -99,6 +99,169 @@ def validate_stylebook_refs_for_organization(
             )
 
 
+def _stylebook_ids_for_organization(session: Session, organization_id: int) -> set[int]:
+    rows = session.exec(
+        select(Stylebook.id).where(Stylebook.organization_id == organization_id)
+    ).all()
+    return {int(row) for row in rows if row is not None}
+
+
+def _org_default_stylebook_id(session: Session, organization_id: int) -> int | None:
+    row = session.exec(
+        select(Stylebook.id).where(
+            Stylebook.organization_id == organization_id,
+            Stylebook.is_default.is_(True),
+        )
+    ).first()
+    return int(row) if row is not None else None
+
+
+def _apply_stylebook_ref_replacement(params: dict[str, Any], *, replacement: int | None) -> None:
+    if replacement is None:
+        params.pop(STYLEBOOK_NODE_PARAM_KEY, None)
+        params.pop(_LEGACY_STYLEBOOK_PARAM_KEY, None)
+        return
+    params[STYLEBOOK_NODE_PARAM_KEY] = replacement
+    params.pop(_LEGACY_STYLEBOOK_PARAM_KEY, None)
+
+
+def _is_db_output_node_type(node_type: Any) -> bool:
+    if not isinstance(node_type, str):
+        return False
+    normalized = node_type.strip().lower().replace("-", "_")
+    return normalized in ("dboutput", "db_output")
+
+
+def _is_geocode_agent_node_type(node_type: Any) -> bool:
+    if not isinstance(node_type, str):
+        return False
+    normalized = node_type.strip().lower().replace("-", "_")
+    return normalized in ("geocodeagent", "geocode_agent")
+
+
+def sanitize_stylebook_refs_for_organization(
+    session: Session,
+    *,
+    organization_id: int,
+    spec: dict[str, Any],
+) -> bool:
+    """Replace missing stylebook ids with the org default (or clear for Backfield output).
+
+    Returns ``True`` when ``spec`` was mutated. Cross-org references are left unchanged so
+    validation can still reject them explicitly.
+    """
+    valid_ids = _stylebook_ids_for_organization(session, organization_id)
+    if not valid_ids:
+        return False
+    default_id = _org_default_stylebook_id(session, organization_id)
+
+    nodes = spec.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+
+    changed = False
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        params = node.get("params")
+        if not isinstance(params, dict):
+            continue
+        sid = stylebook_id_from_node_params(params)
+        if sid is None or sid in valid_ids:
+            continue
+        sb = session.get(Stylebook, sid)
+        if sb is not None and int(sb.organization_id) != int(organization_id):
+            continue
+
+        node_type = node.get("type")
+        if _is_db_output_node_type(node_type):
+            _apply_stylebook_ref_replacement(params, replacement=None)
+        elif _is_geocode_agent_node_type(node_type):
+            use_cache = params.get("useCache")
+            if use_cache is True and default_id is not None:
+                _apply_stylebook_ref_replacement(params, replacement=default_id)
+            else:
+                _apply_stylebook_ref_replacement(params, replacement=None)
+        elif default_id is not None:
+            _apply_stylebook_ref_replacement(params, replacement=default_id)
+        else:
+            _apply_stylebook_ref_replacement(params, replacement=None)
+        changed = True
+    return changed
+
+
+def reassign_stylebook_id_in_spec_dict(
+    spec: dict[str, Any],
+    *,
+    from_stylebook_id: int,
+    to_stylebook_id: int,
+) -> bool:
+    """Replace ``from_stylebook_id`` with ``to_stylebook_id`` in every node params.
+
+    Returns ``True`` when the spec was mutated.
+    """
+    if from_stylebook_id == to_stylebook_id:
+        return False
+    nodes = spec.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    changed = False
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        params = node.get("params")
+        if not isinstance(params, dict):
+            continue
+        sid = stylebook_id_from_node_params(params)
+        if sid != from_stylebook_id:
+            continue
+        params[STYLEBOOK_NODE_PARAM_KEY] = to_stylebook_id
+        if _LEGACY_STYLEBOOK_PARAM_KEY in params:
+            params[_LEGACY_STYLEBOOK_PARAM_KEY] = to_stylebook_id
+        changed = True
+    return changed
+
+
+def reassign_stylebook_refs_in_org_graphs(
+    session: Session,
+    *,
+    organization_id: int,
+    from_stylebook_id: int,
+    to_stylebook_id: int,
+) -> int:
+    """Rewrite graph specs when a stylebook is deleted.
+
+    Returns the number of graphs whose ``spec_json`` was updated.
+    """
+    if from_stylebook_id == to_stylebook_id:
+        return 0
+    graphs = session.exec(
+        select(AgateGraph, BackfieldProject)
+        .join(BackfieldProject, AgateGraph.project_id == BackfieldProject.id)
+        .where(BackfieldProject.organization_id == organization_id)
+    ).all()
+
+    updated = 0
+    for ag, _proj in graphs:
+        try:
+            spec = json.loads(ag.spec_json)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(spec, dict):
+            continue
+        if reassign_stylebook_id_in_spec_dict(
+            spec,
+            from_stylebook_id=from_stylebook_id,
+            to_stylebook_id=to_stylebook_id,
+        ):
+            ag.spec_json = json.dumps(spec)
+            session.add(ag)
+            updated += 1
+    if updated:
+        session.flush()
+    return updated
+
+
 def count_stylebook_usage_in_graphs(
     session: Session,
     *,

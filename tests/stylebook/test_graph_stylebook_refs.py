@@ -15,6 +15,8 @@ from backfield_stylebook.graph_stylebook_refs import (
     StylebookGraphRefsError,
     count_stylebook_usage_in_graphs,
     iter_stylebook_refs_from_spec_dict,
+    reassign_stylebook_id_in_spec_dict,
+    sanitize_stylebook_refs_for_organization,
     unique_stylebook_ids_from_spec_dict,
     validate_stylebook_refs_for_organization,
 )
@@ -52,6 +54,23 @@ def test_iter_legacy_stylebookId_param() -> None:
     }
     assert iter_stylebook_refs_from_spec_dict(spec) == [("a", 7)]
     assert unique_stylebook_ids_from_spec_dict(spec) == [7]
+
+
+def test_reassign_stylebook_id_in_spec_dict() -> None:
+    spec = {
+        "name": "x",
+        "nodes": [
+            {"id": "a", "type": "db_output", "params": {STYLEBOOK_NODE_PARAM_KEY: 3}},
+            {"id": "b", "type": "GeocodeAgent", "params": {"stylebookId": 3}},
+            {"id": "c", "type": "t", "params": {STYLEBOOK_NODE_PARAM_KEY: 9}},
+        ],
+        "edges": [],
+    }
+    assert reassign_stylebook_id_in_spec_dict(spec, from_stylebook_id=3, to_stylebook_id=5) is True
+    assert spec["nodes"][0]["params"][STYLEBOOK_NODE_PARAM_KEY] == 5
+    assert spec["nodes"][1]["params"]["stylebookId"] == 5
+    assert spec["nodes"][2]["params"][STYLEBOOK_NODE_PARAM_KEY] == 9
+    assert reassign_stylebook_id_in_spec_dict(spec, from_stylebook_id=3, to_stylebook_id=5) is False
 
 
 def test_iter_and_unique_ids() -> None:
@@ -166,6 +185,68 @@ def test_validate_missing_stylebook() -> None:
             pass
         else:
             raise AssertionError("expected StylebookGraphRefsError")
+
+
+def test_sanitize_missing_stylebook_to_org_default() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="O", slug="o-san")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        oid = int(org.id)  # type: ignore[arg-type]
+        sb = Stylebook(
+            organization_id=oid,
+            slug="default",
+            name="Default",
+            is_default=True,
+        )
+        session.add(sb)
+        session.commit()
+        session.refresh(sb)
+        sid = int(sb.id)  # type: ignore[arg-type]
+
+        spec = _minimal_spec_with_stylebook("n", 99999)
+        assert sanitize_stylebook_refs_for_organization(session, organization_id=oid, spec=spec) is True
+        assert spec["nodes"][0]["params"].get(STYLEBOOK_NODE_PARAM_KEY) is None
+        validate_stylebook_refs_for_organization(session, organization_id=oid, spec=spec)
+
+
+def test_sanitize_db_output_clears_missing_stylebook() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="O", slug="o-dbo")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        oid = int(org.id)  # type: ignore[arg-type]
+        sb = Stylebook(
+            organization_id=oid,
+            slug="default",
+            name="Default",
+            is_default=True,
+        )
+        session.add(sb)
+        session.commit()
+        session.refresh(sb)
+        sid = int(sb.id)  # type: ignore[arg-type]
+
+        spec = {
+            "name": "g",
+            "nodes": [
+                {
+                    "id": "out",
+                    "type": "DBOutput",
+                    "params": {STYLEBOOK_NODE_PARAM_KEY: 4242},
+                },
+            ],
+            "edges": [],
+        }
+        assert sanitize_stylebook_refs_for_organization(session, organization_id=oid, spec=spec) is True
+        assert STYLEBOOK_NODE_PARAM_KEY not in spec["nodes"][0]["params"] or (
+            spec["nodes"][0]["params"].get(STYLEBOOK_NODE_PARAM_KEY) is None
+        )
+        validate_stylebook_refs_for_organization(session, organization_id=oid, spec=spec)
 
 
 def test_validate_wrong_org() -> None:

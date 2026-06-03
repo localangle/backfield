@@ -335,6 +335,34 @@ export default function GeocodeAgentPanel({
   }
 
   const paramStylebookId = resolvedStylebookId(params as Record<string, unknown>)
+  const orgDefaultStylebook = stylebooks.find((sb) => sb.is_default)
+  const missingStylebookFromList =
+    params.useCache &&
+    paramStylebookId != null &&
+    !stylebooks.some((s) => s.id === paramStylebookId)
+
+  useEffect(() => {
+    if (!editMode || !setNodes || !missingStylebookFromList || paramStylebookId == null) return
+    if (stylebooks.length === 0) return
+    const nextId = orgDefaultStylebook?.id ?? null
+    if (nextId == null) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? { ...n, data: mergeData({ ...(n.data || {}), stylebook_id: nextId }) }
+          : n,
+      ),
+    )
+  }, [
+    editMode,
+    setNodes,
+    missingStylebookFromList,
+    paramStylebookId,
+    stylebooks.length,
+    orgDefaultStylebook?.id,
+    node.id,
+  ])
+
   const stylebookSelectValue =
     paramStylebookId != null ? String(paramStylebookId) : NO_STYLEBOOK_VALUE
 

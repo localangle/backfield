@@ -256,6 +256,18 @@ export default function DBOutputPanel({
 
   const missingFromList = paramStylebookId != null && !stylebooks.some((s) => s.id === paramStylebookId)
 
+  useEffect(() => {
+    if (!editMode || !setNodes || !missingFromList || paramStylebookId == null) return
+    if (stylebooks.length === 0) return
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? { ...n, data: mergeData({ ...(n.data || {}), stylebook_id: null }) }
+          : n,
+      ),
+    )
+  }, [editMode, setNodes, missingFromList, paramStylebookId, stylebooks.length, node.id])
+
   const orgDefaultStylebook = stylebooks.find((sb) => sb.is_default)
   const usesOrgDefault =
     paramStylebookId == null ||
