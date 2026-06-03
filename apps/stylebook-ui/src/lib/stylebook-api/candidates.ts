@@ -21,6 +21,8 @@ export interface Candidate {
   status: string
   /** Human-readable ingest/policy reason when present (e.g. deferred private residence). */
   defer_display_message?: string | null
+  /** Human-readable ingest/policy context (open and deferred queues). */
+  canonical_review_lines?: string[] | null
   canonical_suggestion?: CanonicalSuggestion | null
 }
 

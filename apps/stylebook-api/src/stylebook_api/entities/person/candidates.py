@@ -32,6 +32,10 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.helpers.candidate_review_display import (
+    first_candidate_review_line,
+    format_candidate_review_lines,
+)
 from stylebook_api.helpers.project_scope import (
     project_by_slug as _project_by_slug,
 )
@@ -171,33 +175,6 @@ def _canonical_suggestion_payload(person: SubstratePerson) -> dict[str, Any] | N
     return out or None
 
 
-def _extract_defer_display_message(person: SubstratePerson) -> str | None:
-    raw = person.canonical_review_reasons_json
-    if raw is None:
-        return None
-    items: list[dict[str, Any]] = []
-    if isinstance(raw, list):
-        items = [r for r in raw if isinstance(r, dict)]
-    elif isinstance(raw, dict):
-        items = [raw]
-    skip_codes = frozenset(
-        {
-            "canonical_suggestion",
-            "canonical_adjudication",
-            "review_note",
-            "deferred_manual",
-        }
-    )
-    for it in items:
-        code = str(it.get("code") or "")
-        if code in skip_codes:
-            continue
-        msg = it.get("message")
-        if isinstance(msg, str) and msg.strip():
-            return msg.strip()
-    return None
-
-
 def _extract_review_note(person: SubstratePerson) -> str | None:
     raw = person.canonical_review_reasons_json
     if raw is None:
@@ -217,7 +194,8 @@ def _extract_review_note(person: SubstratePerson) -> str | None:
 def _candidate_dict(person: SubstratePerson) -> dict[str, Any]:
     note = _extract_review_note(person)
     sug = _canonical_suggestion_payload(person)
-    defer_msg = _extract_defer_display_message(person)
+    review_lines = format_candidate_review_lines(person.canonical_review_reasons_json)
+    defer_msg = first_candidate_review_line(person.canonical_review_reasons_json)
     row: dict[str, Any] = {
         "id": int(person.id),  # type: ignore[arg-type]
         "project_id": int(person.project_id),
@@ -234,6 +212,8 @@ def _candidate_dict(person: SubstratePerson) -> dict[str, Any]:
             "deferred" if str(person.canonical_link_status) == CANONICAL_LINK_WAIVED else "open"
         ),
     }
+    if review_lines:
+        row["canonical_review_lines"] = review_lines
     if defer_msg is not None:
         row["defer_display_message"] = defer_msg
     if sug is not None:

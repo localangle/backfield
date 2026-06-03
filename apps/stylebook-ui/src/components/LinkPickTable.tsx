@@ -25,6 +25,8 @@ export function LinkPickTable(props: {
   /** Tooltip and aria-label for the link control */
   linkActionLabel?: string
   className?: string
+  /** Primary column header (default Location for place candidates). */
+  primaryColumnLabel?: string
   /** When false, omit the Address column (e.g. catalog search where space is tight). */
   includeAddress?: boolean
 }) {
@@ -35,6 +37,7 @@ export function LinkPickTable(props: {
     onLink,
     linkActionLabel = "Link",
     className,
+    primaryColumnLabel = "Location",
     includeAddress = true,
   } = props
 
@@ -51,7 +54,7 @@ export function LinkPickTable(props: {
                 includeAddress ? "w-[34%]" : "w-[62%]",
               )}
             >
-              Location
+              {primaryColumnLabel}
             </TableHead>
             <TableHead
               className={cn(

@@ -1021,6 +1021,49 @@ def test_deferred_candidate_lists_defer_display_message_from_reasons_json(
     cand = body["candidates"][0]
     assert cand["suggested_name"] == "Private Rd"
     assert cand["defer_display_message"] == "Private place or residence"
+    assert cand["canonical_review_lines"] == ["Private place or residence"]
+
+
+def test_open_candidate_lists_canonical_review_lines(
+    client: TestClient, stylebook_test_engine: object
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Greg Abbott",
+            normalized_name="greg abbott",
+            location_type="place",
+            identity_fingerprint="fp-review-lines-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+            canonical_review_reasons_json=[
+                {
+                    "code": "ambiguous_canonical_match",
+                    "recall_canonical_ids": ["id-1", "id-2"],
+                },
+                {
+                    "code": "canonical_adjudication",
+                    "rationale": "Not the same place as recalled entries.",
+                    "outcome": "no_high_confidence_link",
+                },
+            ],
+        )
+        s.add(loc)
+        s.commit()
+
+    r = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    cand = r.json()["candidates"][0]
+    assert cand["canonical_review_lines"] == [
+        "Several catalog locations could match (2 recalled).",
+        "Not the same place as recalled entries.",
+    ]
 
 
 def test_candidates_lists_unlinked_substrate(

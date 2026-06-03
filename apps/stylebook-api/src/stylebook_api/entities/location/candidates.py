@@ -37,6 +37,10 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.helpers.candidate_review_display import (
+    first_candidate_review_line,
+    format_candidate_review_lines,
+)
 from stylebook_api.helpers.project_scope import (
     project_by_slug as _project_by_slug,
 )
@@ -184,7 +188,8 @@ def _canonical_suggestion_payload(loc: SubstrateLocation) -> dict[str, Any] | No
 def _candidate_dict(loc: SubstrateLocation) -> dict[str, Any]:
     note = _extract_review_note(loc)
     sug = _canonical_suggestion_payload(loc)
-    defer_msg = _extract_defer_display_message(loc)
+    review_lines = format_candidate_review_lines(loc.canonical_review_reasons_json)
+    defer_msg = first_candidate_review_line(loc.canonical_review_reasons_json)
     row: dict[str, Any] = {
         "id": int(loc.id),  # type: ignore[arg-type]
         "project_id": int(loc.project_id),
@@ -197,39 +202,13 @@ def _candidate_dict(loc: SubstrateLocation) -> dict[str, Any]:
             "deferred" if str(loc.canonical_link_status) == CANONICAL_LINK_WAIVED else "open"
         ),
     }
+    if review_lines:
+        row["canonical_review_lines"] = review_lines
     if defer_msg is not None:
         row["defer_display_message"] = defer_msg
     if sug is not None:
         row["canonical_suggestion"] = sug
     return row
-
-
-def _extract_defer_display_message(loc: SubstrateLocation) -> str | None:
-    """Short message from ingest/policy reasons (e.g. ``private_place_or_residence``) for UI."""
-    raw = loc.canonical_review_reasons_json
-    if raw is None:
-        return None
-    items: list[dict[str, Any]] = []
-    if isinstance(raw, list):
-        items = [r for r in raw if isinstance(r, dict)]
-    elif isinstance(raw, dict):
-        items = [raw]
-    skip_codes = frozenset(
-        {
-            "canonical_suggestion",
-            "canonical_adjudication",
-            "review_note",
-            "deferred_manual",
-        }
-    )
-    for it in items:
-        code = str(it.get("code") or "")
-        if code in skip_codes:
-            continue
-        msg = it.get("message")
-        if isinstance(msg, str) and msg.strip():
-            return msg.strip()
-    return None
 
 
 def _extract_review_note(loc: SubstrateLocation) -> str | None:

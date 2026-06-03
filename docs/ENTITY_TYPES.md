@@ -140,6 +140,19 @@ Every new `extract_and_persist` type should ship the same **canonical ingest + e
 
 **Suggested canonicals (link modal):** `rank_canonical_suggestions_for_substrate` should prefer **exact alias** match, then ranked recall. UI calls `GET …/candidates/{substrate_id}/suggested-canonicals` and catalog search `GET …/canonical-<plural>?q=…`. See [`API.md`](API.md) and [`FRONTEND.md`](FRONTEND.md).
 
+### Candidate queue UX parity (required for every type)
+
+Location and person queues share the same **linking niceties**; new types must ship the same behavior (do not copy-paste per page—reuse the shared modules below).
+
+| Behavior | API / data | Shared UI (stylebook-ui) | Reference pages |
+|----------|------------|--------------------------|-----------------|
+| **Review context under rows** | List rows include `canonical_review_lines` from `canonical_review_reasons_json` (open + deferred when displayable) | [`CandidateReviewReasons.tsx`](../apps/stylebook-ui/src/components/CandidateReviewReasons.tsx) | [`LocationCandidates.tsx`](../apps/stylebook-ui/src/pages/LocationCandidates.tsx), [`PersonCandidates.tsx`](../apps/stylebook-ui/src/pages/PersonCandidates.tsx) |
+| **Create-modal “similar canonical exists” nudge** | `GET …/candidates/{substrate_id}/suggested-canonicals` while the user edits the draft label; show when label similarity ≥ **0.86** | [`candidateQueueSimilarity.ts`](../apps/stylebook-ui/src/lib/candidateQueueSimilarity.ts) (`pickCreateLinkNudge`), [`CreateCanonicalLinkNudgeAlert.tsx`](../apps/stylebook-ui/src/components/CreateCanonicalLinkNudgeAlert.tsx) | Same pages (create dialog) |
+| **Post-create toast + potential links** | After accept/materialize, prefetch open-queue rows with `q=` on the new canonical label; rank top **5** by label similarity | [`candidateQueueToast.ts`](../apps/stylebook-ui/src/lib/candidateQueueToast.ts), [`PotentialCandidateLinksDialog.tsx`](../apps/stylebook-ui/src/components/PotentialCandidateLinksDialog.tsx), [`LinkPickTable.tsx`](../apps/stylebook-ui/src/components/LinkPickTable.tsx) | Same pages (toast stays open while follow-up loads or matches exist) |
+| **Link modal** | Suggested-canonicals + catalog `?q=` search + `POST …/link-canonical` | Per-type `*CanonicalLinkModal` | [`CanonicalLinkModal.tsx`](../apps/stylebook-ui/src/components/CanonicalLinkModal.tsx), [`PersonCanonicalLinkModal.tsx`](../apps/stylebook-ui/src/components/PersonCanonicalLinkModal.tsx) |
+
+**API checklist for issue 03:** wire `canonical_review_lines` in the candidate list serializer (helper: [`candidate_review_display.py`](../apps/stylebook-api/src/stylebook_api/helpers/candidate_review_display.py)). **UI checklist:** add `<Type>Candidates.tsx` by adapting the location page pattern and importing the shared pieces above; set `entityNoun` / `candidateNounPlural` / column labels for product copy.
+
 ### Opt-in patterns (enable in PRD when needed)
 
 | Pattern | When to enable | Person reference | Notes |

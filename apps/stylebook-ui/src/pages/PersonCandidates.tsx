@@ -9,11 +9,22 @@ import {
   deferPersonCandidate,
   getCanonicalPersonLegacy,
   getPersonCandidateContext,
+  getSuggestedPersonCanonicals,
   linkPersonSubstrateToCanonical,
   listPersonCandidates,
   type PersonCandidate,
   type PersonCandidateContextResponse,
 } from "@/lib/api"
+import {
+  CANDIDATE_TOAST_AUTO_DISMISS_MS,
+  CANDIDATE_TOAST_FADE_MS,
+} from "@/lib/candidateQueueToast"
+import {
+  pickCreateLinkNudge,
+  rankCandidatesByLabelSimilarity,
+} from "@/lib/candidateQueueSimilarity"
+import { CreateCanonicalLinkNudgeAlert } from "@/components/CreateCanonicalLinkNudgeAlert"
+import { PotentialCandidateLinksDialog } from "@/components/PotentialCandidateLinksDialog"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { PersonCanonicalLinkModal } from "@/components/PersonCanonicalLinkModal"
 import { Button } from "@/components/ui/button"
@@ -49,6 +60,10 @@ import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import {
+  CandidateReviewReasons,
+  candidateReviewLines,
+} from "@/components/CandidateReviewReasons"
+import {
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -59,11 +74,15 @@ import {
   X,
 } from "lucide-react"
 
-/** Fixed toast auto-dismiss + fade-out (matches ``transition-opacity duration-300``). */
-const CANDIDATE_TOAST_AUTO_DISMISS_MS = 3000
-const CANDIDATE_TOAST_FADE_MS = 300
-
 const REVIEW_QUEUE_PAGE_SIZE = 100
+
+function personCandidateDetailLine(c: PersonCandidate): string {
+  const parts = [
+    (c.suggested_title ?? "").trim(),
+    (c.suggested_affiliation ?? "").trim(),
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(" · ") : "—"
+}
 
 function suggestedRowAction(c: PersonCandidate): "link" | "create_new" | "defer" | null {
   const raw = c.canonical_suggestion?.suggested_action
@@ -134,6 +153,16 @@ export default function PersonCandidates() {
     canonicalId: string
   } | null>(null)
   const [createdToastLeaving, setCreatedToastLeaving] = useState(false)
+  const [toastFollowupLoading, setToastFollowupLoading] = useState(false)
+  const [toastFollowupError, setToastFollowupError] = useState<string | null>(null)
+  const [toastFollowupRows, setToastFollowupRows] = useState<PersonCandidate[]>([])
+  const [potentialLinksOpen, setPotentialLinksOpen] = useState(false)
+  const [toastLinkBusyId, setToastLinkBusyId] = useState<number | null>(null)
+  const [toastLinkError, setToastLinkError] = useState<string | null>(null)
+  const [createLinkNudge, setCreateLinkNudge] = useState<{
+    canonicalId: string
+    label: string
+  } | null>(null)
   const [linkedToast, setLinkedToast] = useState<{
     canonicalId: string
     canonicalLabel: string
@@ -271,12 +300,115 @@ export default function PersonCandidates() {
     }
   }, [projectSlug, status, debouncedQuery, listPage, listFetchGen])
 
+  const refreshCreateLinkNudge = useCallback(
+    async (substratePersonId: number, draftLabel: string) => {
+      if (!projectSlug) return
+      const draft = draftLabel.trim()
+      if (!draft) {
+        setCreateLinkNudge(null)
+        return
+      }
+      try {
+        const res = await getSuggestedPersonCanonicals(projectSlug, substratePersonId, 16)
+        const nudge = pickCreateLinkNudge(res.suggestions, draft)
+        setCreateLinkNudge(
+          nudge ? { canonicalId: nudge.canonicalId, label: nudge.label } : null,
+        )
+      } catch {
+        setCreateLinkNudge(null)
+      }
+    },
+    [projectSlug],
+  )
+
+  useEffect(() => {
+    if (createModalId === null || !projectSlug) return
+    let cancelled = false
+    const draft = createLabelDraft.trim()
+    if (!draft) {
+      setCreateLinkNudge(null)
+      return
+    }
+    setCreateLinkNudge(null)
+    const t = window.setTimeout(() => {
+      void (async () => {
+        if (!cancelled) await refreshCreateLinkNudge(createModalId, draft)
+      })()
+    }, 280)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [createModalId, createLabelDraft, projectSlug, refreshCreateLinkNudge])
+
+  const prefetchToastFollowupCandidates = useCallback(async () => {
+    const label = createdToast?.canonicalLabel?.trim()
+    if (!projectSlug || !label) return
+    setToastFollowupLoading(true)
+    setToastFollowupError(null)
+    try {
+      const res = await listPersonCandidates(projectSlug, "open", {
+        limit: 100,
+        offset: 0,
+        q: label,
+      })
+      const ranked = rankCandidatesByLabelSimilarity(
+        res.candidates,
+        label,
+        (c) => c.suggested_name ?? "",
+      ).slice(0, 5)
+      setToastFollowupRows(ranked)
+    } catch (e) {
+      setToastFollowupError(e instanceof Error ? e.message : "Couldn't load candidates")
+      setToastFollowupRows([])
+    } finally {
+      setToastFollowupLoading(false)
+    }
+  }, [projectSlug, createdToast?.canonicalLabel])
+
+  useEffect(() => {
+    if (!createdToast || !projectSlug) {
+      setToastFollowupRows([])
+      setToastFollowupLoading(false)
+      setToastFollowupError(null)
+      setPotentialLinksOpen(false)
+      setToastLinkBusyId(null)
+      setToastLinkError(null)
+      return
+    }
+    void prefetchToastFollowupCandidates()
+  }, [createdToast, projectSlug, prefetchToastFollowupCandidates])
+
+  useEffect(() => {
+    if (!createdToast) {
+      setCreatedToastLeaving(false)
+      return
+    }
+    setCreatedToastLeaving(false)
+    if (toastFollowupLoading || toastFollowupRows.length > 0) {
+      return
+    }
+    const timeouts = { main: 0 as number, fade: undefined as number | undefined }
+    timeouts.main = window.setTimeout(() => {
+      setCreatedToastLeaving(true)
+      timeouts.fade = window.setTimeout(() => {
+        setCreatedToast(null)
+        setCreatedToastLeaving(false)
+      }, CANDIDATE_TOAST_FADE_MS)
+    }, CANDIDATE_TOAST_AUTO_DISMISS_MS)
+    return () => {
+      window.clearTimeout(timeouts.main)
+      if (timeouts.fade !== undefined) window.clearTimeout(timeouts.fade)
+    }
+  }, [createdToast, toastFollowupLoading, toastFollowupRows.length])
+
   function openCreateModal(c: PersonCandidate) {
     setCreateModalId(c.id)
     setCreateLabelDraft((c.suggested_name ?? "").trim())
     setCreateTitleDraft((c.suggested_title ?? "").trim())
     setCreateAffiliationDraft((c.suggested_affiliation ?? "").trim())
     setCreatePublicFigure(Boolean(c.suggested_public_figure))
+    setCreateLinkNudge(null)
   }
 
   function closeCreateModal() {
@@ -285,6 +417,22 @@ export default function PersonCandidates() {
     setCreateTitleDraft("")
     setCreateAffiliationDraft("")
     setCreatePublicFigure(false)
+    setCreateLinkNudge(null)
+  }
+
+  async function linkToastCandidateToNewCanonical(c: PersonCandidate) {
+    if (!projectSlug || !createdToast) return
+    setToastLinkError(null)
+    setToastLinkBusyId(c.id)
+    try {
+      await linkPersonSubstrateToCanonical(c.id, projectSlug, createdToast.canonicalId)
+      setToastFollowupRows((rows) => rows.filter((r) => r.id !== c.id))
+      await refreshListQuiet()
+    } catch (e) {
+      setToastLinkError(e instanceof Error ? e.message : "Link failed")
+    } finally {
+      setToastLinkBusyId(null)
+    }
   }
 
   async function submitCreateFromModal() {
@@ -410,6 +558,25 @@ export default function PersonCandidates() {
                     {createdToast.canonicalLabel}
                   </Link>
                 </div>
+                {toastFollowupLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground pt-0.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden />
+                    <span>Checking the open queue for related people…</span>
+                  </div>
+                ) : null}
+                {toastFollowupError && !toastFollowupLoading ? (
+                  <p className="text-xs text-destructive">{toastFollowupError}</p>
+                ) : null}
+                {!toastFollowupLoading && toastFollowupRows.length > 0 ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="mt-1 w-full shrink-0 self-start sm:w-auto"
+                    onClick={() => setPotentialLinksOpen(true)}
+                  >
+                    Potential links found
+                  </Button>
+                ) : null}
               </div>
               <Button
                 type="button"
@@ -625,9 +792,7 @@ export default function PersonCandidates() {
                                   <span className="text-xs text-muted-foreground">{rowSugLabel}</span>
                                 </div>
                               ) : null}
-                              {status === "deferred" && c.defer_display_message ? (
-                                <p className="pl-10 text-xs text-muted-foreground">{c.defer_display_message}</p>
-                              ) : null}
+                              <CandidateReviewReasons lines={candidateReviewLines(c)} />
                             </div>
                           </TableCell>
                           <TableCell>{typeLabel}</TableCell>
@@ -785,6 +950,19 @@ export default function PersonCandidates() {
               <span className="font-semibold text-foreground">{stylebookLabel}</span>
             </DialogDescription>
           </DialogHeader>
+          {createLinkNudge ? (
+            <CreateCanonicalLinkNudgeAlert
+              existingLabel={createLinkNudge.label}
+              entityNoun="person"
+              disabled={createModalId === null}
+              onOpenLinkFlow={() => {
+                if (createModalId === null) return
+                setLinkModalId(createModalId)
+                setLinkModalInitialCanonicalId(createLinkNudge.canonicalId)
+                closeCreateModal()
+              }}
+            />
+          ) : null}
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="create-person-name">Name</Label>
@@ -838,6 +1016,36 @@ export default function PersonCandidates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PotentialCandidateLinksDialog
+        open={potentialLinksOpen}
+        onOpenChange={(open) => {
+          setPotentialLinksOpen(open)
+          if (!open) {
+            setToastLinkError(null)
+            setToastLinkBusyId(null)
+          }
+        }}
+        canonicalLabel={createdToast?.canonicalLabel ?? ""}
+        candidateNounPlural="people"
+        loading={toastFollowupLoading}
+        error={toastLinkError ?? toastFollowupError}
+        rows={toastFollowupRows.map((c) => ({
+          rowKey: c.id,
+          location: c.suggested_name || "—",
+          typeLabel: c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—",
+          address: personCandidateDetailLine(c),
+        }))}
+        busyKey={toastLinkBusyId}
+        linkDisabled={!createdToast}
+        onLink={(rowKey) => {
+          const c = toastFollowupRows.find((x) => x.id === rowKey)
+          if (c) void linkToastCandidateToNewCanonical(c)
+        }}
+        onRefresh={() => void prefetchToastFollowupCandidates()}
+        linkActionLabel="Link this candidate to the new person"
+        primaryColumnLabel="Name"
+      />
     </div>
   )
 }
