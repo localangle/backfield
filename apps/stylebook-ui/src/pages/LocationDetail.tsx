@@ -1080,6 +1080,7 @@ export default function LocationDetail() {
           }}
           projectSlug={moveSubstrate.project_slug}
           substrateLocationId={moveSubstrate.id}
+          excludeCanonicalId={canonical.id}
           title="Move linked place to another canonical"
           onDone={() => void refreshCanonicalPage(true)}
         />

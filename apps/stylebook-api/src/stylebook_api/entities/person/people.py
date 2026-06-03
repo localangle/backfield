@@ -717,6 +717,32 @@ class SubstratePersonResponse(BaseModel):
     stylebook_person_canonical_id: str | None = None
 
 
+@router.get("/people/{person_id}", response_model=SubstratePersonResponse)
+def get_substrate_person(
+    person_id: int,
+    project_slug: str = Query(...),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> SubstratePersonResponse:
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    person = session.get(SubstratePerson, person_id)
+    if person is None or int(person.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Person not found")
+    return SubstratePersonResponse(
+        id=int(person.id),  # type: ignore[arg-type]
+        name=str(person.name),
+        title=person.title,
+        affiliation=person.affiliation,
+        public_figure=bool(person.public_figure),
+        person_type=person.person_type,
+        sort_key=person.sort_key,
+        status=str(person.status),
+        canonical_link_status=str(person.canonical_link_status or ""),
+        stylebook_person_canonical_id=person.stylebook_person_canonical_id,
+    )
+
+
 class PatchSubstratePersonBody(BaseModel):
     name: str | None = None
     title: str | None = None

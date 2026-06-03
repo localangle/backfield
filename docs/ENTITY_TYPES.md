@@ -267,6 +267,8 @@ UI wiring: reuse **`MetaTab`** via a thin `<Type>MetaTab` wrapper; mentions tabl
 
 When the last mention is unlinked and no linked substrate rows remain, prompt to delete the canonical via **`usePromptDeleteEmptyCanonical`** (same copy and confirm flow for every type).
 
+Link/move modals (`CanonicalLinkModal`, `PersonCanonicalLinkModal`) must omit the **source canonical** from suggestions and catalog search: pass **`excludeCanonicalId`** from canonical detail move flows, and exclude the substrate’s current linked canonical id when loaded from **`GET /v1/people/{id}`** / **`GET /v1/locations/{id}`**.
+
 Do not show canonical **`status`** on the detail page Details card (location does not; same rule for person and future types). Status may still appear on canonical list rows where the list UI already surfaces it.
 
 When adding a type (issue 03), ship mentions list route + linked-substrates + meta routes together with the detail page — do not leave metadata or mentions for a follow-up unless the type is catalog-only stub.

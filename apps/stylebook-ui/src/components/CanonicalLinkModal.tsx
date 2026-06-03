@@ -21,6 +21,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import {
+  buildCanonicalLinkExcludeIds,
+  isExcludedCanonicalLinkTarget,
+} from "@/lib/canonicalLinkModalExclude"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 import { Loader2 } from "lucide-react"
 
@@ -56,9 +60,19 @@ export function CanonicalLinkModal(props: {
   title?: string
   /** When set, surface this canonical first (e.g. pre-filled from row suggestion). */
   initialCanonicalId?: string | null
+  /** Omit from suggestions/search (e.g. canonical detail page the move was started from). */
+  excludeCanonicalId?: string | null
 }) {
-  const { open, onOpenChange, projectSlug, substrateLocationId, onDone, title, initialCanonicalId } =
-    props
+  const {
+    open,
+    onOpenChange,
+    projectSlug,
+    substrateLocationId,
+    onDone,
+    title,
+    initialCanonicalId,
+    excludeCanonicalId,
+  } = props
   const stylebookLabel = useSelectedStylebookLabel()
   const [suggestions, setSuggestions] = useState<SuggestedCanonicalItem[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
@@ -111,6 +125,11 @@ export function CanonicalLinkModal(props: {
     }
   }, [open, substrateLocationId, projectSlug])
 
+  const excludeCanonicalIds = useMemo(
+    () => buildCanonicalLinkExcludeIds(linkedCanonicalId, excludeCanonicalId),
+    [linkedCanonicalId, excludeCanonicalId],
+  )
+
   useEffect(() => {
     if (!open || !initialCanonicalId || !projectSlug) {
       setInitialCanonExtra(null)
@@ -153,9 +172,9 @@ export function CanonicalLinkModal(props: {
       try {
         const res = await getSuggestedCanonicals(projectSlug, substrateLocationId)
         if (!cancelled) {
-          const exclude = (linkedCanonicalId ?? "").trim()
-          const next = exclude ? res.suggestions.filter((s) => String(s.canonical_id) !== exclude) : res.suggestions
-          setSuggestions(next)
+          setSuggestions(
+            res.suggestions.filter((s) => !isExcludedCanonicalLinkTarget(s.canonical_id, excludeCanonicalIds)),
+          )
         }
       } catch (e) {
         if (!cancelled) {
@@ -169,7 +188,7 @@ export function CanonicalLinkModal(props: {
     return () => {
       cancelled = true
     }
-  }, [open, substrateLocationId, projectSlug, linkedMetaLoaded, linkedCanonicalId])
+  }, [open, substrateLocationId, projectSlug, linkedMetaLoaded, excludeCanonicalIds])
 
   useEffect(() => {
     if (!open || !projectSlug) return
@@ -191,9 +210,9 @@ export function CanonicalLinkModal(props: {
         try {
           const res = await listCanonicalLocationsLegacy(projectSlug, q, 20, 0)
           if (!cancelled) {
-            const exclude = (linkedCanonicalId ?? "").trim()
-            const next = exclude ? res.canonicals.filter((c) => String(c.id) !== exclude) : res.canonicals
-            setSearchHits(next)
+            setSearchHits(
+              res.canonicals.filter((c) => !isExcludedCanonicalLinkTarget(c.id, excludeCanonicalIds)),
+            )
           }
         } catch {
           if (!cancelled) setSearchHits([])
@@ -206,23 +225,22 @@ export function CanonicalLinkModal(props: {
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [searchQ, open, projectSlug, linkedCanonicalId, linkedMetaLoaded])
+  }, [searchQ, open, projectSlug, excludeCanonicalIds, linkedMetaLoaded])
 
   const mergedSuggestions: SuggestedCanonicalItem[] = useMemo(() => {
-    const exclude = (linkedCanonicalId ?? "").trim()
-    const merged: SuggestedCanonicalItem[] = exclude
-      ? suggestions.filter((s) => String(s.canonical_id) !== exclude)
-      : [...suggestions]
+    const merged: SuggestedCanonicalItem[] = suggestions.filter(
+      (s) => !isExcludedCanonicalLinkTarget(s.canonical_id, excludeCanonicalIds),
+    )
     if (initialCanonExtra) {
       const exId = initialCanonExtra.id
-      if (!exclude || exId !== exclude) {
+      if (!isExcludedCanonicalLinkTarget(exId, excludeCanonicalIds)) {
         if (!merged.some((s) => s.canonical_id === exId)) {
           merged.unshift(canonicalToSuggestedRow(initialCanonExtra))
         }
       }
     }
     if (initialCanonicalId) {
-      if (!exclude || initialCanonicalId !== exclude) {
+      if (!isExcludedCanonicalLinkTarget(initialCanonicalId, excludeCanonicalIds)) {
         const ix = merged.findIndex((s) => s.canonical_id === initialCanonicalId)
         if (ix > 0) {
           const [picked] = merged.splice(ix, 1)
@@ -231,7 +249,7 @@ export function CanonicalLinkModal(props: {
       }
     }
     return merged
-  }, [suggestions, initialCanonExtra, initialCanonicalId, linkedCanonicalId, linkedMetaLoaded])
+  }, [suggestions, initialCanonExtra, initialCanonicalId, excludeCanonicalIds])
 
   const suggestionRows = useMemo(
     () => suggestedItemsToPickRows(mergedSuggestions),

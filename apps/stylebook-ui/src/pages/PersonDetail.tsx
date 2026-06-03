@@ -723,6 +723,7 @@ export default function PersonDetail() {
           }}
           projectSlug={moveSubstrate.project_slug}
           substratePersonId={moveSubstrate.id}
+          excludeCanonicalId={person.id}
           title="Move linked person to another canonical"
           onDone={() => void refreshCanonicalPage(true)}
         />

@@ -21,6 +21,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
+import {
+  buildCanonicalLinkExcludeIds,
+  isExcludedCanonicalLinkTarget,
+} from "@/lib/canonicalLinkModalExclude"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 import { Loader2 } from "lucide-react"
 
@@ -62,6 +66,8 @@ export function PersonCanonicalLinkModal(props: {
   initialCanonicalId?: string | null
   /** Pre-fills catalog search when the modal opens (e.g. candidate display name). */
   initialSearchQuery?: string | null
+  /** Omit from suggestions/search (e.g. canonical detail page the move was started from). */
+  excludeCanonicalId?: string | null
 }) {
   const {
     open,
@@ -72,6 +78,7 @@ export function PersonCanonicalLinkModal(props: {
     title,
     initialCanonicalId,
     initialSearchQuery,
+    excludeCanonicalId,
   } = props
   const stylebookLabel = useSelectedStylebookLabel()
   const [suggestions, setSuggestions] = useState<SuggestedPersonCanonicalItem[]>([])
@@ -130,6 +137,11 @@ export function PersonCanonicalLinkModal(props: {
     }
   }, [open, substratePersonId, projectSlug])
 
+  const excludeCanonicalIds = useMemo(
+    () => buildCanonicalLinkExcludeIds(linkedCanonicalId, excludeCanonicalId),
+    [linkedCanonicalId, excludeCanonicalId],
+  )
+
   useEffect(() => {
     if (!open || !initialCanonicalId || !projectSlug) {
       setInitialCanonExtra(null)
@@ -172,11 +184,9 @@ export function PersonCanonicalLinkModal(props: {
       try {
         const res = await getSuggestedPersonCanonicals(projectSlug, substratePersonId)
         if (!cancelled) {
-          const exclude = (linkedCanonicalId ?? "").trim()
-          const next = exclude
-            ? res.suggestions.filter((s) => String(s.canonical_id) !== exclude)
-            : res.suggestions
-          setSuggestions(next)
+          setSuggestions(
+            res.suggestions.filter((s) => !isExcludedCanonicalLinkTarget(s.canonical_id, excludeCanonicalIds)),
+          )
         }
       } catch (e) {
         if (!cancelled) {
@@ -190,7 +200,7 @@ export function PersonCanonicalLinkModal(props: {
     return () => {
       cancelled = true
     }
-  }, [open, substratePersonId, projectSlug, linkedMetaLoaded, linkedCanonicalId])
+  }, [open, substratePersonId, projectSlug, linkedMetaLoaded, excludeCanonicalIds])
 
   useEffect(() => {
     if (!open || !projectSlug) return
@@ -212,11 +222,9 @@ export function PersonCanonicalLinkModal(props: {
         try {
           const res = await listCanonicalPeopleLegacy(projectSlug, q, 20, 0)
           if (!cancelled) {
-            const exclude = (linkedCanonicalId ?? "").trim()
-            const next = exclude
-              ? res.canonicals.filter((c) => String(c.id) !== exclude)
-              : res.canonicals
-            setSearchHits(next)
+            setSearchHits(
+              res.canonicals.filter((c) => !isExcludedCanonicalLinkTarget(c.id, excludeCanonicalIds)),
+            )
           }
         } catch {
           if (!cancelled) setSearchHits([])
@@ -229,23 +237,22 @@ export function PersonCanonicalLinkModal(props: {
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [searchQ, open, projectSlug, linkedCanonicalId, linkedMetaLoaded])
+  }, [searchQ, open, projectSlug, excludeCanonicalIds, linkedMetaLoaded])
 
   const mergedSuggestions: SuggestedPersonCanonicalItem[] = useMemo(() => {
-    const exclude = (linkedCanonicalId ?? "").trim()
-    const merged: SuggestedPersonCanonicalItem[] = exclude
-      ? suggestions.filter((s) => String(s.canonical_id) !== exclude)
-      : [...suggestions]
+    const merged: SuggestedPersonCanonicalItem[] = suggestions.filter(
+      (s) => !isExcludedCanonicalLinkTarget(s.canonical_id, excludeCanonicalIds),
+    )
     if (initialCanonExtra) {
       const exId = initialCanonExtra.id
-      if (!exclude || exId !== exclude) {
+      if (!isExcludedCanonicalLinkTarget(exId, excludeCanonicalIds)) {
         if (!merged.some((s) => s.canonical_id === exId)) {
           merged.unshift(canonicalToSuggestedRow(initialCanonExtra))
         }
       }
     }
     if (initialCanonicalId) {
-      if (!exclude || initialCanonicalId !== exclude) {
+      if (!isExcludedCanonicalLinkTarget(initialCanonicalId, excludeCanonicalIds)) {
         const ix = merged.findIndex((s) => s.canonical_id === initialCanonicalId)
         if (ix > 0) {
           const [picked] = merged.splice(ix, 1)
@@ -254,7 +261,7 @@ export function PersonCanonicalLinkModal(props: {
       }
     }
     return merged
-  }, [suggestions, initialCanonExtra, initialCanonicalId, linkedCanonicalId])
+  }, [suggestions, initialCanonExtra, initialCanonicalId, excludeCanonicalIds])
 
   const suggestionRows = useMemo(
     () => suggestedItemsToPickRows(mergedSuggestions),

@@ -204,6 +204,48 @@ def test_person_candidates_lists_unlinked_substrate(
     assert data["candidates"][0]["suggested_name"] == "Jane Doe"
 
 
+def test_get_substrate_person_returns_linked_canonical_id(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    pid: int
+    canon_id: str
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Jane Doe",
+            slug="jane-doe",
+            status="active",
+        )
+        s.add(canon)
+        s.flush()
+        canon_id = str(canon.id)
+        pid = _add_pending_person(
+            s,
+            project_id=int(proj.id),
+            name="Jane Doe",
+            normalized_name="jane doe",
+            fingerprint="fp-jane-get-1",
+        )
+        person = s.get(SubstratePerson, pid)
+        assert person is not None
+        person.stylebook_person_canonical_id = canon_id
+        person.canonical_link_status = CANONICAL_LINK_LINKED
+        s.add(person)
+        s.commit()
+
+    r = client.get(
+        f"/v1/people/{pid}?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == pid
+    assert body["stylebook_person_canonical_id"] == canon_id
+
+
 def test_canonical_people_filters_public_figure(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:
