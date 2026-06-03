@@ -265,6 +265,10 @@ Every Stylebook **canonical detail** page (`/stylebook/{slug}/<type>/canonical/{
 
 UI wiring: reuse **`MetaTab`** via a thin `<Type>MetaTab` wrapper; mentions table mirrors `LocationDetail` (substrate group header with **Move…** / **Unlink**, nested article rows with nature, role, quoted text). Location adds **Geography**; non-location types omit map sections unless the entity has geography.
 
+When the last mention is unlinked and no linked substrate rows remain, prompt to delete the canonical via **`usePromptDeleteEmptyCanonical`** (same copy and confirm flow for every type).
+
+Do not show canonical **`status`** on the detail page Details card (location does not; same rule for person and future types). Status may still appear on canonical list rows where the list UI already surfaces it.
+
 When adding a type (issue 03), ship mentions list route + linked-substrates + meta routes together with the detail page — do not leave metadata or mentions for a follow-up unless the type is catalog-only stub.
 
 ### stylebook-ui (current)

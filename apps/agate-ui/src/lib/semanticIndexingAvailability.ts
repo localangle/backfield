@@ -29,6 +29,30 @@ async function inferSemanticIndexingConfiguredFromCatalog(
   return false
 }
 
+/** Auto-clear stored flag only when embedding is confirmed unavailable (not while loading). */
+export function shouldAutoClearSemanticIndexingEnabled(
+  configured: boolean | null,
+  enabled: boolean,
+): boolean {
+  return configured === false && enabled
+}
+
+/** Yes/no display for the semantic indexing select (preserve saved Yes while availability loads). */
+export function semanticIndexingUiShowsYes(
+  configured: boolean | null,
+  enabled: boolean,
+): boolean {
+  return enabled && configured !== false
+}
+
+/** Whether the semantic indexing select should be disabled. */
+export function semanticIndexingSelectDisabled(
+  configured: boolean | null,
+  panelDisabled: boolean,
+): boolean {
+  return panelDisabled || configured === false
+}
+
 /** Whether Backfield Output semantic indexing can run for this project. */
 export async function isProjectSemanticIndexingConfigured(
   projectId: number,

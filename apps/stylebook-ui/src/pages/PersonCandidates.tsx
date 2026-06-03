@@ -917,6 +917,8 @@ export default function PersonCandidates() {
         candidateNounPlural="people"
         linkActionLabel="Link this candidate to the new person"
         primaryColumnLabel="Name"
+        secondaryColumnLabel="Affiliation"
+        includeType={false}
       />
     </div>
   )

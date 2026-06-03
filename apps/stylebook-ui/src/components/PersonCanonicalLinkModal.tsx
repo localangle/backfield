@@ -34,6 +34,11 @@ function canonicalToSuggestedRow(c: CanonicalPerson): SuggestedPersonCanonicalIt
   }
 }
 
+function personSuggestionDetailLine(s: SuggestedPersonCanonicalItem): string {
+  const parts = [(s.title ?? "").trim(), (s.affiliation ?? "").trim()].filter(Boolean)
+  return parts.length > 0 ? parts.join(" · ") : "—"
+}
+
 function suggestedItemsToPickRows(items: SuggestedPersonCanonicalItem[]): LinkPickTableRow[] {
   return items.map((s) => ({
     rowKey: s.canonical_id,
@@ -42,7 +47,7 @@ function suggestedItemsToPickRows(items: SuggestedPersonCanonicalItem[]): LinkPi
       s.person_type && String(s.person_type).trim()
         ? placeExtractTypeLabel(s.person_type)
         : "—",
-    address: [s.title, s.affiliation].filter(Boolean).join(" · ") || "—",
+    address: personSuggestionDetailLine(s),
   }))
 }
 
@@ -299,7 +304,7 @@ export function PersonCanonicalLinkModal(props: {
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-1 py-2 sm:px-2">
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="space-y-2">
-            <Label htmlFor="person-canon-search">Search catalog</Label>
+            <Label htmlFor="person-canon-search">Search Stylebook</Label>
             <Input
               id="person-canon-search"
               placeholder="Type to search names…"
@@ -324,7 +329,10 @@ export function PersonCanonicalLinkModal(props: {
               <div className="max-h-[min(50vh,360px)] overflow-y-auto pr-1">
                 <LinkPickTable
                   rows={tableRows}
-                  includeAddress={false}
+                  primaryColumnLabel="Name"
+                  secondaryColumnLabel="Affiliation"
+                  includeAddress
+                  includeType={false}
                   busyKey={linkingCanonicalId}
                   linkDisabled={substratePersonId == null}
                   onLink={(key) => void linkToCanonical(String(key))}

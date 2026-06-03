@@ -15,6 +15,7 @@ import {
 import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
 import { personNatureBadgeClass, personNatureDisplayLabel } from "@/lib/personMentionNature"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -75,7 +76,7 @@ function mentionArticleHref(m: LinkedPersonMention): string | null {
 }
 
 export default function PersonDetail() {
-  const { showError } = useAppMessage()
+  const { showError, showConfirm } = useAppMessage()
   const {
     projectFilterSlug,
     filterScopeSuffix,
@@ -295,20 +296,31 @@ export default function PersonDetail() {
     setSortKey(row.sort_key ?? derivePersonSortKey(row.label))
   }
 
-  async function handleDelete() {
-    if (!person || !stylebookSlug) return
+  const onDelete = useCallback(async () => {
+    if (!person || !id || !stylebookSlug) return
     setDeleting(true)
     try {
-      await deleteCanonicalPerson(person.id, stylebookSlug)
-      setDeleteOpen(false)
+      await deleteCanonicalPerson(id, stylebookSlug)
       navigate(canonicalListHref)
     } catch (e) {
       console.error(e)
-      showError("Failed to delete person")
+      showError(e instanceof Error ? e.message : "Delete failed")
     } finally {
       setDeleting(false)
+      setDeleteOpen(false)
     }
-  }
+  }, [person, id, stylebookSlug, navigate, canonicalListHref, showError])
+
+  usePromptDeleteEmptyCanonical({
+    canonicalKey: `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`,
+    enabled: Boolean(id),
+    mentions,
+    mentionsLoading,
+    substrates,
+    substratesLoading,
+    showConfirm,
+    onDelete,
+  })
 
   if (loading) {
     return (
@@ -331,7 +343,7 @@ export default function PersonDetail() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-start gap-4">
+      <div className="flex justify-between items-center">
         <div className="min-w-0">
           <Breadcrumbs
             className="mb-3"
@@ -343,9 +355,46 @@ export default function PersonDetail() {
           />
           <h1 className="text-3xl font-bold">{person.label}</h1>
         </div>
-        <Button variant="outline" asChild>
-          <Link to={canonicalListHref}>Back to people</Link>
-        </Button>
+        <div className="flex gap-2">
+          {editing ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  resetEditFieldsFromPerson(person)
+                  setEditing(false)
+                }}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button onClick={() => void handleSave()} disabled={!canEdit || saving}>
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  resetEditFieldsFromPerson(person)
+                  setEditing(true)
+                }}
+                disabled={!canEdit}
+              >
+                Edit
+              </Button>
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={() => setDeleteOpen(true)}
+                disabled={!canEdit}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -441,21 +490,6 @@ export default function PersonDetail() {
                   />
                 </div>
               </div>
-              <div className="flex gap-2 pt-1">
-                <Button onClick={() => void handleSave()} disabled={!canEdit || saving}>
-                  {saving ? "Saving…" : "Save"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    resetEditFieldsFromPerson(person)
-                    setEditing(false)
-                  }}
-                  disabled={saving}
-                >
-                  Cancel
-                </Button>
-              </div>
             </>
           ) : (
             <>
@@ -487,22 +521,6 @@ export default function PersonDetail() {
                   <span className="text-muted-foreground">Sort key:</span> {person.sort_key}
                 </div>
               ) : null}
-              <div>
-                <span className="text-muted-foreground">Status:</span> {person.status}
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={() => setEditing(true)} disabled={!canEdit}>
-                  Edit
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => setDeleteOpen(true)}
-                  disabled={!canEdit}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
-              </div>
             </>
           )}
         </CardContent>
@@ -690,7 +708,7 @@ export default function PersonDetail() {
             <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => void handleDelete()} disabled={deleting}>
+            <Button variant="destructive" onClick={() => void onDelete()} disabled={deleting}>
               {deleting ? "Deleting…" : "Delete"}
             </Button>
           </DialogFooter>

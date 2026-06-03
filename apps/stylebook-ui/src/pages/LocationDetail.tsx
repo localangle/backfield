@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   deleteCanonicalLocation,
@@ -14,6 +14,7 @@ import {
 } from "@/lib/api"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -246,18 +247,6 @@ export default function LocationDetail() {
     return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
   }, [catalogBasePath, searchParams, filterScopeSuffix])
   const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
-  const prevMentionCountRef = useRef<number | null>(null)
-  const prevSubstrateCountRef = useRef<number | null>(null)
-  const lastCanonicalKeyRef = useRef<string>("")
-
-  useEffect(() => {
-    const key = `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`
-    if (key !== lastCanonicalKeyRef.current) {
-      lastCanonicalKeyRef.current = key
-      prevMentionCountRef.current = null
-      prevSubstrateCountRef.current = null
-    }
-  }, [id, stylebookSlug, evidenceProjectSlug])
 
   const loadCanonical = async (canonicalId: string, sbSlug: string, quiet = false) => {
     try {
@@ -429,58 +418,16 @@ export default function LocationDetail() {
     }
   }, [canonical, id, navigate, stylebookSlug, showError, canonicalListHref])
 
-  useEffect(() => {
-    if (!id) return
-    if (mentionsLoading || substratesLoading) return
-
-    const mentionCount = mentions.length
-    const substrateCount = substrates.length
-
-    const prevMentions = prevMentionCountRef.current
-    const prevSubs = prevSubstrateCountRef.current
-
-    // Establish baseline after first successful refresh for this canonical.
-    if (prevMentions === null || prevSubs === null) {
-      prevMentionCountRef.current = mentionCount
-      prevSubstrateCountRef.current = substrateCount
-      return
-    }
-
-    const mentionsCleared = prevMentions > 0 && mentionCount === 0
-    const noLinkedSubstrates = substrateCount === 0
-
-    if (mentionsCleared && noLinkedSubstrates) {
-      void (async () => {
-        const ok = await showConfirm(
-          "All mentions for this canonical have been removed. Would you like to delete it?",
-          {
-            title: "Delete canonical?",
-            confirmLabel: "Delete canonical",
-            cancelLabel: "Keep",
-            destructive: true,
-          },
-        )
-        if (ok) {
-          await onDelete()
-        }
-        prevMentionCountRef.current = mentionCount
-        prevSubstrateCountRef.current = substrateCount
-      })()
-      return
-    }
-
-    prevMentionCountRef.current = mentionCount
-    prevSubstrateCountRef.current = substrateCount
-  }, [
-    id,
-    evidenceProjectSlug,
+  usePromptDeleteEmptyCanonical({
+    canonicalKey: `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`,
+    enabled: Boolean(id),
     mentions,
     mentionsLoading,
     substrates,
     substratesLoading,
     showConfirm,
     onDelete,
-  ])
+  })
 
   const geometrySource = geometryEditing ? geometryDraft : geometry
   const geometryDraftIsMultiPolygon = geometryEditing && isMultiPolygonGeometry(geometryDraft)

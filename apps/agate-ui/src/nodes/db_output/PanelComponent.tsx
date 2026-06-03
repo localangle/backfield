@@ -56,7 +56,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { listOrgStylebooks, type OrgStylebook } from '@/lib/core-api'
-import { isProjectSemanticIndexingConfigured } from '@/lib/semanticIndexingAvailability'
+import {
+  isProjectSemanticIndexingConfigured,
+  semanticIndexingSelectDisabled,
+  semanticIndexingUiShowsYes,
+  shouldAutoClearSemanticIndexingEnabled,
+} from '@/lib/semanticIndexingAvailability'
 import {
   PROJECT_AI_MODELS_CHANGED_EVENT,
   type ProjectAiModelsChangedDetail,
@@ -348,10 +353,10 @@ export default function DBOutputPanel({
   const aiAssisted = data.canonicalization_mode === 'ai_assisted'
 
   useEffect(() => {
-    if (!semanticIndexingAvailable && semanticIndexingEnabled) {
+    if (shouldAutoClearSemanticIndexingEnabled(semanticIndexingConfigured, semanticIndexingEnabled)) {
       patch({ semantic_indexing_enabled: false })
     }
-  }, [semanticIndexingAvailable, semanticIndexingEnabled])
+  }, [semanticIndexingConfigured, semanticIndexingEnabled])
 
   const catalogHint =
     (projectId == null || graphContext?.fetchProjectAiModels == null) && editMode ? (
@@ -429,11 +434,13 @@ export default function DBOutputPanel({
           <div className="space-y-2">
             <Label htmlFor="dbout-semantic-indexing">Semantic indexing</Label>
             <Select
-              value={yesNoSelectValue(semanticIndexingEnabled && semanticIndexingAvailable)}
+              value={yesNoSelectValue(
+                semanticIndexingUiShowsYes(semanticIndexingConfigured, semanticIndexingEnabled),
+              )}
               onValueChange={(value) =>
                 patch({ semantic_indexing_enabled: value === 'yes' })
               }
-              disabled={disabled || !semanticIndexingAvailable}
+              disabled={semanticIndexingSelectDisabled(semanticIndexingConfigured, disabled)}
             >
               <SelectTrigger id="dbout-semantic-indexing" className="text-xs">
                 <SelectValue placeholder="Choose whether to prepare saved mentions for search" />

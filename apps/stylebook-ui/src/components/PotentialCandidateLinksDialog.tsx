@@ -25,7 +25,9 @@ type PotentialCandidateLinksDialogProps = {
   onRefresh: () => void
   linkActionLabel?: string
   primaryColumnLabel?: string
+  secondaryColumnLabel?: string
   includeAddress?: boolean
+  includeType?: boolean
 }
 
 export function PotentialCandidateLinksDialog({
@@ -42,7 +44,9 @@ export function PotentialCandidateLinksDialog({
   onRefresh,
   linkActionLabel,
   primaryColumnLabel = "Name",
+  secondaryColumnLabel = "Address",
   includeAddress = true,
+  includeType = true,
 }: PotentialCandidateLinksDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -76,7 +80,9 @@ export function PotentialCandidateLinksDialog({
                 onLink={onLink}
                 linkActionLabel={linkActionLabel}
                 primaryColumnLabel={primaryColumnLabel}
+                secondaryColumnLabel={secondaryColumnLabel}
                 includeAddress={includeAddress}
+                includeType={includeType}
               />
             </div>
           )}
