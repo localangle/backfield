@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
 /** Shared timing for Stylebook candidate success toasts. */
 export const CANDIDATE_TOAST_AUTO_DISMISS_MS = 3000
@@ -48,11 +48,14 @@ export function useAutoDismissToast<T>() {
     }
   }, [payload])
 
-  return {
-    payload,
-    leaving,
-    isVisible: payload !== null,
-    show,
-    dismissNow,
-  }
+  return useMemo(
+    () => ({
+      payload,
+      leaving,
+      isVisible: payload !== null,
+      show,
+      dismissNow,
+    }),
+    [payload, leaving, show, dismissNow],
+  )
 }
