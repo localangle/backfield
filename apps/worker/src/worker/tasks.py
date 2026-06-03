@@ -13,6 +13,7 @@ from typing import Any
 
 import boto3
 from agate_runtime import GraphSpec, execute_graph
+from agate_runtime.run_graph_spec import merge_run_result_payload, resolve_run_graph_spec_json
 from agate_runtime.nodes import NODE_RUNNERS
 from agate_runtime.nodes.json_input import json_input_output_from_dict
 from agate_runtime.s3_batch import (
@@ -367,7 +368,11 @@ def execute_s3_batch_setup(run_id: str) -> None:
             run = session.get(AgateRun, run_id)
             if not run:
                 return
-            run.result_json = json.dumps({"s3_batch": batch_meta})
+            run.result_json = merge_run_result_payload(
+                run.result_json,
+                s3_batch=batch_meta,
+                graph_spec_json=graph.spec_json,
+            )
             run.updated_at = datetime.now(UTC)
             session.add(run)
             session.commit()
@@ -447,7 +452,12 @@ def execute_processed_item(item_id: int) -> None:
             session.add(item)
             session.commit()
             return
-        spec = GraphSpec.model_validate_json(graph.spec_json)
+        spec = GraphSpec.model_validate_json(
+            resolve_run_graph_spec_json(
+                run_result_json=run.result_json,
+                graph_spec_json=graph.spec_json,
+            )
+        )
 
         batch_meta: dict[str, Any] = {}
         if run.result_json:

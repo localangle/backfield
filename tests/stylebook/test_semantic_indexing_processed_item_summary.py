@@ -226,3 +226,55 @@ def test_build_summary_prefers_db_counts_and_embedded_at() -> None:
         assert indexed_at == embedded_at.replace(tzinfo=None)
     else:
         assert indexed_at == embedded_at
+
+
+def test_build_summary_reflects_db_when_output_says_not_enabled() -> None:
+    """Later re-index can populate docs even when Backfield Output ran with indexing off."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    embedded_at = datetime(2026, 6, 3, 21, 33, tzinfo=UTC)
+
+    with Session(engine) as session:
+        _oid, pid = _seed_project(session)
+        article = SubstrateArticle(project_id=pid, headline="H", text="Body")
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+        aid = int(article.id)
+
+        session.add(
+            SubstratePersonSemanticDocument(
+                project_id=pid,
+                article_id=aid,
+                person_id=1,
+                person_mention_id=1,
+                person_mention_occurrence_id=1,
+                search_text="Indexed later",
+                source_hash="abc",
+                embedding_status=SEMANTIC_EMBEDDING_STATUS_READY,
+                embedding_model="openai/text-embedding-3-small",
+                embedded_at=embedded_at,
+            )
+        )
+        session.commit()
+
+        summary = build_processed_item_semantic_indexing_summary(
+            session,
+            project_id=pid,
+            item_status="succeeded",
+            result_obj={
+                "stylebook_output": {
+                    "semantic_indexing": {
+                        "enabled": False,
+                        "status": "not_enabled",
+                        "domains": [],
+                    }
+                }
+            },
+            article_id=aid,
+        )
+
+    assert summary["status"] == "succeeded"
+    assert summary["enabled"] is True
+    assert summary["indexed_count"] == 1
+    assert summary["document_count"] == 1

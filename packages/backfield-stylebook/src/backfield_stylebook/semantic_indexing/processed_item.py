@@ -162,6 +162,33 @@ def build_processed_item_semantic_indexing_summary(
         return _empty_summary(status="running")
 
     raw = extract_db_output_semantic_indexing(result_obj)
+    stored_enabled = bool(raw and raw.get("enabled"))
+
+    if session is not None and article_id is not None and project_id > 0:
+        db_stats = _article_semantic_document_stats(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+        )
+        if db_stats["document_count"] > 0 and not stored_enabled:
+            status = _resolve_semantic_indexing_status(
+                output_status="succeeded",
+                indexed_count=int(db_stats["indexed_count"]),
+                pending_count=int(db_stats["pending_count"]),
+                failed_count=int(db_stats["failed_count"]),
+            )
+            return {
+                "status": status,
+                "enabled": True,
+                "document_count": db_stats["document_count"],
+                "indexed_count": db_stats["indexed_count"],
+                "pending_count": db_stats["pending_count"],
+                "failed_count": db_stats["failed_count"],
+                "indexed_at": db_stats["latest_embedded_at"],
+                "embedding_model": db_stats["embedding_model"],
+                "error": None,
+            }
+
     if raw is None or not raw.get("enabled"):
         return _empty_summary(status="not_enabled")
 

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
+from agate_runtime.run_graph_spec import merge_run_result_payload
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
 from agate_runtime.single_item import build_single_item_input_from_graph_spec_json
 from api.deps import get_auth, get_session
@@ -540,6 +541,7 @@ def create_run(
         )
         session.add(item)
         run.status = "running"
+        run.result_json = merge_run_result_payload(None, graph_spec_json=g.spec_json)
         run.updated_at = datetime.now(UTC)
         session.add(run)
         session.commit()

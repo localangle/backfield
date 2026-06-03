@@ -138,6 +138,8 @@ def test_execute_s3_batch_setup_fanout_and_finalize(batch_engine, monkeypatch):
         run = session.get(AgateRun, run_id)
         assert run is not None
         assert run.status == "succeeded"
+        graph = session.get(AgateGraph, graph_id)
+        assert graph is not None
         items = session.exec(
             select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)
         ).all()
@@ -148,3 +150,4 @@ def test_execute_s3_batch_setup_fanout_and_finalize(batch_engine, monkeypatch):
         summary = json.loads(run.result_json or "{}")
         assert "items" in summary
         assert summary.get("s3_batch", {}).get("valid_executed") == 1
+        assert summary.get("graph_spec_json") == graph.spec_json
