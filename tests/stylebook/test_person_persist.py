@@ -12,17 +12,23 @@ from backfield_db import (
     StylebookPersonCanonical,
     SubstratePerson,
 )
-from backfield_stylebook.canonical.link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_stylebook.canonical.link import (
+    CANONICAL_LINK_LINKED,
+    CANONICAL_LINK_PENDING,
+)
 from backfield_stylebook.canonical.policy import CanonicalPersistDecision
 from backfield_stylebook.entities.person import (
     allocate_unique_person_canonical_slug,
+    create_standalone_canonical,
     decide_person_canonical_persist_plan,
     derive_person_sort_key,
     link_substrate_to_canonical_atomic,
     link_to_existing_canonical,
     materialize_new_canonical_and_link,
+    maybe_prune_ingest_orphan_person_canonical,
     person_identity_fingerprint,
     rank_canonical_suggestions_for_substrate,
+    unlink_substrate_from_canonical,
     upsert_alias_for_canonical_text,
 )
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -448,6 +454,117 @@ def test_rank_canonical_suggestions_prefers_exact_alias() -> None:
         )
         assert ranked
         assert ranked[0][0] == str(exact.id)
+
+
+def test_unlink_prunes_ingest_orphan_canonical_when_last_substrate_removed() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed_stylebook(session)
+        person = SubstratePerson(
+            project_id=pid,
+            name="Alex Bregman",
+            normalized_name="alex bregman",
+            title="Player",
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        materialize_new_canonical_and_link(session, stylebook_id=sb_id, person=person)
+        session.commit()
+        session.refresh(person)
+        ghost_id = str(person.stylebook_person_canonical_id)
+        assert ghost_id
+
+        unlink_substrate_from_canonical(
+            session,
+            stylebook_id=sb_id,
+            person=person,
+            provenance="agate_superseded_ingest",
+            requeue_after_unlink=False,
+        )
+        session.commit()
+
+        assert session.get(StylebookPersonCanonical, ghost_id) is None
+        assert (
+            session.exec(
+                select(StylebookPersonAlias).where(
+                    StylebookPersonAlias.person_canonical_id == ghost_id
+                )
+            ).first()
+            is None
+        )
+
+
+def test_unlink_keeps_manual_canonical_with_zero_substrates() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed_stylebook(session)
+        canon = create_standalone_canonical(
+            session,
+            stylebook_id=sb_id,
+            label="Catalog Only",
+            provenance="stylebook_ui_manual",
+        )
+        session.commit()
+        canon_id = str(canon.id)
+        person = SubstratePerson(
+            project_id=pid,
+            name="Catalog Only",
+            normalized_name="catalog only",
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        link_substrate_to_canonical_atomic(
+            session,
+            stylebook_id=sb_id,
+            person=person,
+            target_canonical_id=canon_id,
+            provenance="stylebook_ui_link",
+        )
+        session.commit()
+        session.refresh(person)
+
+        unlink_substrate_from_canonical(
+            session,
+            stylebook_id=sb_id,
+            person=person,
+            provenance="stylebook_ui_unlink",
+            requeue_after_unlink=True,
+        )
+        session.commit()
+
+        assert session.get(StylebookPersonCanonical, canon_id) is not None
+
+
+def test_maybe_prune_skips_aliasless_legacy_canonical_without_ingest_signal() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, _pid = _seed_stylebook(session)
+        legacy = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Legacy Import",
+            slug="legacy-import",
+        )
+        session.add(legacy)
+        session.commit()
+        session.refresh(legacy)
+        legacy_id = str(legacy.id)
+
+        pruned = maybe_prune_ingest_orphan_person_canonical(
+            session,
+            stylebook_id=sb_id,
+            canonical_id=legacy_id,
+            removed_substrate_ingest_alias=False,
+        )
+        session.commit()
+
+        assert pruned is False
+        assert session.get(StylebookPersonCanonical, legacy_id) is not None
 
 
 def test_derive_person_sort_key_uses_last_name() -> None:

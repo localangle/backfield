@@ -27,6 +27,9 @@ from backfield_stylebook.entities.location.persist import seed_aliases_for_canon
 from backfield_stylebook.entities.person.persist import (
     allocate_unique_person_canonical_slug,
 )
+from backfield_stylebook.entities.person.persist import (
+    seed_aliases_for_canonical_label as seed_person_aliases_for_canonical_label,
+)
 from backfield_stylebook.entities.person.types import derive_person_sort_key
 from backfield_stylebook.stylebook_library import (
     StylebookLibraryError,
@@ -428,7 +431,14 @@ def _import_person_row(
     )
     session.add(canon)
     session.flush()
-    id_map[old_id] = str(canon.id)
+    cid = str(canon.id)
+    seed_person_aliases_for_canonical_label(
+        session,
+        canon_id=cid,
+        label=label,
+        provenance="stylebook_bundle_import",
+    )
+    id_map[old_id] = cid
     stats["canonical_people"] += 1
 
 

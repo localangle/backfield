@@ -12,6 +12,7 @@ from backfield_db import (
     Stylebook,
     StylebookLocationAlias,
     StylebookLocationCanonical,
+    StylebookPersonAlias,
     StylebookPersonCanonical,
 )
 from backfield_stylebook.full_bundle import (
@@ -210,3 +211,10 @@ def test_export_import_roundtrip_includes_people(tmp_path: Path) -> None:
         assert imported[0].title == "Mayor"
         assert imported[0].sort_key == "doe"
         assert imported[0].public_figure is True
+        aliases = session.exec(
+            select(StylebookPersonAlias).where(
+                StylebookPersonAlias.person_canonical_id == str(imported[0].id),
+            )
+        ).all()
+        assert len(aliases) >= 1
+        assert any(a.provenance == "stylebook_bundle_import" for a in aliases)

@@ -5,7 +5,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from backfield_db import StylebookPersonAlias, StylebookPersonCanonical, SubstratePerson
+from backfield_db import (
+    StylebookPersonAlias,
+    StylebookPersonCanonical,
+    StylebookPersonMeta,
+    SubstratePerson,
+    SubstratePersonMention,
+)
 from sqlmodel import Session, col, func, select
 
 from backfield_stylebook.canonical.link import (
@@ -15,6 +21,9 @@ from backfield_stylebook.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_stylebook.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_stylebook.entities.person.catalog_provenance import (
+    is_person_catalog_editorial_provenance,
+)
 from backfield_stylebook.entities.person.policy import (
     find_existing_person_canonical_id_by_alias,
     plan_has_ambiguous_person_canonical_match,
@@ -87,6 +96,27 @@ def _mirror_fields_from_substrate(person: SubstratePerson) -> dict[str, Any]:
         "person_type": person.person_type,
         "sort_key": sort_key,
     }
+
+
+def seed_aliases_for_canonical_label(
+    session: Session,
+    *,
+    canon_id: str,
+    label: str,
+    provenance: str,
+) -> None:
+    """Upsert normalized alias variants from a canonical label (import / manual create)."""
+    clean = label.strip()
+    if not clean:
+        return
+    for norm in person_alias_lookup_keys(clean):
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=canon_id,
+            alias_text=clean,
+            normalized_alias=norm,
+            provenance=provenance,
+        )
 
 
 def upsert_alias_for_canonical_text(
@@ -426,16 +456,121 @@ def rank_canonical_suggestions_for_substrate(
     return out[:limit]
 
 
+def _linked_substrate_count_for_person_canonical(
+    session: Session,
+    *,
+    canonical_id: str,
+) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstratePerson)
+            .where(col(SubstratePerson.stylebook_person_canonical_id) == str(canonical_id))
+        )
+        or 0
+    )
+
+
+def _active_mention_count_for_person_canonical(
+    session: Session,
+    *,
+    canonical_id: str,
+) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstratePersonMention)
+            .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+            .where(
+                col(SubstratePerson.stylebook_person_canonical_id) == str(canonical_id),
+                col(SubstratePersonMention.deleted).is_(False),
+            )
+        )
+        or 0
+    )
+
+
+def person_canonical_has_editorial_catalog_provenance(
+    session: Session,
+    *,
+    canonical_id: str,
+) -> bool:
+    """True when aliases or meta indicate manual/import catalog intent."""
+    alias_rows = session.exec(
+        select(StylebookPersonAlias.provenance).where(
+            StylebookPersonAlias.person_canonical_id == str(canonical_id),
+        )
+    ).all()
+    if any(is_person_catalog_editorial_provenance(str(p)) for p in alias_rows if p is not None):
+        return True
+    meta_count = int(
+        session.scalar(
+            select(func.count())
+            .select_from(StylebookPersonMeta)
+            .where(col(StylebookPersonMeta.stylebook_person_canonical_id) == str(canonical_id))
+        )
+        or 0
+    )
+    return meta_count > 0
+
+
+def maybe_prune_ingest_orphan_person_canonical(
+    session: Session,
+    *,
+    stylebook_id: int,
+    canonical_id: str,
+    removed_substrate_ingest_alias: bool = False,
+) -> bool:
+    """Delete ingest-only canonical rows left with no substrates or mentions.
+
+    Manual, CSV, bundle, and review-queue catalog rows are protected via editorial
+    alias provenance (``PERSON_CATALOG_EDITORIAL_PROVENANCES``). Legacy bundle rows
+    without aliases are also kept unless an ingest alias was removed in this same
+    unlink/dispose step.
+    """
+    cid = str(canonical_id)
+    canon = session.get(StylebookPersonCanonical, cid)
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
+        return False
+    if person_canonical_has_editorial_catalog_provenance(session, canonical_id=cid):
+        return False
+    if _linked_substrate_count_for_person_canonical(session, canonical_id=cid) > 0:
+        return False
+    if _active_mention_count_for_person_canonical(session, canonical_id=cid) > 0:
+        return False
+
+    alias_rows = session.exec(
+        select(StylebookPersonAlias).where(StylebookPersonAlias.person_canonical_id == cid)
+    ).all()
+    if alias_rows:
+        if any(
+            is_person_catalog_editorial_provenance(str(row.provenance)) for row in alias_rows
+        ):
+            return False
+        session.delete(canon)
+        return True
+
+    if not removed_substrate_ingest_alias:
+        return False
+
+    session.delete(canon)
+    return True
+
+
 def delete_canonical_alias_if_no_other_linked_substrate(
     session: Session,
     *,
     canonical_id: str,
     normalized_name: str,
     exclude_substrate_person_id: int,
-) -> bool:
+) -> str | None:
+    """Remove a name alias when no other linked substrate shares it.
+
+    Returns the deleted alias provenance, or ``None`` when no row was removed.
+    """
     norm = str(normalized_name).strip()
     if not norm:
-        return False
+        return None
     cnt_stmt = (
         select(func.count())
         .select_from(SubstratePerson)
@@ -447,7 +582,7 @@ def delete_canonical_alias_if_no_other_linked_substrate(
     )
     other = int(session.scalar(cnt_stmt) or 0)
     if other > 0:
-        return False
+        return None
     alias = session.exec(
         select(StylebookPersonAlias).where(
             StylebookPersonAlias.person_canonical_id == str(canonical_id),
@@ -456,9 +591,10 @@ def delete_canonical_alias_if_no_other_linked_substrate(
         )
     ).first()
     if alias is None:
-        return False
+        return None
+    provenance = str(alias.provenance)
     session.delete(alias)
-    return True
+    return provenance
 
 
 def unlink_substrate_from_canonical(
@@ -481,7 +617,7 @@ def unlink_substrate_from_canonical(
         raise ValueError("canonical not in this stylebook")
     pid = int(person.id)
     old = str(cid)
-    delete_canonical_alias_if_no_other_linked_substrate(
+    removed_alias_provenance = delete_canonical_alias_if_no_other_linked_substrate(
         session,
         canonical_id=old,
         normalized_name=str(person.normalized_name),
@@ -499,6 +635,12 @@ def unlink_substrate_from_canonical(
         }
     ]
     session.add(person)
+    maybe_prune_ingest_orphan_person_canonical(
+        session,
+        stylebook_id=stylebook_id,
+        canonical_id=old,
+        removed_substrate_ingest_alias=removed_alias_provenance == "substrate_ingest",
+    )
 
 
 def link_substrate_to_canonical_atomic(
@@ -550,11 +692,17 @@ def link_substrate_to_canonical_atomic(
         provenance=provenance,
     )
     if prev_str is not None and prev_str != tid:
-        delete_canonical_alias_if_no_other_linked_substrate(
+        removed_alias_provenance = delete_canonical_alias_if_no_other_linked_substrate(
             session,
             canonical_id=prev_str,
             normalized_name=str(person.normalized_name),
             exclude_substrate_person_id=pid,
+        )
+        maybe_prune_ingest_orphan_person_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            canonical_id=prev_str,
+            removed_substrate_ingest_alias=removed_alias_provenance == "substrate_ingest",
         )
     return True
 

@@ -26,7 +26,7 @@ Registry source of truth: `packages/backfield-stylebook/src/backfield_stylebook/
 
 ## Stylebook catalog transfer (create, import, export)
 
-Org-admin **Export** / **Import** (Agate **Manage stylebooks**, `worker.tasks.export_stylebook_bundle` / `import_stylebook_bundle`) copies **canonical rows only** — no aliases, meta, connections, substrate, or candidate queues. New UUIDs are assigned on import.
+Org-admin **Export** / **Import** (Agate **Manage stylebooks**, `worker.tasks.export_stylebook_bundle` / `import_stylebook_bundle`) copies **canonical rows only** — no meta, connections, substrate, or candidate queues. Import seeds a primary alias per canonical (locations and people) with `stylebook_bundle_import` provenance so rows are not treated as ingest orphans. New UUIDs are assigned on import.
 
 Implementation hub: [`packages/backfield-stylebook/src/backfield_stylebook/full_bundle.py`](../packages/backfield-stylebook/src/backfield_stylebook/full_bundle.py). Manifest **`schema_version`** is **3** for new exports; import accepts **1**, **2**, or **3**.
 
@@ -38,7 +38,7 @@ Implementation hub: [`packages/backfield-stylebook/src/backfield_stylebook/full_
 | **Bundle export shard** | `canonicals/locations/part-*.jsonl`, manifest `kind: canonical_location` | `canonicals/people/part-*.jsonl`, manifest `kind: canonical_person` | Add `canonicals/<type>/…`, `kind: canonical_<type>`, `_iter_*_canonicals`, `_import_*_row` |
 | **Bundle import** | Handles `kind: canonical` (legacy v1/v2) and `canonical_location` | Handles `kind: canonical_person` | Extend `_import_shard_rows` dispatch + `importable_kinds` |
 | **Standalone persist helper** | `backfield_stylebook.locations.create_standalone_canonical` | `backfield_stylebook.entities.person.persist.create_standalone_canonical` | Same pattern under `entities/<type>/persist.py` |
-| **Provenance strings** | `stylebook_ui_manual`, `stylebook_ui_import_geojson` | `stylebook_ui_manual`, `stylebook_ui_import_csv` | Follow `{surface}_manual` / `{surface}_import_csv` |
+| **Provenance strings** | `stylebook_ui_manual`, `stylebook_ui_import_geojson` | `stylebook_ui_manual`, `stylebook_ui_import_csv`, `stylebook_bundle_import` | Follow `{surface}_manual` / `{surface}_import_csv` |
 
 **Checklist when adding a new entity type:**
 
@@ -117,7 +117,7 @@ Every new `extract_and_persist` type should ship the same **canonical ingest + e
 | **Shared plan types** | `CanonicalPersistDecision`, `CanonicalPersistPlan`, `ADJUDICATION_LINK_MIN_CONFIDENCE` (0.9) | [`canonical/plan_types.py`](../packages/backfield-stylebook/src/backfield_stylebook/canonical/plan_types.py) |
 | **Policy** | `decide_<type>_canonical_persist_plan(session, stylebook_id, substrate_row) → CanonicalPersistPlan` | [`entities/location/policy.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/location/policy.py), [`entities/person/policy.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/person/policy.py) |
 | **Recall** | `retrieve_<type>_canonical_candidates` — ranked `(canonical_id, label)` for defer paths, LLM payloads, and link UI (cap **24**, recall-biased score floor) | [`entities/person/recall.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/person/recall.py) |
-| **Persist + link** | `create_standalone_canonical`, alias upsert on link, `rank_canonical_suggestions_for_substrate`, atomic link/unlink | [`entities/person/persist.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/person/persist.py) |
+| **Persist + link** | `create_standalone_canonical`, alias upsert on link, `rank_canonical_suggestions_for_substrate`, atomic link/unlink; **person:** `maybe_prune_ingest_orphan_person_canonical` removes ingest-only catalog rows when the last substrate unlinks (manual/CSV/bundle/review-queue rows protected via editorial alias provenance) | [`entities/person/persist.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/person/persist.py) |
 | **Worker handler** | Upsert substrate → call policy → link / defer / materialize; register in [`substrate/entities/registry.py`](../apps/worker/src/worker/substrate/entities/registry.py) | [`substrate/entities/person/handler.py`](../apps/worker/src/worker/substrate/entities/person/handler.py) |
 | **stylebook-api** | `GET /v1/<plural>/candidates`, `GET …/candidates/{id}/suggested-canonicals`, `POST …/{id}/link-canonical`, catalog `GET /v1/canonical-<plural>?q=…` | [`entities/person/`](../apps/stylebook-api/src/stylebook_api/entities/person/) |
 | **stylebook-ui** | Candidate queue page, **Link to canonical** modal (suggestions + catalog search), canonical detail (mentions, meta, connections) | [`PersonCandidates.tsx`](../apps/stylebook-ui/src/pages/PersonCandidates.tsx), [`PersonCanonicalLinkModal.tsx`](../apps/stylebook-ui/src/components/PersonCanonicalLinkModal.tsx) |
