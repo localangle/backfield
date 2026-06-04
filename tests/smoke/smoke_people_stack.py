@@ -25,6 +25,7 @@ from _helpers import (
     ensure_health,
     http_error_detail,
     log,
+    resolve_run_execution_output,
     wait_for_terminal_run,
 )
 from agate_runtime import (
@@ -181,10 +182,8 @@ def _run_via_agate_api(*, live_llm: bool) -> None:
         run = assert_object(client.post("/runs", json=payload), "create run")
         run_id = str(run["id"])
         terminal = wait_for_terminal_run(client, run_id)
-        result = terminal.get("result")
-        if not isinstance(result, dict):
-            raise RuntimeError("Run result missing object payload")
-        so = result.get("stylebook_output")
+        execution_output = resolve_run_execution_output(client, terminal)
+        so = execution_output.get("stylebook_output")
         if not isinstance(so, dict) or so.get("success") is not True:
             raise RuntimeError(f"stylebook_output.success expected true, got {so!r}")
         log(f"stack people smoke OK run_id={run_id}")
