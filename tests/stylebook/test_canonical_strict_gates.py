@@ -14,8 +14,10 @@ from backfield_stylebook.canonical_jurisdiction import (
     container_admin_query_from_components,
     geocode_components_vs_formatted_address_mismatch,
     jurisdiction_from_components,
+    parse_jurisdiction_from_formatted_address,
     strict_canonical_gates_enabled,
 )
+from backfield_stylebook.entities.location.policy import _jurisdiction_pair_demotes_recall_score
 from backfield_stylebook.canonical_link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
@@ -136,6 +138,27 @@ def test_geocode_components_vs_formatted_address_mismatch() -> None:
     )
 
 
+def test_parse_jurisdiction_from_formatted_address_state_with_zip() -> None:
+    assert parse_jurisdiction_from_formatted_address(
+        "Tonia Rd, Arkadelphia, AR 71923"
+    ) == ("US", "AR")
+
+
+def test_geocode_country_mismatch_when_story_is_abroad() -> None:
+    comps = {
+        "city": "Aksum",
+        "state": None,
+        "country": {"name": "Ethiopia", "abbr": "ET"},
+    }
+    assert (
+        geocode_components_vs_formatted_address_mismatch(
+            formatted_address="Tonia Rd, Arkadelphia, AR 71923",
+            comps=comps,
+        )
+        == "geocode_country_mismatch"
+    )
+
+
 def _make_engine():
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
@@ -156,6 +179,78 @@ def _bootstrap(session: Session, *, org_slug: str) -> tuple[int, int]:
     session.add(ws)
     session.commit()
     return oid, sb_id
+
+
+def test_decide_preflight_defers_on_geocode_country_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-country")
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Aksum, Tigray, Ethiopia",
+            normalized_name="aksum, tigray, ethiopia",
+            location_type="place",
+            status="resolved",
+            canonical_link_status="unlinked",
+            formatted_address="Tonia Rd, Arkadelphia, AR 71923",
+            source_details_json={
+                "place_extract_components": {
+                    "city": "Aksum",
+                    "state": None,
+                    "country": {"name": "Ethiopia", "abbr": "ET"},
+                }
+            },
+            geometry_json={"type": "Point", "coordinates": [-93.05, 34.12]},
+            identity_fingerprint="fp-strict-country",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry={"components": loc.source_details_json["place_extract_components"]},
+        )
+        assert plan.decision.value == "defer"
+        assert any(
+            isinstance(r, dict) and r.get("code") == "geocode_country_mismatch"
+            for r in plan.resolution_reasons
+        )
+
+
+def test_jurisdiction_pair_demotes_on_country_without_state() -> None:
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-jur-country")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Tonia Rd, Arkadelphia, AR",
+            slug="tonia-rd",
+            location_type="address",
+            country_code="US",
+            subdivision_code="AR",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Aksum, Tigray, Ethiopia",
+            normalized_name="aksum, tigray, ethiopia",
+            location_type="place",
+            status="resolved",
+            canonical_link_status="unlinked",
+            identity_fingerprint="fp-jur-country",
+        )
+        comps = {
+            "city": "Aksum",
+            "country": {"abbr": "ET"},
+        }
+        assert _jurisdiction_pair_demotes_recall_score(loc, canon, comps) is True
 
 
 def test_decide_preflight_defers_on_geocode_state_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:

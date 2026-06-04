@@ -245,16 +245,14 @@ def _jurisdiction_pair_demotes_recall_score(
     if s_lt not in _JURISDICTION_SCORE_GATE_SUBSTRATE_TYPES:
         return False
     s_country, s_sub, _city = jurisdiction_from_components(comps)
-    if not s_sub:
-        return False
     c_country = (canon.country_code or "").strip().upper()[:2] or None
     c_sub = (canon.subdivision_code or "").strip().upper()[:2] or None
     c_lt = (canon.location_type or "").strip().lower()
     if c_lt in _POI_LIKE_CANON_TYPES and not (c_country and c_sub):
         return False
-    if c_sub and s_sub != c_sub:
-        return True
     if c_country and s_country and s_country != c_country:
+        return True
+    if c_sub and s_sub and s_sub != c_sub:
         return True
     return False
 
@@ -688,17 +686,21 @@ def decide_location_canonical_persist_plan(
             autolink_container_to_fine_denied(location.location_type, alias_canon_lt)
         )
         alias_content_ok = False
+        alias_jurisdiction_ok = True
+        comps_alias = place_extract_components_from_entry(location, entry)
         if alias_canon is not None:
             alias_content_ok = not substrate_canonical_link_blocked_by_content_sanity(
                 substrate_location_type=location.location_type,
                 location_text=str(location.name),
-                components=place_extract_components_from_entry(location, entry),
+                components=comps_alias,
                 match_label=str(alias_canon.label),
                 match_formatted_address=alias_canon.formatted_address,
                 match_location_type=alias_canon_lt,
                 match_geometry_type=alias_canon.geometry_type,
             )
-        if alias_pair_ok and alias_content_ok:
+            if _jurisdiction_pair_demotes_recall_score(location, alias_canon, comps_alias):
+                alias_jurisdiction_ok = False
+        if alias_pair_ok and alias_content_ok and alias_jurisdiction_ok:
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.LINK_EXISTING,
                 existing_canonical_id=cid,
