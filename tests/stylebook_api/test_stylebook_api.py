@@ -44,6 +44,10 @@ def _stylebook_test_stack(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> Generator[tuple[TestClient, Engine], None, None]:
     monkeypatch.setenv("SERVICE_API_TOKEN", "backfield-dev")
+    monkeypatch.setattr(
+        "stylebook_api.semantic_reindex.celery_app.send_task",
+        lambda *_args, **_kwargs: None,
+    )
     import importlib
 
     import backfield_auth.service_tokens as service_tokens
