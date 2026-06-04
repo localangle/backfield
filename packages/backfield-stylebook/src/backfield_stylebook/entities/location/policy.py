@@ -57,6 +57,9 @@ from backfield_stylebook.geocode_cache.sanity import (
     substrate_canonical_link_blocked_by_content_sanity,
 )
 
+# Scores at or below this value are treated as gate-demoted (just under recall floor).
+_RECALL_SCORE_DEMOTED: float = RECALL_MIN_SCORE - 0.001
+
 
 def find_existing_canonical_id_by_alias(
     session: Session,
@@ -391,8 +394,14 @@ def _substrate_preflight_strict_gates(
     )
     if mm:
         msg = {
-            "geocode_country_mismatch": "PlaceExtract country disagrees with geocoder address",
-            "geocode_state_mismatch": "PlaceExtract state disagrees with geocoder address",
+            "geocode_country_mismatch": (
+                "Place extraction disagrees with the geocoded address on country — "
+                "confirm before linking"
+            ),
+            "geocode_state_mismatch": (
+                "Place extraction disagrees with the geocoded address on state or province — "
+                "confirm before linking"
+            ),
         }.get(mm, "Geocode vs components mismatch")
         return CanonicalPersistPlan(
             decision=CanonicalPersistDecision.DEFER,
@@ -484,18 +493,65 @@ def _substrate_preflight_strict_gates(
     return None
 
 
+def _apply_recall_match_gates(
+    raw_score: float,
+    *,
+    location: SubstrateLocation,
+    canon: StylebookLocationCanonical,
+    feat: CanonicalMatchFeatures,
+    comps: dict[str, Any],
+) -> float:
+    """Apply deterministic recall gates; return gated score (may clamp below recall floor)."""
+    sc = float(raw_score)
+    gate_lt = _should_apply_head_anchor_gate(location.location_type)
+    if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if not types_are_comparable(location.location_type, canon.location_type):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if strict_canonical_gates_enabled() and _jurisdiction_pair_demotes_recall_score(
+        location, canon, comps
+    ):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if strict_canonical_gates_enabled() and _district_identity_pair_mismatch(comps, canon):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if strict_canonical_gates_enabled() and _address_neighborhood_geometry_demotes_recall(
+        location, canon, feat
+    ):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
+    if strict_canonical_gates_enabled() and substrate_canonical_link_blocked_by_content_sanity(
+        substrate_location_type=location.location_type,
+        location_text=str(location.name),
+        components=comps,
+        match_label=str(canon.label),
+        match_formatted_address=canon.formatted_address,
+        match_location_type=canon.location_type,
+        match_geometry_type=canon.geometry_type,
+    ):
+        sc = min(sc, _RECALL_SCORE_DEMOTED)
+    return sc
+
+
+def recall_match_gate_demoted_below_threshold(raw_score: float, gated_score: float) -> bool:
+    """True when gates dropped an otherwise-recallable match below the recall floor."""
+    if raw_score < RECALL_MIN_SCORE:
+        return False
+    if gated_score >= RECALL_MIN_SCORE:
+        return False
+    return gated_score <= _RECALL_SCORE_DEMOTED + 1e-9
+
+
 def rank_scored_canonical_recall_matches(
     session: Session,
     *,
     location: SubstrateLocation,
     recall: list[tuple[str, float | None]],
     entry: dict[str, Any] | None = None,
-) -> list[tuple[str, str, float, int]]:
+) -> list[tuple[str, str, float, int, float]]:
     """Score each recalled canonical; return best-first rows.
 
-    Each tuple is ``(canonical_id, label, score, recall_index)``. Tie-break on equal
-    ``score``: higher ``recall_index`` wins, matching fuzzy ``best_id`` selection in
-    :func:`decide_canonical_persist_plan`.
+    Each tuple is ``(canonical_id, label, gated_score, recall_index, raw_score)``.
+    Tie-break on equal ``gated_score``: higher ``recall_index`` wins, matching fuzzy
+    ``best_id`` selection in :func:`decide_canonical_persist_plan`.
     """
     if not recall:
         return []
@@ -521,48 +577,30 @@ def rank_scored_canonical_recall_matches(
             geometry_json=canon.geometry_json,
             retrieval_string_hint=hint,
         )
-        sc = float(
+        raw_sc = float(
             policy_match_score(
                 substrate,
                 feat,
                 substrate_location_type=location.location_type,
             )
         )
-        gate_lt = _should_apply_head_anchor_gate(location.location_type)
-        if gate_lt and not _head_anchor_gate_passes(str(location.name), feat):
-            sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        if not types_are_comparable(location.location_type, canon.location_type):
-            sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        if strict_canonical_gates_enabled() and _jurisdiction_pair_demotes_recall_score(
-            location, canon, comps
-        ):
-            sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        if strict_canonical_gates_enabled() and _district_identity_pair_mismatch(comps, canon):
-            sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        if strict_canonical_gates_enabled() and _address_neighborhood_geometry_demotes_recall(
-            location, canon, feat
-        ):
-            sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        if strict_canonical_gates_enabled() and substrate_canonical_link_blocked_by_content_sanity(
-            substrate_location_type=location.location_type,
-            location_text=str(location.name),
-            components=comps,
-            match_label=str(canon.label),
-            match_formatted_address=canon.formatted_address,
-            match_location_type=canon.location_type,
-            match_geometry_type=canon.geometry_type,
-        ):
-            sc = min(sc, RECALL_MIN_SCORE - 0.001)
-        rows.append((recall_index, str(canon_id), str(canon.label), sc))
+        sc = _apply_recall_match_gates(
+            raw_sc,
+            location=location,
+            canon=canon,
+            feat=feat,
+            comps=comps,
+        )
+        rows.append((recall_index, str(canon_id), str(canon.label), sc, raw_sc))
     rows.sort(key=lambda r: (-r[3], -r[0]))
-    return [(r[1], r[2], r[3], r[0]) for r in rows]
+    return [(r[1], r[2], r[3], r[0], r[4]) for r in rows]
 
 
 def _best_allowed_recall_score(
     session: Session,
     *,
     substrate_location_type: str | None,
-    ranked: list[tuple[str, str, float, int]],
+    ranked: list[tuple[str, str, float, int, float]],
 ) -> float | None:
     """Return best recall score among canonicals allowed to link (strict matrix).
 
@@ -575,8 +613,8 @@ def _best_allowed_recall_score(
         return None
     s_lt = (substrate_location_type or "").strip().lower()
     if not s_lt:
-        return max(sc for _cid, _lab, sc, _idx in ranked)
-    ids = [cid for cid, _lab, _sc, _idx in ranked[:24]]
+        return max(sc for _cid, _lab, sc, _idx, _raw in ranked)
+    ids = [cid for cid, _lab, _sc, _idx, _raw in ranked[:24]]
     rows = session.exec(
         select(StylebookLocationCanonical).where(col(StylebookLocationCanonical.id).in_(ids))
     ).all()
@@ -585,7 +623,7 @@ def _best_allowed_recall_score(
         if c.id is not None:
             lt_by_id[str(c.id)] = c.location_type
     best: float | None = None
-    for cid, _lab, sc, _idx in ranked:
+    for cid, _lab, sc, _idx, _raw in ranked:
         c_lt = lt_by_id.get(str(cid))
         if link_pair_allowed(s_lt, c_lt) and not autolink_container_to_fine_denied(s_lt, c_lt):
             best = sc if best is None else max(best, sc)
@@ -617,14 +655,14 @@ def _should_materialize_when_no_canonical_match(location: SubstrateLocation) -> 
 def _intra_strict_group_ambiguous(
     session: Session,
     location: SubstrateLocation,
-    ranked: list[tuple[str, str, float, int]],
+    ranked: list[tuple[str, str, float, int, float]],
 ) -> bool:
     """True when two or more candidates share the substrate's strict type group at autolink tier."""
     sg = strict_type_group(location.location_type)
     if sg is None:
         return False
     n = 0
-    for cid, _lab, sc, _idx in ranked:
+    for cid, _lab, sc, _idx, _raw in ranked:
         if sc < AUTOLINK_MIN_SCORE:
             break
         canon = session.get(StylebookLocationCanonical, cid)
@@ -768,8 +806,10 @@ def decide_location_canonical_persist_plan(
     )
     best_id: str | None = None
     best_score = 0.0
+    best_raw_score = 0.0
     recall_canonical_ids: tuple[str, ...] = ()
     intra_ambiguous = False
+    ranked: list[tuple[str, str, float, int, float]] = []
     if recall:
         recall_canonical_ids = tuple(str(cid) for cid, _ in recall)
         pd_pf = _political_district_recall_identity_preflight(
@@ -781,7 +821,7 @@ def decide_location_canonical_persist_plan(
             session, location=location, recall=list(recall), entry=entry
         )
         if ranked:
-            best_id, best_score = ranked[0][0], ranked[0][2]
+            best_id, best_score, best_raw_score = ranked[0][0], ranked[0][2], ranked[0][4]
         tier = classify_recall_score(best_score)
         intra_ambiguous = (
             tier == "autolink"
@@ -862,6 +902,32 @@ def decide_location_canonical_persist_plan(
                         ),
                         "type_gate_applied": True,
                         "intra_strict_group_ambiguous": intra_ambiguous,
+                        "recall_canonical_ids": list(recall_canonical_ids[:24]),
+                    },
+                ),
+            )
+        if (
+            ranked
+            and best_id is not None
+            and classify_recall_score(best_score) == "below_recall"
+            and recall_match_gate_demoted_below_threshold(best_raw_score, best_score)
+        ):
+            return CanonicalPersistPlan(
+                decision=CanonicalPersistDecision.DEFER,
+                resolution_reasons=(
+                    {
+                        "code": "ambiguous_canonical_match",
+                        "best_canonical_id": str(best_id),
+                        "best_score": float(best_score),
+                        "fuzzy_raw_score_before_gates": float(best_raw_score),
+                        "gate_demoted_recall_match": True,
+                        "autolink_min_score": float(AUTOLINK_MIN_SCORE),
+                        "recall_min_score": float(RECALL_MIN_SCORE),
+                        "match_basis": _match_basis_for_audit(location.location_type),
+                        "head_anchor_gate_applied": _should_apply_head_anchor_gate(
+                            location.location_type
+                        ),
+                        "type_gate_applied": True,
                         "recall_canonical_ids": list(recall_canonical_ids[:24]),
                     },
                 ),

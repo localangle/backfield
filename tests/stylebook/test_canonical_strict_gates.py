@@ -6,6 +6,7 @@ import pytest
 from backfield_db import (
     BackfieldOrganization,
     BackfieldWorkspace,
+    StylebookLocationAlias,
     StylebookLocationCanonical,
     SubstrateLocation,
 )
@@ -20,7 +21,10 @@ from backfield_stylebook.canonical_jurisdiction import (
 from backfield_stylebook.entities.location.policy import (
     _jurisdiction_pair_demotes_recall_score,
     find_existing_canonical_id_by_normalized_label,
+    plan_requires_llm_canonical_adjudication,
+    recall_match_gate_demoted_below_threshold,
 )
+from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
 from backfield_stylebook.canonical_link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
@@ -241,6 +245,78 @@ def test_decide_links_imported_canonical_by_normalized_label_without_alias(
             isinstance(r, dict) and r.get("code") == "linked_exact_normalized_label"
             for r in plan.resolution_reasons
         )
+
+
+def test_gate_demoted_high_raw_recall_defers_for_llm_not_materialize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Spelling variants demoted by head-anchor gate defer (LLM) instead of materialize."""
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-gate-demote")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Arlington International Race Course, Arlington Heights, IL",
+            slug="arlington-race-course",
+            location_type="place",
+            status="active",
+            geometry_json={"type": "Point", "coordinates": [-87.98, 42.08]},
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Arlington International Race Course, Arlington Heights, IL",
+                normalized_alias="arlington international race course, arlington heights, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Arlington International Racecourse, Arlington Heights, IL",
+            normalized_name="arlington international racecourse, arlington heights, il",
+            location_type="place",
+            status="resolved",
+            canonical_link_status="unlinked",
+            formatted_address="Arlington International Racecourse, Arlington Heights, IL",
+            source_details_json={
+                "place_extract_components": {
+                    "place": {"name": "Arlington International Racecourse"},
+                    "city": "Arlington Heights",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+            geometry_json={"type": "Point", "coordinates": [-87.98, 42.08]},
+            identity_fingerprint="fp-gate-demote-race",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry={"components": loc.source_details_json["place_extract_components"]},
+        )
+        assert plan.decision.value == "defer"
+        assert plan.existing_canonical_id is None
+        reason = next(
+            r
+            for r in plan.resolution_reasons
+            if isinstance(r, dict) and r.get("code") == "ambiguous_canonical_match"
+        )
+        assert reason.get("gate_demoted_recall_match") is True
+        assert float(reason["fuzzy_raw_score_before_gates"]) >= RECALL_MIN_SCORE
+        assert float(reason["best_score"]) < RECALL_MIN_SCORE
+        assert plan_requires_llm_canonical_adjudication(plan, loc) is True
 
 
 def test_decide_preflight_defers_on_geocode_country_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:

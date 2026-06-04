@@ -136,7 +136,7 @@ Every new `extract_and_persist` type should ship the same **canonical ingest + e
 | **Location** | Geocode-resolved identity + location policy rules | Private residence, ambiguous place match, etc. |
 | **Person** | Exact normalized **name + affiliation** on canonical | Alias hit with affiliation mismatch; multiple recall candidates (`ambiguous_person_canonical_match` in rules mode) |
 
-**`canonicalization_mode`** (project/workspace): `rules` applies policy only; `ai_assisted` may call LLM adjudication when policy defers with non-empty recall (see opt-in below). Document chosen mode in the PRD.
+**`canonicalization_mode`** (project/workspace): `rules` applies policy only; `ai_assisted` may call LLM adjudication when policy defers with non-empty recall (see opt-in below). **Location** also defers (and triggers LLM when `ai_assisted`) when fuzzy recall surfaces a candidate whose **pre-gate** string score is at or above the recall floor but **deterministic gates** (head-anchor, type, jurisdiction, etc.) demote it below that floor—e.g. spelling variants like `Racecourse` vs `Race Course`. Document chosen mode in the PRD.
 
 **Suggested canonicals (link modal):** `rank_canonical_suggestions_for_substrate` should prefer **exact alias** match, then ranked recall. UI calls `GET …/candidates/{substrate_id}/suggested-canonicals` and catalog search `GET …/canonical-<plural>?q=…`. See [`API.md`](API.md) and [`FRONTEND.md`](FRONTEND.md).
 
@@ -158,7 +158,7 @@ Location and person queues share the same **linking niceties**; new types must s
 
 | Pattern | When to enable | Person reference | Notes |
 |---------|----------------|------------------|-------|
-| **LLM canonical adjudication** | Ambiguous recall under `ai_assisted` | [`worker/…/person/adjudication.py`](../apps/worker/src/worker/substrate/entities/person/adjudication.py), handler hook after policy `DEFER` | Link only if model confidence ≥ `ADJUDICATION_LINK_MIN_CONFIDENCE` (0.9); declined link → `MATERIALIZE_NEW` when `person_may_materialize_canonical_after_recall` (blocked by PersonExtract `flag_review` / `auto_defer`) |
+| **LLM canonical adjudication** | Ambiguous recall under `ai_assisted` | Person: [`worker/…/person/adjudication.py`](../apps/worker/src/worker/substrate/entities/person/adjudication.py). Location: [`worker/…/canonical/adjudication.py`](../apps/worker/src/worker/substrate/canonical/adjudication.py) after policy `DEFER` with `ambiguous_canonical_match` (includes **gate-demoted** recall per `entities/location/policy.py`) | Link only if model confidence ≥ `ADJUDICATION_LINK_MIN_CONFIDENCE` (0.9); declined link → `MATERIALIZE_NEW` when materialize-after-recall gates allow (person: blocked by PersonExtract `flag_review` / `auto_defer`) |
 | **Extract review routing** | Extract emits review codes (waive vs flag queue) | [`entities/person/review.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/person/review.py) | PersonExtract: `child` / `animal` → waive when `auto_apply_canonicalization`; `stage_name_or_alias` / `first_name_only` → open pending + `needs_review` on mentions |
 | **Variant-name recall / search** | Display names vary (formal vs nickname, middle initials) | [`entities/person/name_match.py`](../packages/backfield-stylebook/src/backfield_stylebook/entities/person/name_match.py), recall + catalog `q` token OR | Organizations may use legal name vs DBA; skip for types with stable unique codes |
 

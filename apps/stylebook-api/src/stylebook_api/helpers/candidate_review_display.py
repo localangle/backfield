@@ -23,8 +23,13 @@ _DEFAULT_CODE_MESSAGES: dict[str, str] = {
     "first_name_only": "First name only — confirm full identity before linking",
     "private_place_or_residence": "Private place or residence",
     "road_span_not_canonicalized": "Road spans are not auto-canonicalized",
-    "geocode_country_mismatch": "Story country does not match the geocoded address — confirm before linking",
-    "geocode_state_mismatch": "Story state or province does not match the geocoded address — confirm before linking",
+    "geocode_country_mismatch": (
+        "Place extraction disagrees with the geocoded address on country — confirm before linking"
+    ),
+    "geocode_state_mismatch": (
+        "Place extraction disagrees with the geocoded address on state or province — "
+        "confirm before linking"
+    ),
 }
 
 
