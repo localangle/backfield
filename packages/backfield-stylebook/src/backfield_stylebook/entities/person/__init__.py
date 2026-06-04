@@ -28,13 +28,16 @@ from backfield_stylebook.entities.person.policy import (
 from backfield_stylebook.entities.person.recall import retrieve_person_canonical_candidates
 from backfield_stylebook.entities.person.types import (
     PERSON_NATURE_VALUES,
+    PERSON_TYPE_VALUES,
     derive_person_sort_key,
     normalize_person_text,
+    normalize_person_type,
     person_identity_fingerprint,
 )
 
 __all__ = [
     "PERSON_NATURE_VALUES",
+    "PERSON_TYPE_VALUES",
     "allocate_unique_person_canonical_slug",
     "apply_canonical_persist_plan",
     "apply_canonical_persist_plan_review_only",
@@ -48,6 +51,7 @@ __all__ = [
     "link_to_existing_canonical",
     "materialize_new_canonical_and_link",
     "normalize_person_text",
+    "normalize_person_type",
     "person_identity_fingerprint",
     "person_may_materialize_canonical_after_recall",
     "rank_canonical_suggestions_for_substrate",

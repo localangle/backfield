@@ -201,7 +201,13 @@ Optional array of additional values from the same vocabulary when a secondary ro
 
 ### type
 
-Optional category when evident (e.g. `politician`, `athlete`, `community member`, `law enforcement`). Omit or use empty string when unclear.
+Story-relative role — **one slug** from this list (classify **why they appear in this story**, not full biography or job title alone):
+
+`athlete`, `coach`, `sports_official`, `sports_executive`, `elected_official`, `government_official`, `political_staff`, `lawyer_legal_advocate`, `judge_court_official`, `law_enforcement_public_safety`, `crime_justice_subject`, `business_owner_executive`, `business_professional`, `labor_union_representative`, `artist_entertainer`, `media_journalism`, `arts_culture_professional`, `education_research_expert`, `healthcare_worker`, `community_member`, `unknown`, `other`
+
+Prefer story function over title: chef at a restaurant opening → `business_owner_executive`; chef profiled for creative work → `arts_culture_professional`; chef quoted as a neighbor → `community_member`. Use `unknown` when role cannot be inferred; use `other` only when role is clear but no category fits.
+
+Boundaries: mayor on policy → `elected_official`; agency director → `government_official`; campaign manager → `political_staff`; police chief → `law_enforcement_public_safety`; person charged → `crime_justice_subject`; their lawyer → `lawyer_legal_advocate`; judge → `judge_court_official`; restaurant owner at opening → `business_owner_executive`; musician at festival → `artist_entertainer`; resident quoted → `community_member`; professor explaining a trend → `education_research_expert`; doctor on patient care → `healthcare_worker`.
 
 ### sort_key
 
@@ -254,7 +260,7 @@ Each person object **must** include:
 - `title`: string — role or position only (official or informal)
 - `affiliation`: string — institution or organization if mentioned
 - `public_figure`: boolean
-- `type`: string — optional person category when evident
+- `type`: string — one taxonomy slug listed under **type** (`unknown` when unclear; never invent new categories)
 - `sort_key`: string — lowercase last name (or sole name token) for sorting
 - `role_in_story`: string
 - `nature`: string — one vocabulary value listed above

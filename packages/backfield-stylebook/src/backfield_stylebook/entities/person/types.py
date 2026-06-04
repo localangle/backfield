@@ -19,6 +19,40 @@ PERSON_NATURE_VALUES: tuple[str, ...] = (
     "other",
 )
 
+# PersonExtract ``type`` → substrate / canonical ``person_type``
+# (prompt: person_extract/prompts/extract.md).
+PERSON_TYPE_VALUES: tuple[str, ...] = (
+    "athlete",
+    "coach",
+    "sports_official",
+    "sports_executive",
+    "elected_official",
+    "government_official",
+    "political_staff",
+    "lawyer_legal_advocate",
+    "judge_court_official",
+    "law_enforcement_public_safety",
+    "crime_justice_subject",
+    "business_owner_executive",
+    "business_professional",
+    "labor_union_representative",
+    "artist_entertainer",
+    "media_journalism",
+    "arts_culture_professional",
+    "education_research_expert",
+    "healthcare_worker",
+    "community_member",
+    "unknown",
+    "other",
+)
+
+PERSON_TYPE_LEGACY_ALIASES: dict[str, str] = {
+    "politician": "elected_official",
+    "musician": "artist_entertainer",
+    "community member": "community_member",
+    "law enforcement": "law_enforcement_public_safety",
+}
+
 
 def normalize_person_text(value: str | None) -> str:
     if value is None:
@@ -40,6 +74,22 @@ def person_names_match(a: str | None, b: str | None) -> bool:
     key_a = person_match_key(a)
     key_b = person_match_key(b)
     return bool(key_a) and key_a == key_b
+
+
+def normalize_person_type(value: str | None) -> str | None:
+    """Map PersonExtract ``type`` to a bounded ``person_type`` slug."""
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    if not cleaned:
+        return None
+    slug = cleaned.replace(" ", "_")
+    mapped = PERSON_TYPE_LEGACY_ALIASES.get(cleaned) or PERSON_TYPE_LEGACY_ALIASES.get(slug)
+    if mapped:
+        slug = mapped
+    if slug in PERSON_TYPE_VALUES:
+        return slug
+    return "other"
 
 
 def person_alias_lookup_keys(value: str | None) -> tuple[str, ...]:

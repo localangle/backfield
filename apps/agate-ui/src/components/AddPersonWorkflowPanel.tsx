@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,12 +12,18 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import type { ArticleTextSelection } from '@/components/ProcessedItemArticleBody'
 import { PERSON_NATURE_OPTIONS, personNatureDisplayLabel } from '@/lib/personMentionNature'
+import {
+  personTypeManualSelectOptions,
+  placeExtractTypeLabel,
+} from '@/lib/placeExtractTypeLabel'
 import { newUserPersonId } from '@/lib/review/entities/person/reviewRow'
 import {
   createSavedPersonFromArticleEvidence,
   type CreatedSavedPersonFromArticleEvidence,
 } from '@/lib/stylebookPeopleApi'
 import { Loader2 } from 'lucide-react'
+
+const ADD_PERSON_TYPE_NONE = '__none__'
 
 export type AddPersonWorkflowCreatedPayload = {
   anchor: string
@@ -69,6 +75,10 @@ export function AddPersonWorkflowPanel({
   const [roleInStory, setRoleInStory] = useState('')
   const [saving, setSaving] = useState(false)
   const previousSelectionRef = useRef(selection)
+  const typeOptions = useMemo(
+    () => personTypeManualSelectOptions(personType),
+    [personType],
+  )
 
   useEffect(() => {
     const previous = previousSelectionRef.current
@@ -224,13 +234,25 @@ export function AddPersonWorkflowPanel({
 
         <div className="space-y-1.5">
           <Label htmlFor="add-person-type">Type</Label>
-          <Input
-            id="add-person-type"
-            value={personType}
+          <Select
+            value={personType || ADD_PERSON_TYPE_NONE}
             disabled={saving}
-            onChange={(e) => setPersonType(e.target.value)}
-            placeholder="e.g. politician, athlete"
-          />
+            onValueChange={(value) =>
+              setPersonType(value === ADD_PERSON_TYPE_NONE ? '' : value)
+            }
+          >
+            <SelectTrigger id="add-person-type" className="h-9 w-full">
+              <SelectValue placeholder="Select type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ADD_PERSON_TYPE_NONE}>None</SelectItem>
+              {typeOptions.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {placeExtractTypeLabel(value)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-1.5">

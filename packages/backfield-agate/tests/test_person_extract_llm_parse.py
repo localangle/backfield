@@ -16,7 +16,7 @@ def test_person_from_llm_entry_flat_name() -> None:
             "title": "Mayor",
             "affiliation": "City of Chicago",
             "public_figure": True,
-            "type": "politician",
+            "type": "elected_official",
             "role_in_story": "Announced policy",
             "nature": "official",
             "nature_secondary_tags": ["source"],
@@ -27,7 +27,7 @@ def test_person_from_llm_entry_flat_name() -> None:
     assert person.sort_key == "doe"
     assert person.nature == "official"
     assert person.nature_secondary_tags == ["source"]
-    assert person.type == "politician"
+    assert person.type == "elected_official"
 
 
 def test_person_from_llm_entry_accepts_legacy_name_object() -> None:
@@ -54,6 +54,32 @@ def test_person_from_llm_entry_uses_explicit_sort_key() -> None:
         }
     )
     assert person.sort_key == "custom"
+
+
+def test_person_from_llm_entry_maps_legacy_politician_slug() -> None:
+    person = person_from_llm_entry(
+        {
+            "name": "Jane Doe",
+            "type": "politician",
+            "role_in_story": "Announced policy",
+            "nature": "official",
+            "mentions": [{"text": "Jane Doe announced policy.", "quote": False}],
+        }
+    )
+    assert person.type == "elected_official"
+
+
+def test_person_from_llm_entry_invalid_type_becomes_other() -> None:
+    person = person_from_llm_entry(
+        {
+            "name": "Pat Lee",
+            "type": "astronaut",
+            "role_in_story": "Mentioned briefly",
+            "nature": "other",
+            "mentions": [{"text": "Pat Lee was there.", "quote": False}],
+        }
+    )
+    assert person.type == "other"
 
 
 def test_person_from_llm_entry_invalid_nature_becomes_other() -> None:

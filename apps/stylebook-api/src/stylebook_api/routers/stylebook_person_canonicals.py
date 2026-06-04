@@ -15,7 +15,11 @@ from backfield_db import (
 )
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.entities.person.persist import create_standalone_canonical
-from backfield_stylebook.entities.person.types import derive_person_sort_key
+from backfield_stylebook.entities.person.types import (
+    PERSON_TYPE_VALUES,
+    derive_person_sort_key,
+    normalize_person_type,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal
@@ -383,7 +387,8 @@ def list_canonical_person_types(
             func.length(func.trim(col(StylebookPersonCanonical.person_type))) > 0,
         )
     ).all()
-    types = sorted({str(r).strip() for r in rows if r is not None and str(r).strip()})
+    stored = {str(r).strip() for r in rows if r is not None and str(r).strip()}
+    types = sorted(set(PERSON_TYPE_VALUES) | stored)
     return {"types": types}
 
 
@@ -446,7 +451,7 @@ def create_canonical_person(
         title=body.title,
         affiliation=body.affiliation,
         public_figure=body.public_figure,
-        person_type=body.person_type,
+        person_type=normalize_person_type(body.person_type),
         sort_key=body.sort_key,
         provenance="stylebook_ui_manual",
     )
@@ -501,8 +506,7 @@ def patch_canonical_person(
         if v is None:
             canon.person_type = None
         else:
-            s = str(v).strip()
-            canon.person_type = s if s else None
+            canon.person_type = normalize_person_type(str(v).strip() or None)
     if "title" in updates:
         v = updates["title"]
         if v is None:

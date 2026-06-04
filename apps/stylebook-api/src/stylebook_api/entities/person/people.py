@@ -28,7 +28,9 @@ from backfield_stylebook.entities.person.persist import (
 )
 from backfield_stylebook.entities.person.types import (
     PERSON_NATURE_VALUES,
+    PERSON_TYPE_VALUES,
     derive_person_sort_key,
+    normalize_person_type,
     person_identity_fingerprint,
 )
 from backfield_stylebook.people import (
@@ -255,6 +257,11 @@ class LinkCanonicalResponse(BaseModel):
     changed: bool
 
 
+def _manual_person_type(value: str | None) -> str | None:
+    """Normalize manual UI/API ``person_type`` to the bounded taxonomy."""
+    return normalize_person_type(value)
+
+
 def _persist_new_catalog_canonical(
     session: Session,
     *,
@@ -277,7 +284,7 @@ def _persist_new_catalog_canonical(
         title=title,
         affiliation=affiliation,
         public_figure=public_figure,
-        person_type=person_type,
+        person_type=_manual_person_type(person_type),
         sort_key=resolved_sort_key,
         provenance="stylebook_ui_manual",
     )
@@ -429,7 +436,8 @@ def list_canonical_person_types(
             func.length(func.trim(col(StylebookPersonCanonical.person_type))) > 0,
         )
     ).all()
-    types = sorted({str(r).strip() for r in rows if r is not None and str(r).strip()})
+    stored = {str(r).strip() for r in rows if r is not None and str(r).strip()}
+    types = sorted(set(PERSON_TYPE_VALUES) | stored)
     return {"types": types}
 
 
@@ -555,8 +563,7 @@ def patch_canonical_person(
         if v is None:
             canon.person_type = None
         else:
-            s = str(v).strip()
-            canon.person_type = s if s else None
+            canon.person_type = _manual_person_type(str(v).strip() or None)
     if "title" in updates:
         v = updates["title"]
         if v is None:
@@ -857,7 +864,7 @@ def create_person_from_article_evidence(
     if selected_text != quote_text:
         raise HTTPException(status_code=400, detail="source selection does not match the article")
 
-    person_type = body.person_type.strip() if body.person_type else None
+    person_type = _manual_person_type(body.person_type.strip() if body.person_type else None)
     title = body.title.strip() if body.title else None
     affiliation = body.affiliation.strip() if body.affiliation else None
     normalized_name = _normalize_person_name(name)
@@ -987,7 +994,7 @@ def patch_substrate_person(
     if body.public_figure is not None:
         person.public_figure = bool(body.public_figure)
     if body.person_type is not None:
-        person.person_type = body.person_type.strip() or None
+        person.person_type = _manual_person_type(body.person_type.strip() or None)
 
     person.identity_fingerprint = person_identity_fingerprint(
         normalized_name=str(person.normalized_name),

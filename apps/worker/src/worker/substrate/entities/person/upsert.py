@@ -15,6 +15,7 @@ from backfield_stylebook.entities.person.review import (
 )
 from backfield_stylebook.entities.person.types import (
     derive_person_sort_key,
+    normalize_person_type,
     person_identity_fingerprint,
 )
 from sqlalchemy.exc import IntegrityError
@@ -49,7 +50,7 @@ def _optional_text(value: Any) -> str | None:
 
 
 def _person_type_from_entry(entry: dict[str, Any]) -> str | None:
-    return _optional_text(entry.get("type"))
+    return normalize_person_type(_optional_text(entry.get("type")))
 
 
 def _iter_people_entries(people: list[Any]) -> Iterable[tuple[str, dict[str, Any]]]:

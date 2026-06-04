@@ -5,14 +5,16 @@ import {
   getCanonicalPerson,
   getCanonicalPersonMentions,
   listCanonicalLinkedPersonSubstrates,
-  listCanonicalPersonTypes,
   patchCanonicalPerson,
   unlinkPersonSubstrateFromCanonical,
   type CanonicalPerson,
   type LinkedPersonMention,
   type LinkedPersonSubstrateItem,
 } from "@/lib/api"
-import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
+import {
+  personTypeManualSelectOptions,
+  placeExtractTypeLabel,
+} from "@/lib/place-extract-type-label"
 import { personNatureBadgeClass, personNatureDisplayLabel } from "@/lib/personMentionNature"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
@@ -103,7 +105,6 @@ export default function PersonDetail() {
   const [personType, setPersonType] = useState("")
   const [publicFigure, setPublicFigure] = useState(false)
   const [sortKey, setSortKey] = useState("")
-  const [types, setTypes] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -118,8 +119,8 @@ export default function PersonDetail() {
   }, [catalogBasePath, searchParams, filterScopeSuffix])
 
   const orderedTypeOptions = useMemo(
-    () => sortReviewQueueTypeFilterOptions(types),
-    [types],
+    () => personTypeManualSelectOptions(personType),
+    [personType],
   )
 
   const loadPerson = useCallback(
@@ -214,18 +215,6 @@ export default function PersonDetail() {
     if (!id || !stylebookSlug) return
     void loadMentions(id, stylebookSlug)
   }, [id, stylebookSlug, loadMentions])
-
-  useEffect(() => {
-    if (!stylebookSlug) return
-    void (async () => {
-      try {
-        const res = await listCanonicalPersonTypes(stylebookSlug)
-        setTypes(res.types)
-      } catch {
-        setTypes([])
-      }
-    })()
-  }, [stylebookSlug])
 
   const mentionsBySubstrateId = useMemo(() => {
     const map = new Map<number, LinkedPersonMention[]>()

@@ -29,7 +29,7 @@ def _sample_person_entry(*, name: str = "Jane Smith") -> dict:
         "title": "Mayor",
         "affiliation": "City of Chicago",
         "public_figure": True,
-        "type": "politician",
+        "type": "elected_official",
         "role_in_story": "Announced a new policy",
         "nature": "official",
         "nature_secondary_tags": ["source"],
@@ -86,7 +86,7 @@ def test_persist_people_writes_substrate_mention_occurrence() -> None:
         assert person.title == "Mayor"
         assert person.affiliation == "City of Chicago"
         assert person.public_figure is True
-        assert person.person_type == "politician"
+        assert person.person_type == "elected_official"
         assert person.sort_key == "smith"
         assert person.identity_fingerprint
         assert person.canonical_link_status == CANONICAL_LINK_PENDING
@@ -264,7 +264,7 @@ def _mock_people_demo_json() -> str:
                     "title": "Mayor",
                     "affiliation": "Chicago",
                     "public_figure": True,
-                    "type": "politician",
+                    "type": "elected_official",
                     "role_in_story": "Announced park initiative",
                     "nature": "official",
                     "nature_secondary_tags": [],

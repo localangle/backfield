@@ -1409,7 +1409,7 @@ def test_create_person_from_article_evidence(
     assert body["anchor"].startswith("user_person:")
     person_id = int(body["person"]["id"])
     assert body["person"]["name"] == "Jane Doe"
-    assert body["person"]["person_type"] == "politician"
+    assert body["person"]["person_type"] == "elected_official"
     assert body["person"]["canonical_link_status"] == CANONICAL_LINK_PENDING
 
     with Session(engine) as s:

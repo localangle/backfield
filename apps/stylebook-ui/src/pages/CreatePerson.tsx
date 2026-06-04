@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import {
@@ -7,7 +7,7 @@ import {
 } from "@/components/CreateCanonicalShell"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
-import { createCanonicalPerson, listCanonicalPersonTypes } from "@/lib/api"
+import { createCanonicalPerson } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,7 +21,11 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
-import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
+import {
+  PERSON_EXTRACT_PERSON_TYPES,
+  placeExtractTypeLabel,
+  sortReviewQueueTypeFilterOptions,
+} from "@/lib/place-extract-type-label"
 import { derivePersonSortKeyFromLabel } from "@/lib/personSortKey"
 import { Loader2 } from "lucide-react"
 
@@ -42,27 +46,14 @@ export default function CreatePerson() {
   const [publicFigure, setPublicFigure] = useState(false)
   const [sortKey, setSortKey] = useState("")
   const [sortKeyEdited, setSortKeyEdited] = useState(false)
-  const [types, setTypes] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
 
-  const peopleListHref = `${catalogBasePath}/people/canonical${filterScopeSuffix}`
-
-  useEffect(() => {
-    if (!stylebookSlug) return
-    void (async () => {
-      try {
-        const res = await listCanonicalPersonTypes(stylebookSlug)
-        setTypes(res.types)
-      } catch {
-        setTypes([])
-      }
-    })()
-  }, [stylebookSlug])
-
   const orderedTypeOptions = useMemo(
-    () => sortReviewQueueTypeFilterOptions(types),
-    [types],
+    () => sortReviewQueueTypeFilterOptions([...PERSON_EXTRACT_PERSON_TYPES]),
+    [],
   )
+
+  const peopleListHref = `${catalogBasePath}/people/canonical${filterScopeSuffix}`
 
   const handleSubmit = async () => {
     if (!stylebookSlug) return

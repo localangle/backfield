@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import {
@@ -9,8 +10,14 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { PERSON_NATURE_OPTIONS, personNatureDisplayLabel } from '@/lib/personMentionNature'
+import {
+  personTypeManualSelectOptions,
+  placeExtractTypeLabel,
+} from '@/lib/placeExtractTypeLabel'
 import type { PersonEditFields } from '@/lib/review/entities/person/personEditFields'
 import { cn } from '@/lib/utils'
+
+const PERSON_TYPE_NONE = '__none__'
 
 export interface PersonEditFormProps {
   fields: PersonEditFields
@@ -23,6 +30,10 @@ export function PersonEditForm({ fields, onChange, disabled = false }: PersonEdi
   const labelClass = 'text-xs font-medium'
   const inputClass = 'h-8 text-xs'
   const fieldClass = 'min-w-0 space-y-1'
+  const typeOptions = useMemo(
+    () => personTypeManualSelectOptions(fields.personType),
+    [fields.personType],
+  )
 
   return (
     <div className="space-y-3">
@@ -69,14 +80,25 @@ export function PersonEditForm({ fields, onChange, disabled = false }: PersonEdi
           <Label htmlFor="person-type" className={labelClass}>
             Type
           </Label>
-          <Input
-            id="person-type"
-            className={inputClass}
-            value={fields.personType}
+          <Select
+            value={fields.personType || PERSON_TYPE_NONE}
             disabled={disabled}
-            onChange={(e) => set({ personType: e.target.value })}
-            placeholder="e.g. politician"
-          />
+            onValueChange={(value) =>
+              set({ personType: value === PERSON_TYPE_NONE ? '' : value })
+            }
+          >
+            <SelectTrigger id="person-type" className={inputClass}>
+              <SelectValue placeholder="Select type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={PERSON_TYPE_NONE}>None</SelectItem>
+              {typeOptions.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {placeExtractTypeLabel(value)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className={fieldClass}>
           <Label htmlFor="person-nature" className={labelClass}>
