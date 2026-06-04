@@ -16,8 +16,7 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
 )
-from sqlmodel import select
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 
 def _engine():

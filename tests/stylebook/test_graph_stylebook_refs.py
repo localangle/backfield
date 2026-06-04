@@ -204,10 +204,12 @@ def test_sanitize_missing_stylebook_to_org_default() -> None:
         session.add(sb)
         session.commit()
         session.refresh(sb)
-        sid = int(sb.id)  # type: ignore[arg-type]
 
         spec = _minimal_spec_with_stylebook("n", 99999)
-        assert sanitize_stylebook_refs_for_organization(session, organization_id=oid, spec=spec) is True
+        changed = sanitize_stylebook_refs_for_organization(
+            session, organization_id=oid, spec=spec
+        )
+        assert changed is True
         assert spec["nodes"][0]["params"].get(STYLEBOOK_NODE_PARAM_KEY) is None
         validate_stylebook_refs_for_organization(session, organization_id=oid, spec=spec)
 
@@ -229,7 +231,6 @@ def test_sanitize_db_output_clears_missing_stylebook() -> None:
         session.add(sb)
         session.commit()
         session.refresh(sb)
-        sid = int(sb.id)  # type: ignore[arg-type]
 
         spec = {
             "name": "g",
@@ -242,7 +243,10 @@ def test_sanitize_db_output_clears_missing_stylebook() -> None:
             ],
             "edges": [],
         }
-        assert sanitize_stylebook_refs_for_organization(session, organization_id=oid, spec=spec) is True
+        changed = sanitize_stylebook_refs_for_organization(
+            session, organization_id=oid, spec=spec
+        )
+        assert changed is True
         assert STYLEBOOK_NODE_PARAM_KEY not in spec["nodes"][0]["params"] or (
             spec["nodes"][0]["params"].get(STYLEBOOK_NODE_PARAM_KEY) is None
         )

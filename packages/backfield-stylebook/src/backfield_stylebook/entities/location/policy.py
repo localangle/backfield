@@ -21,7 +21,6 @@ from backfield_stylebook.canonical.jurisdiction import (
     point_in_geojson_bbox,
     strict_canonical_gates_enabled,
 )
-from backfield_stylebook.entities.location.review_display import deferred_policy_display_message
 from backfield_stylebook.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
@@ -45,6 +44,7 @@ from backfield_stylebook.canonical.retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
+from backfield_stylebook.entities.location.review_display import deferred_policy_display_message
 from backfield_stylebook.entities.location.types import (
     ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE,
     ADDRESS_PLACE_KIND_PUBLIC_NAMED,

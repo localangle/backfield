@@ -13,9 +13,9 @@ from typing import Any
 
 import boto3
 from agate_runtime import GraphSpec, execute_graph
-from agate_runtime.run_graph_spec import merge_run_result_payload, resolve_run_graph_spec_json
 from agate_runtime.nodes import NODE_RUNNERS
 from agate_runtime.nodes.json_input import json_input_output_from_dict
+from agate_runtime.run_graph_spec import merge_run_result_payload, resolve_run_graph_spec_json
 from agate_runtime.s3_batch import (
     list_json_keys_under_prefix,
     parse_s3_text_json_document,

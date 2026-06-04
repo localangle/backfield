@@ -18,18 +18,17 @@ from backfield_stylebook.canonical_jurisdiction import (
     parse_jurisdiction_from_formatted_address,
     strict_canonical_gates_enabled,
 )
-from backfield_stylebook.entities.location.policy import (
-    _jurisdiction_pair_demotes_recall_score,
-    find_existing_canonical_id_by_normalized_label,
-    plan_requires_llm_canonical_adjudication,
-    recall_match_gate_demoted_below_threshold,
-)
-from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
 from backfield_stylebook.canonical_link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
 )
+from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
 from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+from backfield_stylebook.entities.location.policy import (
+    _jurisdiction_pair_demotes_recall_score,
+    find_existing_canonical_id_by_normalized_label,
+    plan_requires_llm_canonical_adjudication,
+)
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -319,7 +318,7 @@ def test_gate_demoted_high_raw_recall_defers_for_llm_not_materialize(
         assert plan_requires_llm_canonical_adjudication(plan, loc) is True
 
 
-def test_decide_preflight_defers_on_geocode_country_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_decide_defers_on_geocode_country_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
     engine = _make_engine()
     with Session(engine) as session:

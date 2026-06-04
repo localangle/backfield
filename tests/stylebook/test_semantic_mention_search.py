@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from backfield_stylebook.semantic_indexing.search import (
     _coerce_embedding_vector,
     cosine_similarity,
