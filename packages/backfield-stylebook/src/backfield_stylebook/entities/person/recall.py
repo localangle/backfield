@@ -7,11 +7,90 @@ from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
 from backfield_stylebook.entities.person.name_match import score_person_name_overlap
-from backfield_stylebook.entities.person.types import normalize_person_text
+from backfield_stylebook.entities.person.types import (
+    normalize_person_text,
+    person_alias_lookup_keys,
+    person_match_key,
+    person_names_match,
+)
 
 # Recall-biased floor: include weak name overlap for LLM adjudication (cap applied after sort).
 PERSON_RECALL_MIN_SCORE = 20
 PERSON_RECALL_DEFAULT_LIMIT = 24
+
+
+def canonical_ids_from_person_name_keys(
+    session: Session,
+    *,
+    stylebook_id: int,
+    name_or_norm: str,
+) -> list[str]:
+    """Canonical ids whose alias ``normalized_alias`` matches accent-insensitively."""
+    keys = person_alias_lookup_keys(name_or_norm)
+    match_key = person_match_key(name_or_norm)
+    if not keys and not match_key:
+        return []
+    lookup_keys = set(keys)
+    if match_key:
+        lookup_keys.add(match_key)
+    stmt = (
+        select(StylebookPersonCanonical.id, StylebookPersonAlias.normalized_alias)
+        .join(
+            StylebookPersonAlias,
+            StylebookPersonAlias.person_canonical_id == StylebookPersonCanonical.id,
+        )
+        .where(
+            StylebookPersonCanonical.stylebook_id == stylebook_id,
+            StylebookPersonAlias.normalized_alias.in_(lookup_keys),
+            StylebookPersonAlias.suppressed.is_(False),
+        )
+    )
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in session.exec(stmt).all():
+        cid, norm_alias = row[0], row[1]
+        if cid is None:
+            continue
+        if match_key and person_match_key(str(norm_alias or "")) != match_key:
+            continue
+        cid_str = str(cid)
+        if cid_str not in seen:
+            seen.add(cid_str)
+            out.append(cid_str)
+    if out or not match_key:
+        return out
+
+    tokens = match_key.split()
+    if not tokens:
+        return []
+    search_tok = tokens[0] if len(tokens[0]) >= 2 else tokens[-1]
+    if len(search_tok) < 2:
+        return []
+    esc = search_tok.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pat = f"%{esc}%"
+    scan_stmt = (
+        select(StylebookPersonCanonical.id, StylebookPersonAlias.normalized_alias)
+        .join(
+            StylebookPersonAlias,
+            StylebookPersonAlias.person_canonical_id == StylebookPersonCanonical.id,
+        )
+        .where(
+            StylebookPersonCanonical.stylebook_id == stylebook_id,
+            StylebookPersonAlias.suppressed.is_(False),
+            col(StylebookPersonAlias.normalized_alias).like(pat, escape="\\"),
+        )
+        .limit(120)
+    )
+    for cid, norm_alias in session.exec(scan_stmt).all():
+        if cid is None:
+            continue
+        if person_match_key(str(norm_alias or "")) != match_key:
+            continue
+        cid_str = str(cid)
+        if cid_str not in seen:
+            seen.add(cid_str)
+            out.append(cid_str)
+    return out
 
 
 def _person_display_name(person: SubstratePerson) -> str:
@@ -53,10 +132,12 @@ def _score_canonical_for_person(
         extra_candidate_names=aliases,
     )
     if score == 0:
-        label_norm = normalize_person_text(canon.label)
-        if label_norm == norm:
+        if person_names_match(query_display, str(canon.label)):
             score = 100
-        elif norm and (norm in label_norm or label_norm in norm):
+        elif norm and person_match_key(str(canon.label)) and (
+            norm in normalize_person_text(canon.label)
+            or normalize_person_text(canon.label) in norm
+        ):
             score = 40
     if title_norm and normalize_person_text(canon.title) == title_norm:
         score += 20
@@ -71,31 +152,11 @@ def _canonical_ids_from_exact_alias(
     stylebook_id: int,
     normalized_name: str,
 ) -> list[str]:
-    norm = str(normalized_name).strip()
-    if not norm:
-        return []
-    stmt = (
-        select(StylebookPersonCanonical.id)
-        .join(
-            StylebookPersonAlias,
-            StylebookPersonAlias.person_canonical_id == StylebookPersonCanonical.id,
-        )
-        .where(
-            StylebookPersonCanonical.stylebook_id == stylebook_id,
-            StylebookPersonAlias.normalized_alias == norm,
-            StylebookPersonAlias.suppressed.is_(False),
-        )
+    return canonical_ids_from_person_name_keys(
+        session,
+        stylebook_id=stylebook_id,
+        name_or_norm=normalized_name,
     )
-    out: list[str] = []
-    seen: set[str] = set()
-    for row in session.exec(stmt).all():
-        if row is None:
-            continue
-        cid = str(row)
-        if cid not in seen:
-            seen.add(cid)
-            out.append(cid)
-    return out
 
 
 def _canonical_ids_from_token_alias_search(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import unicodedata
+
 PERSON_NATURE_VALUES: tuple[str, ...] = (
     "subject",
     "source",
@@ -22,6 +24,33 @@ def normalize_person_text(value: str | None) -> str:
     if value is None:
         return ""
     return " ".join(str(value).strip().lower().split())
+
+
+def person_match_key(value: str | None) -> str:
+    """Accent-insensitive key for person-name equality (display text unchanged elsewhere)."""
+    normalized = normalize_person_text(value)
+    if not normalized:
+        return ""
+    decomposed = unicodedata.normalize("NFKD", normalized)
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+
+
+def person_names_match(a: str | None, b: str | None) -> bool:
+    """True when both names share the same non-empty accent-folded match key."""
+    key_a = person_match_key(a)
+    key_b = person_match_key(b)
+    return bool(key_a) and key_a == key_b
+
+
+def person_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
+    """Stored ``normalized_alias`` variants for recall and exact alias lookup."""
+    norm = normalize_person_text(value)
+    if not norm:
+        return ()
+    folded = person_match_key(value)
+    if folded != norm:
+        return (norm, folded)
+    return (norm,)
 
 
 def normalize_person_sort_key(value: str | None) -> str | None:

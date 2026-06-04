@@ -120,6 +120,39 @@ def test_recall_ranks_ron_wyden_for_ronald_l_wyden() -> None:
         assert "Ron Wyden" in labels
 
 
+def test_recall_ranks_accent_variant_for_same_affiliation() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="José García",
+            slug="jose-garcia",
+            affiliation="City Hall",
+        )
+        session.add(canon)
+        session.flush()
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=str(canon.id),
+            alias_text="José García",
+            normalized_alias="josé garcía",
+            provenance="seed",
+        )
+        session.commit()
+        person = SubstratePerson(
+            project_id=pid,
+            name="Jose Garcia",
+            normalized_name="jose garcia",
+            affiliation="City Hall",
+        )
+        recall = retrieve_person_canonical_candidates(
+            session, stylebook_id=sb_id, person=person, limit=8
+        )
+        assert recall
+        assert recall[0][0] == str(canon.id)
+
+
 def test_alias_hit_with_affiliation_mismatch_defers_not_links() -> None:
     engine = _engine()
     with Session(engine) as session:

@@ -227,6 +227,75 @@ def test_decide_person_canonical_persist_plan_links_exact_identity() -> None:
         assert plan.existing_canonical_id == str(canon.id)
 
 
+def test_decide_person_links_accent_variant_with_same_affiliation() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed_stylebook(session)
+        canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="José García",
+            slug="jose-garcia",
+            title="Director",
+            affiliation="Natural Resources Defense Council",
+        )
+        session.add(canon)
+        session.flush()
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=str(canon.id),
+            alias_text="José García",
+            normalized_alias="josé garcía",
+            provenance="seed",
+        )
+        person = SubstratePerson(
+            project_id=pid,
+            name="Jose Garcia",
+            normalized_name="jose garcia",
+            title="Director",
+            affiliation="Natural Resources Defense Council",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
+        assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert plan.existing_canonical_id == str(canon.id)
+
+
+def test_decide_person_defers_when_accent_variant_but_affiliation_differs() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed_stylebook(session)
+        canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Gina Ramirez",
+            slug="gina-ramirez",
+            affiliation="Midwest Environmental Health, Natural Resources Defense Council",
+        )
+        session.add(canon)
+        session.flush()
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=str(canon.id),
+            alias_text="Gina Ramirez",
+            normalized_alias="gina ramirez",
+            provenance="seed",
+        )
+        person = SubstratePerson(
+            project_id=pid,
+            name="Gina Ramírez",
+            normalized_name="gina ramírez",
+            affiliation="Natural Resources Defense Council",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
+        assert plan.decision == CanonicalPersistDecision.DEFER
+
+
 def test_decide_person_defers_when_alias_matches_but_affiliation_differs() -> None:
     engine = _engine()
     with Session(engine) as session:

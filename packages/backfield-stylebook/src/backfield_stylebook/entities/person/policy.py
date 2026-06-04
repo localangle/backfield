@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_db import StylebookPersonAlias, StylebookPersonCanonical, SubstratePerson
+from backfield_db import StylebookPersonCanonical, SubstratePerson
 from sqlmodel import Session, select
 
 from backfield_stylebook.canonical.plan_types import (
@@ -13,6 +13,7 @@ from backfield_stylebook.canonical.plan_types import (
 )
 from backfield_stylebook.entities.person.recall import (
     PERSON_RECALL_DEFAULT_LIMIT,
+    canonical_ids_from_person_name_keys,
     retrieve_person_canonical_candidates,
 )
 from backfield_stylebook.entities.person.review import (
@@ -22,7 +23,11 @@ from backfield_stylebook.entities.person.review import (
     review_context_from_source_details,
     review_reason_dict,
 )
-from backfield_stylebook.entities.person.types import normalize_person_text
+from backfield_stylebook.entities.person.types import (
+    normalize_person_text,
+    person_match_key,
+    person_names_match,
+)
 
 AMBIGUOUS_PERSON_CANONICAL_MATCH = "ambiguous_person_canonical_match"
 
@@ -34,39 +39,28 @@ def find_existing_person_canonical_id_by_alias(
     normalized_name: str,
 ) -> str | None:
     """Return canonical id when a non-suppressed alias matches ``normalized_name``."""
-    norm = str(normalized_name).strip()
-    if not norm:
+    if not str(normalized_name).strip():
         return None
-    stmt = (
-        select(StylebookPersonCanonical)
-        .join(
-            StylebookPersonAlias,
-            StylebookPersonAlias.person_canonical_id == StylebookPersonCanonical.id,
-        )
-        .where(
-            StylebookPersonCanonical.stylebook_id == stylebook_id,
-            StylebookPersonAlias.normalized_alias == norm,
-            StylebookPersonAlias.suppressed.is_(False),
-        )
-        .limit(1)
+    matches = canonical_ids_from_person_name_keys(
+        session,
+        stylebook_id=stylebook_id,
+        name_or_norm=normalized_name,
     )
-    canon = session.exec(stmt).first()
-    if canon is None or canon.id is None:
+    if not matches:
         return None
-    return str(canon.id)
+    return matches[0]
 
 
 def person_name_matches_canonical(
     person: SubstratePerson,
     canon: StylebookPersonCanonical,
 ) -> bool:
-    norm = normalize_person_text(person.normalized_name or person.name)
-    if not norm:
+    person_name = str(person.normalized_name or person.name or "")
+    if not person_match_key(person_name):
         return False
-    label_norm = normalize_person_text(canon.label)
-    if label_norm == norm:
-        return True
-    return label_norm == normalize_person_text(person.name)
+    return person_names_match(person_name, str(canon.label)) or person_names_match(
+        person_name, str(person.name or "")
+    )
 
 
 def person_affiliation_matches_canonical(
@@ -130,23 +124,15 @@ def _strong_identity_canonical_ids(
     matches: list[str] = []
     seen: set[str] = set()
 
-    alias_stmt = (
-        select(StylebookPersonCanonical)
-        .join(
-            StylebookPersonAlias,
-            StylebookPersonAlias.person_canonical_id == StylebookPersonCanonical.id,
-        )
-        .where(
-            StylebookPersonCanonical.stylebook_id == stylebook_id,
-            StylebookPersonAlias.normalized_alias == norm,
-            StylebookPersonAlias.suppressed.is_(False),
-        )
-    )
-    for canon in session.exec(alias_stmt).all():
-        if canon.id is None:
+    for cid in canonical_ids_from_person_name_keys(
+        session,
+        stylebook_id=stylebook_id,
+        name_or_norm=str(person.normalized_name or person.name),
+    ):
+        canon = session.get(StylebookPersonCanonical, cid)
+        if canon is None or canon.id is None:
             continue
         if person_strong_identity_matches_canonical(person, canon):
-            cid = str(canon.id)
             if cid not in seen:
                 seen.add(cid)
                 matches.append(cid)

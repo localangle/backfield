@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import re
 
-from backfield_stylebook.entities.person.types import normalize_person_text
+from backfield_stylebook.entities.person.types import (
+    normalize_person_text,
+    person_match_key,
+    person_names_match,
+)
 
 _WS_RE = re.compile(r"\s+")
 # Single letter or letter+period (middle initial).
@@ -13,7 +17,7 @@ _MIDDLE_INITIAL_RE = re.compile(r"^[a-z]\.?$")
 
 def person_name_tokens(display_name: str) -> tuple[str | None, str | None, list[str]]:
     """Parse ``(given, family, significant_tokens)`` from a display name."""
-    norm = normalize_person_text(display_name)
+    norm = person_match_key(display_name)
     if not norm:
         return None, None, []
     raw_parts = [p for p in _WS_RE.split(norm) if p]
@@ -63,12 +67,13 @@ def score_person_name_overlap(
         if not c_tokens:
             continue
         score = 0
-        q_norm = normalize_person_text(query_name)
-        c_norm = normalize_person_text(cand)
-        if q_norm and c_norm and q_norm == c_norm:
+        if person_names_match(query_name, cand):
             score = 100
-        elif q_norm and c_norm and (q_norm in c_norm or c_norm in q_norm):
-            score = max(score, 40)
+        else:
+            q_norm = normalize_person_text(query_name)
+            c_norm = normalize_person_text(cand)
+            if q_norm and c_norm and (q_norm in c_norm or c_norm in q_norm):
+                score = max(score, 40)
         if q_family and c_family and q_family == c_family:
             score += 50
             if q_given and c_given and _given_names_compatible(q_given, c_given):

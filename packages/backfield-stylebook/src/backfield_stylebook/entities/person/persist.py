@@ -24,7 +24,10 @@ from backfield_stylebook.entities.person.review import (
     plan_includes_auto_waive_person_review,
     plan_includes_flag_person_review,
 )
-from backfield_stylebook.entities.person.types import derive_person_sort_key
+from backfield_stylebook.entities.person.types import (
+    derive_person_sort_key,
+    person_alias_lookup_keys,
+)
 
 
 def _slugify_person_label(label: str) -> str:
@@ -125,13 +128,15 @@ def _upsert_alias_for_substrate(
     person: SubstratePerson,
     provenance: str,
 ) -> None:
-    upsert_alias_for_canonical_text(
-        session,
-        canon_id=canon_id,
-        alias_text=str(person.name),
-        normalized_alias=str(person.normalized_name),
-        provenance=provenance,
-    )
+    alias_text = str(person.name)
+    for norm in person_alias_lookup_keys(alias_text):
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=canon_id,
+            alias_text=alias_text,
+            normalized_alias=norm,
+            provenance=provenance,
+        )
 
 
 def refresh_aliases_for_linked_person(
@@ -216,13 +221,14 @@ def create_standalone_canonical(
     session.add(canon)
     session.flush()
     cid = str(canon.id)
-    upsert_alias_for_canonical_text(
-        session,
-        canon_id=cid,
-        alias_text=clean,
-        normalized_alias=_normalize_alias_text(clean),
-        provenance=provenance,
-    )
+    for norm in person_alias_lookup_keys(clean):
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=cid,
+            alias_text=clean,
+            normalized_alias=norm,
+            provenance=provenance,
+        )
     session.flush()
     return canon
 
