@@ -17,7 +17,10 @@ from backfield_stylebook.canonical_jurisdiction import (
     parse_jurisdiction_from_formatted_address,
     strict_canonical_gates_enabled,
 )
-from backfield_stylebook.entities.location.policy import _jurisdiction_pair_demotes_recall_score
+from backfield_stylebook.entities.location.policy import (
+    _jurisdiction_pair_demotes_recall_score,
+    find_existing_canonical_id_by_normalized_label,
+)
 from backfield_stylebook.canonical_link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
@@ -179,6 +182,65 @@ def _bootstrap(session: Session, *, org_slug: str) -> tuple[int, int]:
     session.add(ws)
     session.commit()
     return oid, sb_id
+
+
+def test_decide_links_imported_canonical_by_normalized_label_without_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bundle-imported rows without aliases still link when label matches tier-1 rules."""
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-label")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Albany Park, Chicago, IL",
+            slug="albany-park-chicago-il",
+            location_type="neighborhood",
+            status="active",
+            geometry_json={"type": "Point", "coordinates": [-87.72, 41.97]},
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Albany Park, Chicago, IL",
+            normalized_name="albany park, chicago, il",
+            location_type="neighborhood",
+            status="resolved",
+            canonical_link_status="unlinked",
+            formatted_address="Albany Park, Chicago, IL",
+            source_details_json={
+                "place_extract_components": {
+                    "neighborhood": "Albany Park",
+                    "city": "Chicago",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+            geometry_json={"type": "Point", "coordinates": [-87.72, 41.97]},
+            identity_fingerprint="fp-strict-label",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        assert find_existing_canonical_id_by_normalized_label(
+            session, stylebook_id=sb_id, location=loc
+        ) == str(canon.id)
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="areas.neighborhoods",
+            location=loc,
+            entry={"components": loc.source_details_json["place_extract_components"]},
+        )
+        assert plan.decision.value == "link_existing"
+        assert plan.existing_canonical_id == str(canon.id)
+        assert any(
+            isinstance(r, dict) and r.get("code") == "linked_exact_normalized_label"
+            for r in plan.resolution_reasons
+        )
 
 
 def test_decide_preflight_defers_on_geocode_country_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:

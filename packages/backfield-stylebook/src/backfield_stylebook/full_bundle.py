@@ -23,6 +23,7 @@ from backfield_db import (
 from sqlmodel import Session, col, select
 
 from backfield_stylebook.canonical.slug import allocate_unique_canonical_slug
+from backfield_stylebook.entities.location.persist import seed_aliases_for_canonical_label
 from backfield_stylebook.entities.person.persist import (
     allocate_unique_person_canonical_slug,
 )
@@ -378,7 +379,14 @@ def _import_location_row(
     )
     session.add(canon)
     session.flush()
-    id_map[old_id] = str(canon.id)
+    cid = str(canon.id)
+    seed_aliases_for_canonical_label(
+        session,
+        canon_id=cid,
+        label=str(row.get("label") or ""),
+        provenance="stylebook_bundle_import",
+    )
+    id_map[old_id] = cid
     stats["canonical_locations"] += 1
 
 

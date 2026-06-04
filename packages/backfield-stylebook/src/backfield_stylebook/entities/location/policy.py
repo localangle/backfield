@@ -51,6 +51,7 @@ from backfield_stylebook.entities.location.types import (
     ADDRESS_PLACE_KIND_UNKNOWN,
     is_address_like_location_type,
 )
+from backfield_stylebook.geocode_cache.fingerprint import normalize_substrate_cache_query
 from backfield_stylebook.geocode_cache.resolve import try_resolve_substrate_location_cache_geometry
 from backfield_stylebook.geocode_cache.sanity import (
     substrate_canonical_link_blocked_by_content_sanity,
@@ -81,6 +82,37 @@ def find_existing_canonical_id_by_alias(
     if canon is None or canon.id is None:
         return None
     return str(canon.id)
+
+
+def find_existing_canonical_id_by_normalized_label(
+    session: Session,
+    *,
+    stylebook_id: int,
+    location: SubstrateLocation,
+) -> str | None:
+    """Return canonical id when exactly one active row matches geocode tier-1 label rules."""
+    queries: set[str] = set()
+    for raw in (location.name, location.normalized_name):
+        n = normalize_substrate_cache_query(str(raw or ""))
+        if n:
+            queries.add(n)
+    if not queries:
+        return None
+    canons = session.exec(
+        select(StylebookLocationCanonical).where(
+            StylebookLocationCanonical.stylebook_id == stylebook_id,
+            StylebookLocationCanonical.status == "active",
+        )
+    ).all()
+    winners: list[StylebookLocationCanonical] = []
+    for canon in canons:
+        if canon.id is None:
+            continue
+        if normalize_substrate_cache_query(str(canon.label)) in queries:
+            winners.append(canon)
+    if len(winners) != 1:
+        return None
+    return str(winners[0].id)
 
 
 def _address_place_kind_from_entry(entry: dict[str, Any] | None) -> str:
@@ -679,6 +711,15 @@ def decide_location_canonical_persist_plan(
     cid = find_existing_canonical_id_by_alias(
         session, stylebook_id=stylebook_id, normalized_name=str(location.normalized_name)
     )
+    exact_link_code = "linked_exact_normalized_alias"
+    exact_match_basis = "exact_alias_lookup"
+    if cid is None:
+        cid = find_existing_canonical_id_by_normalized_label(
+            session, stylebook_id=stylebook_id, location=location
+        )
+        if cid is not None:
+            exact_link_code = "linked_exact_normalized_label"
+            exact_match_basis = "exact_normalized_label"
     if cid is not None:
         alias_canon = session.get(StylebookLocationCanonical, cid)
         alias_canon_lt = alias_canon.location_type if alias_canon is not None else None
@@ -706,10 +747,10 @@ def decide_location_canonical_persist_plan(
                 existing_canonical_id=cid,
                 resolution_reasons=(
                     {
-                        "code": "linked_exact_normalized_alias",
+                        "code": exact_link_code,
                         "canonical_id": str(cid),
                         "normalized_name": str(location.normalized_name),
-                        "match_basis": "exact_alias_lookup",
+                        "match_basis": exact_match_basis,
                         "type_gate_applied": True,
                     },
                 ),

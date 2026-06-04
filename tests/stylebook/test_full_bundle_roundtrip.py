@@ -10,6 +10,7 @@ from uuid import uuid4
 from backfield_db import (
     BackfieldOrganization,
     Stylebook,
+    StylebookLocationAlias,
     StylebookLocationCanonical,
     StylebookPersonCanonical,
 )
@@ -131,6 +132,13 @@ def test_export_import_roundtrip_canonicals_only(tmp_path: Path) -> None:
         ).all()
         assert len(new_canon) == 1
         assert str(new_canon[0].label) == "Elm Street"
+        aliases = session.exec(
+            select(StylebookLocationAlias).where(
+                StylebookLocationAlias.location_canonical_id == str(new_canon[0].id),
+            )
+        ).all()
+        assert len(aliases) >= 1
+        assert any(a.normalized_alias == "elm street" for a in aliases)
 
 
 def test_export_import_roundtrip_includes_people(tmp_path: Path) -> None:

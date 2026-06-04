@@ -57,6 +57,27 @@ def _normalized_alias_variants(normalized_alias: str) -> tuple[str, ...]:
     return (norm,)
 
 
+def seed_aliases_for_canonical_label(
+    session: Session,
+    *,
+    canon_id: str,
+    label: str,
+    provenance: str,
+) -> None:
+    """Upsert normalized alias variants from a canonical label (import / manual create)."""
+    clean = label.strip()
+    if not clean:
+        return
+    for norm in _normalized_alias_variants(_normalize_alias_text(clean)):
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=canon_id,
+            alias_text=clean,
+            normalized_alias=norm,
+            provenance=provenance,
+        )
+
+
 def upsert_alias_for_canonical_text(
     session: Session,
     *,
@@ -194,14 +215,9 @@ def create_standalone_canonical(
     session.add(canon)
     session.flush()
     cid = str(canon.id)
-    for norm in _normalized_alias_variants(_normalize_alias_text(clean)):
-        upsert_alias_for_canonical_text(
-            session,
-            canon_id=cid,
-            alias_text=clean,
-            normalized_alias=norm,
-            provenance=provenance,
-        )
+    seed_aliases_for_canonical_label(
+        session, canon_id=cid, label=clean, provenance=provenance
+    )
     session.flush()
     return canon
 
