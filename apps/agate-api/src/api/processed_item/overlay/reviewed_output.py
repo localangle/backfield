@@ -14,6 +14,12 @@ from api.processed_item.entities.location.locations_merge import (
     _select_geocoded_places_node_id,
     build_merged_locations_lane,
 )
+from api.processed_item.entities.person.people_merge import (
+    _anchor_for_person_dict,
+    build_merged_people_lane,
+    normalize_people_overlay,
+    select_people_node_id,
+)
 
 ARTICLE_OVERLAY_KEYS: tuple[str, ...] = (
     "publication",
@@ -25,7 +31,7 @@ ARTICLE_OVERLAY_KEYS: tuple[str, ...] = (
 
 
 def overlay_has_review_content(overlay: dict[str, Any] | None) -> bool:
-    """True when overlay carries location or article review edits."""
+    """True when overlay carries location, people, or article review edits."""
     if not overlay or not isinstance(overlay, dict):
         return False
     loc_root = overlay.get("locations")
@@ -37,6 +43,19 @@ def overlay_has_review_content(overlay: dict[str, Any] | None) -> bool:
         if isinstance(user_added, list) and len(user_added) > 0:
             return True
         removed = loc_root.get("removed_anchors")
+        if isinstance(removed, list):
+            for anchor in removed:
+                if isinstance(anchor, str) and anchor.strip():
+                    return True
+    people_root = overlay.get("people")
+    if isinstance(people_root, dict):
+        by_anchor = people_root.get("by_anchor")
+        if isinstance(by_anchor, dict) and len(by_anchor) > 0:
+            return True
+        user_added = people_root.get("user_added")
+        if isinstance(user_added, list) and len(user_added) > 0:
+            return True
+        removed = people_root.get("removed_anchors")
         if isinstance(removed, list):
             for anchor in removed:
                 if isinstance(anchor, str) and anchor.strip():
@@ -237,7 +256,65 @@ def build_reviewed_output(
     if merged_places is not None:
         _sync_consolidated_places_in_output(reviewed, merged_places)
 
+    merged_people_rows, _stale_people = build_merged_people_lane(output=output, overlay=overlay)
+    _people_patches, _people_user_added, removed_people_anchors = normalize_people_overlay(
+        overlay
+    )
+    anchor_to_person: dict[str, dict[str, Any]] = {}
+    user_people: list[dict[str, Any]] = []
+    for row in merged_people_rows:
+        if not isinstance(row, dict):
+            continue
+        anchor = row.get("anchor")
+        person = row.get("person")
+        if not isinstance(anchor, str) or not isinstance(person, dict):
+            continue
+        if row.get("source") == "user":
+            user_people.append(person)
+        else:
+            anchor_to_person[anchor] = person
+
+    node_id = select_people_node_id(reviewed)
+    if node_id:
+        payload = reviewed.get(node_id)
+        if isinstance(payload, dict):
+            people_list = payload.get("people")
+            if isinstance(people_list, list):
+                new_people: list[dict[str, Any]] = []
+                idx = 0
+                for person in people_list:
+                    if not isinstance(person, dict):
+                        continue
+                    anchor = _anchor_for_person_dict(person, node_id, idx)
+                    idx += 1
+                    if anchor in removed_people_anchors:
+                        continue
+                    if anchor in anchor_to_person:
+                        new_people.append(copy.deepcopy(anchor_to_person[anchor]))
+                    else:
+                        new_people.append(copy.deepcopy(person))
+                for person in user_people:
+                    new_people.append(copy.deepcopy(person))
+                payload["people"] = new_people
+                _sync_consolidated_people_in_output(reviewed, new_people)
+
     if overlay and isinstance(overlay, dict):
         _apply_article_overlay_to_output(reviewed, overlay)
 
     return reviewed
+
+
+def _sync_consolidated_people_in_output(
+    output: dict[str, Any],
+    merged_people: list[dict[str, Any]],
+) -> None:
+    """Copy canonical merged ``people`` onto every ``consolidated.people`` in node outputs."""
+    people_copy = copy.deepcopy(merged_people)
+    for payload in output.values():
+        if not isinstance(payload, dict):
+            continue
+        consolidated = payload.get("consolidated")
+        if isinstance(consolidated, dict):
+            consolidated["people"] = copy.deepcopy(people_copy)
+        if isinstance(payload.get("people"), list):
+            payload["people"] = copy.deepcopy(people_copy)

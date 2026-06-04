@@ -1,4 +1,46 @@
 /**
+ * Mirror of ``backfield_stylebook.entities.person.types.PERSON_TYPE_VALUES``.
+ * Keep in sync when the PersonExtract taxonomy changes.
+ */
+export const PERSON_EXTRACT_PERSON_TYPES = [
+  "athlete",
+  "coach",
+  "sports_official",
+  "sports_executive",
+  "elected_official",
+  "government_official",
+  "political_staff",
+  "lawyer_legal_advocate",
+  "judge_court_official",
+  "law_enforcement_public_safety",
+  "crime_justice_subject",
+  "business_owner_executive",
+  "business_professional",
+  "labor_union_representative",
+  "artist_entertainer",
+  "media_journalism",
+  "arts_culture_professional",
+  "education_research_expert",
+  "healthcare_worker",
+  "community_member",
+  "unknown",
+  "other",
+] as const
+
+/** Explicit labels for PersonExtract ``type`` values used in review UI. */
+const PERSON_TYPE_LABEL_OVERRIDES: Record<string, string> = {
+  law_enforcement_public_safety: "Law enforcement / public safety",
+  crime_justice_subject: "Crime / justice subject",
+  business_owner_executive: "Business owner / executive",
+  labor_union_representative: "Labor / union representative",
+  arts_culture_professional: "Arts / culture professional",
+  education_research_expert: "Education / research expert",
+  lawyer_legal_advocate: "Lawyer / legal advocate",
+  judge_court_official: "Judge / court official",
+  media_journalism: "Media / journalism",
+}
+
+/**
  * Mirror of ``backfield_stylebook.place_extract_location_types.PLACE_EXTRACT_LOCATION_TYPES``.
  * Keep in sync when the PlaceExtract taxonomy changes.
  */
@@ -33,11 +75,13 @@ const TYPE_LABEL_OVERRIDES: Record<string, string> = {
   political_district: "Political district",
 }
 
-/** Human label for a PlaceExtract `location.type` value (snake_case → Title Case words, with overrides). */
+/** Human label for a PlaceExtract or PersonExtract type slug (snake_case → Title Case, with overrides). */
 export function placeExtractTypeLabel(value: string): string {
   const raw = value.trim()
   if (!raw) return value
   const key = raw.toLowerCase()
+  const personMapped = PERSON_TYPE_LABEL_OVERRIDES[key]
+  if (personMapped) return personMapped
   const mapped = TYPE_LABEL_OVERRIDES[key]
   if (mapped) return mapped
   return raw
@@ -48,14 +92,15 @@ export function placeExtractTypeLabel(value: string): string {
 }
 
 /**
- * Sort type filter values A–Z by display label; ``other`` (any casing) stays last.
+ * Sort type filter values A–Z by display label; ``unknown`` and ``other`` (any casing) stay last.
  */
 export function sortReviewQueueTypeFilterOptions(types: string[]): string[] {
   const list = types.filter((t) => String(t).trim() !== "")
-  const other: string[] = []
+  const trailing: string[] = []
   const rest: string[] = []
   for (const t of list) {
-    if (t.toLowerCase() === "other") other.push(t)
+    const lower = t.toLowerCase()
+    if (lower === "other" || lower === "unknown") trailing.push(t)
     else rest.push(t)
   }
   rest.sort((a, b) =>
@@ -63,5 +108,15 @@ export function sortReviewQueueTypeFilterOptions(types: string[]): string[] {
       sensitivity: "base",
     }),
   )
-  return [...rest, ...other]
+  return [...rest, ...trailing]
+}
+
+/** Options for manual person-type pickers (taxonomy only, plus legacy current value when editing). */
+export function personTypeManualSelectOptions(current?: string | null): string[] {
+  const taxonomy = sortReviewQueueTypeFilterOptions([...PERSON_EXTRACT_PERSON_TYPES])
+  const cur = (current ?? "").trim()
+  if (cur && !taxonomy.includes(cur)) {
+    return [...taxonomy, cur]
+  }
+  return taxonomy
 }

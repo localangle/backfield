@@ -2,6 +2,16 @@
  * Agate API client — Backfield agate-api.
  */
 
+import {
+  normalizeProcessedItemSemanticIndexing,
+  type ProcessedItemSemanticIndexing,
+} from '@/lib/review/content/semanticIndexingDisplay'
+
+export type {
+  ProcessedItemSemanticIndexing,
+  ProcessedItemSemanticIndexingStatus,
+} from '@/lib/review/content/semanticIndexingDisplay'
+
 /** Agate API base. Default `/api/agate` uses Vite dev proxy to the Agate service (same-origin cookies). */
 export const API_BASE =
   import.meta.env.VITE_API_BASE ||
@@ -34,9 +44,13 @@ export interface ProjectStats {
   /** Runs with status ``failed`` (includes cancelled runs). */
   runs_failed: number
   median_duration_ms_per_run: number | null
+  min_duration_ms_per_run?: number | null
+  max_duration_ms_per_run?: number | null
   median_duration_ms_per_item: number | null
   /** Median tracked LLM spend per succeeded run. */
   median_estimated_ai_cost_per_run?: string | number | null
+  min_estimated_ai_cost_per_run?: string | number | null
+  max_estimated_ai_cost_per_run?: string | number | null
   median_estimated_ai_cost_currency?: string | null
   median_estimated_ai_cost_incomplete?: boolean
 }
@@ -125,11 +139,16 @@ export interface ProcessedItem {
   overlay_version?: number
   /** Merged model + overlay location lane (see API docs). */
   merged_locations?: Array<Record<string, unknown>>
+  /** Merged model + overlay people lane (see API docs). */
+  merged_people?: Array<Record<string, unknown>>
   /** Overlay patches whose anchor no longer exists in model output. */
   stale_overlay_entries?: Array<Record<string, unknown>>
+  stale_people_overlay_entries?: Array<Record<string, unknown>>
   /** Materialized model output + overlay for JSON export; absent when no review saved. */
   reviewed_output?: Record<string, unknown> | null
   article_context?: ArticleContext
+  /** Compact semantic search indexing status from Backfield Output. */
+  semantic_indexing?: ProcessedItemSemanticIndexing
 }
 
 export interface Run {
@@ -531,7 +550,11 @@ export interface RunEstimatedAiCost {
   estimated_total: string
   incomplete_estimate: boolean
   attempt_count: number
-  node_breakdown: Array<{ node_id: string | null; estimated_total: string }>
+  node_breakdown: Array<{
+    node_id: string | null
+    node_type?: string | null
+    estimated_total: string
+  }>
 }
 
 export async function getRunEstimatedAiCost(runId: string): Promise<RunEstimatedAiCost> {
@@ -574,8 +597,11 @@ interface RawProcessedItemDetail {
   overlay_version?: number
   reviewed_output?: Record<string, unknown> | null
   merged_locations?: Array<Record<string, unknown>>
+  merged_people?: Array<Record<string, unknown>>
   stale_overlay_entries?: Array<Record<string, unknown>>
+  stale_people_overlay_entries?: Array<Record<string, unknown>>
   article_context?: unknown
+  semantic_indexing?: unknown
 }
 
 function _normalizeArticleContext(raw: unknown): ArticleContext {
@@ -653,14 +679,19 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
     overlay: raw.overlay ?? null,
     overlay_version: overlayVersion,
     merged_locations: Array.isArray(raw.merged_locations) ? raw.merged_locations : [],
+    merged_people: Array.isArray(raw.merged_people) ? raw.merged_people : [],
     stale_overlay_entries: Array.isArray(raw.stale_overlay_entries)
       ? raw.stale_overlay_entries
+      : [],
+    stale_people_overlay_entries: Array.isArray(raw.stale_people_overlay_entries)
+      ? raw.stale_people_overlay_entries
       : [],
     reviewed_output:
       raw.reviewed_output && typeof raw.reviewed_output === 'object'
         ? raw.reviewed_output
         : null,
     article_context: _normalizeArticleContext(raw.article_context),
+    semantic_indexing: normalizeProcessedItemSemanticIndexing(raw.semantic_indexing),
   }
 }
 

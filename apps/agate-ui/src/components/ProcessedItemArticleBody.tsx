@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { X } from 'lucide-react'
 import {
   collectAnchorsForRange,
   mergeTieredHighlightRanges,
@@ -12,8 +13,10 @@ export interface ProcessedItemArticleBodyProps {
   body: string
   /** Subtle highlights for every geocoded mention (``original_text``) before / besides selection. */
   ambientHighlights?: EvidenceSpanRange[]
-  /** Stronger highlights for the selected place. */
+  /** Stronger highlights for the selected place or person mentions (non-quotes). */
   highlights: EvidenceSpanRange[]
+  /** Distinct highlights for attributed quotes when reviewing people. */
+  quoteHighlights?: EvidenceSpanRange[]
   /**
    * Changes to this value (e.g. selected place id) scroll the first selected highlight into view when
    * ``highlights`` is non-empty.
@@ -25,11 +28,21 @@ export interface ProcessedItemArticleBodyProps {
   placeLabels?: Record<string, string>
   /** Select a geocoded place from a story mention click. */
   onSelectPlace?: (anchor: string) => void
+  /** When ``select-passage``, only text selection works. When ``locked``, the story pane is read-only. */
+  interactionMode?: 'normal' | 'select-passage' | 'locked'
+  /** Disambiguation menu heading when one span maps to several anchors. */
+  mentionChoicePrompt?: string
   /** Report ordinary text selections so callers can start an add workflow. */
   onTextSelectionChange?: (selection: ArticleTextSelection | null) => void
   activeTextSelection?: ArticleTextSelection | null
   onAddPlaceFromSelection?: (selection: ArticleTextSelection) => void
   addPlaceActionLabel?: string
+  /** People edit: map ``start:end`` span keys to occurrence client ids. */
+  editableOccurrenceClientIds?: Record<string, string>
+  selectedOccurrenceClientId?: string | null
+  onSelectOccurrenceClientId?: (clientId: string) => void
+  onRemoveOccurrenceClientId?: (clientId: string) => void
+  onAddOccurrenceFromSelection?: (selection: ArticleTextSelection, kind: 'mention' | 'quote') => void
   className?: string
 }
 
@@ -50,12 +63,14 @@ function MentionDisambiguationMenu({
   anchors,
   labels,
   position,
+  prompt,
   onSelect,
   onClose,
 }: {
   anchors: string[]
   labels: Record<string, string>
   position: { x: number; y: number }
+  prompt: string
   onSelect: (anchor: string) => void
   onClose: () => void
 }) {
@@ -83,11 +98,11 @@ function MentionDisambiguationMenu({
     <div
       ref={menuRef}
       role="menu"
-      aria-label="Choose place"
+      aria-label={prompt}
       className="fixed z-[200] min-w-[11rem] max-w-[16rem] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
       style={{ left: position.x, top: position.y }}
     >
-      <p className="px-2 py-1 text-[11px] font-medium text-muted-foreground">Which place?</p>
+      <p className="px-2 py-1 text-[11px] font-medium text-muted-foreground">{prompt}</p>
       {anchors.map((anchor) => (
         <button
           key={anchor}
@@ -113,21 +128,35 @@ function StoryMentionMark({
   onSelectPlace,
   onOpenDisambiguation,
   markRef,
+  editableOccurrenceClientId,
+  occurrenceSelected = false,
+  onSelectOccurrence,
+  onRemoveOccurrence,
   children,
 }: {
-  tier: 'ambient' | 'selected'
+  tier: 'ambient' | 'selected' | 'quote'
   anchors: string[]
   onSelectPlace?: (anchor: string) => void
   onOpenDisambiguation: (anchors: string[], clientX: number, clientY: number) => void
   markRef?: RefObject<HTMLElement>
+  editableOccurrenceClientId?: string
+  occurrenceSelected?: boolean
+  onSelectOccurrence?: (clientId: string) => void
+  onRemoveOccurrence?: (clientId: string) => void
   children: ReactNode
 }) {
-  const interactive = Boolean(onSelectPlace) && anchors.length > 0
+  const editable = Boolean(editableOccurrenceClientId && onSelectOccurrence)
+  const interactive = editable || (Boolean(onSelectPlace) && anchors.length > 0)
 
   const handleClick = (e: React.MouseEvent<HTMLElement>) => {
-    if (!interactive || !onSelectPlace) return
+    if (!interactive) return
     e.preventDefault()
     e.stopPropagation()
+    if (editable && editableOccurrenceClientId) {
+      onSelectOccurrence?.(editableOccurrenceClientId)
+      return
+    }
+    if (!onSelectPlace) return
     if (anchors.length === 1) {
       onSelectPlace(anchors[0]!)
       return
@@ -139,8 +168,13 @@ function StoryMentionMark({
     if (!interactive) return
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
+      if (editable && editableOccurrenceClientId) {
+        onSelectOccurrence?.(editableOccurrenceClientId)
+        return
+      }
+      if (!onSelectPlace) return
       if (anchors.length === 1) {
-        onSelectPlace?.(anchors[0]!)
+        onSelectPlace(anchors[0]!)
         return
       }
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -156,11 +190,19 @@ function StoryMentionMark({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'rounded-sm px-0.5 text-foreground transition-colors',
-        tier === 'selected'
-          ? 'border border-transparent bg-amber-200/90 dark:bg-amber-500/40'
-          : 'border border-dotted border-yellow-300/70 bg-yellow-100/85 dark:border-yellow-600/45 dark:bg-yellow-500/28',
+        'relative rounded-sm px-0.5 text-foreground transition-colors',
+        tier === 'quote'
+          ? 'border border-transparent bg-sky-200/90 dark:bg-sky-500/40'
+          : tier === 'selected'
+            ? 'border border-transparent bg-amber-200/90 dark:bg-amber-500/40'
+            : 'border border-dotted border-yellow-300/70 bg-yellow-100/85 dark:border-yellow-600/45 dark:bg-yellow-500/28',
+        occurrenceSelected && 'ring-2 ring-inset ring-primary',
+        editable && 'inline-flex items-center gap-1',
+        editable && 'group',
         interactive && 'cursor-pointer',
+        interactive &&
+          tier === 'quote' &&
+          'hover:bg-sky-200/95 dark:hover:bg-sky-500/45',
         interactive &&
           tier === 'selected' &&
           'hover:bg-amber-300/95 dark:hover:bg-amber-500/55',
@@ -168,8 +210,32 @@ function StoryMentionMark({
           tier === 'ambient' &&
           'hover:border-yellow-400/80 hover:bg-yellow-200/90 dark:hover:border-yellow-500/55 dark:hover:bg-yellow-500/40',
       )}
+      title={tier === 'quote' ? 'Quote' : tier === 'selected' ? 'Mention' : undefined}
     >
       {children}
+      {editable && editableOccurrenceClientId && onRemoveOccurrence ? (
+        <button
+          type="button"
+          aria-label="Remove highlight"
+          className={cn(
+            'inline-grid h-5 w-5 shrink-0 place-items-center self-center rounded-full border border-border bg-background p-0 text-muted-foreground shadow-sm hover:bg-destructive hover:text-destructive-foreground',
+            occurrenceSelected
+              ? 'inline-grid'
+              : 'hidden group-hover:inline-grid group-focus-within:inline-grid',
+          )}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onRemoveOccurrence(editableOccurrenceClientId)
+          }}
+        >
+          <X className="size-2.5 shrink-0" strokeWidth={2.5} aria-hidden />
+        </button>
+      ) : null}
     </mark>
   )
 }
@@ -181,40 +247,51 @@ export function ProcessedItemArticleBody({
   body,
   ambientHighlights = [],
   highlights,
+  quoteHighlights = [],
   scrollWhenKey,
   mentionSpanHits = [],
   placeLabels = {},
   onSelectPlace,
+  interactionMode = 'normal',
+  mentionChoicePrompt = 'Which place?',
   onTextSelectionChange,
   activeTextSelection = null,
   onAddPlaceFromSelection,
   addPlaceActionLabel = 'Add place',
+  editableOccurrenceClientIds,
+  selectedOccurrenceClientId = null,
+  onSelectOccurrenceClientId,
+  onRemoveOccurrenceClientId,
+  onAddOccurrenceFromSelection,
   className,
 }: ProcessedItemArticleBodyProps) {
   const firstSelectedMarkRef = useRef<HTMLElement>(null)
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [disambiguation, setDisambiguation] = useState<DisambiguationMenuState | null>(null)
+  const mentionSelectionEnabled = interactionMode === 'normal' || interactionMode === 'select-passage'
+  const mentionClickHandler = mentionSelectionEnabled ? onSelectPlace : undefined
 
   const tieredRanges = useMemo(
-    () => mergeTieredHighlightRanges(ambientHighlights, highlights),
-    [ambientHighlights, highlights],
+    () => mergeTieredHighlightRanges(ambientHighlights, highlights, quoteHighlights),
+    [ambientHighlights, highlights, quoteHighlights],
   )
 
   useEffect(() => {
-    if (highlights.length === 0 || scrollWhenKey === null || scrollWhenKey === '') {
+    const hasHighlights = highlights.length > 0 || quoteHighlights.length > 0
+    if (!hasHighlights || scrollWhenKey === null || scrollWhenKey === '') {
       return
     }
     const el = firstSelectedMarkRef.current
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-  }, [scrollWhenKey, highlights])
+  }, [scrollWhenKey, highlights, quoteHighlights])
 
   const openDisambiguation = (anchors: string[], clientX: number, clientY: number) => {
     setDisambiguation({ anchors, x: clientX, y: clientY })
   }
 
   const readTextSelection = () => {
-    if (!onTextSelectionChange) return
+    if (!onTextSelectionChange || !mentionSelectionEnabled) return
     const root = bodyRef.current
     const sel = window.getSelection()
     if (!root || !sel || sel.rangeCount === 0 || sel.isCollapsed) {
@@ -259,7 +336,13 @@ export function ProcessedItemArticleBody({
         >
           {body}
         </div>
-        {activeTextSelection && onAddPlaceFromSelection ? (
+        {activeTextSelection && onAddOccurrenceFromSelection ? (
+          <AddOccurrenceSelectionAction
+            selection={activeTextSelection}
+            onAdd={onAddOccurrenceFromSelection}
+          />
+        ) : null}
+        {activeTextSelection && onAddPlaceFromSelection && !onAddOccurrenceFromSelection ? (
           <AddPlaceSelectionAction
             selection={activeTextSelection}
             label={addPlaceActionLabel}
@@ -281,21 +364,37 @@ export function ProcessedItemArticleBody({
     if (start > cursor) {
       segments.push(body.slice(cursor, start))
     }
-    const isFirstSelected = tier === 'selected' && selectedMarkIndex === 0
+    const isFirstSelected =
+      (tier === 'selected' || tier === 'quote') && selectedMarkIndex === 0
     const anchors = collectAnchorsForRange(mentionSpanHits, start, end)
+    const spanKey = `${start}:${end}`
+    const editableOccurrenceClientId =
+      (tier === 'selected' || tier === 'quote') && editableOccurrenceClientIds
+        ? editableOccurrenceClientIds[spanKey]
+        : undefined
     segments.push(
       <StoryMentionMark
         key={`${tier}-${start}-${end}`}
         tier={tier}
         anchors={anchors}
-        onSelectPlace={onSelectPlace}
+        onSelectPlace={mentionClickHandler}
         onOpenDisambiguation={openDisambiguation}
         markRef={isFirstSelected ? firstSelectedMarkRef : undefined}
+        editableOccurrenceClientId={editableOccurrenceClientId}
+        occurrenceSelected={
+          Boolean(
+            editableOccurrenceClientId &&
+              selectedOccurrenceClientId &&
+              editableOccurrenceClientId === selectedOccurrenceClientId,
+          )
+        }
+        onSelectOccurrence={onSelectOccurrenceClientId}
+        onRemoveOccurrence={onRemoveOccurrenceClientId}
       >
         {body.slice(start, end)}
       </StoryMentionMark>,
     )
-    if (tier === 'selected') {
+    if (tier === 'selected' || tier === 'quote') {
       selectedMarkIndex += 1
     }
     cursor = end
@@ -323,11 +422,18 @@ export function ProcessedItemArticleBody({
           anchors={disambiguation.anchors}
           labels={placeLabels}
           position={{ x: disambiguation.x, y: disambiguation.y }}
-          onSelect={(anchor) => onSelectPlace?.(anchor)}
+          prompt={mentionChoicePrompt}
+          onSelect={(anchor) => mentionClickHandler?.(anchor)}
           onClose={() => setDisambiguation(null)}
         />
       ) : null}
-      {activeTextSelection && onAddPlaceFromSelection ? (
+      {activeTextSelection && onAddOccurrenceFromSelection ? (
+        <AddOccurrenceSelectionAction
+          selection={activeTextSelection}
+          onAdd={onAddOccurrenceFromSelection}
+        />
+      ) : null}
+      {activeTextSelection && onAddPlaceFromSelection && !onAddOccurrenceFromSelection ? (
         <AddPlaceSelectionAction
           selection={activeTextSelection}
           label={addPlaceActionLabel}
@@ -335,6 +441,40 @@ export function ProcessedItemArticleBody({
         />
       ) : null}
     </>
+  )
+}
+
+function AddOccurrenceSelectionAction({
+  selection,
+  onAdd,
+}: {
+  selection: ArticleTextSelection
+  onAdd: (selection: ArticleTextSelection, kind: 'mention' | 'quote') => void
+}) {
+  const top = Math.max(8, selection.rect.top - 44)
+  const left = Math.max(8, selection.rect.left + selection.rect.width / 2 - 72)
+  return createPortal(
+    <div
+      className="fixed z-[210] flex gap-1 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+      style={{ left, top }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <button
+        type="button"
+        className="rounded-sm px-2 py-1 text-xs font-medium hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring"
+        onClick={() => onAdd(selection, 'mention')}
+      >
+        Add mention
+      </button>
+      <button
+        type="button"
+        className="rounded-sm px-2 py-1 text-xs font-medium hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring"
+        onClick={() => onAdd(selection, 'quote')}
+      >
+        Add quote
+      </button>
+    </div>,
+    document.body,
   )
 }
 

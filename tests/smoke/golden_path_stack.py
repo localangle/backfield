@@ -26,6 +26,7 @@ from _helpers import (
     keep_smoke_data,
     log,
     login_session_context,
+    resolve_run_execution_output,
     session_cookie_headers,
     smoke_db_session,
     wait_for_terminal_run,
@@ -331,7 +332,8 @@ def run_service_bearer_flow() -> int:
                     "Smoke run failed: "
                     f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
                 )
-            stylebook_output = _assert_golden_run_result(terminal_run.get("result"))
+            execution_output = resolve_run_execution_output(agate_client, terminal_run)
+            stylebook_output = _assert_golden_run_result(execution_output)
             _assert_stylebook_persistence_visible(
                 article_id=int(stylebook_output["article_id"]),
                 project_slug=SMOKE_PROJECT_SLUG,
@@ -418,7 +420,8 @@ def run_session_flow() -> int:
                     "Smoke run failed: "
                     f"status={terminal_run.get('status')} error={terminal_run.get('error_message')}"
                 )
-            stylebook_output = _assert_golden_run_result(terminal_run.get("result"))
+            execution_output = resolve_run_execution_output(agate_client, terminal_run)
+            stylebook_output = _assert_golden_run_result(execution_output)
             _assert_stylebook_persistence_visible(
                 article_id=int(stylebook_output["article_id"]),
                 project_slug=ctx.project_slug,

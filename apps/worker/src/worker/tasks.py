@@ -15,6 +15,7 @@ import boto3
 from agate_runtime import GraphSpec, execute_graph
 from agate_runtime.nodes import NODE_RUNNERS
 from agate_runtime.nodes.json_input import json_input_output_from_dict
+from agate_runtime.run_graph_spec import merge_run_result_payload, resolve_run_graph_spec_json
 from agate_runtime.s3_batch import (
     list_json_keys_under_prefix,
     parse_s3_text_json_document,
@@ -30,11 +31,13 @@ from backfield_ai.tracking_context import (
 from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, StylebookBundleJob
 from backfield_db.session import get_engine
 from backfield_stylebook.full_bundle import export_stylebook_bundle, import_stylebook_bundle
+from backfield_stylebook.semantic_indexing.reindex_contract import SemanticReindexScope
 from celery import Celery, chord, group
 from sqlmodel import Session, select
 
 from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
+from worker.semantic_indexing.reindex import run_semantic_reindex_for_scope
 
 logger = logging.getLogger(__name__)
 
@@ -365,7 +368,11 @@ def execute_s3_batch_setup(run_id: str) -> None:
             run = session.get(AgateRun, run_id)
             if not run:
                 return
-            run.result_json = json.dumps({"s3_batch": batch_meta})
+            run.result_json = merge_run_result_payload(
+                run.result_json,
+                s3_batch=batch_meta,
+                graph_spec_json=graph.spec_json,
+            )
             run.updated_at = datetime.now(UTC)
             session.add(run)
             session.commit()
@@ -445,7 +452,12 @@ def execute_processed_item(item_id: int) -> None:
             session.add(item)
             session.commit()
             return
-        spec = GraphSpec.model_validate_json(graph.spec_json)
+        spec = GraphSpec.model_validate_json(
+            resolve_run_graph_spec_json(
+                run_result_json=run.result_json,
+                graph_spec_json=graph.spec_json,
+            )
+        )
 
         batch_meta: dict[str, Any] = {}
         if run.result_json:
@@ -771,3 +783,20 @@ def import_stylebook_bundle_task(job_id: str) -> None:
     finally:
         if tmp_path:
             Path(tmp_path).unlink(missing_ok=True)
+
+
+@celery_app.task(name="worker.tasks.reindex_semantic_documents")
+def reindex_semantic_documents(
+    project_id: int,
+    article_id: int,
+    entity_type: str | None = None,
+) -> dict[str, object]:
+    """Sync and embed semantic documents for one article scope after manual edits."""
+    engine = get_engine()
+    scope = SemanticReindexScope(
+        project_id=int(project_id),
+        article_id=int(article_id),
+        entity_type=entity_type if entity_type in ("person", "location") else None,  # type: ignore[arg-type]
+    )
+    with Session(engine) as session:
+        return run_semantic_reindex_for_scope(session, scope)

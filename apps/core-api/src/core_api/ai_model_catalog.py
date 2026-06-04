@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 from backfield_ai.constants import (
+    AI_CAPABILITY_EMBEDDING,
     AI_CAPABILITY_JSON,
     AI_CAPABILITY_TEXT,
     AI_CAPABILITY_VISION,
@@ -44,7 +45,12 @@ except Exception:  # pragma: no cover
     litellm = None
 
 ALLOWED_CAPABILITIES: frozenset[str] = frozenset(
-    {AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON, AI_CAPABILITY_VISION}
+    {
+        AI_CAPABILITY_TEXT,
+        AI_CAPABILITY_JSON,
+        AI_CAPABILITY_VISION,
+        AI_CAPABILITY_EMBEDDING,
+    }
 )
 ALLOWED_MODEL_KINDS: frozenset[str] = frozenset({AI_MODEL_KIND_GENERATIVE, AI_MODEL_KIND_EMBEDDING})
 ALLOWED_STATUS: frozenset[str] = frozenset({"active", "disabled"})
@@ -59,6 +65,7 @@ class CuratedAiModelTemplate:
     provider_model_id: str
     label: str
     capabilities: tuple[str, ...]
+    model_kind: str = AI_MODEL_KIND_GENERATIVE
 
 
 # Insertion order controls default API list order and Preset dropdown order within each provider.
@@ -250,6 +257,23 @@ CURATED_TEMPLATES: dict[str, CuratedAiModelTemplate] = {
         label="Mistral Large",
         capabilities=(AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON),
     ),
+    # --- OpenAI embeddings ---
+    "openai:text-embedding-3-small": CuratedAiModelTemplate(
+        template_id="openai:text-embedding-3-small",
+        provider="openai",
+        provider_model_id="text-embedding-3-small",
+        label="text-embedding-3-small",
+        capabilities=(AI_CAPABILITY_EMBEDDING,),
+        model_kind=AI_MODEL_KIND_EMBEDDING,
+    ),
+    "openai:text-embedding-3-large": CuratedAiModelTemplate(
+        template_id="openai:text-embedding-3-large",
+        provider="openai",
+        provider_model_id="text-embedding-3-large",
+        label="text-embedding-3-large",
+        capabilities=(AI_CAPABILITY_EMBEDDING,),
+        model_kind=AI_MODEL_KIND_EMBEDDING,
+    ),
 }
 
 
@@ -258,6 +282,7 @@ class CuratedAiModelOptionOut(BaseModel):
     provider: str
     provider_model_id: str
     label: str
+    model_kind: str
     capabilities: list[str]
     input_token_price: Decimal | None = None
     output_token_price: Decimal | None = None
@@ -336,6 +361,7 @@ def list_curated_options_out() -> list[CuratedAiModelOptionOut]:
             provider=t.provider,
             provider_model_id=t.provider_model_id,
             label=t.label,
+            model_kind=t.model_kind,
             capabilities=list(t.capabilities),
             input_token_price=_litellm_price_per_token(t.provider, t.provider_model_id, "input"),
             output_token_price=_litellm_price_per_token(t.provider, t.provider_model_id, "output"),
@@ -389,7 +415,7 @@ def _validate_model_kind(kind: str) -> str:
     return k
 
 
-def _validate_capabilities(caps: list[str]) -> list[str]:
+def _validate_capabilities(caps: list[str], *, model_kind: str) -> list[str]:
     if not caps:
         raise HTTPException(status_code=400, detail="capabilities must not be empty")
     unknown = sorted(set(caps) - ALLOWED_CAPABILITIES)
@@ -404,6 +430,33 @@ def _validate_capabilities(caps: list[str]) -> list[str]:
         if c not in seen:
             seen.add(c)
             ordered.append(c)
+    mk = _validate_model_kind(model_kind)
+    if mk == AI_MODEL_KIND_EMBEDDING:
+        if AI_CAPABILITY_EMBEDDING not in ordered:
+            raise HTTPException(
+                status_code=400,
+                detail="Embedding models require the embedding capability",
+            )
+        extra = [c for c in ordered if c != AI_CAPABILITY_EMBEDDING]
+        if extra:
+            raise HTTPException(
+                status_code=400,
+                detail="Embedding models only support the embedding capability",
+            )
+    else:
+        if AI_CAPABILITY_EMBEDDING in ordered:
+            raise HTTPException(
+                status_code=400,
+                detail="Generative models cannot include the embedding capability",
+            )
+        if not any(
+            c in (AI_CAPABILITY_TEXT, AI_CAPABILITY_JSON, AI_CAPABILITY_VISION)
+            for c in ordered
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Generative models require at least one of text, json, or vision",
+            )
     return ordered
 
 
@@ -539,12 +592,6 @@ def create_org_model_config(
     organization_id: int,
     body: AiModelConfigCreateBody,
 ) -> AiModelConfigOut:
-    model_kind = _validate_model_kind(body.model_kind)
-    if model_kind != AI_MODEL_KIND_GENERATIVE:
-        raise HTTPException(
-            status_code=400,
-            detail="Only generative models can be created through this endpoint for now",
-        )
     currency = _normalize_currency(body.currency)
     inp_p, out_p = _validate_optional_prices(body.input_token_price, body.output_token_price)
 
@@ -560,6 +607,14 @@ def create_org_model_config(
         tmpl = CURATED_TEMPLATES.get(body.curated_id.strip())
         if tmpl is None:
             raise HTTPException(status_code=400, detail="Unknown curated_id")
+        model_kind = _validate_model_kind(tmpl.model_kind)
+        if "model_kind" in body.model_fields_set:
+            body_mk = _validate_model_kind(body.model_kind)
+            if body_mk != model_kind:
+                raise HTTPException(
+                    status_code=400,
+                    detail="model_kind must match the curated template",
+                )
         name = (body.name or tmpl.label).strip()
         provider = tmpl.provider.strip().lower()
         provider_model_id = tmpl.provider_model_id.strip()
@@ -623,11 +678,12 @@ def create_org_model_config(
         provider, provider_model_id = _split_litellm_route_for_storage(litellm_route)
         integration_sid = int(cid_in)
         caps_raw = body.capabilities
+        model_kind = _validate_model_kind(body.model_kind)
 
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
 
-    capabilities = _validate_capabilities(caps_raw)
+    capabilities = _validate_capabilities(caps_raw, model_kind=model_kind)
 
     row = BackfieldAiModelConfig(
         organization_id=organization_id,
@@ -681,11 +737,17 @@ def patch_org_model_config(
             raise HTTPException(status_code=400, detail="Unsupported status")
         row.status = st
 
+    if "model_kind" in data and data["model_kind"] is not None:
+        row.model_kind = _validate_model_kind(str(data["model_kind"]))
+
     if "capabilities" in data:
         caps = data["capabilities"]
         if caps is None:
             raise HTTPException(status_code=400, detail="capabilities must not be null")
-        row.capabilities_json = _validate_capabilities(list(caps))
+        row.capabilities_json = _validate_capabilities(
+            list(caps),
+            model_kind=str(row.model_kind),
+        )
 
     if "config_json" in data:
         row.config_json = data["config_json"]
@@ -693,14 +755,11 @@ def patch_org_model_config(
     if "currency" in data and data["currency"] is not None:
         row.currency = _normalize_currency(str(data["currency"]))
 
-    if "model_kind" in data and data["model_kind"] is not None:
-        mk = _validate_model_kind(str(data["model_kind"]))
-        if mk != AI_MODEL_KIND_GENERATIVE:
-            raise HTTPException(
-                status_code=400,
-                detail="Only generative models are supported for now",
-            )
-        row.model_kind = mk
+    if "model_kind" in data and "capabilities" not in data:
+        row.capabilities_json = _validate_capabilities(
+            list(row.capabilities_json or []),
+            model_kind=str(row.model_kind),
+        )
 
     if "input_token_price" in data or "output_token_price" in data:
         new_in = row.input_token_price
@@ -767,8 +826,10 @@ def run_org_model_connection_test(
     """Tiny LiteLLM ping; updates latest test columns only (no LLM call records)."""
     from backfield_ai.completion import completion_text_sync
     from backfield_ai.credentials import organization_llm_api_keys
+    from backfield_ai.embeddings import EMBEDDING_CONNECTION_TEST_TEXT, embed_texts_sync
 
     row = get_org_model_config(session, organization_id=organization_id, config_id=config_id)
+    is_embedding = str(row.model_kind) == AI_MODEL_KIND_EMBEDDING
     lm = effective_litellm_model_row(
         litellm_model=row.litellm_model,
         provider=str(row.provider),
@@ -839,22 +900,34 @@ def run_org_model_connection_test(
 
     now = datetime.now(UTC)
     try:
-        messages = [
-            {"role": "system", "content": "Reply with exactly OK."},
-            {"role": "user", "content": "ping"},
-        ]
-        is_gpt5 = lm.startswith("gpt-5")
-        temp = None if is_gpt5 else 0.0
-        completion_text_sync(
-            litellm_model=lm,
-            messages=messages,
-            api_key=api_key,
-            api_base=api_base,
-            max_tokens=8,
-            temperature=temp,
-            timeout=60.0,
-            force_json_response=False,
-        )
+        if is_embedding:
+            batch = embed_texts_sync(
+                litellm_model=lm,
+                texts=[EMBEDDING_CONNECTION_TEST_TEXT],
+                api_key=api_key,
+                api_base=api_base,
+                timeout=60.0,
+                track_attempt=False,
+            )
+            if batch.batch_error or not batch.items or batch.items[0].vector is None:
+                raise RuntimeError(batch.batch_error or "Embedding test returned no vector")
+        else:
+            messages = [
+                {"role": "system", "content": "Reply with exactly OK."},
+                {"role": "user", "content": "ping"},
+            ]
+            is_gpt5 = lm.startswith("gpt-5")
+            temp = None if is_gpt5 else 0.0
+            completion_text_sync(
+                litellm_model=lm,
+                messages=messages,
+                api_key=api_key,
+                api_base=api_base,
+                max_tokens=8,
+                temperature=temp,
+                timeout=60.0,
+                force_json_response=False,
+            )
         row.latest_test_status = "succeeded"
         row.latest_test_error = None
     except Exception as exc:  # noqa: BLE001 — safe summary only on config row

@@ -1,0 +1,38 @@
+{
+  "type": "PersonExtract",
+  "name": "PersonExtract",
+  "label": "Person Extract",
+  "description": "Extract editorially relevant people from text using an LLM.",
+  "category": "extraction",
+  "icon": "User",
+  "color": "bg-indigo-500",
+  "requiredUpstreamNodes": [],
+  "inputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
+    },
+    {
+      "id": "people",
+      "label": "People",
+      "type": "array"
+    }
+  ],
+  "defaultParams": {
+    "model": "",
+    "aiModelConfigId": null,
+    "prompt_file": "prompts/extract.md",
+    "prompt": "",
+    "output_format_file": "prompts/_output_format.json",
+    "llmTimeout": 600
+  }
+}

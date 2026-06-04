@@ -24,6 +24,9 @@ from backfield_db.models import (
     StylebookLocationCanonical,
     StylebookLocationMeta,
     StylebookMembership,
+    StylebookPersonAlias,
+    StylebookPersonCanonical,
+    StylebookPersonMeta,
     StylebookSlugRedirect,
     SubstrateArticle,
     SubstrateImage,
@@ -31,6 +34,13 @@ from backfield_db.models import (
     SubstrateLocationCache,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
+    SubstratePerson,
+    SubstratePersonMention,
+    SubstratePersonMentionOccurrence,
+)
+from backfield_db.semantic_document_models import (
+    SubstrateLocationSemanticDocument,
+    SubstratePersonSemanticDocument,
 )
 from backfield_db.session import get_engine, get_session_factory, get_session_generator, init_db
 
@@ -60,6 +70,9 @@ __all__ = [
     "StylebookLocationAlias",
     "StylebookLocationCanonical",
     "StylebookLocationMeta",
+    "StylebookPersonAlias",
+    "StylebookPersonCanonical",
+    "StylebookPersonMeta",
     "StylebookSlugRedirect",
     "SubstrateArticle",
     "SubstrateImage",
@@ -67,6 +80,11 @@ __all__ = [
     "SubstrateLocationCache",
     "SubstrateLocationMention",
     "SubstrateLocationMentionOccurrence",
+    "SubstrateLocationSemanticDocument",
+    "SubstratePerson",
+    "SubstratePersonMention",
+    "SubstratePersonMentionOccurrence",
+    "SubstratePersonSemanticDocument",
     "get_engine",
     "get_session_factory",
     "get_session_generator",

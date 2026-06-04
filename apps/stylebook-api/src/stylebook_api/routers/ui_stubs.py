@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from backfield_auth.gate import require_project_access
-from backfield_db import StylebookLocationCanonical, SubstrateLocation
+from backfield_db import (
+    StylebookLocationCanonical,
+    StylebookPersonCanonical,
+    SubstrateLocation,
+    SubstratePerson,
+)
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -13,7 +18,8 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
-from stylebook_api.entities.location.locations import _project_by_slug, _require_stylebook_id
+from stylebook_api.helpers.pagination import empty_page_metadata
+from stylebook_api.helpers.project_scope import project_by_slug, require_stylebook_id
 
 router = APIRouter(prefix="/v1", tags=["stylebook-ui-stubs"])
 
@@ -32,11 +38,11 @@ def get_stats(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> StatsOut:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     z = {"canonical_count": 0, "candidate_count": 0}
     try:
-        stylebook_id = _require_stylebook_id(session, proj, stylebook_slug)
+        stylebook_id = require_stylebook_id(session, proj, stylebook_slug)
     except HTTPException as e:
         if e.status_code == 400:
             return StatsOut(locations=z, people=z, organizations=z, works=z)
@@ -63,7 +69,31 @@ def get_stats(
         or 0
     )
     loc = {"canonical_count": canon_cnt, "candidate_count": cand_cnt}
-    return StatsOut(locations=loc, people=z, organizations=z, works=z)
+    people_canon_cnt = int(
+        session.scalar(
+            select(func.count())
+            .select_from(StylebookPersonCanonical)
+            .where(StylebookPersonCanonical.stylebook_id == int(stylebook_id))
+        )
+        or 0
+    )
+    people_cand_cnt = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstratePerson)
+            .where(
+                SubstratePerson.project_id == int(proj.id),
+                col(SubstratePerson.stylebook_person_canonical_id).is_(None),
+                SubstratePerson.canonical_link_status == CANONICAL_LINK_PENDING,
+            )
+        )
+        or 0
+    )
+    people_stats = {
+        "canonical_count": people_canon_cnt,
+        "candidate_count": people_cand_cnt,
+    }
+    return StatsOut(locations=loc, people=people_stats, organizations=z, works=z)
 
 
 @router.get("/agents/types", response_model=list[dict[str, Any]])
@@ -72,25 +102,13 @@ def agent_types(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> list[dict[str, Any]]:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     return []
 
 
 def _empty_page(*, limit: int, offset: int) -> tuple[int, int, bool, bool]:
-    page = (offset // limit) + 1 if limit > 0 else 1
-    return page, limit, False, False
-
-
-class PaginatedPeopleStub(BaseModel):
-    """Empty canonical people list (EntitySelector shape until people are migrated)."""
-
-    people: list[Any] = Field(default_factory=list)
-    total: int = 0
-    page: int = 1
-    per_page: int = 25
-    has_next: bool = False
-    has_prev: bool = False
+    return empty_page_metadata(limit=limit, offset=offset)
 
 
 class PaginatedOrganizationsStub(BaseModel):
@@ -111,21 +129,7 @@ class PaginatedWorksStub(BaseModel):
     has_prev: bool = False
 
 
-@router.get("/people", response_model=PaginatedPeopleStub)
-def list_people_stub(
-    project_slug: str = Query(...),
-    limit: int = Query(25, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    session: Session = Depends(get_session),
-    auth: dict[str, Any] = Depends(get_auth),
-) -> PaginatedPeopleStub:
-    proj = _project_by_slug(session, project_slug)
-    require_project_access(session, auth, int(proj.id))
-    page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
-    return PaginatedPeopleStub(
-        page=page, per_page=limit, has_next=has_next, has_prev=has_prev
-    )
-
+# GET /v1/people removed — use GET /v1/canonical-people (entityListStubs updated separately).
 
 @router.get("/organizations", response_model=PaginatedOrganizationsStub)
 def list_organizations_stub(
@@ -135,7 +139,7 @@ def list_organizations_stub(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedOrganizationsStub:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
     return PaginatedOrganizationsStub(
@@ -151,7 +155,7 @@ def list_works_stub(
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> PaginatedWorksStub:
-    proj = _project_by_slug(session, project_slug)
+    proj = project_by_slug(session, project_slug)
     require_project_access(session, auth, int(proj.id))
     page, _, has_next, has_prev = _empty_page(limit=limit, offset=offset)
     return PaginatedWorksStub(page=page, per_page=limit, has_next=has_next, has_prev=has_prev)

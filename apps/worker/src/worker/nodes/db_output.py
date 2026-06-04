@@ -6,9 +6,15 @@ import os
 from typing import Any
 
 from agate_runtime.output_node import consolidated_body_from_dboutput
+from backfield_stylebook.db_output_settings import DbOutputCanonicalSettings
+from backfield_stylebook.semantic_indexing.db_output import (
+    build_semantic_indexing_summary,
+    sync_semantic_documents_after_db_output,
+)
 from sqlmodel import Session
 
 from worker.flags.replace_geography import clear_replace_article_geography_flags
+from worker.semantic_indexing.embed import embed_pending_semantic_documents_for_db_output
 from worker.substrate import persist_from_consolidated
 
 
@@ -31,6 +37,8 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
     processed_item_id = int(item_id_raw) if item_id_raw.isdigit() else None
 
     body = consolidated_body_from_dboutput(params, inputs)
+    node_params = params if isinstance(params, dict) else None
+    settings = DbOutputCanonicalSettings.from_node_params(node_params)
 
     from backfield_db.session import get_engine
 
@@ -49,6 +57,37 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         substrates_disposed = persist_result.disposed_substrates
         replace_stats = persist_result.replace_stats
         reconciliation_summary = persist_result.reconciliation_summary.as_dict()
+        domain_summaries = [
+            summary.as_dict() for summary in persist_result.domain_summaries
+        ] or [reconciliation_summary]
+
+        if settings.semantic_indexing_enabled:
+            try:
+                sync_result = sync_semantic_documents_after_db_output(
+                    session,
+                    project_id=project_id,
+                    article_id=article_id,
+                    consolidated_domain_keys=persist_result.consolidated_domain_keys,
+                )
+                embedding_summary = embed_pending_semantic_documents_for_db_output(
+                    session,
+                    project_id=project_id,
+                    article_id=article_id,
+                    consolidated_domain_keys=persist_result.consolidated_domain_keys,
+                )
+                semantic_indexing = build_semantic_indexing_summary(
+                    enabled=True,
+                    sync_result=sync_result,
+                    embedding=embedding_summary,
+                )
+            except Exception as exc:
+                semantic_indexing = build_semantic_indexing_summary(
+                    enabled=True,
+                    error=str(exc),
+                )
+        else:
+            semantic_indexing = build_semantic_indexing_summary(enabled=False)
+
         clear_replace_article_geography_flags(
             session,
             run_id=run_id,
@@ -80,7 +119,8 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         "disposed_substrate_count": substrates_disposed,
         "reconciliation": {
             "policy": reconciliation_summary["policy"],
-            "domains": [reconciliation_summary],
+            "domains": domain_summaries,
         },
+        "semantic_indexing": semantic_indexing,
         "message": message,
     }

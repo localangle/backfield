@@ -44,9 +44,18 @@ import {
   type IntegrationSecretPatchInput,
 } from '@/lib/core-api'
 import { groupCuratedOptionsForPresetUi } from '@/lib/ai-curated-presets'
+import {
+  buildCustomCreateBody,
+  buildPresetCreateBody,
+  defaultGenerativeCaps,
+  filterCuratedOptionsByKind,
+  modelKindLabel,
+  normalizeModelKind,
+  resolveCapabilitiesForKind,
+  resolvePresetCapabilities,
+  type AiModelKind,
+} from '@/lib/ai-model-catalog-ui'
 import { Loader2, Plus } from 'lucide-react'
-
-const CAP_KEYS = ['text', 'json', 'vision'] as const
 
 /** API + DB store usage prices per token; inputs show per 1M tokens for readability. */
 const TOKENS_PER_MILLION = 1_000_000
@@ -66,10 +75,6 @@ function perTokenToPerMillionDisplay(v: unknown): string {
   const n = Number(v)
   if (!Number.isFinite(n)) return String(v)
   return formatPriceNumberForInputField(n * TOKENS_PER_MILLION)
-}
-
-function normalizeCapabilityList(selected: Set<string>): string[] {
-  return CAP_KEYS.filter((k) => selected.has(k))
 }
 
 function catalogEntryPrimaryTitle(entry: AiCredentialCatalogEntry): string {
@@ -109,6 +114,7 @@ export default function AiModelsSettingsPage() {
   const [submitting, setSubmitting] = useState(false)
 
   const [curatedOptions, setCuratedOptions] = useState<CuratedAiModelOption[]>([])
+  const [addModelKind, setAddModelKind] = useState<AiModelKind>('generative')
   const [addTab, setAddTab] = useState<'preset' | 'custom'>('preset')
   const [presetCuratedId, setPresetCuratedId] = useState<string>('')
   const [presetName, setPresetName] = useState('')
@@ -123,7 +129,7 @@ export default function AiModelsSettingsPage() {
   const [customName, setCustomName] = useState('')
   const [customLitellmModel, setCustomLitellmModel] = useState('')
   const [customIntegrationSecretId, setCustomIntegrationSecretId] = useState('')
-  const [customCaps, setCustomCaps] = useState<Set<string>>(new Set(['text', 'json']))
+  const [customCaps, setCustomCaps] = useState<Set<string>>(defaultGenerativeCaps())
   const [customCurrency, setCustomCurrency] = useState('USD')
   const [customPriceIn, setCustomPriceIn] = useState('')
   const [customPriceOut, setCustomPriceOut] = useState('')
@@ -158,9 +164,14 @@ export default function AiModelsSettingsPage() {
     return credentialCatalog.filter((e) => e.integration_secret_id != null)
   }, [credentialCatalog, editRow])
 
+  const curatedOptionsForAddKind = useMemo(
+    () => filterCuratedOptionsByKind(curatedOptions, addModelKind),
+    [curatedOptions, addModelKind],
+  )
+
   const curatedPresetSections = useMemo(
-    () => groupCuratedOptionsForPresetUi(curatedOptions),
-    [curatedOptions],
+    () => groupCuratedOptionsForPresetUi(curatedOptionsForAddKind),
+    [curatedOptionsForAddKind],
   )
 
   const refreshOrgAiData = useCallback(async (oid: number): Promise<AiModelConfigRow[]> => {
@@ -225,11 +236,6 @@ export default function AiModelsSettingsPage() {
       .then((opts) => {
         if (!cancelled) {
           setCuratedOptions(opts)
-          const first = opts[0]
-          if (first) {
-            setPresetCuratedId(first.curated_id)
-            setPresetCaps(new Set(first.capabilities))
-          }
         }
       })
       .catch((e: unknown) => {
@@ -243,9 +249,24 @@ export default function AiModelsSettingsPage() {
   }, [addOpen, orgId, showError])
 
   useEffect(() => {
+    if (!addOpen) return
+    const filtered = filterCuratedOptionsByKind(curatedOptions, addModelKind)
+    const first = filtered[0]
+    if (!first) {
+      setPresetCuratedId('')
+      setPresetCaps(new Set())
+      return
+    }
+    setPresetCuratedId((current) => {
+      if (filtered.some((o) => o.curated_id === current)) return current
+      return first.curated_id
+    })
+  }, [addOpen, addModelKind, curatedOptions])
+
+  useEffect(() => {
     const opt = curatedOptions.find((o) => o.curated_id === presetCuratedId)
     if (opt) {
-      setPresetCaps(new Set(opt.capabilities))
+      setPresetCaps(new Set(resolvePresetCapabilities(opt)))
       if (presetCurrency.trim() === '' || presetCurrency.trim().toUpperCase() === 'USD') {
         const nextCur = (opt.currency ?? 'USD').trim().toUpperCase()
         if (nextCur) setPresetCurrency(nextCur)
@@ -279,6 +300,7 @@ export default function AiModelsSettingsPage() {
 
   function resetAddForm() {
     setAddTab('preset')
+    setAddModelKind('generative')
     setPresetName('')
     setPresetCurrency('USD')
     setPresetPriceIn('')
@@ -289,14 +311,18 @@ export default function AiModelsSettingsPage() {
     setCustomName('')
     setCustomLitellmModel('')
     setCustomIntegrationSecretId('')
-    setCustomCaps(new Set(['text', 'json']))
+    setCustomCaps(defaultGenerativeCaps())
     setCustomCurrency('USD')
     setCustomPriceIn('')
     setCustomPriceOut('')
-    const first = curatedOptions[0]
+    const filtered = filterCuratedOptionsByKind(curatedOptions, 'generative')
+    const first = filtered[0]
     if (first) {
       setPresetCuratedId(first.curated_id)
-      setPresetCaps(new Set(first.capabilities))
+      setPresetCaps(new Set(resolvePresetCapabilities(first)))
+    } else {
+      setPresetCuratedId('')
+      setPresetCaps(new Set())
     }
   }
 
@@ -371,12 +397,17 @@ export default function AiModelsSettingsPage() {
     try {
       if (addTab === 'preset') {
         if (!presetCuratedId) {
-          showError('Choose a preset model.')
+          showError(
+            addModelKind === 'embedding'
+              ? 'Choose an embedding preset.'
+              : 'Choose a preset model.',
+          )
           return
         }
-        const caps = normalizeCapabilityList(presetCaps)
+        const opt = curatedOptionsForAddKind.find((o) => o.curated_id === presetCuratedId)
+        const caps = resolvePresetCapabilities(opt)
         if (caps.length === 0) {
-          showError('Select at least one capability.')
+          showError('This preset has no supported capabilities.')
           return
         }
         const sid = Number(presetIntegrationSecretId)
@@ -388,14 +419,17 @@ export default function AiModelsSettingsPage() {
           presetPriceIn.trim() === '' && presetPriceOut.trim() === ''
             ? {}
             : optionalPricePayload(presetPriceIn, presetPriceOut)
-        await createOrganizationAiModel(orgId, {
-          curated_id: presetCuratedId,
-          name: presetName.trim() || undefined,
-          capabilities: caps,
-          currency: presetCurrency.trim().toUpperCase() || 'USD',
-          integration_secret_id: sid,
-          ...prices,
-        })
+        await createOrganizationAiModel(
+          orgId,
+          buildPresetCreateBody({
+            curatedId: presetCuratedId,
+            option: opt,
+            name: presetName.trim() || undefined,
+            integrationSecretId: sid,
+            currency: presetCurrency.trim().toUpperCase() || 'USD',
+            prices,
+          }),
+        )
       } else {
         if (!customName.trim()) {
           showError('Display name is required.')
@@ -411,7 +445,7 @@ export default function AiModelsSettingsPage() {
           showError('Choose a saved API credential for this model.')
           return
         }
-        const caps = normalizeCapabilityList(customCaps)
+        const caps = resolveCapabilitiesForKind(addModelKind, customCaps)
         if (caps.length === 0) {
           showError('Select at least one capability.')
           return
@@ -420,14 +454,18 @@ export default function AiModelsSettingsPage() {
           customPriceIn.trim() === '' && customPriceOut.trim() === ''
             ? {}
             : optionalPricePayload(customPriceIn, customPriceOut)
-        await createOrganizationAiModel(orgId, {
-          name: customName.trim(),
-          litellm_model: lm,
-          integration_secret_id: sid,
-          capabilities: caps,
-          currency: customCurrency.trim().toUpperCase() || 'USD',
-          ...prices,
-        })
+        await createOrganizationAiModel(
+          orgId,
+          buildCustomCreateBody({
+            kind: addModelKind,
+            name: customName.trim(),
+            litellmModel: lm,
+            integrationSecretId: sid,
+            selectedGenerativeCaps: customCaps,
+            currency: customCurrency.trim().toUpperCase() || 'USD',
+            prices,
+          }),
+        )
       }
       await refreshOrgAiData(orgId)
       setAddOpen(false)
@@ -443,7 +481,8 @@ export default function AiModelsSettingsPage() {
     if (orgId == null || editRow == null) return
     setSubmitting(true)
     try {
-      const caps = normalizeCapabilityList(editCaps)
+      const editKind = normalizeModelKind(editRow.model_kind)
+      const caps = resolveCapabilitiesForKind(editKind, editCaps)
       if (caps.length === 0) {
         showError('Select at least one capability.')
         return
@@ -730,6 +769,7 @@ export default function AiModelsSettingsPage() {
                         : `${m.provider} · ${m.provider_model_id}`}
                     </div>
                     <div className="flex flex-wrap gap-1 pt-1">
+                      <Badge variant="outline">{modelKindLabel(normalizeModelKind(m.model_kind))}</Badge>
                       <Badge
                         variant="outline"
                         className={
@@ -828,12 +868,39 @@ export default function AiModelsSettingsPage() {
               Add a model to your organization and assign credentials.
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-xs">Model type</Label>
+            <Select
+              value={addModelKind}
+              onValueChange={(v) => setAddModelKind(v as AiModelKind)}
+            >
+              <SelectTrigger className="text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="generative">Generative — chat and text models</SelectItem>
+                <SelectItem value="embedding">Embedding</SelectItem>
+              </SelectContent>
+            </Select>
+            {addModelKind === 'embedding' ? (
+              <p className="text-xs text-muted-foreground">
+                Used when flows index saved entities for meaning-based search. Presets include
+                text-embedding-3-small and text-embedding-3-large.
+              </p>
+            ) : null}
+          </div>
           <Tabs value={addTab} onValueChange={(v) => setAddTab(v as 'preset' | 'custom')}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="preset">Preset</TabsTrigger>
               <TabsTrigger value="custom">Custom</TabsTrigger>
             </TabsList>
             <TabsContent value="preset" className="space-y-4 pt-4">
+              {curatedOptionsForAddKind.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No {addModelKind === 'embedding' ? 'embedding' : 'generative'} presets are
+                  available yet.
+                </p>
+              ) : (
               <div className="space-y-2">
                 <Label className="text-xs">Preset</Label>
                 <Select value={presetCuratedId} onValueChange={setPresetCuratedId}>
@@ -857,6 +924,7 @@ export default function AiModelsSettingsPage() {
                   </SelectContent>
                 </Select>
               </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="preset-name" className="text-xs">
                   Display name (optional)
@@ -945,7 +1013,9 @@ export default function AiModelsSettingsPage() {
             </TabsContent>
             <TabsContent value="custom" className="space-y-4 pt-4">
               <p className="text-xs text-muted-foreground">
-                Choose any LiteLLM supported model from{' '}
+                {addModelKind === 'embedding'
+                  ? 'Choose a provider embedding model from '
+                  : 'Choose any LiteLLM supported model from '}
                 <a
                   href="https://models.litellm.ai/"
                   className="underline underline-offset-2 hover:text-foreground"
@@ -975,7 +1045,11 @@ export default function AiModelsSettingsPage() {
                   id="cust-litellm"
                   value={customLitellmModel}
                   onChange={(e) => setCustomLitellmModel(e.target.value)}
-                  placeholder="ex. azure_ai/claude-haiku-4-5"
+                  placeholder={
+                    addModelKind === 'embedding'
+                      ? 'ex. openai/text-embedding-3-small'
+                      : 'ex. azure_ai/claude-haiku-4-5'
+                  }
                   className="font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">Full model name string from LiteLLM</p>
@@ -1063,7 +1137,10 @@ export default function AiModelsSettingsPage() {
             <Button
               type="button"
               className="bg-black text-white hover:bg-black/90"
-              disabled={submitting}
+              disabled={
+                submitting ||
+                (addTab === 'preset' && curatedOptionsForAddKind.length === 0)
+              }
               onClick={() => void handleAddSubmit()}
             >
               {submitting ? (
@@ -1088,6 +1165,10 @@ export default function AiModelsSettingsPage() {
             </DialogDescription>
           </DialogHeader>
           {editRow ? (
+            <>
+              <div className="rounded-md border border-input bg-muted/30 px-3 py-2 text-sm">
+                Type: {modelKindLabel(normalizeModelKind(editRow.model_kind))}
+              </div>
             <Tabs
               key={editRow.id}
               value={editRow.litellm_model?.trim() ? 'custom' : 'preset'}
@@ -1325,6 +1406,7 @@ export default function AiModelsSettingsPage() {
                 </div>
               </TabsContent>
             </Tabs>
+            </>
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setEditRow(null)}>

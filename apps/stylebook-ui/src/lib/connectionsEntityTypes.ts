@@ -1,1 +1,1 @@
-export type ConnectionsEntityType = "location" | "person" | "organization" | "work"
+export type { EntityType } from "@/lib/entityTypes"

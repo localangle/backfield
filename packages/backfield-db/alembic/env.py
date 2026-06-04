@@ -34,12 +34,22 @@ from backfield_db.models import (  # noqa: F401
     StylebookLocationAlias,
     StylebookLocationCanonical,
     StylebookLocationMeta,
+    StylebookPersonAlias,
+    StylebookPersonCanonical,
+    StylebookPersonMeta,
     SubstrateArticle,
     SubstrateImage,
     SubstrateLocation,
     SubstrateLocationCache,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
+    SubstratePerson,
+    SubstratePersonMention,
+    SubstratePersonMentionOccurrence,
+)
+from backfield_db.semantic_document_models import (  # noqa: F401
+    SubstrateLocationSemanticDocument,
+    SubstratePersonSemanticDocument,
 )
 
 config = context.config

@@ -8,15 +8,18 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
+from agate_runtime.run_graph_spec import merge_run_result_payload
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
 from agate_runtime.single_item import build_single_item_input_from_graph_spec_json
 from api.deps import get_auth, get_session
 from api.processed_item import (
     OverlayGeometryValidationError,
     build_merged_locations_lane,
+    build_merged_people_lane,
     build_processed_item_article_context,
     build_reviewed_output,
     enrich_merged_locations_for_review,
+    enrich_merged_people_for_review,
     validate_processed_item_overlay_geometry,
 )
 from backfield_auth.gate import require_project_access, visible_project_ids
@@ -28,6 +31,9 @@ from backfield_db import (
     BackfieldProjectSecret,
 )
 from backfield_db.crypto import decrypt_secret
+from backfield_stylebook.semantic_indexing.processed_item import (
+    build_processed_item_semantic_indexing_summary,
+)
 from celery import Celery
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -74,6 +80,7 @@ def _celery_queue() -> str:
 
 class AiCostNodeBreakdown(BaseModel):
     node_id: str | None
+    node_type: str | None = None
     estimated_total: Decimal
 
 
@@ -117,6 +124,27 @@ class ArticleContextOut(BaseModel):
     reason: str | None = None
 
 
+class ProcessedItemSemanticIndexingOut(BaseModel):
+    """Compact semantic indexing status for processed item detail."""
+
+    status: Literal[
+        "not_enabled",
+        "pending",
+        "running",
+        "succeeded",
+        "partial",
+        "failed",
+    ]
+    enabled: bool = False
+    document_count: int = 0
+    indexed_count: int = 0
+    pending_count: int = 0
+    failed_count: int = 0
+    indexed_at: datetime | None = None
+    embedding_model: str | None = None
+    error: str | None = None
+
+
 class ProcessedItemDetailOut(BaseModel):
     """Single processed item for run detail / item drill-down."""
 
@@ -144,10 +172,15 @@ class ProcessedItemDetailOut(BaseModel):
     reviewed_output: dict[str, Any] | None = None
     #: Single merged lane: model + user places with provenance (see ``docs/API.md``).
     merged_locations: list[dict[str, Any]] = Field(default_factory=list)
+    #: Single merged lane: model + user people with provenance (see ``docs/API.md``).
+    merged_people: list[dict[str, Any]] = Field(default_factory=list)
     #: Overlay patches whose anchor no longer exists in current model output.
     stale_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
+    stale_people_overlay_entries: list[dict[str, Any]] = Field(default_factory=list)
     #: Resolved article body/headline for the item (see ``docs/API.md``).
     article_context: ArticleContextOut
+    #: Semantic search indexing status from Backfield Output (see ``docs/API.md``).
+    semantic_indexing: ProcessedItemSemanticIndexingOut
 
 
 class ProcessedItemOverlayPatchIn(BaseModel):
@@ -193,6 +226,26 @@ class RunOut(BaseModel):
 def _graph_project_id(session: Session, graph_id: str) -> int:
     g = session.get(AgateGraph, graph_id)
     return g.project_id if g else 0
+
+
+def _processed_item_semantic_indexing(
+    session: Session,
+    *,
+    project_id: int,
+    item_status: str,
+    output_obj: dict[str, Any] | None,
+    article_id: int | None,
+    item_updated_at: datetime,
+) -> ProcessedItemSemanticIndexingOut:
+    summary = build_processed_item_semantic_indexing_summary(
+        session,
+        project_id=project_id,
+        item_status=item_status,
+        result_obj=output_obj,
+        article_id=article_id,
+        item_updated_at=item_updated_at,
+    )
+    return ProcessedItemSemanticIndexingOut.model_validate(summary)
 
 
 def _rollup_ai_costs_for_run(
@@ -488,6 +541,7 @@ def create_run(
         )
         session.add(item)
         run.status = "running"
+        run.result_json = merge_run_result_payload(None, graph_spec_json=g.spec_json)
         run.updated_at = datetime.now(UTC)
         session.add(run)
         session.commit()
@@ -647,6 +701,9 @@ def _detail_from_agate_processed_row(
     merged_locations, stale_overlay_entries = build_merged_locations_lane(
         output=output_obj, overlay=overlay_obj
     )
+    merged_people, stale_people_overlay_entries = build_merged_people_lane(
+        output=output_obj, overlay=overlay_obj
+    )
 
     article_ctx_dict = build_processed_item_article_context(
         session, project_id=project_id, input_obj=input_obj, result_obj=output_obj
@@ -659,6 +716,22 @@ def _detail_from_agate_processed_row(
         run_id=row.run_id,
         article_id=article_ctx_dict.get("article_id"),
         merged_locations=merged_locations,
+    )
+    merged_people = enrich_merged_people_for_review(
+        session,
+        project_id=project_id,
+        run_id=row.run_id,
+        article_id=article_ctx_dict.get("article_id"),
+        merged_people=merged_people,
+    )
+
+    semantic_indexing = _processed_item_semantic_indexing(
+        session,
+        project_id=project_id,
+        item_status=row.status,
+        output_obj=output_obj,
+        article_id=article_ctx_dict.get("article_id"),
+        item_updated_at=row.updated_at,
     )
 
     rid = row.id
@@ -686,7 +759,10 @@ def _detail_from_agate_processed_row(
         reviewed_output=reviewed_output_obj,
         merged_locations=merged_locations,
         stale_overlay_entries=stale_overlay_entries,
+        merged_people=merged_people,
+        stale_people_overlay_entries=stale_people_overlay_entries,
         article_context=article_ctx,
+        semantic_indexing=semantic_indexing,
     )
 
 
@@ -745,6 +821,9 @@ def _maybe_detail_whole_graph_run(
     merged_locations, stale_overlay_entries = build_merged_locations_lane(
         output=output_obj, overlay=None
     )
+    merged_people, stale_people_overlay_entries = build_merged_people_lane(
+        output=output_obj, overlay=None
+    )
 
     project_id = _graph_project_id(session, run.graph_id)
     article_ctx_dict = build_processed_item_article_context(
@@ -758,6 +837,22 @@ def _maybe_detail_whole_graph_run(
         run_id=run.id,
         article_id=article_ctx_dict.get("article_id"),
         merged_locations=merged_locations,
+    )
+    merged_people = enrich_merged_people_for_review(
+        session,
+        project_id=project_id,
+        run_id=run.id,
+        article_id=article_ctx_dict.get("article_id"),
+        merged_people=merged_people,
+    )
+
+    semantic_indexing = _processed_item_semantic_indexing(
+        session,
+        project_id=project_id,
+        item_status=st,
+        output_obj=output_obj,
+        article_id=article_ctx_dict.get("article_id"),
+        item_updated_at=run.updated_at,
     )
 
     return ProcessedItemDetailOut(
@@ -782,7 +877,10 @@ def _maybe_detail_whole_graph_run(
         reviewed_output=None,
         merged_locations=merged_locations,
         stale_overlay_entries=stale_overlay_entries,
+        merged_people=merged_people,
+        stale_people_overlay_entries=stale_people_overlay_entries,
         article_context=article_ctx,
+        semantic_indexing=semantic_indexing,
     )
 
 
@@ -1140,7 +1238,7 @@ def get_run_estimated_ai_cost(
     rows = list(session.exec(stmt).all())
     total = Decimal("0")
     incomplete = False
-    by_node: dict[str | None, Decimal] = {}
+    by_node: dict[str | None, tuple[Decimal, str | None]] = {}
     currency = "USD"
     for row in rows:
         currency = str(row.currency or "USD")
@@ -1151,12 +1249,15 @@ def get_run_estimated_ai_cost(
         if row.cost_estimate_incomplete:
             incomplete = True
         nk = row.node_id
-        prev = by_node.get(nk, Decimal("0"))
-        by_node[nk] = prev + (row.estimated_cost or Decimal("0"))
+        prev_cost, prev_type = by_node.get(nk, (Decimal("0"), None))
+        node_type = row.node_type or prev_type
+        by_node[nk] = (prev_cost + (row.estimated_cost or Decimal("0")), node_type)
 
     breakdown = [
-        AiCostNodeBreakdown(node_id=k, estimated_total=v)
-        for k, v in sorted(by_node.items(), key=lambda kv: (kv[0] is None, str(kv[0])))
+        AiCostNodeBreakdown(node_id=k, node_type=node_type, estimated_total=cost)
+        for k, (cost, node_type) in sorted(
+            by_node.items(), key=lambda kv: (kv[0] is None, str(kv[0]))
+        )
     ]
 
     return RunEstimatedAiCostOut(

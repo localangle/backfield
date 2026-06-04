@@ -1,7 +1,4 @@
-"""Canonical geocode starter graph.
-
-Topology: TextInput → PlaceExtract → GeocodeAgent → Backfield Output (DBOutput).
-"""
+"""Canonical starter graphs for local bootstrap and smoke."""
 
 from __future__ import annotations
 
@@ -9,6 +6,15 @@ from agate_runtime.types import Edge, GraphSpec, NodeConfig
 
 # Stored graph name in agate_graph.name (UI + smoke lookup).
 STARTER_FLOW_GRAPH_DISPLAY_NAME = "Starter flow"
+PEOPLE_STARTER_FLOW_GRAPH_DISPLAY_NAME = "People starter"
+
+PEOPLE_SMOKE_DEMO_TEXT = (
+    "Mayor John Smith of Chicago announced a new park initiative Monday. "
+    "Jane Doe, a local resident, said she supports the plan. "
+    "Police arrested Robert Lee in connection with vandalism at the site; "
+    "Maria Garcia witnessed the incident. "
+    "Cubs shortstop Sam Rivera attended the ribbon-cutting as a guest."
+)
 
 
 def starter_geocode_flow_graph_spec() -> GraphSpec:
@@ -64,5 +70,40 @@ def starter_geocode_flow_graph_spec() -> GraphSpec:
                 sourceHandle="locations",
                 targetHandle="data",
             ),
+        ],
+    )
+
+
+def starter_people_flow_graph_spec() -> GraphSpec:
+    """Golden-path people ingest: TextInput → PersonExtract → DBOutput."""
+    return GraphSpec(
+        name="starter_people_flow",
+        nodes=[
+            NodeConfig(
+                id="n1",
+                type="TextInput",
+                params={"text": PEOPLE_SMOKE_DEMO_TEXT},
+                position={"x": 0.0, "y": 0.0},
+            ),
+            NodeConfig(
+                id="n2",
+                type="PersonExtract",
+                params={},
+                position={"x": 337.0, "y": 46.0},
+            ),
+            NodeConfig(
+                id="n3",
+                type="DBOutput",
+                params={
+                    "stylebook_matching_enabled": True,
+                    "auto_apply_canonicalization": False,
+                    "reconciliation_policy": "smart_merge",
+                },
+                position={"x": 620.0, "y": 46.0},
+            ),
+        ],
+        edges=[
+            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(source="n2", target="n3", sourceHandle="people", targetHandle="data"),
         ],
     )

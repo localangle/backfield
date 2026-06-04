@@ -15,13 +15,11 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_db.text_sanitize import strip_nul_bytes
 from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
 from backfield_stylebook.locations import create_standalone_canonical
 from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_stylebook.resolve import (
-    STYLEBOOK_SLUG_NOT_IN_ORG,
-    resolve_effective_stylebook_id_for_project,
-)
+from backfield_stylebook.semantic_indexing.reindex import location_patch_affects_semantic_index
 from backfield_stylebook.substrate_canonical_link_actions import (
     finalize_substrate_after_article_scoped_remove,
     link_substrate_to_canonical_atomic,
@@ -37,8 +35,13 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.catalog_scope import StylebookSlugQuery
 from stylebook_api.deps import get_auth, get_session
+from stylebook_api.helpers.project_scope import project_by_slug, require_stylebook_id
 from stylebook_api.mention_occurrences import replace_mention_occurrences_for_article
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
+from stylebook_api.semantic_reindex import (
+    enqueue_semantic_reindex,
+    enqueue_semantic_reindex_for_entity,
+)
 
 router = APIRouter(prefix="/v1", tags=["locations"])
 
@@ -51,10 +54,15 @@ _ALLOWED_CANONICAL_LIST_TYPE_FILTER = frozenset(PLACE_EXTRACT_LOCATION_TYPES)
 
 
 def _project_by_slug(session: Session, slug: str) -> BackfieldProject:
-    row = session.exec(select(BackfieldProject).where(BackfieldProject.slug == slug)).first()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return row
+    return project_by_slug(session, slug)
+
+
+def _require_stylebook_id(
+    session: Session,
+    project: BackfieldProject,
+    stylebook_slug: str | None = None,
+) -> int:
+    return require_stylebook_id(session, project, stylebook_slug=stylebook_slug)
 
 
 def _normalize_name(name: str) -> str:
@@ -190,6 +198,19 @@ class PatchLocationBody(BaseModel):
     notes: str | None = None
 
 
+def _enqueue_location_reindex_for_articles(
+    *,
+    project_id: int,
+    article_ids: set[int],
+) -> None:
+    for aid in sorted(article_ids):
+        enqueue_semantic_reindex(
+            project_id=project_id,
+            article_id=aid,
+            entity_type="location",
+        )
+
+
 class PatchGeometryBody(BaseModel):
     """Set GeoJSON geometry, or null to clear the saved place pin/footprint."""
 
@@ -200,26 +221,6 @@ class PatchCanonicalGeometryBody(BaseModel):
     """Set GeoJSON geometry, or null to clear the canonical pin/footprint."""
 
     geometry_json: dict[str, Any] | None  # required field; use explicit JSON null to clear
-
-
-def _require_stylebook_id(
-    session: Session,
-    project: BackfieldProject,
-    stylebook_slug: str | None = None,
-) -> int:
-    try:
-        return resolve_effective_stylebook_id_for_project(
-            session, project, stylebook_slug=stylebook_slug
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except LookupError as e:
-        if str(e) == STYLEBOOK_SLUG_NOT_IN_ORG:
-            raise HTTPException(
-                status_code=404,
-                detail="No catalog matches that name in your organization.",
-            ) from e
-        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 def _persist_new_catalog_canonical(
@@ -985,6 +986,12 @@ def unlink_substrate_from_canonical_route(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     session.commit()
+    enqueue_semantic_reindex_for_entity(
+        session,
+        project_id=int(proj.id),
+        entity_type="location",
+        entity_id=location_id,
+    )
     return {"message": "unlinked"}
 
 
@@ -1017,6 +1024,12 @@ def link_substrate_to_canonical_route(
             raise HTTPException(status_code=400, detail=msg) from e
         raise HTTPException(status_code=409, detail=msg) from e
     session.commit()
+    enqueue_semantic_reindex_for_entity(
+        session,
+        project_id=int(proj.id),
+        entity_type="location",
+        entity_id=location_id,
+    )
     return LinkCanonicalResponse(changed=changed)
 
 
@@ -1061,8 +1074,8 @@ def create_location_from_article_evidence(
 
     label = body.label.strip()
     location_type = body.location_type.strip()
-    mention_text = body.mention_text.strip()
-    quote_text = body.quote_text.strip()
+    mention_text = strip_nul_bytes(body.mention_text.strip())
+    quote_text = strip_nul_bytes(body.quote_text.strip())
     run_id = body.run_id.strip()
     if not label:
         raise HTTPException(status_code=400, detail="label is required")
@@ -1138,6 +1151,11 @@ def create_location_from_article_evidence(
     )
     session.add(occurrence)
     session.commit()
+    enqueue_semantic_reindex(
+        project_id=int(proj.id),
+        article_id=body.article_id,
+        entity_type="location",
+    )
     session.refresh(loc)
     session.refresh(mention)
     session.refresh(occurrence)
@@ -1175,6 +1193,13 @@ def patch_location(
         loc.status = _map_incoming_status(body.status) or body.status
     session.add(loc)
     session.commit()
+    if location_patch_affects_semantic_index(body):
+        enqueue_semantic_reindex_for_entity(
+            session,
+            project_id=int(proj.id),
+            entity_type="location",
+            entity_id=location_id,
+        )
     session.refresh(loc)
     mc = _mention_counts(session, [location_id])
     return LocationResponse.from_row(loc, mc.get(location_id, 0))
@@ -1256,6 +1281,7 @@ def delete_location(
         mention_filters.append(SubstrateLocationMention.article_id == article_id)
 
     mentions = session.exec(select(SubstrateLocationMention).where(*mention_filters)).all()
+    article_ids = {int(mention.article_id) for mention in mentions}
     for mention in mentions:
         mention.deleted = True
         session.add(mention)
@@ -1308,6 +1334,10 @@ def delete_location(
                     detail="Location still has linked mentions or references; cannot delete.",
                 ) from None
     session.commit()
+    _enqueue_location_reindex_for_articles(
+        project_id=int(proj.id),
+        article_ids=article_ids,
+    )
     return {
         "message": "deleted",
         "mentions_removed": len(mentions),
@@ -1488,6 +1518,11 @@ def replace_location_mention_occurrences(
         occurrences_in=payload,
     )
     session.commit()
+    enqueue_semantic_reindex(
+        project_id=int(proj.id),
+        article_id=article_id,
+        entity_type="location",
+    )
     out: list[MentionOccurrenceOut] = []
     for row in created:
         if row.id is None:

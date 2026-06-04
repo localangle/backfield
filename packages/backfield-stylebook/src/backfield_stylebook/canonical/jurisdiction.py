@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from typing import Any
 
 from backfield_db import SubstrateLocation
@@ -78,6 +79,13 @@ SUBNATIONAL_2: frozenset[str] = frozenset(
     }
 )
 
+_CA_SUBDIVISIONS: frozenset[str] = frozenset(
+    {"AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"}
+)
+_US_SUBDIVISIONS: frozenset[str] = SUBNATIONAL_2 - _CA_SUBDIVISIONS
+
+_SUBDIVISION_TAIL_RE = re.compile(r"^([A-Z]{2})(?:\s+\d{5}(?:-\d{4})?)?$")
+
 
 def strict_canonical_gates_enabled() -> bool:
     v = (os.environ.get("BACKFIELD_STRICT_CANONICAL_GATES") or "1").strip().lower()
@@ -139,6 +147,25 @@ def stylebook_jurisdiction_fields_from_components(
     }
 
 
+def _country_for_subdivision_code(code: str) -> str | None:
+    if code in _US_SUBDIVISIONS:
+        return "US"
+    if code in _CA_SUBDIVISIONS:
+        return "CA"
+    return None
+
+
+def _subdivision_from_address_tail(tail: str) -> str | None:
+    """Parse ``AR`` or ``AR 71923`` (and similar) from the last comma segment."""
+    cand = tail.upper().replace(".", "").strip()
+    if len(cand) == 2 and cand in SUBNATIONAL_2:
+        return cand
+    m = _SUBDIVISION_TAIL_RE.fullmatch(cand)
+    if m and m.group(1) in SUBNATIONAL_2:
+        return m.group(1)
+    return None
+
+
 def parse_jurisdiction_from_formatted_address(
     formatted_address: str | None,
 ) -> tuple[str | None, str | None]:
@@ -156,9 +183,11 @@ def parse_jurisdiction_from_formatted_address(
         country = "US"
         work = work[:-1]
     if work:
-        cand = work[-1].upper().replace(".", "")
-        if len(cand) == 2 and cand in SUBNATIONAL_2:
-            state = cand
+        sub = _subdivision_from_address_tail(work[-1])
+        if sub is not None:
+            state = sub
+            if country is None:
+                country = _country_for_subdivision_code(sub)
     return country, state
 
 

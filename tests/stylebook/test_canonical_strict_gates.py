@@ -6,6 +6,7 @@ import pytest
 from backfield_db import (
     BackfieldOrganization,
     BackfieldWorkspace,
+    StylebookLocationAlias,
     StylebookLocationCanonical,
     SubstrateLocation,
 )
@@ -14,13 +15,20 @@ from backfield_stylebook.canonical_jurisdiction import (
     container_admin_query_from_components,
     geocode_components_vs_formatted_address_mismatch,
     jurisdiction_from_components,
+    parse_jurisdiction_from_formatted_address,
     strict_canonical_gates_enabled,
 )
 from backfield_stylebook.canonical_link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
 )
+from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
 from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+from backfield_stylebook.entities.location.policy import (
+    _jurisdiction_pair_demotes_recall_score,
+    find_existing_canonical_id_by_normalized_label,
+    plan_requires_llm_canonical_adjudication,
+)
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -136,6 +144,27 @@ def test_geocode_components_vs_formatted_address_mismatch() -> None:
     )
 
 
+def test_parse_jurisdiction_from_formatted_address_state_with_zip() -> None:
+    assert parse_jurisdiction_from_formatted_address(
+        "Tonia Rd, Arkadelphia, AR 71923"
+    ) == ("US", "AR")
+
+
+def test_geocode_country_mismatch_when_story_is_abroad() -> None:
+    comps = {
+        "city": "Aksum",
+        "state": None,
+        "country": {"name": "Ethiopia", "abbr": "ET"},
+    }
+    assert (
+        geocode_components_vs_formatted_address_mismatch(
+            formatted_address="Tonia Rd, Arkadelphia, AR 71923",
+            comps=comps,
+        )
+        == "geocode_country_mismatch"
+    )
+
+
 def _make_engine():
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
@@ -156,6 +185,209 @@ def _bootstrap(session: Session, *, org_slug: str) -> tuple[int, int]:
     session.add(ws)
     session.commit()
     return oid, sb_id
+
+
+def test_decide_links_imported_canonical_by_normalized_label_without_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bundle-imported rows without aliases still link when label matches tier-1 rules."""
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-label")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Albany Park, Chicago, IL",
+            slug="albany-park-chicago-il",
+            location_type="neighborhood",
+            status="active",
+            geometry_json={"type": "Point", "coordinates": [-87.72, 41.97]},
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Albany Park, Chicago, IL",
+            normalized_name="albany park, chicago, il",
+            location_type="neighborhood",
+            status="resolved",
+            canonical_link_status="unlinked",
+            formatted_address="Albany Park, Chicago, IL",
+            source_details_json={
+                "place_extract_components": {
+                    "neighborhood": "Albany Park",
+                    "city": "Chicago",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+            geometry_json={"type": "Point", "coordinates": [-87.72, 41.97]},
+            identity_fingerprint="fp-strict-label",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        assert find_existing_canonical_id_by_normalized_label(
+            session, stylebook_id=sb_id, location=loc
+        ) == str(canon.id)
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="areas.neighborhoods",
+            location=loc,
+            entry={"components": loc.source_details_json["place_extract_components"]},
+        )
+        assert plan.decision.value == "link_existing"
+        assert plan.existing_canonical_id == str(canon.id)
+        assert any(
+            isinstance(r, dict) and r.get("code") == "linked_exact_normalized_label"
+            for r in plan.resolution_reasons
+        )
+
+
+def test_gate_demoted_high_raw_recall_defers_for_llm_not_materialize(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Spelling variants demoted by head-anchor gate defer (LLM) instead of materialize."""
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-gate-demote")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Arlington International Race Course, Arlington Heights, IL",
+            slug="arlington-race-course",
+            location_type="place",
+            status="active",
+            geometry_json={"type": "Point", "coordinates": [-87.98, 42.08]},
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        cid = str(canon.id)
+        session.add(
+            StylebookLocationAlias(
+                location_canonical_id=cid,
+                alias_text="Arlington International Race Course, Arlington Heights, IL",
+                normalized_alias="arlington international race course, arlington heights, il",
+                provenance="test",
+                suppressed=False,
+            )
+        )
+        session.commit()
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Arlington International Racecourse, Arlington Heights, IL",
+            normalized_name="arlington international racecourse, arlington heights, il",
+            location_type="place",
+            status="resolved",
+            canonical_link_status="unlinked",
+            formatted_address="Arlington International Racecourse, Arlington Heights, IL",
+            source_details_json={
+                "place_extract_components": {
+                    "place": {"name": "Arlington International Racecourse"},
+                    "city": "Arlington Heights",
+                    "state": {"abbr": "IL"},
+                    "country": {"abbr": "US"},
+                }
+            },
+            geometry_json={"type": "Point", "coordinates": [-87.98, 42.08]},
+            identity_fingerprint="fp-gate-demote-race",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry={"components": loc.source_details_json["place_extract_components"]},
+        )
+        assert plan.decision.value == "defer"
+        assert plan.existing_canonical_id is None
+        reason = next(
+            r
+            for r in plan.resolution_reasons
+            if isinstance(r, dict) and r.get("code") == "ambiguous_canonical_match"
+        )
+        assert reason.get("gate_demoted_recall_match") is True
+        assert float(reason["fuzzy_raw_score_before_gates"]) >= RECALL_MIN_SCORE
+        assert float(reason["best_score"]) < RECALL_MIN_SCORE
+        assert plan_requires_llm_canonical_adjudication(plan, loc) is True
+
+
+def test_decide_defers_on_geocode_country_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BACKFIELD_STRICT_CANONICAL_GATES", "1")
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-country")
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Aksum, Tigray, Ethiopia",
+            normalized_name="aksum, tigray, ethiopia",
+            location_type="place",
+            status="resolved",
+            canonical_link_status="unlinked",
+            formatted_address="Tonia Rd, Arkadelphia, AR 71923",
+            source_details_json={
+                "place_extract_components": {
+                    "city": "Aksum",
+                    "state": None,
+                    "country": {"name": "Ethiopia", "abbr": "ET"},
+                }
+            },
+            geometry_json={"type": "Point", "coordinates": [-93.05, 34.12]},
+            identity_fingerprint="fp-strict-country",
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        plan = decide_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            places_bucket="points",
+            location=loc,
+            entry={"components": loc.source_details_json["place_extract_components"]},
+        )
+        assert plan.decision.value == "defer"
+        assert any(
+            isinstance(r, dict) and r.get("code") == "geocode_country_mismatch"
+            for r in plan.resolution_reasons
+        )
+
+
+def test_jurisdiction_pair_demotes_on_country_without_state() -> None:
+    engine = _make_engine()
+    with Session(engine) as session:
+        _, sb_id = _bootstrap(session, org_slug="strict-gates-jur-country")
+        canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Tonia Rd, Arkadelphia, AR",
+            slug="tonia-rd",
+            location_type="address",
+            country_code="US",
+            subdivision_code="AR",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        loc = SubstrateLocation(
+            project_id=1,
+            name="Aksum, Tigray, Ethiopia",
+            normalized_name="aksum, tigray, ethiopia",
+            location_type="place",
+            status="resolved",
+            canonical_link_status="unlinked",
+            identity_fingerprint="fp-jur-country",
+        )
+        comps = {
+            "city": "Aksum",
+            "country": {"abbr": "ET"},
+        }
+        assert _jurisdiction_pair_demotes_recall_score(loc, canon, comps) is True
 
 
 def test_decide_preflight_defers_on_geocode_state_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -72,3 +72,63 @@ export async function importGeoJson(
   )
 }
 
+export type AnalyzeCsvResponse = {
+  row_count: number
+  available_columns: string[]
+  sample_row: Record<string, string> | null
+}
+
+export type PersonCsvFieldMappings = {
+  label?: string
+  full_name?: string
+  first_name?: string
+  last_name?: string
+  title?: string
+  affiliation?: string
+  public_figure?: string
+  person_type?: string
+  sort_key?: string
+}
+
+export type ImportCsvResponse = {
+  total_rows: number
+  attempted_rows: number
+  created_count: number
+  failed_count: number
+  created: { row_index: number; canonical_id: string; label: string }[]
+  failed: { row_index: number; error: string }[]
+}
+
+export async function analyzeImportCsvPeople(
+  stylebookSlug: string,
+  csvData: string,
+): Promise<AnalyzeCsvResponse> {
+  return stylebookJsonFetch<AnalyzeCsvResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/import/csv/people/analyze`,
+    {
+      method: "POST",
+      body: JSON.stringify({ csv_data: csvData }),
+    },
+  )
+}
+
+export async function importCsvPeople(
+  stylebookSlug: string,
+  csvData: string,
+  fieldMappings?: PersonCsvFieldMappings,
+): Promise<ImportCsvResponse> {
+  const mappings: Record<string, string> = {}
+  if (fieldMappings) {
+    for (const [key, col] of Object.entries(fieldMappings)) {
+      if (col && col.trim()) mappings[key] = col.trim()
+    }
+  }
+  return stylebookJsonFetch<ImportCsvResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/import/csv/people`,
+    {
+      method: "POST",
+      body: JSON.stringify({ csv_data: csvData, field_mappings: mappings }),
+    },
+  )
+}
+

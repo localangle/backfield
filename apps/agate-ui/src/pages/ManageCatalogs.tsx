@@ -387,7 +387,7 @@ export default function ManageCatalogsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <SettingsScreenHeader title="Stylebooks">
           <>
-            Stylebooks hold your organization&apos;s canonical locations and related editorial data.{" "}
+            Stylebooks hold your organization&apos;s canonical locations, people, and related editorial data.{" "}
             Manage access to stylebooks via{" "}
             <span className="text-foreground font-medium">Users</span>.
           </>
@@ -494,8 +494,9 @@ export default function ManageCatalogsPage() {
           <DialogHeader>
             <DialogTitle>Import a stylebook copy</DialogTitle>
             <DialogDescription>
-              Upload a stylebook file you previously downloaded from this product. Only canonical
-              locations are copied; a new stylebook is created with new internal identifiers.
+              Upload a stylebook file you previously downloaded from this product. Canonical
+              locations and people are copied; a new stylebook is created with new internal
+              identifiers. Aliases, metadata, connections, and review queues are not included.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

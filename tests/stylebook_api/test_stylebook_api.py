@@ -21,6 +21,9 @@ from backfield_db import (
     SubstrateLocation,
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
+    SubstratePerson,
+    SubstratePersonMention,
+    SubstratePersonMentionOccurrence,
 )
 from backfield_stylebook.canonical_link import (
     CANONICAL_LINK_LINKED,
@@ -41,6 +44,10 @@ def _stylebook_test_stack(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> Generator[tuple[TestClient, Engine], None, None]:
     monkeypatch.setenv("SERVICE_API_TOKEN", "backfield-dev")
+    monkeypatch.setattr(
+        "stylebook_api.semantic_reindex.celery_app.send_task",
+        lambda *_args, **_kwargs: None,
+    )
     import importlib
 
     import backfield_auth.service_tokens as service_tokens
@@ -1018,6 +1025,49 @@ def test_deferred_candidate_lists_defer_display_message_from_reasons_json(
     cand = body["candidates"][0]
     assert cand["suggested_name"] == "Private Rd"
     assert cand["defer_display_message"] == "Private place or residence"
+    assert cand["canonical_review_lines"] == ["Private place or residence"]
+
+
+def test_open_candidate_lists_canonical_review_lines(
+    client: TestClient, stylebook_test_engine: object
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Greg Abbott",
+            normalized_name="greg abbott",
+            location_type="place",
+            identity_fingerprint="fp-review-lines-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+            canonical_review_reasons_json=[
+                {
+                    "code": "ambiguous_canonical_match",
+                    "recall_canonical_ids": ["id-1", "id-2"],
+                },
+                {
+                    "code": "canonical_adjudication",
+                    "rationale": "Not the same place as recalled entries.",
+                    "outcome": "no_high_confidence_link",
+                },
+            ],
+        )
+        s.add(loc)
+        s.commit()
+
+    r = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=open",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    cand = r.json()["candidates"][0]
+    assert cand["canonical_review_lines"] == [
+        "Several Stylebook locations could match (2 recalled).",
+        "Not the same place as recalled entries.",
+    ]
 
 
 def test_candidates_lists_unlinked_substrate(
@@ -1313,6 +1363,83 @@ def test_create_location_from_article_evidence(
         ).one()
         assert occurrence.source_kind == "manual_add"
         assert occurrence.mention_text == "Lincoln School"
+        assert occurrence.quote_text == text[start:end]
+        assert occurrence.start_char == start
+        assert occurrence.end_char == end
+
+
+def test_create_person_from_article_evidence(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        text = "Mayor Jane Doe announced a new policy at city hall."
+        art = SubstrateArticle(
+            project_id=pid,
+            headline="Policy announcement",
+            text=text,
+            url="https://example.com/add-person",
+            deleted=False,
+        )
+        s.add(art)
+        s.commit()
+        s.refresh(art)
+        aid = int(art.id)  # type: ignore[arg-type]
+
+    start = text.index("Mayor Jane Doe")
+    end = start + len("Mayor Jane Doe")
+    r = client.post(
+        "/v1/people/from-article-evidence?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={
+            "article_id": aid,
+            "run_id": "run-456",
+            "name": "Jane Doe",
+            "person_type": "politician",
+            "title": "Mayor",
+            "affiliation": "City of Example",
+            "nature": "official",
+            "mention_text": "Mayor Jane Doe",
+            "quote_text": text[start:end],
+            "start_char": start,
+            "end_char": end,
+            "role_in_story": "Announced policy",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["anchor"].startswith("user_person:")
+    person_id = int(body["person"]["id"])
+    assert body["person"]["name"] == "Jane Doe"
+    assert body["person"]["person_type"] == "elected_official"
+    assert body["person"]["canonical_link_status"] == CANONICAL_LINK_PENDING
+
+    with Session(engine) as s:
+        person = s.get(SubstratePerson, person_id)
+        assert person is not None
+        assert person.status == "active"
+        assert person.source_kind == "manual_add"
+        assert person.source_details_json["run_id"] == "run-456"
+        assert person.source_details_json["raw_entry_id"] == body["anchor"]
+        mention = s.exec(
+            select(SubstratePersonMention).where(
+                SubstratePersonMention.person_id == person_id,
+                SubstratePersonMention.article_id == aid,
+            )
+        ).one()
+        assert mention.added is True
+        assert mention.source_kind == "manual_add"
+        assert mention.nature == "official"
+        assert mention.role_in_story == "Announced policy"
+        occurrence = s.exec(
+            select(SubstratePersonMentionOccurrence).where(
+                SubstratePersonMentionOccurrence.person_mention_id == int(mention.id)
+            )
+        ).one()
+        assert occurrence.source_kind == "manual_add"
+        assert occurrence.mention_text == "Mayor Jane Doe"
         assert occurrence.quote_text == text[start:end]
         assert occurrence.start_char == start
         assert occurrence.end_char == end
@@ -2570,17 +2697,6 @@ def test_get_suggested_canonicals_for_pending_candidate(
     body = r.json()
     assert "suggestions" in body
     assert isinstance(body["suggestions"], list)
-
-
-def test_get_people_stub_empty(client: TestClient) -> None:
-    r = client.get(
-        "/v1/people?project_slug=demo-proj&limit=10&offset=0",
-        headers=_service_headers(),
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["people"] == []
-    assert body["total"] == 0
 
 
 def test_canonical_location_meta_crud(client: TestClient, stylebook_test_engine: Engine) -> None:

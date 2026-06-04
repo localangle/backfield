@@ -67,11 +67,12 @@ import {
   type Run,
 } from '@/lib/api'
 import { buildProjectBreadcrumbItems } from '@/lib/projectBreadcrumbs'
-import { fetchProjectEffectiveAiModels, listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
+import { fetchProjectEffectiveAiModels, listMyWorkspaces, listOrgStylebooks, type WorkspaceWithProjects } from '@/lib/core-api'
 import {
   INPUT_BOOKEND_TYPES,
   OUTPUT_BOOKEND_TYPES,
   paramsForGraphSave,
+  sanitizeNodeStylebookRef,
   validateGraphForSave,
 } from '@/lib/flowValidation'
 import { nodeMetadata } from '@/nodes/registry'
@@ -351,13 +352,54 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           return
         }
 
+        let model = hydrated.model
+        if (project.organization_id != null) {
+          try {
+            const stylebooks = await listOrgStylebooks(project.organization_id)
+            const validStylebookIds = new Set(stylebooks.map((sb) => sb.id))
+            const defaultStylebookId = stylebooks.find((sb) => sb.is_default)?.id ?? null
+            model = {
+              ...model,
+              inputNode: {
+                ...model.inputNode,
+                data: sanitizeNodeStylebookRef(
+                  model.inputNode.type,
+                  model.inputNode.data ?? {},
+                  validStylebookIds,
+                  defaultStylebookId,
+                ),
+              },
+              outputNode: {
+                ...model.outputNode,
+                data: sanitizeNodeStylebookRef(
+                  model.outputNode.type,
+                  model.outputNode.data ?? {},
+                  validStylebookIds,
+                  defaultStylebookId,
+                ),
+              },
+              middleNodes: model.middleNodes.map((node) => ({
+                ...node,
+                data: sanitizeNodeStylebookRef(
+                  node.type,
+                  node.data ?? {},
+                  validStylebookIds,
+                  defaultStylebookId,
+                ),
+              })),
+            }
+          } catch (error) {
+            console.warn('Could not sanitize stale Stylebook references on load:', error)
+          }
+        }
+
         syncNodeIdCounter(graph.spec.nodes)
         setExistingGraphId(graph.id)
         setGraphName(graph.name)
         setResolvedFlowProject(project)
-        setScaffoldModel(applyLayoutToModel(hydrated.model))
-        setInputNode(toReactFlowBookend(hydrated.model.inputNode))
-        setOutputNode(toReactFlowBookend(hydrated.model.outputNode))
+        setScaffoldModel(applyLayoutToModel(model))
+        setInputNode(toReactFlowBookend(model.inputNode))
+        setOutputNode(toReactFlowBookend(model.outputNode))
         setCompletedSteps(completedStepsForEdit())
         setActiveStep(getInitialEditStep())
         setSelectedNodeId(null)
@@ -905,6 +947,11 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     onSwapOutputBookend: capabilities.allowBookendEdit ? handleChangeOutputDestination : undefined,
   }
 
+  const dismissActiveNodePanel = useCallback(() => {
+    setSelectedNodeId(null)
+    setConfigureGateActive(false)
+  }, [])
+
   const handleSave = useCallback(async (options?: { stayInEditMode?: boolean }): Promise<boolean> => {
     if (!inputNode || !outputNode) {
       showModal({
@@ -963,21 +1010,46 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
     try {
       setSaving(true)
+
+      let validStylebookIds: Set<number> | null = null
+      let defaultStylebookId: number | null = null
+      if (resolvedFlowProject.organization_id != null) {
+        try {
+          const stylebooks = await listOrgStylebooks(resolvedFlowProject.organization_id)
+          validStylebookIds = new Set(stylebooks.map((sb) => sb.id))
+          defaultStylebookId = stylebooks.find((sb) => sb.is_default)?.id ?? null
+        } catch (error) {
+          console.warn('Could not load Stylebooks before save:', error)
+        }
+      }
+
       const graphSpec = {
         name: graphName,
         project_id: resolvedFlowProject.id,
         spec: {
           name: graphName.toLowerCase().replace(/\s+/g, '_'),
-          nodes: draftSpec.nodes.map((node) => ({
-            id: node.id,
-            type: node.type,
-            params: paramsForGraphSave({
+          nodes: draftSpec.nodes.map((node) => {
+            const baseParams = paramsForGraphSave({
               id: node.id,
               type: node.type,
               data: node.params,
-            }),
-            position: node.position,
-          })),
+            })
+            const params =
+              validStylebookIds != null
+                ? sanitizeNodeStylebookRef(
+                    node.type,
+                    baseParams,
+                    validStylebookIds,
+                    defaultStylebookId,
+                  )
+                : baseParams
+            return {
+              id: node.id,
+              type: node.type,
+              params,
+              position: node.position,
+            }
+          }),
           edges: draftSpec.edges,
         },
       }
@@ -1000,6 +1072,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           navigate(`/flow/${graph.id}`)
         }
       }
+      dismissActiveNodePanel()
       return true
     } catch (error) {
       console.error('Failed to save graph:', error)
@@ -1025,19 +1098,22 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     navigate,
     showModal,
     onSaved,
+    dismissActiveNodePanel,
   ])
 
   const handlePanelSave = useCallback(async (): Promise<void> => {
     if (!selectedNodeId) return
+    const nodeId = selectedNodeId
     const saved = await handleSave({ stayInEditMode: true })
     if (!saved) return
+    dismissActiveNodePanel()
     setDirtyPanelNodeIds((prev) => {
       const next = new Set(prev)
-      next.delete(selectedNodeId)
+      next.delete(nodeId)
       return next
     })
-    setSavedPanelNodeIds((prev) => new Set(prev).add(selectedNodeId))
-  }, [handleSave, selectedNodeId])
+    setSavedPanelNodeIds((prev) => new Set(prev).add(nodeId))
+  }, [handleSave, selectedNodeId, dismissActiveNodePanel])
 
   const buildSnapshot = useCallback(
     (): GuidedFlowSnapshot =>
@@ -1590,10 +1666,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                     ? handleCancelMiddleNodeAdd
                     : undefined
             }
-            onClose={() => {
-              setSelectedNodeId(null)
-              setConfigureGateActive(false)
-            }}
+            onClose={dismissActiveNodePanel}
             onSave={() => void handlePanelSave()}
             onTextChange={activeStep === 'input' ? handleTextInputChange : undefined}
             setNodes={setNodes}

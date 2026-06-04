@@ -188,7 +188,7 @@ def test_rank_caps_incompatible_type_below_recall() -> None:
         )
 
     assert len(ranked) == 1
-    _, _label, score, _ = ranked[0]
+    _, _label, score, _, _raw = ranked[0]
     assert score < RECALL_MIN_SCORE
 
 
@@ -237,7 +237,7 @@ def test_rank_allows_same_type_city_to_city() -> None:
         )
 
     assert len(ranked) == 1
-    _, _label, score, _ = ranked[0]
+    _, _label, score, _, _raw = ranked[0]
     assert score >= AUTOLINK_MIN_SCORE, (
         f"Expected city→city score >= AUTOLINK_MIN_SCORE ({AUTOLINK_MIN_SCORE}), got {score}"
     )
@@ -295,7 +295,7 @@ def test_rank_caps_address_to_neighborhood() -> None:
         )
 
     assert len(ranked) == 1
-    _, _label, score, _ = ranked[0]
+    _, _label, score, _, _raw = ranked[0]
     assert score < RECALL_MIN_SCORE
 
 
@@ -585,7 +585,7 @@ def test_rank_caps_intersection_to_city() -> None:
         )
 
     assert len(ranked) == 1
-    _, _label, score, _ = ranked[0]
+    _, _label, score, _, _raw = ranked[0]
     assert score < RECALL_MIN_SCORE
 
 
@@ -634,7 +634,7 @@ def test_rank_allows_address_to_place() -> None:
         )
 
     assert len(ranked) == 1
-    _, _label, score, _ = ranked[0]
+    _, _label, score, _, _raw = ranked[0]
     assert score >= AUTOLINK_MIN_SCORE
 
 

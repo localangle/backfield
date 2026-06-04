@@ -1,0 +1,62 @@
+{
+  "people": [
+    {
+      "name": "John Smith",
+      "title": "Mayor",
+      "affiliation": "City of Chicago",
+      "public_figure": true,
+      "type": "elected_official",
+      "sort_key": "smith",
+      "role_in_story": "Announced a new park initiative",
+      "nature": "official",
+      "nature_secondary_tags": [],
+      "review_handling": "none",
+      "mentions": [
+        {
+          "text": "Mayor John Smith announced a new park initiative Monday.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "Buddy",
+      "title": "",
+      "affiliation": "",
+      "public_figure": false,
+      "type": "",
+      "sort_key": "buddy",
+      "role_in_story": "Family dog mentioned in the story",
+      "nature": "other",
+      "nature_secondary_tags": [],
+      "review_handling": "auto_defer",
+      "review_reason_code": "animal",
+      "review_message": "Identified as an animal",
+      "mentions": [
+        {
+          "text": "The family dog Buddy was unharmed.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "Prince",
+      "title": "",
+      "affiliation": "",
+      "public_figure": true,
+      "type": "artist_entertainer",
+      "sort_key": "prince",
+      "role_in_story": "Referenced by stage name only",
+      "nature": "subject",
+      "nature_secondary_tags": [],
+      "review_handling": "flag_review",
+      "review_reason_code": "stage_name_or_alias",
+      "review_message": "Stage name or alias — confirm full identity before linking",
+      "mentions": [
+        {
+          "text": "Prince performed at the venue last year.",
+          "quote": false
+        }
+      ]
+    }
+  ]
+}

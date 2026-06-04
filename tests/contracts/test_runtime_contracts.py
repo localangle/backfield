@@ -53,3 +53,4 @@ def test_queue_and_task_contracts_match():
     assert worker_tasks.execute_s3_batch_setup.name == "worker.tasks.execute_s3_batch_setup"
     assert worker_tasks.execute_processed_item.name == "worker.tasks.execute_processed_item"
     assert worker_tasks.finalize_s3_parent_run.name == "worker.tasks.finalize_s3_parent_run"
+    assert worker_tasks.reindex_semantic_documents.name == "worker.tasks.reindex_semantic_documents"

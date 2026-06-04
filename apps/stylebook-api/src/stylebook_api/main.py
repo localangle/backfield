@@ -8,14 +8,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from stylebook_api.entities.location import candidates, locations, meta
+from stylebook_api.entities.person import candidates as person_candidates
+from stylebook_api.entities.person import meta as person_meta
+from stylebook_api.entities.person import people
 from stylebook_api.routers import (
     connections,
     geocode,
     health,
     imports,
+    semantic_mention_search,
     stylebook_bundle_jobs,
     stylebook_canonicals,
     stylebook_permissions,
+    stylebook_person_canonicals,
     stylebooks,
     taxonomy,
     ui_stubs,
@@ -55,7 +60,12 @@ app.include_router(imports.stylebook_router)
 app.include_router(candidates.router)
 app.include_router(meta.router)
 app.include_router(stylebook_canonicals.router)
+app.include_router(stylebook_person_canonicals.router)
 app.include_router(stylebook_permissions.router)
 app.include_router(connections.connections_router, prefix="/v1/connections")
 app.include_router(connections.locations_connections_router)
+app.include_router(person_candidates.router)
+app.include_router(people.router)
+app.include_router(person_meta.router)
+app.include_router(semantic_mention_search.router)
 app.include_router(ui_stubs.router)

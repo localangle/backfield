@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   paramsForGraphSave,
+  sanitizeNodeStylebookRef,
   validateFlowInputOutputRules,
   validateGraphForSave,
   validateInputConnections,
@@ -196,6 +197,27 @@ describe('paramsForGraphSave', () => {
         data: { bucket: 's3://my-bucket', folder_path: 'input/' },
       }).bucket,
     ).toBe('my-bucket')
+  })
+})
+
+describe('sanitizeNodeStylebookRef', () => {
+  const validIds = new Set([10, 20])
+
+  it('clears stale Backfield output stylebook ids', () => {
+    expect(
+      sanitizeNodeStylebookRef('DBOutput', { stylebook_id: 99 }, validIds, 10),
+    ).toEqual({ stylebook_id: null })
+  })
+
+  it('remaps stale geocode cache stylebook ids to the org default', () => {
+    expect(
+      sanitizeNodeStylebookRef(
+        'GeocodeAgent',
+        { useCache: true, stylebook_id: 99 },
+        validIds,
+        10,
+      ),
+    ).toEqual({ useCache: true, stylebook_id: 10 })
   })
 })
 

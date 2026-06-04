@@ -12,12 +12,13 @@ from backfield_stylebook.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_stylebook.canonical.link_matrix import link_pair_allowed
-from backfield_stylebook.canonical.policy import (
+from backfield_stylebook.canonical.retrieval import retrieve_candidate_canonical_ids
+from backfield_stylebook.entities.location.persist import refresh_aliases_for_linked_location
+from backfield_stylebook.entities.location.policy import (
     find_existing_canonical_id_by_alias,
     rank_scored_canonical_recall_matches,
 )
-from backfield_stylebook.canonical.retrieval import retrieve_candidate_canonical_ids
-from backfield_stylebook.entities.location.persist import refresh_aliases_for_linked_location
+from backfield_stylebook.semantic_indexing.cleanup import delete_semantic_documents_for_location
 
 
 def rank_canonical_suggestions_for_substrate(
@@ -179,6 +180,11 @@ def dispose_orphan_substrate_without_requeue(
         location.stylebook_location_canonical_id = None
         session.add(location)
 
+    delete_semantic_documents_for_location(
+        session,
+        location_id=int(location.id),
+        project_id=int(location.project_id),
+    )
     session.delete(location)
 
 

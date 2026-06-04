@@ -11,6 +11,8 @@ export type MentionOccurrenceDraft = {
   clientId: string
   mentionText: string
   quoteText?: string
+  /** Direct or attributed quote (person extraction), not merely ``quote_text`` passage storage. */
+  isQuote?: boolean
   startChar: number | null
   endChar: number | null
   occurrenceOrder: number
@@ -29,6 +31,13 @@ function newClientId(): string {
   return `occ-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+function readIsQuoteFromRaw(raw: Record<string, unknown>): boolean {
+  if (raw.is_quote === true || raw.quote === true) return true
+  const labels = raw.labels_json
+  if (Array.isArray(labels) && labels.some((label) => label === 'quote')) return true
+  return false
+}
+
 function normalizeApiOccurrence(raw: Record<string, unknown>, order: number): MentionOccurrenceDraft | null {
   const textRaw = raw.mention_text ?? raw.text
   const mentionText = typeof textRaw === 'string' ? textRaw.trim() : ''
@@ -42,11 +51,13 @@ function normalizeApiOccurrence(raw: Record<string, unknown>, order: number): Me
   const endRaw = raw.end_char
   const orderRaw = raw.occurrence_order
   const quoteRaw = raw.quote_text
+  const isQuote = readIsQuoteFromRaw(raw)
   return {
     id,
     clientId,
     mentionText,
     quoteText: typeof quoteRaw === 'string' && quoteRaw.trim() ? quoteRaw : undefined,
+    isQuote: isQuote || undefined,
     startChar: typeof startRaw === 'number' && Number.isFinite(startRaw) ? Math.trunc(startRaw) : null,
     endChar: typeof endRaw === 'number' && Number.isFinite(endRaw) ? Math.trunc(endRaw) : null,
     occurrenceOrder: typeof orderRaw === 'number' && Number.isFinite(orderRaw) ? Math.trunc(orderRaw) : order,
@@ -66,8 +77,9 @@ function modelOccurrencesFromPlace(place: Record<string, unknown>): MentionOccur
     for (let i = 0; i < mentions.length; i++) {
       const item = mentions[i]
       if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const text = (item as Record<string, unknown>).text
-        const norm = normalizeApiOccurrence({ text, mention_text: text }, i)
+        const raw = item as Record<string, unknown>
+        const text = raw.text
+        const norm = normalizeApiOccurrence({ ...raw, text, mention_text: text }, i)
         if (norm) out.push(norm)
       } else if (typeof item === 'string' && item.trim()) {
         const norm = normalizeApiOccurrence({ text: item, mention_text: item }, i)
@@ -150,6 +162,7 @@ export function mentionOccurrencesEqual(a: MentionOccurrenceDraft[], b: MentionO
         clientId: o.clientId,
         mentionText: o.mentionText,
         quoteText: o.quoteText,
+        isQuote: o.isQuote,
         startChar: o.startChar,
         endChar: o.endChar,
         occurrenceOrder: o.occurrenceOrder,
@@ -221,6 +234,7 @@ export function buildOccurrencesOverlayPayload(occurrences: MentionOccurrenceDra
     }
     if (o.id !== undefined) row.id = o.id
     if (o.quoteText !== undefined) row.quote_text = o.quoteText
+    if (o.isQuote) row.is_quote = true
     return row
   })
 }

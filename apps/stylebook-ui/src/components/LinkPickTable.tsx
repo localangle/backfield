@@ -25,8 +25,14 @@ export function LinkPickTable(props: {
   /** Tooltip and aria-label for the link control */
   linkActionLabel?: string
   className?: string
-  /** When false, omit the Address column (e.g. catalog search where space is tight). */
+  /** Primary column header (default Location for place candidates). */
+  primaryColumnLabel?: string
+  /** Secondary detail column header (default Address). */
+  secondaryColumnLabel?: string
+  /** When false, omit the secondary detail column (e.g. search where space is tight). */
   includeAddress?: boolean
+  /** When false, omit the Type column (person link pickers). */
+  includeType?: boolean
 }) {
   const {
     rows,
@@ -35,8 +41,18 @@ export function LinkPickTable(props: {
     onLink,
     linkActionLabel = "Link",
     className,
+    primaryColumnLabel = "Location",
+    secondaryColumnLabel = "Address",
     includeAddress = true,
+    includeType = true,
   } = props
+
+  const primaryWidth = !includeType && !includeAddress
+    ? "w-[62%]"
+    : includeType && includeAddress
+      ? "w-[34%]"
+      : "w-[44%]"
+  const typeWidth = includeAddress ? "w-[11%]" : "w-[26%]"
 
   if (rows.length === 0) return null
 
@@ -45,23 +61,13 @@ export function LinkPickTable(props: {
       <Table className="table-fixed w-full">
         <TableHeader>
           <TableRow>
-            <TableHead
-              className={cn(
-                "min-w-0",
-                includeAddress ? "w-[34%]" : "w-[62%]",
-              )}
-            >
-              Location
-            </TableHead>
-            <TableHead
-              className={cn(
-                "whitespace-nowrap",
-                includeAddress ? "w-[11%]" : "w-[26%]",
-              )}
-            >
-              Type
-            </TableHead>
-            {includeAddress ? <TableHead className="min-w-0">Address</TableHead> : null}
+            <TableHead className={cn("min-w-0", primaryWidth)}>{primaryColumnLabel}</TableHead>
+            {includeType ? (
+              <TableHead className={cn("whitespace-nowrap", typeWidth)}>Type</TableHead>
+            ) : null}
+            {includeAddress ? (
+              <TableHead className="min-w-0">{secondaryColumnLabel}</TableHead>
+            ) : null}
             <TableHead className="w-14 text-right pr-2">
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -76,9 +82,11 @@ export function LinkPickTable(props: {
                 <TableCell className="min-w-0 py-3 align-middle font-medium break-words">
                   {r.location}
                 </TableCell>
-                <TableCell className="whitespace-nowrap py-3 align-middle text-sm text-muted-foreground">
-                  {r.typeLabel}
-                </TableCell>
+                {includeType ? (
+                  <TableCell className="whitespace-nowrap py-3 align-middle text-sm text-muted-foreground">
+                    {r.typeLabel}
+                  </TableCell>
+                ) : null}
                 {includeAddress ? (
                   <TableCell className="min-w-0 py-3 align-middle text-sm text-muted-foreground break-words">
                     {r.address}

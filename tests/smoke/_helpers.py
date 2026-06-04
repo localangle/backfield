@@ -83,6 +83,54 @@ def wait_for_terminal_run(
     raise RuntimeError(f"Timed out waiting for run {run_id} to finish")
 
 
+def resolve_run_execution_output(
+    client: httpx.Client,
+    terminal_run: dict[str, Any],
+    *,
+    whole_run_markers: tuple[str, ...] = (
+        "stylebook_output",
+        "text_input",
+        "geocode_agent",
+    ),
+) -> dict[str, Any]:
+    """Return executor node outputs for a terminal run.
+
+    Single-item runs pin ``graph_spec_json`` on ``run.result`` and store executor
+    output on ``agate_processed_item.result_json``; legacy whole-graph runs embed
+    output directly on ``run.result``.
+    """
+    run_id = str(terminal_run["id"])
+    result = terminal_run.get("result")
+    if isinstance(result, dict) and any(key in result for key in whole_run_markers):
+        return result
+
+    item_id: int | None = None
+    processed_items = terminal_run.get("processed_items")
+    if isinstance(processed_items, list) and processed_items:
+        first = processed_items[0]
+        if isinstance(first, dict) and isinstance(first.get("id"), int):
+            item_id = int(first["id"])
+    if item_id is None and isinstance(result, dict):
+        result_items = result.get("items")
+        if isinstance(result_items, list) and result_items:
+            first = result_items[0]
+            if isinstance(first, dict) and isinstance(first.get("id"), int):
+                item_id = int(first["id"])
+    if item_id is None:
+        raise RuntimeError(
+            f"Run {run_id} missing processed item id for execution output: {terminal_run!r}"
+        )
+
+    item_detail = assert_object(
+        client.get(f"/runs/{run_id}/items/{item_id}"),
+        f"processed item {item_id}",
+    )
+    output = item_detail.get("output")
+    if not isinstance(output, dict):
+        raise RuntimeError(f"Processed item {item_id} output must be an object: {output!r}")
+    return output
+
+
 def wait_for_run_status(
     client: httpx.Client,
     run_id: str,

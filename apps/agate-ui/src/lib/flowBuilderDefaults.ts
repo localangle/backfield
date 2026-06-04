@@ -41,8 +41,9 @@ export function getMiddleNodeDefaultData(
   workspaceStylebookId?: number | null,
 ): Record<string, unknown> {
   switch (type) {
-    case 'PlaceExtract': {
-      const meta = nodeMetadata.find((m) => m.type === 'PlaceExtract')
+    case 'PlaceExtract':
+    case 'PersonExtract': {
+      const meta = nodeMetadata.find((m) => m.type === type)
       return (
         meta?.defaultParams ?? {
           model: '',

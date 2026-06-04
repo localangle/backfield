@@ -399,11 +399,130 @@ class StylebookLocationMeta(SQLModel, table=True):
     )
 
 
+class StylebookPersonCanonical(SQLModel, table=True):
+    """Canonical person row within a Stylebook."""
+
+    __tablename__ = "stylebook_person_canonical"
+    __table_args__ = (
+        UniqueConstraint(
+            "stylebook_id",
+            "slug",
+            name="uq_stylebook_person_canonical_stylebook_slug",
+        ),
+        Index("ix_stylebook_person_canonical_stylebook_type", "stylebook_id", "person_type"),
+        Index(
+            "ix_stylebook_person_canonical_stylebook_public_figure",
+            "stylebook_id",
+            "public_figure",
+        ),
+        Index(
+            "ix_stylebook_person_canonical_stylebook_sort_key",
+            "stylebook_id",
+            "sort_key",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    label: str = Field(sa_column=Column(Text, nullable=False))
+    slug: str = Field(sa_column=Column(Text, nullable=False))
+    title: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    affiliation: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    public_figure: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    person_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    sort_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    primary_substrate_person_id: int | None = Field(
+        default=None,
+        foreign_key="substrate_person.id",
+        index=True,
+    )
+    status: str = Field(
+        default="active",
+        sa_column=Column(Text, nullable=False, server_default="active"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookPersonAlias(SQLModel, table=True):
+    """Alias string for a canonical person (hybrid provenance)."""
+
+    __tablename__ = "stylebook_person_alias"
+    __table_args__ = (
+        UniqueConstraint(
+            "person_canonical_id",
+            "normalized_alias",
+            name="uq_stylebook_person_alias_canonical_normalized",
+        ),
+        Index("ix_stylebook_person_alias_normalized", "normalized_alias"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    person_canonical_id: str = Field(foreign_key="stylebook_person_canonical.id", index=True)
+    alias_text: str = Field(sa_column=Column(Text, nullable=False))
+    normalized_alias: str = Field(sa_column=Column(Text, nullable=False))
+    provenance: str = Field(sa_column=Column(Text, nullable=False))
+    suppressed: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookPersonMeta(SQLModel, table=True):
+    """Arbitrary JSON metadata rows for a canonical person (tags, research blobs, etc.)."""
+
+    __tablename__ = "stylebook_person_meta"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_person_meta_canonical_type",
+            "stylebook_person_canonical_id",
+            "meta_type",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    stylebook_person_canonical_id: str = Field(
+        foreign_key="stylebook_person_canonical.id",
+        index=True,
+    )
+    meta_type: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    data_json: Any | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    added: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    edited: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    deleted: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class StylebookConnection(SQLModel, table=True):
     """Directed edge between two canonical entities within a project (polymorphic entity ids).
 
-    ``from_entity_id`` / ``to_entity_id`` are TEXT: UUID strings for ``location`` entities,
-    decimal strings for stub person/organization/work ids until those catalogs use UUIDs.
+    ``from_entity_id`` / ``to_entity_id`` are TEXT UUID strings for ``location`` and ``person``
+    entities; decimal strings for stub organization/work ids until those catalogs use UUIDs.
     """
 
     __tablename__ = "stylebook_connections"
@@ -975,6 +1094,188 @@ class SubstrateLocationMentionOccurrence(SQLModel, table=True):
     source_kind: str = Field(
         default="system_extraction",
         sa_column=Column(Text, nullable=False, server_default="system_extraction")
+    )
+    source_details_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    mention_text: str = Field(sa_column=Column(Text, nullable=False))
+    quote_text: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    start_char: int | None = Field(default=None)
+    end_char: int | None = Field(default=None)
+    occurrence_order: int | None = Field(default=None)
+    labels_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    suppressed: bool = Field(default=False, index=True)
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class SubstratePerson(SQLModel, table=True):
+    """Durable shared person entity for stateful article ingestion."""
+
+    __tablename__ = "substrate_person"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "external_source",
+            "external_id",
+            name="uq_substrate_person_project_external",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "identity_fingerprint",
+            name="uq_substrate_person_project_fingerprint",
+        ),
+        Index("idx_substrate_person_project_status", "project_id", "status"),
+        Index("idx_substrate_person_project_name", "project_id", "normalized_name"),
+        Index("idx_substrate_person_project_type", "project_id", "person_type"),
+        Index(
+            "idx_substrate_person_project_public_figure",
+            "project_id",
+            "public_figure",
+        ),
+        Index(
+            "idx_substrate_person_project_sort_key",
+            "project_id",
+            "sort_key",
+        ),
+        Index(
+            "ix_substrate_person_project_canonical",
+            "project_id",
+            "stylebook_person_canonical_id",
+        ),
+        Index(
+            "ix_substrate_person_project_link_status",
+            "project_id",
+            "canonical_link_status",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    name: str = Field(sa_column=Column(Text, nullable=False))
+    normalized_name: str = Field(sa_column=Column(Text, nullable=False, index=True))
+    title: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    affiliation: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    public_figure: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+    person_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    sort_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    status: str = Field(
+        default="provisional",
+        sa_column=Column(Text, nullable=False, server_default="provisional"),
+    )
+    stylebook_person_canonical_id: str | None = Field(
+        default=None,
+        foreign_key="stylebook_person_canonical.id",
+        index=True,
+    )
+    canonical_link_status: str = Field(
+        default="unlinked",
+        sa_column=Column(Text, nullable=False, server_default="unlinked"),
+    )
+    canonical_review_reasons_json: list[Any] | dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    external_source: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    external_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    identity_fingerprint: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    source_kind: str = Field(
+        default="unknown",
+        sa_column=Column(Text, nullable=False, server_default="unknown"),
+    )
+    source_details_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class SubstratePersonMention(SQLModel, table=True):
+    """One aggregate article-to-person association."""
+
+    __tablename__ = "substrate_person_mention"
+    __table_args__ = (
+        UniqueConstraint(
+            "article_id",
+            "person_id",
+            name="uq_substrate_person_mention_article_person",
+        ),
+        Index(
+            "idx_substrate_person_mention_article_review",
+            "article_id",
+            "needs_review",
+            "deleted",
+        ),
+        Index("idx_substrate_person_mention_person", "person_id", "deleted"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    article_id: int = Field(foreign_key="substrate_article.id", index=True)
+    person_id: int = Field(foreign_key="substrate_person.id", index=True)
+    role_in_story: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    nature: str | None = Field(default=None, sa_column=Column(Text, nullable=True, index=True))
+    nature_secondary_tags_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    needs_review: bool = Field(default=False, index=True)
+    review_data_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    added: bool = Field(default=False, index=True)
+    edited: bool = Field(default=False, index=True)
+    deleted: bool = Field(default=False, index=True)
+    source_kind: str = Field(
+        default="unknown",
+        sa_column=Column(Text, nullable=False, server_default="unknown"),
+    )
+    source_details_json: dict | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class SubstratePersonMentionOccurrence(SQLModel, table=True):
+    """Supporting textual evidence for a person mention aggregate."""
+
+    __tablename__ = "substrate_person_mention_occurrence"
+    __table_args__ = (
+        Index(
+            "idx_substrate_person_occurrence_mention_source",
+            "person_mention_id",
+            "source_kind",
+            "suppressed",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    person_mention_id: int = Field(foreign_key="substrate_person_mention.id", index=True)
+    source_kind: str = Field(
+        default="system_extraction",
+        sa_column=Column(Text, nullable=False, server_default="system_extraction"),
     )
     source_details_json: dict | None = Field(
         default=None,

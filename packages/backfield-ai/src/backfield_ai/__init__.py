@@ -1,6 +1,7 @@
 """Shared AI model primitives for Backfield services."""
 
 from backfield_ai.constants import (
+    AI_CAPABILITY_EMBEDDING,
     AI_CAPABILITY_JSON,
     AI_CAPABILITY_TEXT,
     AI_CAPABILITY_VISION,
@@ -10,6 +11,7 @@ from backfield_ai.constants import (
 )
 
 __all__ = [
+    "AI_CAPABILITY_EMBEDDING",
     "AI_CAPABILITY_JSON",
     "AI_CAPABILITY_TEXT",
     "AI_CAPABILITY_VISION",

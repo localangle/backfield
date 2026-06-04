@@ -8,13 +8,9 @@ from typing import Any
 from agate_runtime import GraphSpec
 from agate_runtime.types import Edge, NodeConfig
 from api.deps import get_auth, get_session
-from api.routers.graphs import GraphOut
+from api.routers.graphs import GraphOut, _prepare_spec_stylebook_refs
 from backfield_auth.gate import require_project_access
 from backfield_db import AgateGraph, AgateTemplate, BackfieldProject
-from backfield_stylebook.graph_stylebook_refs import (
-    StylebookGraphRefsError,
-    validate_stylebook_refs_for_organization,
-)
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
@@ -97,18 +93,11 @@ def instantiate(
     except Exception as e:
         raise HTTPException(500, f"Invalid template spec: {e}") from e
     remapped = _remap_spec(spec)
-    try:
-        validate_stylebook_refs_for_organization(
-            session,
-            organization_id=int(proj.organization_id),
-            spec=remapped.model_dump(),
-        )
-    except StylebookGraphRefsError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    prepared = _prepare_spec_stylebook_refs(session, body.project_id, remapped)
     graph_name = body.name.strip() if body.name else f"{t.name} (copy)"
     g = AgateGraph(
         name=graph_name,
-        spec_json=remapped.model_dump_json(),
+        spec_json=prepared.model_dump_json(),
         project_id=body.project_id,
     )
     session.add(g)

@@ -67,7 +67,8 @@ export default function RunPanel({
 
   return (
     <div className="absolute top-0 right-0 h-full w-96 bg-background/95 backdrop-blur-sm border-l shadow-lg flex flex-col z-10 slide-in-from-right">
-      <div className="flex items-center justify-end p-3 border-b">
+      <div className="flex items-center justify-between gap-3 p-4 border-b">
+        <h3 className="font-semibold text-lg">Run details</h3>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
           <X className="h-4 w-4" />
         </Button>

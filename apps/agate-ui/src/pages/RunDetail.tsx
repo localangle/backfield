@@ -522,7 +522,9 @@ export default function RunDetail() {
                 <ul className="list-disc pl-5 space-y-1">
                   {aiCost.node_breakdown.map((row) => (
                     <li key={String(row.node_id)}>
-                      {getNodeStepDisplayName(graph?.spec?.nodes, row.node_id)}
+                      {getNodeStepDisplayName(graph?.spec?.nodes, row.node_id, {
+                        nodeType: row.node_type,
+                      })}
                       {': '}
                       {formatCurrencySummary(Number(row.estimated_total), aiCost.currency || 'USD')}
                     </li>

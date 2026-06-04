@@ -42,7 +42,7 @@ export const geographyTypes = new Set([
 ])
 export const imageTypes = new Set(['EmbedImages', 'ImageEnrich'])
 export const textTypes = new Set(['Embed', 'LLMEnrich', 'StatsNode'])
-export const peopleTypes = new Set(['PeopleExtract', 'PeopleClassify'])
+export const peopleTypes = new Set(['PersonExtract', 'PeopleExtract', 'PeopleClassify'])
 export const organizationTypes = new Set(['OrganizationsExtract', 'OrgLocationConnections'])
 export const workTypes = new Set(['WorksExtract'])
 export const formattingTypes = new Set(['LLMFormat'])

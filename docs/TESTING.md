@@ -22,13 +22,15 @@
   - `make smoke-auth`: session login, `GET /v1/auth/me`, `GET /v1/me/workspaces`, Agate `GET /projects`, and Stylebook permissions all agree on the same user scope.
   - `make smoke-agate-basic`: creates a tiny `TextInput -> Output` graph, runs it through Agate + worker, and asserts the deterministic `json_output.consolidated.text` result.
   - `make smoke-stylebook-basic`: creates a canonical through the Stylebook write API, fetches it back, and asserts the new card starts with `linked_substrate_count == 0`.
-  - `make smoke`: the Agate-to-Stylebook handoff lane (`[tests/smoke/golden_path_stack.py](../tests/smoke/golden_path_stack.py)`). In session mode it follows **log in → workspace → project → run**; otherwise it uses the service Bearer path. It asserts the **Starter flow** still matches bootstrap, the run returns `stylebook_output.success == true`, and the persisted article/location is visible through downstream Stylebook read APIs.
+  - `make smoke`: the Agate-to-Stylebook handoff lane (`[tests/smoke/golden_path_stack.py](../tests/smoke/golden_path_stack.py)`). In session mode it follows **log in → workspace → project → run**; otherwise it uses the service Bearer path. It asserts the **Starter flow** still matches bootstrap, executor output includes `stylebook_output.success == true` (via `GET /runs/{id}/items/{item_id}` when the run uses processed items), and the persisted article/location is visible through downstream Stylebook read APIs.
   - `make smoke-worker-async`: focuses on run lifecycle (`pending` to terminal state) and the whole-run item detail route.
   - `make smoke-stylebook-editorial`: seeds one pending review candidate, checks queue/context/suggestions, then links it to an existing canonical and verifies the queue and linked-substrate state update.
   - `make smoke-stylebook-import-export`: exercises the GeoJSON analyze + import path with a one-feature fixture.
   - `make smoke-s3-batch`: runs the worker S3 batch setup path with a deterministic fake S3 client and eager Celery execution, then asserts parent and item summaries.
   - `make smoke-place-geocode`: optional in-process PlaceExtract + GeocodeAgent corpus smoke (not part of CI).
   - `make smoke-place-geocode-stack`: optional single-run stack harness for the geocode starter path.
+  - `make smoke-people`: optional in-process PersonExtract + DBOutput smoke with mocked LLM (not part of CI).
+  - `make smoke-people-stack`: optional stack harness for the **People starter** graph (`starter_people_flow_graph_spec`).
   - **Guided flow builder (manual):** on a live stack, walk through create → parallel branch → edit bookend clear-middle → run from read-only view: `/flow/new` with Text Input → Place Extract → Geocode → JSON Output; add a parallel Place Extract branch from input; save; open `/flow/:id/edit`, change output type with middle steps present (confirm clear); open `/flow/:id`, **Run flow** without **Edit flow**, then **Edit flow** and confirm **+** / delete unlock. See `docs/FRONTEND.md` → **Guided flow builder**.
   Aggregate bundles:
   - `make smoke-fast`: `smoke-auth`, `smoke-agate-basic`, `smoke-stylebook-basic`
@@ -59,9 +61,13 @@
   - `tests/stylebook_api/` — Stylebook API tests (`stylebook_api` app). `**POST /v1/geocode/resolve`** requires auth (service Bearer, session, or `bfk_`), matching production `resolve_auth` behavior. Substrate ↔ canonical editorial routes (`**GET /v1/candidates/{id}/suggested-canonicals**`, `**POST /v1/locations/{id}/link-canonical**`, `**POST /v1/locations/{id}/unlink-canonical**`, `**GET /v1/canonical-locations/{id}/linked-substrates**`) are covered here as well.
   - `tests/stylebook/` — Stylebook-domain pure tests (for example canonical fuzzy-match scoring without Postgres). **Trigram retrieval** against a live Postgres DB is covered by running `**make migrate`** on Compose and exercising ingest/worker paths locally; CI SQLite runs use the dialect fallback only.
   - `tests/contracts/` — cross-cutting structural checks (schema prefixes, indexes, shared runtime contracts) that are not tied to a single HTTP app.
-  - `tests/smoke/` — smoke harnesses and shared helpers. Most lanes run against the live stack (`smoke_auth.py`, `smoke_agate_basic.py`, `golden_path_stack.py`, `smoke_stylebook_basic.py`, `smoke_worker_async.py`, `smoke_stylebook_editorial.py`, `smoke_stylebook_import_export.py`); `smoke_s3_batch.py` is an in-process worker-path harness; `place_geocode_smoke.py` remains the optional PlaceExtract + GeocodeAgent corpus runner. These scripts are invoked via `make`, not pytest collection.
+  - `tests/smoke/` — smoke harnesses and shared helpers. Most lanes run against the live stack (`smoke_auth.py`, `smoke_agate_basic.py`, `golden_path_stack.py`, `smoke_stylebook_basic.py`, `smoke_worker_async.py`, `smoke_stylebook_editorial.py`, `smoke_stylebook_import_export.py`); `smoke_s3_batch.py` is an in-process worker-path harness; `place_geocode_smoke.py` and `smoke_people_stack.py` remain optional extract-path corpus runners. These scripts are invoked via `make`, not pytest collection.
 - Shared pytest defaults for these tests live in `tests/conftest.py` at the repo `tests/` root.
 - Add new FastAPI integration tests under the folder that matches the app; add new structural or schema-wide assertions under `tests/contracts/`.
+
+### New entity types
+
+When adding a Stylebook entity type, follow the **Tests per issue** table in [`ENTITY_TYPES.md`](ENTITY_TYPES.md) → **Per-type implementation patterns** (which `tests/stylebook/test_<type>_*.py`, `tests/stylebook_api/test_<type>_api.py`, and worker tests to add per issue 01–06). This doc keeps the global `make lint` / `make test` / `make smoke` ladder only.
 
 ## CI suggestion
 

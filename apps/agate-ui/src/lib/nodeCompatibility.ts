@@ -44,6 +44,9 @@ function typesCompatible(outputType: string, inputType: string): boolean {
   if (inputType === 'any' || outputType === 'any') return true
   if (outputType === inputType) return true
   if (inputType === 'object' && (outputType === 'object' || outputType === 'array')) return true
+  // JSONInput (and similar) emit article-shaped objects on the text port; extract nodes
+  // declare string but resolve body text from object.text at runtime (see executor tests).
+  if (inputType === 'string' && outputType === 'object') return true
   return false
 }
 
@@ -78,6 +81,7 @@ export function resolveEdgeHandles(
       const preferred =
         compatible.find((output) => output.id === 'locations') ??
         compatible.find((output) => output.id === 'places') ??
+        compatible.find((output) => output.id === 'people') ??
         compatible.find((output) => output.type === 'array' || output.type === 'object') ??
         compatible[compatible.length - 1]
       return { sourceHandle: preferred.id, targetHandle: input.id }

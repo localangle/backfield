@@ -5,7 +5,9 @@ from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
     StylebookLocationCanonical,
+    StylebookPersonCanonical,
     SubstrateLocation,
+    SubstratePerson,
 )
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
 from backfield_stylebook.canonical_policy import (
@@ -16,6 +18,9 @@ from sqlmodel import Session, SQLModel, create_engine
 from worker.substrate.canonical.adjudication import (
     ADJUDICATION_LINK_MIN_CONFIDENCE,
     adjudicate_ambiguous_plan_with_llm,
+)
+from worker.substrate.entities.person.adjudication import (
+    adjudicate_ambiguous_person_plan_with_llm,
 )
 
 
@@ -190,6 +195,135 @@ def test_adjudicate_ambiguous_materialize_when_llm_rejects_link(monkeypatch) -> 
         assert "ambiguous_canonical_match" in codes
         adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
         assert adj.get("outcome") == "no_high_confidence_link"
+
+
+def test_adjudicate_ambiguous_person_materialize_when_llm_rejects_link(monkeypatch) -> None:
+    """Greg Abbott–style namesake recall: declined link materializes when review gates allow."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        wrong = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Other Person",
+            slug="other-person",
+            affiliation="Elsewhere",
+            status="active",
+        )
+        session.add(wrong)
+        session.commit()
+        session.refresh(wrong)
+        wrong_id = str(wrong.id)
+
+        person = SubstratePerson(
+            project_id=pid,
+            name="Greg Abbott",
+            normalized_name="greg abbott",
+            title="Governor",
+            affiliation="State of Texas",
+            identity_fingerprint="fp-adj-greg",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_person_canonical_match",
+                    "best_canonical_id": wrong_id,
+                    "recall_canonical_ids": [wrong_id],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                '{"canonical_id": null, "confidence": 0.33, '
+                '"rationale": "None match Greg Abbott, Governor of Texas."}'
+            )
+
+        monkeypatch.setattr(
+            "worker.substrate.entities.person.adjudication.call_llm",
+            _fake_llm,
+        )
+
+        out = adjudicate_ambiguous_person_plan_with_llm(
+            session,
+            plan=plan,
+            person=person,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+        codes = [str(r.get("code") or "") for r in out.resolution_reasons]
+        assert "ambiguous_person_canonical_match" in codes
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "no_high_confidence_link"
+        assert adj.get("canonical_id") is None
+
+
+def test_adjudicate_ambiguous_person_stays_deferred_when_flag_review(monkeypatch) -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        wrong = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Other Person",
+            slug="other-person-flag",
+            status="active",
+        )
+        session.add(wrong)
+        session.commit()
+        session.refresh(wrong)
+        wrong_id = str(wrong.id)
+
+        person = SubstratePerson(
+            project_id=pid,
+            name="Prince",
+            normalized_name="prince",
+            identity_fingerprint="fp-adj-prince",
+            source_details_json={
+                "review_handling": "flag_review",
+                "review_reason_code": "stage_name_or_alias",
+            },
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_person_canonical_match",
+                    "recall_canonical_ids": [wrong_id],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return '{"canonical_id": null, "confidence": 0.1, "rationale": "No match."}'
+
+        monkeypatch.setattr(
+            "worker.substrate.entities.person.adjudication.call_llm",
+            _fake_llm,
+        )
+
+        out = adjudicate_ambiguous_person_plan_with_llm(
+            session,
+            plan=plan,
+            person=person,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.DEFER
 
 
 def test_adjudicate_rejects_link_when_confidence_below_floor(monkeypatch) -> None:

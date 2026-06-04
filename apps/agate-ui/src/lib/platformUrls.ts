@@ -73,3 +73,28 @@ export function stylebookCanonicalDetailHref(
   url.pathname = `${root}/locations/canonical/${encodeURIComponent(canonicalId)}`
   return url.toString()
 }
+
+/** Open a specific catalog person (canonical UUID) in Stylebook. */
+export function stylebookPersonCanonicalDetailHref(
+  stylebookSlug: string,
+  canonicalId: string,
+  projectSlug?: string | null,
+): string {
+  const shell = stylebookShellHref(stylebookSlug, projectSlug ?? undefined)
+  const url = new URL(shell)
+  const root = url.pathname.replace(/\/$/, '')
+  url.pathname = `${root}/people/canonical/${encodeURIComponent(canonicalId)}`
+  return url.toString()
+}
+
+/** Stylebook people candidate queue for this project. */
+export function stylebookPeopleCandidatesHref(
+  stylebookSlug: string,
+  projectSlug?: string | null,
+): string {
+  const shell = stylebookShellHref(stylebookSlug, projectSlug ?? undefined)
+  const url = new URL(shell)
+  const root = url.pathname.replace(/\/$/, '')
+  url.pathname = `${root}/people/candidates`
+  return url.toString()
+}

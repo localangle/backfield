@@ -39,7 +39,8 @@ const nodeMetadata = {
     "reconciliation_policy": "smart_merge",
     "auto_apply_canonicalization": true,
     "adjudication_model": "",
-    "adjudication_ai_model_config_id": null
+    "adjudication_ai_model_config_id": null,
+    "semantic_indexing_enabled": false
   }
 };
 

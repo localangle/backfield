@@ -6,6 +6,7 @@ AI_MODEL_KIND_EMBEDDING = "embedding"
 AI_CAPABILITY_TEXT = "text"
 AI_CAPABILITY_JSON = "json"
 AI_CAPABILITY_VISION = "vision"
+AI_CAPABILITY_EMBEDDING = "embedding"
 
 DEFAULT_AI_CURRENCY = "USD"
 
@@ -94,9 +95,12 @@ def is_platform_integration_key(integration_key: str) -> bool:
 AI_DEFAULT_ROLE_GEOCODE_ROUTER = "geocode.router"
 AI_DEFAULT_ROLE_GEOCODE_EVALUATION = "geocode.evaluation"
 
+AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING = "semantic.embedding"
+
 PROJECT_AI_DEFAULT_ROLES: frozenset[str] = frozenset(
     {
         AI_DEFAULT_ROLE_GEOCODE_ROUTER,
         AI_DEFAULT_ROLE_GEOCODE_EVALUATION,
+        AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
     }
 )

@@ -120,6 +120,7 @@ export interface CuratedAiModelOption {
   provider: string
   provider_model_id: string
   label: string
+  model_kind?: string
   capabilities: string[]
   input_token_price?: string | number | null
   output_token_price?: string | number | null
@@ -364,6 +365,37 @@ export async function deleteProjectAiModelCredentialOverride(
   return jsonFetch(
     `/v1/projects/${projectId}/ai-models/${encodeURIComponent(modelConfigId)}/credential-override`,
     { method: 'DELETE' },
+  )
+}
+
+export interface ProjectAiModelDefaultRole {
+  role: string
+  model_config_id: string
+}
+
+export async function fetchProjectAiModelDefaults(
+  projectId: number,
+): Promise<ProjectAiModelDefaultRole[]> {
+  return jsonFetch(`/v1/projects/${projectId}/ai-model-defaults`)
+}
+
+export async function fetchProjectSemanticIndexingConfigured(
+  projectId: number,
+): Promise<{ configured: boolean }> {
+  return jsonFetch(`/v1/projects/${projectId}/semantic-indexing-configured`)
+}
+
+export async function putProjectAiModelDefaultRole(
+  projectId: number,
+  role: string,
+  modelConfigId: string,
+): Promise<ProjectAiModelDefaultRole> {
+  return jsonFetch(
+    `/v1/projects/${projectId}/ai-model-defaults/${encodeURIComponent(role)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ model_config_id: modelConfigId }),
+    },
   )
 }
 

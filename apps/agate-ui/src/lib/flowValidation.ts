@@ -1,4 +1,5 @@
 import { stripJsonInputEditorMarkers } from '@/lib/jsonInputValidation'
+import { resolvedStylebookId } from '@/lib/nodePanelAiModel'
 import { isValidS3BucketName, normalizeS3BucketName, normalizeS3FolderPath, normalizeS3MaxFilesInput, S3_DEFAULT_MAX_FILES, s3BucketFieldError } from '@/lib/s3InputValidation'
 import { nodeMetadata } from '@/nodes/registry'
 
@@ -106,6 +107,44 @@ export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown>
     }
   }
   return raw
+}
+
+/** Clear or remap a stale persisted stylebook id before graph save. */
+export function sanitizeNodeStylebookRef(
+  nodeType: string | undefined,
+  params: Record<string, unknown>,
+  validStylebookIds: ReadonlySet<number>,
+  defaultStylebookId: number | null,
+): Record<string, unknown> {
+  const sid = resolvedStylebookId(params)
+  if (sid == null || validStylebookIds.has(sid)) {
+    return params
+  }
+
+  const out = { ...params }
+  if (nodeType === 'DBOutput') {
+    out.stylebook_id = null
+    delete out.stylebookId
+    return out
+  }
+
+  if (nodeType === 'GeocodeAgent') {
+    if (out.useCache === true && defaultStylebookId != null) {
+      out.stylebook_id = defaultStylebookId
+    } else {
+      delete out.stylebook_id
+    }
+    delete out.stylebookId
+    return out
+  }
+
+  if (defaultStylebookId != null) {
+    out.stylebook_id = defaultStylebookId
+  } else {
+    delete out.stylebook_id
+  }
+  delete out.stylebookId
+  return out
 }
 
 export function validateSingleBookends(graph: FlowGraph): FlowValidationResult {

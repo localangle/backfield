@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 
 from backfield_db import (
+    AgateGraph,
     BackfieldOrganization,
+    BackfieldProject,
     BackfieldWorkspace,
     Stylebook,
     StylebookBundleJob,
     StylebookSlugRedirect,
 )
 from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
+from backfield_stylebook.graph_stylebook_refs import (
+    STYLEBOOK_NODE_PARAM_KEY,
+    validate_stylebook_refs_for_organization,
+)
 from backfield_stylebook.stylebook_library import (
     StylebookLibraryError,
     create_stylebook,
@@ -149,6 +156,60 @@ def test_delete_reassigns_workspaces_to_org_default() -> None:
         ws2 = session.get(BackfieldWorkspace, wid)
         assert ws2 is not None
         assert int(ws2.stylebook_id) == aid
+
+
+def test_delete_reassigns_graph_node_stylebook_refs() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="O", slug="o-graph")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        oid = int(org.id)  # type: ignore[arg-type]
+        a = create_stylebook(session, organization_id=oid, name="A", is_default=True)
+        b = create_stylebook(session, organization_id=oid, name="B", is_default=False)
+        session.commit()
+        session.refresh(a)
+        session.refresh(b)
+        aid = int(a.id)  # type: ignore[arg-type]
+        bid = int(b.id)  # type: ignore[arg-type]
+
+        proj = BackfieldProject(
+            organization_id=oid,
+            name="P",
+            slug="p-graph",
+            workspace_id=None,
+        )
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        pid = int(proj.id)  # type: ignore[arg-type]
+
+        spec = {
+            "name": "flow",
+            "nodes": [
+                {
+                    "id": "backfield",
+                    "type": "db_output",
+                    "params": {STYLEBOOK_NODE_PARAM_KEY: bid},
+                },
+            ],
+            "edges": [],
+        }
+        graph = AgateGraph(name="G", spec_json=json.dumps(spec), project_id=pid)
+        session.add(graph)
+        session.commit()
+        session.refresh(graph)
+        gid = graph.id
+
+        delete_stylebook(session, bid)
+        session.commit()
+
+        updated = session.get(AgateGraph, gid)
+        assert updated is not None
+        updated_spec = json.loads(updated.spec_json)
+        assert updated_spec["nodes"][0]["params"][STYLEBOOK_NODE_PARAM_KEY] == aid
+        validate_stylebook_refs_for_organization(session, organization_id=oid, spec=updated_spec)
 
 
 def test_delete_stylebook_removes_referencing_bundle_jobs() -> None:

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { getStats, type Stats } from "@/lib/api"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
+import { ENTITY_HOME_CARDS, entityDisplayName } from "@/lib/entityRegistry"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
@@ -12,7 +13,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { MapPin, Users, Building2, BookOpen, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
+
+function entityStatsKey(entityType: (typeof ENTITY_HOME_CARDS)[number]["entityType"]): keyof Stats {
+  if (entityType === "location") return "locations"
+  if (entityType === "person") return "people"
+  if (entityType === "organization") return "organizations"
+  return "works"
+}
 
 export default function Index() {
   const navigate = useNavigate()
@@ -49,16 +57,10 @@ export default function Index() {
     }
   }
 
-  const handleEntityTypeClick = (type: string) => {
-    if (type === "locations") {
-      navigate(`${catalogBasePath}/locations/canonical${filterScopeSuffix}`)
-    } else if (type === "people") {
-      navigate(`${catalogBasePath}/people/candidates${workflowScopeSuffix}`)
-    } else if (type === "organizations") {
-      navigate(`${catalogBasePath}/organizations/candidates${workflowScopeSuffix}`)
-    } else if (type === "works") {
-      navigate(`${catalogBasePath}/works/candidates${workflowScopeSuffix}`)
-    }
+  const handleEntityTypeClick = (card: (typeof ENTITY_HOME_CARDS)[number]) => {
+    const suffix = card.canonicalFirst ? filterScopeSuffix : workflowScopeSuffix
+    const pathSegment = card.canonicalFirst ? "canonical" : "candidates"
+    navigate(`${catalogBasePath}/${card.routeSegment}/${pathSegment}${suffix}`)
   }
 
   if (loading) {
@@ -81,109 +83,53 @@ export default function Index() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => handleEntityTypeClick("locations")}
-          >
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Locations</CardTitle>
-                <MapPin className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <CardDescription>Canonical places and locations</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground">
-                Canonicals are stylebook-scoped. Evidence can be filtered by project.
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="opacity-60">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">People</CardTitle>
-                <Users className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <CardDescription>Canonical people</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground">
-                Select a project to view candidates.
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="opacity-60">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Organizations</CardTitle>
-                <Building2 className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <CardDescription>Canonical organizations and institutions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground">
-                Select a project to view candidates.
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="opacity-60">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Works</CardTitle>
-                <BookOpen className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <CardDescription>
-                Canonical works (laws, reports, books, products, artworks)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground">
-                Select a project to view candidates.
-              </div>
-            </CardContent>
-          </Card>
+          {ENTITY_HOME_CARDS.map((card) => {
+            const Icon = card.icon
+            const isLocation = card.entityType === "location"
+            return (
+              <Card
+                key={card.entityType}
+                className={
+                  isLocation
+                    ? "cursor-pointer hover:shadow-md transition-shadow"
+                    : "opacity-60"
+                }
+                onClick={isLocation ? () => handleEntityTypeClick(card) : undefined}
+              >
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">
+                      {entityDisplayName(card.entityType, true)}
+                    </CardTitle>
+                    <Icon className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <CardDescription>{card.description}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-sm text-muted-foreground">
+                    {isLocation
+                      ? "Canonicals are stylebook-scoped. Evidence can be filtered by project."
+                      : "Select a project to view candidates."}
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       </div>
     )
   }
 
-  const entityTypes = [
-    {
-      id: "locations",
-      name: "Locations",
-      icon: MapPin,
-      stats: stats.locations,
-      description: "Canonical places and locations",
-    },
-    {
-      id: "people",
-      name: "People",
-      icon: Users,
-      stats: stats.people,
-      description: "Canonical people",
-    },
-    {
-      id: "organizations",
-      name: "Organizations",
-      icon: Building2,
-      stats: stats.organizations ?? {
-        canonical_count: 0,
-        candidate_count: 0,
-      },
-      description: "Canonical organizations and institutions",
-    },
-    {
-      id: "works",
-      name: "Works",
-      icon: BookOpen,
-      stats: stats.works ?? { canonical_count: 0, candidate_count: 0 },
-      description:
-        "Canonical works (laws, reports, books, products, artworks)",
-    },
-  ]
+  const entityTypes = ENTITY_HOME_CARDS.map((card) => ({
+    id: card.routeSegment,
+    name: entityDisplayName(card.entityType, true),
+    icon: card.icon,
+    stats:
+      stats[entityStatsKey(card.entityType)] ??
+      ({ canonical_count: 0, candidate_count: 0 } as Stats["people"]),
+    description: card.description,
+    card,
+  }))
 
   return (
     <div className="space-y-6">
@@ -202,7 +148,7 @@ export default function Index() {
             <Card
               key={entityType.id}
               className="cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={() => handleEntityTypeClick(entityType.id)}
+              onClick={() => handleEntityTypeClick(entityType.card)}
             >
               <CardHeader>
                 <div className="flex items-center gap-3">

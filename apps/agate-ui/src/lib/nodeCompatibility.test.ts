@@ -33,6 +33,12 @@ describe('getCompatibleNextNodes', () => {
     const geocode = result.disabled.find((e) => e.type === 'GeocodeAgent')
     expect(geocode?.reason).toBe('Requires extracted places as input.')
   })
+
+  it('enables Person and Place Extract from JSON Input', () => {
+    const result = getCompatibleNextNodes('JSONInput', ['JSONInput'])
+    expect(result.enabled.map((e) => e.type)).toContain('PlaceExtract')
+    expect(result.enabled.map((e) => e.type)).toContain('PersonExtract')
+  })
 })
 
 describe('getCompatibleInsertNodes', () => {
@@ -67,6 +73,17 @@ describe('resolveEdgeHandles', () => {
     expect(resolveEdgeHandles('TextInput', 'DBOutput')).toEqual({
       sourceHandle: 'text',
       targetHandle: 'data',
+    })
+  })
+
+  it('maps JSON Input to Place and Person Extract on the text port', () => {
+    expect(resolveEdgeHandles('JSONInput', 'PlaceExtract')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'text',
+    })
+    expect(resolveEdgeHandles('JSONInput', 'PersonExtract')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'text',
     })
   })
 })

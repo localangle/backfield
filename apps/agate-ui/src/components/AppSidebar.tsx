@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { matchPath, NavLink, useLocation } from 'react-router-dom'
 import {
+  ChevronDown,
+  ChevronRight,
   HelpCircle,
   Settings,
 } from 'lucide-react'
@@ -18,6 +20,19 @@ import {
 } from '@/lib/stylebook-org-api'
 
 const STORAGE_EXPANDED = 'agate-sidebar-expanded'
+const STORAGE_WORKSPACES_EXPANDED = 'agate-sidebar-workspaces-expanded'
+
+function readExpandedWorkspaceSlugs(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_WORKSPACES_EXPANDED)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((slug): slug is string => typeof slug === 'string'))
+  } catch {
+    return new Set()
+  }
+}
 
 function pickProjectSlugForStylebookLinks(
   activeSlug: string | null,
@@ -37,6 +52,29 @@ export default function AppSidebar() {
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>([])
   const [apiProjects, setApiProjects] = useState<Project[]>([])
   const [stylebooks, setStylebooks] = useState<StylebookCatalogRow[]>([])
+  const [expandedWorkspaceSlugs, setExpandedWorkspaceSlugs] = useState<Set<string>>(
+    readExpandedWorkspaceSlugs,
+  )
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_WORKSPACES_EXPANDED,
+        JSON.stringify([...expandedWorkspaceSlugs]),
+      )
+    } catch {
+      /* ignore */
+    }
+  }, [expandedWorkspaceSlugs])
+
+  const toggleWorkspaceExpanded = useCallback((workspaceSlug: string) => {
+    setExpandedWorkspaceSlugs((prev) => {
+      const next = new Set(prev)
+      if (next.has(workspaceSlug)) next.delete(workspaceSlug)
+      else next.add(workspaceSlug)
+      return next
+    })
+  }, [])
 
   const loadWorkspaces = useCallback(async (): Promise<WorkspaceWithProjects[]> => {
     try {
@@ -128,6 +166,30 @@ export default function AppSidebar() {
       ? decodeURIComponent(workspaceRouteMatch.params.workspaceSlug)
       : null
 
+  useEffect(() => {
+    const slugsToExpand = new Set<string>()
+    if (activeWorkspaceSlug) slugsToExpand.add(activeWorkspaceSlug)
+    if (activeProjectSlug) {
+      for (const ws of workspaceRows) {
+        if (ws.projects.some((p) => p.slug === activeProjectSlug)) {
+          slugsToExpand.add(ws.slug)
+        }
+      }
+    }
+    if (slugsToExpand.size === 0) return
+    setExpandedWorkspaceSlugs((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      for (const slug of slugsToExpand) {
+        if (!next.has(slug)) {
+          next.add(slug)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [activeWorkspaceSlug, activeProjectSlug, workspaceRows])
+
   const sortedStylebooks = useMemo(() => {
     return [...stylebooks].sort(
       (a, b) =>
@@ -154,7 +216,7 @@ export default function AppSidebar() {
   const workspaceRowClass = (active: boolean) =>
     cn(
       'rounded-md text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-      'flex w-full min-w-0 items-center px-2 py-2 text-left',
+      'flex w-full min-w-0 items-center gap-1 px-2 py-2 text-left font-medium',
       active
         ? 'bg-accent text-accent-foreground'
         : 'text-foreground hover:bg-muted/60',
@@ -212,39 +274,56 @@ export default function AppSidebar() {
               )}
 
               {(expanded ? workspaceRows : []).map((ws) => {
-                const wsActive = activeWorkspaceSlug === ws.slug
+                const workspaceExpanded = expandedWorkspaceSlugs.has(ws.slug)
+                const wsContainsActiveProject = ws.projects.some(
+                  (p) => p.slug === activeProjectSlug,
+                )
+                const wsHighlighted =
+                  activeWorkspaceSlug === ws.slug || wsContainsActiveProject
                 const projectsSorted = [...ws.projects].sort((a, b) =>
                   a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
                 )
+                const projectsPanelId = `sidebar-workspace-projects-${ws.slug}`
                 return (
                   <div
                     key={`${ws.slug}-${ws.id}`}
                     className="flex flex-col gap-0.5"
                   >
-                    <NavLink
-                      to={`/workspace/${encodeURIComponent(ws.slug)}`}
+                    <button
+                      type="button"
                       title={ws.name}
-                      aria-label={`Open workspace ${ws.name}`}
-                      aria-current={wsActive ? 'page' : undefined}
-                      className={() => workspaceRowClass(wsActive)}
+                      aria-label={`${workspaceExpanded ? 'Collapse' : 'Expand'} ${ws.name}`}
+                      aria-expanded={workspaceExpanded}
+                      aria-controls={projectsPanelId}
+                      onClick={() => toggleWorkspaceExpanded(ws.slug)}
+                      className={workspaceRowClass(wsHighlighted)}
                     >
+                      {workspaceExpanded ? (
+                        <ChevronDown className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                      )}
                       <span className="min-w-0 truncate">{ws.name}</span>
-                    </NavLink>
-                    {projectsSorted.map((p) => {
-                      const pActive = activeProjectSlug === p.slug
-                      return (
-                        <NavLink
-                          key={`${ws.slug}-p-${p.id}`}
-                          to={`/project/${encodeURIComponent(p.slug)}`}
-                          title={p.name}
-                          aria-label={`Open project ${p.name}`}
-                          aria-current={pActive ? 'page' : undefined}
-                          className={() => projectUnderWorkspaceClass(pActive)}
-                        >
-                          <span className="min-w-0 truncate">{p.name}</span>
-                        </NavLink>
-                      )
-                    })}
+                    </button>
+                    {workspaceExpanded ? (
+                      <div id={projectsPanelId} className="flex flex-col gap-0.5">
+                        {projectsSorted.map((p) => {
+                          const pActive = activeProjectSlug === p.slug
+                          return (
+                            <NavLink
+                              key={`${ws.slug}-p-${p.id}`}
+                              to={`/project/${encodeURIComponent(p.slug)}`}
+                              title={p.name}
+                              aria-label={`Open project ${p.name}`}
+                              aria-current={pActive ? 'page' : undefined}
+                              className={() => projectUnderWorkspaceClass(pActive)}
+                            >
+                              <span className="min-w-0 truncate">{p.name}</span>
+                            </NavLink>
+                          )
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                 )
               })}

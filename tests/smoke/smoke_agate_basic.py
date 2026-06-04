@@ -16,6 +16,7 @@ from _helpers import (
     keep_smoke_data,
     log,
     login_session_context,
+    resolve_run_execution_output,
     session_cookie_headers,
     wait_for_terminal_run,
 )
@@ -105,36 +106,7 @@ def main() -> int:
                 timeout_s=SMOKE_POLL_TIMEOUT_SECONDS,
                 interval_s=SMOKE_POLL_INTERVAL_SECONDS,
             )
-            result = terminal.get("result")
-            if isinstance(result, dict) and isinstance(result.get("text_input"), dict):
-                effective_result = result
-            else:
-                processed_items = terminal.get("processed_items")
-                item_id: int | None = None
-                if isinstance(processed_items, list) and processed_items:
-                    first = processed_items[0]
-                    if isinstance(first, dict) and isinstance(first.get("id"), int):
-                        item_id = int(first["id"])
-                if item_id is None and isinstance(result, dict):
-                    result_items = result.get("items")
-                    if isinstance(result_items, list) and result_items:
-                        first = result_items[0]
-                        if isinstance(first, dict) and isinstance(first.get("id"), int):
-                            item_id = int(first["id"])
-                if item_id is None:
-                    raise RuntimeError(
-                        "Run "
-                        f"{terminal.get('id')} missing item id for output validation: "
-                        f"{terminal!r}"
-                    )
-                item_detail = assert_object(
-                    agate.get(f"/runs/{terminal['id']}/items/{item_id}"),
-                    "get processed item detail",
-                )
-                output = item_detail.get("output")
-                if not isinstance(output, dict):
-                    raise RuntimeError(f"Processed item output must be an object: {output!r}")
-                effective_result = output
+            effective_result = resolve_run_execution_output(agate, terminal)
         finally:
             if graph_id and not keep_smoke_data():
                 with suppress(Exception):

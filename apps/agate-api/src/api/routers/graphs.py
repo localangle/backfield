@@ -18,6 +18,7 @@ from backfield_db import (
 )
 from backfield_stylebook.graph_stylebook_refs import (
     StylebookGraphRefsError,
+    sanitize_stylebook_refs_for_organization,
     validate_stylebook_refs_for_organization,
 )
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,18 +29,30 @@ from sqlmodel import Session, select
 router = APIRouter(prefix="/graphs", tags=["graphs"])
 
 
-def _raise_stylebook_graph_refs(session: Session, project_id: int, spec: GraphSpec) -> None:
+def _prepare_spec_stylebook_refs(
+    session: Session,
+    project_id: int,
+    spec: GraphSpec,
+) -> GraphSpec:
     proj = session.get(BackfieldProject, project_id)
     if not proj:
-        return
+        return spec
+    org_id = int(proj.organization_id)
+    spec_dict = spec.model_dump()
+    sanitize_stylebook_refs_for_organization(
+        session,
+        organization_id=org_id,
+        spec=spec_dict,
+    )
     try:
         validate_stylebook_refs_for_organization(
             session,
-            organization_id=int(proj.organization_id),
-            spec=spec.model_dump(),
+            organization_id=org_id,
+            spec=spec_dict,
         )
     except StylebookGraphRefsError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    return GraphSpec.model_validate(spec_dict)
 
 
 class GraphCreate(BaseModel):
@@ -66,10 +79,10 @@ def create_graph(
     p = session.get(BackfieldProject, body.project_id)
     if not p:
         raise HTTPException(404, "Project not found")
-    _raise_stylebook_graph_refs(session, body.project_id, body.spec)
+    prepared_spec = _prepare_spec_stylebook_refs(session, body.project_id, body.spec)
     g = AgateGraph(
         name=body.name,
-        spec_json=body.spec.model_dump_json(),
+        spec_json=prepared_spec.model_dump_json(),
         project_id=body.project_id,
     )
     session.add(g)
@@ -140,9 +153,9 @@ def update_graph(
     p = session.get(BackfieldProject, body.project_id)
     if not p:
         raise HTTPException(404, "Project not found")
-    _raise_stylebook_graph_refs(session, body.project_id, body.spec)
+    prepared_spec = _prepare_spec_stylebook_refs(session, body.project_id, body.spec)
     g.name = body.name
-    g.spec_json = body.spec.model_dump_json()
+    g.spec_json = prepared_spec.model_dump_json()
     g.project_id = body.project_id
     session.add(g)
     session.commit()

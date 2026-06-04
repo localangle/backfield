@@ -10,7 +10,10 @@ from typing import Any
 from backfield_db import BackfieldAiCallRecord
 from sqlmodel import Session
 
-from backfield_ai.constants import COST_ESTIMATE_SOURCE_UNAVAILABLE
+from backfield_ai.constants import (
+    AI_MODEL_KIND_GENERATIVE,
+    COST_ESTIMATE_SOURCE_UNAVAILABLE,
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,7 @@ def persist_llm_attempt(
     error_type: str | None,
     error_message: str | None,
     cost_estimate_source: str | None = None,
+    model_kind: str = AI_MODEL_KIND_GENERATIVE,
 ) -> None:
     ctx = current_llm_tracking_context()
     if ctx is None:
@@ -79,7 +83,7 @@ def persist_llm_attempt(
         model_config_snapshot_json=model_config_snapshot_json,
         provider=provider,
         provider_model_id=provider_model_id,
-        model_kind="generative",
+        model_kind=model_kind,
         status=status,
         attempt_number=attempt_number,
         prompt_tokens=prompt_tokens,

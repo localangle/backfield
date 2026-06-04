@@ -6,6 +6,7 @@ from backfield_db import BackfieldWorkspace, Stylebook, StylebookBundleJob, Styl
 from sqlalchemy import delete, or_, update
 from sqlmodel import Session, col, select
 
+from backfield_stylebook.graph_stylebook_refs import reassign_stylebook_refs_in_org_graphs
 from backfield_stylebook.stylebook_record_slug import allocate_unique_stylebook_slug
 
 
@@ -253,6 +254,12 @@ def delete_stylebook(
     if reassign_target_id is None:
         raise StylebookLibraryError("organization has no default stylebook to reassign workspaces")
     _reassign_workspaces_from_stylebook(
+        session,
+        organization_id=org_id,
+        from_stylebook_id=int(stylebook_id),
+        to_stylebook_id=int(reassign_target_id),
+    )
+    reassign_stylebook_refs_in_org_graphs(
         session,
         organization_id=org_id,
         from_stylebook_id=int(stylebook_id),

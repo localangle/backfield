@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,11 +15,20 @@ import {
 import { useAppMessage } from '@/components/AppMessageProvider'
 import {
   deleteProjectAiModelCredentialOverride,
+  fetchProjectAiModelDefaults,
   fetchProjectEffectiveAiModels,
   putProjectAiModelAvailability,
   putProjectAiModelCredentialOverride,
+  putProjectAiModelDefaultRole,
   type ProjectEffectiveAiModelRow,
 } from '@/lib/core-api'
+import {
+  modelKindLabel,
+  normalizeModelKind,
+  SEMANTIC_EMBEDDING_DEFAULT_ROLE,
+} from '@/lib/ai-model-catalog-ui'
+import { dispatchProjectAiModelsChanged } from '@/lib/projectAiModelsEvents'
+import { partitionProjectModelsByKind } from '@/lib/project-models-ui'
 import { Loader2 } from 'lucide-react'
 
 function isAzureStyleModel(row: ProjectEffectiveAiModelRow): boolean {
@@ -28,7 +37,6 @@ function isAzureStyleModel(row: ProjectEffectiveAiModelRow): boolean {
   return p === 'azure' || lm.startsWith('azure/')
 }
 
-/** Matches Integrations tab — project-specific credential saved for this model. */
 function OverriddenBadge() {
   return (
     <Badge
@@ -47,26 +55,40 @@ interface ProjectDetailModelsTabProps {
 export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModelsTabProps) {
   const { showError, showConfirm, showMessage } = useAppMessage()
   const [rows, setRows] = useState<ProjectEffectiveAiModelRow[]>([])
+  const [semanticDefaultModelId, setSemanticDefaultModelId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [busyModelId, setBusyModelId] = useState<string | null>(null)
+  const autoDefaultInFlight = useRef(false)
 
   const [credentialDialog, setCredentialDialog] = useState<ProjectEffectiveAiModelRow | null>(null)
   const [credentialKey, setCredentialKey] = useState('')
   const [credentialBase, setCredentialBase] = useState('')
   const [credentialSaving, setCredentialSaving] = useState(false)
 
+  const partitioned = useMemo(() => partitionProjectModelsByKind(rows), [rows])
+  const enabledEmbeddingIds = useMemo(
+    () => partitioned.embedding.enabled.map((r) => r.id),
+    [partitioned.embedding.enabled],
+  )
+  const soleEnabledEmbeddingId =
+    enabledEmbeddingIds.length === 1 ? enabledEmbeddingIds[0] : null
+
   const reload = useCallback(async () => {
     try {
       setListError(null)
       setLoading(true)
-      const data = await fetchProjectEffectiveAiModels(projectId, undefined, {
-        includeDisabled: true,
-      })
+      const [data, defaults] = await Promise.all([
+        fetchProjectEffectiveAiModels(projectId, undefined, { includeDisabled: true }),
+        fetchProjectAiModelDefaults(projectId),
+      ])
       setRows(data)
+      const semantic = defaults.find((d) => d.role === SEMANTIC_EMBEDDING_DEFAULT_ROLE)
+      setSemanticDefaultModelId(semantic?.model_config_id ?? null)
     } catch (e) {
       console.error(e)
       setRows([])
+      setSemanticDefaultModelId(null)
       setListError('Could not load models for this project.')
     } finally {
       setLoading(false)
@@ -77,14 +99,63 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
     void reload()
   }, [reload])
 
-  const enabledRows = useMemo(
-    () => rows.filter((m) => m.status === 'active' && m.project_enabled),
-    [rows],
+  const setSemanticDefault = useCallback(
+    async (modelConfigId: string) => {
+      try {
+        setBusyModelId(modelConfigId)
+        await putProjectAiModelDefaultRole(
+          projectId,
+          SEMANTIC_EMBEDDING_DEFAULT_ROLE,
+          modelConfigId,
+        )
+        setSemanticDefaultModelId(modelConfigId)
+        dispatchProjectAiModelsChanged(projectId)
+      } catch (e) {
+        console.error(e)
+        showError('We could not set the semantic search default. Try again.')
+      } finally {
+        setBusyModelId(null)
+      }
+    },
+    [projectId, showError],
   )
-  const disabledRows = useMemo(
-    () => rows.filter((m) => m.status === 'active' && !m.project_enabled),
-    [rows],
+
+  const maybeAutoAssignSoleEmbeddingDefault = useCallback(
+    async (enabledEmbeddings: ProjectEffectiveAiModelRow[], currentDefaultId: string | null) => {
+      if (enabledEmbeddings.length !== 1) return
+      const soleId = enabledEmbeddings[0].id
+      if (!soleId || soleId === currentDefaultId) return
+      if (autoDefaultInFlight.current) return
+      autoDefaultInFlight.current = true
+      try {
+        await putProjectAiModelDefaultRole(
+          projectId,
+          SEMANTIC_EMBEDDING_DEFAULT_ROLE,
+          soleId,
+        )
+        setSemanticDefaultModelId(soleId)
+        dispatchProjectAiModelsChanged(projectId)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        autoDefaultInFlight.current = false
+      }
+    },
+    [projectId],
   )
+
+  useEffect(() => {
+    if (loading) return
+    void maybeAutoAssignSoleEmbeddingDefault(
+      partitioned.embedding.enabled,
+      semanticDefaultModelId,
+    )
+  }, [
+    loading,
+    partitioned.embedding.enabled,
+    semanticDefaultModelId,
+    maybeAutoAssignSoleEmbeddingDefault,
+  ])
 
   const setBusy = (id: string | null) => setBusyModelId(id)
 
@@ -92,7 +163,19 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
     try {
       setBusy(row.id)
       const updated = await putProjectAiModelAvailability(projectId, row.id, next)
-      setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+      const nextRows = rows.map((r) => (r.id === updated.id ? updated : r))
+      setRows(nextRows)
+      const enabledEmbeddings = nextRows.filter(
+        (r) =>
+          r.status === 'active' &&
+          r.project_enabled &&
+          normalizeModelKind(r.model_kind) === 'embedding',
+      )
+      await maybeAutoAssignSoleEmbeddingDefault(
+        enabledEmbeddings,
+        semanticDefaultModelId,
+      )
+      dispatchProjectAiModelsChanged(projectId)
     } catch (e) {
       console.error(e)
       showError('We could not update this model. Try again.')
@@ -164,9 +247,18 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
     }
   }
 
-  const renderRow = (row: ProjectEffectiveAiModelRow) => {
+  const renderModelRow = (
+    row: ProjectEffectiveAiModelRow,
+    options?: { showSemanticDefaultToggle?: boolean },
+  ) => {
     const busy = busyModelId === row.id
     const override = row.project_credential_override_configured ?? false
+    const isDefault = semanticDefaultModelId === row.id
+    const lockDefaultOn =
+      options?.showSemanticDefaultToggle === true &&
+      soleEnabledEmbeddingId === row.id &&
+      isDefault
+
     return (
       <div
         key={row.id}
@@ -180,6 +272,10 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Badge variant="outline">{modelKindLabel(normalizeModelKind(row.model_kind))}</Badge>
+            {isDefault && options?.showSemanticDefaultToggle ? (
+              <Badge variant="secondary">Default</Badge>
+            ) : null}
             {override ? <OverriddenBadge /> : <Badge variant="success">Configured</Badge>}
           </div>
         </div>
@@ -202,6 +298,23 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             </Label>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
+            {options?.showSemanticDefaultToggle && row.project_enabled ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={
+                  isDefault ? 'border-black bg-black text-white hover:bg-black/90' : undefined
+                }
+                disabled={busy || isDefault}
+                aria-pressed={isDefault}
+                onClick={() => {
+                  if (!isDefault) void setSemanticDefault(row.id)
+                }}
+              >
+                Default
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -209,7 +322,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
               disabled={busy}
               onClick={() => openCredentialDialog(row)}
             >
-              {override ? 'Update project key' : 'Use project key'}
+              Override credentials
             </Button>
             {override ? (
               <Button
@@ -224,22 +337,70 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             ) : null}
           </div>
         </div>
+        {lockDefaultOn ? (
+          <p className="text-xs text-muted-foreground">Only embedding model enabled for this project.</p>
+        ) : null}
       </div>
     )
   }
 
+  const renderKindSection = (
+    title: string,
+    description: string,
+    enabled: ProjectEffectiveAiModelRow[],
+    disabled: ProjectEffectiveAiModelRow[],
+    options?: { showSemanticDefaultToggle?: boolean },
+  ) => (
+    <section className="space-y-4" aria-labelledby={`${title}-heading`}>
+      <div className="space-y-1">
+        <h2 id={`${title}-heading`} className="text-sm font-semibold tracking-tight">
+          {title}
+        </h2>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      <div className="space-y-4">
+        <div className="space-y-0">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
+            Available in this project
+          </h3>
+          {enabled.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No models enabled in this section.</p>
+          ) : (
+            enabled.map((row) => renderModelRow(row, options))
+          )}
+        </div>
+        <div className="space-y-0 border-t border-border pt-6">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
+            Turned off for this project
+          </h3>
+          {disabled.length === 0 ? (
+            <p className="text-sm text-muted-foreground">None.</p>
+          ) : (
+            disabled.map((row) => renderModelRow(row, options))
+          )}
+        </div>
+      </div>
+    </section>
+  )
+
+  const hasGenerative =
+    partitioned.generative.enabled.length > 0 || partitioned.generative.disabled.length > 0
+  const hasEmbedding =
+    partitioned.embedding.enabled.length > 0 || partitioned.embedding.disabled.length > 0
+
   return (
     <div className="w-full min-w-0 space-y-6">
       <p className="text-sm text-muted-foreground">
-        Turn models on or off to make them accessible to flows in this project.
+        Turn models on or off for this project. Embedding models power semantic search when Backfield
+        Output has semantic search enabled.
       </p>
 
       <Card className="w-full">
         <CardHeader>
           <CardTitle className="text-base">Project models</CardTitle>
           <CardDescription>
-            Organization admins manage the catalog. Use the switch to include or exclude a model here; optional keys
-            override organization credentials for this project only.
+            Organization admins manage the catalog under Settings → Models. Enable models here and
+            choose which embedding model is the project default for semantic search.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-10">
@@ -250,29 +411,33 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             </div>
           ) : listError ? (
             <p className="text-sm text-muted-foreground">{listError}</p>
+          ) : !hasGenerative && !hasEmbedding ? (
+            <p className="text-sm text-muted-foreground">
+              No models in your organization catalog yet. Ask an administrator to add models under
+              Settings → Models.
+            </p>
           ) : (
             <>
-              <section className="space-y-4" aria-labelledby="models-available-heading">
-                <h2 id="models-available-heading" className="text-sm font-semibold tracking-tight">
-                  Available in this project
-                </h2>
-                {enabledRows.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No models enabled for this project.</p>
-                ) : (
-                  <div className="space-y-0">{enabledRows.map(renderRow)}</div>
-                )}
-              </section>
-
-              <section className="space-y-4 border-t border-border pt-10" aria-labelledby="models-off-heading">
-                <h2 id="models-off-heading" className="text-sm font-semibold tracking-tight">
-                  Turned off for this project
-                </h2>
-                {disabledRows.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">None — every organization model is available.</p>
-                ) : (
-                  <div className="space-y-0">{disabledRows.map(renderRow)}</div>
-                )}
-              </section>
+              {hasGenerative
+                ? renderKindSection(
+                    'Generative',
+                    'Language and vision models used in flow nodes such as extraction and geocoding.',
+                    partitioned.generative.enabled,
+                    partitioned.generative.disabled,
+                  )
+                : null}
+              {hasGenerative && hasEmbedding ? (
+                <div className="border-t border-border" />
+              ) : null}
+              {hasEmbedding
+                ? renderKindSection(
+                    'Embeddings',
+                    'Vector models for semantic search across saved mentions. One enabled model is used automatically when it is the only choice.',
+                    partitioned.embedding.enabled,
+                    partitioned.embedding.disabled,
+                    { showSemanticDefaultToggle: true },
+                  )
+                : null}
             </>
           )}
         </CardContent>
@@ -285,7 +450,8 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-sm text-muted-foreground">
-              Only flows that run in this project will use this key. It does not change organization settings.
+              Only flows that run in this project will use this key. It does not change organization
+              settings.
             </p>
             <div className="space-y-1">
               <Label htmlFor="proj-model-key">Provider key</Label>

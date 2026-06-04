@@ -126,6 +126,7 @@ export function ProcessedItemVerificationSection({
   const [articleTextSelection, setArticleTextSelection] = useState<ArticleTextSelection | null>(null)
   const [addPlaceMode, setAddPlaceMode] = useState(false)
   const [addPlaceSelection, setAddPlaceSelection] = useState<ArticleTextSelection | null>(null)
+  const [awaitingAddPlaceReselection, setAwaitingAddPlaceReselection] = useState(false)
   const [pendingGeometryStartAnchor, setPendingGeometryStartAnchor] = useState<string | null>(null)
   const dirty = useMemo(
     () => !overlaysStructurallyEqual(baselineOverlay, draftOverlay),
@@ -822,26 +823,41 @@ export function ProcessedItemVerificationSection({
       setAddPlaceMode(false)
       setSelectedAnchor(null)
       setAddPlaceSelection(selection)
+      setAwaitingAddPlaceReselection(false)
       setArticleTextSelection(null)
     },
     [geometryEditing, cancelGeometryEdit],
   )
 
-  const exitAddPlaceMode = useCallback(() => {
+  const cancelAddPlaceWorkflow = useCallback(() => {
     setAddPlaceMode(false)
+    setAddPlaceSelection(null)
+    setAwaitingAddPlaceReselection(false)
     setArticleTextSelection(null)
     const sel = window.getSelection()
     sel?.removeAllRanges()
   }, [])
 
+  const addPlaceWorkflowActive = addPlaceMode || addPlaceSelection !== null
+
+  const articleInteractionMode = useMemo(() => {
+    if (addPlaceSelection && !awaitingAddPlaceReselection) {
+      return 'locked' as const
+    }
+    if (addPlaceMode || awaitingAddPlaceReselection) {
+      return 'select-passage' as const
+    }
+    return 'normal' as const
+  }, [addPlaceSelection, awaitingAddPlaceReselection, addPlaceMode])
+
   useEffect(() => {
-    if (!addPlaceMode) return
+    if (!addPlaceWorkflowActive || addPlaceSelection) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') exitAddPlaceMode()
+      if (e.key === 'Escape') cancelAddPlaceWorkflow()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [addPlaceMode, exitAddPlaceMode])
+  }, [addPlaceWorkflowActive, addPlaceSelection, cancelAddPlaceWorkflow])
 
   const handleAddPlaceCreated = useCallback(
     async (payload: AddPlaceWorkflowCreatedPayload) => {
@@ -880,6 +896,7 @@ export function ProcessedItemVerificationSection({
       }
       setAddPlaceMode(false)
       setAddPlaceSelection(null)
+      setAwaitingAddPlaceReselection(false)
       setArticleTextSelection(null)
       setSelectedAnchor(anchor)
       setPendingGeometryStartAnchor(anchor)
@@ -945,7 +962,7 @@ export function ProcessedItemVerificationSection({
                   addPlaceMode ? undefined : 'bg-black text-white hover:bg-black/90',
                 )}
                 variant={addPlaceMode ? 'outline' : 'default'}
-                disabled={Boolean(addPlaceSelection)}
+                disabled={addPlaceSelection !== null}
                 onClick={() => {
                   if (addPlaceSelection) return
                   if (articleTextSelection) {
@@ -953,14 +970,14 @@ export function ProcessedItemVerificationSection({
                     return
                   }
                   if (addPlaceMode) {
-                    exitAddPlaceMode()
+                    cancelAddPlaceWorkflow()
                     return
                   }
                   setAddPlaceMode(true)
                 }}
               >
                 {addPlaceMode ? null : <Plus className="mr-2 h-4 w-4" />}
-                {addPlaceMode ? 'Cancel adding place' : 'Add place'}
+                {addPlaceMode ? 'Cancel' : 'Add place'}
               </Button>
             </div>
           ) : null}
@@ -988,13 +1005,34 @@ export function ProcessedItemVerificationSection({
                 </p>
               ) : article?.body?.trim() ? (
                 <>
-                  {addPlaceMode ? (
-                    <p
-                      className="mb-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2 text-sm text-foreground"
+                  {addPlaceMode || awaitingAddPlaceReselection ? (
+                    <div
+                      className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-2"
                       role="status"
                     >
-                      Highlight the passage in the story that supports this place.
-                    </p>
+                      <p className="text-sm text-foreground">
+                        {awaitingAddPlaceReselection
+                          ? 'Highlight a new passage in the story for this place.'
+                          : 'Highlight the passage in the story that supports this place.'}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 shrink-0 px-2"
+                        onClick={() => {
+                          if (awaitingAddPlaceReselection) {
+                            setAwaitingAddPlaceReselection(false)
+                            setArticleTextSelection(null)
+                            window.getSelection()?.removeAllRanges()
+                            return
+                          }
+                          cancelAddPlaceWorkflow()
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   ) : null}
                   <ProcessedItemArticleBody
                     body={article.body}
@@ -1003,17 +1041,22 @@ export function ProcessedItemVerificationSection({
                     scrollWhenKey={selectedAnchor}
                     mentionSpanHits={mentionSpanHits}
                     placeLabels={placeLabelsByAnchor}
-                    onSelectPlace={selectPlaceAnchor}
+                    interactionMode={articleInteractionMode}
+                    onSelectPlace={
+                      addPlaceWorkflowActive ? undefined : selectPlaceAnchor
+                    }
                     onTextSelectionChange={(selection) => {
-                      if (addPlaceSelection) return
+                      if (addPlaceSelection && !awaitingAddPlaceReselection) return
                       setArticleTextSelection(selection)
-                      if (addPlaceMode && selection) {
+                      if ((addPlaceMode || awaitingAddPlaceReselection) && selection) {
                         handleBeginAddPlace(selection)
                       }
                     }}
                     activeTextSelection={null}
                     onAddPlaceFromSelection={undefined}
-                    className={addPlaceMode ? 'cursor-text' : undefined}
+                    className={
+                      addPlaceMode || awaitingAddPlaceReselection ? 'cursor-text' : undefined
+                    }
                   />
                   {storyHighlightAnchor &&
                   storyHighlightRanges.length === 0 &&
@@ -1036,16 +1079,14 @@ export function ProcessedItemVerificationSection({
               articleId={articleIdForStylebook ?? 0}
               persistToStylebook={persistAddPlaceToStylebook}
               selection={addPlaceSelection}
+              awaitingNewSelection={awaitingAddPlaceReselection}
               onChangeSelection={() => {
-                setAddPlaceSelection(null)
+                setAwaitingAddPlaceReselection(true)
                 setArticleTextSelection(null)
-                setAddPlaceMode(true)
+                const sel = window.getSelection()
+                sel?.removeAllRanges()
               }}
-              onCancel={() => {
-                setAddPlaceSelection(null)
-                setArticleTextSelection(null)
-                setAddPlaceMode(false)
-              }}
+              onCancel={cancelAddPlaceWorkflow}
               onCreated={(createdPayload) => {
                 void handleAddPlaceCreated(createdPayload)
               }}

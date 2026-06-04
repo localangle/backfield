@@ -23,6 +23,7 @@ export function getNodePanelTabs(
     case 'JSONInput':
       return hasRunOutput ? ['settings', 'info', 'outputs'] : ['settings', 'info']
     case 'PlaceExtract':
+    case 'PersonExtract':
       return ['settings', 'prompts', 'outputs', 'info']
     case 'GeocodeAgent':
       return ['settings', 'models']

@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from backfield_db import SubstrateArticle, SubstrateImage
+from backfield_db.text_sanitize import strip_nul_bytes
 from sqlmodel import Session, col, select
 
 from worker.substrate.common import _parse_date, _sha256_hex, _utcnow
@@ -28,7 +29,7 @@ def _upsert_article(
         text = consolidated.get("article_text")
     if not isinstance(text, str) or not text.strip():
         text = "(empty)"
-    text_str = text if isinstance(text, str) else str(text)
+    text_str = strip_nul_bytes(text if isinstance(text, str) else str(text))
 
     author = consolidated.get("author")
     author_str = str(author).strip() if isinstance(author, str) else None

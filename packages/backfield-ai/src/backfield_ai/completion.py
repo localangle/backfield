@@ -10,7 +10,7 @@ from typing import Any
 
 import litellm
 
-from backfield_ai.constants import COST_ESTIMATE_SOURCE_LITELLM
+from backfield_ai.cost_estimate import litellm_estimated_cost_from_response
 
 logger = logging.getLogger(__name__)
 
@@ -128,15 +128,12 @@ def _build_completion_result(
     """Normalize LiteLLM ``completion`` response into our result shape (success or rejected)."""
     pt, ct, tt = _usage_from_response(resp)
     incomplete = pt is None and ct is None and tt is None
-    est_cost: Decimal | None = None
-    currency = "USD"
-    try:
-        cost_val = litellm.completion_cost(completion_response=resp)
-        if cost_val is not None:
-            est_cost = Decimal(str(cost_val))
-            incomplete = False
-    except Exception:
-        incomplete = True
+    est_cost, cost_incomplete, cost_source, currency = litellm_estimated_cost_from_response(
+        resp,
+        litellm_model=litellm_model,
+    )
+    if not cost_incomplete:
+        incomplete = False
 
     provider = ""
     provider_model_id = litellm_model
@@ -156,8 +153,8 @@ def _build_completion_result(
         total_tokens=tt,
         estimated_cost=est_cost,
         currency=currency,
-        cost_estimate_incomplete=incomplete,
-        cost_estimate_source=COST_ESTIMATE_SOURCE_LITELLM,
+        cost_estimate_incomplete=incomplete or cost_incomplete,
+        cost_estimate_source=cost_source,
         latency_ms=latency_ms,
         raw_response=resp,
     )

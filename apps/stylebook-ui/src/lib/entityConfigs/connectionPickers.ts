@@ -3,8 +3,10 @@
  * Person / organization / work use empty-list stubs until those entities are migrated.
  */
 
+import { personConfig, type PersonPickerRow } from "@/lib/entityConfigs/person"
 import { listCanonicalLocationsLegacy } from "@/lib/stylebook-api/locations"
-import { listOrganizations, listPeople, listWorks } from "@/lib/stylebook-api/entityListStubs"
+import { listOrganizations, listWorks } from "@/lib/stylebook-api/entityListStubs"
+import { listPersonPickerRows } from "@/lib/entityConfigs/person"
 import type { EntityConfig } from "@/lib/entityTypes"
 
 /** Canonical location row as used by EntitySelector (name matches agate ``Location`` shape). */
@@ -18,16 +20,7 @@ export interface LocationPickerRow {
   updated_at: string
 }
 
-export interface PersonPickerRow {
-  id: number
-  project_id: number
-  full_name: string
-  title?: string
-  affiliation?: string
-  status: string
-  created_at: string
-  updated_at: string
-}
+export type { PersonPickerRow }
 
 export interface OrganizationPickerRow {
   id: number
@@ -128,18 +121,14 @@ export const locationPickerConfig = {
   }),
 } as unknown as EntityConfig<LocationPickerRow>
 
+/** Person picker config — canonical list uses ``listCanonicalPeopleLegacy`` via ``listPersonPickerRows``. */
 export const personPickerConfig = {
-  type: "person",
-  displayName: { singular: "Person", plural: "People" },
-  routes: {
-    candidates: "/people/candidates",
-    canonical: "/people/canonical",
-    detail: "/people/canonical/:id",
-  },
+  ...personConfig,
   api: {
+    ...personConfig.api,
     listCandidates: noopListCandidates,
-    listCanonical: listPeople,
-    listCanonicalForSelector: listPeople,
+    listCanonical: listPersonPickerRows,
+    listCanonicalForSelector: listPersonPickerRows,
     getDetail: notImplemented,
     createCanonical: notImplemented,
     updateCanonical: notImplemented,
@@ -156,20 +145,6 @@ export const personPickerConfig = {
     updateMeta: notImplemented,
     deleteMeta: notImplemented,
   },
-  fields: [
-    { key: "name", label: "Name", sortable: true },
-    { key: "title", label: "Title", sortable: true },
-    { key: "affiliation", label: "Affiliation", sortable: true },
-  ],
-  filters: [],
-  getCandidateName: () => "",
-  getCanonicalName: (c: PersonPickerRow) => c.full_name,
-  getCandidateDisplayFields: () => ({ name: "", title: "", affiliation: "" }),
-  getCanonicalDisplayFields: (c: PersonPickerRow) => ({
-    name: c.full_name,
-    title: c.title ?? "",
-    affiliation: c.affiliation ?? "",
-  }),
 } as unknown as EntityConfig<PersonPickerRow>
 
 export const organizationPickerConfig = {
