@@ -95,6 +95,28 @@ def test_person_from_llm_entry_merges_review_and_first_name_heuristic() -> None:
     assert person.needs_review is True
 
 
+def test_person_from_llm_entry_inferred_surname_gets_first_name_only_review() -> None:
+    person = person_from_llm_entry(
+        {
+            "name": "Peter Wirtz",
+            "role_in_story": "Brother of Rocky Wirtz",
+            "nature": "participant",
+            "surname_inferred_from_relative": True,
+            "review_handling": "none",
+            "mentions": [
+                {
+                    "text": "Rocky Wirtz's brother, Peter, spoke briefly.",
+                    "quote": False,
+                }
+            ],
+        }
+    )
+    assert person.name == "Peter Wirtz"
+    assert person.review_handling == "flag_review"
+    assert person.review_reason_code == "first_name_only"
+    assert person.needs_review is True
+
+
 def test_person_from_llm_entry_preserves_animal_auto_defer() -> None:
     person = person_from_llm_entry(
         {

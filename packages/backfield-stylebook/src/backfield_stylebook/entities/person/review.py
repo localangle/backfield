@@ -28,6 +28,10 @@ _DEFAULT_MESSAGES: dict[str, str] = {
     REASON_FIRST_NAME_ONLY: "First name only — confirm full identity before linking",
 }
 
+_INFERRED_SURNAME_REVIEW_MESSAGE = (
+    "Surname inferred from a family reference — confirm full identity before linking"
+)
+
 _VALID_HANDLING: frozenset[str] = frozenset(
     {REVIEW_HANDLING_NONE, REVIEW_HANDLING_FLAG, REVIEW_HANDLING_AUTO_DEFER}
 )
@@ -111,6 +115,35 @@ def looks_like_first_name_only_token(name: str) -> bool:
     return _FIRST_NAME_ONLY_RE.fullmatch(token) is not None
 
 
+def surname_inferred_from_relative(entry: dict[str, Any]) -> bool:
+    """True when PersonExtract inferred a shared surname from a family reference."""
+    val = entry.get("surname_inferred_from_relative")
+    if val is True:
+        return True
+    if isinstance(val, str) and val.strip().lower() in {"true", "yes", "1"}:
+        return True
+    return False
+
+
+def apply_inferred_surname_review_flag(
+    entry: dict[str, Any],
+    *,
+    handling: ReviewHandling,
+    reason_code: str | None,
+    message: str | None,
+) -> tuple[ReviewHandling, str | None, str | None]:
+    """Force open-queue review for inferred surnames (same code as first-name-only)."""
+    if not surname_inferred_from_relative(entry):
+        return handling, reason_code, message
+    if reason_code in AUTO_WAIVE_REASON_CODES:
+        return handling, reason_code, message
+    return (
+        REVIEW_HANDLING_FLAG,
+        REASON_FIRST_NAME_ONLY,
+        message or _INFERRED_SURNAME_REVIEW_MESSAGE,
+    )
+
+
 def apply_deterministic_review_overrides(
     name: str,
     *,
@@ -136,6 +169,12 @@ def finalize_review_fields_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
     name_raw = entry.get("name")
     name = name_raw.strip() if isinstance(name_raw, str) else ""
     handling, code, message = parse_review_fields_from_entry(entry)
+    handling, code, message = apply_inferred_surname_review_flag(
+        entry,
+        handling=handling,
+        reason_code=code,
+        message=message,
+    )
     if name:
         handling, code, message = apply_deterministic_review_overrides(
             name,

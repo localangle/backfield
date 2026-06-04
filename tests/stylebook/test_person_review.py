@@ -50,6 +50,26 @@ def _seed(session: Session) -> tuple[int, int]:
     return sb_id, int(proj.id)  # type: ignore[arg-type]
 
 
+def test_finalize_inferred_surname_flags_first_name_only_review() -> None:
+    out = finalize_review_fields_from_entry(
+        {
+            "name": "Peter Wirtz",
+            "surname_inferred_from_relative": True,
+            "review_handling": "none",
+            "mentions": [
+                {
+                    "text": "Rocky Wirtz's brother, Peter, attended the hearing.",
+                    "quote": False,
+                }
+            ],
+        }
+    )
+    assert out["review_handling"] == "flag_review"
+    assert out["review_reason_code"] == REASON_FIRST_NAME_ONLY
+    assert out["needs_review"] is True
+    assert "inferred" in (out.get("review_message") or "").lower()
+
+
 def test_finalize_first_name_only_when_llm_left_none() -> None:
     out = finalize_review_fields_from_entry(
         {

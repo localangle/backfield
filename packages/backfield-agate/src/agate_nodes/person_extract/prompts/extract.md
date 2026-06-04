@@ -87,12 +87,21 @@ You must merge all references to the same person into one record:
 
 Example: "Superintendent Lisa Johnson" → "Johnson" → "the superintendent"
 
-### 3. Disambiguation Rules
+### 3. Surnames from family references
+
+When the article names a **relative** of someone who already has a clear full or last name, you may **infer the shared surname** for the relative if context makes the link unambiguous. This is a common journalistic pattern.
+
+- Example: `Rocky Wirtz's brother, Peter` → extract **`Peter Wirtz`** (Peter is named; Wirtz comes from Rocky Wirtz).
+- Example: `Mayor Jane Smith and her son Tom` → **`Tom Smith`** when Tom is clearly Jane Smith's son.
+- Do **not** infer a surname from vague references (`his brother`, `her daughter`) when the anchor person's surname is not established in the same passage.
+- Still put the **inferred full name** in `name` (e.g. `"Peter Wirtz"`), set **`surname_inferred_from_relative`: `true`**, and route for **candidate review** the same as first-name-only: `review_handling`: `flag_review`, `review_reason_code`: `first_name_only` (editors must confirm the inferred surname).
+
+### 4. Disambiguation Rules
 
 - If two people share the same last name, maintain separate entries
 - Only merge when there is unambiguous evidence they are the same person
 
-### 4. Pronoun Linking
+### 5. Pronoun Linking
 
 For each person, include any sentence or paragraph where a pronoun refers to them, even if their name is not repeated.
 
@@ -146,6 +155,7 @@ The complete name as a **flat string** on first mention (e.g. `"Jane Doe"`). **M
 - `"Dr. Jane Doe"` → `name`: `"Jane Doe"`.
 - **Initials:** write initials **without periods** in `name` (e.g. `"PT Barnum"`, `"JB Pritzker"`, `"JFK"` — not `"P.T. Barnum"`, `"J.B. Pritzker"`).
 - If the article uses only a surname after introduction (`"Pritzker said…"`), use the fullest name form established earlier in the text for `name`.
+- If a relative is named with only a first name but shares an established family surname (see **Surnames from family references**), use the full inferred name (e.g. `"Peter Wirtz"`).
 
 ### title
 
@@ -228,10 +238,11 @@ For each extracted person, set review fields so Stylebook can route the candidat
 | Animal (named pet, etc.) | `auto_defer` | `animal` | Identified as an animal |
 | Stage name, nickname, or alias without a clear legal/full name (e.g. "Prince", "Hurting Heart in Georgia") | `flag_review` | `stage_name_or_alias` | Short explanation |
 | First name only in the article (no surname or full name elsewhere) | `flag_review` | `first_name_only` | Short explanation |
+| Surname inferred from a family reference (relative named with first name only in text) | `flag_review` | `first_name_only` | Note which relative established the surname (e.g. Rocky Wirtz → Peter Wirtz) |
 | Normal named person with full identity | `none` | omit or empty | omit |
 
 - Use `auto_defer` only for **children** and **animals** (these are auto-removed from the linking queue when auto-apply is on).
-- Use `flag_review` for **aliases** and **first-name-only** mentions — they stay in the **open** queue for editors; do not use `auto_defer` for those.
+- Use `flag_review` for **aliases**, **first-name-only** mentions, and **inferred surnames from family references** — they stay in the **open** queue for editors; do not use `auto_defer` for those.
 - When `review_handling` is `none`, omit `review_reason_code` and `review_message` (or use empty strings).
 
 ## Output Format
@@ -252,6 +263,7 @@ Each person object **must** include:
 - `review_handling`: string — `none`, `flag_review`, or `auto_defer` (see Review routing above)
 - `review_reason_code`: string — when handling is not `none`: `child`, `animal`, `stage_name_or_alias`, or `first_name_only`
 - `review_message`: string — short editor-facing explanation when handling is not `none`
+- `surname_inferred_from_relative`: boolean — `true` when `name` includes a surname inferred from a family reference (see **Surnames from family references**); omit or `false` otherwise
 
 Return `{{ "people": [ ... ] }}`. When no named people qualify, return `{{ "people": [] }}`.
 
