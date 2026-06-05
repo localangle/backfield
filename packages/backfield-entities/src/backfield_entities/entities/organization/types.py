@@ -48,6 +48,11 @@ def normalize_organization_text(value: str | None) -> str:
     return " ".join(str(value).strip().lower().split())
 
 
+def organization_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
+    norm = normalize_organization_text(value)
+    return (norm,) if norm else ()
+
+
 def normalize_organization_type(value: str | None) -> str | None:
     """Map OrganizationExtract ``type`` to a bounded ``organization_type`` slug."""
     if value is None:
