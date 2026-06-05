@@ -19,11 +19,6 @@ function canonicalToSuggestedRow(c: CanonicalOrganization): SuggestedOrganizatio
   }
 }
 
-function organizationSuggestionDetailLine(s: SuggestedOrganizationCanonicalItem): string {
-  const typeLabel = (s.organization_type ?? "").trim()
-  return typeLabel ? placeExtractTypeLabel(typeLabel) : "—"
-}
-
 function suggestionToPickRow(s: SuggestedOrganizationCanonicalItem): LinkPickTableRow {
   return {
     rowKey: s.canonical_id,
@@ -32,7 +27,7 @@ function suggestionToPickRow(s: SuggestedOrganizationCanonicalItem): LinkPickTab
       s.organization_type && String(s.organization_type).trim()
         ? placeExtractTypeLabel(s.organization_type)
         : "—",
-    address: organizationSuggestionDetailLine(s),
+    address: "—",
   }
 }
 
@@ -49,9 +44,7 @@ export const organizationCanonicalLinkModalConfig: CanonicalLinkModalConfig<
   linkActionLabel: "Link to this organization",
   table: {
     primaryColumnLabel: "Name",
-    secondaryColumnLabel: "Type",
-    includeAddress: true,
-    includeType: true,
+    includeAddress: false,
   },
   getLinkedCanonicalId: (substrate) => {
     const row = substrate as { stylebook_organization_canonical_id?: string | null }

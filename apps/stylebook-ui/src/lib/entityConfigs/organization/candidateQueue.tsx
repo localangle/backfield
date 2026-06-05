@@ -86,8 +86,8 @@ export const organizationCandidateQueueConfig: CandidateQueuePageConfig<Organiza
       candidateNounPlural: "organizations",
       linkActionLabel: "Link this candidate to the new organization",
       primaryColumnLabel: "Name",
-      secondaryColumnLabel: "Type",
       includeType: true,
+      includeAddress: false,
     },
   },
 
