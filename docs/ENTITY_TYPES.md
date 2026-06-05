@@ -15,7 +15,7 @@ When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/s
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
 | Person | `person` | Full stack including PersonExtract node, Agate people review tab, Stylebook manual create, CSV import, and bundle export/import |
-| Organization | `organization` | Stylebook API + UI (issue 03); worker ingest + extract + Agate review pending (issues 04–06) |
+| Organization | `organization` | Worker substrate ingest (issue 04); OrganizationExtract + Agate review pending (issues 05–06) |
 | Work | `work` | Stub — planned via add-entity-type skill |
 
 Folder names in Python packages use these slugs (`location`, not `place`). Pipeline JSON may still use `places` in Geocode output; that is product vocabulary, not package naming.
@@ -201,7 +201,10 @@ apps/worker/src/worker/
         adjudication.py      # ai_assisted LLM pick among recalled canonicals
         upsert.py
         mentions.py
-      organization/          # stub
+      organization/
+        handler.py           # organizations persist loop
+        upsert.py
+        mentions.py
       work/                  # stub
     canonical/
       adjudication.py
