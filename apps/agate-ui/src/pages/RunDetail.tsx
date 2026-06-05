@@ -157,6 +157,9 @@ export default function RunDetail() {
 
     try {
       setRunningAgain(true)
+      // Input lives on the saved flow spec; refresh so preview/state match what the API will use.
+      const latestGraph = await getGraph(run.graph_id)
+      setGraph(latestGraph)
       const newRun = await createRun(run.graph_id)
       // Navigate to the new run detail page
       navigate(`/runs/${newRun.id}`)

@@ -165,6 +165,8 @@ export interface ProcessedItemInformationCardProps {
   onItemUpdated: (item: ProcessedItem) => void
   /** When the Places tab has unsaved map/overlay edits. */
   reviewDirty?: boolean
+  /** When a rerun is in flight; story detail fields cannot be edited. */
+  reviewLocked?: boolean
 }
 
 export function ProcessedItemInformationCard({
@@ -172,6 +174,7 @@ export function ProcessedItemInformationCard({
   item,
   onItemUpdated,
   reviewDirty = false,
+  reviewLocked = false,
 }: ProcessedItemInformationCardProps) {
   const { showError, showConfirm } = useAppMessage()
   const [fields, setFields] = useState<ArticleFields>(() => readArticleFieldsFromProcessedItem(item))
@@ -187,6 +190,12 @@ export function ProcessedItemInformationCard({
     setBaseline(next)
     setEditingKey(null)
   }, [syncKey, item])
+
+  useEffect(() => {
+    if (reviewLocked) {
+      setEditingKey(null)
+    }
+  }, [reviewLocked])
 
   const persistFields = useCallback(
     async (nextFields: ArticleFields): Promise<boolean> => {
@@ -262,7 +271,7 @@ export function ProcessedItemInformationCard({
     [baseline],
   )
 
-  const editable = !item.synthetic
+  const editable = !item.synthetic && !reviewLocked
   const semanticIndexing = item.semantic_indexing
   const showSemanticIndexing = shouldShowSemanticIndexingSummary(semanticIndexing)
 

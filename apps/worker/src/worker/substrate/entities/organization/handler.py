@@ -15,11 +15,13 @@ from backfield_entities.entities.organization.persist import (
 from backfield_entities.entities.organization.policy import (
     decide_organization_canonical_persist_plan,
     plan_requires_llm_organization_canonical_adjudication,
+    plan_requires_llm_organization_name_variant_recall,
 )
 from sqlmodel import Session, col, select
 
 from worker.substrate.entities.organization.adjudication import (
     adjudicate_ambiguous_organization_plan_with_llm,
+    enrich_materialize_plan_with_name_variant_recall,
 )
 from worker.substrate.entities.organization.mentions import (
     _upsert_mention_and_occurrence,
@@ -137,13 +139,29 @@ class OrganizationPersistHandler:
                     organizations_bucket=bucket,
                     auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
                 )
+                adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
+                if (
+                    ctx.settings.canonicalization_mode == "ai_assisted"
+                    and plan_requires_llm_organization_name_variant_recall(
+                        plan, organization
+                    )
+                ):
+                    plan = enrich_materialize_plan_with_name_variant_recall(
+                        session,
+                        plan=plan,
+                        organization=organization,
+                        stylebook_id=ctx.stylebook_id,
+                        model=adj_model,
+                        model_config_id=ctx.settings.adjudication_ai_model_config_id,
+                        organizations_bucket=bucket,
+                        auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
+                    )
                 if (
                     ctx.settings.canonicalization_mode == "ai_assisted"
                     and plan_requires_llm_organization_canonical_adjudication(
                         plan, organization
                     )
                 ):
-                    adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
                     plan = adjudicate_ambiguous_organization_plan_with_llm(
                         session,
                         plan=plan,

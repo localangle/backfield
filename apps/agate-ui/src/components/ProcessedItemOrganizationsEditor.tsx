@@ -18,6 +18,7 @@ export interface ProcessedItemOrganizationsEditorProps {
   fieldsDraft: OrganizationEditFields | undefined
   fieldsDirty: boolean
   saving: boolean
+  reviewLocked?: boolean
   onSelectAnchor: (anchor: string) => void
   onOpenStylebook: (row: Record<string, unknown>) => void
   onStartEdit: () => void
@@ -37,6 +38,7 @@ export function ProcessedItemOrganizationsEditor({
   fieldsDraft,
   fieldsDirty,
   saving,
+  reviewLocked = false,
   onSelectAnchor,
   onOpenStylebook,
   onStartEdit,
@@ -46,7 +48,7 @@ export function ProcessedItemOrganizationsEditor({
   onUnselect,
   onFieldsChange,
 }: ProcessedItemOrganizationsEditorProps) {
-  const actionsDisabled = saving
+  const actionsDisabled = saving || reviewLocked
   const reviewOnly = selectedRow !== null && isReviewOnlyMergedOrganizationRow(selectedRow)
   const linkedStylebook = selectedRow !== null && isMergedRowLinkedToStylebook(selectedRow)
   const showToolbar = Boolean(selectedAnchor)
@@ -155,7 +157,7 @@ export function ProcessedItemOrganizationsEditor({
                   : ''}{' '}
                 in the story. Edit them in the story pane.
               </p>
-              <OrganizationEditForm fields={fieldsDraft} disabled={saving} onChange={onFieldsChange} />
+              <OrganizationEditForm fields={fieldsDraft} disabled={actionsDisabled} onChange={onFieldsChange} />
             </>
           ) : null}
         </div>

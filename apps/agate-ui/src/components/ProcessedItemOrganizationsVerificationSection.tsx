@@ -58,6 +58,8 @@ export interface ProcessedItemOrganizationsVerificationSectionProps {
   onVerificationDirtyChange?: (dirty: boolean) => void
   catalogStylebookSlug?: string | null
   catalogProjectSlug?: string | null
+  /** When a rerun is in flight; organization review cannot be edited. */
+  reviewLocked?: boolean
 }
 
 export function ProcessedItemOrganizationsVerificationSection({
@@ -67,6 +69,7 @@ export function ProcessedItemOrganizationsVerificationSection({
   onVerificationDirtyChange,
   catalogStylebookSlug = null,
   catalogProjectSlug = null,
+  reviewLocked = false,
 }: ProcessedItemOrganizationsVerificationSectionProps) {
   const { showError, showConfirm, showMessage } = useAppMessage()
   const [baselineOverlay, setBaselineOverlay] = useState<Record<string, unknown>>(() =>
@@ -430,6 +433,9 @@ export function ProcessedItemOrganizationsVerificationSection({
   const addOrganizationWorkflowActive = addOrganizationMode || addOrganizationSelection !== null
 
   const articleInteractionMode = useMemo(() => {
+    if (reviewLocked) {
+      return 'locked' as const
+    }
     if (addOrganizationSelection && !awaitingAddOrganizationReselection) {
       return 'locked' as const
     }
@@ -437,7 +443,13 @@ export function ProcessedItemOrganizationsVerificationSection({
       return 'select-passage' as const
     }
     return 'normal' as const
-  }, [addOrganizationSelection, awaitingAddOrganizationReselection, addOrganizationMode])
+  }, [reviewLocked, addOrganizationSelection, awaitingAddOrganizationReselection, addOrganizationMode])
+
+  useEffect(() => {
+    if (!reviewLocked) return
+    cancelOrganizationEdit()
+    cancelAddOrganizationWorkflow()
+  }, [reviewLocked, cancelOrganizationEdit, cancelAddOrganizationWorkflow])
 
   useEffect(() => {
     if (!addOrganizationWorkflowActive || addOrganizationSelection) return
@@ -724,9 +736,9 @@ export function ProcessedItemOrganizationsVerificationSection({
             type="button"
             variant={addOrganizationMode ? 'outline' : 'default'}
             size="sm"
-            disabled={addOrganizationSelection !== null}
+            disabled={reviewLocked || addOrganizationSelection !== null}
             onClick={() => {
-              if (addOrganizationSelection) return
+              if (reviewLocked || addOrganizationSelection) return
               if (articleTextSelection) {
                 handleBeginAddOrganization(articleTextSelection)
                 return
@@ -748,7 +760,12 @@ export function ProcessedItemOrganizationsVerificationSection({
         <Alert>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>You have unsaved organizations review changes.</span>
-            <Button type="button" size="sm" disabled={saving} onClick={() => void saveOverlayReview()}>
+            <Button
+              type="button"
+              size="sm"
+              disabled={saving || reviewLocked}
+              onClick={() => void saveOverlayReview()}
+            >
               Save review
             </Button>
           </AlertDescription>
@@ -849,7 +866,9 @@ export function ProcessedItemOrganizationsVerificationSection({
                 placeLabels={organizationLabelsByAnchor}
                 interactionMode={articleInteractionMode}
                 onSelectPlace={
-                  addOrganizationWorkflowActive || organizationEditing ? undefined : selectOrganizationAnchor
+                  reviewLocked || addOrganizationWorkflowActive || organizationEditing
+                    ? undefined
+                    : selectOrganizationAnchor
                 }
                 mentionChoicePrompt="Which organization?"
                 onTextSelectionChange={(selection) => {
@@ -921,6 +940,7 @@ export function ProcessedItemOrganizationsVerificationSection({
             fieldsDraft={fieldsDraft}
             fieldsDirty={fieldsDirty}
             saving={saving}
+            reviewLocked={reviewLocked}
             onSelectAnchor={selectOrganizationAnchor}
             onOpenStylebook={handleOpenStylebook}
             onStartEdit={startOrganizationEdit}

@@ -57,16 +57,50 @@ Use the same **school naming** logic as PlaceExtract:
 
 Set `type` to `school` for the institution; use `sports_team` when extracting the athletic program (see below).
 
-#### Prep and college sports teams
+#### Prep and college sports teams (mandatory)
 
-When the story refers to a **high school or college sports team**, build `name` to include **school (full name when possible), sport, and gender or level** whenever they can be inferred—do not emit only the school short name.
+In **game, score, standings, playoff, recruiting, commitment, ranking, player-stat, or other athletics** coverage, a **bare school or university name** is usually **metonymy for that school's team**—not the school as an institution and not a geography. Readers mean **which squad** (sport + gender/level), not the campus in the abstract.
 
-- "Mt. Carmel football team" not "Mt. Carmel"
-- "Brother Rice boys basketball team" not "Brother Rice"
-- "Hopkins girls soccer team" not "Hopkins"
-- "University of Minnesota men's hockey team" not "Minnesota" or "the Gophers" unless the mascot is the only proper name given and sport/level cannot be inferred
+**Athletics signals** (any one is enough): scorelines, championships or class levels (e.g. **Class 8A champion**), positions (**quarterback**, **linebacker**, **defensive back**), recruiting ranks, commitments/decommits, season stats, coaches, schedules, team nicknames, section headers like high-school sports.
 
-Set `type` to `sports_team` for these athletic programs.
+**INVALID `name` values when `type` is `sports_team` (do not output these):**
+
+- Bare school shorthands in athletics context: **"Mount Carmel"**, **"Mt. Carmel"**, **"Brother Rice"**, **"Marist"**, **"Kenwood"**, **"Barrington"**, **"Stevenson"**, **"New Trier"**
+- Bare university names in game stories: **"Duke"**, **"Northwestern"**, **"Seton Hall"**, **"Villanova"** when the story is about competition—not campus policy
+- Mascot-only pro nicknames when city/market is established elsewhere in the article: **"Cubs"** alone when the text also establishes **Chicago**
+
+**Required pattern** — use whenever sport (and gender/level when applicable) can be inferred from **any part** of the supplied text (headline, deck, scoreline, section, caption, recurring vocabulary):
+
+`[School name as used in the story] [boys | girls | men's | women's] [sport] team`
+
+Examples:
+
+- **"Mount Carmel football team"** or **"Mount Carmel High School football team"** — not **"Mount Carmel"** or **"Mount Carmel High School"** as `school` when the story is about football players, stats, recruiting, or championships (even if "football" is not repeated in every sentence)
+- **"Mount Carmel football team"** for **"a second Mount Carmel star"**, **"Class 8A champion Mount Carmel"**, and caption lines like **"Mount Carmel's Tavares Harrington"** — these refer to the **team/program**, not school administration
+- **"Brother Rice boys basketball team"** — not **"Brother Rice"** in **"Brother Rice beat Marist 48-41"**
+- **"Hopkins girls soccer team"** — not **"Hopkins"**
+- **"University of Minnesota men's hockey team"** — not **"Minnesota"** alone in a hockey recap
+- **"Chicago Cubs"** — not **"Cubs"** or **"Chicago"** alone when the franchise is clearly meant
+
+**Primary sport for the entire article:** Infer the article's dominant sport (and for prep/HS/college, the dominant gender level when one clearly applies) from the headline, league, scores, coaches, and recurring vocabulary. Unless the text **explicitly** signals a different sport or level, treat **every** prep/HS/college team mention as that same sport— including opponents named once with no sport in the same sentence. Do **not** wait for the sport to appear beside each school name.
+
+If gender level is unclear but sport is clear, use **`[School] [sport] team`**. If you cannot infer sport at all, **omit** the `sports_team` row rather than emitting a bare school name.
+
+#### Team nicknames and monikers
+
+When the story uses a **school's athletic nickname** instead of the school name, still emit a `sports_team` with the required pattern—not `school`, and not the nickname alone:
+
+- **"Caravan"** (Mount Carmel) → **"Mount Carmel football team"** (or **"Mount Carmel High School football team"**)
+- **"Wolverines"** (Michigan) → **"University of Michigan football team"** when the story is recruiting or game coverage
+- **"Wildkits"** (Evanston), **"Trevians"** (New Trier) → **`[School] football team`** (or the article's sport)
+
+Map nickname mentions to the same `sports_team` record as bare-school mentions for that program. Include **every** supporting snippet in `mentions`.
+
+**Do not** expand a nickname into a `school` row. **Do not** emit both a `school` and a `sports_team` for the same program in the same athletics story unless the text clearly treats the **campus institution** and the **competing squad** as separate actors (rare).
+
+Set `type` to `sports_team` for competing squads. Extract the **school** or **university** as `school` / `university` **only** when the **institution** (administration, district, campus policy, enrollment) is the actor—not when the story is about players, games, recruiting, or championships.
+
+When athletics context applies, **never** set `type` to `school` for a name that only appears beside a player, position, stat line, ranking, or championship.
 
 ### 2. One Record Per Organization
 

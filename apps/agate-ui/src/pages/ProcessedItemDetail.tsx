@@ -26,6 +26,7 @@ import {
   reconciliationPolicyFromGraph,
   rerunWarningBody,
 } from '@/lib/rerunWarning'
+import { isProcessedItemReviewLocked } from '@/lib/review/processedItemReviewLock'
 import {
   Download,
   CheckCircle,
@@ -250,6 +251,7 @@ export default function ProcessedItemDetail() {
   }, [item?.status, item?.id, rerunRequested, item])
 
   const rerunBusy = rerunning || rerunRequested
+  const reviewLocked = item ? isProcessedItemReviewLocked(item, rerunBusy) : false
 
   async function loadItemData() {
     if (!runId || !itemId) return
@@ -624,6 +626,15 @@ export default function ProcessedItemDetail() {
         </div>
       </div>
 
+      {reviewLocked ? (
+        <Alert>
+          <AlertDescription className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+            This item is being rerun. Review editing is paused until processing finishes.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <Tabs value={activeTab} onValueChange={(v) => void handleTabChange(v)} className="space-y-4">
         <TabsList className="w-full h-auto flex flex-wrap justify-start gap-1 p-1">
           {PROCESSED_ITEM_DETAIL_TABS.map((tab) => (
@@ -639,6 +650,7 @@ export default function ProcessedItemDetail() {
             item={item}
             onItemUpdated={(next) => setItem({ ...next, synthetic: item.synthetic })}
             reviewDirty={reviewDirty}
+            reviewLocked={reviewLocked}
           />
 
       {/* Error Display */}
@@ -805,6 +817,7 @@ export default function ProcessedItemDetail() {
               onVerificationDirtyChange={handleVerificationDirtyChange}
               catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
               catalogProjectSlug={catalogProject?.slug ?? null}
+              reviewLocked={reviewLocked}
             />
           ) : (
             <Card>
@@ -826,6 +839,7 @@ export default function ProcessedItemDetail() {
               onVerificationDirtyChange={handleVerificationDirtyChange}
               catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
               catalogProjectSlug={catalogProject?.slug ?? null}
+              reviewLocked={reviewLocked}
             />
           ) : (
             <Card>
@@ -847,6 +861,7 @@ export default function ProcessedItemDetail() {
               onVerificationDirtyChange={handleVerificationDirtyChange}
               catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
               catalogProjectSlug={catalogProject?.slug ?? null}
+              reviewLocked={reviewLocked}
             />
           ) : (
             <Card>

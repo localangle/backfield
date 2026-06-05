@@ -323,8 +323,8 @@ def test_accept_organization_candidate_create_new(
                 StylebookOrganizationAlias.organization_canonical_id == cid,
             )
         ).all()
-        assert len(aliases) == 1
-        assert aliases[0].normalized_alias == "new org"
+        norm_aliases = {a.normalized_alias for a in aliases}
+        assert "new org" in norm_aliases
 
 
 def test_accept_organization_candidate_link_existing_canonical(
@@ -371,8 +371,9 @@ def test_accept_organization_candidate_link_existing_canonical(
                 StylebookOrganizationAlias.organization_canonical_id == cid,
             )
         ).all()
-        assert len(aliases) == 1
-        assert aliases[0].normalized_alias == "linkme org"
+        norm_aliases = {a.normalized_alias for a in aliases}
+        assert "linkme org" in norm_aliases
+        assert "existing org" in norm_aliases
 
 
 def test_stylebook_scoped_csv_organizations_import_requires_editor(

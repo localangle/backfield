@@ -33,6 +33,7 @@ from backfield_entities.entities.organization.policy import (
 from backfield_entities.entities.organization.types import (
     normalize_organization_type,
     organization_alias_lookup_keys,
+    organization_alias_surface_form,
 )
 
 
@@ -99,7 +100,7 @@ def seed_aliases_for_canonical_label(
         upsert_alias_for_canonical_text(
             session,
             canon_id=canon_id,
-            alias_text=clean,
+            alias_text=organization_alias_surface_form(clean, norm),
             normalized_alias=norm,
             provenance=provenance,
         )
@@ -149,7 +150,7 @@ def _upsert_alias_for_substrate(
         upsert_alias_for_canonical_text(
             session,
             canon_id=canon_id,
-            alias_text=alias_text,
+            alias_text=organization_alias_surface_form(alias_text, norm),
             normalized_alias=norm,
             provenance=provenance,
         )
@@ -174,6 +175,13 @@ def refresh_aliases_for_linked_organization(
         organization=organization,
         provenance=provenance,
     )
+    if canon.label:
+        seed_aliases_for_canonical_label(
+            session,
+            canon_id=canon_id,
+            label=str(canon.label),
+            provenance=provenance,
+        )
 
 
 def link_to_existing_canonical(
@@ -236,7 +244,7 @@ def create_standalone_canonical(
         upsert_alias_for_canonical_text(
             session,
             canon_id=cid,
-            alias_text=clean,
+            alias_text=organization_alias_surface_form(clean, norm),
             normalized_alias=norm,
             provenance=provenance,
         )

@@ -58,6 +58,8 @@ export interface ProcessedItemPeopleVerificationSectionProps {
   onVerificationDirtyChange?: (dirty: boolean) => void
   catalogStylebookSlug?: string | null
   catalogProjectSlug?: string | null
+  /** When a rerun is in flight; people review cannot be edited. */
+  reviewLocked?: boolean
 }
 
 export function ProcessedItemPeopleVerificationSection({
@@ -67,6 +69,7 @@ export function ProcessedItemPeopleVerificationSection({
   onVerificationDirtyChange,
   catalogStylebookSlug = null,
   catalogProjectSlug = null,
+  reviewLocked = false,
 }: ProcessedItemPeopleVerificationSectionProps) {
   const { showError, showConfirm, showMessage } = useAppMessage()
   const [baselineOverlay, setBaselineOverlay] = useState<Record<string, unknown>>(() =>
@@ -430,6 +433,9 @@ export function ProcessedItemPeopleVerificationSection({
   const addPersonWorkflowActive = addPersonMode || addPersonSelection !== null
 
   const articleInteractionMode = useMemo(() => {
+    if (reviewLocked) {
+      return 'locked' as const
+    }
     if (addPersonSelection && !awaitingAddPersonReselection) {
       return 'locked' as const
     }
@@ -437,7 +443,13 @@ export function ProcessedItemPeopleVerificationSection({
       return 'select-passage' as const
     }
     return 'normal' as const
-  }, [addPersonSelection, awaitingAddPersonReselection, addPersonMode])
+  }, [reviewLocked, addPersonSelection, awaitingAddPersonReselection, addPersonMode])
+
+  useEffect(() => {
+    if (!reviewLocked) return
+    cancelPersonEdit()
+    cancelAddPersonWorkflow()
+  }, [reviewLocked, cancelPersonEdit, cancelAddPersonWorkflow])
 
   useEffect(() => {
     if (!addPersonWorkflowActive || addPersonSelection) return
@@ -728,9 +740,9 @@ export function ProcessedItemPeopleVerificationSection({
             type="button"
             variant={addPersonMode ? 'outline' : 'default'}
             size="sm"
-            disabled={addPersonSelection !== null}
+            disabled={reviewLocked || addPersonSelection !== null}
             onClick={() => {
-              if (addPersonSelection) return
+              if (reviewLocked || addPersonSelection) return
               if (articleTextSelection) {
                 handleBeginAddPerson(articleTextSelection)
                 return
@@ -752,7 +764,12 @@ export function ProcessedItemPeopleVerificationSection({
         <Alert>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
             <span>You have unsaved people review changes.</span>
-            <Button type="button" size="sm" disabled={saving} onClick={() => void saveOverlayReview()}>
+            <Button
+              type="button"
+              size="sm"
+              disabled={saving || reviewLocked}
+              onClick={() => void saveOverlayReview()}
+            >
               Save review
             </Button>
           </AlertDescription>
@@ -853,7 +870,9 @@ export function ProcessedItemPeopleVerificationSection({
                 placeLabels={personLabelsByAnchor}
                 interactionMode={articleInteractionMode}
                 onSelectPlace={
-                  addPersonWorkflowActive || personEditing ? undefined : selectPersonAnchor
+                  reviewLocked || addPersonWorkflowActive || personEditing
+                    ? undefined
+                    : selectPersonAnchor
                 }
                 mentionChoicePrompt="Which person?"
                 onTextSelectionChange={(selection) => {
@@ -925,6 +944,7 @@ export function ProcessedItemPeopleVerificationSection({
             fieldsDraft={fieldsDraft}
             fieldsDirty={fieldsDirty}
             saving={saving}
+            reviewLocked={reviewLocked}
             onSelectAnchor={selectPersonAnchor}
             onOpenStylebook={handleOpenStylebook}
             onStartEdit={startPersonEdit}

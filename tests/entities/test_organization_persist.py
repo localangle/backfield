@@ -98,8 +98,8 @@ def test_create_standalone_canonical_creates_uuid_and_alias() -> None:
                 StylebookOrganizationAlias.organization_canonical_id == str(canon.id)
             )
         ).all()
-        assert len(aliases) == 1
-        assert aliases[0].normalized_alias == "chicago teachers union"
+        norm_aliases = {a.normalized_alias for a in aliases}
+        assert norm_aliases == {"chicago teachers union", "ctu"}
 
 
 def test_materialize_new_canonical_and_link_mirrors_type() -> None:

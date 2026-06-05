@@ -12,6 +12,8 @@ from sqlmodel import Session, col, select
 from backfield_entities.entities.organization.types import (
     normalize_organization_text,
     normalize_organization_type,
+    organization_alias_lookup_keys,
+    organization_names_match_via_acronym,
 )
 
 ORGANIZATION_RECALL_MIN_SCORE = 40
@@ -25,8 +27,8 @@ def canonical_ids_from_organization_name_keys(
     name_or_norm: str,
 ) -> list[str]:
     """Canonical ids whose alias ``normalized_alias`` matches exactly."""
-    norm = normalize_organization_text(name_or_norm)
-    if not norm:
+    lookup_keys = set(organization_alias_lookup_keys(name_or_norm))
+    if not lookup_keys:
         return []
     stmt = (
         select(StylebookOrganizationCanonical.id)
@@ -37,7 +39,7 @@ def canonical_ids_from_organization_name_keys(
         )
         .where(
             StylebookOrganizationCanonical.stylebook_id == stylebook_id,
-            StylebookOrganizationAlias.normalized_alias == norm,
+            StylebookOrganizationAlias.normalized_alias.in_(lookup_keys),
             StylebookOrganizationAlias.suppressed.is_(False),
         )
     )
@@ -61,6 +63,22 @@ def _organization_type_norm(organization: SubstrateOrganization) -> str | None:
     return normalize_organization_type(organization.organization_type)
 
 
+def _organization_lookup_norms(
+    organization: SubstrateOrganization,
+    *,
+    extra_lookup_names: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    norms: list[str] = []
+    seen: set[str] = set()
+    sources = [organization.normalized_name or organization.name, *extra_lookup_names]
+    for source in sources:
+        for key in organization_alias_lookup_keys(source):
+            if key not in seen:
+                seen.add(key)
+                norms.append(key)
+    return tuple(norms)
+
+
 def _score_canonical_for_organization(
     *,
     norm: str,
@@ -71,6 +89,8 @@ def _score_canonical_for_organization(
     score = 0
     if norm and label_norm == norm:
         score = 100
+    elif norm and label_norm and organization_names_match_via_acronym(norm, label_norm):
+        score = 90
     elif norm and label_norm and (norm in label_norm or label_norm in norm):
         score = 60
     canon_type = normalize_organization_type(canon.organization_type)
@@ -85,23 +105,28 @@ def retrieve_organization_canonical_candidates(
     stylebook_id: int,
     organization: SubstrateOrganization,
     limit: int = ORGANIZATION_RECALL_DEFAULT_LIMIT,
+    extra_lookup_names: tuple[str, ...] = (),
 ) -> list[tuple[str, str]]:
     """Ranked ``(canonical_id, label)`` for policy defer, LLM adjudication, and link UI."""
-    norm = _organization_name_norm(organization)
-    if not norm:
+    lookup_norms = _organization_lookup_norms(
+        organization,
+        extra_lookup_names=extra_lookup_names,
+    )
+    if not lookup_norms:
         return []
 
     type_norm = _organization_type_norm(organization)
     scored: dict[str, tuple[int, str]] = {}
 
-    exact_alias_ids = set(
-        canonical_ids_from_organization_name_keys(
-            session,
-            stylebook_id=stylebook_id,
-            name_or_norm=norm,
+    exact_alias_ids: set[str] = set()
+    for lookup_norm in lookup_norms:
+        exact_alias_ids.update(
+            canonical_ids_from_organization_name_keys(
+                session,
+                stylebook_id=stylebook_id,
+                name_or_norm=lookup_norm,
+            )
         )
-    )
-    candidate_ids: set[str] = set(exact_alias_ids)
 
     label_stmt = (
         select(StylebookOrganizationCanonical)
@@ -113,12 +138,20 @@ def retrieve_organization_canonical_candidates(
         if canon.id is None:
             continue
         cid = str(canon.id)
-        score = _score_canonical_for_organization(norm=norm, type_norm=type_norm, canon=canon)
+        score = 0
+        for lookup_norm in lookup_norms:
+            score = max(
+                score,
+                _score_canonical_for_organization(
+                    norm=lookup_norm,
+                    type_norm=type_norm,
+                    canon=canon,
+                ),
+            )
         if cid in exact_alias_ids:
             score = max(score, 100)
         if score < ORGANIZATION_RECALL_MIN_SCORE:
             continue
-        candidate_ids.add(cid)
         prev = scored.get(cid)
         if prev is None or score > prev[0]:
             scored[cid] = (score, str(canon.label))

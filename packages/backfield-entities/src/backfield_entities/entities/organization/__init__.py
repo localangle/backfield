@@ -24,13 +24,17 @@ from backfield_entities.entities.organization.persist import (
 )
 from backfield_entities.entities.organization.policy import (
     AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH,
+    ORGANIZATION_MATERIALIZE_NEW_CODE,
     decide_organization_canonical_persist_plan,
     find_existing_organization_canonical_id_by_alias,
     organization_may_materialize_canonical_after_recall,
     organization_strong_identity_matches_canonical,
     plan_has_ambiguous_organization_canonical_match,
+    plan_is_materialize_new_canonical,
     plan_requires_llm_organization_canonical_adjudication,
+    plan_requires_llm_organization_name_variant_recall,
     rank_organization_canonical_recall_matches,
+    replan_organization_canonical_after_name_variants,
 )
 from backfield_entities.entities.organization.recall import (
     ORGANIZATION_RECALL_DEFAULT_LIMIT,
@@ -41,11 +45,16 @@ from backfield_entities.entities.organization.types import (
     ORGANIZATION_TYPE_VALUES,
     normalize_organization_text,
     normalize_organization_type,
+    organization_acronym_from_name,
+    organization_alias_lookup_keys,
     organization_identity_fingerprint,
+    organization_looks_like_acronym,
+    organization_names_match_via_acronym,
 )
 
 __all__ = [
     "AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH",
+    "ORGANIZATION_MATERIALIZE_NEW_CODE",
     "ORGANIZATION_CATALOG_EDITORIAL_PROVENANCES",
     "ORGANIZATION_NATURE_VALUES",
     "ORGANIZATION_RECALL_DEFAULT_LIMIT",
@@ -70,9 +79,16 @@ __all__ = [
     "organization_may_materialize_canonical_after_recall",
     "organization_strong_identity_matches_canonical",
     "plan_has_ambiguous_organization_canonical_match",
+    "plan_is_materialize_new_canonical",
     "plan_requires_llm_organization_canonical_adjudication",
+    "plan_requires_llm_organization_name_variant_recall",
     "rank_canonical_suggestions_for_substrate",
+    "organization_acronym_from_name",
+    "organization_alias_lookup_keys",
+    "organization_looks_like_acronym",
+    "organization_names_match_via_acronym",
     "rank_organization_canonical_recall_matches",
+    "replan_organization_canonical_after_name_variants",
     "refresh_aliases_for_linked_organization",
     "retrieve_organization_canonical_candidates",
     "seed_aliases_for_canonical_label",

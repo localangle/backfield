@@ -18,6 +18,7 @@ export interface ProcessedItemPeopleEditorProps {
   fieldsDraft: PersonEditFields | undefined
   fieldsDirty: boolean
   saving: boolean
+  reviewLocked?: boolean
   onSelectAnchor: (anchor: string) => void
   onOpenStylebook: (row: Record<string, unknown>) => void
   onStartEdit: () => void
@@ -37,6 +38,7 @@ export function ProcessedItemPeopleEditor({
   fieldsDraft,
   fieldsDirty,
   saving,
+  reviewLocked = false,
   onSelectAnchor,
   onOpenStylebook,
   onStartEdit,
@@ -46,7 +48,7 @@ export function ProcessedItemPeopleEditor({
   onUnselect,
   onFieldsChange,
 }: ProcessedItemPeopleEditorProps) {
-  const actionsDisabled = saving
+  const actionsDisabled = saving || reviewLocked
   const reviewOnly = selectedRow !== null && isReviewOnlyMergedPersonRow(selectedRow)
   const linkedStylebook = selectedRow !== null && isMergedRowLinkedToStylebook(selectedRow)
   const showToolbar = Boolean(selectedAnchor)
@@ -155,7 +157,7 @@ export function ProcessedItemPeopleEditor({
                   : ''}{' '}
                 in the story. Edit them in the story pane.
               </p>
-              <PersonEditForm fields={fieldsDraft} disabled={saving} onChange={onFieldsChange} />
+              <PersonEditForm fields={fieldsDraft} disabled={actionsDisabled} onChange={onFieldsChange} />
             </>
           ) : null}
         </div>

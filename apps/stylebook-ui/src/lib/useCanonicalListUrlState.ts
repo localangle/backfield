@@ -22,6 +22,15 @@ export function useCanonicalListUrlState<
 
   const urlState = useMemo(() => parseListArgs(searchParams), [parseListArgs, searchParams])
 
+  const urlQ = searchParams.get("q") ?? ""
+  const extraUrlSignature = useMemo(
+    () =>
+      extraDebouncedParamKeys
+        .map((key) => `${key}=${searchParams.get(key) ?? ""}`)
+        .join("&"),
+    [extraDebouncedParamKeys, searchParams],
+  )
+
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("q") ?? "")
   const [textQueries, setTextQueries] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {}
@@ -31,8 +40,14 @@ export function useCanonicalListUrlState<
     return initial
   })
 
+  // Sync local text inputs from URL only when the corresponding param *values* change
+  // (not on every searchParams object reference). Otherwise in-progress typing is cleared
+  // before the debounced write to `q` lands.
   useEffect(() => {
-    setSearchQuery(searchParams.get("q") ?? "")
+    setSearchQuery(urlQ)
+  }, [urlQ])
+
+  useEffect(() => {
     setTextQueries((prev) => {
       const next = { ...prev }
       for (const key of extraDebouncedParamKeys) {
@@ -40,7 +55,8 @@ export function useCanonicalListUrlState<
       }
       return next
     })
-  }, [searchParams, extraDebouncedParamKeys])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on serialized extra param values
+  }, [extraUrlSignature])
 
   useEffect(() => {
     const workflowScope = searchParams.get("project_scope")
@@ -57,7 +73,6 @@ export function useCanonicalListUrlState<
   }, [searchParams, setSearchParams])
 
   useEffect(() => {
-    const urlQ = searchParams.get("q") ?? ""
     const timer = setTimeout(() => {
       if (searchQuery === urlQ) return
       setSearchParams((prev) => {
@@ -70,7 +85,7 @@ export function useCanonicalListUrlState<
       })
     }, 300)
     return () => clearTimeout(timer)
-  }, [searchQuery, searchParams, setSearchParams])
+  }, [searchQuery, urlQ, setSearchParams])
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = []
@@ -93,7 +108,7 @@ export function useCanonicalListUrlState<
     return () => {
       for (const timer of timers) clearTimeout(timer)
     }
-  }, [textQueries, extraDebouncedParamKeys, searchParams, setSearchParams])
+  }, [textQueries, extraDebouncedParamKeys, extraUrlSignature, searchParams, setSearchParams])
 
   const setTextQuery = useCallback((key: string, value: string) => {
     setTextQueries((prev) => ({ ...prev, [key]: value }))
