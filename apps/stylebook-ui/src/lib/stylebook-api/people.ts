@@ -91,26 +91,6 @@ export async function listCanonicalPeople(
   )
 }
 
-/** Legacy project-scoped canonical list (kept for project workflows like linking). */
-export async function listCanonicalPeopleLegacy(
-  projectSlug: string,
-  q?: string,
-  limit: number = 25,
-  offset: number = 0,
-  typeFilter?: string,
-  options?: Pick<CanonicalPersonListFilters, "publicFigure" | "nature">,
-): Promise<PaginatedCanonicalPersonResponse> {
-  const params = new URLSearchParams({ project_slug: projectSlug })
-  if (q) params.append("q", q)
-  if (typeFilter && typeFilter !== "all") params.append("type_filter", typeFilter)
-  if (options?.publicFigure === true) params.append("public_figure", "true")
-  if (options?.publicFigure === false) params.append("public_figure", "false")
-  if (options?.nature && options.nature !== "all") params.append("nature", options.nature)
-  params.append("limit", limit.toString())
-  params.append("offset", offset.toString())
-  return stylebookJsonFetch<PaginatedCanonicalPersonResponse>(`/v1/canonical-people?${params}`)
-}
-
 export async function listCanonicalPersonTypes(stylebookSlug: string): Promise<{ types: string[] }> {
   return stylebookJsonFetch(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/types`,
@@ -126,16 +106,6 @@ export async function getCanonicalPerson(
   if (projectFilterSlug) params.set("project", projectFilterSlug)
   return stylebookJsonFetch<CanonicalPerson>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(canonicalId)}?${params}`,
-  )
-}
-
-/** Legacy project-scoped canonical detail (kept for project workflows like linking). */
-export async function getCanonicalPersonLegacy(
-  canonicalId: string,
-  projectSlug: string,
-): Promise<CanonicalPerson> {
-  return stylebookJsonFetch<CanonicalPerson>(
-    `/v1/canonical-people/${encodeURIComponent(canonicalId)}?project_slug=${encodeURIComponent(projectSlug)}`,
   )
 }
 

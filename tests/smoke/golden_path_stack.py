@@ -217,8 +217,8 @@ def _assert_stylebook_persistence_visible(
     ) as stylebook:
         linked_substrates = assert_object(
             stylebook.get(
-                f"/v1/canonical-locations/{canonical_id}/linked-substrates",
-                params={"project_slug": project_slug},
+                f"/v1/stylebooks/default/canonical-locations/{canonical_id}/linked-substrates",
+                params={"project": project_slug},
             ),
             "linked substrates",
         )
@@ -234,8 +234,8 @@ def _assert_stylebook_persistence_visible(
 
         mentions = assert_object(
             stylebook.get(
-                f"/v1/canonical-locations/{canonical_id}/mentions",
-                params={"project_slug": project_slug},
+                f"/v1/stylebooks/default/canonical-locations/{canonical_id}/mentions",
+                params={"project": project_slug},
             ),
             "canonical mentions",
         )

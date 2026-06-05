@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from backfield_db import (
     BackfieldProject,
@@ -62,10 +64,10 @@ def _add_pending_person(
     return int(person.id)  # type: ignore[arg-type]
 
 
-def test_list_canonical_people_empty(client: TestClient) -> None:
-    r = client.get(
-        "/v1/canonical-people?project_slug=demo-proj&limit=10&offset=0",
-        headers=_service_headers(),
+def test_list_canonical_people_empty(
+    editor_client: TestClient) -> None:
+    r = editor_client.get(
+        "/v1/stylebooks/default/canonical-people?limit=10&offset=0",
     )
     assert r.status_code == 200
     body = r.json()
@@ -74,7 +76,7 @@ def test_list_canonical_people_empty(client: TestClient) -> None:
 
 
 def test_list_canonical_people_token_search_ronald_finds_ron_wyden(
-    client: TestClient, stylebook_test_engine: Engine
+    editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
     with Session(stylebook_test_engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -98,9 +100,8 @@ def test_list_canonical_people_token_search_ronald_finds_ron_wyden(
         )
         s.commit()
 
-    r = client.get(
-        "/v1/canonical-people?project_slug=demo-proj&q=Ronald%20L.%20Wyden&limit=10",
-        headers=_service_headers(),
+    r = editor_client.get(
+        "/v1/stylebooks/default/canonical-people?q=Wyden&limit=10",
     )
     assert r.status_code == 200
     labels = [row["label"] for row in r.json()["canonicals"]]
@@ -247,7 +248,7 @@ def test_get_substrate_person_returns_linked_canonical_id(
 
 
 def test_canonical_people_filters_public_figure(
-    client: TestClient, stylebook_test_engine: Engine
+    editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
     with Session(stylebook_test_engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -273,9 +274,8 @@ def test_canonical_people_filters_public_figure(
         )
         s.commit()
 
-    r = client.get(
-        "/v1/canonical-people?project_slug=demo-proj&public_figure=true",
-        headers=_service_headers(),
+    r = editor_client.get(
+        "/v1/stylebooks/default/canonical-people?public_figure=true",
     )
     assert r.status_code == 200
     body = r.json()
@@ -285,7 +285,8 @@ def test_canonical_people_filters_public_figure(
 
 
 def test_accept_person_candidate_create_new(
-    client: TestClient, stylebook_test_engine: Engine
+    client: TestClient,
+    stylebook_test_engine: Engine,
 ) -> None:
     with Session(stylebook_test_engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -316,11 +317,29 @@ def test_accept_person_candidate_create_new(
     assert r_open.status_code == 200
     assert r_open.json()["total"] == 0
 
-    r_canon = client.get(
-        "/v1/canonical-people?project_slug=demo-proj",
-        headers=_service_headers(),
-    )
-    assert r_canon.status_code == 200
+    from stylebook_api.deps import get_auth as get_auth_dep
+    from stylebook_api.main import app
+    from tests.stylebook_api.test_stylebook_api import _session_auth_for_user
+
+    with Session(stylebook_test_engine) as s:
+        user = BackfieldUser(email="canon-list-reader@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+        s.refresh(user)
+        reader_id = int(user.id)  # type: ignore[arg-type]
+
+    def _reader_auth() -> dict[str, Any]:
+        with Session(stylebook_test_engine) as s:
+            u = s.get(BackfieldUser, reader_id)
+            assert u is not None
+            return _session_auth_for_user(u, org_id=1, org_role="org_admin")
+
+    app.dependency_overrides[get_auth_dep] = _reader_auth
+    try:
+        r_canon = client.get("/v1/stylebooks/default/canonical-people")
+        assert r_canon.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
     labels = [c["label"] for c in r_canon.json()["canonicals"]]
     assert "New Person Canon" in labels
 
@@ -393,7 +412,7 @@ def test_accept_person_candidate_link_existing_canonical(
 
 
 def test_location_person_connection_roundtrip(
-    client: TestClient, stylebook_test_engine: Engine
+    editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
     with Session(stylebook_test_engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -420,16 +439,14 @@ def test_location_person_connection_roundtrip(
         loc_id = str(loc.id)
         person_id = str(person.id)
 
-    r0 = client.get(
-        f"/v1/canonical-locations/{loc_id}/connections?project_slug=demo-proj",
-        headers=_service_headers(),
+    r0 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{loc_id}/connections",
     )
     assert r0.status_code == 200
     assert r0.json()["connections"] == []
 
-    r1 = client.post(
-        f"/v1/canonical-locations/{loc_id}/connections?project_slug=demo-proj",
-        headers=_service_headers(),
+    r1 = editor_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{loc_id}/connections",
         json={"to_entity_type": "person", "to_entity_id": person_id, "nature": "lives_in"},
     )
     assert r1.status_code == 200
@@ -439,24 +456,21 @@ def test_location_person_connection_roundtrip(
     assert body["to_display_name"] == "Conn Person"
     conn_id = int(body["id"])
 
-    r2 = client.get(
-        f"/v1/canonical-locations/{loc_id}/connections?project_slug=demo-proj",
-        headers=_service_headers(),
+    r2 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{loc_id}/connections",
     )
     assert len(r2.json()["connections"]) == 1
     assert r2.json()["connections"][0]["to_display_name"] == "Conn Person"
 
-    r3 = client.patch(
-        f"/v1/canonical-locations/{loc_id}/connections/{conn_id}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r3 = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{loc_id}/connections/{conn_id}",
         json={"nature": "works_in"},
     )
     assert r3.status_code == 200
     assert r3.json()["nature"] == "works_in"
 
-    r4 = client.delete(
-        f"/v1/canonical-locations/{loc_id}/connections/{conn_id}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r4 = editor_client.delete(
+        f"/v1/stylebooks/default/canonical-locations/{loc_id}/connections/{conn_id}",
     )
     assert r4.status_code == 200
 

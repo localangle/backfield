@@ -1,5 +1,6 @@
+import { useMemo } from "react"
 import EntitySelector from "@/components/EntitySelector"
-import { personPickerConfig } from "@/lib/entityConfigs/connectionPickers"
+import { createPersonPickerConfig } from "@/lib/entityConfigs/connectionPickers"
 import type { PersonPickerRow } from "@/lib/entityConfigs/connectionPickers"
 
 interface PersonSelectorProps {
@@ -7,6 +8,7 @@ interface PersonSelectorProps {
   onOpenChange: (open: boolean) => void
   onSelect: (personId: string | number, displayName?: string) => void
   projectSlug: string
+  stylebookSlug: string
   candidateNames?: string[]
   excludeIds?: Array<string | number>
 }
@@ -16,9 +18,12 @@ export default function PersonSelector({
   onOpenChange,
   onSelect,
   projectSlug,
+  stylebookSlug,
   candidateNames = [],
   excludeIds = [],
 }: PersonSelectorProps) {
+  const config = useMemo(() => createPersonPickerConfig(stylebookSlug), [stylebookSlug])
+
   return (
     <EntitySelector<PersonPickerRow>
       open={open}
@@ -27,7 +32,7 @@ export default function PersonSelector({
       projectSlug={projectSlug}
       candidateNames={candidateNames}
       excludeIds={excludeIds}
-      config={personPickerConfig}
+      config={config}
     />
   )
 }

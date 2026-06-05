@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
 import {
-  getCanonicalPersonLegacy,
+  getCanonicalPerson,
   getPerson,
   getSuggestedPersonCanonicals,
   linkPersonSubstrateToCanonical,
-  listCanonicalPeopleLegacy,
+  listCanonicalPeople,
   type CanonicalPerson,
   type SuggestedPersonCanonicalItem,
 } from "@/lib/api"
@@ -59,6 +59,7 @@ export function PersonCanonicalLinkModal(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectSlug: string
+  stylebookSlug: string
   substratePersonId: number | null
   onDone: () => void
   onLinked?: (canonical: { id: string; label: string }) => void
@@ -73,6 +74,7 @@ export function PersonCanonicalLinkModal(props: {
     open,
     onOpenChange,
     projectSlug,
+    stylebookSlug,
     substratePersonId,
     onDone,
     title,
@@ -143,7 +145,7 @@ export function PersonCanonicalLinkModal(props: {
   )
 
   useEffect(() => {
-    if (!open || !initialCanonicalId || !projectSlug) {
+    if (!open || !initialCanonicalId || !projectSlug || !stylebookSlug) {
       setInitialCanonExtra(null)
       return
     }
@@ -158,7 +160,7 @@ export function PersonCanonicalLinkModal(props: {
     let cancelled = false
     void (async () => {
       try {
-        const c = await getCanonicalPersonLegacy(initialCanonicalId, projectSlug)
+        const c = await getCanonicalPerson(initialCanonicalId, stylebookSlug, projectSlug)
         if (!cancelled) setInitialCanonExtra(c)
       } catch {
         if (!cancelled) setInitialCanonExtra(null)
@@ -167,7 +169,7 @@ export function PersonCanonicalLinkModal(props: {
     return () => {
       cancelled = true
     }
-  }, [open, initialCanonicalId, projectSlug, suggestions, linkedCanonicalId])
+  }, [open, initialCanonicalId, projectSlug, stylebookSlug, suggestions, linkedCanonicalId])
 
   useEffect(() => {
     if (!open || substratePersonId == null || !projectSlug) {
@@ -203,7 +205,7 @@ export function PersonCanonicalLinkModal(props: {
   }, [open, substratePersonId, projectSlug, linkedMetaLoaded, excludeCanonicalIds])
 
   useEffect(() => {
-    if (!open || !projectSlug) return
+    if (!open || !projectSlug || !stylebookSlug) return
     if (!linkedMetaLoaded) {
       setSearchHits([])
       setSearchLoading(false)
@@ -220,7 +222,7 @@ export function PersonCanonicalLinkModal(props: {
     const t = window.setTimeout(() => {
       void (async () => {
         try {
-          const res = await listCanonicalPeopleLegacy(projectSlug, q, 20, 0)
+          const res = await listCanonicalPeople(stylebookSlug, q, 20, 0, undefined, projectSlug)
           if (!cancelled) {
             setSearchHits(
               res.canonicals.filter((c) => !isExcludedCanonicalLinkTarget(c.id, excludeCanonicalIds)),
@@ -237,7 +239,7 @@ export function PersonCanonicalLinkModal(props: {
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [searchQ, open, projectSlug, excludeCanonicalIds, linkedMetaLoaded])
+  }, [searchQ, open, projectSlug, stylebookSlug, excludeCanonicalIds, linkedMetaLoaded])
 
   const mergedSuggestions: SuggestedPersonCanonicalItem[] = useMemo(() => {
     const merged: SuggestedPersonCanonicalItem[] = suggestions.filter(

@@ -7,7 +7,7 @@ import { fetchProjects, type Project } from "@/lib/api"
 import {
   acceptPersonCandidate,
   deferPersonCandidate,
-  getCanonicalPersonLegacy,
+  getCanonicalPerson,
   getPersonCandidateContext,
   getSuggestedPersonCanonicals,
   linkPersonSubstrateToCanonical,
@@ -413,7 +413,7 @@ export default function PersonCandidates() {
       await linkPersonSubstrateToCanonical(c.id, projectSlug, cid)
       let canonLabel = cid
       try {
-        const canon = await getCanonicalPersonLegacy(cid, projectSlug)
+        const canon = await getCanonicalPerson(cid, stylebookSlug, projectSlug)
         canonLabel = (canon.label ?? "").trim() || cid
       } catch {
         // ignore
@@ -814,6 +814,7 @@ export default function PersonCandidates() {
           }
         }}
         projectSlug={projectSlug}
+        stylebookSlug={stylebookSlug}
         substratePersonId={linkModalId}
         initialCanonicalId={linkModalInitialCanonicalId}
         initialSearchQuery={linkModalSearchQuery}

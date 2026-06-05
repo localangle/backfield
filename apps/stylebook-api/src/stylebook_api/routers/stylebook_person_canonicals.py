@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -27,14 +28,6 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
 from stylebook_api.deps import get_auth, get_session
-from stylebook_api.entities.person.people import (
-    CanonicalPersonResponse,
-    CreateCanonicalPersonBody,
-    PaginatedCanonicalPersonResponse,
-    PatchCanonicalPersonBody,
-    _canonical_list_sort_key,
-    _escape_ilike_metacharacters,
-)
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import (
@@ -43,6 +36,89 @@ from stylebook_api.stylebook_scope import (
 )
 
 router = APIRouter(prefix="/v1/stylebooks", tags=["stylebook-person-canonicals"])
+
+
+def _escape_ilike_metacharacters(s: str) -> str:
+    """Escape ``%`` and ``_`` for SQL ``ILIKE`` patterns (use with ``escape='\\\\'``)."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _canonical_list_sort_key():
+    return func.coalesce(
+        func.lower(col(StylebookPersonCanonical.sort_key)),
+        func.lower(col(StylebookPersonCanonical.label)),
+    )
+
+
+class CanonicalPersonResponse(BaseModel):
+    """One ``stylebook_person_canonical`` row (not a substrate person)."""
+
+    id: str
+    slug: str
+    label: str
+    title: str | None = None
+    affiliation: str | None = None
+    public_figure: bool = False
+    person_type: str | None = None
+    sort_key: str | None = None
+    status: str
+    linked_substrate_count: int = 0
+    mention_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_canonical(
+        cls,
+        canon: StylebookPersonCanonical,
+        *,
+        linked_substrate_count: int = 0,
+        mention_count: int = 0,
+    ) -> CanonicalPersonResponse:
+        return cls(
+            id=str(canon.id),
+            slug=str(canon.slug),
+            label=str(canon.label),
+            title=canon.title,
+            affiliation=canon.affiliation,
+            public_figure=bool(canon.public_figure),
+            person_type=canon.person_type,
+            sort_key=canon.sort_key,
+            status=str(canon.status),
+            linked_substrate_count=linked_substrate_count,
+            mention_count=mention_count,
+            created_at=canon.created_at,
+            updated_at=canon.updated_at,
+        )
+
+
+class PaginatedCanonicalPersonResponse(BaseModel):
+    canonicals: list[CanonicalPersonResponse]
+    total: int
+    page: int
+    per_page: int
+    has_next: bool
+    has_prev: bool
+
+
+class CreateCanonicalPersonBody(BaseModel):
+    """Create a catalog canonical only (no ``substrate_person`` row)."""
+
+    label: str
+    person_type: str | None = None
+    title: str | None = None
+    affiliation: str | None = None
+    public_figure: bool = False
+    sort_key: str | None = None
+
+
+class PatchCanonicalPersonBody(BaseModel):
+    label: str | None = None
+    person_type: str | None = None
+    title: str | None = None
+    affiliation: str | None = None
+    public_figure: bool | None = None
+    sort_key: str | None = None
 
 
 def _mention_counts_by_canonical(

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
-import { createLocation } from "@/lib/api"
+import { createCanonicalLocation } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -143,7 +143,8 @@ function geometryToFeatureCollections(
 export default function CreateLocation() {
   const { showMessage, showError, showConfirm } = useAppMessage()
   const navigate = useNavigate()
-  const { filterScopeSuffix, catalogBasePath } = useProjectCatalogScope()
+  const { filterScopeSuffix, catalogBasePath, stylebookSlug, projectFilterSlug } =
+    useProjectCatalogScope()
   const crumbRoot = useScopeBreadcrumbRoot()
   const canEdit = useCanEditStylebook()
   const [projectSlug, setProjectSlug] = useState("")
@@ -225,13 +226,16 @@ export default function CreateLocation() {
     try {
       setCreating(true)
       const geometryToCreate = geometryEditing ? geometryDraft : geometry
-      const location = await createLocation(projectSlug, {
-        name: name.trim(),
-        location_type: storedLocationTypeSlug || undefined,
-        formatted_address: formattedAddress.trim() || undefined,
-        geometry_json: geometryToCreate ?? undefined,
-        status: "active",
-      })
+      const location = await createCanonicalLocation(
+        stylebookSlug,
+        {
+          label: name.trim(),
+          location_type: storedLocationTypeSlug || undefined,
+          formatted_address: formattedAddress.trim() || undefined,
+          geometry_json: geometryToCreate ?? undefined,
+        },
+        projectFilterSlug || projectSlug || undefined,
+      )
       navigate(`${catalogBasePath}/locations/canonical/${location.id}${filterScopeSuffix}`)
     } catch (error) {
       console.error("Failed to create location:", error)

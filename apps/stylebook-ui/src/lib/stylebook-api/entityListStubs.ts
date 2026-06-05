@@ -1,5 +1,5 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
-import { listCanonicalPeopleLegacy } from "@/lib/stylebook-api/people"
+import { listCanonicalPeople } from "@/lib/stylebook-api/people"
 
 export interface PersonListRow {
   id: string
@@ -16,6 +16,7 @@ export interface PersonListRow {
 
 /** Canonical people list for EntitySelector (maps catalog ``label`` → ``full_name``). */
 export async function listPeople(
+  stylebookSlug: string,
   projectSlug: string,
   q?: string,
   _status?: string,
@@ -35,12 +36,13 @@ export async function listPeople(
   has_next: boolean
   has_prev: boolean
 }> {
-  const res = await listCanonicalPeopleLegacy(
-    projectSlug,
+  const res = await listCanonicalPeople(
+    stylebookSlug,
     q,
     limit,
     offset,
     options?.type_filter,
+    projectSlug,
     { publicFigure: options?.public_figure },
   )
   return {

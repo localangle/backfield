@@ -286,7 +286,7 @@ def test_list_stylebooks_service(client: TestClient) -> None:
 
 
 def test_list_locations_requires_auth(client: TestClient) -> None:
-    r = client.get("/v1/locations?project_slug=demo-proj")
+    r = client.get("/v1/stylebooks/default/canonical-locations")
     assert r.status_code == 401
 
 
@@ -600,7 +600,7 @@ def test_import_geojson_meta_skips_empty_property_silently(
 
 
 def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
-    client: TestClient, stylebook_test_engine: Engine
+    editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
     with Session(stylebook_test_engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -608,11 +608,10 @@ def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
         q = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
         before = len(s.exec(q).all())
 
-    r = client.post(
-        "/v1/locations?project_slug=demo-proj",
-        headers=_service_headers(),
+    r = editor_client.post(
+        "/v1/stylebooks/default/canonical-locations",
         json={
-            "name": "West Garfield Park, Chicago, IL",
+            "label": "West Garfield Park, Chicago, IL",
             "location_type": "neighborhood",
         },
     )
@@ -642,7 +641,7 @@ def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
 
 
 def test_create_canonical_location_post_alias_no_substrate(
-    client: TestClient, stylebook_test_engine: Engine
+    editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
     with Session(stylebook_test_engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -650,9 +649,8 @@ def test_create_canonical_location_post_alias_no_substrate(
         q0 = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
         before = len(s.exec(q0).all())
 
-    r = client.post(
-        "/v1/canonical-locations?project_slug=demo-proj",
-        headers=_service_headers(),
+    r = editor_client.post(
+        "/v1/stylebooks/default/canonical-locations",
         json={"label": "Solo Canonical, Evanston, IL"},
     )
     assert r.status_code == 200
@@ -667,22 +665,20 @@ def test_create_canonical_location_post_alias_no_substrate(
         assert after == before
 
 
-def test_list_canonical_locations_type_filter(client: TestClient) -> None:
-    r_city = client.post(
-        "/v1/canonical-locations?project_slug=demo-proj",
-        headers=_service_headers(),
+def test_list_canonical_locations_type_filter(
+    editor_client: TestClient) -> None:
+    r_city = editor_client.post(
+        "/v1/stylebooks/default/canonical-locations",
         json={"label": "Filter City Row", "location_type": "city"},
     )
     assert r_city.status_code == 200
-    r_nb = client.post(
-        "/v1/canonical-locations?project_slug=demo-proj",
-        headers=_service_headers(),
+    r_nb = editor_client.post(
+        "/v1/stylebooks/default/canonical-locations",
         json={"label": "Filter Neighborhood Row", "location_type": "neighborhood"},
     )
     assert r_nb.status_code == 200
-    r_list = client.get(
-        "/v1/canonical-locations?project_slug=demo-proj&type_filter=city",
-        headers=_service_headers(),
+    r_list = editor_client.get(
+        "/v1/stylebooks/default/canonical-locations?type_filter=city",
     )
     assert r_list.status_code == 200
     data = r_list.json()
@@ -692,9 +688,8 @@ def test_list_canonical_locations_type_filter(client: TestClient) -> None:
     for row in data["canonicals"]:
         if row["label"] == "Filter City Row":
             assert row.get("location_type") == "city"
-    r_bad = client.get(
-        "/v1/canonical-locations?project_slug=demo-proj&type_filter=not_a_real_type",
-        headers=_service_headers(),
+    r_bad = editor_client.get(
+        "/v1/stylebooks/default/canonical-locations?type_filter=not_a_real_type",
     )
     # Canonical types include custom values; unknown filters are treated as "no matches" rather
     # than a hard 400.
@@ -703,17 +698,16 @@ def test_list_canonical_locations_type_filter(client: TestClient) -> None:
     assert data_bad["canonicals"] == []
 
 
-def test_list_canonical_locations_orders_by_label_case_insensitive(client: TestClient) -> None:
+def test_list_canonical_locations_orders_by_label_case_insensitive(
+    editor_client: TestClient) -> None:
     for label in ("Zebra", "alpha", "Mike"):
-        r = client.post(
-            "/v1/canonical-locations?project_slug=demo-proj",
-            headers=_service_headers(),
-            json={"label": label},
+        r = editor_client.post(
+            "/v1/stylebooks/default/canonical-locations",
+                json={"label": label},
         )
         assert r.status_code == 200
-    r = client.get(
-        "/v1/canonical-locations?project_slug=demo-proj&limit=50",
-        headers=_service_headers(),
+    r = editor_client.get(
+        "/v1/stylebooks/default/canonical-locations?limit=50",
     )
     assert r.status_code == 200
     labels = [c["label"] for c in r.json()["canonicals"]]
@@ -721,7 +715,7 @@ def test_list_canonical_locations_orders_by_label_case_insensitive(client: TestC
 
 
 def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains(
-    client: TestClient, stylebook_test_engine: Engine
+    editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
     _ = stylebook_test_engine
     from urllib.parse import quote
@@ -732,17 +726,15 @@ def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains
     b = exact_query
     c = f"{exact_query} More"
     for lb in (a, b, c):
-        r = client.post(
-            "/v1/canonical-locations?project_slug=demo-proj",
-            headers=_service_headers(),
-            json={"label": lb},
+        r = editor_client.post(
+            "/v1/stylebooks/default/canonical-locations",
+                json={"label": lb},
         )
         assert r.status_code == 200
 
     q = quote(exact_query)
-    r = client.get(
-        f"/v1/canonical-locations?project_slug=demo-proj&q={q}&limit=200",
-        headers=_service_headers(),
+    r = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations?q={q}&limit=200",
     )
     assert r.status_code == 200
     labels = [row["label"] for row in r.json()["canonicals"]]
@@ -755,17 +747,15 @@ def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains
     b2 = f"{prefix_query}, IL"
     c2 = f"United, {prefix_query}, IL"
     for lb in (a2, b2, c2):
-        r = client.post(
-            "/v1/canonical-locations?project_slug=demo-proj",
-            headers=_service_headers(),
-            json={"label": lb},
+        r = editor_client.post(
+            "/v1/stylebooks/default/canonical-locations",
+                json={"label": lb},
         )
         assert r.status_code == 200
 
     q2 = quote(prefix_query)
-    r2 = client.get(
-        f"/v1/canonical-locations?project_slug=demo-proj&q={q2}&limit=200",
-        headers=_service_headers(),
+    r2 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations?q={q2}&limit=200",
     )
     assert r2.status_code == 200
     labels2 = [row["label"] for row in r2.json()["canonicals"]]
@@ -774,61 +764,58 @@ def test_list_canonical_locations_search_prefers_exact_then_prefix_then_contains
     assert labels2.index(b2) < labels2.index(c2)
 
 
-def test_list_canonical_locations_returns_catalog_not_substrate(client: TestClient) -> None:
-    r = client.post(
-        "/v1/locations?project_slug=demo-proj",
-        headers=_service_headers(),
-        json={"name": "Catalog Test Place", "location_type": "city"},
+def test_list_canonical_locations_returns_catalog_not_substrate(
+    editor_client: TestClient) -> None:
+    r = editor_client.post(
+        "/v1/stylebooks/default/canonical-locations",
+        json={"label": "Catalog Test Place", "location_type": "city"},
     )
     assert r.status_code == 200
     created = r.json()
     canon_fk = str(created["id"])
     assert created["label"] == "Catalog Test Place"
-    r2 = client.get("/v1/canonical-locations?project_slug=demo-proj", headers=_service_headers())
+    r2 = editor_client.get(
+        "/v1/stylebooks/default/canonical-locations",
+    )
     assert r2.status_code == 200
     data = r2.json()
     assert data["total"] >= 1
     canon = next(c for c in data["canonicals"] if c["label"] == "Catalog Test Place")
     assert str(canon["id"]) == str(canon_fk)
     assert canon.get("linked_substrate_count", 0) == 0
-    r3 = client.get(
-        f"/v1/canonical-locations/{canon['id']}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r3 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{canon['id']}",
     )
     assert r3.status_code == 200
     assert r3.json()["label"] == "Catalog Test Place"
 
 
 def test_patch_canonical_location_updates_location_type_and_formatted_address(
-    client: TestClient, stylebook_test_engine: Engine
+    editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
     _ = stylebook_test_engine
-    r = client.post(
-        "/v1/canonical-locations?project_slug=demo-proj",
-        headers=_service_headers(),
+    r = editor_client.post(
+        "/v1/stylebooks/default/canonical-locations",
         json={"label": "Patchable Canon Row"},
     )
     assert r.status_code == 200
     cid = str(r.json()["id"])
-    r2 = client.patch(
-        f"/v1/canonical-locations/{cid}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r2 = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{cid}",
         json={"location_type": "city", "formatted_address": "Patchable, IL, USA"},
     )
     assert r2.status_code == 200
     body = r2.json()
     assert body["location_type"] == "city"
     assert body["formatted_address"] == "Patchable, IL, USA"
-    r3 = client.get(
-        f"/v1/canonical-locations/{cid}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r3 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{cid}",
     )
     assert r3.status_code == 200
     assert r3.json()["location_type"] == "city"
     assert r3.json()["formatted_address"] == "Patchable, IL, USA"
-    r4 = client.patch(
-        f"/v1/canonical-locations/{cid}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r4 = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{cid}",
         json={"location_type": None, "formatted_address": None},
     )
     assert r4.status_code == 200
@@ -857,12 +844,30 @@ def test_stats_no_workspace_project_returns_location_zeros(client: TestClient) -
 def test_stats_reflects_canonical_and_pending_candidates(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:
-    r_loc = client.post(
-        "/v1/locations?project_slug=demo-proj",
-        headers=_service_headers(),
-        json={"name": "Stats Town", "location_type": "city"},
-    )
-    assert r_loc.status_code == 200
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        user = BackfieldUser(email="stats-canon-writer@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+        s.refresh(user)
+        writer_id = int(user.id)  # type: ignore[arg-type]
+
+    def _writer_auth() -> dict[str, Any]:
+        with Session(engine) as s:
+            u = s.get(BackfieldUser, writer_id)
+            assert u is not None
+            return _session_auth_for_user(u, org_id=1, org_role="org_admin")
+
+    app.dependency_overrides[get_auth_dep] = _writer_auth
+    try:
+        r_loc = client.post(
+            "/v1/stylebooks/default/canonical-locations",
+            json={"label": "Stats Town", "location_type": "city"},
+        )
+        assert r_loc.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
+
     with Session(stylebook_test_engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
         pid = int(proj.id)
@@ -2569,11 +2574,27 @@ def test_get_canonical_linked_substrates(
         == 200
     )
 
-    r = client.get(
-        f"/v1/canonical-locations/{cid}/linked-substrates?project_slug=demo-proj",
-        headers=_service_headers(),
-    )
-    assert r.status_code == 200
+    with Session(engine) as s:
+        user = BackfieldUser(email="linked-substrates-reader@example.com", password_hash="x")
+        s.add(user)
+        s.commit()
+        s.refresh(user)
+        reader_id = int(user.id)  # type: ignore[arg-type]
+
+    def _reader_auth() -> dict[str, Any]:
+        with Session(engine) as s:
+            u = s.get(BackfieldUser, reader_id)
+            assert u is not None
+            return _session_auth_for_user(u, org_id=1, org_role="org_admin")
+
+    app.dependency_overrides[get_auth_dep] = _reader_auth
+    try:
+        r = client.get(
+            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates",
+        )
+        assert r.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_auth_dep, None)
     data = r.json()
     assert len(data["substrates"]) == 1
     assert data["substrates"][0]["id"] == sid
@@ -2657,7 +2678,8 @@ def test_stylebook_canonical_linked_substrates_include_project_fields(
         assert [row["project_id"] for row in all_rows] == [demo_proj_id, other_proj_id]
 
         r_filtered = client.get(
-            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates?project=demo-proj"
+            f"/v1/stylebooks/default/canonical-locations/{cid}/linked-substrates"
+            "?project=demo-proj"
         )
         assert r_filtered.status_code == 200
         filtered_rows = r_filtered.json()["substrates"]
@@ -2699,7 +2721,8 @@ def test_get_suggested_canonicals_for_pending_candidate(
     assert isinstance(body["suggestions"], list)
 
 
-def test_canonical_location_meta_crud(client: TestClient, stylebook_test_engine: Engine) -> None:
+def test_canonical_location_meta_crud(
+    editor_client: TestClient, stylebook_test_engine: Engine) -> None:
     engine = stylebook_test_engine
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
@@ -2718,39 +2741,34 @@ def test_canonical_location_meta_crud(client: TestClient, stylebook_test_engine:
         s.refresh(canon)
         cid = str(canon.id)
 
-    r0 = client.get(
-        f"/v1/canonical-locations/{cid}/meta?project_slug=demo-proj",
-        headers=_service_headers(),
+    r0 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{cid}/meta",
     )
     assert r0.status_code == 200
     assert r0.json()["count"] == 0
 
-    r1 = client.post(
-        f"/v1/canonical-locations/{cid}/meta?project_slug=demo-proj",
-        headers=_service_headers(),
+    r1 = editor_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{cid}/meta",
         json={"meta_type": "tag", "data": {"x": 1}},
     )
     assert r1.status_code == 200
     mid = int(r1.json()["id"])
 
-    r2 = client.get(
-        f"/v1/canonical-locations/{cid}/meta?project_slug=demo-proj",
-        headers=_service_headers(),
+    r2 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{cid}/meta",
     )
     assert r2.json()["count"] == 1
 
-    r3 = client.patch(
-        f"/v1/canonical-locations/{cid}/meta/{mid}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r3 = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}",
         json={"data": {"x": 2}, "meta_type": "note"},
     )
     assert r3.status_code == 200
     assert r3.json()["data"] == {"x": 2}
     assert r3.json()["meta_type"] == "note"
 
-    r4 = client.delete(
-        f"/v1/canonical-locations/{cid}/meta/{mid}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r4 = editor_client.delete(
+        f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}",
     )
     assert r4.status_code == 200
 
@@ -2760,7 +2778,7 @@ def test_canonical_location_meta_crud(client: TestClient, stylebook_test_engine:
 
 
 def test_canonical_location_connections_roundtrip(
-    client: TestClient, stylebook_test_engine: Engine
+    editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:
     engine = stylebook_test_engine
     with Session(engine) as s:
@@ -2791,38 +2809,33 @@ def test_canonical_location_connections_roundtrip(
         aid = str(ca.id)
         bid = str(cb.id)
 
-    r0 = client.get(
-        f"/v1/canonical-locations/{aid}/connections?project_slug=demo-proj",
-        headers=_service_headers(),
+    r0 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
     )
     assert r0.status_code == 200
     assert r0.json()["connections"] == []
 
-    r1 = client.post(
-        f"/v1/canonical-locations/{aid}/connections?project_slug=demo-proj",
-        headers=_service_headers(),
+    r1 = editor_client.post(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
         json={"to_entity_type": "location", "to_entity_id": bid, "nature": "near"},
     )
     assert r1.status_code == 200
     conn_id = int(r1.json()["id"])
 
-    r2 = client.get(
-        f"/v1/canonical-locations/{aid}/connections?project_slug=demo-proj",
-        headers=_service_headers(),
+    r2 = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
     )
     assert len(r2.json()["connections"]) == 1
 
-    r3 = client.patch(
-        f"/v1/canonical-locations/{aid}/connections/{conn_id}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r3 = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections/{conn_id}",
         json={"nature": "adjacent"},
     )
     assert r3.status_code == 200
     assert r3.json()["nature"] == "adjacent"
 
-    r4 = client.delete(
-        f"/v1/canonical-locations/{aid}/connections/{conn_id}?project_slug=demo-proj",
-        headers=_service_headers(),
+    r4 = editor_client.delete(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections/{conn_id}",
     )
     assert r4.status_code == 200
 

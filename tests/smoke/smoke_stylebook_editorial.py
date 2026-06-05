@@ -205,8 +205,8 @@ def main() -> int:
 
             linked_substrates = assert_object(
                 client.get(
-                    f"/v1/canonical-locations/{canonical_id}/linked-substrates",
-                    params={"project_slug": ctx.project_slug},
+                    f"/v1/stylebooks/default/canonical-locations/{canonical_id}/linked-substrates",
+                    params={"project": ctx.project_slug},
                 ),
                 "linked substrates",
             )

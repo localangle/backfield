@@ -1079,6 +1079,7 @@ export default function LocationDetail() {
             if (!o) setMoveSubstrate(null)
           }}
           projectSlug={moveSubstrate.project_slug}
+          stylebookSlug={stylebookSlug}
           substrateLocationId={moveSubstrate.id}
           excludeCanonicalId={canonical.id}
           title="Move linked place to another canonical"

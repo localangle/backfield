@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
 import {
-  getCanonicalLocationLegacy,
+  getCanonicalLocation,
   getLocation,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
-  listCanonicalLocationsLegacy,
+  listCanonicalLocations,
   type CanonicalLocation,
   type SuggestedCanonicalItem,
 } from "@/lib/api"
@@ -53,6 +53,7 @@ export function CanonicalLinkModal(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectSlug: string
+  stylebookSlug: string
   /** Substrate location id (open candidate or linked row for relink/move). */
   substrateLocationId: number | null
   onDone: () => void
@@ -67,6 +68,7 @@ export function CanonicalLinkModal(props: {
     open,
     onOpenChange,
     projectSlug,
+    stylebookSlug,
     substrateLocationId,
     onDone,
     title,
@@ -131,7 +133,7 @@ export function CanonicalLinkModal(props: {
   )
 
   useEffect(() => {
-    if (!open || !initialCanonicalId || !projectSlug) {
+    if (!open || !initialCanonicalId || !projectSlug || !stylebookSlug) {
       setInitialCanonExtra(null)
       return
     }
@@ -146,7 +148,7 @@ export function CanonicalLinkModal(props: {
     let cancelled = false
     void (async () => {
       try {
-        const c = await getCanonicalLocationLegacy(initialCanonicalId, projectSlug)
+        const c = await getCanonicalLocation(initialCanonicalId, stylebookSlug, projectSlug)
         if (!cancelled) setInitialCanonExtra(c)
       } catch {
         if (!cancelled) setInitialCanonExtra(null)
@@ -155,7 +157,7 @@ export function CanonicalLinkModal(props: {
     return () => {
       cancelled = true
     }
-  }, [open, initialCanonicalId, projectSlug, suggestions, linkedCanonicalId])
+  }, [open, initialCanonicalId, projectSlug, stylebookSlug, suggestions, linkedCanonicalId])
 
   useEffect(() => {
     if (!open || substrateLocationId == null || !projectSlug) {
@@ -191,7 +193,7 @@ export function CanonicalLinkModal(props: {
   }, [open, substrateLocationId, projectSlug, linkedMetaLoaded, excludeCanonicalIds])
 
   useEffect(() => {
-    if (!open || !projectSlug) return
+    if (!open || !projectSlug || !stylebookSlug) return
     if (!linkedMetaLoaded) {
       setSearchHits([])
       setSearchLoading(false)
@@ -208,7 +210,7 @@ export function CanonicalLinkModal(props: {
     const t = window.setTimeout(() => {
       void (async () => {
         try {
-          const res = await listCanonicalLocationsLegacy(projectSlug, q, 20, 0)
+          const res = await listCanonicalLocations(stylebookSlug, q, 20, 0, undefined, projectSlug)
           if (!cancelled) {
             setSearchHits(
               res.canonicals.filter((c) => !isExcludedCanonicalLinkTarget(c.id, excludeCanonicalIds)),
@@ -225,7 +227,7 @@ export function CanonicalLinkModal(props: {
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [searchQ, open, projectSlug, excludeCanonicalIds, linkedMetaLoaded])
+  }, [searchQ, open, projectSlug, stylebookSlug, excludeCanonicalIds, linkedMetaLoaded])
 
   const mergedSuggestions: SuggestedCanonicalItem[] = useMemo(() => {
     const merged: SuggestedCanonicalItem[] = suggestions.filter(

@@ -5,7 +5,6 @@
 import {
   locationPickerConfig,
   organizationPickerConfig,
-  personPickerConfig,
   workPickerConfig,
 } from "@/lib/entityConfigs/connectionPickers"
 import { personConfig } from "@/lib/entityConfigs/person"

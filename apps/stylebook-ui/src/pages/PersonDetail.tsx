@@ -711,6 +711,7 @@ export default function PersonDetail() {
             if (!o) setMoveSubstrate(null)
           }}
           projectSlug={moveSubstrate.project_slug}
+          stylebookSlug={stylebookSlug}
           substratePersonId={moveSubstrate.id}
           excludeCanonicalId={person.id}
           title="Move linked person to another canonical"

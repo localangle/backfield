@@ -8,7 +8,7 @@ import {
   acceptCandidate,
   deferCandidate,
   getCandidateContext,
-  getCanonicalLocationLegacy,
+  getCanonicalLocation,
   getSuggestedCanonicals,
   linkSubstrateToCanonical,
   listCandidates,
@@ -465,7 +465,7 @@ export default function LocationCandidates() {
       await linkSubstrateToCanonical(c.id, projectSlug, cid)
       let canonLabel = cid
       try {
-        const canon = await getCanonicalLocationLegacy(cid, projectSlug)
+        const canon = await getCanonicalLocation(cid, stylebookSlug, projectSlug)
         canonLabel = (canon.label ?? "").trim() || cid
       } catch {
         // ignore; fall back to id
@@ -956,6 +956,7 @@ export default function LocationCandidates() {
           }
         }}
         projectSlug={projectSlug}
+        stylebookSlug={stylebookSlug}
         substrateLocationId={linkModalId}
         initialCanonicalId={linkModalInitialCanonicalId}
         title="Link candidate to canonical"

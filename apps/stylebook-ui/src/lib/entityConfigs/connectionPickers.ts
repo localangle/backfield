@@ -3,10 +3,13 @@
  * Person / organization / work use empty-list stubs until those entities are migrated.
  */
 
-import { personConfig, type PersonPickerRow } from "@/lib/entityConfigs/person"
-import { listCanonicalLocationsLegacy } from "@/lib/stylebook-api/locations"
+import {
+  createListPersonPickerRows,
+  personConfig,
+  type PersonPickerRow,
+} from "@/lib/entityConfigs/person"
+import { listCanonicalLocations } from "@/lib/stylebook-api/locations"
 import { listOrganizations, listWorks } from "@/lib/stylebook-api/entityListStubs"
-import { listPersonPickerRows } from "@/lib/entityConfigs/person"
 import type { EntityConfig } from "@/lib/entityTypes"
 
 /** Canonical location row as used by EntitySelector (name matches agate ``Location`` shape). */
@@ -42,24 +45,33 @@ export interface WorkPickerRow {
   updated_at: string
 }
 
-async function listLocationPickerRows(
-  projectSlug: string,
-  q?: string,
-  _status?: string,
-  limit: number = 100,
-  offset: number = 0,
-): Promise<{ locations: LocationPickerRow[] }> {
-  const res = await listCanonicalLocationsLegacy(projectSlug, q, limit, offset)
-  return {
-    locations: res.canonicals.map((c) => ({
-      id: c.id,
-      project_id: 0,
-      name: c.label,
-      location_type: c.location_type ?? "",
-      status: c.status,
-      created_at: c.created_at,
-      updated_at: c.updated_at,
-    })),
+export function createListLocationPickerRows(stylebookSlug: string) {
+  return async function listLocationPickerRows(
+    projectSlug: string,
+    q?: string,
+    _status?: string,
+    limit: number = 100,
+    offset: number = 0,
+  ): Promise<{ locations: LocationPickerRow[] }> {
+    const res = await listCanonicalLocations(
+      stylebookSlug,
+      q,
+      limit,
+      offset,
+      undefined,
+      projectSlug,
+    )
+    return {
+      locations: res.canonicals.map((c) => ({
+        id: c.id,
+        project_id: 0,
+        name: c.label,
+        location_type: c.location_type ?? "",
+        status: c.status,
+        created_at: c.created_at,
+        updated_at: c.updated_at,
+      })),
+    }
   }
 }
 
@@ -77,7 +89,7 @@ const notImplemented = async (): Promise<never> => {
   throw new Error("Not available in this Stylebook slice")
 }
 
-export const locationPickerConfig = {
+const locationPickerConfigBase = {
   type: "location",
   displayName: { singular: "Location", plural: "Locations" },
   routes: {
@@ -87,8 +99,8 @@ export const locationPickerConfig = {
   },
   api: {
     listCandidates: noopListCandidates,
-    listCanonical: listLocationPickerRows,
-    listCanonicalForSelector: listLocationPickerRows,
+    listCanonical: notImplemented,
+    listCanonicalForSelector: notImplemented,
     getDetail: notImplemented,
     createCanonical: notImplemented,
     updateCanonical: notImplemented,
@@ -121,31 +133,48 @@ export const locationPickerConfig = {
   }),
 } as unknown as EntityConfig<LocationPickerRow>
 
-/** Person picker config — canonical list uses ``listCanonicalPeopleLegacy`` via ``listPersonPickerRows``. */
-export const personPickerConfig = {
-  ...personConfig,
-  api: {
-    ...personConfig.api,
-    listCandidates: noopListCandidates,
-    listCanonical: listPersonPickerRows,
-    listCanonicalForSelector: listPersonPickerRows,
-    getDetail: notImplemented,
-    createCanonical: notImplemented,
-    updateCanonical: notImplemented,
-    deleteCanonical: notImplemented,
-    acceptCandidate: notImplemented,
-    bulkAcceptCandidates: notImplemented,
-    linkCandidateToExisting: notImplemented,
-    createCanonicalFromCluster: notImplemented,
-    getMentions: notImplemented,
-    unlink: notImplemented,
-    bulkUnlink: notImplemented,
-    getMeta: notImplemented,
-    createMeta: notImplemented,
-    updateMeta: notImplemented,
-    deleteMeta: notImplemented,
-  },
-} as unknown as EntityConfig<PersonPickerRow>
+export function createLocationPickerConfig(stylebookSlug: string): EntityConfig<LocationPickerRow> {
+  const listRows = createListLocationPickerRows(stylebookSlug)
+  return {
+    ...locationPickerConfigBase,
+    api: {
+      ...locationPickerConfigBase.api,
+      listCanonical: listRows,
+      listCanonicalForSelector: listRows,
+    },
+  } as unknown as EntityConfig<LocationPickerRow>
+}
+
+/** @deprecated Use ``createLocationPickerConfig(stylebookSlug)`` — requires catalog scope. */
+export const locationPickerConfig = locationPickerConfigBase
+
+export function createPersonPickerConfig(stylebookSlug: string): EntityConfig<PersonPickerRow> {
+  const listRows = createListPersonPickerRows(stylebookSlug)
+  return {
+    ...personConfig,
+    api: {
+      ...personConfig.api,
+      listCandidates: noopListCandidates,
+      listCanonical: listRows,
+      listCanonicalForSelector: listRows,
+      getDetail: notImplemented,
+      createCanonical: notImplemented,
+      updateCanonical: notImplemented,
+      deleteCanonical: notImplemented,
+      acceptCandidate: notImplemented,
+      bulkAcceptCandidates: notImplemented,
+      linkCandidateToExisting: notImplemented,
+      createCanonicalFromCluster: notImplemented,
+      getMentions: notImplemented,
+      unlink: notImplemented,
+      bulkUnlink: notImplemented,
+      getMeta: notImplemented,
+      createMeta: notImplemented,
+      updateMeta: notImplemented,
+      deleteMeta: notImplemented,
+    },
+  } as unknown as EntityConfig<PersonPickerRow>
+}
 
 export const organizationPickerConfig = {
   type: "organization",

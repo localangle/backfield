@@ -1,5 +1,6 @@
+import { useMemo } from "react"
 import EntitySelector from "@/components/EntitySelector"
-import { locationPickerConfig } from "@/lib/entityConfigs/connectionPickers"
+import { createLocationPickerConfig } from "@/lib/entityConfigs/connectionPickers"
 import type { LocationPickerRow } from "@/lib/entityConfigs/connectionPickers"
 
 interface LocationSelectorProps {
@@ -7,6 +8,7 @@ interface LocationSelectorProps {
   onOpenChange: (open: boolean) => void
   onSelect: (locationId: string | number, displayName?: string) => void
   projectSlug: string
+  stylebookSlug: string
   candidateNames?: string[]
   excludeIds?: Array<string | number>
 }
@@ -16,9 +18,12 @@ export default function LocationSelector({
   onOpenChange,
   onSelect,
   projectSlug,
+  stylebookSlug,
   candidateNames = [],
   excludeIds = [],
 }: LocationSelectorProps) {
+  const config = useMemo(() => createLocationPickerConfig(stylebookSlug), [stylebookSlug])
+
   return (
     <EntitySelector<LocationPickerRow>
       open={open}
@@ -27,7 +32,7 @@ export default function LocationSelector({
       projectSlug={projectSlug}
       candidateNames={candidateNames}
       excludeIds={excludeIds}
-      config={locationPickerConfig}
+      config={config}
     />
   )
 }
