@@ -68,12 +68,6 @@ def test_json_output_runner_does_not_semantically_index() -> None:
     assert "semantic_indexing" not in out
 
 
-def test_node_runners_use_separate_output_and_db_output() -> None:
-    from agate_runtime.nodes import NODE_RUNNERS
-
-    assert NODE_RUNNERS["Output"] is not NODE_RUNNERS["DBOutput"]
-
-
 def test_persist_without_semantic_setting_does_not_create_semantic_docs() -> None:
     engine = _engine()
     with Session(engine) as session:

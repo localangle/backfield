@@ -375,17 +375,39 @@ def test_import_geojson_analyze_rejects_non_featurecollection(client: TestClient
     assert r.status_code == 400
 
 
-def test_import_geojson_analyze_rejects_over_25mb(client: TestClient, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/v1/import/geojson/analyze?project_slug=demo-proj",
+            {"geojson": {"type": "FeatureCollection", "features": [], "pad": "x" * 100}},
+        ),
+        (
+            "/v1/import/geojson?project_slug=demo-proj",
+            {
+                "geojson": {
+                    "type": "FeatureCollection",
+                    "features": [],
+                    "pad": "x" * 100,
+                },
+                "mappings": {"label_property": "name", "location_type_property": "type"},
+            },
+        ),
+    ],
+    ids=["analyze", "import"],
+)
+def test_import_geojson_rejects_over_25mb(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    payload: dict[str, Any],
+) -> None:
     import stylebook_api.routers.imports as imports_router
 
     monkeypatch.setattr(imports_router, "MAX_IMPORT_BYTES", 10)
     # No Content-Length is sent by TestClient here, so the router will use the JSON-dumped
     # size as a best-effort fallback.
-    r = client.post(
-        "/v1/import/geojson/analyze?project_slug=demo-proj",
-        headers=_service_headers(),
-        json={"geojson": {"type": "FeatureCollection", "features": [], "pad": "x" * 100}},
-    )
+    r = client.post(path, headers=_service_headers(), json=payload)
     assert r.status_code == 413
 
 
@@ -429,25 +451,6 @@ def test_import_geojson_creates_canonicals_with_partial_failures(client: TestCli
     assert len(body["created"]) == 1
     assert body["created"][0]["label"] == "A"
     assert len(body["failed"]) == 2
-
-
-def test_import_geojson_rejects_over_25mb(client: TestClient, monkeypatch) -> None:
-    import stylebook_api.routers.imports as imports_router
-
-    monkeypatch.setattr(imports_router, "MAX_IMPORT_BYTES", 10)
-    r = client.post(
-        "/v1/import/geojson?project_slug=demo-proj",
-        headers=_service_headers(),
-        json={
-            "geojson": {
-                "type": "FeatureCollection",
-                "features": [],
-                "pad": "x" * 100,
-            },
-            "mappings": {"label_property": "name", "location_type_property": "type"},
-        },
-    )
-    assert r.status_code == 413
 
 
 def test_import_geojson_splits_geometrycollection_on_import(client: TestClient) -> None:
@@ -638,31 +641,6 @@ def test_create_location_creates_standalone_canonical_and_alias_no_substrate(
         # We store a conservative ordinal/punctuation-stripped variant for better recall.
         assert "west garfield park, chicago, il" in norms
         assert "west garfield park chicago il" in norms
-
-
-def test_create_canonical_location_post_alias_no_substrate(
-    editor_client: TestClient, stylebook_test_engine: Engine
-) -> None:
-    with Session(stylebook_test_engine) as s:
-        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
-        pid = int(proj.id)
-        q0 = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
-        before = len(s.exec(q0).all())
-
-    r = editor_client.post(
-        "/v1/stylebooks/default/canonical-locations",
-        json={"label": "Solo Canonical, Evanston, IL"},
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["label"] == "Solo Canonical, Evanston, IL"
-    cid = str(body["id"])
-    with Session(stylebook_test_engine) as s:
-        canon = s.get(StylebookLocationCanonical, cid)
-        assert canon is not None
-        q1 = select(SubstrateLocation).where(SubstrateLocation.project_id == pid)
-        after = len(s.exec(q1).all())
-        assert after == before
 
 
 def test_list_canonical_locations_type_filter(
@@ -2719,129 +2697,6 @@ def test_get_suggested_canonicals_for_pending_candidate(
     body = r.json()
     assert "suggestions" in body
     assert isinstance(body["suggestions"], list)
-
-
-def test_canonical_location_meta_crud(
-    editor_client: TestClient, stylebook_test_engine: Engine) -> None:
-    engine = stylebook_test_engine
-    with Session(engine) as s:
-        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
-        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
-        sb_id = int(ws.stylebook_id)
-        canon = StylebookLocationCanonical(
-            stylebook_id=sb_id,
-            label="Meta Canon",
-            slug="meta-canon",
-            location_type="city",
-            primary_substrate_location_id=None,
-            status="active",
-        )
-        s.add(canon)
-        s.commit()
-        s.refresh(canon)
-        cid = str(canon.id)
-
-    r0 = editor_client.get(
-        f"/v1/stylebooks/default/canonical-locations/{cid}/meta",
-    )
-    assert r0.status_code == 200
-    assert r0.json()["count"] == 0
-
-    r1 = editor_client.post(
-        f"/v1/stylebooks/default/canonical-locations/{cid}/meta",
-        json={"meta_type": "tag", "data": {"x": 1}},
-    )
-    assert r1.status_code == 200
-    mid = int(r1.json()["id"])
-
-    r2 = editor_client.get(
-        f"/v1/stylebooks/default/canonical-locations/{cid}/meta",
-    )
-    assert r2.json()["count"] == 1
-
-    r3 = editor_client.patch(
-        f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}",
-        json={"data": {"x": 2}, "meta_type": "note"},
-    )
-    assert r3.status_code == 200
-    assert r3.json()["data"] == {"x": 2}
-    assert r3.json()["meta_type"] == "note"
-
-    r4 = editor_client.delete(
-        f"/v1/stylebooks/default/canonical-locations/{cid}/meta/{mid}",
-    )
-    assert r4.status_code == 200
-
-    with Session(engine) as s:
-        n = s.exec(select(StylebookLocationMeta).where(StylebookLocationMeta.id == mid)).first()
-        assert n is None
-
-
-def test_canonical_location_connections_roundtrip(
-    editor_client: TestClient, stylebook_test_engine: Engine
-) -> None:
-    engine = stylebook_test_engine
-    with Session(engine) as s:
-        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
-        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
-        sb_id = int(ws.stylebook_id)
-        ca = StylebookLocationCanonical(
-            stylebook_id=sb_id,
-            label="Conn A",
-            slug="conn-a",
-            location_type="city",
-            primary_substrate_location_id=None,
-            status="active",
-        )
-        cb = StylebookLocationCanonical(
-            stylebook_id=sb_id,
-            label="Conn B",
-            slug="conn-b",
-            location_type="city",
-            primary_substrate_location_id=None,
-            status="active",
-        )
-        s.add(ca)
-        s.add(cb)
-        s.commit()
-        s.refresh(ca)
-        s.refresh(cb)
-        aid = str(ca.id)
-        bid = str(cb.id)
-
-    r0 = editor_client.get(
-        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
-    )
-    assert r0.status_code == 200
-    assert r0.json()["connections"] == []
-
-    r1 = editor_client.post(
-        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
-        json={"to_entity_type": "location", "to_entity_id": bid, "nature": "near"},
-    )
-    assert r1.status_code == 200
-    conn_id = int(r1.json()["id"])
-
-    r2 = editor_client.get(
-        f"/v1/stylebooks/default/canonical-locations/{aid}/connections",
-    )
-    assert len(r2.json()["connections"]) == 1
-
-    r3 = editor_client.patch(
-        f"/v1/stylebooks/default/canonical-locations/{aid}/connections/{conn_id}",
-        json={"nature": "adjacent"},
-    )
-    assert r3.status_code == 200
-    assert r3.json()["nature"] == "adjacent"
-
-    r4 = editor_client.delete(
-        f"/v1/stylebooks/default/canonical-locations/{aid}/connections/{conn_id}",
-    )
-    assert r4.status_code == 200
-
-    with Session(engine) as s:
-        row = s.get(StylebookConnection, conn_id)
-        assert row is None
 
 
 def test_stylebook_canonical_location_meta_crud(
