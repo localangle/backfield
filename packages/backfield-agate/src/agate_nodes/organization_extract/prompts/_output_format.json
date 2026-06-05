@@ -14,14 +14,27 @@
       ]
     },
     {
-      "name": "Chicago Police Department",
-      "type": "law_enforcement",
-      "role_in_story": "Will increase patrols near the site",
-      "nature": "regulator",
-      "nature_secondary_tags": ["source"],
+      "name": "Brother Rice boys basketball team",
+      "type": "sports_team",
+      "role_in_story": "Won the regional semifinal",
+      "nature": "subject",
+      "nature_secondary_tags": [],
       "mentions": [
         {
-          "text": "The Chicago Police Department said it will increase patrols near the site.",
+          "text": "Brother Rice beat Marist 48-41 in the regional semifinal.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "National Basketball Association",
+      "type": "sports_league",
+      "role_in_story": "Announced a new policy",
+      "nature": "actor",
+      "nature_secondary_tags": [],
+      "mentions": [
+        {
+          "text": "The NBA announced a new policy on Tuesday.",
           "quote": false
         }
       ]
