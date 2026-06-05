@@ -10,7 +10,6 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateLocation,
 )
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.canonical.jurisdiction import (
     container_admin_query_from_components,
     geocode_components_vs_formatted_address_mismatch,
@@ -23,6 +22,7 @@ from backfield_entities.canonical.link_matrix import (
     link_pair_allowed,
 )
 from backfield_entities.canonical.match_score import RECALL_MIN_SCORE
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.entities.location.policy import (
     _jurisdiction_pair_demotes_recall_score,
     decide_canonical_persist_plan,

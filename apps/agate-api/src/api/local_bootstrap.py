@@ -25,7 +25,7 @@ from backfield_db import (
 )
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from backfield_db.session import get_engine
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)

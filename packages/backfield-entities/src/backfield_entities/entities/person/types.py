@@ -136,7 +136,7 @@ def person_identity_fingerprint(
     affiliation: str | None = None,
 ) -> str:
     """Project-scoped dedupe hash for substrate person rows."""
-    from backfield_entities.entity_types import compute_identity_fingerprint
+    from backfield_entities.registry.entity_types import compute_identity_fingerprint
 
     return compute_identity_fingerprint(
         "person",

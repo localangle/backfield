@@ -1,13 +1,13 @@
 """Backward-compatible re-exports of substrate source bundles."""
 
-from backfield_entities.semantic_indexing.common.article import ArticleSource
-from backfield_entities.semantic_indexing.location.sources import (
+from backfield_entities.ingest.semantic_indexing.common.article import ArticleSource
+from backfield_entities.ingest.semantic_indexing.location.sources import (
     LocationCanonicalSource,
     LocationEntitySource,
     LocationMentionSource,
     LocationOccurrenceSource,
 )
-from backfield_entities.semantic_indexing.person.sources import (
+from backfield_entities.ingest.semantic_indexing.person.sources import (
     PersonCanonicalSource,
     PersonEntitySource,
     PersonMentionSource,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from backfield_entities.semantic_indexing import (
+from backfield_entities.ingest.semantic_indexing import (
     SKIP_OCCURRENCE_SUPPRESSED,
     SemanticDocumentBuildSkip,
     SemanticDocumentDraft,
@@ -14,7 +14,7 @@ from backfield_entities.semantic_indexing import (
     semantic_builder_supported,
     unsupported_semantic_builder_type,
 )
-from backfield_entities.semantic_indexing.sources import (
+from backfield_entities.ingest.semantic_indexing.sources import (
     ArticleSource,
     LocationCanonicalSource,
     LocationEntitySource,

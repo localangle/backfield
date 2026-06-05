@@ -50,9 +50,9 @@ New entity types (person, organization, work, …) follow the same **substrate t
 
 **Stylebook alias** and **meta**: alias rows (`alias_text`, `normalized_alias`, `provenance`, `suppressed`); meta rows (`meta_type`, `data_json`, soft `added` / `edited` / `deleted`).
 
-**Consolidated JSON keys** (Agate `DBOutput` merge): derived from entity slug in `backfield_entities.entity_types` — e.g. `person` → `people`, `location` → `places` (legacy). Types without Agate review tabs use the same key rule.
+**Consolidated JSON keys** (Agate `DBOutput` merge): derived from entity slug in `backfield_entities.registry.entity_types` — e.g. `person` → `people`, `location` → `places` (legacy). Types without Agate review tabs use the same key rule.
 
-**Identity fingerprint:** `backfield_entities.entity_types.compute_identity_fingerprint` hashes normalized name plus type-specific inputs for dedupe across ingests (location may keep geocode-specific fingerprint paths until unified).
+**Identity fingerprint:** `backfield_entities.registry.entity_types.compute_identity_fingerprint` hashes normalized name plus type-specific inputs for dedupe across ingests (location may keep geocode-specific fingerprint paths until unified).
 
 ### Shared content and locations (`substrate_*`)
 

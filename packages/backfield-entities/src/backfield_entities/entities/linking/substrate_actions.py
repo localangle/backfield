@@ -18,7 +18,9 @@ from backfield_entities.entities.location.policy import (
     find_existing_canonical_id_by_alias,
     rank_scored_canonical_recall_matches,
 )
-from backfield_entities.semantic_indexing.cleanup import delete_semantic_documents_for_location
+from backfield_entities.ingest.semantic_indexing.cleanup import (
+    delete_semantic_documents_for_location,
+)
 
 
 def rank_canonical_suggestions_for_substrate(

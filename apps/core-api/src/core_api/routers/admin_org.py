@@ -15,7 +15,7 @@ from backfield_db import (
     BackfieldWorkspaceMembership,
     Stylebook,
 )
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session, col, select

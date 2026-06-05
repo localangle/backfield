@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import pytest
-from backfield_entities.semantic_indexing.search import (
+from backfield_entities.ingest.semantic_indexing.search import (
     _coerce_embedding_vector,
     cosine_similarity,
     search_person_semantic_mentions,
 )
-from backfield_entities.semantic_indexing.search_contract import PersonSemanticSearchFilters
+from backfield_entities.ingest.semantic_indexing.search_contract import PersonSemanticSearchFilters
 from sqlmodel import Session, SQLModel, create_engine
 
 from tests.entities.test_semantic_mention_search_fixtures import (

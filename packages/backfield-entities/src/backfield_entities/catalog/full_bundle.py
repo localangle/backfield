@@ -23,6 +23,10 @@ from backfield_db import (
 from sqlmodel import Session, col, select
 
 from backfield_entities.canonical.slug import allocate_unique_canonical_slug
+from backfield_entities.catalog.stylebook_library import (
+    StylebookLibraryError,
+    create_stylebook_for_import,
+)
 from backfield_entities.entities.location.persist import seed_aliases_for_canonical_label
 from backfield_entities.entities.person.persist import (
     allocate_unique_person_canonical_slug,
@@ -31,10 +35,6 @@ from backfield_entities.entities.person.persist import (
     seed_aliases_for_canonical_label as seed_person_aliases_for_canonical_label,
 )
 from backfield_entities.entities.person.types import derive_person_sort_key
-from backfield_entities.stylebook_library import (
-    StylebookLibraryError,
-    create_stylebook_for_import,
-)
 
 # v2: location canonical rows only (legacy path ``canonicals/part-*.jsonl``, kind ``canonical``).
 # v3: per-entity shards under ``canonicals/{entity}/`` with kinds ``canonical_location``,

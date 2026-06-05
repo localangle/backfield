@@ -10,9 +10,9 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateLocation,
 )
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.canonical.link_matrix import link_pair_allowed, types_are_comparable
-from backfield_entities.canonical.substrate_link_actions import link_substrate_to_canonical_atomic
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.entities.linking.substrate_actions import link_substrate_to_canonical_atomic
 from backfield_entities.entities.location.policy import (
     CanonicalPersistDecision,
     decide_canonical_persist_plan,

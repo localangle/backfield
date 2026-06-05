@@ -12,7 +12,7 @@ from backfield_db import (
     SubstratePersonSemanticDocument,
 )
 from backfield_db.semantic_indexing import SEMANTIC_EMBEDDING_STATUS_PENDING
-from backfield_entities.semantic_indexing.cleanup import delete_semantic_documents_for_person
+from backfield_entities.ingest.semantic_indexing.cleanup import delete_semantic_documents_for_person
 from sqlmodel import Session, SQLModel, create_engine, select
 
 

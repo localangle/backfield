@@ -14,12 +14,12 @@ from backfield_db import (
     StylebookBundleJob,
     StylebookSlugRedirect,
 )
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
-from backfield_entities.graph_stylebook_refs import (
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.graph_stylebook_refs import (
     STYLEBOOK_NODE_PARAM_KEY,
     validate_stylebook_refs_for_organization,
 )
-from backfield_entities.stylebook_library import (
+from backfield_entities.catalog.stylebook_library import (
     StylebookLibraryError,
     create_stylebook,
     delete_stylebook,

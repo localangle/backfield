@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from backfield_entities.db_output_settings import DbOutputCanonicalSettings
-from backfield_entities.semantic_indexing.db_output import (
+from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
+from backfield_entities.ingest.semantic_indexing.db_output import (
     build_semantic_indexing_summary,
     semantic_entity_types_for_consolidated_domains,
     sync_semantic_documents_after_db_output,
 )
-from backfield_entities.semantic_indexing.embedding_contract import EmbeddingRunSummary
-from backfield_entities.semantic_indexing.sync_contract import (
+from backfield_entities.ingest.semantic_indexing.embedding_contract import EmbeddingRunSummary
+from backfield_entities.ingest.semantic_indexing.sync_contract import (
     SemanticSyncResult,
     SemanticSyncSummary,
 )

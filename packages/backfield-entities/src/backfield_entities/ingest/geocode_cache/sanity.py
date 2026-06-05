@@ -9,7 +9,7 @@ from backfield_entities.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
 )
-from backfield_entities.geocode_cache.fingerprint import normalize_substrate_cache_query
+from backfield_entities.ingest.geocode_cache.fingerprint import normalize_substrate_cache_query
 
 # Fine-grained PlaceExtract rows must not autolink to container admin canonicals via cache.
 _FINE_SUBSTRATE_TYPES: frozenset[str] = frozenset(

@@ -26,7 +26,7 @@ from backfield_db import (
     BackfieldWorkspaceMembership,
     SubstrateArticle,
 )
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine

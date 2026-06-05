@@ -7,8 +7,8 @@ from typing import Any
 from backfield_db import SubstrateLocationMention, SubstratePersonMention
 from sqlmodel import Session, col, select
 
-from backfield_entities.semantic_indexing.contracts import SemanticBuilderEntityType
-from backfield_entities.semantic_indexing.reindex_contract import SemanticReindexScope
+from backfield_entities.ingest.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
 
 _PERSON_ENTITY_PATCH_FIELDS = frozenset(
     {"name", "title", "affiliation", "public_figure", "person_type", "sort_key"}

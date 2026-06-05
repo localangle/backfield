@@ -30,7 +30,7 @@ Before interviewing, inspect the repo for **Issue 00 foundation** markers. Found
 
 | Marker | Path |
 |--------|------|
-| Entity registry + fingerprint | `packages/backfield-entities/src/backfield_entities/entity_types.py` |
+| Entity registry + fingerprint | `packages/backfield-entities/src/backfield_entities/registry/entity_types.py` |
 | Persist domain dispatch | `apps/worker/src/worker/substrate/entities/registry.py` |
 | Shared field docs | `docs/DATABASE.md` → section **Shared entity fields** |
 | UI entity registry | `apps/stylebook-ui/src/lib/entityRegistry.ts` |
@@ -107,7 +107,7 @@ Keys are derived from **`EntityType` slug**, not Agate tab names. Types without 
 | `organization` | `organizations` | |
 | `work` | `works` | |
 
-Registry source of truth: `backfield_entities.entity_types`.
+Registry source of truth: `backfield_entities.registry.entity_types`.
 
 ### Canonical ID policy
 
@@ -156,7 +156,7 @@ Replace `<type>` with the entity slug. Prefer new paths over legacy shims.
 | Layer | Location reference |
 |-------|-------------------|
 | DB models | `packages/backfield-db` — `SubstrateLocation*`, `StylebookLocation*` |
-| Shared contracts | `backfield_db/entity_contracts.py`, `backfield_entities/entity_types.py` |
+| Shared contracts | `backfield_db/entity_contracts.py`, `backfield_entities/registry/entity_types.py` |
 | Worker persist | `worker/substrate/entities/location/` + `orchestration.py` |
 | Stylebook logic | `backfield_entities/entities/location/persist.py` |
 | stylebook-api | `stylebook_api/entities/location/` |

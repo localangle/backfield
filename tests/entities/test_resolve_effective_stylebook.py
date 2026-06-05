@@ -8,7 +8,7 @@ from backfield_db import (
     BackfieldWorkspace,
     Stylebook,
 )
-from backfield_entities.resolve import (
+from backfield_entities.catalog.resolve import (
     STYLEBOOK_SLUG_NOT_IN_ORG,
     resolve_effective_stylebook_id_for_project,
     resolve_stylebook_id_for_project_id,

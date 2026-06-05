@@ -76,7 +76,7 @@ def resolve_effective_stylebook_id_for_project(
     raw = (stylebook_slug or "").strip()
     if not raw:
         return resolve_stylebook_id_for_project_id(session, int(project.id))
-    from backfield_entities.stylebook_library import resolve_stylebook_by_slug
+    from backfield_entities.catalog.stylebook_library import resolve_stylebook_by_slug
 
     row = resolve_stylebook_by_slug(session, organization_id=oid, slug=raw)
     if row is None:

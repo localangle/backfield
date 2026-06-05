@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backfield_entities.geocode_cache.sanity import cache_hit_sane_for_substrate
+from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
 
 
 def test_address_blocks_city_canonical_without_street_in_label() -> None:

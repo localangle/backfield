@@ -1,6 +1,5 @@
-"""Stylebook domain logic shared by worker, stylebook-api, and core-api."""
+"""Entity domain logic shared by worker, stylebook-api, core-api, and agate-runtime."""
 
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
@@ -8,6 +7,40 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.full_bundle import (
+    ALLOWED_MANIFEST_SCHEMA_VERSIONS,
+    BUNDLE_SCHEMA_VERSION,
+    DEFAULT_MAX_ZIP_BYTES,
+    export_stylebook_bundle,
+    import_stylebook_bundle,
+    read_manifest_from_zip,
+)
+from backfield_entities.catalog.graph_stylebook_refs import (
+    STYLEBOOK_NODE_PARAM_KEY,
+    StylebookGraphRefsError,
+    count_stylebook_usage_in_graphs,
+    iter_stylebook_refs_from_spec_dict,
+    unique_stylebook_ids_from_spec_dict,
+    validate_stylebook_refs_for_organization,
+)
+from backfield_entities.catalog.resolve import (
+    STYLEBOOK_SLUG_NOT_IN_ORG,
+    resolve_effective_stylebook_id_for_project,
+    resolve_stylebook_id_for_project_id,
+)
+from backfield_entities.catalog.stylebook_library import (
+    StylebookLibraryError,
+    create_stylebook,
+    delete_stylebook,
+    rename_stylebook,
+    resolve_stylebook_by_slug,
+    set_org_default_stylebook,
+)
+from backfield_entities.catalog.stylebook_record_slug import (
+    allocate_unique_stylebook_slug,
+    slugify_stylebook_name,
+)
 from backfield_entities.entities.location.persist import (
     apply_canonical_persist_plan,
     assert_canonical_link_invariant,
@@ -42,7 +75,7 @@ from backfield_entities.entities.person import (
 from backfield_entities.entities.person import (
     materialize_new_canonical_and_link as materialize_new_person_canonical_and_link,
 )
-from backfield_entities.entity_types import (
+from backfield_entities.registry.entity_types import (
     EntityMeta,
     EntityType,
     all_entity_types,
@@ -51,39 +84,6 @@ from backfield_entities.entity_types import (
     entity_meta,
     entity_type_from_consolidated_key,
     normalize_entity_name,
-)
-from backfield_entities.full_bundle import (
-    ALLOWED_MANIFEST_SCHEMA_VERSIONS,
-    BUNDLE_SCHEMA_VERSION,
-    DEFAULT_MAX_ZIP_BYTES,
-    export_stylebook_bundle,
-    import_stylebook_bundle,
-    read_manifest_from_zip,
-)
-from backfield_entities.graph_stylebook_refs import (
-    STYLEBOOK_NODE_PARAM_KEY,
-    StylebookGraphRefsError,
-    count_stylebook_usage_in_graphs,
-    iter_stylebook_refs_from_spec_dict,
-    unique_stylebook_ids_from_spec_dict,
-    validate_stylebook_refs_for_organization,
-)
-from backfield_entities.resolve import (
-    STYLEBOOK_SLUG_NOT_IN_ORG,
-    resolve_effective_stylebook_id_for_project,
-    resolve_stylebook_id_for_project_id,
-)
-from backfield_entities.stylebook_library import (
-    StylebookLibraryError,
-    create_stylebook,
-    delete_stylebook,
-    rename_stylebook,
-    resolve_stylebook_by_slug,
-    set_org_default_stylebook,
-)
-from backfield_entities.stylebook_record_slug import (
-    allocate_unique_stylebook_slug,
-    slugify_stylebook_name,
 )
 
 __all__ = [

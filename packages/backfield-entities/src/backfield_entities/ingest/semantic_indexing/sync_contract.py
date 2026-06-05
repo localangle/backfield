@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from backfield_entities.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_entities.ingest.semantic_indexing.contracts import SemanticBuilderEntityType
 
 
 @dataclass(frozen=True)

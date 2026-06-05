@@ -6,8 +6,8 @@ from backfield_db import BackfieldWorkspace, Stylebook, StylebookBundleJob, Styl
 from sqlalchemy import delete, or_, update
 from sqlmodel import Session, col, select
 
-from backfield_entities.graph_stylebook_refs import reassign_stylebook_refs_in_org_graphs
-from backfield_entities.stylebook_record_slug import allocate_unique_stylebook_slug
+from backfield_entities.catalog.graph_stylebook_refs import reassign_stylebook_refs_in_org_graphs
+from backfield_entities.catalog.stylebook_record_slug import allocate_unique_stylebook_slug
 
 
 class StylebookLibraryError(ValueError):

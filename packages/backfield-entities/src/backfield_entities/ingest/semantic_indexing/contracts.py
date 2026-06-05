@@ -7,7 +7,7 @@ from typing import Literal
 
 from backfield_db.semantic_indexing import SEMANTIC_DOCUMENT_KIND_MENTION_OCCURRENCE
 
-from backfield_entities.entity_types import EntityType
+from backfield_entities.registry.entity_types import EntityType
 
 SemanticBuilderEntityType = Literal["person", "location"]
 

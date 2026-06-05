@@ -22,13 +22,13 @@ Folder names in Python packages use these slugs (`location`, not `place`). Pipel
 
 **Catalog create / import / export:** Stylebook catalog rows can be added manually, bulk-imported, or copied via org-admin ZIP bundles. See **Stylebook catalog transfer** below. Registry for CSV importers: `stylebook_api/imports/` (`csv` + entity slug).
 
-Registry source of truth: `packages/backfield-entities/src/backfield_entities/entity_types.py`.
+Registry source of truth: `packages/backfield-entities/src/backfield_entities/registry/entity_types.py`.
 
 ## Stylebook catalog transfer (create, import, export)
 
 Org-admin **Export** / **Import** (Agate **Manage stylebooks**, `worker.tasks.export_stylebook_bundle` / `import_stylebook_bundle`) copies **canonical rows only** — no meta, connections, substrate, or candidate queues. Import seeds a primary alias per canonical (locations and people) with `stylebook_bundle_import` provenance so rows are not treated as ingest orphans. New UUIDs are assigned on import.
 
-Implementation hub: [`packages/backfield-entities/src/backfield_entities/full_bundle.py`](../packages/backfield-entities/src/backfield_entities/full_bundle.py). Manifest **`schema_version`** is **3** for new exports; import accepts **1**, **2**, or **3**.
+Implementation hub: [`packages/backfield-entities/src/backfield_entities/catalog/full_bundle.py`](../packages/backfield-entities/src/backfield_entities/catalog/full_bundle.py). Manifest **`schema_version`** is **3** for new exports; import accepts **1**, **2**, or **3**.
 
 | Concern | Location | Person | Organization / work (future) |
 |---------|----------|--------|------------------------------|
@@ -57,7 +57,7 @@ Before adding a new type, ensure **Issue 00** scaffolding is merged:
 
 | Marker | Path |
 |--------|------|
-| Entity registry + fingerprint | `backfield_entities/entity_types.py` |
+| Entity registry + fingerprint | `backfield_entities/registry/entity_types.py` |
 | Persist domain dispatch | `worker/substrate/entities/registry.py` |
 | Shared field docs | `docs/DATABASE.md` → **Shared entity fields** |
 | UI entity registry | `apps/stylebook-ui/src/lib/entityRegistry.ts` |
@@ -214,10 +214,19 @@ Public entrypoint: `from worker.substrate import persist_from_consolidated`
 
 ```
 packages/backfield-entities/src/backfield_entities/
-  entity_types.py            # slug registry, consolidated keys, fingerprint
+  catalog/                   # org Stylebook rows, resolve, library CRUD, bundle transfer
+    bootstrap.py
+    resolve.py
+    stylebook_library.py
+    full_bundle.py
+  registry/
+    entity_types.py          # slug registry, consolidated keys, fingerprint
   canonical/
     plan_types.py            # CanonicalPersistDecision, CanonicalPersistPlan (shared)
+    link.py / link_matrix.py / retrieval.py / ...
   entities/
+    linking/
+      substrate_actions.py   # editorial substrate ↔ canonical link/unlink/suggestions
     location/
       policy.py              # decide_location_canonical_persist_plan
       persist.py
@@ -229,7 +238,10 @@ packages/backfield-entities/src/backfield_entities/
       review.py              # opt-in extract review routing
       persist.py
       types.py
-  geocode_cache/
+  ingest/                    # substrate pipeline adjuncts
+    db_output_settings.py
+    geocode_cache/
+    semantic_indexing/
 ```
 
 ### stylebook-api (current)

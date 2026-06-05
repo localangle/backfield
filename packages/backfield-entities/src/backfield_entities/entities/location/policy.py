@@ -51,9 +51,11 @@ from backfield_entities.entities.location.types import (
     ADDRESS_PLACE_KIND_UNKNOWN,
     is_address_like_location_type,
 )
-from backfield_entities.geocode_cache.fingerprint import normalize_substrate_cache_query
-from backfield_entities.geocode_cache.resolve import try_resolve_substrate_location_cache_geometry
-from backfield_entities.geocode_cache.sanity import (
+from backfield_entities.ingest.geocode_cache.fingerprint import normalize_substrate_cache_query
+from backfield_entities.ingest.geocode_cache.resolve import (
+    try_resolve_substrate_location_cache_geometry,
+)
+from backfield_entities.ingest.geocode_cache.sanity import (
     substrate_canonical_link_blocked_by_content_sanity,
 )
 

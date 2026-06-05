@@ -6,8 +6,10 @@ from unittest.mock import MagicMock, patch
 
 from backfield_ai.embeddings import EmbeddingItemResult, LiteLLMEmbeddingBatchResult
 from backfield_db import AgateRun, SubstratePersonSemanticDocument
-from backfield_entities.semantic_indexing.db_output import sync_semantic_documents_after_db_output
-from backfield_entities.semantic_indexing.embedding_contract import EmbeddingApplySummary
+from backfield_entities.ingest.semantic_indexing.db_output import (
+    sync_semantic_documents_after_db_output,
+)
+from backfield_entities.ingest.semantic_indexing.embedding_contract import EmbeddingApplySummary
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker.semantic_indexing.embed import embed_pending_semantic_documents_for_db_output
 from worker.substrate import persist_from_consolidated

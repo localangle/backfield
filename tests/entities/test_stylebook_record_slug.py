@@ -7,7 +7,7 @@ from backfield_db import (
     Stylebook,
     StylebookSlugRedirect,
 )
-from backfield_entities.stylebook_record_slug import (
+from backfield_entities.catalog.stylebook_record_slug import (
     allocate_unique_stylebook_slug,
     slugify_stylebook_name,
 )

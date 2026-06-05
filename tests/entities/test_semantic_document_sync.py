@@ -20,7 +20,7 @@ from backfield_db.semantic_indexing import (
     SEMANTIC_EMBEDDING_STATUS_PENDING,
     SEMANTIC_EMBEDDING_STATUS_READY,
 )
-from backfield_entities.semantic_indexing import (
+from backfield_entities.ingest.semantic_indexing import (
     sync_semantic_documents_for_article,
     sync_semantic_documents_for_entity_type,
 )

@@ -8,7 +8,7 @@ from backfield_db import (
     BackfieldWorkspace,
     Stylebook,
 )
-from backfield_entities.db_output_settings import (
+from backfield_entities.ingest.db_output_settings import (
     DbOutputCanonicalSettings,
     resolve_effective_stylebook_id,
 )

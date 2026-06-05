@@ -116,7 +116,7 @@ def test_persist_flag_review_open_pending_with_needs_review_mention() -> None:
 
 def test_persist_alias_affiliation_mismatch_stays_pending() -> None:
     from backfield_db import StylebookPersonCanonical
-    from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+    from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
     from backfield_entities.entities.person.persist import upsert_alias_for_canonical_text
 
     engine = create_engine("sqlite://", echo=False)

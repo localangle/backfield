@@ -25,7 +25,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_entities.canonical.slug import allocate_unique_canonical_slug
-from backfield_entities.canonical.substrate_link_actions import (
+from backfield_entities.entities.linking.substrate_actions import (
     rank_canonical_suggestions_for_substrate,
 )
 from backfield_entities.entities.location.persist import refresh_aliases_for_linked_location

@@ -10,12 +10,12 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateLocationCache,
 )
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
-from backfield_entities.geocode_cache.fingerprint import (
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.ingest.geocode_cache.fingerprint import (
     normalize_substrate_cache_query,
     substrate_location_cache_query_fingerprint,
 )
-from backfield_entities.geocode_cache.resolve import (
+from backfield_entities.ingest.geocode_cache.resolve import (
     build_geocode_cache_adjudication_candidates,
     materialize_canonical_match_dict,
     resolve_geocode_cache_strict_with_outcome,

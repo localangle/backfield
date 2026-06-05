@@ -13,7 +13,7 @@ from backfield_db import (
     BackfieldProject,
     SubstratePersonSemanticDocument,
 )
-from backfield_entities.semantic_indexing.embedding_contract import EmbeddingRunSummary
+from backfield_entities.ingest.semantic_indexing.embedding_contract import EmbeddingRunSummary
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker.nodes.db_output import run_db_output
 from worker.substrate import persist_from_consolidated

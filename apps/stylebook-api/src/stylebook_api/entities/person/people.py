@@ -35,8 +35,8 @@ from backfield_entities.entities.person.types import (
     normalize_person_type,
     person_identity_fingerprint,
 )
-from backfield_entities.semantic_indexing.cleanup import delete_semantic_documents_for_person
-from backfield_entities.semantic_indexing.reindex import (
+from backfield_entities.ingest.semantic_indexing.cleanup import delete_semantic_documents_for_person
+from backfield_entities.ingest.semantic_indexing.reindex import (
     person_patch_affects_semantic_index,
     person_patch_entity_fields_changed,
 )

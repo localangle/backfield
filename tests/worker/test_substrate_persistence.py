@@ -14,12 +14,12 @@ from backfield_db import (
     SubstrateLocationMentionOccurrence,
 )
 from backfield_entities import assert_canonical_link_invariant
-from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
 )
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from sqlmodel import Session, SQLModel, col, create_engine, select
 from worker.substrate import _find_mention_span, persist_from_consolidated
 from worker.substrate.content.geography_reset import replace_machine_geography_for_article

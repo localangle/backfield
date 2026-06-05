@@ -17,11 +17,11 @@ from backfield_entities.canonical.retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
-from backfield_entities.geocode_cache.fingerprint import (
+from backfield_entities.ingest.geocode_cache.fingerprint import (
     normalize_substrate_cache_query,
     substrate_location_cache_query_fingerprint,
 )
-from backfield_entities.geocode_cache.sanity import cache_hit_sane_for_substrate
+from backfield_entities.ingest.geocode_cache.sanity import cache_hit_sane_for_substrate
 
 _DEFAULT_ADJUDICATION_CANDIDATE_LIMIT: int = 18
 

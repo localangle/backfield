@@ -6,7 +6,7 @@ from typing import Any
 
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import BackfieldProject, Stylebook
-from backfield_entities.stylebook_library import resolve_stylebook_by_slug
+from backfield_entities.catalog.stylebook_library import resolve_stylebook_by_slug
 from fastapi import HTTPException
 from sqlmodel import Session, select
 

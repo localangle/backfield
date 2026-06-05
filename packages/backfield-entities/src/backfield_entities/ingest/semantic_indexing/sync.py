@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
-from backfield_entities.entity_types import EntityType
-from backfield_entities.semantic_indexing.builders import (
+from backfield_entities.ingest.semantic_indexing.builders import (
     SUPPORTED_SEMANTIC_BUILDER_ENTITY_TYPES,
     semantic_builder_supported,
 )
-from backfield_entities.semantic_indexing.contracts import SemanticBuilderEntityType
-from backfield_entities.semantic_indexing.location import sync_location_semantic_documents
-from backfield_entities.semantic_indexing.person import sync_person_semantic_documents
-from backfield_entities.semantic_indexing.sync_contract import (
+from backfield_entities.ingest.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_entities.ingest.semantic_indexing.location import sync_location_semantic_documents
+from backfield_entities.ingest.semantic_indexing.person import sync_person_semantic_documents
+from backfield_entities.ingest.semantic_indexing.sync_contract import (
     SemanticSyncResult,
     SemanticSyncScope,
     SemanticSyncSummary,
 )
+from backfield_entities.registry.entity_types import EntityType
 
 
 def _sync_entity_type(

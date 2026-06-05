@@ -12,7 +12,7 @@ CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 
 def _bootstrap_project(session: Session, *, org_slug: str, project_slug: str) -> int:
     from backfield_db import BackfieldOrganization, BackfieldProject, BackfieldWorkspace
-    from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+    from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 
     org = BackfieldOrganization(name="Org", slug=org_slug)
     session.add(org)
