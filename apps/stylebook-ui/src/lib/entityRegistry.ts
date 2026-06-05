@@ -2,11 +2,8 @@
  * Central registry of Stylebook entity types and their EntityConfig objects.
  */
 
-import {
-  locationPickerConfig,
-  organizationPickerConfig,
-  workPickerConfig,
-} from "@/lib/entityConfigs/connectionPickers"
+import { locationPickerConfig, workPickerConfig } from "@/lib/entityConfigs/connectionPickers"
+import { organizationConfig } from "@/lib/entityConfigs/organization"
 import { personConfig } from "@/lib/entityConfigs/person"
 import type { EntityConfig, EntityType } from "@/lib/entityTypes"
 import type { LucideIcon } from "lucide-react"
@@ -15,7 +12,7 @@ import { BookOpen, Building2, MapPin, Users } from "lucide-react"
 export const ENTITY_REGISTRY: Record<EntityType, EntityConfig<unknown>> = {
   location: locationPickerConfig as EntityConfig<unknown>,
   person: personConfig as EntityConfig<unknown>,
-  organization: organizationPickerConfig as EntityConfig<unknown>,
+  organization: organizationConfig as EntityConfig<unknown>,
   work: workPickerConfig as EntityConfig<unknown>,
 }
 
@@ -49,6 +46,7 @@ export const ENTITY_HOME_CARDS: EntityHomeCard[] = [
     routeSegment: "organizations",
     icon: Building2,
     description: "Canonical organizations and institutions",
+    canonicalFirst: true,
   },
   {
     entityType: "work",

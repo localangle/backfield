@@ -111,3 +111,59 @@ export async function deleteStylebookCanonicalPersonMeta(
     { method: "DELETE" },
   )
 }
+
+export interface OrganizationMetaItem {
+  id: number
+  meta_type: string
+  data: unknown
+  created_at?: string
+}
+
+export interface OrganizationMetaListResponse {
+  organization_id: string
+  meta: OrganizationMetaItem[]
+  count: number
+}
+
+export async function getStylebookCanonicalOrganizationMeta(
+  stylebookSlug: string,
+  canonicalId: string,
+): Promise<OrganizationMetaListResponse> {
+  return stylebookJsonFetch<OrganizationMetaListResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(canonicalId)}/meta`,
+  )
+}
+
+export async function createStylebookCanonicalOrganizationMeta(
+  stylebookSlug: string,
+  canonicalId: string,
+  body: { meta_type: string; data: unknown },
+): Promise<OrganizationMetaItem> {
+  return stylebookJsonFetch<OrganizationMetaItem>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(canonicalId)}/meta`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
+}
+
+export async function updateStylebookCanonicalOrganizationMeta(
+  stylebookSlug: string,
+  canonicalId: string,
+  metaId: number,
+  body: { data: unknown; meta_type?: string },
+): Promise<OrganizationMetaItem> {
+  return stylebookJsonFetch<OrganizationMetaItem>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(canonicalId)}/meta/${metaId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )
+}
+
+export async function deleteStylebookCanonicalOrganizationMeta(
+  stylebookSlug: string,
+  canonicalId: string,
+  metaId: number,
+): Promise<{ message: string }> {
+  return stylebookJsonFetch<{ message: string }>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(canonicalId)}/meta/${metaId}`,
+    { method: "DELETE" },
+  )
+}

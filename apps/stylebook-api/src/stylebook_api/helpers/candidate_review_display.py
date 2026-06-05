@@ -17,6 +17,12 @@ _SKIP_LIST_DISPLAY_CODES: frozenset[str] = frozenset(
 _DEFAULT_CODE_MESSAGES: dict[str, str] = {
     "ambiguous_canonical_match": "Several Stylebook locations could match this place.",
     "ambiguous_person_canonical_match": "Several Stylebook people could match this person.",
+    "ambiguous_organization_canonical_match": (
+        "Several Stylebook organizations could match this organization."
+    ),
+    "organization_canonical_type_mismatch": (
+        "Organization type does not match the recalled Stylebook entry."
+    ),
     "child": "Identified as a child",
     "animal": "Identified as an animal",
     "stage_name_or_alias": "Stage name or alias — confirm full identity before linking",
@@ -67,10 +73,19 @@ def _line_for_reason(item: dict[str, Any]) -> str | None:
             return "Ingest suggested linking to an existing Stylebook entry."
         return None
 
-    if code in ("ambiguous_canonical_match", "ambiguous_person_canonical_match"):
+    if code in (
+        "ambiguous_canonical_match",
+        "ambiguous_person_canonical_match",
+        "ambiguous_organization_canonical_match",
+    ):
         ids = item.get("recall_canonical_ids")
         if isinstance(ids, list) and len(ids) > 0:
-            noun = "locations" if code == "ambiguous_canonical_match" else "people"
+            if code == "ambiguous_canonical_match":
+                noun = "locations"
+            elif code == "ambiguous_person_canonical_match":
+                noun = "people"
+            else:
+                noun = "organizations"
             return f"Several Stylebook {noun} could match ({len(ids)} recalled)."
         return _DEFAULT_CODE_MESSAGES.get(code)
 

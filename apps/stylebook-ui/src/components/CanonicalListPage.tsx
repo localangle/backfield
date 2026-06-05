@@ -167,7 +167,9 @@ export function CanonicalListPage<
   }
 
   const searchPlaceholder =
-    config.routeSegment === "people" ? "Search names…" : "Search canonical labels…"
+    config.routeSegment === "people" || config.routeSegment === "organizations"
+      ? "Search names…"
+      : "Search canonical labels…"
 
   return (
     <div className="container mx-auto p-6">

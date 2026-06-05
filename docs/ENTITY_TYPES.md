@@ -15,7 +15,7 @@ When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/s
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
 | Person | `person` | Full stack including PersonExtract node, Agate people review tab, Stylebook manual create, CSV import, and bundle export/import |
-| Organization | `organization` | Schema + persist/policy (issues 01–02); API/extract/review in progress |
+| Organization | `organization` | Stylebook API + UI (issue 03); worker ingest + extract + Agate review pending (issues 04–06) |
 | Work | `work` | Stub — planned via add-entity-type skill |
 
 Folder names in Python packages use these slugs (`location`, not `place`). Pipeline JSON may still use `places` in Geocode output; that is product vocabulary, not package naming.
@@ -32,11 +32,11 @@ Implementation hub: [`packages/backfield-entities/src/backfield_entities/catalog
 
 | Concern | Location | Person | Organization / work (future) |
 |---------|----------|--------|------------------------------|
-| **Manual create (UI)** | `…/locations/create` → `POST …/canonical-locations` or legacy `POST /v1/locations` | `…/people/create` → `POST …/canonical-people` | Add `…/<type>/create` + stylebook-scoped POST when schema exists |
-| **Bulk import format** | GeoJSON (`POST …/import/geojson/…`) | CSV (`POST …/import/csv/people/…`) | CSV via `stylebook_api/imports/csv_<type>.py` + registry `(csv, <plural>)` |
-| **Import registry** | `(geojson, locations)` → `_GeoJsonLocationsImporter` | `(csv, people)` → `CsvPeopleImporter` | Register `(csv, organizations)` / `(csv, works)` after `add-entity-type` |
-| **Bundle export shard** | `canonicals/locations/part-*.jsonl`, manifest `kind: canonical_location` | `canonicals/people/part-*.jsonl`, manifest `kind: canonical_person` | Add `canonicals/<type>/…`, `kind: canonical_<type>`, `_iter_*_canonicals`, `_import_*_row` |
-| **Bundle import** | Handles `kind: canonical` (legacy v1/v2) and `canonical_location` | Handles `kind: canonical_person` | Extend `_import_shard_rows` dispatch + `importable_kinds` |
+| **Manual create (UI)** | `…/locations/create` → `POST …/canonical-locations` or legacy `POST /v1/locations` | `…/people/create` → `POST …/canonical-people` | `…/organizations/create` → `POST …/canonical-organizations` (organization); work TBD |
+| **Bulk import format** | GeoJSON (`POST …/import/geojson/…`) | CSV (`POST …/import/csv/people/…`) | CSV (`POST …/import/csv/organizations/…`) for organization; work TBD |
+| **Import registry** | `(geojson, locations)` → `_GeoJsonLocationsImporter` | `(csv, people)` → `CsvPeopleImporter` | `(csv, organizations)` → `CsvOrganizationsImporter`; work TBD |
+| **Bundle export shard** | `canonicals/locations/part-*.jsonl`, manifest `kind: canonical_location` | `canonicals/people/part-*.jsonl`, manifest `kind: canonical_person` | `canonicals/organizations/part-*.jsonl`, `kind: canonical_organization` (organization); work TBD |
+| **Bundle import** | Handles `kind: canonical` (legacy v1/v2) and `canonical_location` | Handles `kind: canonical_person` | Handles `kind: canonical_organization` (organization); work TBD |
 | **Standalone persist helper** | `backfield_entities.entities.location.persist.create_standalone_canonical` | `backfield_entities.entities.person.persist.create_standalone_canonical` | Same pattern under `entities/<type>/persist.py` |
 | **Provenance strings** | `stylebook_ui_manual`, `stylebook_ui_import_geojson` | `stylebook_ui_manual`, `stylebook_ui_import_csv`, `stylebook_bundle_import` | Follow `{surface}_manual` / `{surface}_import_csv` |
 
@@ -260,9 +260,15 @@ apps/stylebook-api/src/stylebook_api/
       people.py              # /v1/canonical-people, catalog q + token search
       candidates.py          # /v1/people/candidates*
       meta.py
+    organization/
+      organizations.py       # /v1/organizations, link-canonical
+      candidates.py          # /v1/organizations/candidates*
+      meta.py
+  routers/
+    stylebook_organization_canonicals.py  # /v1/stylebooks/…/canonical-organizations
 ```
 
-Location HTTP paths are unchanged. Future types use `/v1/<plural>`, `/v1/<plural>/candidates`, meta under canonical id — see [`API.md`](API.md).
+Location HTTP paths are unchanged. Person and organization types use `/v1/<plural>`, `/v1/<plural>/candidates`, meta under canonical id — see [`API.md`](API.md).
 
 ### Stylebook canonical detail page (all entity types)
 
