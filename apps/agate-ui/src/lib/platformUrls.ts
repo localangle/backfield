@@ -98,3 +98,28 @@ export function stylebookPeopleCandidatesHref(
   url.pathname = `${root}/people/candidates`
   return url.toString()
 }
+
+/** Open a specific catalog organization (canonical UUID) in Stylebook. */
+export function stylebookOrganizationCanonicalDetailHref(
+  stylebookSlug: string,
+  canonicalId: string,
+  projectSlug?: string | null,
+): string {
+  const shell = stylebookShellHref(stylebookSlug, projectSlug ?? undefined)
+  const url = new URL(shell)
+  const root = url.pathname.replace(/\/$/, '')
+  url.pathname = `${root}/organizations/canonical/${encodeURIComponent(canonicalId)}`
+  return url.toString()
+}
+
+/** Stylebook organizations candidate queue for this project. */
+export function stylebookOrganizationsCandidatesHref(
+  stylebookSlug: string,
+  projectSlug?: string | null,
+): string {
+  const shell = stylebookShellHref(stylebookSlug, projectSlug ?? undefined)
+  const url = new URL(shell)
+  const root = url.pathname.replace(/\/$/, '')
+  url.pathname = `${root}/organizations/candidates`
+  return url.toString()
+}

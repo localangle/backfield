@@ -5,6 +5,7 @@ import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { ProcessedItemInformationCard } from '@/components/ProcessedItemInformationCard'
 import { ProcessedItemVerificationSection } from '@/components/ProcessedItemVerificationSection'
 import { ProcessedItemPeopleVerificationSection } from '@/components/ProcessedItemPeopleVerificationSection'
+import { ProcessedItemOrganizationsVerificationSection } from '@/components/ProcessedItemOrganizationsVerificationSection'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -836,9 +837,29 @@ export default function ProcessedItemDetail() {
           )}
         </TabsContent>
 
+        <TabsContent value="organizations" className="space-y-4">
+          {!item.synthetic ? (
+            <ProcessedItemOrganizationsVerificationSection
+              runId={runId!}
+              item={item}
+              graph={graph}
+              onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
+              onVerificationDirtyChange={handleVerificationDirtyChange}
+              catalogStylebookSlug={catalogProject?.workspace_stylebook_slug ?? null}
+              catalogProjectSlug={catalogProject?.slug ?? null}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Organizations review is available for batch stories. This run used a single input and
+                has no separate story item.
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
         {(
           [
-            ['organizations', 'Organizations'],
             ['events', 'Events'],
             ['works', 'Works'],
             ['images', 'Images'],

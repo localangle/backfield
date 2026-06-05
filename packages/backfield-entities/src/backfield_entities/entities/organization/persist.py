@@ -19,6 +19,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
+    CANONICAL_LINK_WAIVED,
 )
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
 from backfield_entities.entities.organization.catalog_provenance import (
@@ -622,6 +623,39 @@ def unlink_substrate_from_canonical(
         canonical_id=old,
         removed_substrate_ingest_alias=removed_alias_provenance == "substrate_ingest",
     )
+
+
+def requeue_substrate_after_story_remove(
+    session: Session,
+    *,
+    stylebook_id: int,
+    organization: SubstrateOrganization,
+    provenance: str = "agate_review_delete",
+) -> bool:
+    if organization.id is None:
+        raise ValueError("organization must be persisted")
+    st = str(organization.canonical_link_status or "")
+    if st == CANONICAL_LINK_LINKED and organization.stylebook_organization_canonical_id is not None:
+        unlink_substrate_from_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            organization=organization,
+            provenance=provenance,
+        )
+        return True
+    if st in (CANONICAL_LINK_WAIVED, CANONICAL_LINK_UNLINKED):
+        organization.canonical_link_status = CANONICAL_LINK_PENDING
+        organization.stylebook_organization_canonical_id = None
+        session.add(organization)
+        return True
+    if (
+        st == CANONICAL_LINK_PENDING
+        and organization.stylebook_organization_canonical_id is not None
+    ):
+        organization.stylebook_organization_canonical_id = None
+        session.add(organization)
+        return True
+    return False
 
 
 def link_substrate_to_canonical_atomic(
