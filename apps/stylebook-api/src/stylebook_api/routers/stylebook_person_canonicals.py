@@ -13,9 +13,9 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
-from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
-from backfield_stylebook.entities.person.persist import create_standalone_canonical
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.entities.person.persist import create_standalone_canonical
+from backfield_entities.entities.person.types import (
     PERSON_TYPE_VALUES,
     derive_person_sort_key,
     normalize_person_type,

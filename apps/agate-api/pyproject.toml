@@ -10,7 +10,7 @@ dependencies = [
     "backfield-auth",
     "agate-runtime",
     "backfield-db",
-    "backfield-stylebook",
+    "backfield-entities",
     "pydantic>=2.0.0",
 ]
 

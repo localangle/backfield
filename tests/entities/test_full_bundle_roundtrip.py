@@ -15,7 +15,7 @@ from backfield_db import (
     StylebookPersonAlias,
     StylebookPersonCanonical,
 )
-from backfield_stylebook.full_bundle import (
+from backfield_entities.full_bundle import (
     BUNDLE_KIND_LOCATION,
     BUNDLE_KIND_PERSON,
     BUNDLE_SCHEMA_VERSION,

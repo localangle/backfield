@@ -1,8 +1,8 @@
 """Symmetric substrate ↔ canonical ``location_type`` rules for linking.
 
 Used by ingest policy, recall filtering, exact-alias checks, Stylebook suggestions,
-and manual link validation.  Keeps :mod:`canonical_policy` free of import cycles
-with :mod:`canonical_retrieval`.
+and manual link validation.  Keeps :mod:`entities.location.policy` free of import cycles
+with :mod:`canonical.retrieval`.
 """
 
 from __future__ import annotations

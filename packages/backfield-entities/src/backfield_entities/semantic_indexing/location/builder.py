@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from backfield_stylebook.semantic_indexing.common.article import ArticleSource
-from backfield_stylebook.semantic_indexing.common.context import extract_article_context_snippet
-from backfield_stylebook.semantic_indexing.contracts import (
+from backfield_entities.semantic_indexing.common.article import ArticleSource
+from backfield_entities.semantic_indexing.common.context import extract_article_context_snippet
+from backfield_entities.semantic_indexing.contracts import (
     DEFAULT_DOCUMENT_KIND,
     SKIP_ARTICLE_DELETED,
     SKIP_MENTION_DELETED,
@@ -13,14 +13,14 @@ from backfield_stylebook.semantic_indexing.contracts import (
     SemanticDocumentDraft,
     SemanticDocumentSourceKey,
 )
-from backfield_stylebook.semantic_indexing.hashing import compute_semantic_source_hash
-from backfield_stylebook.semantic_indexing.location.sources import (
+from backfield_entities.semantic_indexing.hashing import compute_semantic_source_hash
+from backfield_entities.semantic_indexing.location.sources import (
     LocationCanonicalSource,
     LocationEntitySource,
     LocationMentionSource,
     LocationOccurrenceSource,
 )
-from backfield_stylebook.semantic_indexing.search_text import (
+from backfield_entities.semantic_indexing.search_text import (
     append_joined_line,
     append_labeled_line,
     join_search_text,

@@ -20,7 +20,7 @@ def _build_geocode_cache_bundle(
     """Return callables for strict resolve + adjudication candidates + canonical materialization."""
 
     from backfield_db.session import get_engine
-    from backfield_stylebook.geocode_cache_resolve import (
+    from backfield_entities.geocode_cache.resolve import (
         build_geocode_cache_adjudication_candidates,
         materialize_canonical_match_dict,
         resolve_geocode_cache_strict_with_outcome,

@@ -9,7 +9,7 @@ from typing import Any
 
 from backfield_auth.gate import require_project_access
 from backfield_db import StylebookLocationMeta
-from backfield_stylebook.locations import create_standalone_canonical
+from backfield_entities.entities.location.persist import create_standalone_canonical
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session

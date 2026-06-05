@@ -7,19 +7,19 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, select
 
-from backfield_stylebook.canonical.jurisdiction import (
+from backfield_entities.canonical.jurisdiction import (
     place_extract_components_from_entry,
     stylebook_district_fields_from_components,
     stylebook_jurisdiction_fields_from_components,
 )
-from backfield_stylebook.canonical.link import (
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.canonical.match_score import _loose_key
-from backfield_stylebook.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
-from backfield_stylebook.canonical.slug import allocate_unique_canonical_slug
+from backfield_entities.canonical.match_score import _loose_key
+from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_entities.canonical.slug import allocate_unique_canonical_slug
 
 
 def assert_canonical_link_invariant(location: SubstrateLocation) -> None:

@@ -27,7 +27,7 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from sqlmodel import select
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")

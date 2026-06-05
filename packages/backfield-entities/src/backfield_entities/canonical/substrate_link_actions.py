@@ -5,20 +5,20 @@ from __future__ import annotations
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, col, func, select
 
-from backfield_stylebook.canonical.link import (
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.canonical.link_matrix import link_pair_allowed
-from backfield_stylebook.canonical.retrieval import retrieve_candidate_canonical_ids
-from backfield_stylebook.entities.location.persist import refresh_aliases_for_linked_location
-from backfield_stylebook.entities.location.policy import (
+from backfield_entities.canonical.link_matrix import link_pair_allowed
+from backfield_entities.canonical.retrieval import retrieve_candidate_canonical_ids
+from backfield_entities.entities.location.persist import refresh_aliases_for_linked_location
+from backfield_entities.entities.location.policy import (
     find_existing_canonical_id_by_alias,
     rank_scored_canonical_recall_matches,
 )
-from backfield_stylebook.semantic_indexing.cleanup import delete_semantic_documents_for_location
+from backfield_entities.semantic_indexing.cleanup import delete_semantic_documents_for_location
 
 
 def rank_canonical_suggestions_for_substrate(
@@ -276,7 +276,7 @@ def link_substrate_to_canonical_atomic(
     """Attach substrate to canonical B, refresh aliases on B, prune alias on old A when safe.
 
     When ``enforce_type_gate`` is true, linking is allowed only if
-    :func:`~backfield_stylebook.canonical_link_matrix.link_pair_allowed` returns true
+    :func:`~backfield_entities.canonical.link_matrix.link_pair_allowed` returns true
     (today always true; reserved for a future deny-list).
 
     Returns ``False`` if already linked to ``target_canonical_id`` (idempotent no-op).

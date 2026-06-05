@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from backfield_stylebook.canonical_match_score import (
+from backfield_entities.canonical.match_score import (
     AUTOLINK_MIN_SCORE,
     RECALL_MIN_SCORE,
     CanonicalMatchFeatures,

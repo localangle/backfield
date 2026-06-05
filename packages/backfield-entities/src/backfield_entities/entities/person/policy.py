@@ -7,23 +7,23 @@ from typing import Any
 from backfield_db import StylebookPersonCanonical, SubstratePerson
 from sqlmodel import Session, select
 
-from backfield_stylebook.canonical.plan_types import (
+from backfield_entities.canonical.plan_types import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
 )
-from backfield_stylebook.entities.person.recall import (
+from backfield_entities.entities.person.recall import (
     PERSON_RECALL_DEFAULT_LIMIT,
     canonical_ids_from_person_name_keys,
     retrieve_person_canonical_candidates,
 )
-from backfield_stylebook.entities.person.review import (
+from backfield_entities.entities.person.review import (
     REVIEW_HANDLING_AUTO_DEFER,
     REVIEW_HANDLING_FLAG,
     default_review_message,
     review_context_from_source_details,
     review_reason_dict,
 )
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.types import (
     normalize_person_text,
     person_match_key,
     person_names_match,

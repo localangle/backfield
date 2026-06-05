@@ -8,14 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc curl && rm 
 COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-agate /app/packages/backfield-agate
-COPY packages/backfield-stylebook /app/packages/backfield-stylebook
+COPY packages/backfield-entities /app/packages/backfield-entities
 COPY packages/backfield-auth /app/packages/backfield-auth
 COPY apps/agate-api /app/apps/agate-api
 
-# Local packages are not on PyPI: db → ai → stylebook → agate → auth → app.
+# Local packages are not on PyPI: db → ai → entities → agate → auth → app.
 RUN pip install --no-cache-dir -e /app/packages/backfield-db \
     && pip install --no-cache-dir -e /app/packages/backfield-ai \
-    && pip install --no-cache-dir -e /app/packages/backfield-stylebook \
+    && pip install --no-cache-dir -e /app/packages/backfield-entities \
     && pip install --no-cache-dir -e /app/packages/backfield-agate \
     && pip install --no-cache-dir -e /app/packages/backfield-auth \
     && pip install --no-cache-dir \

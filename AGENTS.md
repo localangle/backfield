@@ -25,7 +25,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - `packages/backfield-ui`: Shared shell components and `@backfield/ui/nodeOutputs` (executor output-key helpers for TS panels).
 - `packages/backfield-auth`: Shared session cookies and service Bearer token dependencies for FastAPI apps.
 - `packages/backfield-db`: SQLModel models, crypto helpers, engine/session helpers, and Alembic migrations.
-- `packages/backfield-stylebook`: Stylebook domain helpers (default Stylebook per org, `stylebook_id` resolution from project/workspace, canonical/alias sync) shared by worker, core-api, and agate-api bootstrap.
+- `packages/backfield-entities`: Entity domain helpers (catalog resolution, canonical matching, substrate↔Stylebook linking, semantic indexing) shared by worker, stylebook-api, core-api, and agate-runtime.
 - `infra/docker-compose.yml`: Local multi-service stack.
 
 ## Canonical commands

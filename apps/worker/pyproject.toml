@@ -9,7 +9,7 @@ dependencies = [
     "geoalchemy2>=0.14.0",
     "agate-runtime",
     "backfield-db",
-    "backfield-stylebook",
+    "backfield-entities",
 ]
 
 [build-system]

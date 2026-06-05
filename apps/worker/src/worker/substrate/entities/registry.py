@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from backfield_stylebook.db_output_settings import DbOutputCanonicalSettings, ReconciliationPolicy
+from backfield_entities.db_output_settings import DbOutputCanonicalSettings, ReconciliationPolicy
 from sqlmodel import Session
 
 from worker.substrate.content.geography_reset import ArticleGeographyReplaceStats

@@ -9,11 +9,11 @@ from backfield_db.semantic_indexing import (
     SEMANTIC_EMBEDDING_STATUS_FAILED,
 )
 
-from backfield_stylebook.semantic_indexing.contracts import (
+from backfield_entities.semantic_indexing.contracts import (
     SemanticBuilderEntityType,
     SemanticDocumentDraft,
 )
-from backfield_stylebook.semantic_indexing.sync_contract import SemanticSyncSummary
+from backfield_entities.semantic_indexing.sync_contract import SemanticSyncSummary
 
 
 class _SemanticDocumentRow(Protocol):

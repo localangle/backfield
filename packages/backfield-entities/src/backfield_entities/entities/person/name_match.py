@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.types import (
     normalize_person_text,
     person_match_key,
     person_names_match,

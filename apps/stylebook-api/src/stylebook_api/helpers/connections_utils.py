@@ -5,8 +5,8 @@ from __future__ import annotations
 from uuid import UUID
 
 from backfield_db import StylebookLocationCanonical, StylebookPersonCanonical
-from backfield_stylebook.entity_types import all_entity_types
-from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
+from backfield_entities.entity_types import all_entity_types
+from backfield_entities.resolve import resolve_stylebook_id_for_project_id
 from fastapi import HTTPException
 from sqlmodel import Session, select
 

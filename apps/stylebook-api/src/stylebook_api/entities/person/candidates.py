@@ -14,12 +14,12 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
-from backfield_stylebook.canonical_link import (
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.people import (
+from backfield_entities.entities.person.persist import (
     link_substrate_to_canonical_atomic,
     materialize_new_canonical_and_link,
     rank_canonical_suggestions_for_substrate,

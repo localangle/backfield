@@ -24,7 +24,7 @@ from backfield_db.semantic_indexing import SEMANTIC_EMBEDDING_STATUS_READY
 from sqlalchemy import and_, func, or_
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.semantic_indexing.search_contract import (
+from backfield_entities.semantic_indexing.search_contract import (
     LocationSemanticSearchFilters,
     PersonSemanticSearchFilters,
     QuoteStatusFilter,

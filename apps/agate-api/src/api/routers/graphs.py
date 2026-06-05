@@ -16,7 +16,7 @@ from backfield_db import (
     BackfieldProject,
     SubstrateArticle,
 )
-from backfield_stylebook.graph_stylebook_refs import (
+from backfield_entities.graph_stylebook_refs import (
     StylebookGraphRefsError,
     sanitize_stylebook_refs_for_organization,
     validate_stylebook_refs_for_organization,

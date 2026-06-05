@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from backfield_stylebook.db_output_settings import (
+from backfield_entities.db_output_settings import (
     DbOutputCanonicalSettings,
     ReconciliationPolicy,
     resolve_effective_stylebook_id,

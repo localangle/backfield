@@ -6,8 +6,8 @@ import os
 from typing import Any
 
 from agate_runtime.output_node import consolidated_body_from_dboutput
-from backfield_stylebook.db_output_settings import DbOutputCanonicalSettings
-from backfield_stylebook.semantic_indexing.db_output import (
+from backfield_entities.db_output_settings import DbOutputCanonicalSettings
+from backfield_entities.semantic_indexing.db_output import (
     build_semantic_indexing_summary,
     sync_semantic_documents_after_db_output,
 )

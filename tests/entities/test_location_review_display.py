@@ -1,6 +1,6 @@
 """Tests for location candidate review display copy."""
 
-from backfield_stylebook.entities.location.review_display import deferred_policy_display_message
+from backfield_entities.entities.location.review_display import deferred_policy_display_message
 
 
 def test_deferred_policy_needs_review_bucket() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from backfield_db import SubstrateLocation, SubstrateLocationMention
-from backfield_stylebook.substrate_canonical_link_actions import (
+from backfield_entities.canonical.substrate_link_actions import (
     dispose_orphan_substrate_without_requeue,
 )
 from sqlalchemy import func

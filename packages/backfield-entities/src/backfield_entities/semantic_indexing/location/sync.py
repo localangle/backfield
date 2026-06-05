@@ -6,15 +6,15 @@ from backfield_db import SubstrateLocationSemanticDocument
 from backfield_db.semantic_indexing import SEMANTIC_EMBEDDING_STATUS_PENDING
 from sqlmodel import Session, select
 
-from backfield_stylebook.semantic_indexing.common.article import load_article_source
-from backfield_stylebook.semantic_indexing.contracts import (
+from backfield_entities.semantic_indexing.common.article import load_article_source
+from backfield_entities.semantic_indexing.contracts import (
     SemanticDocumentBuildSkip,
     SemanticDocumentDraft,
 )
-from backfield_stylebook.semantic_indexing.location.builder import build_occurrence_document
-from backfield_stylebook.semantic_indexing.location.loader import load_sync_bundles
-from backfield_stylebook.semantic_indexing.sync_apply import apply_semantic_document_sync
-from backfield_stylebook.semantic_indexing.sync_contract import SemanticSyncSummary
+from backfield_entities.semantic_indexing.location.builder import build_occurrence_document
+from backfield_entities.semantic_indexing.location.loader import load_sync_bundles
+from backfield_entities.semantic_indexing.sync_apply import apply_semantic_document_sync
+from backfield_entities.semantic_indexing.sync_contract import SemanticSyncSummary
 
 
 def sync_semantic_documents(

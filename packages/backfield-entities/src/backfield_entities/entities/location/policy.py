@@ -7,7 +7,7 @@ from typing import Any
 from backfield_db import StylebookLocationAlias, StylebookLocationCanonical, SubstrateLocation
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.canonical.jurisdiction import (
+from backfield_entities.canonical.jurisdiction import (
     container_admin_query_from_components,
     district_identity_from_components,
     district_identity_key,
@@ -21,13 +21,13 @@ from backfield_stylebook.canonical.jurisdiction import (
     point_in_geojson_bbox,
     strict_canonical_gates_enabled,
 )
-from backfield_stylebook.canonical.link_matrix import (
+from backfield_entities.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
     strict_type_group,
     types_are_comparable,
 )
-from backfield_stylebook.canonical.match_score import (
+from backfield_entities.canonical.match_score import (
     AUTOLINK_MIN_SCORE,
     RECALL_MIN_SCORE,
     CanonicalMatchFeatures,
@@ -36,24 +36,24 @@ from backfield_stylebook.canonical.match_score import (
     classify_recall_score,
     policy_match_score,
 )
-from backfield_stylebook.canonical.plan_types import (
+from backfield_entities.canonical.plan_types import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
 )
-from backfield_stylebook.canonical.retrieval import (
+from backfield_entities.canonical.retrieval import (
     load_canonical_match_features,
     retrieve_candidate_canonical_ids,
 )
-from backfield_stylebook.entities.location.review_display import deferred_policy_display_message
-from backfield_stylebook.entities.location.types import (
+from backfield_entities.entities.location.review_display import deferred_policy_display_message
+from backfield_entities.entities.location.types import (
     ADDRESS_PLACE_KIND_PRIVATE_RESIDENCE,
     ADDRESS_PLACE_KIND_PUBLIC_NAMED,
     ADDRESS_PLACE_KIND_UNKNOWN,
     is_address_like_location_type,
 )
-from backfield_stylebook.geocode_cache.fingerprint import normalize_substrate_cache_query
-from backfield_stylebook.geocode_cache.resolve import try_resolve_substrate_location_cache_geometry
-from backfield_stylebook.geocode_cache.sanity import (
+from backfield_entities.geocode_cache.fingerprint import normalize_substrate_cache_query
+from backfield_entities.geocode_cache.resolve import try_resolve_substrate_location_cache_geometry
+from backfield_entities.geocode_cache.sanity import (
     substrate_canonical_link_blocked_by_content_sanity,
 )
 

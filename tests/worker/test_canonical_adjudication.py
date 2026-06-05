@@ -9,8 +9,8 @@ from backfield_db import (
     SubstrateLocation,
     SubstratePerson,
 )
-from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-from backfield_stylebook.canonical_policy import (
+from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.entities.location.policy import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
 )

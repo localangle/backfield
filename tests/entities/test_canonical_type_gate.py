@@ -10,15 +10,15 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateLocation,
 )
-from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-from backfield_stylebook.canonical_link_matrix import link_pair_allowed, types_are_comparable
-from backfield_stylebook.canonical_policy import (
+from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.canonical.link_matrix import link_pair_allowed, types_are_comparable
+from backfield_entities.canonical.substrate_link_actions import link_substrate_to_canonical_atomic
+from backfield_entities.entities.location.policy import (
     CanonicalPersistDecision,
     decide_canonical_persist_plan,
     rank_scored_canonical_recall_matches,
     substrate_may_materialize_canonical_after_recall,
 )
-from backfield_stylebook.substrate_canonical_link_actions import link_substrate_to_canonical_atomic
 from sqlmodel import Session, SQLModel, create_engine
 
 # ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ def _bootstrap(session: Session, *, org_slug: str) -> tuple[int, int]:
 
 def test_rank_caps_incompatible_type_below_recall() -> None:
     """An address substrate must not autolink to a city canonical via the scorer."""
-    from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
+    from backfield_entities.canonical.match_score import RECALL_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -194,7 +194,7 @@ def test_rank_caps_incompatible_type_below_recall() -> None:
 
 def test_rank_allows_same_type_city_to_city() -> None:
     """A city substrate should score normally against a city canonical."""
-    from backfield_stylebook.canonical_match_score import AUTOLINK_MIN_SCORE
+    from backfield_entities.canonical.match_score import AUTOLINK_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -250,7 +250,7 @@ def test_link_pair_denies_address_to_neighborhood() -> None:
 
 def test_rank_caps_address_to_neighborhood() -> None:
     """Street addresses must not autolink to neighborhood canonicals (token overlap only)."""
-    from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
+    from backfield_entities.canonical.match_score import RECALL_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -541,7 +541,7 @@ def test_decide_canonical_persist_plan_address_does_not_link_neighborhood_alias(
 
 def test_rank_caps_intersection_to_city() -> None:
     """An intersection substrate must not autolink to a city canonical."""
-    from backfield_stylebook.canonical_match_score import RECALL_MIN_SCORE
+    from backfield_entities.canonical.match_score import RECALL_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -591,7 +591,7 @@ def test_rank_caps_intersection_to_city() -> None:
 
 def test_rank_allows_address_to_place() -> None:
     """An address substrate should be allowed to score against a place canonical."""
-    from backfield_stylebook.canonical_match_score import AUTOLINK_MIN_SCORE
+    from backfield_entities.canonical.match_score import AUTOLINK_MIN_SCORE
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -684,7 +684,7 @@ def test_rank_does_not_drop_strict_to_flexible_candidates() -> None:
 
 def test_decide_canonical_persist_plan_intersection_exact_alias_does_not_link_city() -> None:
     """Exact alias on a city canonical does not link an intersection (type deny-list)."""
-    from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+    from backfield_entities.entities.location.policy import decide_canonical_persist_plan
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -742,7 +742,7 @@ def test_decide_canonical_persist_plan_intersection_exact_alias_does_not_link_ci
 
 def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None:
     """With permissive types, ambiguous-tier fuzzy recall defers for human/LLM review."""
-    from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+    from backfield_entities.entities.location.policy import decide_canonical_persist_plan
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -795,7 +795,7 @@ def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None
 
 def test_decide_canonical_persist_plan_span_always_defers_even_with_exact_alias() -> None:
     """Spans never auto-link or materialize; exact alias matches are ignored for ingest policy."""
-    from backfield_stylebook.canonical_policy import decide_canonical_persist_plan
+    from backfield_entities.entities.location.policy import decide_canonical_persist_plan
 
     engine = _make_engine()
     with Session(engine) as session:

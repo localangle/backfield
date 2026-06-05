@@ -30,8 +30,8 @@ from backfield_ai.tracking_context import (
 )
 from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, StylebookBundleJob
 from backfield_db.session import get_engine
-from backfield_stylebook.full_bundle import export_stylebook_bundle, import_stylebook_bundle
-from backfield_stylebook.semantic_indexing.reindex_contract import SemanticReindexScope
+from backfield_entities.full_bundle import export_stylebook_bundle, import_stylebook_bundle
+from backfield_entities.semantic_indexing.reindex_contract import SemanticReindexScope
 from celery import Celery, chord, group
 from sqlmodel import Session, select
 

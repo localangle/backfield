@@ -8,13 +8,13 @@ RUN pip install --no-cache-dir uv
 COPY packages/backfield-db /app/packages/backfield-db
 COPY packages/backfield-ai /app/packages/backfield-ai
 COPY packages/backfield-auth /app/packages/backfield-auth
-COPY packages/backfield-stylebook /app/packages/backfield-stylebook
+COPY packages/backfield-entities /app/packages/backfield-entities
 COPY apps/stylebook-api /app/apps/stylebook-api
 
-# Local packages are not on PyPI; install deps before the app (db → ai → stylebook → auth).
+# Local packages are not on PyPI; install deps before the app (db → ai → entities → auth).
 RUN cd /app/packages/backfield-db && uv pip install --system -e . \
     && cd /app/packages/backfield-ai && uv pip install --system -e . \
-    && cd /app/packages/backfield-stylebook && uv pip install --system -e . \
+    && cd /app/packages/backfield-entities && uv pip install --system -e . \
     && cd /app/packages/backfield-auth && uv pip install --system -e . \
     && cd /app/apps/stylebook-api && uv pip install --system -e .
 

@@ -17,28 +17,26 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from backfield_db.text_sanitize import strip_nul_bytes
-from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
-from backfield_stylebook.entities.person.name_match import (
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.entities.person.name_match import (
     score_person_name_overlap,
     significant_search_tokens,
 )
-from backfield_stylebook.entities.person.persist import (
+from backfield_entities.entities.person.persist import (
+    create_standalone_canonical,
+    link_substrate_to_canonical_atomic,
     requeue_substrate_after_story_remove,
     unlink_substrate_from_canonical,
 )
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.types import (
     PERSON_NATURE_VALUES,
     PERSON_TYPE_VALUES,
     derive_person_sort_key,
     normalize_person_type,
     person_identity_fingerprint,
 )
-from backfield_stylebook.people import (
-    create_standalone_canonical,
-    link_substrate_to_canonical_atomic,
-)
-from backfield_stylebook.semantic_indexing.cleanup import delete_semantic_documents_for_person
-from backfield_stylebook.semantic_indexing.reindex import (
+from backfield_entities.semantic_indexing.cleanup import delete_semantic_documents_for_person
+from backfield_entities.semantic_indexing.reindex import (
     person_patch_affects_semantic_index,
     person_patch_entity_fields_changed,
 )

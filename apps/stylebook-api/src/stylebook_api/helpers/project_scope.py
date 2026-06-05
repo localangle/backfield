@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from backfield_db import BackfieldProject
-from backfield_stylebook.resolve import (
+from backfield_entities.resolve import (
     STYLEBOOK_SLUG_NOT_IN_ORG,
     resolve_effective_stylebook_id_for_project,
 )

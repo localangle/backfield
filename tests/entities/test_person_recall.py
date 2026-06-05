@@ -9,13 +9,13 @@ from backfield_db import (
     StylebookPersonCanonical,
     SubstratePerson,
 )
-from backfield_stylebook.canonical.plan_types import CanonicalPersistDecision
-from backfield_stylebook.entities.person.persist import upsert_alias_for_canonical_text
-from backfield_stylebook.entities.person.policy import (
+from backfield_entities.canonical.plan_types import CanonicalPersistDecision
+from backfield_entities.entities.person.persist import upsert_alias_for_canonical_text
+from backfield_entities.entities.person.policy import (
     decide_person_canonical_persist_plan,
     person_strong_identity_matches_canonical,
 )
-from backfield_stylebook.entities.person.recall import (
+from backfield_entities.entities.person.recall import (
     PERSON_RECALL_DEFAULT_LIMIT,
     retrieve_person_canonical_candidates,
 )

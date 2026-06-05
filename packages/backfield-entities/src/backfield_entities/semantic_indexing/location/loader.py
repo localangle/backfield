@@ -10,7 +10,7 @@ from backfield_db.models import (
 )
 from sqlmodel import Session, select
 
-from backfield_stylebook.semantic_indexing.location.sources import (
+from backfield_entities.semantic_indexing.location.sources import (
     LocationCanonicalSource,
     LocationEntitySource,
     LocationMentionSource,

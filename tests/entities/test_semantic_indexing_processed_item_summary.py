@@ -14,7 +14,7 @@ from backfield_db.semantic_indexing import (
     SEMANTIC_EMBEDDING_STATUS_PENDING,
     SEMANTIC_EMBEDDING_STATUS_READY,
 )
-from backfield_stylebook.semantic_indexing.processed_item import (
+from backfield_entities.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
     extract_db_output_semantic_indexing,
 )

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from backfield_stylebook.entities.person.name_match import (
+from backfield_entities.entities.person.name_match import (
     person_name_tokens,
     score_person_name_overlap,
     significant_search_tokens,
 )
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.types import (
     person_alias_lookup_keys,
     person_match_key,
     person_names_match,

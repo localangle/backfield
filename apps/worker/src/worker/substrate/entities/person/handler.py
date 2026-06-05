@@ -6,13 +6,13 @@ import logging
 from typing import Any
 
 from backfield_db import SubstratePersonMention
-from backfield_stylebook.canonical.link import CANONICAL_LINK_UNLINKED
-from backfield_stylebook.entities.person.persist import (
+from backfield_entities.canonical.link import CANONICAL_LINK_UNLINKED
+from backfield_entities.entities.person.persist import (
     apply_canonical_persist_plan,
     apply_canonical_persist_plan_review_only,
     refresh_aliases_for_linked_person,
 )
-from backfield_stylebook.entities.person.policy import (
+from backfield_entities.entities.person.policy import (
     decide_person_canonical_persist_plan,
     plan_requires_llm_person_canonical_adjudication,
 )

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_stylebook.entities.person.review import finalize_review_fields_from_entry
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.review import finalize_review_fields_from_entry
+from backfield_entities.entities.person.types import (
     PERSON_NATURE_VALUES,
     derive_person_sort_key,
     normalize_person_type,

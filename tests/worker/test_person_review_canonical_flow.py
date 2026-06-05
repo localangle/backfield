@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from backfield_db import AgateRun, SubstratePerson, SubstratePersonMention
-from backfield_stylebook.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED
-from backfield_stylebook.entities.person.review import REASON_ANIMAL, REASON_CHILD
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED
+from backfield_entities.entities.person.review import REASON_ANIMAL, REASON_CHILD
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker.substrate import persist_from_consolidated
 
@@ -116,8 +116,8 @@ def test_persist_flag_review_open_pending_with_needs_review_mention() -> None:
 
 def test_persist_alias_affiliation_mismatch_stays_pending() -> None:
     from backfield_db import StylebookPersonCanonical
-    from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-    from backfield_stylebook.entities.person.persist import upsert_alias_for_canonical_text
+    from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+    from backfield_entities.entities.person.persist import upsert_alias_for_canonical_text
 
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

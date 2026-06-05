@@ -18,7 +18,7 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED
+from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from sqlmodel import Session, col, select
 
 _WS_RE = re.compile(r"\s+")

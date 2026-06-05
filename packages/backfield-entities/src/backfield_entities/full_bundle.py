@@ -22,16 +22,16 @@ from backfield_db import (
 )
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.canonical.slug import allocate_unique_canonical_slug
-from backfield_stylebook.entities.location.persist import seed_aliases_for_canonical_label
-from backfield_stylebook.entities.person.persist import (
+from backfield_entities.canonical.slug import allocate_unique_canonical_slug
+from backfield_entities.entities.location.persist import seed_aliases_for_canonical_label
+from backfield_entities.entities.person.persist import (
     allocate_unique_person_canonical_slug,
 )
-from backfield_stylebook.entities.person.persist import (
+from backfield_entities.entities.person.persist import (
     seed_aliases_for_canonical_label as seed_person_aliases_for_canonical_label,
 )
-from backfield_stylebook.entities.person.types import derive_person_sort_key
-from backfield_stylebook.stylebook_library import (
+from backfield_entities.entities.person.types import derive_person_sort_key
+from backfield_entities.stylebook_library import (
     StylebookLibraryError,
     create_stylebook_for_import,
 )

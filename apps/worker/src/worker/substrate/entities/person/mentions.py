@@ -10,15 +10,15 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from backfield_db.text_sanitize import strip_nul_bytes
-from backfield_stylebook.canonical.link import (
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
 )
-from backfield_stylebook.entities.person.persist import unlink_substrate_from_canonical
-from backfield_stylebook.entities.person.types import PERSON_NATURE_VALUES
-from backfield_stylebook.resolve import resolve_stylebook_id_for_project_id
-from backfield_stylebook.semantic_indexing.cleanup import delete_semantic_documents_for_person
+from backfield_entities.entities.person.persist import unlink_substrate_from_canonical
+from backfield_entities.entities.person.types import PERSON_NATURE_VALUES
+from backfield_entities.resolve import resolve_stylebook_id_for_project_id
+from backfield_entities.semantic_indexing.cleanup import delete_semantic_documents_for_person
 from sqlalchemy import func
 from sqlmodel import Session, col, select
 

@@ -6,8 +6,8 @@ from backfield_db import StylebookPersonAlias, StylebookPersonCanonical, Substra
 from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.entities.person.name_match import score_person_name_overlap
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.name_match import score_person_name_overlap
+from backfield_entities.entities.person.types import (
     normalize_person_text,
     person_alias_lookup_keys,
     person_match_key,
@@ -166,7 +166,7 @@ def _canonical_ids_from_token_alias_search(
     query_display: str,
 ) -> list[str]:
     """Canonical ids whose alias scores as a name overlap with ``query_display``."""
-    from backfield_stylebook.entities.person.name_match import person_name_tokens
+    from backfield_entities.entities.person.name_match import person_name_tokens
 
     _given, family, tokens = person_name_tokens(query_display)
     if not family and not tokens:

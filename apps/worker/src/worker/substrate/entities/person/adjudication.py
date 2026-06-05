@@ -8,12 +8,12 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 from backfield_db import StylebookPersonCanonical, SubstratePerson
-from backfield_stylebook.canonical.plan_types import (
+from backfield_entities.canonical.plan_types import (
     ADJUDICATION_LINK_MIN_CONFIDENCE,
     CanonicalPersistDecision,
     CanonicalPersistPlan,
 )
-from backfield_stylebook.entities.person.policy import (
+from backfield_entities.entities.person.policy import (
     AMBIGUOUS_PERSON_CANONICAL_MATCH,
     person_may_materialize_canonical_after_recall,
 )

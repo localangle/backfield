@@ -1,8 +1,8 @@
-"""Tests for backfield_stylebook.entity_types registry and fingerprint helper."""
+"""Tests for backfield_entities.entity_types registry and fingerprint helper."""
 
 from __future__ import annotations
 
-from backfield_stylebook.entity_types import (
+from backfield_entities.entity_types import (
     ENTITY_REGISTRY,
     all_entity_types,
     compute_identity_fingerprint,

@@ -6,15 +6,15 @@ import logging
 from typing import Any
 
 from backfield_db import SubstrateLocationMention
-from backfield_stylebook.canonical_link import CANONICAL_LINK_UNLINKED
-from backfield_stylebook.entities.location.policy import (
-    decide_location_canonical_persist_plan,
-    plan_requires_llm_canonical_adjudication,
-)
-from backfield_stylebook.locations import (
+from backfield_entities.canonical.link import CANONICAL_LINK_UNLINKED
+from backfield_entities.entities.location.persist import (
     apply_canonical_persist_plan,
     apply_canonical_persist_plan_review_only,
     refresh_aliases_for_linked_location,
+)
+from backfield_entities.entities.location.policy import (
+    decide_location_canonical_persist_plan,
+    plan_requires_llm_canonical_adjudication,
 )
 from sqlmodel import Session, col, select
 

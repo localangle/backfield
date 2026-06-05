@@ -13,9 +13,9 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from backfield_stylebook import assert_canonical_link_invariant
-from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-from backfield_stylebook.canonical_link import (
+from backfield_entities import assert_canonical_link_invariant
+from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
@@ -1351,7 +1351,7 @@ def test_superseded_ingest_disposes_linked_substrate_with_no_remaining_mentions(
     }
 
     with Session(engine) as session:
-        from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED
+        from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 
         project_id = _bootstrap_project(session, org_slug="org-red", project_slug="proj-red")
         proj = session.get(BackfieldProject, project_id)

@@ -8,11 +8,11 @@ from backfield_db import (
     Stylebook,
     SubstratePerson,
 )
-from backfield_stylebook.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED
-from backfield_stylebook.canonical.policy import CanonicalPersistDecision
-from backfield_stylebook.entities.person.persist import apply_canonical_persist_plan
-from backfield_stylebook.entities.person.policy import decide_person_canonical_persist_plan
-from backfield_stylebook.entities.person.review import (
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED
+from backfield_entities.canonical.plan_types import CanonicalPersistDecision
+from backfield_entities.entities.person.persist import apply_canonical_persist_plan
+from backfield_entities.entities.person.policy import decide_person_canonical_persist_plan
+from backfield_entities.entities.person.review import (
     REASON_ANIMAL,
     REASON_CHILD,
     REASON_FIRST_NAME_ONLY,
@@ -22,7 +22,7 @@ from backfield_stylebook.entities.person.review import (
     looks_like_first_name_only_token,
     parse_review_fields_from_entry,
 )
-from backfield_stylebook.entities.person.types import person_identity_fingerprint
+from backfield_entities.entities.person.types import person_identity_fingerprint
 from sqlmodel import Session, SQLModel, create_engine
 
 

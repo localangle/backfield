@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
+from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
 
 
 def test_political_district_is_registered_place_extract_type() -> None:

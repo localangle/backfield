@@ -16,16 +16,16 @@ from backfield_db import (
     SubstrateLocationMentionOccurrence,
 )
 from backfield_db.text_sanitize import strip_nul_bytes
-from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
-from backfield_stylebook.locations import create_standalone_canonical
-from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_stylebook.semantic_indexing.reindex import location_patch_affects_semantic_index
-from backfield_stylebook.substrate_canonical_link_actions import (
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.canonical.substrate_link_actions import (
     finalize_substrate_after_article_scoped_remove,
     link_substrate_to_canonical_atomic,
     requeue_substrate_after_story_remove,
     unlink_substrate_from_canonical,
 )
+from backfield_entities.entities.location.persist import create_standalone_canonical
+from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
+from backfield_entities.semantic_indexing.reindex import location_patch_affects_semantic_index
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import case, literal

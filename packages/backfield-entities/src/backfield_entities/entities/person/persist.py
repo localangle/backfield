@@ -14,26 +14,26 @@ from backfield_db import (
 )
 from sqlmodel import Session, col, func, select
 
-from backfield_stylebook.canonical.link import (
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_UNLINKED,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
-from backfield_stylebook.entities.person.catalog_provenance import (
+from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_entities.entities.person.catalog_provenance import (
     is_person_catalog_editorial_provenance,
 )
-from backfield_stylebook.entities.person.policy import (
+from backfield_entities.entities.person.policy import (
     find_existing_person_canonical_id_by_alias,
     plan_has_ambiguous_person_canonical_match,
     rank_person_canonical_recall_matches,
 )
-from backfield_stylebook.entities.person.review import (
+from backfield_entities.entities.person.review import (
     plan_includes_auto_waive_person_review,
     plan_includes_flag_person_review,
 )
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.types import (
     derive_person_sort_key,
     person_alias_lookup_keys,
 )

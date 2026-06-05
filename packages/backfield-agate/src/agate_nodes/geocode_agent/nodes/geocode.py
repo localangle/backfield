@@ -22,7 +22,7 @@ from ..models import (
 from ..types import AgentState, normalized_geocode_hints
 from agate_utils.geocoding.localize import match_canonical_location, get_location_cache
 from agate_utils.geocoding.geocoding_types import stylebook_match_to_geocoding_result, cache_match_to_geocoding_result
-from backfield_stylebook.geocode_cache_sanity import cache_hit_sane_for_substrate
+from backfield_entities.geocode_cache.sanity import cache_hit_sane_for_substrate
 
 logger = logging.getLogger(__name__)
 

@@ -14,22 +14,22 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from backfield_stylebook.canonical_jurisdiction import (
+from backfield_entities.canonical.jurisdiction import (
     place_extract_components_from_entry,
     stylebook_district_fields_from_components,
     stylebook_jurisdiction_fields_from_components,
 )
-from backfield_stylebook.canonical_link import (
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.canonical_slug import allocate_unique_canonical_slug
-from backfield_stylebook.locations import refresh_aliases_for_linked_location
-from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_stylebook.substrate_canonical_link_actions import (
+from backfield_entities.canonical.slug import allocate_unique_canonical_slug
+from backfield_entities.canonical.substrate_link_actions import (
     rank_canonical_suggestions_for_substrate,
 )
+from backfield_entities.entities.location.persist import refresh_aliases_for_linked_location
+from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import exists, or_

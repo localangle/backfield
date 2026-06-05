@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from backfield_stylebook.entity_types import EntityType
-from backfield_stylebook.semantic_indexing.contracts import (
+from backfield_entities.entity_types import EntityType
+from backfield_entities.semantic_indexing.contracts import (
     SUPPORTED_SEMANTIC_BUILDER_ENTITY_TYPES,
     SemanticDocumentUnsupportedType,
 )
-from backfield_stylebook.semantic_indexing.location import (
+from backfield_entities.semantic_indexing.location import (
     build_location_occurrence_document,
     build_location_occurrence_documents,
 )
-from backfield_stylebook.semantic_indexing.person import (
+from backfield_entities.semantic_indexing.person import (
     build_person_occurrence_document,
     build_person_occurrence_documents,
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
+from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 

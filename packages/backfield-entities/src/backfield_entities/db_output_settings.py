@@ -8,7 +8,7 @@ from backfield_db import BackfieldProject
 from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session
 
-from backfield_stylebook.resolve import resolve_effective_stylebook_id_for_project
+from backfield_entities.resolve import resolve_effective_stylebook_id_for_project
 
 CanonicalizationMode = Literal["rules", "ai_assisted"]
 ReconciliationPolicy = Literal["add_only", "smart_merge", "replace"]

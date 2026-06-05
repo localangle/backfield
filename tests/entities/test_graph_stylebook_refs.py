@@ -10,7 +10,7 @@ from backfield_db import (
     BackfieldProject,
     Stylebook,
 )
-from backfield_stylebook.graph_stylebook_refs import (
+from backfield_entities.graph_stylebook_refs import (
     STYLEBOOK_NODE_PARAM_KEY,
     StylebookGraphRefsError,
     count_stylebook_usage_in_graphs,

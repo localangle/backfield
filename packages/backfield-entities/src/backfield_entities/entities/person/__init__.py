@@ -1,10 +1,10 @@
 """Person canonical persist, policy, and link helpers."""
 
-from backfield_stylebook.entities.person.catalog_provenance import (
+from backfield_entities.entities.person.catalog_provenance import (
     PERSON_CATALOG_EDITORIAL_PROVENANCES,
     is_person_catalog_editorial_provenance,
 )
-from backfield_stylebook.entities.person.persist import (
+from backfield_entities.entities.person.persist import (
     allocate_unique_person_canonical_slug,
     apply_canonical_persist_plan,
     apply_canonical_persist_plan_review_only,
@@ -23,7 +23,7 @@ from backfield_stylebook.entities.person.persist import (
     unlink_substrate_from_canonical,
     upsert_alias_for_canonical_text,
 )
-from backfield_stylebook.entities.person.policy import (
+from backfield_entities.entities.person.policy import (
     decide_person_canonical_persist_plan,
     find_existing_person_canonical_id_by_alias,
     find_existing_person_canonical_id_by_identity,
@@ -32,8 +32,8 @@ from backfield_stylebook.entities.person.policy import (
     plan_requires_llm_person_canonical_adjudication,
     rank_person_canonical_recall_matches,
 )
-from backfield_stylebook.entities.person.recall import retrieve_person_canonical_candidates
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.recall import retrieve_person_canonical_candidates
+from backfield_entities.entities.person.types import (
     PERSON_NATURE_VALUES,
     PERSON_TYPE_VALUES,
     derive_person_sort_key,

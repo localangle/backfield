@@ -7,10 +7,10 @@ from typing import Any
 
 from sqlmodel import Session
 
-from backfield_stylebook.semantic_indexing.contracts import SemanticBuilderEntityType
-from backfield_stylebook.semantic_indexing.embedding_contract import EmbeddingRunSummary
-from backfield_stylebook.semantic_indexing.sync import sync_semantic_documents_for_article
-from backfield_stylebook.semantic_indexing.sync_contract import SemanticSyncResult
+from backfield_entities.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_entities.semantic_indexing.embedding_contract import EmbeddingRunSummary
+from backfield_entities.semantic_indexing.sync import sync_semantic_documents_for_article
+from backfield_entities.semantic_indexing.sync_contract import SemanticSyncResult
 
 logger = logging.getLogger(__name__)
 

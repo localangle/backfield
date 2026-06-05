@@ -7,11 +7,11 @@ from typing import Any, Literal
 from backfield_ai.embeddings import EmbeddingConfigurationError
 from backfield_ai.query_embedding import SemanticQueryEmbedding, embed_semantic_search_query
 from backfield_auth.gate import require_project_access
-from backfield_stylebook.semantic_indexing.search import (
+from backfield_entities.semantic_indexing.search import (
     search_location_semantic_mentions,
     search_person_semantic_mentions,
 )
-from backfield_stylebook.semantic_indexing.search_contract import (
+from backfield_entities.semantic_indexing.search_contract import (
     LocationSemanticSearchFilters,
     PersonSemanticSearchFilters,
     QuoteStatusFilter,

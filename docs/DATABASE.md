@@ -10,7 +10,7 @@ Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix*
 | Agate graphs, runs, templates                    | `packages/backfield-db` | Alembic migrations live here only                                      |
 | Backfield orgs, users, projects, credentials     | `packages/backfield-db` | Same migration chain                                                   |
 | Shared content/location substrate                | `packages/backfield-db` | `substrate_article`, `substrate_location`, mentions, occurrences, cache; worker ingest layout in [`ENTITY_TYPES.md`](ENTITY_TYPES.md) |
-| Stylebook editorial / canonical tables           | `packages/backfield-db` | `stylebook`, `stylebook_location_canonical`, `stylebook_location_alias`, **`stylebook_location_meta`**, **`stylebook_connections`**; helpers in `packages/backfield-stylebook` |
+| Stylebook editorial / canonical tables           | `packages/backfield-db` | `stylebook`, `stylebook_location_canonical`, `stylebook_location_alias`, **`stylebook_location_meta`**, **`stylebook_connections`**; helpers in `packages/backfield-entities` |
 | Shared AI model configuration and usage tracking | `packages/backfield-db` | `backfield_ai_*` tables for model catalog, project overrides, default roles, and LLM call cost records |
 
 
@@ -50,9 +50,9 @@ New entity types (person, organization, work, …) follow the same **substrate t
 
 **Stylebook alias** and **meta**: alias rows (`alias_text`, `normalized_alias`, `provenance`, `suppressed`); meta rows (`meta_type`, `data_json`, soft `added` / `edited` / `deleted`).
 
-**Consolidated JSON keys** (Agate `DBOutput` merge): derived from entity slug in `backfield_stylebook.entity_types` — e.g. `person` → `people`, `location` → `places` (legacy). Types without Agate review tabs use the same key rule.
+**Consolidated JSON keys** (Agate `DBOutput` merge): derived from entity slug in `backfield_entities.entity_types` — e.g. `person` → `people`, `location` → `places` (legacy). Types without Agate review tabs use the same key rule.
 
-**Identity fingerprint:** `backfield_stylebook.entity_types.compute_identity_fingerprint` hashes normalized name plus type-specific inputs for dedupe across ingests (location may keep geocode-specific fingerprint paths until unified).
+**Identity fingerprint:** `backfield_entities.entity_types.compute_identity_fingerprint` hashes normalized name plus type-specific inputs for dedupe across ingests (location may keep geocode-specific fingerprint paths until unified).
 
 ### Shared content and locations (`substrate_*`)
 

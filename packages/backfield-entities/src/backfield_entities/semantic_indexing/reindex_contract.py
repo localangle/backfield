@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backfield_stylebook.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_entities.semantic_indexing.contracts import SemanticBuilderEntityType
 
 SEMANTIC_REINDEX_TASK_NAME = "worker.tasks.reindex_semantic_documents"
 

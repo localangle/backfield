@@ -12,8 +12,8 @@ from backfield_db.semantic_indexing import (
 )
 from sqlmodel import Session, col, select
 
-from backfield_stylebook.semantic_indexing.contracts import SemanticBuilderEntityType
-from backfield_stylebook.semantic_indexing.embedding_contract import (
+from backfield_entities.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_entities.semantic_indexing.embedding_contract import (
     DEFAULT_SEMANTIC_EMBEDDING_BATCH_SIZE,
     EmbeddingApplySummary,
     EmbeddingBatchPlan,

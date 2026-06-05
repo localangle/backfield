@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backfield_stylebook.semantic_indexing.reindex import (
+from backfield_entities.semantic_indexing.reindex import (
     location_patch_affects_semantic_index,
     person_patch_affects_semantic_index,
     person_patch_entity_fields_changed,

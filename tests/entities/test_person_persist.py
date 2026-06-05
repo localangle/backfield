@@ -12,12 +12,12 @@ from backfield_db import (
     StylebookPersonCanonical,
     SubstratePerson,
 )
-from backfield_stylebook.canonical.link import (
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
 )
-from backfield_stylebook.canonical.policy import CanonicalPersistDecision
-from backfield_stylebook.entities.person import (
+from backfield_entities.canonical.plan_types import CanonicalPersistDecision
+from backfield_entities.entities.person import (
     allocate_unique_person_canonical_slug,
     create_standalone_canonical,
     decide_person_canonical_persist_plan,

@@ -59,7 +59,7 @@
   - `tests/core_api/` — `core-api` HTTP tests and core-api-only bootstrap/env behavior.
   - `tests/agate_api/` — Agate API `TestClient` tests.
   - `tests/stylebook_api/` — Stylebook API tests (`stylebook_api` app). `**POST /v1/geocode/resolve`** requires auth (service Bearer, session, or `bfk_`), matching production `resolve_auth` behavior. Substrate ↔ canonical editorial routes (`**GET /v1/candidates/{id}/suggested-canonicals**`, `**POST /v1/locations/{id}/link-canonical**`, `**POST /v1/locations/{id}/unlink-canonical**`, `**GET /v1/canonical-locations/{id}/linked-substrates**`) are covered here as well.
-  - `tests/stylebook/` — Stylebook-domain pure tests (for example canonical fuzzy-match scoring without Postgres). **Trigram retrieval** against a live Postgres DB is covered by running `**make migrate`** on Compose and exercising ingest/worker paths locally; CI SQLite runs use the dialect fallback only.
+  - `tests/entities/` — Entity-domain pure tests (for example canonical fuzzy-match scoring without Postgres). **Trigram retrieval** against a live Postgres DB is covered by running `**make migrate`** on Compose and exercising ingest/worker paths locally; CI SQLite runs use the dialect fallback only.
   - `tests/contracts/` — cross-cutting structural checks (schema prefixes, indexes, shared runtime contracts) that are not tied to a single HTTP app.
   - `tests/smoke/` — smoke harnesses and shared helpers. Most lanes run against the live stack (`smoke_auth.py`, `smoke_agate_basic.py`, `golden_path_stack.py`, `smoke_stylebook_basic.py`, `smoke_worker_async.py`, `smoke_stylebook_editorial.py`, `smoke_stylebook_import_export.py`); `smoke_s3_batch.py` is an in-process worker-path harness; `place_geocode_smoke.py` and `smoke_people_stack.py` remain optional extract-path corpus runners. These scripts are invoked via `make`, not pytest collection.
 - Shared pytest defaults for these tests live in `tests/conftest.py` at the repo `tests/` root.
@@ -67,7 +67,7 @@
 
 ### New entity types
 
-When adding a Stylebook entity type, follow the **Tests per issue** table in [`ENTITY_TYPES.md`](ENTITY_TYPES.md) → **Per-type implementation patterns** (which `tests/stylebook/test_<type>_*.py`, `tests/stylebook_api/test_<type>_api.py`, and worker tests to add per issue 01–06). This doc keeps the global `make lint` / `make test` / `make smoke` ladder only.
+When adding a Stylebook entity type, follow the **Tests per issue** table in [`ENTITY_TYPES.md`](ENTITY_TYPES.md) → **Per-type implementation patterns** (which `tests/entities/test_<type>_*.py`, `tests/stylebook_api/test_<type>_api.py`, and worker tests to add per issue 01–06). This doc keeps the global `make lint` / `make test` / `make smoke` ladder only.
 
 ## CI suggestion
 

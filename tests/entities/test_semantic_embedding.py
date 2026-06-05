@@ -16,13 +16,13 @@ from backfield_db.semantic_indexing import (
     SEMANTIC_EMBEDDING_STATUS_PENDING,
     SEMANTIC_EMBEDDING_STATUS_READY,
 )
-from backfield_stylebook.semantic_indexing.embedding import (
+from backfield_entities.semantic_indexing.embedding import (
     _apply_person_outcome,
     apply_embedding_batch_outcomes,
     collect_pending_semantic_documents,
     plan_embedding_batches,
 )
-from backfield_stylebook.semantic_indexing.embedding_contract import (
+from backfield_entities.semantic_indexing.embedding_contract import (
     EmbeddingVectorOutcome,
     PendingSemanticDocument,
 )

@@ -8,15 +8,15 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateLocation,
 )
-from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
-from backfield_stylebook.canonical_jurisdiction import (
+from backfield_entities.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.canonical.jurisdiction import (
     district_identity_from_components,
     district_identity_key,
     normalize_district_number_token,
     stylebook_district_fields_from_components,
 )
-from backfield_stylebook.canonical_match_score import CanonicalMatchFeatures
-from backfield_stylebook.canonical_policy import (
+from backfield_entities.canonical.match_score import CanonicalMatchFeatures
+from backfield_entities.entities.location.policy import (
     _address_neighborhood_geometry_demotes_recall,
     _political_district_recall_identity_preflight,
 )
