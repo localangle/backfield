@@ -1,0 +1,30 @@
+{
+  "organizations": [
+    {
+      "name": "Chicago City Hall",
+      "type": "government",
+      "role_in_story": "Announced a new park initiative",
+      "nature": "actor",
+      "nature_secondary_tags": [],
+      "mentions": [
+        {
+          "text": "Chicago City Hall announced a new park initiative Monday.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "Chicago Police Department",
+      "type": "law_enforcement",
+      "role_in_story": "Will increase patrols near the site",
+      "nature": "regulator",
+      "nature_secondary_tags": ["source"],
+      "mentions": [
+        {
+          "text": "The Chicago Police Department said it will increase patrols near the site.",
+          "quote": false
+        }
+      ]
+    }
+  ]
+}

@@ -15,7 +15,7 @@ When adding a type, use [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/s
 |------|---------------------|--------|
 | Location | `location` | Full stack (substrate ingest, Stylebook canonical, review) |
 | Person | `person` | Full stack including PersonExtract node, Agate people review tab, Stylebook manual create, CSV import, and bundle export/import |
-| Organization | `organization` | Worker substrate ingest (issue 04); OrganizationExtract + Agate review pending (issues 05–06) |
+| Organization | `organization` | OrganizationExtract + worker ingest (issues 04–05); Agate review tab pending (issue 06) |
 | Work | `work` | Stub — planned via add-entity-type skill |
 
 Folder names in Python packages use these slugs (`location`, not `place`). Pipeline JSON may still use `places` in Geocode output; that is product vocabulary, not package naming.
@@ -366,7 +366,7 @@ Non-location tabs: **People** review is implemented (issue 06); other entity tab
 
 One folder per node under `packages/backfield-agate/src/agate_nodes/<snake_case>/`.
 
-Current extract nodes: `place_extract`, `person_extract`. Run `npm run sync-nodes` in `apps/agate-ui` after adding or changing node UI/metadata.
+Current extract nodes: `place_extract`, `person_extract`, `organization_extract`. Run `npm run sync-nodes` in `apps/agate-ui` after adding or changing node UI/metadata.
 
 For **run AI cost and step labels**, the worker records React Flow `node_id` and node type on each `backfield_ai_call_record` row; Agate UI shows user-facing names from synced `metadata.json` `label` (via `getNodeStepDisplayName`, with `node_type` fallback when the graph id is missing). New extract nodes must ship `metadata.json` with a product **`label`** before merge.
 

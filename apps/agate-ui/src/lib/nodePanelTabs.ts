@@ -24,6 +24,7 @@ export function getNodePanelTabs(
       return hasRunOutput ? ['settings', 'info', 'outputs'] : ['settings', 'info']
     case 'PlaceExtract':
     case 'PersonExtract':
+    case 'OrganizationExtract':
       return ['settings', 'prompts', 'outputs', 'info']
     case 'GeocodeAgent':
       return ['settings', 'models']

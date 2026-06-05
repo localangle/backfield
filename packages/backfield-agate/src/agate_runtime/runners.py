@@ -13,6 +13,11 @@ from agate_nodes.geocode_agent.node import (
     GeocodeAgentOutput,
     GeocodeAgentParams,
 )
+from agate_nodes.organization_extract.node_port import (
+    OrganizationExtractInput,
+    OrganizationExtractNode,
+    OrganizationExtractParams,
+)
 from agate_nodes.person_extract.node_port import (
     PersonExtractInput,
     PersonExtractNode,
@@ -69,6 +74,27 @@ def run_person_extract_runtime(
 ) -> dict[str, Any]:
     ctx = ctx or default_context()
     return asyncio.run(_person_extract_async(params, input_state, ctx))
+
+
+async def _organization_extract_async(
+    params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
+) -> dict[str, Any]:
+    node = OrganizationExtractNode()
+    out = await node.run(
+        OrganizationExtractInput.model_validate(input_state),
+        OrganizationExtractParams.model_validate(params),
+        ctx,
+    )
+    return out.model_dump()
+
+
+def run_organization_extract_runtime(
+    params: dict[str, Any],
+    input_state: dict[str, Any],
+    ctx: AgateEnvContext | None = None,
+) -> dict[str, Any]:
+    ctx = ctx or default_context()
+    return asyncio.run(_organization_extract_async(params, input_state, ctx))
 
 
 async def _geocode_async(

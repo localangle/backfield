@@ -85,5 +85,9 @@ describe('resolveEdgeHandles', () => {
       sourceHandle: 'text',
       targetHandle: 'text',
     })
+    expect(resolveEdgeHandles('JSONInput', 'OrganizationExtract')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'text',
+    })
   })
 })

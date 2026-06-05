@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import patch
+
+from agate_runtime import execute_graph
+from agate_runtime.starter_flow import starter_organizations_flow_graph_spec
 from backfield_db import (
     AgateRun,
     SubstrateOrganization,
@@ -244,3 +249,107 @@ def test_organizations_reingest_retires_stale_system_mentions() -> None:
             )
         ).all()
         assert len(active_mentions) == 1
+
+
+def _mock_organizations_demo_json() -> str:
+    return json.dumps(
+        {
+            "organizations": [
+                {
+                    "name": "Chicago City Hall",
+                    "type": "government",
+                    "role_in_story": "Announced park initiative",
+                    "nature": "actor",
+                    "nature_secondary_tags": [],
+                    "mentions": [
+                        {
+                            "text": "Chicago City Hall announced a new park initiative Monday.",
+                            "quote": False,
+                        }
+                    ],
+                },
+                {
+                    "name": "Chicago Police Department",
+                    "type": "law_enforcement",
+                    "role_in_story": "Will increase patrols",
+                    "nature": "regulator",
+                    "nature_secondary_tags": [],
+                    "mentions": [
+                        {
+                            "text": (
+                                "The Chicago Police Department said it will increase "
+                                "patrols near the site."
+                            ),
+                            "quote": False,
+                        }
+                    ],
+                },
+                {
+                    "name": "Cook County",
+                    "type": "government",
+                    "role_in_story": "Approved funding",
+                    "nature": "source",
+                    "nature_secondary_tags": [],
+                    "mentions": [
+                        {
+                            "text": "Cook County approved funding for the project.",
+                            "quote": False,
+                        }
+                    ],
+                },
+                {
+                    "name": "Chicago Cubs",
+                    "type": "sports_team",
+                    "role_in_story": "Hosted ribbon-cutting",
+                    "nature": "context",
+                    "nature_secondary_tags": [],
+                    "mentions": [
+                        {
+                            "text": (
+                                "The Chicago Cubs hosted a ribbon-cutting at Wrigley Field."
+                            ),
+                            "quote": False,
+                        }
+                    ],
+                },
+            ]
+        }
+    )
+
+
+def test_organization_extract_pipeline_persist_to_substrate() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-oe2", project_slug="proj-oe2")
+        session.add(AgateRun(id="run-oe2", graph_id="graph-oe2", status="pending"))
+        session.commit()
+
+        spec = starter_organizations_flow_graph_spec()
+        with patch(
+            "agate_nodes.organization_extract.node_port.call_llm",
+            return_value=_mock_organizations_demo_json(),
+        ):
+            out = execute_graph(spec)
+        body = out["stylebook_output"]
+        assert body["success"] is True
+        assert len(body["organizations"]) >= 4
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-oe2",
+            run_id="run-oe2",
+            consolidated=body,
+            db_output_params={"auto_apply_canonicalization": False},
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        orgs = session.exec(select(SubstrateOrganization)).all()
+        assert len(orgs) >= 4
+        mentions = session.exec(select(SubstrateOrganizationMention)).all()
+        assert len(mentions) >= 4
+        natures = {m.nature for m in mentions if m.nature}
+        assert "actor" in natures
+        assert "regulator" in natures

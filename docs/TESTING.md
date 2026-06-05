@@ -31,6 +31,8 @@
   - `make smoke-place-geocode-stack`: optional single-run stack harness for the geocode starter path.
   - `make smoke-people`: optional in-process PersonExtract + DBOutput smoke with mocked LLM (not part of CI).
   - `make smoke-people-stack`: optional stack harness for the **People starter** graph (`starter_people_flow_graph_spec`).
+  - `make smoke-organizations`: optional in-process OrganizationExtract + DBOutput smoke with mocked LLM (not part of CI).
+  - `make smoke-organizations-stack`: optional stack harness for the **Organizations starter** graph (`starter_organizations_flow_graph_spec`).
   - **Guided flow builder (manual):** on a live stack, walk through create → parallel branch → edit bookend clear-middle → run from read-only view: `/flow/new` with Text Input → Place Extract → Geocode → JSON Output; add a parallel Place Extract branch from input; save; open `/flow/:id/edit`, change output type with middle steps present (confirm clear); open `/flow/:id`, **Run flow** without **Edit flow**, then **Edit flow** and confirm **+** / delete unlock. See `docs/FRONTEND.md` → **Guided flow builder**.
   Aggregate bundles:
   - `make smoke-fast`: `smoke-auth`, `smoke-agate-basic`, `smoke-stylebook-basic`
