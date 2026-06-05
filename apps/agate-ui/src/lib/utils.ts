@@ -54,9 +54,6 @@ export function formatDate(dateString: string, options?: {
   }
 }
 
-// Backward compatibility alias
-export const formatDateCentral = formatDate
-
 /** Short date/time for run page titles and processed-item run links (e.g. "May 18, 2:30 PM"). */
 export function formatRunTitleDate(dateString: string): string {
   const utcDateString =

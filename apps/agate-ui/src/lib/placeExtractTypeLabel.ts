@@ -1,5 +1,5 @@
 /**
- * Mirror of ``backfield_stylebook.entities.person.types.PERSON_TYPE_VALUES``.
+ * Mirror of ``backfield_entities.entities.person.types.PERSON_TYPE_VALUES``.
  * Keep in sync with ``apps/stylebook-ui/src/lib/place-extract-type-label.ts``.
  */
 export const PERSON_EXTRACT_PERSON_TYPES = [
@@ -41,7 +41,7 @@ const PERSON_TYPE_LABEL_OVERRIDES: Record<string, string> = {
 }
 
 /**
- * Mirror of ``backfield_stylebook.place_extract_location_types.PLACE_EXTRACT_LOCATION_TYPES``.
+ * Mirror of ``backfield_entities.entities.location.types.PLACE_EXTRACT_LOCATION_TYPES``.
  * Keep in sync with ``apps/stylebook-ui/src/lib/place-extract-type-label.ts``.
  */
 export const PLACE_EXTRACT_LOCATION_TYPES = [

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from backfield_db import BackfieldProject, SubstrateArticle, SubstratePerson, SubstratePersonMention
-from backfield_stylebook.semantic_indexing.reindex_contract import SEMANTIC_REINDEX_TASK_NAME
+from backfield_entities.ingest.semantic_indexing.reindex_contract import SEMANTIC_REINDEX_TASK_NAME
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select

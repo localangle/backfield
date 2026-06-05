@@ -14,7 +14,7 @@ import {
   type ArticleFields,
 } from '@/lib/review/content/articleFields'
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/review/content/sourceDisplay'
-import { formatDateCentral } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 import {
   formatSemanticIndexingDetail,
   semanticIndexingStatusLabel,
@@ -335,12 +335,12 @@ export function ProcessedItemInformationCard({
           <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
             <div>
               <label className="text-sm font-medium text-muted-foreground">Created</label>
-              <p className="text-sm mt-0.5">{formatDateCentral(item.created_at)}</p>
+              <p className="text-sm mt-0.5">{formatDate(item.created_at)}</p>
             </div>
             {item.status !== 'pending' ? (
               <div>
                 <label className="text-sm font-medium text-muted-foreground">Completed</label>
-                <p className="text-sm mt-0.5">{formatDateCentral(item.updated_at)}</p>
+                <p className="text-sm mt-0.5">{formatDate(item.updated_at)}</p>
               </div>
             ) : null}
             <div>
@@ -370,7 +370,7 @@ export function ProcessedItemInformationCard({
                 ) : null}
                 {semanticIndexing.indexed_at ? (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Last indexed {formatDateCentral(semanticIndexing.indexed_at)}
+                    Last indexed {formatDate(semanticIndexing.indexed_at)}
                   </p>
                 ) : null}
               </div>

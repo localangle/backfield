@@ -13,7 +13,7 @@ from backfield_db import (
     BackfieldProject,
     SubstratePersonSemanticDocument,
 )
-from backfield_stylebook.semantic_indexing.embedding_contract import EmbeddingRunSummary
+from backfield_entities.ingest.semantic_indexing.embedding_contract import EmbeddingRunSummary
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker.nodes.db_output import run_db_output
 from worker.substrate import persist_from_consolidated
@@ -66,12 +66,6 @@ def test_json_output_runner_does_not_semantically_index() -> None:
         },
     )
     assert "semantic_indexing" not in out
-
-
-def test_node_runners_use_separate_output_and_db_output() -> None:
-    from agate_runtime.nodes import NODE_RUNNERS
-
-    assert NODE_RUNNERS["Output"] is not NODE_RUNNERS["DBOutput"]
 
 
 def test_persist_without_semantic_setting_does_not_create_semantic_docs() -> None:

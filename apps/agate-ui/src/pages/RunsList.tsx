@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { listRuns, listGraphs, listProjects, cancelRun, type Run, type Graph, type Project } from '@/lib/api'
 import { formatRunEstimatedAiCost } from '@/lib/formatRunEstimatedCost'
-import { formatDateCentral } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 import { Loader2, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw, Building2, AlertTriangle, StopCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const RUNS_PER_PAGE = 50
@@ -372,7 +372,7 @@ export default function RunsList() {
                       </div>
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">
-                      {formatDateCentral(run.created_at, { dateStyle: 'medium', timeStyle: 'short' })}
+                      {formatDate(run.created_at, { dateStyle: 'medium', timeStyle: 'short' })}
                     </td>
                     <td className="p-4 text-sm text-muted-foreground tabular-nums">
                       <>

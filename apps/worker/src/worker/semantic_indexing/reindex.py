@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_stylebook.semantic_indexing.builders import SUPPORTED_SEMANTIC_BUILDER_ENTITY_TYPES
-from backfield_stylebook.semantic_indexing.contracts import SemanticBuilderEntityType
-from backfield_stylebook.semantic_indexing.reindex_contract import SemanticReindexScope
-from backfield_stylebook.semantic_indexing.sync import sync_semantic_documents_for_article
+from backfield_entities.ingest.semantic_indexing.builders import (
+    SUPPORTED_SEMANTIC_BUILDER_ENTITY_TYPES,
+)
+from backfield_entities.ingest.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
+from backfield_entities.ingest.semantic_indexing.sync import sync_semantic_documents_for_article
 from sqlmodel import Session
 
 from worker.semantic_indexing.embed import embed_pending_semantic_documents

@@ -8,21 +8,21 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 from backfield_db import StylebookLocationCanonical, SubstrateLocation
-from backfield_stylebook.canonical.plan_types import (
-    ADJUDICATION_LINK_MIN_CONFIDENCE,
-    CanonicalPersistDecision,
-    CanonicalPersistPlan,
-)
-from backfield_stylebook.canonical_jurisdiction import (
+from backfield_entities.canonical.jurisdiction import (
     district_identity_from_components,
     district_identity_key,
     place_extract_components_from_entry,
 )
-from backfield_stylebook.canonical_link_matrix import (
+from backfield_entities.canonical.link_matrix import (
     autolink_container_to_fine_denied,
     link_pair_allowed,
 )
-from backfield_stylebook.entities.location.policy import (
+from backfield_entities.canonical.plan_types import (
+    ADJUDICATION_LINK_MIN_CONFIDENCE,
+    CanonicalPersistDecision,
+    CanonicalPersistPlan,
+)
+from backfield_entities.entities.location.policy import (
     substrate_may_materialize_canonical_after_recall,
 )
 from sqlmodel import Session, select

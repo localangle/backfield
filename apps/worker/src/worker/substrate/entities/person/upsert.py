@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstratePerson
-from backfield_stylebook.entities.person.review import (
+from backfield_entities.entities.person.review import (
     entry_people_bucket as _entry_people_bucket,
 )
-from backfield_stylebook.entities.person.review import (
+from backfield_entities.entities.person.review import (
     finalize_review_fields_from_entry,
 )
-from backfield_stylebook.entities.person.types import (
+from backfield_entities.entities.person.types import (
     derive_person_sort_key,
     normalize_person_type,
     person_identity_fingerprint,

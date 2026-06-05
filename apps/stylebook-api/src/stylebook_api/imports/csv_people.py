@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
-from backfield_stylebook.entities.person.persist import create_standalone_canonical
+from backfield_entities.entities.person.persist import create_standalone_canonical
 from fastapi import HTTPException, Request
 from sqlmodel import Session
 

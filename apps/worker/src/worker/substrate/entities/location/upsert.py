@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstrateLocation, SubstrateLocationCache
-from backfield_stylebook.substrate_location_cache_fingerprint import (
+from backfield_entities.ingest.geocode_cache.fingerprint import (
     substrate_location_cache_query_fingerprint,
 )
 from sqlalchemy.exc import IntegrityError

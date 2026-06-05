@@ -11,7 +11,7 @@ from backfield_db import (
     SubstrateLocation,
     SubstratePerson,
 )
-from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, func, select

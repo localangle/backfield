@@ -20,7 +20,7 @@ import {
   type Graph,
   type GraphCreate,
 } from '@/lib/api'
-import { formatDateCentral } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 import { Loader2, Copy, Trash2 } from 'lucide-react'
 import {
   Select,
@@ -192,7 +192,7 @@ export default function FlowsPage() {
                         className="p-4 text-sm text-muted-foreground cursor-pointer"
                         onClick={() => navigate(`/flow/${graph.id}`)}
                       >
-                        {formatDateCentral(graph.created_at, { includeTime: false })}
+                        {formatDate(graph.created_at, { includeTime: false })}
                       </td>
                       <td className="p-4">
                         <div className="flex items-center justify-end gap-1">

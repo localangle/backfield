@@ -31,7 +31,7 @@ from backfield_db import (
     BackfieldProjectSecret,
 )
 from backfield_db.crypto import decrypt_secret
-from backfield_stylebook.semantic_indexing.processed_item import (
+from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
 )
 from celery import Celery

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 
-from backfield_stylebook.semantic_indexing.contracts import SemanticBuilderEntityType
-from backfield_stylebook.semantic_indexing.reindex import semantic_reindex_scopes_for_entity
-from backfield_stylebook.semantic_indexing.reindex_contract import SEMANTIC_REINDEX_TASK_NAME
+from backfield_entities.ingest.semantic_indexing.contracts import SemanticBuilderEntityType
+from backfield_entities.ingest.semantic_indexing.reindex import semantic_reindex_scopes_for_entity
+from backfield_entities.ingest.semantic_indexing.reindex_contract import SEMANTIC_REINDEX_TASK_NAME
 from celery import Celery
 from sqlmodel import Session
 

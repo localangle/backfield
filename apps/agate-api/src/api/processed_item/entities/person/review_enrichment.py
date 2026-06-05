@@ -16,8 +16,8 @@ from backfield_db import (
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
 )
-from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED
-from backfield_stylebook.entities.person.types import person_identity_fingerprint
+from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
+from backfield_entities.entities.person.types import person_identity_fingerprint
 from sqlmodel import Session, col, select
 
 _WS_RE = re.compile(r"\s+")

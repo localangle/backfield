@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backfield_stylebook.entities.location.review_display import deferred_policy_display_message
+from backfield_entities.entities.location.review_display import deferred_policy_display_message
 
 _SKIP_LIST_DISPLAY_CODES: frozenset[str] = frozenset(
     {

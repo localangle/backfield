@@ -12,7 +12,7 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from backfield_stylebook.locations import create_standalone_canonical
+from backfield_entities.entities.location.persist import create_standalone_canonical
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import case, literal
@@ -615,7 +615,7 @@ def delete_canonical_location(
             SubstrateLocation.stylebook_location_canonical_id == str(canon.id),
         )
     ).all()
-    from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
+    from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 
     for loc in linked:
         loc.stylebook_location_canonical_id = None

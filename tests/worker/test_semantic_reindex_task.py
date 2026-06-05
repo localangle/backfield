@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from backfield_stylebook.semantic_indexing.embedding_contract import EmbeddingRunSummary
-from backfield_stylebook.semantic_indexing.reindex_contract import SemanticReindexScope
-from backfield_stylebook.semantic_indexing.sync_contract import (
+from backfield_entities.ingest.semantic_indexing.embedding_contract import EmbeddingRunSummary
+from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
+from backfield_entities.ingest.semantic_indexing.sync_contract import (
     SemanticSyncResult,
     SemanticSyncSummary,
 )

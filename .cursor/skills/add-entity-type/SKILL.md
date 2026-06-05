@@ -30,7 +30,7 @@ Before interviewing, inspect the repo for **Issue 00 foundation** markers. Found
 
 | Marker | Path |
 |--------|------|
-| Entity registry + fingerprint | `packages/backfield-stylebook/src/backfield_stylebook/entity_types.py` |
+| Entity registry + fingerprint | `packages/backfield-entities/src/backfield_entities/registry/entity_types.py` |
 | Persist domain dispatch | `apps/worker/src/worker/substrate/entities/registry.py` |
 | Shared field docs | `docs/DATABASE.md` → section **Shared entity fields** |
 | UI entity registry | `apps/stylebook-ui/src/lib/entityRegistry.ts` |
@@ -107,7 +107,7 @@ Keys are derived from **`EntityType` slug**, not Agate tab names. Types without 
 | `organization` | `organizations` | |
 | `work` | `works` | |
 
-Registry source of truth: `backfield_stylebook.entity_types`.
+Registry source of truth: `backfield_entities.registry.entity_types`.
 
 ### Canonical ID policy
 
@@ -139,8 +139,8 @@ Break the PRD into issues via [`prd-to-issues`](../prd-to-issues/SKILL.md). Stan
 | Issue | Slice | Blocked by |
 |-------|-------|------------|
 | **01** | Type-specific schema (Alembic migration) | Issue 00 foundation |
-| **02** | `backfield_stylebook/entities/<type>/` persist + link | 01 |
-| **03** | stylebook-api routers + stylebook-ui `entityConfigs/<type>.ts` + canonical list page (`<Type>s.tsx` or equivalent) with standard list filters including `min_mentions` | 02 |
+| **02** | `backfield_entities/entities/<type>/` persist + link | 01 |
+| **03** | stylebook-api routers + stylebook-ui **entity shell configs** (`entityConfigs/<type>/candidateQueue`, `canonicalLinkModal`, `canonicalList`, `canonicalDetail`) + thin page wrappers (`<Type>Candidates.tsx`, `<Type>s.tsx`, `<Type>Detail.tsx`) — mount shared shells, do not copy `LocationCandidates.tsx` | 02 |
 | **04** | Worker `substrate/entities/<type>/` + orchestration handler registration | 01 |
 | **05** | `<Type>Extract` Agate node + smoke graph | 04 |
 | **06** | Agate review (agate-api + agate-ui tab) | 05 |
@@ -156,11 +156,11 @@ Replace `<type>` with the entity slug. Prefer new paths over legacy shims.
 | Layer | Location reference |
 |-------|-------------------|
 | DB models | `packages/backfield-db` — `SubstrateLocation*`, `StylebookLocation*` |
-| Shared contracts | `backfield_db/entity_contracts.py`, `backfield_stylebook/entity_types.py` |
+| Shared contracts | `backfield_db/entity_contracts.py`, `backfield_entities/registry/entity_types.py` |
 | Worker persist | `worker/substrate/entities/location/` + `orchestration.py` |
-| Stylebook logic | `backfield_stylebook/entities/location/persist.py` |
+| Stylebook logic | `backfield_entities/entities/location/persist.py` |
 | stylebook-api | `stylebook_api/entities/location/` |
-| stylebook-ui | Location pages + `entityRegistry.ts` |
+| stylebook-ui | `entityConfigs/location/*` + thin page wrappers + `entityRegistry.ts` (see ENTITY_TYPES → **stylebook-ui shells**) |
 | Extract node | `agate_nodes/place_extract/` |
 | Enrichment (location only) | `agate_nodes/geocode_agent/` |
 | agate-api review | `api/processed_item/entities/location/` |
@@ -173,17 +173,17 @@ Use for organization/work and other non-location types. Waive rows marked opt-in
 | Layer | Person reference |
 |-------|------------------|
 | DB models | `SubstratePerson*`, `StylebookPerson*` in `backfield_db` |
-| Policy + recall | `backfield_stylebook/entities/person/policy.py`, `recall.py` |
+| Policy + recall | `backfield_entities/entities/person/policy.py`, `recall.py` |
 | Opt-in name overlap | `entities/person/name_match.py` |
 | Opt-in extract review | `entities/person/review.py` |
 | Persist + suggestions | `entities/person/persist.py` |
 | Worker | `worker/substrate/entities/person/handler.py`; opt-in `adjudication.py` |
 | stylebook-api | `stylebook_api/entities/person/` (`people.py`, `candidates.py`, `meta.py`) |
-| stylebook-ui | `PersonCandidates.tsx`, `PersonCanonicalLinkModal.tsx`, `People.tsx`, `PersonDetail.tsx` |
+| stylebook-ui | `entityConfigs/person/*` + thin wrappers (`PersonCandidates.tsx`, `PersonCanonicalLinkModal.tsx`, `People.tsx`, `PersonDetail.tsx`) |
 | Extract node | `agate_nodes/person_extract/` |
 | agate-api review | `api/processed_item/entities/person/` |
 | agate-ui review | `apps/agate-ui/src/lib/review/entities/person/` |
-| Tests | See ENTITY_TYPES → **Tests per issue** (`tests/stylebook/test_person_*.py`, etc.) |
+| Tests | See ENTITY_TYPES → **Tests per issue** (`tests/entities/test_person_*.py`, etc.) |
 
 ---
 

@@ -455,6 +455,7 @@ export default function ConnectionsSection({
                   open={selectorOpen}
                   onOpenChange={setSelectorOpen}
                   projectSlug={selectorProjectSlug}
+                  stylebookSlug={stylebookSlug}
                   excludeIds={entityType === 'person' ? [entityId] : undefined}
                   onSelect={(id, displayName) => {
                     setSelectedTargetId(id)
@@ -491,6 +492,7 @@ export default function ConnectionsSection({
                   open={selectorOpen}
                   onOpenChange={setSelectorOpen}
                   projectSlug={selectorProjectSlug}
+                  stylebookSlug={stylebookSlug}
                   excludeIds={entityType === 'location' ? [entityId] : undefined}
                   onSelect={(id, displayName) => {
                     setSelectedTargetId(id)

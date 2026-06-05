@@ -6,15 +6,15 @@ import logging
 
 from backfield_ai.embeddings import EmbeddingConfigurationError, embed_texts_for_model_config
 from backfield_ai.model_resolve import resolve_semantic_embedding_model_config_id
-from backfield_stylebook.semantic_indexing.db_output import (
+from backfield_entities.ingest.semantic_indexing.db_output import (
     semantic_entity_types_for_consolidated_domains,
 )
-from backfield_stylebook.semantic_indexing.embedding import (
+from backfield_entities.ingest.semantic_indexing.embedding import (
     apply_embedding_batch_outcomes,
     collect_pending_semantic_documents,
     plan_embedding_batches,
 )
-from backfield_stylebook.semantic_indexing.embedding_contract import (
+from backfield_entities.ingest.semantic_indexing.embedding_contract import (
     EmbeddingRunSummary,
     EmbeddingVectorOutcome,
 )

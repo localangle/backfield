@@ -47,7 +47,7 @@ def single_engine(tmp_path, monkeypatch):
         s.commit()
         s.refresh(org)
         ensure_default = __import__(
-            "backfield_stylebook.bootstrap",
+            "backfield_entities.catalog.bootstrap",
             fromlist=["ensure_default_stylebook_for_organization"],
         ).ensure_default_stylebook_for_organization
         ensure_default(s, organization_id=int(org.id))

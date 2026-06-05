@@ -7,19 +7,19 @@ from typing import Any
 
 from backfield_auth.gate import require_org_admin
 from backfield_db import BackfieldUser, Stylebook, StylebookMembership
-from backfield_stylebook.graph_stylebook_refs import count_stylebook_usage_in_graphs
-from backfield_stylebook.stylebook_library import (
+from backfield_entities.catalog.graph_stylebook_refs import count_stylebook_usage_in_graphs
+from backfield_entities.catalog.stylebook_library import (
     StylebookLibraryError,
     resolve_stylebook_by_slug,
     set_org_default_stylebook,
 )
-from backfield_stylebook.stylebook_library import (
+from backfield_entities.catalog.stylebook_library import (
     create_stylebook as domain_create_stylebook,
 )
-from backfield_stylebook.stylebook_library import (
+from backfield_entities.catalog.stylebook_library import (
     delete_stylebook as domain_delete_stylebook,
 )
-from backfield_stylebook.stylebook_library import (
+from backfield_entities.catalog.stylebook_library import (
     rename_stylebook as domain_rename_stylebook,
 )
 from fastapi import APIRouter, Depends, HTTPException

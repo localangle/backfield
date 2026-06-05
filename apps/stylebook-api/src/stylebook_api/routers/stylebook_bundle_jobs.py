@@ -11,7 +11,7 @@ from typing import Any
 import boto3
 from backfield_auth.gate import require_org_admin
 from backfield_db import BackfieldProject, Stylebook, StylebookBundleJob
-from backfield_stylebook.full_bundle import DEFAULT_MAX_ZIP_BYTES, read_manifest_from_zip
+from backfield_entities.catalog.full_bundle import DEFAULT_MAX_ZIP_BYTES, read_manifest_from_zip
 from celery import Celery
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field

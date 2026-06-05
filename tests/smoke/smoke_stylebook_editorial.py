@@ -27,7 +27,7 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from sqlmodel import select
 
 AGATE_API_BASE = os.environ.get("AGATE_API_BASE", "http://localhost:8000")
@@ -205,8 +205,8 @@ def main() -> int:
 
             linked_substrates = assert_object(
                 client.get(
-                    f"/v1/canonical-locations/{canonical_id}/linked-substrates",
-                    params={"project_slug": ctx.project_slug},
+                    f"/v1/stylebooks/default/canonical-locations/{canonical_id}/linked-substrates",
+                    params={"project": ctx.project_slug},
                 ),
                 "linked substrates",
             )

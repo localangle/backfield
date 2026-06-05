@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "backfield-ai",
     "backfield-db",
-    "backfield-stylebook",
+    "backfield-entities",
     "pydantic>=2.0.0",
     "anthropic>=0.18.0",
     "openai>=1.12.0",

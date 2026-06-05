@@ -14,22 +14,22 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from backfield_stylebook.canonical_jurisdiction import (
+from backfield_entities.canonical.jurisdiction import (
     place_extract_components_from_entry,
     stylebook_district_fields_from_components,
     stylebook_jurisdiction_fields_from_components,
 )
-from backfield_stylebook.canonical_link import (
+from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
     CANONICAL_LINK_WAIVED,
 )
-from backfield_stylebook.canonical_slug import allocate_unique_canonical_slug
-from backfield_stylebook.locations import refresh_aliases_for_linked_location
-from backfield_stylebook.place_extract_location_types import PLACE_EXTRACT_LOCATION_TYPES
-from backfield_stylebook.substrate_canonical_link_actions import (
+from backfield_entities.canonical.slug import allocate_unique_canonical_slug
+from backfield_entities.entities.linking.substrate_actions import (
     rank_canonical_suggestions_for_substrate,
 )
+from backfield_entities.entities.location.persist import refresh_aliases_for_linked_location
+from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import exists, or_
@@ -582,12 +582,18 @@ def candidates_suggested_canonicals(
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Substrate location not found")
     st = str(loc.canonical_link_status or "")
-    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED):
+    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED, CANONICAL_LINK_WAIVED):
         raise HTTPException(
             status_code=409,
-            detail="Suggestions are only available for pending or linked substrate locations",
+            detail=(
+                "Suggestions are only available for pending, deferred, or linked "
+                "substrate locations"
+            ),
         )
-    if st == CANONICAL_LINK_PENDING and loc.stylebook_location_canonical_id is not None:
+    if (
+        st in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED)
+        and loc.stylebook_location_canonical_id is not None
+    ):
         raise HTTPException(status_code=409, detail="Invalid pending state: canonical FK is set")
     ranked = rank_canonical_suggestions_for_substrate(
         session, stylebook_id=stylebook_id, location=loc, limit=limit
@@ -686,10 +692,12 @@ def accept_candidate(
         raise HTTPException(status_code=404, detail="Substrate location not found")
     if loc.stylebook_location_canonical_id is not None:
         raise HTTPException(status_code=409, detail="Location already linked to a canonical")
-    if loc.canonical_link_status != CANONICAL_LINK_PENDING:
+    if loc.canonical_link_status not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
         raise HTTPException(
             status_code=400,
-            detail="Location is not in the canonical review queue (status must be pending)",
+            detail=(
+                "Location is not in the canonical review queue (status must be pending or deferred)"
+            ),
         )
 
     if body.create_new:

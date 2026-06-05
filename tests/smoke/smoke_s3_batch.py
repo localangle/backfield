@@ -19,7 +19,7 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
 )
-from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker import tasks as worker_tasks
 

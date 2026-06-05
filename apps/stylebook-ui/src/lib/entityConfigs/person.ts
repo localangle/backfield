@@ -9,9 +9,8 @@ import {
   listPersonCandidates,
 } from "@/lib/stylebook-api/personCandidates"
 import {
-  getCanonicalPersonLegacy,
   linkPersonSubstrateToCanonical,
-  listCanonicalPeopleLegacy,
+  listCanonicalPeople,
   unlinkPersonSubstrateFromCanonical,
 } from "@/lib/stylebook-api/people"
 import type { EntityConfig } from "@/lib/entityTypes"
@@ -29,27 +28,29 @@ export interface PersonPickerRow {
   updated_at: string
 }
 
-async function listPersonPickerRows(
-  projectSlug: string,
-  q?: string,
-  _status?: string,
-  limit: number = 100,
-  offset: number = 0,
-): Promise<{ people: PersonPickerRow[] }> {
-  const res = await listCanonicalPeopleLegacy(projectSlug, q, limit, offset)
-  return {
-    people: res.canonicals.map((c) => ({
-      id: c.id,
-      project_id: 0,
-      full_name: c.label,
-      title: c.title ?? undefined,
-      affiliation: c.affiliation ?? undefined,
-      person_type: c.person_type ?? undefined,
-      public_figure: c.public_figure,
-      status: c.status,
-      created_at: c.created_at,
-      updated_at: c.updated_at,
-    })),
+export function createListPersonPickerRows(stylebookSlug: string) {
+  return async function listPersonPickerRows(
+    projectSlug: string,
+    q?: string,
+    _status?: string,
+    limit: number = 100,
+    offset: number = 0,
+  ): Promise<{ people: PersonPickerRow[] }> {
+    const res = await listCanonicalPeople(stylebookSlug, q, limit, offset, undefined, projectSlug)
+    return {
+      people: res.canonicals.map((c) => ({
+        id: c.id,
+        project_id: 0,
+        full_name: c.label,
+        title: c.title ?? undefined,
+        affiliation: c.affiliation ?? undefined,
+        person_type: c.person_type ?? undefined,
+        public_figure: c.public_figure,
+        status: c.status,
+        created_at: c.created_at,
+        updated_at: c.updated_at,
+      })),
+    }
   }
 }
 
@@ -67,10 +68,9 @@ export const personConfig = {
   },
   api: {
     listCandidates: listPersonCandidates,
-    listCanonical: listPersonPickerRows,
-    listCanonicalForSelector: listPersonPickerRows,
-    getDetail: (id: string | number, projectSlug: string) =>
-      getCanonicalPersonLegacy(String(id), projectSlug),
+    listCanonical: notImplemented,
+    listCanonicalForSelector: notImplemented,
+    getDetail: notImplemented,
     createCanonical: notImplemented,
     updateCanonical: notImplemented,
     deleteCanonical: notImplemented,
@@ -130,4 +130,4 @@ export const personConfig = {
   }),
 } as unknown as EntityConfig<PersonPickerRow>
 
-export { deferPersonCandidate, getPersonCandidateContext, listPersonPickerRows }
+export { deferPersonCandidate, getPersonCandidateContext }

@@ -15,7 +15,7 @@ from backfield_db import (
     SubstratePersonSemanticDocument,
 )
 from backfield_db.semantic_indexing import SEMANTIC_EMBEDDING_STATUS_PENDING
-from backfield_stylebook.canonical_link import CANONICAL_LINK_PENDING
+from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
 from sqlmodel import Session, SQLModel, col, create_engine, select
 from worker.substrate import persist_from_consolidated
 from worker.substrate.entities.registry import get_persist_handler, registered_consolidated_keys

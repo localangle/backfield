@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   deleteCanonicalLocation,
@@ -19,31 +19,16 @@ import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
-import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
-import { cn } from "@/lib/utils"
-import { Breadcrumbs } from "@/components/Breadcrumbs"
-import { Badge } from "@/components/ui/badge"
+import CanonicalDetailLayout from "@/components/CanonicalDetailLayout"
+import LocationGeographySection, {
+  geometryToFeatureCollections,
+} from "@/components/LocationGeographySection"
+import LocationMetaTab from "@/components/LocationMetaTab"
+import { locationCanonicalDetailConfig } from "@/lib/entityConfigs/location/canonicalDetail"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import SimpleGeoJsonGeometry from "@/components/SimpleGeoJsonGeometry"
-import LocationMetaTab from "@/components/LocationMetaTab"
-import ConnectionsSection from "@/components/ConnectionsSection"
-import { GeometryEditLeafletMap } from "@backfield/ui/GeometryEditLeafletMap"
-import { LeafletMap } from "@backfield/ui/LeafletMap"
-import {
-  boundsFromPolygonGeometry,
-  isAxisAlignedRectanglePolygon,
-} from "@backfield/ui/axisAlignedRectangle"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -52,147 +37,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Info, Loader2, MousePointer, Square, Trash2 } from "lucide-react"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { LeafletMap } from "@backfield/ui/LeafletMap"
+import { updateCanonicalLocationGeometry } from "@/lib/stylebook-api/locations"
+import { Loader2 } from "lucide-react"
 
 /** Continental US when adding the first geometry from an empty draft (matches LeafletMap defaults). */
 const ADD_GEOMETRY_MAP_CENTER: [number, number] = [39.8283, -98.5795]
 /** Match @backfield/ui LeafletMap continental US default framing. */
 const ADD_GEOMETRY_MAP_ZOOM = 3
-
-function mentionArticleDisplayTitle(m: LinkedMention): string {
-  const trimmed = (m.article_headline ?? "").trim()
-  if (trimmed.length > 0) return trimmed
-  return `Article ${m.article_id}`
-}
-
-function mentionArticleHref(m: LinkedMention): string | null {
-  const u = (m.article_url ?? "").trim()
-  return u.length > 0 ? u : null
-}
-
-function mentionNatureDisplayLabel(raw: string | null | undefined): string {
-  const s = (raw ?? "").trim().toLowerCase()
-  if (!s) return "Unknown"
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
-
-function mentionNatureBadgeClass(raw: string | null | undefined): string {
-  const s = (raw ?? "").trim().toLowerCase()
-  switch (s) {
-    case "primary":
-      return "border-primary/35 bg-primary/10 text-primary"
-    case "secondary":
-      return "border-muted-foreground/25 bg-muted text-muted-foreground"
-    case "subject":
-      return "border-violet-500/40 bg-violet-500/10 text-violet-900 dark:text-violet-200"
-    case "context":
-      return "border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-100"
-    case "person":
-      return "border-amber-500/45 bg-amber-500/12 text-amber-950 dark:text-amber-100"
-    default:
-      return "border-border bg-background text-muted-foreground"
-  }
-}
-
-type GeoJsonGeometry =
-  | { type: "Point"; coordinates: [number, number] }
-  | { type: "Polygon"; coordinates: [number, number][][] }
-  | { type: "MultiPolygon"; coordinates: [number, number][][][] }
-
-function isPointGeometry(geometry: Record<string, unknown> | null): geometry is {
-  type: "Point"
-  coordinates: [number, number]
-} {
-  if (!geometry || typeof geometry !== "object") return false
-  const g = geometry as Record<string, unknown>
-  if (g.type !== "Point") return false
-  const c = g.coordinates
-  return Array.isArray(c) && c.length === 2 && typeof c[0] === "number" && typeof c[1] === "number"
-}
-
-function isPolygonGeometry(geometry: Record<string, unknown> | null): geometry is {
-  type: "Polygon"
-  coordinates: number[][][]
-} {
-  if (!geometry || typeof geometry !== "object") return false
-  const g = geometry as Record<string, unknown>
-  if (g.type !== "Polygon") return false
-  const c = g.coordinates
-  return Array.isArray(c) && c.length > 0
-}
-
-function isMultiPolygonGeometry(geometry: Record<string, unknown> | null): boolean {
-  if (!geometry || typeof geometry !== "object") return false
-  const g = geometry as Record<string, unknown>
-  return g.type === "MultiPolygon"
-}
-
-function axisAlignedRectangleDraft(geometry: Record<string, unknown> | null): boolean {
-  if (!isPolygonGeometry(geometry)) return false
-  return isAxisAlignedRectanglePolygon(geometry)
-}
-
-function geometryToFeatureCollections(
-  geometry: Record<string, unknown> | null,
-  opts?: { featureId?: string; label?: string; group?: string },
-): { points: unknown; polygons: unknown } {
-  if (!geometry || typeof geometry !== "object") {
-    return {
-      points: { type: "FeatureCollection", features: [] },
-      polygons: { type: "FeatureCollection", features: [] },
-    }
-  }
-
-  const featureId = opts?.featureId ?? "canonical"
-  const label = opts?.label ?? "Canonical"
-  const group = opts?.group ?? "canonical"
-
-  const g = geometry as Partial<GeoJsonGeometry>
-  const type = typeof g.type === "string" ? g.type : null
-
-  if (type === "Point" && Array.isArray(g.coordinates) && g.coordinates.length === 2) {
-    const coords = g.coordinates as [number, number]
-    return {
-      points: {
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            properties: { id: featureId, label, group },
-            geometry: { type: "Point", coordinates: coords },
-          },
-        ],
-      },
-      polygons: { type: "FeatureCollection", features: [] },
-    }
-  }
-
-  if (
-    (type === "Polygon" || type === "MultiPolygon") &&
-    Array.isArray(g.coordinates) &&
-    g.coordinates.length > 0
-  ) {
-    return {
-      points: { type: "FeatureCollection", features: [] },
-      polygons: {
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            properties: { id: featureId, label, group },
-            geometry: { type, coordinates: g.coordinates },
-          },
-        ],
-      },
-    }
-  }
-
-  return {
-    points: { type: "FeatureCollection", features: [] },
-    polygons: { type: "FeatureCollection", features: [] },
-  }
-}
 
 export default function LocationDetail() {
   const { showError, showConfirm } = useAppMessage()
@@ -215,15 +67,6 @@ export default function LocationDetail() {
   const [label, setLabel] = useState("")
   const [locationType, setLocationType] = useState("")
   const [formattedAddress, setFormattedAddress] = useState("")
-  const [geometry, setGeometry] = useState<Record<string, unknown> | null>(null)
-  const [geometryEditing, setGeometryEditing] = useState(false)
-  const [geometryDraft, setGeometryDraft] = useState<Record<string, unknown> | null>(null)
-  const [geometrySaving, setGeometrySaving] = useState(false)
-  const [geometryAddMode, setGeometryAddMode] = useState<"point" | "rectangle" | null>(null)
-  const [rectanglePreview, setRectanglePreview] = useState<{
-    southWest: { lat: number; lng: number }
-    northEast: { lat: number; lng: number }
-  } | null>(null)
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -239,6 +82,7 @@ export default function LocationDetail() {
   const [substrateGeometryJson, setSubstrateGeometryJson] = useState<Record<string, unknown> | null>(
     null,
   )
+  const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
 
   const canonicalListHref = useMemo(() => {
     const base = `${catalogBasePath}/locations/canonical`
@@ -246,77 +90,82 @@ export default function LocationDetail() {
     if (qs) return `${base}?${qs}`
     return filterScopeSuffix ? `${base}${filterScopeSuffix}` : base
   }, [catalogBasePath, searchParams, filterScopeSuffix])
-  const [adoptingSubstrateGeometry, setAdoptingSubstrateGeometry] = useState(false)
 
-  const loadCanonical = async (canonicalId: string, sbSlug: string, quiet = false) => {
-    try {
-      if (!quiet) setLoading(true)
-      const row = await getCanonicalLocation(canonicalId, sbSlug, evidenceProjectSlug || undefined)
-      setCanonical(row)
-      setLabel(row.label)
-      setLocationType(row.location_type ?? "")
-      setFormattedAddress(row.formatted_address ?? "")
-      setGeometry((row.geometry_json as Record<string, unknown> | undefined) ?? null)
-      setGeometryDraft((row.geometry_json as Record<string, unknown> | undefined) ?? null)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      if (!quiet) setLoading(false)
-    }
-  }
+  const loadCanonical = useCallback(
+    async (canonicalId: string, sbSlug: string, quiet = false) => {
+      try {
+        if (!quiet) setLoading(true)
+        const row = await getCanonicalLocation(canonicalId, sbSlug, evidenceProjectSlug || undefined)
+        setCanonical(row)
+        setLabel(row.label)
+        setLocationType(row.location_type ?? "")
+        setFormattedAddress(row.formatted_address ?? "")
+      } catch (e) {
+        console.error(e)
+      } finally {
+        if (!quiet) setLoading(false)
+      }
+    },
+    [evidenceProjectSlug],
+  )
 
   useEffect(() => {
     if (!id || !stylebookSlug) return
     void loadCanonical(id, stylebookSlug)
-  }, [id, stylebookSlug, evidenceProjectSlug])
+  }, [id, stylebookSlug, evidenceProjectSlug, loadCanonical])
 
-  const loadMentions = useCallback(async (canonicalId: string, sbSlug: string, quiet = false) => {
-    if (!quiet) setMentionsLoading(true)
-    try {
-      const m = await getCanonicalLocationMentions(
-        canonicalId,
-        sbSlug,
-        500,
-        0,
-        undefined,
-        "desc",
-        evidenceProjectSlug || undefined,
-      )
-      setMentions(m.mentions)
-    } catch {
-      setMentions([])
-    } finally {
-      if (!quiet) setMentionsLoading(false)
-    }
-  }, [evidenceProjectSlug])
+  const loadMentions = useCallback(
+    async (canonicalId: string, sbSlug: string, quiet = false) => {
+      if (!quiet) setMentionsLoading(true)
+      try {
+        const m = await getCanonicalLocationMentions(
+          canonicalId,
+          sbSlug,
+          500,
+          0,
+          undefined,
+          "desc",
+          evidenceProjectSlug || undefined,
+        )
+        setMentions(m.mentions)
+      } catch {
+        setMentions([])
+      } finally {
+        if (!quiet) setMentionsLoading(false)
+      }
+    },
+    [evidenceProjectSlug],
+  )
 
   useEffect(() => {
     if (!id || !stylebookSlug) return
     void loadMentions(id, stylebookSlug)
   }, [id, stylebookSlug, loadMentions])
 
-  const loadSubstrates = useCallback(async (canonicalId: string, sbSlug: string, quiet = false) => {
-    if (!quiet) setSubstratesLoading(true)
-    try {
-      const r = await listCanonicalLinkedSubstrates(
-        canonicalId,
-        sbSlug,
-        evidenceProjectSlug || undefined,
-      )
-      setSubstrates(r.substrates)
-    } catch {
-      setSubstrates([])
-    } finally {
-      if (!quiet) setSubstratesLoading(false)
-    }
-  }, [evidenceProjectSlug])
+  const loadSubstrates = useCallback(
+    async (canonicalId: string, sbSlug: string, quiet = false) => {
+      if (!quiet) setSubstratesLoading(true)
+      try {
+        const r = await listCanonicalLinkedSubstrates(
+          canonicalId,
+          sbSlug,
+          evidenceProjectSlug || undefined,
+        )
+        setSubstrates(r.substrates)
+      } catch {
+        setSubstrates([])
+      } finally {
+        if (!quiet) setSubstratesLoading(false)
+      }
+    },
+    [evidenceProjectSlug],
+  )
 
   useEffect(() => {
     if (!id || !stylebookSlug) return
     void loadSubstrates(id, stylebookSlug)
   }, [id, stylebookSlug, loadSubstrates])
 
-  /** @param quiet When true, refresh substrates/mentions without the full-table loading state (avoids a flash after unlink / move). */
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
       if (!id || !stylebookSlug) return
@@ -327,18 +176,13 @@ export default function LocationDetail() {
     [id, stylebookSlug, loadCanonical, loadMentions, loadSubstrates],
   )
 
-  const mentionsBySubstrateId = useMemo(() => {
-    const map = new Map<number, LinkedMention[]>()
-    for (const row of mentions) {
-      const sid = row.substrate_location_id
-      const bucket = map.get(sid) ?? []
-      bucket.push(row)
-      map.set(sid, bucket)
-    }
-    return map
-  }, [mentions])
-
   const tableLoading = substratesLoading || mentionsLoading
+
+  const resetEditFieldsFromCanonical = useCallback((row: CanonicalLocation) => {
+    setLabel(row.label)
+    setLocationType(row.location_type ?? "")
+    setFormattedAddress(row.formatted_address ?? "")
+  }, [])
 
   async function handleUnlinkSubstrate(sub: LinkedSubstrateItem) {
     if (!sub.project_slug) {
@@ -384,26 +228,6 @@ export default function LocationDetail() {
     }
   }
 
-  const saveGeometry = async () => {
-    if (!canonical || !id || !stylebookSlug) return
-    setGeometrySaving(true)
-    try {
-      const canonicalId = id
-      await updateCanonicalLocationGeometry(canonicalId, stylebookSlug, geometryDraft)
-      setGeometryEditing(false)
-      setGeometryAddMode(null)
-      setRectanglePreview(null)
-      await loadCanonical(canonicalId, stylebookSlug, true)
-    } catch (e) {
-      console.error(e)
-      const msg =
-        e instanceof Error ? e.message : typeof e === "string" ? e : "Save geometry failed"
-      showError(msg)
-    } finally {
-      setGeometrySaving(false)
-    }
-  }
-
   const onDelete = useCallback(async () => {
     if (!canonical || !id || !stylebookSlug) return
     setDeleting(true)
@@ -428,39 +252,6 @@ export default function LocationDetail() {
     showConfirm,
     onDelete,
   })
-
-  const geometrySource = geometryEditing ? geometryDraft : geometry
-  const geometryDraftIsMultiPolygon = geometryEditing && isMultiPolygonGeometry(geometryDraft)
-  const allowGeometryMapEditing = canEdit && geometryEditing && !geometryDraftIsMultiPolygon
-
-  const leafletCollections = useMemo(() => {
-    const base = geometryToFeatureCollections(geometrySource as any, {
-      featureId: "canonical",
-      label: "Canonical",
-      group: "canonical",
-    })
-
-    const stripCanonicalPolygon = (polygons: any) => {
-      const fc = polygons as any
-      if (!fc || typeof fc !== "object" || fc.type !== "FeatureCollection" || !Array.isArray(fc.features)) return fc
-      return {
-        ...fc,
-        features: fc.features.filter((f: any) => {
-          const id = f?.properties?.id
-          return id !== "canonical"
-        }),
-      }
-    }
-
-    const hideCanonicalPolygon =
-      geometryEditing &&
-      (geometryAddMode === "rectangle" || rectanglePreview != null || axisAlignedRectangleDraft(geometryDraft))
-
-    return {
-      points: base.points,
-      polygons: hideCanonicalPolygon ? stripCanonicalPolygon(base.polygons) : base.polygons,
-    }
-  }, [geometryAddMode, geometryDraft, geometryEditing, geometrySource, rectanglePreview])
 
   const openSubstrateGeometry = useCallback(
     async (sub: LinkedSubstrateItem) => {
@@ -507,476 +298,127 @@ export default function LocationDetail() {
     substrateGeometrySubstrate,
   ])
 
-  const leafletInitialCenter = useMemo((): [number, number] | null => {
-    const g = (geometryEditing ? geometryDraft : geometry) as Record<string, unknown> | null
-    if (!g) return null
-    if (isPointGeometry(g)) {
-      const c = g.coordinates
-      return [c[1], c[0]]
-    }
-    if (isPolygonGeometry(g)) {
-      const b = boundsFromPolygonGeometry(g as any)
-      if (!b) return null
-      const lat = (b.south + b.north) / 2
-      const lng = (b.west + b.east) / 2
-      return [lat, lng]
-    }
-    if (isMultiPolygonGeometry(g)) {
-      const coords = (g as any).coordinates?.[0]?.[0]?.[0]
-      if (Array.isArray(coords) && coords.length >= 2 && typeof coords[0] === "number" && typeof coords[1] === "number") {
-        return [coords[1], coords[0]]
-      }
-    }
-    return null
-  }, [geometry, geometryDraft, geometryEditing])
+  const mentionsConfig = useMemo(
+    () => ({
+      ...locationCanonicalDetailConfig.mentions,
+      renderSubstrateHeaderExtra: (s: LinkedSubstrateItem) => (
+        <button
+          type="button"
+          className="relative z-10 text-xs text-primary hover:underline shrink-0"
+          onClick={() => void openSubstrateGeometry(s)}
+        >
+          View geometry
+        </button>
+      ),
+    }),
+    [openSubstrateGeometry],
+  )
 
-  if (loading || !canonical) {
-    return (
-      <div className="flex justify-center items-center py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  const geometry = (canonical?.geometry_json as Record<string, unknown> | undefined) ?? null
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div className="min-w-0">
-          <Breadcrumbs
-            className="mb-3"
-            items={[
-              { label: crumbRoot.label, to: crumbRoot.to },
-              { label: "Locations", to: canonicalListHref },
-              { label: canonical.label },
-            ]}
-          />
-          <h1 className="text-3xl font-bold">{canonical.label}</h1>
-        </div>
-        <div className="flex gap-2">
-          {editing ? (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (canonical) {
-                    setLabel(canonical.label)
-                    setLocationType(canonical.location_type ?? "")
-                    setFormattedAddress(canonical.formatted_address ?? "")
-                    const nextGeom =
-                      (canonical.geometry_json as Record<string, unknown> | undefined) ?? null
-                    setGeometry(nextGeom)
-                    setGeometryDraft(nextGeom)
-                  }
-                  setEditing(false)
-                }}
-                disabled={saving}
-              >
-                Cancel
-              </Button>
-              <Button onClick={() => void saveEdits()} disabled={saving}>
-                {saving ? "Saving…" : "Save"}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (canonical) {
-                    setLabel(canonical.label)
-                    setLocationType(canonical.location_type ?? "")
-                    setFormattedAddress(canonical.formatted_address ?? "")
-                    const nextGeom =
-                      (canonical.geometry_json as Record<string, unknown> | undefined) ?? null
-                    setGeometry(nextGeom)
-                    setGeometryDraft(nextGeom)
-                  }
-                  setEditing(true)
-                }}
-                disabled={!canEdit}
-              >
-                Edit
-              </Button>
-              <Button
-                variant="destructive"
-                size="icon"
-                onClick={() => setDeleteOpen(true)}
-                disabled={!canEdit}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 max-w-xl">
-          <div>
-            <Label>Label</Label>
-            {editing ? (
-              <Input value={label} onChange={(e) => setLabel(e.target.value)} />
-            ) : (
-              <p className="text-sm mt-1.5">{canonical.label || "—"}</p>
-            )}
-          </div>
-          <div>
-            <Label>Location type</Label>
-            {editing ? (
-              <Input
-                value={locationType}
-                onChange={(e) => setLocationType(e.target.value)}
-                placeholder="e.g. city, neighborhood"
-              />
-            ) : (
-              <p className="text-sm mt-1.5">
-                {canonical.location_type ? placeExtractTypeLabel(canonical.location_type) : "—"}
-              </p>
-            )}
-          </div>
-          <div>
-            <Label>Formatted address</Label>
-            {editing ? (
-              <Input
-                value={formattedAddress}
-                onChange={(e) => setFormattedAddress(e.target.value)}
-                placeholder="e.g. Chicago, IL, USA"
-              />
-            ) : (
-              <p className="text-sm mt-1.5">{canonical.formatted_address || "—"}</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card
-        className={cn(
-          "relative z-0 isolate",
-          geometryEditing &&
-            "border-2 border-foreground/80 bg-white shadow-sm transition-colors",
-        )}
-      >
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <span>Geography</span>
-              {geometryEditing ? (
-                <Badge variant="secondary" className="font-normal">
-                  Editing draft
-                </Badge>
-              ) : null}
-            </CardTitle>
-            <CardDescription>
-              {geometryEditing
-                ? geometryAddMode === "point"
-                  ? "Click the map to place a point."
-                  : geometryAddMode === "rectangle"
-                    ? "Hold Shift and drag on the map to draw an axis-aligned rectangle."
-                    : "Edit canonical geometry (draft) and save or cancel."
-                : "View canonical geometry."}
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            {geometryEditing ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setGeometryDraft(geometry)
-                    setGeometryAddMode(null)
-                    setRectanglePreview(null)
-                    setGeometryEditing(false)
-                  }}
-                  disabled={geometrySaving}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={() => void saveGeometry()} disabled={geometrySaving}>
-                  {geometrySaving ? "Saving…" : "Save"}
-                </Button>
-              </>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setGeometryDraft(geometry)
-                  setGeometryAddMode(null)
-                  setRectanglePreview(null)
-                  setGeometryEditing(true)
-                }}
-              >
-                Edit geography
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {geometryEditing && isMultiPolygonGeometry(geometryDraft) ? (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                Editing is disabled for MultiPolygon geometries. These complex geometries contain multiple polygons and
-                require specialized editing tools. You can delete the geometry, then add a point or rectangle replacement.
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          {geometryEditing ? (
-            <div className="flex flex-wrap gap-2">
-              {!geometryDraft ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={geometryAddMode === "point" || geometrySaving}
-                    onClick={() => {
-                      setGeometryAddMode("point")
-                      setRectanglePreview(null)
-                    }}
-                  >
-                    <MousePointer className="h-4 w-4 mr-2" />
-                    Add point
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={geometryAddMode === "rectangle" || geometrySaving}
-                    onClick={() => {
-                      setGeometryAddMode("rectangle")
-                      setRectanglePreview(null)
-                    }}
-                  >
-                    <Square className="h-4 w-4 mr-2" />
-                    Add rectangle
-                  </Button>
-                </>
+    <CanonicalDetailLayout
+      config={locationCanonicalDetailConfig}
+      loading={loading || !canonical}
+      breadcrumbs={[
+        { label: crumbRoot.label, to: crumbRoot.to },
+        { label: locationCanonicalDetailConfig.listBreadcrumbLabel, to: canonicalListHref },
+        { label: canonical?.label ?? "" },
+      ]}
+      title={canonical?.label ?? ""}
+      editing={editing}
+      saving={saving}
+      canEdit={canEdit}
+      onStartEdit={() => {
+        if (canonical) resetEditFieldsFromCanonical(canonical)
+        setEditing(true)
+      }}
+      onCancelEdit={() => {
+        if (canonical) resetEditFieldsFromCanonical(canonical)
+        setEditing(false)
+      }}
+      onSave={() => void saveEdits()}
+      onDeleteClick={() => setDeleteOpen(true)}
+      deleteOpen={deleteOpen}
+      onDeleteOpenChange={setDeleteOpen}
+      deleting={deleting}
+      onDelete={onDelete}
+      stylebookSlug={stylebookSlug}
+      entityId={canonical?.id}
+      entityDisplayName={canonical?.label}
+      details={
+        <Card>
+          <CardHeader>
+            <CardTitle>Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 max-w-xl">
+            <div>
+              <Label>Label</Label>
+              {editing ? (
+                <Input value={label} onChange={(e) => setLabel(e.target.value)} />
               ) : (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  disabled={geometrySaving}
-                  onClick={() => {
-                    void (async () => {
-                      const ok = await showConfirm("Delete this geometry?", {
-                        title: "Delete geometry",
-                        confirmLabel: "Delete",
-                        destructive: true,
-                      })
-                      if (!ok) return
-                      setGeometryDraft(null)
-                      setGeometryAddMode(null)
-                      setRectanglePreview(null)
-                    })()
-                  }}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete geometry
-                </Button>
+                <p className="text-sm mt-1.5">{canonical?.label || "—"}</p>
               )}
             </div>
-          ) : null}
-
-          <div
-            className={cn(
-              "rounded-md overflow-hidden",
-              geometryEditing && "bg-white ring-1 ring-foreground/25 border border-foreground/30",
-            )}
-          >
-            <GeometryEditLeafletMap
-              points={leafletCollections.points as any}
-              polygons={leafletCollections.polygons as any}
-              geometryEditing={allowGeometryMapEditing}
-              geometryDraft={geometryDraft}
-              onGeometryDraftChange={setGeometryDraft}
-              geometryAddMode={geometryAddMode}
-              onGeometryAddModeChange={setGeometryAddMode}
-              editPointFeatureId="canonical"
-              initialCenter={leafletInitialCenter}
-              rectanglePreview={rectanglePreview}
-              onRectanglePreviewChange={setRectanglePreview}
-              showPopups={false}
-            />
-          </div>
-          {geometryEditing && !geometryDraftIsMultiPolygon ? (
-            <SimpleGeoJsonGeometry value={geometryDraft} onChange={setGeometryDraft} />
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card className="relative z-10">
-        <CardHeader>
-          <CardTitle>Mentions</CardTitle>
-          <CardDescription>
-            Article mentions are grouped by place. Unlink or reassign places below.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {tableLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading…
+            <div>
+              <Label>Location type</Label>
+              {editing ? (
+                <Input
+                  value={locationType}
+                  onChange={(e) => setLocationType(e.target.value)}
+                  placeholder="e.g. city, neighborhood"
+                />
+              ) : (
+                <p className="text-sm mt-1.5">
+                  {canonical?.location_type ? placeExtractTypeLabel(canonical.location_type) : "—"}
+                </p>
+              )}
             </div>
-          ) : substrates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked mentions.</p>
-          ) : (
-            <div className="w-full overflow-x-auto">
-              <Table className="w-full min-w-[56rem]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[26%] min-w-[9rem]">Place / article</TableHead>
-                    <TableHead className="w-[6.5rem] min-w-[5.5rem]">Nature</TableHead>
-                    <TableHead className="w-[10rem] min-w-[10rem]">Type / role</TableHead>
-                    <TableHead className="min-w-[18rem]">Quoted text</TableHead>
-                    <TableHead className="w-[12rem] min-w-[12rem] text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {substrates.map((s) => {
-                    const group = mentionsBySubstrateId.get(s.id) ?? []
-                    return (
-                      <Fragment key={`group-${s.id}`}>
-                        <TableRow className="bg-muted/50 border-t">
-                          <TableCell colSpan={4} className="align-top py-3">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div className="font-medium min-w-0 break-words">{s.name}</div>
-                              <button
-                                type="button"
-                                className="relative z-10 text-xs text-primary hover:underline shrink-0"
-                                onClick={() => void openSubstrateGeometry(s)}
-                              >
-                                View geometry
-                              </button>
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground break-words">
-                              <Badge variant="outline" className="font-normal">
-                                Project: {s.project_name}
-                              </Badge>
-                              {(s.location_type || "").trim()
-                                ? placeExtractTypeLabel(s.location_type)
-                                : "—"}{" "}
-                              <span className="text-muted-foreground/70">·</span>{" "}
-                              {(s.formatted_address ?? "").trim() || "—"}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right align-top py-3 w-[12rem] min-w-[12rem]">
-                            <div className="flex flex-wrap justify-end gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="relative z-10 shrink-0"
-                                disabled={unlinkingId === s.id}
-                                onClick={() => setMoveSubstrate(s)}
-                              >
-                                Move…
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                className="relative z-10 shrink-0"
-                                disabled={unlinkingId === s.id}
-                                onClick={() => void handleUnlinkSubstrate(s)}
-                              >
-                                {unlinkingId === s.id ? "Unlinking…" : "Unlink"}
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                        {group.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5} className="pl-8 text-sm text-muted-foreground py-2">
-                              No article mentions for this place.
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          group.map((m) => {
-                            const articleHref = mentionArticleHref(m)
-                            const articleLabel = mentionArticleDisplayTitle(m)
-                            return (
-                            <TableRow key={m.mention_id} className="hover:bg-muted/30">
-                              <TableCell className="pl-8 align-top min-w-0">
-                                <div className="flex items-start gap-1 min-w-0">
-                                  <span
-                                    className="text-muted-foreground select-none shrink-0 pt-0.5"
-                                    aria-hidden
-                                  >
-                                    ↳
-                                  </span>
-                                  <div className="min-w-0">
-                                    {articleHref ? (
-                                      <a
-                                        href={articleHref}
-                                        className="font-medium text-primary hover:underline break-words"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        title={articleLabel}
-                                      >
-                                      {articleLabel}
-                                    </a>
-                                  ) : (
-                                    <span className="font-medium break-words" title={articleLabel}>
-                                      {articleLabel}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell className="align-top py-3">
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "font-medium shadow-none",
-                                  mentionNatureBadgeClass(m.mention_nature),
-                                )}
-                              >
-                                {mentionNatureDisplayLabel(m.mention_nature)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-muted-foreground text-sm align-top max-w-[10rem] break-words leading-snug">
-                              {m.description ?? "—"}
-                            </TableCell>
-                            <TableCell className="min-w-0 text-sm align-top break-words leading-relaxed">
-                              {m.original_text ?? "—"}
-                            </TableCell>
-                            <TableCell className="align-top" />
-                          </TableRow>
-                          )
-                        })
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </TableBody>
-            </Table>
+            <div>
+              <Label>Formatted address</Label>
+              {editing ? (
+                <Input
+                  value={formattedAddress}
+                  onChange={(e) => setFormattedAddress(e.target.value)}
+                  placeholder="e.g. Chicago, IL, USA"
+                />
+              ) : (
+                <p className="text-sm mt-1.5">{canonical?.formatted_address || "—"}</p>
+              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {stylebookSlug ? (
-        <>
+          </CardContent>
+        </Card>
+      }
+      geography={
+        canonical && stylebookSlug ? (
+          <LocationGeographySection
+            canonicalId={canonical.id}
+            stylebookSlug={stylebookSlug}
+            geometry={geometry}
+            canEdit={canEdit}
+            onGeometrySaved={() => loadCanonical(canonical.id, stylebookSlug, true)}
+          />
+        ) : null
+      }
+      mentions={{
+        config: mentionsConfig,
+        substrates,
+        mentions,
+        loading: tableLoading,
+        unlinkingId,
+        onUnlink: (s) => void handleUnlinkSubstrate(s),
+        onMove: setMoveSubstrate,
+      }}
+      meta={
+        canonical && stylebookSlug ? (
           <LocationMetaTab
             locationId={canonical.id}
             stylebookSlug={stylebookSlug}
             onMetaUpdated={() => void loadCanonical(canonical.id, stylebookSlug, true)}
           />
-
-          <ConnectionsSection
-            entityType="location"
-            entityId={canonical.id}
-            stylebookSlug={stylebookSlug}
-            entityDisplayName={canonical.label}
-          />
-        </>
-      ) : null}
-
+        ) : null
+      }
+    >
       <Dialog open={substrateGeometryOpen} onOpenChange={setSubstrateGeometryOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
@@ -1002,14 +444,14 @@ export default function LocationDetail() {
                       featureId: "substrate",
                       label: "Instance",
                       group: "substrate",
-                    }).points as any
+                    }).points as Parameters<typeof LeafletMap>[0]["points"]
                   }
                   polygons={
                     geometryToFeatureCollections(substrateGeometryJson, {
                       featureId: "substrate",
                       label: "Instance",
                       group: "substrate",
-                    }).polygons as any
+                    }).polygons as Parameters<typeof LeafletMap>[0]["polygons"]
                   }
                   showPopups={false}
                   fitToData
@@ -1052,26 +494,6 @@ export default function LocationDetail() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete canonical location</DialogTitle>
-            <DialogDescription>
-              Delete &quot;{canonical.label}&quot;? Linked places return to the candidate queue. This
-              cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void onDelete()} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {moveSubstrate ? (
         <CanonicalLinkModal
           open={moveSubstrate !== null}
@@ -1079,12 +501,13 @@ export default function LocationDetail() {
             if (!o) setMoveSubstrate(null)
           }}
           projectSlug={moveSubstrate.project_slug}
+          stylebookSlug={stylebookSlug}
           substrateLocationId={moveSubstrate.id}
-          excludeCanonicalId={canonical.id}
+          excludeCanonicalId={canonical?.id ?? ""}
           title="Move linked place to another canonical"
           onDone={() => void refreshCanonicalPage(true)}
         />
       ) : null}
-    </div>
+    </CanonicalDetailLayout>
   )
 }

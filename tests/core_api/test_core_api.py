@@ -13,7 +13,7 @@ from backfield_db import (
     BackfieldWorkspace,
     Stylebook,
 )
-from backfield_stylebook.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from core_api.deps import get_session
 from core_api.main import app
 from cryptography.fernet import Fernet

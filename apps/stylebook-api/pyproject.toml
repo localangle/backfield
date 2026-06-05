@@ -12,7 +12,7 @@ dependencies = [
     "backfield-ai",
     "backfield-auth",
     "backfield-db",
-    "backfield-stylebook",
+    "backfield-entities",
 ]
 
 [build-system]

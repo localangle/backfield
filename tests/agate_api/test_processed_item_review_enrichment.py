@@ -17,7 +17,7 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
-from backfield_stylebook.canonical_link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_entities.canonical.link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
 from sqlmodel import Session, create_engine
 
 

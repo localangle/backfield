@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
-from tests.stylebook.test_semantic_mention_search_fixtures import (
+from tests.entities.test_semantic_mention_search_fixtures import (
     seed_person_semantic_search_rows,
     set_person_semantic_doc_embedding,
 )
