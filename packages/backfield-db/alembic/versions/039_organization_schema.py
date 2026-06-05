@@ -196,7 +196,7 @@ def upgrade() -> None:
         sa.Column("primary_substrate_organization_id", sa.Integer(), nullable=True),
     )
     op.create_foreign_key(
-        "stylebook_organization_canonical_primary_substrate_organization_id_fkey",
+        "sb_org_canon_primary_substrate_org_id_fkey",
         "stylebook_organization_canonical",
         "substrate_organization",
         ["primary_substrate_organization_id"],
@@ -204,7 +204,7 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
     op.create_index(
-        "ix_stylebook_organization_canonical_primary_substrate_organization_id",
+        "ix_sb_org_canon_primary_substrate_org_id",
         "stylebook_organization_canonical",
         ["primary_substrate_organization_id"],
     )
@@ -349,13 +349,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["organization_mention_id"],
             ["substrate_organization_mention.id"],
-            name="substrate_organization_mention_occurrence_organization_mention_id_fkey",
+            name="substrate_org_mention_occ_org_mention_id_fkey",
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name="substrate_organization_mention_occurrence_pkey"),
     )
     op.create_index(
-        "ix_substrate_organization_mention_occurrence_organization_mention_id",
+        "ix_sub_org_mention_occ_org_mention_id",
         "substrate_organization_mention_occurrence",
         ["organization_mention_id"],
     )
@@ -451,7 +451,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["stylebook_organization_canonical_id"],
             ["stylebook_organization_canonical.id"],
-            name="stylebook_organization_meta_stylebook_organization_canonical_id_fkey",
+            name="sb_org_meta_sb_org_canonical_id_fkey",
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name="stylebook_organization_meta_pkey"),
@@ -462,7 +462,7 @@ def upgrade() -> None:
         ["project_id"],
     )
     op.create_index(
-        "ix_stylebook_organization_meta_stylebook_organization_canonical_id",
+        "ix_sb_org_meta_sb_org_canonical_id",
         "stylebook_organization_meta",
         ["stylebook_organization_canonical_id"],
     )
@@ -570,7 +570,7 @@ def upgrade() -> None:
         ["organization_mention_id"],
     )
     op.create_index(
-        "ix_substrate_organization_sem_doc_organization_mention_occurrence_id",
+        "ix_sub_org_sem_doc_org_mention_occ_id",
         "substrate_organization_semantic_document",
         ["organization_mention_occurrence_id"],
     )
@@ -611,12 +611,12 @@ def downgrade() -> None:
     op.drop_table("substrate_organization_mention_occurrence")
     op.drop_table("substrate_organization_mention")
     op.drop_constraint(
-        "stylebook_organization_canonical_primary_substrate_organization_id_fkey",
+        "sb_org_canon_primary_substrate_org_id_fkey",
         "stylebook_organization_canonical",
         type_="foreignkey",
     )
     op.drop_index(
-        "ix_stylebook_organization_canonical_primary_substrate_organization_id",
+        "ix_sb_org_canon_primary_substrate_org_id",
         table_name="stylebook_organization_canonical",
     )
     op.drop_column("stylebook_organization_canonical", "primary_substrate_organization_id")

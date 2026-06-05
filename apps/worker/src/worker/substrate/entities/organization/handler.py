@@ -7,9 +7,6 @@ from typing import Any
 
 from backfield_db import SubstrateOrganizationMention
 from backfield_entities.canonical.link import CANONICAL_LINK_UNLINKED
-from backfield_entities.entities.organization.adjudication import (
-    adjudicate_ambiguous_organization_plan_with_llm,
-)
 from backfield_entities.entities.organization.persist import (
     apply_canonical_persist_plan,
     apply_canonical_persist_plan_review_only,
@@ -21,6 +18,9 @@ from backfield_entities.entities.organization.policy import (
 )
 from sqlmodel import Session, col, select
 
+from worker.substrate.entities.organization.adjudication import (
+    adjudicate_ambiguous_organization_plan_with_llm,
+)
 from worker.substrate.entities.organization.mentions import (
     _upsert_mention_and_occurrence,
     dispose_orphan_substrates_after_retired_mentions,

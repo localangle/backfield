@@ -1,4 +1,4 @@
-"""LLM adjudication for ambiguous organization canonical matches."""
+"""LLM adjudication for ambiguous organization canonical matches (DBOutput ingest)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ from typing import Any
 
 from agate_utils.llm import call_llm
 from backfield_db import StylebookOrganizationCanonical, SubstrateOrganization
-from sqlmodel import Session, select
-
 from backfield_entities.canonical.plan_types import (
     ADJUDICATION_LINK_MIN_CONFIDENCE,
     CanonicalPersistDecision,
@@ -19,6 +17,7 @@ from backfield_entities.entities.organization.policy import (
     AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH,
     organization_may_materialize_canonical_after_recall,
 )
+from sqlmodel import Session, select
 
 
 def _recall_context_for_adjudication(plan: CanonicalPersistPlan) -> dict[str, Any] | None:

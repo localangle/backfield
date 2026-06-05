@@ -1,8 +1,5 @@
 """Organization canonical persist, policy, and link helpers."""
 
-from backfield_entities.entities.organization.adjudication import (
-    adjudicate_ambiguous_organization_plan_with_llm,
-)
 from backfield_entities.entities.organization.catalog_provenance import (
     ORGANIZATION_CATALOG_EDITORIAL_PROVENANCES,
     is_organization_catalog_editorial_provenance,
@@ -53,7 +50,6 @@ __all__ = [
     "ORGANIZATION_NATURE_VALUES",
     "ORGANIZATION_RECALL_DEFAULT_LIMIT",
     "ORGANIZATION_TYPE_VALUES",
-    "adjudicate_ambiguous_organization_plan_with_llm",
     "allocate_unique_organization_canonical_slug",
     "apply_canonical_persist_plan",
     "apply_canonical_persist_plan_review_only",

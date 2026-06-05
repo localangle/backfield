@@ -14,11 +14,11 @@ from backfield_entities.canonical.plan_types import (
     CanonicalPersistDecision,
     CanonicalPersistPlan,
 )
-from backfield_entities.entities.organization import (
-    AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH,
+from backfield_entities.entities.organization import AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH
+from sqlmodel import Session, SQLModel, create_engine
+from worker.substrate.entities.organization.adjudication import (
     adjudicate_ambiguous_organization_plan_with_llm,
 )
-from sqlmodel import Session, SQLModel, create_engine
 
 
 def _engine():
@@ -97,7 +97,7 @@ def test_adjudicate_ambiguous_organization_upgrades_when_llm_confident(monkeypat
             )
 
         monkeypatch.setattr(
-            "backfield_entities.entities.organization.adjudication.call_llm",
+            "worker.substrate.entities.organization.adjudication.call_llm",
             _fake_llm,
         )
 
@@ -154,7 +154,7 @@ def test_adjudicate_ambiguous_organization_materializes_when_llm_rejects_link(
             return '{"canonical_id": null, "confidence": 0.2, "rationale": "Uncertain."}'
 
         monkeypatch.setattr(
-            "backfield_entities.entities.organization.adjudication.call_llm",
+            "worker.substrate.entities.organization.adjudication.call_llm",
             _fake_llm,
         )
 
