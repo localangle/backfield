@@ -319,6 +319,7 @@ def test_accept_person_candidate_create_new(
 
     from stylebook_api.deps import get_auth as get_auth_dep
     from stylebook_api.main import app
+
     from tests.stylebook_api.test_stylebook_api import _session_auth_for_user
 
     with Session(stylebook_test_engine) as s:
