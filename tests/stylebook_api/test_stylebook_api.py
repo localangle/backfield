@@ -972,6 +972,61 @@ def test_candidates_defer_removes_from_open_queue_and_lists_in_deferred(
         assert row.canonical_link_status == CANONICAL_LINK_WAIVED
 
 
+def test_accept_deferred_candidate_create_new(
+    client: TestClient, stylebook_test_engine: object
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        pid = int(proj.id)
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Deferred Create",
+            normalized_name="deferred create",
+            location_type="city",
+            identity_fingerprint="fp-deferred-create-1",
+            stylebook_location_canonical_id=None,
+            canonical_link_status=CANONICAL_LINK_PENDING,
+        )
+        s.add(loc)
+        s.commit()
+        s.refresh(loc)
+        sid = int(loc.id)  # type: ignore[arg-type]
+
+    r_def = client.post(
+        f"/v1/candidates/{sid}/defer?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r_def.status_code == 200
+
+    r_suggest = client.get(
+        f"/v1/candidates/{sid}/suggested-canonicals?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r_suggest.status_code == 200
+
+    r_accept = client.post(
+        f"/v1/candidates/{sid}/accept?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"create_new": True, "name": "Deferred Create Canon"},
+    )
+    assert r_accept.status_code == 200
+    cid = r_accept.json()["stylebook_location_canonical_id"]
+
+    r_deferred = client.get(
+        "/v1/candidates?project_slug=demo-proj&status=deferred",
+        headers=_service_headers(),
+    )
+    assert r_deferred.status_code == 200
+    assert r_deferred.json()["total"] == 0
+
+    with Session(engine) as s:
+        row = s.get(SubstrateLocation, sid)
+        assert row is not None
+        assert row.canonical_link_status == CANONICAL_LINK_LINKED
+        assert row.stylebook_location_canonical_id == cid
+
+
 def test_deferred_candidate_lists_defer_display_message_from_reasons_json(
     client: TestClient, stylebook_test_engine: object
 ) -> None:

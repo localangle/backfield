@@ -582,12 +582,18 @@ def candidates_suggested_canonicals(
     if loc is None or int(loc.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Substrate location not found")
     st = str(loc.canonical_link_status or "")
-    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED):
+    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED, CANONICAL_LINK_WAIVED):
         raise HTTPException(
             status_code=409,
-            detail="Suggestions are only available for pending or linked substrate locations",
+            detail=(
+                "Suggestions are only available for pending, deferred, or linked "
+                "substrate locations"
+            ),
         )
-    if st == CANONICAL_LINK_PENDING and loc.stylebook_location_canonical_id is not None:
+    if (
+        st in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED)
+        and loc.stylebook_location_canonical_id is not None
+    ):
         raise HTTPException(status_code=409, detail="Invalid pending state: canonical FK is set")
     ranked = rank_canonical_suggestions_for_substrate(
         session, stylebook_id=stylebook_id, location=loc, limit=limit
@@ -686,10 +692,12 @@ def accept_candidate(
         raise HTTPException(status_code=404, detail="Substrate location not found")
     if loc.stylebook_location_canonical_id is not None:
         raise HTTPException(status_code=409, detail="Location already linked to a canonical")
-    if loc.canonical_link_status != CANONICAL_LINK_PENDING:
+    if loc.canonical_link_status not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
         raise HTTPException(
             status_code=400,
-            detail="Location is not in the canonical review queue (status must be pending)",
+            detail=(
+                "Location is not in the canonical review queue (status must be pending or deferred)"
+            ),
         )
 
     if body.create_new:

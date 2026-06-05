@@ -284,6 +284,54 @@ def test_canonical_people_filters_public_figure(
     assert body["canonicals"][0]["public_figure"] is True
 
 
+def test_accept_deferred_person_candidate_create_new(
+    client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        sid = _add_pending_person(
+            s,
+            project_id=int(proj.id),
+            name="Deferred Person",
+            normalized_name="deferred person",
+            fingerprint="fp-deferred-person-1",
+        )
+
+    r_def = client.post(
+        f"/v1/people/candidates/{sid}/defer?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r_def.status_code == 200
+
+    r_suggest = client.get(
+        f"/v1/people/candidates/{sid}/suggested-canonicals?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert r_suggest.status_code == 200
+
+    r_accept = client.post(
+        f"/v1/people/candidates/{sid}/accept?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"create_new": True, "name": "Deferred Person Canon"},
+    )
+    assert r_accept.status_code == 200
+    cid = r_accept.json()["stylebook_person_canonical_id"]
+
+    r_deferred = client.get(
+        "/v1/people/candidates?project_slug=demo-proj&status=deferred",
+        headers=_service_headers(),
+    )
+    assert r_deferred.status_code == 200
+    assert r_deferred.json()["total"] == 0
+
+    with Session(stylebook_test_engine) as s:
+        person = s.get(SubstratePerson, sid)
+        assert person is not None
+        assert person.canonical_link_status == CANONICAL_LINK_LINKED
+        assert person.stylebook_person_canonical_id == cid
+
+
 def test_accept_person_candidate_create_new(
     client: TestClient,
     stylebook_test_engine: Engine,

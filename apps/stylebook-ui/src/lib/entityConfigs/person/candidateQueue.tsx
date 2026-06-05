@@ -251,7 +251,7 @@ export const personCandidateQueueConfig: CandidateQueuePageConfig<PersonCandidat
     },
     buildAcceptBody: (draft, candidate) => ({
       create_new: true,
-      label: String(draft.label ?? "").trim(),
+      name: String(draft.label ?? "").trim(),
       title: String(draft.title ?? "").trim() || null,
       affiliation: String(draft.affiliation ?? "").trim() || null,
       public_figure: draft.publicFigure === true,

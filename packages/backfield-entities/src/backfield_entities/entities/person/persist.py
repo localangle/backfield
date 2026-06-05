@@ -645,14 +645,14 @@ def link_substrate_to_canonical_atomic(
     prev = person.stylebook_person_canonical_id
     prev_str = str(prev) if prev is not None else None
     st = str(person.canonical_link_status)
-    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED):
+    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED, CANONICAL_LINK_WAIVED):
         raise ValueError("person canonical_link_status does not allow manual link")
-    if st == CANONICAL_LINK_PENDING and prev_str is not None:
+    if st in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED) and prev_str is not None:
         raise ValueError("invalid state: pending with non-null canonical FK")
     if prev_str == tid and st == CANONICAL_LINK_LINKED:
         return False
 
-    if st == CANONICAL_LINK_PENDING:
+    if st in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
         person.canonical_review_reasons_json = [
             {"code": "linked_to_canonical", "canonical_id": tid, "provenance": provenance}
         ]

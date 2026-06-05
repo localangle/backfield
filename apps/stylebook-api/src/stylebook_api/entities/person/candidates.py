@@ -521,12 +521,17 @@ def candidates_suggested_canonicals(
     if person is None or int(person.project_id) != int(proj.id):
         raise HTTPException(status_code=404, detail="Substrate person not found")
     st = str(person.canonical_link_status or "")
-    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED):
+    if st not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_LINKED, CANONICAL_LINK_WAIVED):
         raise HTTPException(
             status_code=409,
-            detail="Suggestions are only available for pending or linked substrate people",
+            detail=(
+                "Suggestions are only available for pending, deferred, or linked substrate people"
+            ),
         )
-    if st == CANONICAL_LINK_PENDING and person.stylebook_person_canonical_id is not None:
+    if (
+        st in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED)
+        and person.stylebook_person_canonical_id is not None
+    ):
         raise HTTPException(status_code=409, detail="Invalid pending state: canonical FK is set")
     ranked = rank_canonical_suggestions_for_substrate(
         session, stylebook_id=stylebook_id, person=person, limit=limit
@@ -626,10 +631,12 @@ def accept_candidate(
         raise HTTPException(status_code=404, detail="Substrate person not found")
     if person.stylebook_person_canonical_id is not None:
         raise HTTPException(status_code=409, detail="Person already linked to a canonical")
-    if person.canonical_link_status != CANONICAL_LINK_PENDING:
+    if person.canonical_link_status not in (CANONICAL_LINK_PENDING, CANONICAL_LINK_WAIVED):
         raise HTTPException(
             status_code=400,
-            detail="Person is not in the canonical review queue (status must be pending)",
+            detail=(
+                "Person is not in the canonical review queue (status must be pending or deferred)"
+            ),
         )
 
     if body.create_new:

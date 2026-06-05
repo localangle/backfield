@@ -80,7 +80,7 @@ export async function listPersonCandidateTypes(
 export type AcceptPersonCandidateBody = {
   create_new: boolean
   stylebook_person_canonical_id?: string | null
-  label?: string | null
+  name?: string | null
   person_type?: string | null
   title?: string | null
   affiliation?: string | null
