@@ -10,6 +10,10 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
     SubstrateLocationSemanticDocument,
+    SubstrateOrganization,
+    SubstrateOrganizationMention,
+    SubstrateOrganizationMentionOccurrence,
+    SubstrateOrganizationSemanticDocument,
     SubstratePerson,
     SubstratePersonMention,
     SubstratePersonMentionOccurrence,
@@ -384,6 +388,58 @@ def test_location_sync_creates_and_updates_documents() -> None:
         assert "Springfield General" in row.search_text
 
 
+def _seed_organization_chain(
+    session: Session, *, project_id: int, article_id: int
+) -> tuple[int, int, int]:
+    organization = SubstrateOrganization(
+        project_id=project_id,
+        name="Chicago City Hall",
+        normalized_name="chicago city hall",
+        organization_type="government",
+    )
+    session.add(organization)
+    session.commit()
+    session.refresh(organization)
+    mention = SubstrateOrganizationMention(
+        article_id=article_id,
+        organization_id=int(organization.id),
+        role_in_story="Announced a new policy",
+        nature="actor",
+    )
+    session.add(mention)
+    session.commit()
+    session.refresh(mention)
+    occurrence = SubstrateOrganizationMentionOccurrence(
+        organization_mention_id=int(mention.id),
+        mention_text="Chicago City Hall announced a new policy Monday.",
+        start_char=0,
+        end_char=48,
+        occurrence_order=1,
+    )
+    session.add(occurrence)
+    session.commit()
+    session.refresh(occurrence)
+    return int(organization.id), int(mention.id), int(occurrence.id)
+
+
+def test_organization_sync_creates_semantic_document() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        project_id, article_id = _seed_project(session)
+        _seed_organization_chain(session, project_id=project_id, article_id=article_id)
+        result = sync_semantic_documents_for_entity_type(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+            entity_type="organization",
+        )
+        session.commit()
+        assert result.summaries[0].created == 1
+        row = session.exec(select(SubstrateOrganizationSemanticDocument)).one()
+        assert "Chicago City Hall" in row.search_text
+        assert row.embedding_status == SEMANTIC_EMBEDDING_STATUS_PENDING
+
+
 def test_unsupported_entity_type_reports_structured_result() -> None:
     engine = _engine()
     with Session(engine) as session:
@@ -392,7 +448,7 @@ def test_unsupported_entity_type_reports_structured_result() -> None:
             session,
             project_id=project_id,
             article_id=article_id,
-            entity_type="organization",
+            entity_type="work",
         )
         assert result.summaries[0].unsupported == 1
         assert result.summaries[0].created == 0

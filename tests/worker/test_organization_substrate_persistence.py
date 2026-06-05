@@ -353,3 +353,50 @@ def test_organization_extract_pipeline_persist_to_substrate() -> None:
         natures = {m.nature for m in mentions if m.nature}
         assert "actor" in natures
         assert "regulator" in natures
+
+
+def test_persist_organizations_with_semantic_indexing_creates_semantic_docs() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    body = (
+        "Chicago City Hall announced a new policy today. "
+        '"This will benefit all residents," a spokesperson said.'
+    )
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-sem", project_slug="proj-org-sem")
+        session.add(AgateRun(id="run-org-sem", graph_id="graph-org-sem", status="pending"))
+        session.commit()
+
+        from backfield_entities.ingest.semantic_indexing.db_output import (
+            sync_semantic_documents_after_db_output,
+        )
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-org-sem",
+            run_id="run-org-sem",
+            consolidated={
+                "text": body,
+                "url": "https://example.com/org-sem",
+                "organizations": [_sample_organization_entry()],
+            },
+            db_output_params={"semantic_indexing_enabled": True},
+        )
+        session.commit()
+
+        article_id = session.exec(select(SubstrateOrganizationMention)).one().article_id
+        sync_semantic_documents_after_db_output(
+            session,
+            project_id=project_id,
+            article_id=int(article_id),
+            consolidated_domain_keys=("organizations",),
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        docs = session.exec(select(SubstrateOrganizationSemanticDocument)).all()
+        assert len(docs) == 2
+        assert all(doc.embedding_status == SEMANTIC_EMBEDDING_STATUS_PENDING for doc in docs)
+        assert all("Chicago City Hall" in doc.search_text for doc in docs)

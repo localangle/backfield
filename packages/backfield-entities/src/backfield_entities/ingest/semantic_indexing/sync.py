@@ -10,6 +10,9 @@ from backfield_entities.ingest.semantic_indexing.builders import (
 )
 from backfield_entities.ingest.semantic_indexing.contracts import SemanticBuilderEntityType
 from backfield_entities.ingest.semantic_indexing.location import sync_location_semantic_documents
+from backfield_entities.ingest.semantic_indexing.organization import (
+    sync_organization_semantic_documents,
+)
 from backfield_entities.ingest.semantic_indexing.person import sync_person_semantic_documents
 from backfield_entities.ingest.semantic_indexing.sync_contract import (
     SemanticSyncResult,
@@ -28,6 +31,12 @@ def _sync_entity_type(
 ) -> SemanticSyncSummary:
     if entity_type == "person":
         return sync_person_semantic_documents(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+        )
+    if entity_type == "organization":
+        return sync_organization_semantic_documents(
             session,
             project_id=project_id,
             article_id=article_id,

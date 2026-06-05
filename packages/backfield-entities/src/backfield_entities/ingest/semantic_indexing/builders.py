@@ -10,6 +10,10 @@ from backfield_entities.ingest.semantic_indexing.location import (
     build_location_occurrence_document,
     build_location_occurrence_documents,
 )
+from backfield_entities.ingest.semantic_indexing.organization import (
+    build_organization_occurrence_document,
+    build_organization_occurrence_documents,
+)
 from backfield_entities.ingest.semantic_indexing.person import (
     build_person_occurrence_document,
     build_person_occurrence_documents,
@@ -21,6 +25,8 @@ __all__ = [
     "SemanticDocumentUnsupportedType",
     "build_location_occurrence_document",
     "build_location_occurrence_documents",
+    "build_organization_occurrence_document",
+    "build_organization_occurrence_documents",
     "build_person_occurrence_document",
     "build_person_occurrence_documents",
     "semantic_builder_supported",
