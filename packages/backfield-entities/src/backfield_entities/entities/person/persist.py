@@ -403,22 +403,6 @@ def apply_canonical_persist_plan(
     )
 
 
-def sync_substrate_person_into_stylebook(
-    session: Session,
-    *,
-    stylebook_id: int,
-    person: SubstratePerson,
-    provenance: str = "substrate_ingest",
-) -> None:
-    if person.stylebook_person_canonical_id is not None:
-        refresh_aliases_for_linked_person(
-            session,
-            stylebook_id=stylebook_id,
-            person=person,
-            provenance=provenance,
-        )
-
-
 def rank_canonical_suggestions_for_substrate(
     session: Session,
     *,

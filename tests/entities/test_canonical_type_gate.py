@@ -15,7 +15,7 @@ from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_or
 from backfield_entities.entities.linking.substrate_actions import link_substrate_to_canonical_atomic
 from backfield_entities.entities.location.policy import (
     CanonicalPersistDecision,
-    decide_canonical_persist_plan,
+    decide_location_canonical_persist_plan,
     rank_scored_canonical_recall_matches,
     substrate_may_materialize_canonical_after_recall,
 )
@@ -327,7 +327,7 @@ def test_decide_canonical_persist_plan_place_skips_neighborhood_named_place_cano
             identity_fingerprint="fp-poi-hood-place",
         )
 
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -376,7 +376,7 @@ def test_decide_canonical_persist_plan_address_skips_place_canonical_on_street_o
             identity_fingerprint="fp-addr-place",
         )
 
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -419,7 +419,7 @@ def test_decide_canonical_persist_plan_intersection_skips_place_canonical() -> N
             identity_fingerprint="fp-int-place",
         )
 
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -473,7 +473,7 @@ def test_decide_canonical_persist_plan_neighborhood_skips_place_canonical() -> N
             identity_fingerprint="fp-hood-place",
         )
 
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="areas",
@@ -527,7 +527,7 @@ def test_decide_canonical_persist_plan_address_does_not_link_neighborhood_alias(
             identity_fingerprint="fp-type-gate-addr-hood-plan",
         )
 
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -684,7 +684,7 @@ def test_rank_does_not_drop_strict_to_flexible_candidates() -> None:
 
 def test_decide_canonical_persist_plan_intersection_exact_alias_does_not_link_city() -> None:
     """Exact alias on a city canonical does not link an intersection (type deny-list)."""
-    from backfield_entities.entities.location.policy import decide_canonical_persist_plan
+    from backfield_entities.entities.location.policy import decide_location_canonical_persist_plan
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -725,7 +725,7 @@ def test_decide_canonical_persist_plan_intersection_exact_alias_does_not_link_ci
             identity_fingerprint="fp-type-gate-5",
         )
 
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -742,7 +742,7 @@ def test_decide_canonical_persist_plan_intersection_exact_alias_does_not_link_ci
 
 def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None:
     """With permissive types, ambiguous-tier fuzzy recall defers for human/LLM review."""
-    from backfield_entities.entities.location.policy import decide_canonical_persist_plan
+    from backfield_entities.entities.location.policy import decide_location_canonical_persist_plan
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -780,7 +780,7 @@ def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None
             status="resolved",
             identity_fingerprint="fp-mat-ambig-x",
         )
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -795,7 +795,7 @@ def test_ambiguous_cross_type_recall_defers_when_mid_tier_match_exists() -> None
 
 def test_decide_canonical_persist_plan_span_always_defers_even_with_exact_alias() -> None:
     """Spans never auto-link or materialize; exact alias matches are ignored for ingest policy."""
-    from backfield_entities.entities.location.policy import decide_canonical_persist_plan
+    from backfield_entities.entities.location.policy import decide_location_canonical_persist_plan
 
     engine = _make_engine()
     with Session(engine) as session:
@@ -836,7 +836,7 @@ def test_decide_canonical_persist_plan_span_always_defers_even_with_exact_alias(
             identity_fingerprint="fp-span-defer-1",
         )
 
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",

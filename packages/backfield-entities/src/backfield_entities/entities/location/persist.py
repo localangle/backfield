@@ -372,20 +372,3 @@ def apply_canonical_persist_plan(
         provenance=provenance,
         audit_reasons=reasons,
     )
-
-
-def sync_substrate_location_into_stylebook(
-    session: Session,
-    *,
-    stylebook_id: int,
-    location: SubstrateLocation,
-    provenance: str = "substrate_ingest",
-) -> None:
-    """Backward-compatible entry: refresh aliases when already linked; no-op otherwise.
-
-    Prefer :func:`apply_canonical_persist_plan` from persistence after policy.
-    """
-    if location.stylebook_location_canonical_id is not None:
-        refresh_aliases_for_linked_location(
-            session, stylebook_id=stylebook_id, location=location, provenance=provenance
-        )

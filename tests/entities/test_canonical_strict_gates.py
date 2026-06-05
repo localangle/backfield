@@ -25,7 +25,7 @@ from backfield_entities.canonical.match_score import RECALL_MIN_SCORE
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.entities.location.policy import (
     _jurisdiction_pair_demotes_recall_score,
-    decide_canonical_persist_plan,
+    decide_location_canonical_persist_plan,
     find_existing_canonical_id_by_normalized_label,
     plan_requires_llm_canonical_adjudication,
 )
@@ -231,7 +231,7 @@ def test_decide_links_imported_canonical_by_normalized_label_without_alias(
         assert find_existing_canonical_id_by_normalized_label(
             session, stylebook_id=sb_id, location=loc
         ) == str(canon.id)
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="areas.neighborhoods",
@@ -298,7 +298,7 @@ def test_gate_demoted_high_raw_recall_defers_for_llm_not_materialize(
         session.add(loc)
         session.commit()
         session.refresh(loc)
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -344,7 +344,7 @@ def test_decide_defers_on_geocode_country_mismatch(monkeypatch: pytest.MonkeyPat
         session.add(loc)
         session.commit()
         session.refresh(loc)
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -417,7 +417,7 @@ def test_decide_preflight_defers_on_geocode_state_mismatch(monkeypatch: pytest.M
         session.add(loc)
         session.commit()
         session.refresh(loc)
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="points",
@@ -469,7 +469,7 @@ def test_decide_city_does_not_autolink_to_place_canonical(monkeypatch: pytest.Mo
         session.add(loc)
         session.commit()
         session.refresh(loc)
-        plan = decide_canonical_persist_plan(
+        plan = decide_location_canonical_persist_plan(
             session,
             stylebook_id=sb_id,
             places_bucket="areas.cities",

@@ -97,10 +97,6 @@ def person_canonical_to_export_dict(c: StylebookPersonCanonical) -> dict[str, An
     }
 
 
-# Backward-compatible alias for tests and callers.
-canonical_to_export_dict = location_canonical_to_export_dict
-
-
 def _write_jsonl_shards(
     work: Path,
     rel_prefix: str,

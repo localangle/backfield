@@ -38,10 +38,6 @@ class DomainReconciliationSummary:
         }
 
 
-# Backward-compatible alias for location-only imports.
-PlacesReconciliationSummary = DomainReconciliationSummary
-
-
 @dataclass(frozen=True)
 class PersistContext:
     project_id: int

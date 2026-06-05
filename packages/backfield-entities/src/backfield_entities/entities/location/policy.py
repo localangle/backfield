@@ -167,9 +167,6 @@ _NO_AUTOMATIC_CANONICAL_MATERIALIZATION_TYPES: frozenset[str] = frozenset(
     }
 )
 
-# Backwards-compatible name for :func:`link_pair_allowed` (type deny-list + product gates).
-types_are_autolink_compatible = link_pair_allowed
-
 # Recall demotion when an address point is far from a neighborhood polygon (pair is denied for
 # autolink via :func:`link_pair_allowed`; this gate only affects comparable scoring paths).
 ADDRESS_NEIGHBORHOOD_AUTOLINK_MAX_KM = 50.0
@@ -553,7 +550,7 @@ def rank_scored_canonical_recall_matches(
 
     Each tuple is ``(canonical_id, label, gated_score, recall_index, raw_score)``.
     Tie-break on equal ``gated_score``: higher ``recall_index`` wins, matching fuzzy
-    ``best_id`` selection in :func:`decide_canonical_persist_plan`.
+    ``best_id`` selection in :func:`decide_location_canonical_persist_plan`.
     """
     if not recall:
         return []
@@ -1021,7 +1018,3 @@ def defer_reason_payload(
                 d[k] = v
     d["message"] = deferred_policy_display_message(d)
     return (d,)
-
-
-# Backward-compatible alias for imports that predate ``entities/location/policy.py``.
-decide_canonical_persist_plan = decide_location_canonical_persist_plan

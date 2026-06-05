@@ -24,7 +24,6 @@ from worker.substrate.entities.person.handler import PersonPersistHandler  # noq
 from worker.substrate.entities.registry import (
     DomainReconciliationSummary,
     PersistContext,
-    PlacesReconciliationSummary,
     get_persist_handler,
 )
 
@@ -36,7 +35,6 @@ __all__ = [
     "persist_from_consolidated",
     "_find_mention_span",
     "DomainReconciliationSummary",
-    "PlacesReconciliationSummary",
 ]
 
 

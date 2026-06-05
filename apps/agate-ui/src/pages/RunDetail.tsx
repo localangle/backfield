@@ -20,7 +20,7 @@ import {
   type RunEstimatedAiCost,
 } from '@/lib/api'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
-import { formatDateCentral, formatRunTitleDate } from '@/lib/utils'
+import { formatDate, formatRunTitleDate } from '@/lib/utils'
 import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
 import {
@@ -464,7 +464,7 @@ export default function RunDetail() {
         <CardHeader>
           <CardTitle>Run Summary</CardTitle>
           <CardDescription>
-            Created {formatDateCentral(run.created_at)}
+            Created {formatDate(run.created_at)}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -733,7 +733,7 @@ export default function RunDetail() {
                       </span>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDateCentral(item.created_at)}
+                      {formatDate(item.created_at)}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end">

@@ -152,18 +152,6 @@ def _strong_identity_canonical_ids(
     return matches
 
 
-def find_existing_person_canonical_id_by_identity(
-    session: Session,
-    *,
-    stylebook_id: int,
-    person: SubstratePerson,
-) -> str | None:
-    """Backward-compatible alias for tier-1 strong identity (name + affiliation)."""
-    return find_existing_person_canonical_id_by_strong_identity(
-        session, stylebook_id=stylebook_id, person=person
-    )
-
-
 def rank_person_canonical_recall_matches(
     session: Session,
     *,

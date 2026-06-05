@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select'
 import { listRuns, listGraphs, cancelRun, type Run, type Graph } from '@/lib/api'
 import { formatRunEstimatedAiCost } from '@/lib/formatRunEstimatedCost'
-import { formatDateCentral } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 import {
   Loader2,
   CheckCircle,
@@ -261,7 +261,7 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
                         </div>
                       </td>
                       <td className="p-3 sm:p-4 text-muted-foreground align-top hidden sm:table-cell whitespace-nowrap">
-                        {formatDateCentral(run.created_at, { dateStyle: 'medium', timeStyle: 'short' })}
+                        {formatDate(run.created_at, { dateStyle: 'medium', timeStyle: 'short' })}
                       </td>
                       <td className="p-3 sm:p-4 text-muted-foreground align-top hidden sm:table-cell whitespace-nowrap tabular-nums">
                         <>

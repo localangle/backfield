@@ -19,14 +19,13 @@ from backfield_entities.entities.person.persist import (
     refresh_aliases_for_linked_person,
     requeue_substrate_after_story_remove,
     seed_aliases_for_canonical_label,
-    sync_substrate_person_into_stylebook,
     unlink_substrate_from_canonical,
     upsert_alias_for_canonical_text,
 )
 from backfield_entities.entities.person.policy import (
     decide_person_canonical_persist_plan,
     find_existing_person_canonical_id_by_alias,
-    find_existing_person_canonical_id_by_identity,
+    find_existing_person_canonical_id_by_strong_identity,
     person_may_materialize_canonical_after_recall,
     plan_has_ambiguous_person_canonical_match,
     plan_requires_llm_person_canonical_adjudication,
@@ -54,7 +53,7 @@ __all__ = [
     "decide_person_canonical_persist_plan",
     "derive_person_sort_key",
     "find_existing_person_canonical_id_by_alias",
-    "find_existing_person_canonical_id_by_identity",
+    "find_existing_person_canonical_id_by_strong_identity",
     "is_person_catalog_editorial_provenance",
     "link_substrate_to_canonical_atomic",
     "link_to_existing_canonical",
@@ -73,7 +72,6 @@ __all__ = [
     "requeue_substrate_after_story_remove",
     "retrieve_person_canonical_candidates",
     "seed_aliases_for_canonical_label",
-    "sync_substrate_person_into_stylebook",
     "unlink_substrate_from_canonical",
     "upsert_alias_for_canonical_text",
 ]

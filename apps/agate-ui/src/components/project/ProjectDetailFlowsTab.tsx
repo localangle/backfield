@@ -17,7 +17,7 @@ import {
   type Graph,
   type GraphCreate,
 } from '@/lib/api'
-import { formatDateCentral } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
 import { Loader2, Copy, Trash2 } from 'lucide-react'
 
 interface ProjectDetailFlowsTabProps {
@@ -137,7 +137,7 @@ export default function ProjectDetailFlowsTab({
                         className="p-3 sm:p-4 text-muted-foreground cursor-pointer align-top hidden sm:table-cell whitespace-nowrap"
                         onClick={() => navigate(`/flow/${graph.id}`)}
                       >
-                        {formatDateCentral(graph.created_at, { includeTime: false })}
+                        {formatDate(graph.created_at, { includeTime: false })}
                       </td>
                       <td className="p-3 sm:p-4 align-top">
                         <div className="flex items-center justify-end gap-1">

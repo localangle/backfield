@@ -14,12 +14,14 @@ from backfield_entities.ingest.semantic_indexing import (
     semantic_builder_supported,
     unsupported_semantic_builder_type,
 )
-from backfield_entities.ingest.semantic_indexing.sources import (
-    ArticleSource,
+from backfield_entities.ingest.semantic_indexing.common.article import ArticleSource
+from backfield_entities.ingest.semantic_indexing.location.sources import (
     LocationCanonicalSource,
     LocationEntitySource,
     LocationMentionSource,
     LocationOccurrenceSource,
+)
+from backfield_entities.ingest.semantic_indexing.person.sources import (
     PersonCanonicalSource,
     PersonEntitySource,
     PersonMentionSource,
