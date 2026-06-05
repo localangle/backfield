@@ -142,17 +142,17 @@ Every new `extract_and_persist` type should ship the same **canonical ingest + e
 
 ### Candidate queue UX parity (required for every type)
 
-Location and person queues share the same **linking niceties**; new types must ship the same behavior (do not copy-paste per page—reuse the shared modules below).
+Location and person queues share the same **linking niceties**; new types must ship the same behavior via the **candidate queue shell** (do not fork page bodies).
 
-| Behavior | API / data | Shared UI (stylebook-ui) | Reference pages |
+| Behavior | API / data | Shared UI (stylebook-ui) | Per-type config |
 |----------|------------|--------------------------|-----------------|
-| **Review context under rows** | List rows include `canonical_review_lines` from `canonical_review_reasons_json` (open + deferred when displayable). Location **`deferred_policy`** rows (e.g. geocode **`needs_review`** bucket) get product copy via [`review_display.py`](../packages/backfield-entities/src/backfield_entities/entities/location/review_display.py) at ingest and in [`candidate_review_display.py`](../apps/stylebook-api/src/stylebook_api/helpers/candidate_review_display.py) for legacy rows. | [`CandidateReviewReasons.tsx`](../apps/stylebook-ui/src/components/CandidateReviewReasons.tsx) | [`LocationCandidates.tsx`](../apps/stylebook-ui/src/pages/LocationCandidates.tsx), [`PersonCandidates.tsx`](../apps/stylebook-ui/src/pages/PersonCandidates.tsx) |
-| **Create-modal “similar canonical exists” nudge** | `GET …/candidates/{substrate_id}/suggested-canonicals` while the user edits the draft label; show when label similarity ≥ **0.86** | [`candidateQueueSimilarity.ts`](../apps/stylebook-ui/src/lib/candidateQueueSimilarity.ts) (`pickCreateLinkNudge`), [`CreateCanonicalLinkNudgeAlert.tsx`](../apps/stylebook-ui/src/components/CreateCanonicalLinkNudgeAlert.tsx) | Same pages (create dialog) |
-| **Post-create + linked toasts** | After accept/materialize or link, auto-dismiss success toasts (~3s); prefetch open-queue `q=` matches (top **5**) for optional “Potential links” dialog | [`useCandidateQueueToasts.ts`](../apps/stylebook-ui/src/lib/useCandidateQueueToasts.ts) (hook), [`candidateQueueToast.ts`](../apps/stylebook-ui/src/lib/candidateQueueToast.ts) (`useAutoDismissToast`), [`CandidateQueueCreatedToast.tsx`](../apps/stylebook-ui/src/components/CandidateQueueCreatedToast.tsx), [`CandidateQueueLinkedToast.tsx`](../apps/stylebook-ui/src/components/CandidateQueueLinkedToast.tsx), [`PotentialCandidateLinksDialog.tsx`](../apps/stylebook-ui/src/components/PotentialCandidateLinksDialog.tsx) | Wire the hook in `<Type>Candidates.tsx` with type-specific list/link callbacks and copy props on the two toast components |
-| **Link modal** | Suggested-canonicals + catalog `?q=` search + `POST …/link-canonical` | Per-type `*CanonicalLinkModal` | [`CanonicalLinkModal.tsx`](../apps/stylebook-ui/src/components/CanonicalLinkModal.tsx), [`PersonCanonicalLinkModal.tsx`](../apps/stylebook-ui/src/components/PersonCanonicalLinkModal.tsx) |
-| **Inline editor notes** | `POST …/candidates/{substrate_id}/note` stores `review_note` on `canonical_review_reasons_json`; list + context return `note` | [`useCandidateQueueInlineNote.ts`](../apps/stylebook-ui/src/lib/useCandidateQueueInlineNote.ts), [`CandidateQueueInlineNote.tsx`](../apps/stylebook-ui/src/components/CandidateQueueInlineNote.tsx) | Expand row → click-to-edit note under article context; sticky-note icon on rows with a saved note |
+| **Review context under rows** | List rows include `canonical_review_lines` from `canonical_review_reasons_json` (open + deferred when displayable). Location **`deferred_policy`** rows (e.g. geocode **`needs_review`** bucket) get product copy via [`review_display.py`](../packages/backfield-entities/src/backfield_entities/entities/location/review_display.py) at ingest and in [`candidate_review_display.py`](../apps/stylebook-api/src/stylebook_api/helpers/candidate_review_display.py) for legacy rows. | [`CandidateQueuePage.tsx`](../apps/stylebook-ui/src/components/CandidateQueuePage.tsx) + [`CandidateReviewReasons.tsx`](../apps/stylebook-ui/src/components/CandidateReviewReasons.tsx) | `entityConfigs/<type>/candidateQueue.tsx` |
+| **Create-modal “similar canonical exists” nudge** | `GET …/candidates/{substrate_id}/suggested-canonicals` while the user edits the draft label; show when label similarity ≥ **0.86** | [`useCandidateQueuePage.ts`](../apps/stylebook-ui/src/lib/useCandidateQueuePage.ts), [`candidateQueueSimilarity.ts`](../apps/stylebook-ui/src/lib/candidateQueueSimilarity.ts) (`pickCreateLinkNudge`), [`CreateCanonicalLinkNudgeAlert.tsx`](../apps/stylebook-ui/src/components/CreateCanonicalLinkNudgeAlert.tsx) | Create-dialog fields + `getDraftLabelForNudge` in config |
+| **Post-create + linked toasts** | After accept/materialize or link, auto-dismiss success toasts (~3s); prefetch open-queue `q=` matches (top **5**) for optional “Potential links” dialog | [`useCandidateQueueToasts.ts`](../apps/stylebook-ui/src/lib/useCandidateQueueToasts.ts), toast components, [`PotentialCandidateLinksDialog.tsx`](../apps/stylebook-ui/src/components/PotentialCandidateLinksDialog.tsx) | API adapter + copy props in config |
+| **Link modal** | Suggested-canonicals + catalog `?q=` search + `POST …/link-canonical` | [`CanonicalLinkModalGeneric.tsx`](../apps/stylebook-ui/src/components/CanonicalLinkModalGeneric.tsx) | `entityConfigs/<type>/canonicalLinkModal.ts` + thin `*CanonicalLinkModal` wrapper |
+| **Inline editor notes** | `POST …/candidates/{substrate_id}/note` stores `review_note` on `canonical_review_reasons_json`; list + context return `note` | [`useCandidateQueueInlineNote.ts`](../apps/stylebook-ui/src/lib/useCandidateQueueInlineNote.ts), [`CandidateQueueInlineNote.tsx`](../apps/stylebook-ui/src/components/CandidateQueueInlineNote.tsx) | Wired by shell; no per-page duplication |
 
-**API checklist for issue 03:** wire `canonical_review_lines` in the candidate list serializer (helper: [`candidate_review_display.py`](../apps/stylebook-api/src/stylebook_api/helpers/candidate_review_display.py)). Implement `POST …/candidates/{id}/note` and `_extract_review_note` like location/person. **UI checklist:** add `<Type>Candidates.tsx` by adapting the location page pattern and importing the shared pieces above; set `entityNoun` / `candidateNounPlural` / column labels for product copy.
+**API checklist for issue 03:** wire `canonical_review_lines` in the candidate list serializer (helper: [`candidate_review_display.py`](../apps/stylebook-api/src/stylebook_api/helpers/candidate_review_display.py)). Implement `POST …/candidates/{id}/note` and `_extract_review_note` like location/person. **UI checklist:** add `entityConfigs/<type>/candidateQueue.tsx`, `canonicalLinkModal.ts`, `canonicalList.ts` (or `.tsx` when extra filters use JSX), and `canonicalDetail.ts`; mount shells from thin page wrappers (`<Type>Candidates.tsx`, `<Type>s.tsx`, `<Type>Detail.tsx`) — see **stylebook-ui shells** below.
 
 ### Opt-in patterns (enable in PRD when needed)
 
@@ -275,7 +275,7 @@ Every Stylebook **canonical detail** page (`/stylebook/{slug}/<type>/canonical/{
 | **Metadata** | Stylebook-wide JSON meta on the canonical | `GET\|POST …/meta`, `PATCH\|DELETE …/meta/{meta_id}` |
 | **Connections** | Stylebook-wide graph edges | `GET\|POST …/connections`, … |
 
-UI wiring: reuse **`MetaTab`** via a thin `<Type>MetaTab` wrapper; mentions table mirrors `LocationDetail` (substrate group header with **Move…** / **Unlink**, nested article rows with nature, role, quoted text). Location adds **Geography**; non-location types omit map sections unless the entity has geography.
+UI wiring: mount [`CanonicalDetailLayout.tsx`](../apps/stylebook-ui/src/components/CanonicalDetailLayout.tsx) with `entityConfigs/<type>/canonicalDetail.ts` — section order **details → geography (location only) → mentions → meta → connections**. Reuse **`MetaTab`** via a thin `<Type>MetaTab` wrapper; mentions render in [`CanonicalMentionsSection.tsx`](../apps/stylebook-ui/src/components/CanonicalMentionsSection.tsx) (substrate group header with **Move…** / **Unlink**, nested article rows with nature, role, quoted text). Location adds **Geography** via [`LocationGeographySection.tsx`](../apps/stylebook-ui/src/components/LocationGeographySection.tsx); non-location types omit map sections unless the entity has geography.
 
 When the last mention is unlinked and no linked substrate rows remain, prompt to delete the canonical via **`usePromptDeleteEmptyCanonical`** (same copy and confirm flow for every type).
 
@@ -285,17 +285,53 @@ Do not show canonical **`status`** on the detail page Details card (location doe
 
 When adding a type (issue 03), ship mentions list route + linked-substrates + meta routes together with the detail page — do not leave metadata or mentions for a follow-up unless the type is catalog-only stub.
 
-### stylebook-ui (current)
+### stylebook-ui shells (current)
+
+Per-type pages are **thin wrappers** around shared shells + `entityConfigs/<type>/` configs. Do not copy `LocationCandidates.tsx` or `LocationDetail.tsx` bodies for new types.
 
 ```
-apps/stylebook-ui/src/lib/
-  entityTypes.ts
-  entityRegistry.ts          # EntityConfig + home cards
-  entityConfigs/
-    connectionPickers.ts
+apps/stylebook-ui/src/
+  components/
+    CandidateQueuePage.tsx       # candidate review queue
+    CanonicalLinkModalGeneric.tsx
+    CanonicalListPage.tsx        # canonical catalog list
+    CanonicalDetailLayout.tsx    # canonical detail chrome + sections
+    CanonicalMentionsSection.tsx
+    LocationGeographySection.tsx # location-only geography card
+  lib/
+    useCandidateQueuePage.ts
+    useCanonicalListUrlState.ts
+    candidateQueueSuggestions.ts
+    mentionArticleDisplay.ts
+    entityTypes.ts
+    entityRegistry.ts            # EntityConfig + home cards
+    entityConfigs/
+      candidateQueueTypes.ts
+      canonicalLinkModalTypes.ts
+      canonicalListTypes.ts
+      canonicalDetailTypes.ts
+      connectionPickers.ts
+      person.ts                  # legacy person helpers
+      location/
+        candidateQueue.tsx
+        canonicalLinkModal.ts
+        canonicalList.ts
+        canonicalDetail.ts
+      person/
+        candidateQueue.tsx
+        canonicalLinkModal.ts
+        canonicalList.tsx        # .tsx when extraFilters use JSX
+        canonicalDetail.ts
+  pages/
+    LocationCandidates.tsx       # <CandidateQueuePage config={…} />
+    PersonCandidates.tsx
+    Locations.tsx                # <CanonicalListPage config={…} />
+    People.tsx
+    LocationDetail.tsx           # <CanonicalDetailLayout config={…} />
+    PersonDetail.tsx
 ```
 
-Location catalog pages remain under `src/pages/Locations*.tsx`; per-type issues add config-driven surfaces.
+**New type checklist (issue 03):** add the four configs under `entityConfigs/<type>/`, register routes + `entityRegistry.ts`, and wire thin page wrappers. Import wizards (`ImportLocations`, `ImportPeople`) stay separate.
 
 ### agate-api processed_item (current)
 
