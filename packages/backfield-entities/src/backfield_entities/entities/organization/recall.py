@@ -10,10 +10,11 @@ from backfield_db import (
 from sqlmodel import Session, col, select
 
 from backfield_entities.entities.organization.types import (
+    multiword_organization_names_share_ambiguous_acronym,
     normalize_organization_text,
     normalize_organization_type,
-    organization_alias_lookup_keys,
     organization_names_match_via_acronym,
+    organization_substrate_alias_lookup_keys,
 )
 
 ORGANIZATION_RECALL_MIN_SCORE = 40
@@ -27,7 +28,7 @@ def canonical_ids_from_organization_name_keys(
     name_or_norm: str,
 ) -> list[str]:
     """Canonical ids whose alias ``normalized_alias`` matches exactly."""
-    lookup_keys = set(organization_alias_lookup_keys(name_or_norm))
+    lookup_keys = set(organization_substrate_alias_lookup_keys(name_or_norm))
     if not lookup_keys:
         return []
     stmt = (
@@ -72,7 +73,7 @@ def _organization_lookup_norms(
     seen: set[str] = set()
     sources = [organization.normalized_name or organization.name, *extra_lookup_names]
     for source in sources:
-        for key in organization_alias_lookup_keys(source):
+        for key in organization_substrate_alias_lookup_keys(source):
             if key not in seen:
                 seen.add(key)
                 norms.append(key)
@@ -89,7 +90,12 @@ def _score_canonical_for_organization(
     score = 0
     if norm and label_norm == norm:
         score = 100
-    elif norm and label_norm and organization_names_match_via_acronym(norm, label_norm):
+    elif (
+        norm
+        and label_norm
+        and not multiword_organization_names_share_ambiguous_acronym(norm, label_norm)
+        and organization_names_match_via_acronym(norm, label_norm)
+    ):
         score = 90
     elif norm and label_norm and (norm in label_norm or label_norm in norm):
         score = 60

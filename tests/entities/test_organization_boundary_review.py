@@ -33,7 +33,7 @@ def test_parse_organization_boundary_from_entry() -> None:
     assert parse_organization_boundary_from_entry(entry) == "borderline_event_competition"
 
 
-def test_plan_with_boundary_defer_override_preserves_link_suggestion() -> None:
+def test_plan_with_boundary_defer_override_suggests_defer_only() -> None:
     prior = CanonicalPersistPlan(
         decision=CanonicalPersistDecision.LINK_EXISTING,
         existing_canonical_id="canon-twitter",
@@ -48,11 +48,26 @@ def test_plan_with_boundary_defer_override_preserves_link_suggestion() -> None:
     codes = [str(r.get("code") or "") for r in plan.resolution_reasons if isinstance(r, dict)]
     assert BORDERLINE_ORGANIZATION_BOUNDARY_CODE in codes
     assert "canonical_suggestion" in codes
-    link_suggestion = next(
+    suggestion = next(
         r for r in plan.resolution_reasons if r.get("code") == "canonical_suggestion"
     )
-    assert link_suggestion.get("suggested_action") == "link_existing"
-    assert link_suggestion.get("stylebook_organization_canonical_id") == "canon-twitter"
+    assert suggestion.get("suggested_action") == "defer"
+    assert "stylebook_organization_canonical_id" not in suggestion
+
+
+def test_plan_with_boundary_defer_override_replaces_materialize_new_suggestion() -> None:
+    prior = CanonicalPersistPlan(
+        decision=CanonicalPersistDecision.MATERIALIZE_NEW,
+        resolution_reasons=({"code": "no_canonical_match",},),
+    )
+    plan = plan_with_boundary_defer_override(
+        prior,
+        boundary="borderline_work_title",
+    )
+    suggestion = next(
+        r for r in plan.resolution_reasons if r.get("code") == "canonical_suggestion"
+    )
+    assert suggestion.get("suggested_action") == "defer"
 
 
 def test_boundary_reason_dict_short_name() -> None:

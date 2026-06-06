@@ -170,6 +170,42 @@ def test_organization_candidates_lists_unlinked_substrate(
     assert data["candidates"][0]["suggested_type"] == "company"
 
 
+def test_borderline_organization_candidate_suggests_defer_not_create(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        oid = _add_pending_organization(
+            s,
+            project_id=int(proj.id),
+            name="The Rube Goldberg Puzzle Book",
+            normalized_name="the rube goldberg puzzle book",
+            organization_type="media",
+        )
+        organization = s.get(SubstrateOrganization, oid)
+        assert organization is not None
+        organization.canonical_review_reasons_json = [
+            {"code": "borderline_organization_boundary", "boundary": "work_title"},
+            {
+                "code": "canonical_suggestion",
+                "source": "rules_plan",
+                "suggested_action": "materialize_new",
+            },
+        ]
+        s.add(organization)
+        s.commit()
+
+    r = client.get(
+        "/v1/organizations/candidates?project_slug=demo-proj&status=open",
+        headers=_service_headers(),
+    )
+    assert r.status_code == 200
+    row = r.json()["candidates"][0]
+    assert row["suggested_name"] == "The Rube Goldberg Puzzle Book"
+    assert row["canonical_suggestion"]["suggested_action"] == "defer"
+    assert row["canonical_suggestion"].get("stylebook_organization_canonical_id") is None
+
+
 def test_get_substrate_organization_returns_linked_canonical_id(
     client: TestClient, stylebook_test_engine: Engine
 ) -> None:

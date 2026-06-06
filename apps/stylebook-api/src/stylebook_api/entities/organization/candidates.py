@@ -25,6 +25,7 @@ from backfield_entities.entities.organization.persist import (
     rank_canonical_suggestions_for_substrate,
     refresh_aliases_for_linked_organization,
 )
+from backfield_entities.entities.organization.review import BORDERLINE_ORGANIZATION_BOUNDARY_CODE
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import exists, or_
@@ -152,6 +153,15 @@ def _canonical_suggestion_payload(organization: SubstrateOrganization) -> dict[s
             sug = dict(it)
         if code == "canonical_adjudication":
             adj = dict(it)
+    has_boundary = any(
+        str(it.get("code") or "") == BORDERLINE_ORGANIZATION_BOUNDARY_CODE for it in items
+    )
+    if has_boundary:
+        return {
+            "suggested_action": "defer",
+            "stylebook_organization_canonical_id": None,
+            "source": (sug or {}).get("source") or "rules_plan",
+        }
     if sug is None and adj is None:
         return None
     out: dict[str, Any] = {}

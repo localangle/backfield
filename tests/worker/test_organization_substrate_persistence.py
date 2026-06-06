@@ -111,6 +111,10 @@ def test_persist_borderline_organization_sets_review_and_pending_queue() -> None
         codes = [str(r.get("code") or "") for r in reasons if isinstance(r, dict)]
         assert "borderline_organization_boundary" in codes
         assert "canonical_suggestion" in codes
+        suggestion = next(
+            r for r in reasons if isinstance(r, dict) and r.get("code") == "canonical_suggestion"
+        )
+        assert suggestion.get("suggested_action") == "defer"
 
         mentions = session.exec(select(SubstrateOrganizationMention)).all()
         assert len(mentions) == 1

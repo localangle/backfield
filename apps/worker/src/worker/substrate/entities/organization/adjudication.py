@@ -24,6 +24,10 @@ from backfield_entities.entities.organization.policy import (
     plan_is_materialize_new_canonical,
     replan_organization_canonical_after_name_variants,
 )
+from backfield_entities.entities.organization.types import (
+    multiword_organization_names_share_ambiguous_acronym,
+    normalize_organization_text,
+)
 from sqlmodel import Session, select
 
 
@@ -231,6 +235,9 @@ def adjudicate_ambiguous_organization_plan_with_llm(
         "- Set canonical_id to null when organization type, role, or context indicates a "
         "different entity with a similar name, or when you are not certain.\n"
         "- Prefer null (human review) over a stretched link between namesakes.\n"
+        "- Different sports teams with similar shorthand (e.g. Colorado Rockies vs "
+        "Cincinnati Reds) are never the same organization even when both are "
+        "sports_team.\n"
         f"- Use confidence {floor} or higher only for definitive same-organization identity; "
         f"otherwise use confidence below {floor} (the system will not auto-link).\n\n"
         "Return JSON only: canonical_id (UUID string matching one candidate id, or null), "
@@ -295,6 +302,14 @@ def adjudicate_ambiguous_organization_plan_with_llm(
         return _reject_link()
 
     if not organization_type_matches_canonical(organization, canon):
+        return _reject_link()
+
+    substrate_norm = normalize_organization_text(organization.normalized_name or organization.name)
+    canon_label_norm = normalize_organization_text(canon.label)
+    if multiword_organization_names_share_ambiguous_acronym(
+        substrate_norm,
+        canon_label_norm,
+    ):
         return _reject_link()
 
     extra = {

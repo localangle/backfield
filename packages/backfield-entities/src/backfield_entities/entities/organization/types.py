@@ -83,6 +83,8 @@ def organization_names_match_via_acronym(left: str | None, right: str | None) ->
         return False
     if left_norm == right_norm:
         return True
+    if multiword_organization_names_share_ambiguous_acronym(left_norm, right_norm):
+        return False
     left_acr = organization_acronym_from_name(left_norm)
     right_acr = organization_acronym_from_name(right_norm)
     if left_acr and left_acr == right_norm:
@@ -90,6 +92,38 @@ def organization_names_match_via_acronym(left: str | None, right: str | None) ->
     if right_acr and right_acr == left_norm:
         return True
     return False
+
+
+def multiword_organization_names_share_ambiguous_acronym(
+    left_norm: str,
+    right_norm: str,
+) -> bool:
+    """True when two different multi-word names collapse to the same derived acronym."""
+    if not left_norm or not right_norm or left_norm == right_norm:
+        return False
+    if " " not in left_norm or " " not in right_norm:
+        return False
+    left_acr = organization_acronym_from_name(left_norm)
+    right_acr = organization_acronym_from_name(right_norm)
+    return bool(left_acr and left_acr == right_acr)
+
+
+def organization_tier1_identity_compatible(
+    *,
+    substrate_norm: str,
+    canonical_label_norm: str,
+) -> bool:
+    """Whether rules-based tier-1 auto-link may treat two names as the same organization."""
+    if not substrate_norm or not canonical_label_norm:
+        return False
+    if substrate_norm == canonical_label_norm:
+        return True
+    if multiword_organization_names_share_ambiguous_acronym(
+        substrate_norm,
+        canonical_label_norm,
+    ):
+        return False
+    return organization_names_match_via_acronym(substrate_norm, canonical_label_norm)
 
 
 def organization_alias_surface_form(label: str, normalized_key: str) -> str:
@@ -101,14 +135,16 @@ def organization_alias_surface_form(label: str, normalized_key: str) -> str:
     return clean
 
 
-def organization_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
-    """Stored ``normalized_alias`` variants for recall and exact alias lookup."""
+def organization_canonical_alias_keys(value: str | None) -> tuple[str, ...]:
+    """Alias keys stored on a canonical label or linked substrate name."""
     norm = normalize_organization_text(value)
     if not norm:
         return ()
     keys: list[str] = [norm]
     acr = organization_acronym_from_name(value)
-    if acr and acr != norm:
+    # Skip collision-prone two-letter derived acronyms (e.g. Colorado Rockies and
+    # Cincinnati Reds both → ``cr``). Longer acronyms (CPS, NBA) remain useful.
+    if acr and acr != norm and len(acr) > 2:
         keys.append(acr)
     out: list[str] = []
     seen: set[str] = set()
@@ -117,6 +153,26 @@ def organization_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
             seen.add(key)
             out.append(key)
     return tuple(out)
+
+
+def organization_substrate_alias_lookup_keys(value: str | None) -> tuple[str, ...]:
+    """Lookup keys when matching a substrate name against stored aliases.
+
+    Multi-word names use the full normalized form only so shared derived
+    acronyms (e.g. Colorado Rockies and Cincinnati Reds → ``cr``) do not
+    auto-link unrelated organizations. Acronym-like single-token substrate
+    names (e.g. ``CPS``, ``NBA``) still match stored acronym aliases.
+    """
+    norm = normalize_organization_text(value)
+    if not norm:
+        return ()
+    if organization_looks_like_acronym(value) or " " not in norm:
+        return (norm,)
+    return (norm,)
+
+
+# Backward-compatible alias for canonical seeding call sites.
+organization_alias_lookup_keys = organization_canonical_alias_keys
 
 
 def normalize_organization_type(value: str | None) -> str | None:

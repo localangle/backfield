@@ -20,6 +20,7 @@ from backfield_entities.entities.organization.types import (
     normalize_organization_text,
     normalize_organization_type,
     organization_looks_like_acronym,
+    organization_tier1_identity_compatible,
 )
 
 AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH = "ambiguous_organization_canonical_match"
@@ -112,6 +113,12 @@ def _strong_identity_canonical_ids(
                 continue
             if not organization_type_matches_canonical(organization, canon):
                 continue
+            canon_label_norm = normalize_organization_text(canon.label)
+            if not organization_tier1_identity_compatible(
+                substrate_norm=name_norm,
+                canonical_label_norm=canon_label_norm,
+            ):
+                continue
             if cid not in seen:
                 seen.add(cid)
                 matches.append(cid)
@@ -127,6 +134,14 @@ def _strong_identity_canonical_ids(
             organization, canon
         )
         if not label_hit:
+            continue
+        if not any(
+            organization_tier1_identity_compatible(
+                substrate_norm=name_norm,
+                canonical_label_norm=label_norm,
+            )
+            for name_norm in name_norms
+        ):
             continue
         if not organization_type_matches_canonical(organization, canon):
             continue

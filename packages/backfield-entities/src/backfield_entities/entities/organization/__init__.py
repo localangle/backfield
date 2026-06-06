@@ -47,9 +47,11 @@ from backfield_entities.entities.organization.types import (
     normalize_organization_type,
     organization_acronym_from_name,
     organization_alias_lookup_keys,
+    organization_canonical_alias_keys,
     organization_identity_fingerprint,
     organization_looks_like_acronym,
     organization_names_match_via_acronym,
+    organization_substrate_alias_lookup_keys,
 )
 
 __all__ = [
@@ -85,7 +87,9 @@ __all__ = [
     "rank_canonical_suggestions_for_substrate",
     "organization_acronym_from_name",
     "organization_alias_lookup_keys",
+    "organization_canonical_alias_keys",
     "organization_looks_like_acronym",
+    "organization_substrate_alias_lookup_keys",
     "organization_names_match_via_acronym",
     "rank_organization_canonical_recall_matches",
     "replan_organization_canonical_after_name_variants",

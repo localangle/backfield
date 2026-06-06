@@ -15,12 +15,18 @@ from backfield_entities.entities.organization import (
     decide_organization_canonical_persist_plan,
     organization_acronym_from_name,
     organization_alias_lookup_keys,
+    organization_substrate_alias_lookup_keys,
     organization_names_match_via_acronym,
     replan_organization_canonical_after_name_variants,
     retrieve_organization_canonical_candidates,
     seed_aliases_for_canonical_label,
+    upsert_alias_for_canonical_text,
 )
 from backfield_entities.entities.organization.policy import ORGANIZATION_CANONICAL_TYPE_MISMATCH
+from backfield_entities.entities.organization.types import (
+    multiword_organization_names_share_ambiguous_acronym,
+    organization_tier1_identity_compatible,
+)
 from sqlmodel import Session, SQLModel, create_engine
 
 
@@ -56,7 +62,21 @@ def test_organization_acronym_helpers() -> None:
         "chicago public schools",
         "cps",
     )
+    assert organization_substrate_alias_lookup_keys("Chicago Public Schools") == (
+        "chicago public schools",
+    )
+    assert organization_substrate_alias_lookup_keys("CPS") == ("cps",)
+    assert organization_alias_lookup_keys("Cincinnati Reds") == ("cincinnati reds",)
     assert organization_names_match_via_acronym("nba", "national basketball association")
+    assert not organization_names_match_via_acronym("colorado rockies", "cincinnati reds")
+    assert multiword_organization_names_share_ambiguous_acronym(
+        "colorado rockies",
+        "cincinnati reds",
+    )
+    assert not organization_tier1_identity_compatible(
+        substrate_norm="colorado rockies",
+        canonical_label_norm="cincinnati reds",
+    )
 
 
 def test_recall_matches_expanded_substrate_to_acronym_canonical_label() -> None:
@@ -196,6 +216,89 @@ def test_policy_picks_matching_cps_when_two_share_acronym_alias() -> None:
         )
         assert plan.decision == CanonicalPersistDecision.LINK_EXISTING
         assert plan.existing_canonical_id == str(school.id)
+
+
+def test_tier1_blocks_stale_full_name_alias_on_wrong_canonical() -> None:
+    """A mistaken ``colorado rockies`` alias on a Cincinnati canonical must not auto-link."""
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        reds = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Cincinnati Reds",
+            slug="cincinnati-reds",
+            organization_type="sports_team",
+        )
+        session.add(reds)
+        session.flush()
+        seed_aliases_for_canonical_label(
+            session,
+            canon_id=str(reds.id),
+            label="Cincinnati Reds",
+            provenance="test",
+        )
+        upsert_alias_for_canonical_text(
+            session,
+            canon_id=str(reds.id),
+            alias_text="Colorado Rockies",
+            normalized_alias="colorado rockies",
+            provenance="test_stale_alias",
+        )
+        session.commit()
+        organization = SubstrateOrganization(
+            project_id=pid,
+            name="Colorado Rockies",
+            normalized_name="colorado rockies",
+            organization_type="sports_team",
+            identity_fingerprint="fp-colorado-rockies-stale",
+        )
+        session.add(organization)
+        session.commit()
+        plan = decide_organization_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            organization=organization,
+        )
+        assert plan.decision != CanonicalPersistDecision.LINK_EXISTING
+        assert plan.existing_canonical_id != str(reds.id)
+
+
+def test_shared_derived_acronym_does_not_link_different_sports_teams() -> None:
+    """Colorado Rockies and Cincinnati Reds both derive ``cr`` — must not auto-link."""
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        reds = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Cincinnati Reds",
+            slug="cincinnati-reds",
+            organization_type="sports_team",
+        )
+        session.add(reds)
+        session.flush()
+        seed_aliases_for_canonical_label(
+            session,
+            canon_id=str(reds.id),
+            label="Cincinnati Reds",
+            provenance="test",
+        )
+        session.commit()
+        organization = SubstrateOrganization(
+            project_id=pid,
+            name="Colorado Rockies",
+            normalized_name="colorado rockies",
+            organization_type="sports_team",
+            identity_fingerprint="fp-colorado-rockies",
+        )
+        session.add(organization)
+        session.commit()
+        plan = decide_organization_canonical_persist_plan(
+            session,
+            stylebook_id=sb_id,
+            organization=organization,
+        )
+        assert plan.decision != CanonicalPersistDecision.LINK_EXISTING
+        assert plan.existing_canonical_id != str(reds.id)
 
 
 def test_replan_links_via_variant_expanded_name() -> None:

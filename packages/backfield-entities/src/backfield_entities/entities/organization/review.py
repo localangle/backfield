@@ -56,36 +56,20 @@ def boundary_reason_dict(*, boundary: str) -> dict[str, str]:
     return {"code": BORDERLINE_ORGANIZATION_BOUNDARY_CODE, "boundary": short}
 
 
-def _canonical_suggestion_from_prior_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
-    if (
-        plan.decision == CanonicalPersistDecision.LINK_EXISTING
-        and plan.existing_canonical_id is not None
-    ):
-        return {
-            "code": "canonical_suggestion",
-            "source": "rules_plan",
-            "suggested_action": "link_existing",
-            "stylebook_organization_canonical_id": str(plan.existing_canonical_id),
-        }
-    if plan.decision == CanonicalPersistDecision.MATERIALIZE_NEW:
-        return {
-            "code": "canonical_suggestion",
-            "source": "rules_plan",
-            "suggested_action": "materialize_new",
-        }
-    return None
-
-
 def plan_with_boundary_defer_override(
     plan: CanonicalPersistPlan,
     *,
     boundary: str,
 ) -> CanonicalPersistPlan:
-    """Force pending review for borderline cousin mentions while preserving link hints."""
-    reasons: list[dict[str, Any]] = [boundary_reason_dict(boundary=boundary)]
-    suggestion = _canonical_suggestion_from_prior_plan(plan)
-    if suggestion is not None:
-        reasons.append(suggestion)
+    """Force pending review for borderline cousin mentions; suggest defer only."""
+    reasons: list[dict[str, Any]] = [
+        boundary_reason_dict(boundary=boundary),
+        {
+            "code": "canonical_suggestion",
+            "source": "rules_plan",
+            "suggested_action": "defer",
+        },
+    ]
     for item in plan.resolution_reasons:
         if not isinstance(item, dict):
             continue
