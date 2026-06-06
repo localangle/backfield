@@ -200,7 +200,7 @@ def _candidate_dict(organization: SubstrateOrganization) -> dict[str, Any]:
         "id": int(organization.id),  # type: ignore[arg-type]
         "project_id": int(organization.project_id),
         "suggested_name": str(organization.name),
-        "suggested_organization_type": organization.organization_type or "",
+        "suggested_type": organization.organization_type or "",
         "created_at": (
             organization.created_at.isoformat()
             if isinstance(organization.created_at, datetime)

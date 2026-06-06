@@ -38,3 +38,27 @@ def test_organization_from_llm_entry_requires_name() -> None:
 def test_organization_from_llm_entry_requires_mentions() -> None:
     with pytest.raises(ValueError, match="mentions"):
         organization_from_llm_entry({"name": "Cook County", "type": "government"})
+
+
+def test_organization_from_llm_entry_parses_boundary() -> None:
+    org = organization_from_llm_entry(
+        {
+            "name": "Dear Abby",
+            "type": "media",
+            "organization_boundary": "borderline_work_title",
+            "mentions": [{"text": "Dear Abby advised the reader.", "quote": False}],
+        }
+    )
+    assert org.organization_boundary == "borderline_work_title"
+
+
+def test_organization_from_llm_entry_ignores_invalid_boundary() -> None:
+    org = organization_from_llm_entry(
+        {
+            "name": "Twitter",
+            "type": "company",
+            "organization_boundary": "borderline_other",
+            "mentions": [{"text": "Twitter laid off workers.", "quote": False}],
+        }
+    )
+    assert org.organization_boundary is None

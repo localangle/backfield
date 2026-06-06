@@ -5,6 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from backfield_entities.entities.location.review_display import deferred_policy_display_message
+from backfield_entities.entities.organization.review_display import (
+    ORGANIZATION_CANONICAL_TYPE_MISMATCH_MESSAGE,
+    borderline_organization_boundary_display_message,
+    organization_canonical_type_mismatch_display_message,
+)
 
 _SKIP_LIST_DISPLAY_CODES: frozenset[str] = frozenset(
     {
@@ -20,9 +25,7 @@ _DEFAULT_CODE_MESSAGES: dict[str, str] = {
     "ambiguous_organization_canonical_match": (
         "Several Stylebook organizations could match this organization."
     ),
-    "organization_canonical_type_mismatch": (
-        "Organization type does not match the recalled Stylebook entry."
-    ),
+    "organization_canonical_type_mismatch": ORGANIZATION_CANONICAL_TYPE_MISMATCH_MESSAGE,
     "child": "Identified as a child",
     "animal": "Identified as an animal",
     "stage_name_or_alias": "Stage name or alias — confirm full identity before linking",
@@ -91,6 +94,12 @@ def _line_for_reason(item: dict[str, Any]) -> str | None:
 
     if code == "deferred_policy":
         return deferred_policy_display_message(item)
+
+    if code == "organization_canonical_type_mismatch":
+        return organization_canonical_type_mismatch_display_message(item)
+
+    if code == "borderline_organization_boundary":
+        return borderline_organization_boundary_display_message(item)
 
     return _DEFAULT_CODE_MESSAGES.get(code)
 

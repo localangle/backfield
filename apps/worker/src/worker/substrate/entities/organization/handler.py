@@ -17,6 +17,10 @@ from backfield_entities.entities.organization.policy import (
     plan_requires_llm_organization_canonical_adjudication,
     plan_requires_llm_organization_name_variant_recall,
 )
+from backfield_entities.entities.organization.review import (
+    parse_organization_boundary_from_entry,
+    plan_with_boundary_defer_override,
+)
 from sqlmodel import Session, col, select
 
 from worker.substrate.entities.organization.adjudication import (
@@ -139,48 +143,9 @@ class OrganizationPersistHandler:
                     organizations_bucket=bucket,
                     auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
                 )
-                adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
-                if (
-                    ctx.settings.canonicalization_mode == "ai_assisted"
-                    and plan_requires_llm_organization_name_variant_recall(
-                        plan, organization
-                    )
-                ):
-                    plan = enrich_materialize_plan_with_name_variant_recall(
-                        session,
-                        plan=plan,
-                        organization=organization,
-                        stylebook_id=ctx.stylebook_id,
-                        model=adj_model,
-                        model_config_id=ctx.settings.adjudication_ai_model_config_id,
-                        organizations_bucket=bucket,
-                        auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
-                    )
-                if (
-                    ctx.settings.canonicalization_mode == "ai_assisted"
-                    and plan_requires_llm_organization_canonical_adjudication(
-                        plan, organization
-                    )
-                ):
-                    plan = adjudicate_ambiguous_organization_plan_with_llm(
-                        session,
-                        plan=plan,
-                        organization=organization,
-                        stylebook_id=ctx.stylebook_id,
-                        model=adj_model,
-                        model_config_id=ctx.settings.adjudication_ai_model_config_id,
-                    )
-                if ctx.settings.auto_apply_canonicalization:
-                    apply_canonical_persist_plan(
-                        session,
-                        stylebook_id=ctx.stylebook_id,
-                        organization=organization,
-                        plan=plan,
-                        organizations_bucket=bucket,
-                        provenance="substrate_ingest",
-                        auto_apply_canonicalization=True,
-                    )
-                else:
+                boundary = parse_organization_boundary_from_entry(entry)
+                if boundary is not None:
+                    plan = plan_with_boundary_defer_override(plan, boundary=boundary)
                     apply_canonical_persist_plan_review_only(
                         session,
                         stylebook_id=ctx.stylebook_id,
@@ -188,6 +153,56 @@ class OrganizationPersistHandler:
                         plan=plan,
                         organizations_bucket=bucket,
                     )
+                else:
+                    adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
+                    if (
+                        ctx.settings.canonicalization_mode == "ai_assisted"
+                        and plan_requires_llm_organization_name_variant_recall(
+                            plan, organization
+                        )
+                    ):
+                        plan = enrich_materialize_plan_with_name_variant_recall(
+                            session,
+                            plan=plan,
+                            organization=organization,
+                            stylebook_id=ctx.stylebook_id,
+                            model=adj_model,
+                            model_config_id=ctx.settings.adjudication_ai_model_config_id,
+                            organizations_bucket=bucket,
+                            auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
+                        )
+                    if (
+                        ctx.settings.canonicalization_mode == "ai_assisted"
+                        and plan_requires_llm_organization_canonical_adjudication(
+                            plan, organization
+                        )
+                    ):
+                        plan = adjudicate_ambiguous_organization_plan_with_llm(
+                            session,
+                            plan=plan,
+                            organization=organization,
+                            stylebook_id=ctx.stylebook_id,
+                            model=adj_model,
+                            model_config_id=ctx.settings.adjudication_ai_model_config_id,
+                        )
+                    if ctx.settings.auto_apply_canonicalization:
+                        apply_canonical_persist_plan(
+                            session,
+                            stylebook_id=ctx.stylebook_id,
+                            organization=organization,
+                            plan=plan,
+                            organizations_bucket=bucket,
+                            provenance="substrate_ingest",
+                            auto_apply_canonicalization=True,
+                        )
+                    else:
+                        apply_canonical_persist_plan_review_only(
+                            session,
+                            stylebook_id=ctx.stylebook_id,
+                            organization=organization,
+                            plan=plan,
+                            organizations_bucket=bucket,
+                        )
             elif organization.stylebook_organization_canonical_id is None:
                 organization.canonical_link_status = CANONICAL_LINK_UNLINKED
                 session.add(organization)

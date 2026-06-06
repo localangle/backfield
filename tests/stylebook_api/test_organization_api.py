@@ -167,6 +167,7 @@ def test_organization_candidates_lists_unlinked_substrate(
     data = r.json()
     assert data["total"] == 1
     assert data["candidates"][0]["suggested_name"] == "City Hall"
+    assert data["candidates"][0]["suggested_type"] == "company"
 
 
 def test_get_substrate_organization_returns_linked_canonical_id(

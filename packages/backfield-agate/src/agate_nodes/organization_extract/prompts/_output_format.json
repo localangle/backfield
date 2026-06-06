@@ -27,35 +27,15 @@
       ]
     },
     {
-      "name": "Mount Carmel football team",
-      "type": "sports_team",
-      "role_in_story": "Won the conference opener",
-      "nature": "subject",
+      "name": "Dear Abby",
+      "type": "media",
+      "organization_boundary": "borderline_work_title",
+      "role_in_story": "Advice column central to the story",
+      "nature": "source",
       "nature_secondary_tags": [],
       "mentions": [
         {
-          "text": "Mount Carmel rolled past Loyola 35-14 on Friday night.",
-          "quote": false
-        }
-      ]
-    },
-    {
-      "name": "Mount Carmel football team",
-      "type": "sports_team",
-      "role_in_story": "Produced recruits committing to Michigan",
-      "nature": "subject",
-      "nature_secondary_tags": [],
-      "mentions": [
-        {
-          "text": "Whittingham added a second Mount Carmel star to his 2027 class when defensive back Tavares Harrington announced his commitment on Rivals' YouTube channel May 22.",
-          "quote": false
-        },
-        {
-          "text": "Harrington had three interceptions, six tackles for loss, a sack and 50 tackles for Class 8A champion Mount Carmel last fall.",
-          "quote": false
-        },
-        {
-          "text": "Less than 10 days earlier, Caravan wide receiver Quentin Burrell — ranked No. 6 in Illinois and No. 83 nationally — also committed to the Wolverines.",
+          "text": "Dear Abby advised the reader to seek counseling.",
           "quote": false
         }
       ]

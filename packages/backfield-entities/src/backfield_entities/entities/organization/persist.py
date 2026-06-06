@@ -338,8 +338,11 @@ def apply_canonical_persist_plan_review_only(
     _ = stylebook_id
     _ = organizations_bucket
     reasons: list[dict[str, Any]] = [dict(r) for r in plan.resolution_reasons]
+    has_suggestion = any(
+        isinstance(r, dict) and str(r.get("code") or "") == "canonical_suggestion" for r in reasons
+    )
     extra = _canonical_suggestion_from_plan(plan)
-    if extra is not None:
+    if extra is not None and not has_suggestion:
         reasons.append(extra)
     organization.stylebook_organization_canonical_id = None
     organization.canonical_link_status = CANONICAL_LINK_PENDING

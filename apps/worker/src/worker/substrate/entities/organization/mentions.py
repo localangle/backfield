@@ -17,6 +17,10 @@ from backfield_entities.canonical.link import (
 )
 from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_id
 from backfield_entities.entities.organization.persist import unlink_substrate_from_canonical
+from backfield_entities.entities.organization.review import (
+    boundary_review_data_json,
+    parse_organization_boundary_from_entry,
+)
 from backfield_entities.entities.organization.types import ORGANIZATION_NATURE_VALUES
 from backfield_entities.ingest.semantic_indexing.cleanup import (
     delete_semantic_documents_for_organization,
@@ -282,6 +286,9 @@ def _upsert_mention_and_occurrence(
 
     nature_str = _normalize_organization_nature(entry)
     secondary_tags = _parse_nature_secondary_tags(entry)
+    boundary = parse_organization_boundary_from_entry(entry)
+    needs_review = boundary is not None
+    review_data = boundary_review_data_json(boundary) if boundary is not None else None
 
     mention = session.exec(
         select(SubstrateOrganizationMention).where(
@@ -298,8 +305,8 @@ def _upsert_mention_and_occurrence(
             role_in_story=role_str,
             nature=nature_str,
             nature_secondary_tags_json=secondary_tags,
-            needs_review=False,
-            review_data_json=None,
+            needs_review=needs_review,
+            review_data_json=review_data,
             source_kind=_ORGANIZATION_EXTRACT_SOURCE_KIND,
             source_details_json={"run_id": run_id, "graph_id": graph_id},
             edited=False,
@@ -315,6 +322,9 @@ def _upsert_mention_and_occurrence(
         mention.role_in_story = role_str or mention.role_in_story
         mention.nature = nature_str or mention.nature
         mention.nature_secondary_tags_json = secondary_tags
+        if boundary is not None:
+            mention.needs_review = True
+            mention.review_data_json = review_data
         mention.source_kind = _ORGANIZATION_EXTRACT_SOURCE_KIND
         mention.source_details_json = {"run_id": run_id, "graph_id": graph_id}
         mention.updated_at = now

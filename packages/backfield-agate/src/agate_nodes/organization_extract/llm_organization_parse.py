@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backfield_entities.entities.organization.review import normalize_organization_boundary
 from backfield_entities.entities.organization.types import (
     ORGANIZATION_NATURE_VALUES,
     normalize_organization_type,
@@ -89,9 +90,11 @@ def organization_from_llm_entry(entry: dict[str, Any]) -> ExtractedOrganization:
     nature = _normalize_nature(entry.get("nature"))
     secondary = _parse_nature_secondary_tags(entry)
     mentions = _parse_mentions(entry)
+    boundary = normalize_organization_boundary(entry.get("organization_boundary"))
     return ExtractedOrganization(
         name=name,
         type=organization_type,
+        organization_boundary=boundary,
         role_in_story=role,
         nature=nature,
         nature_secondary_tags=secondary,

@@ -9,6 +9,8 @@ from agate_runtime import execute_graph
 from agate_runtime.starter_flow import starter_organizations_flow_graph_spec
 from backfield_db import (
     AgateRun,
+    Stylebook,
+    StylebookOrganizationCanonical,
     SubstrateOrganization,
     SubstrateOrganizationMention,
     SubstrateOrganizationMentionOccurrence,
@@ -48,6 +50,74 @@ def test_registered_organizations_handler() -> None:
     handler = get_persist_handler("organizations")
     assert handler is not None
     assert handler.consolidated_key == "organizations"
+
+
+def test_persist_borderline_organization_sets_review_and_pending_queue() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    body = "Dear Abby advised the reader to seek counseling."
+
+    with Session(engine) as session:
+        from backfield_db import BackfieldProject
+
+        project_id = _bootstrap_project(session, org_slug="org-bnd", project_slug="proj-bnd")
+        project = session.get(BackfieldProject, project_id)
+        assert project is not None
+        stylebook = session.exec(
+            select(Stylebook).where(Stylebook.organization_id == project.organization_id)
+        ).first()
+        assert stylebook is not None
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+                label="Dear Abby",
+                slug="dear-abby",
+                organization_type="media",
+            )
+        )
+        session.add(AgateRun(id="run-bnd", graph_id="graph-bnd", status="pending"))
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-bnd",
+            run_id="run-bnd",
+            consolidated={
+                "text": body,
+                "url": "https://example.com/dear-abby",
+                "organizations": [
+                    {
+                        "name": "Dear Abby",
+                        "type": "media",
+                        "organization_boundary": "borderline_work_title",
+                        "role_in_story": "Advice column central to the story",
+                        "nature": "source",
+                        "mentions": [{"text": body, "quote": False}],
+                    }
+                ],
+            },
+            db_output_params={"auto_apply_canonicalization": True},
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        orgs = session.exec(select(SubstrateOrganization)).all()
+        assert len(orgs) == 1
+        organization = orgs[0]
+        assert organization.canonical_link_status == CANONICAL_LINK_PENDING
+        reasons = organization.canonical_review_reasons_json
+        assert isinstance(reasons, list)
+        codes = [str(r.get("code") or "") for r in reasons if isinstance(r, dict)]
+        assert "borderline_organization_boundary" in codes
+        assert "canonical_suggestion" in codes
+
+        mentions = session.exec(select(SubstrateOrganizationMention)).all()
+        assert len(mentions) == 1
+        assert mentions[0].needs_review is True
+        assert mentions[0].review_data_json == {
+            "organization_boundary": "borderline_work_title",
+        }
 
 
 def test_persist_organizations_writes_substrate_mention_occurrence() -> None:

@@ -15,6 +15,7 @@ class ExtractedOrganization(BaseModel):
 
     name: str
     type: str | None = None
+    organization_boundary: str | None = None
     role_in_story: str | None = None
     nature: str | None = None
     nature_secondary_tags: list[str] = Field(default_factory=list)
