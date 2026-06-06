@@ -67,6 +67,20 @@ function formatFastApiDetail(detail: unknown): string {
   return String(detail)
 }
 
+export class StylebookApiError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = "StylebookApiError"
+    this.status = status
+  }
+}
+
+export function isStylebookApiNotFoundError(error: unknown): boolean {
+  return error instanceof StylebookApiError && error.status === 404
+}
+
 export async function stylebookJsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const resolvedPath = augmentStylebookApiPath(path)
   const response = await fetch(`${stylebookApiBase()}${resolvedPath}`, {
@@ -89,7 +103,7 @@ export async function stylebookJsonFetch<T>(path: string, init?: RequestInit): P
     } catch {
       errorMessage = errorText || errorMessage
     }
-    throw new Error(errorMessage)
+    throw new StylebookApiError(response.status, errorMessage)
   }
   return response.json() as Promise<T>
 }

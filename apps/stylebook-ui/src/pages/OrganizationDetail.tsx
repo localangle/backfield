@@ -15,6 +15,7 @@ import {
   organizationTypeManualSelectOptions,
   placeExtractTypeLabel,
 } from "@/lib/place-extract-type-label"
+import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
@@ -79,7 +80,7 @@ export default function OrganizationDetail() {
   )
 
   const loadOrganization = useCallback(
-    async (canonicalId: string, sbSlug: string, quiet = false) => {
+    async (canonicalId: string, sbSlug: string, quiet = false): Promise<boolean> => {
       try {
         if (!quiet) setLoading(true)
         const row = await getCanonicalOrganization(
@@ -90,9 +91,15 @@ export default function OrganizationDetail() {
         setOrganization(row)
         setLabel(row.label)
         setOrganizationType(row.organization_type ?? "")
+        return true
       } catch (e) {
+        if (isStylebookApiNotFoundError(e)) {
+          setOrganization(null)
+          return false
+        }
         console.error(e)
         if (!quiet) setOrganization(null)
+        return false
       } finally {
         if (!quiet) setLoading(false)
       }
@@ -144,28 +151,33 @@ export default function OrganizationDetail() {
 
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
-      if (!id || !stylebookSlug) return
-      await loadOrganization(id, stylebookSlug, true)
+      if (!id || !stylebookSlug || deleting) return
+      const found = await loadOrganization(id, stylebookSlug, true)
+      if (!found) {
+        setSubstrates([])
+        setMentions([])
+        return
+      }
       await loadSubstrates(id, stylebookSlug, quiet)
       await loadMentions(id, stylebookSlug, quiet)
     },
-    [id, stylebookSlug, loadOrganization, loadSubstrates, loadMentions],
+    [id, stylebookSlug, deleting, loadOrganization, loadSubstrates, loadMentions],
   )
 
   useEffect(() => {
-    if (!id || !stylebookSlug) return
+    if (!id || !stylebookSlug || deleting) return
     void loadOrganization(id, stylebookSlug)
-  }, [id, stylebookSlug, loadOrganization])
+  }, [id, stylebookSlug, deleting, loadOrganization])
 
   useEffect(() => {
-    if (!id || !stylebookSlug) return
+    if (!id || !stylebookSlug || deleting || organization?.id !== id) return
     void loadSubstrates(id, stylebookSlug)
-  }, [id, stylebookSlug, loadSubstrates])
+  }, [id, stylebookSlug, deleting, organization, loadSubstrates])
 
   useEffect(() => {
-    if (!id || !stylebookSlug) return
+    if (!id || !stylebookSlug || deleting || organization?.id !== id) return
     void loadMentions(id, stylebookSlug)
-  }, [id, stylebookSlug, loadMentions])
+  }, [id, stylebookSlug, deleting, organization, loadMentions])
 
   const tableLoading = substratesLoading || mentionsLoading
 
@@ -219,23 +231,27 @@ export default function OrganizationDetail() {
   }
 
   const onDelete = useCallback(async () => {
-    if (!organization || !id || !stylebookSlug) return
+    if (!id || !stylebookSlug) return
     setDeleting(true)
     try {
       await deleteCanonicalOrganization(id, stylebookSlug)
       navigate(canonicalListHref)
     } catch (e) {
+      if (isStylebookApiNotFoundError(e)) {
+        navigate(canonicalListHref)
+        return
+      }
       console.error(e)
       showError(e instanceof Error ? e.message : "Delete failed")
     } finally {
       setDeleting(false)
       setDeleteOpen(false)
     }
-  }, [organization, id, stylebookSlug, navigate, canonicalListHref, showError])
+  }, [id, stylebookSlug, navigate, canonicalListHref, showError])
 
   usePromptDeleteEmptyCanonical({
     canonicalKey: `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`,
-    enabled: Boolean(id),
+    enabled: Boolean(id && !deleting),
     mentions,
     mentionsLoading,
     substrates,

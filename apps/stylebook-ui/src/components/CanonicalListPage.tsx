@@ -4,6 +4,7 @@ import { useAppMessage } from "@/components/AppMessageProvider"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { fetchProjects, type Project } from "@/lib/api"
+import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { placeExtractTypeLabel, sortReviewQueueTypeFilterOptions } from "@/lib/place-extract-type-label"
 import type {
   CanonicalListBaseUrlState,
@@ -399,6 +400,11 @@ export function CanonicalListPage<
                   setDeleteDialog({ open: false, row: null })
                   await loadCanonicals()
                 } catch (error) {
+                  if (isStylebookApiNotFoundError(error)) {
+                    setDeleteDialog({ open: false, row: null })
+                    await loadCanonicals()
+                    return
+                  }
                   console.error("Failed to delete canonical:", error)
                   showError(config.deleteErrorMessage)
                 } finally {
