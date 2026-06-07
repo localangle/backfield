@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { formatConnectionEvidence, hasConnectionEvidence } from './connectionEvidence'
+import {
+  formatConnectionEvidence,
+  hasConnectionEvidence,
+  shouldShowEvidenceReason,
+} from './connectionEvidence'
 
 describe('connectionEvidence helpers', () => {
   it('returns null for manual connections without evidence', () => {
@@ -15,9 +19,17 @@ describe('connectionEvidence helpers', () => {
       reason: 'The story states an employment relationship.',
     })
     expect(view).not.toBeNull()
-    expect(view?.confidenceLabel).toBe('94% confidence')
+    expect(view?.confidencePercent).toBe(94)
     expect(view?.quote).toContain('Jane Smith')
-    expect(view?.reason).toContain('employment')
-    expect(view?.sourceLabel).toContain('automatically')
+    expect(view?.showReason).toBe(true)
+  })
+
+  it('hides boilerplate reasons that repeat the relationship nature', () => {
+    expect(
+      shouldShowEvidenceReason(
+        'Grant Achatz, owner and head chef of Alinea, disagreed.',
+        'Explicit leadership role (owner/head chef) of Alinea evidenced in snippet; supports leads relationship.',
+      ),
+    ).toBe(false)
   })
 })

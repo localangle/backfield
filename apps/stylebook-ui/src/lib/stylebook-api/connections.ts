@@ -94,6 +94,24 @@ export async function listStylebookConnectionsForLocation(
   )
 }
 
+export async function listStylebookConnectionsForPerson(
+  stylebookSlug: string,
+  personCanonicalId: string,
+): Promise<ConnectionListResponse> {
+  return stylebookJsonFetch<ConnectionListResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections`,
+  )
+}
+
+export async function listStylebookConnectionsForOrganization(
+  stylebookSlug: string,
+  organizationCanonicalId: string,
+): Promise<ConnectionListResponse> {
+  return stylebookJsonFetch<ConnectionListResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections`,
+  )
+}
+
 export async function createStylebookConnectionForLocation(
   stylebookSlug: string,
   locationCanonicalId: string,

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backfield_db import StylebookLocationCanonical, StylebookPersonCanonical
+from backfield_db import (
+    StylebookLocationCanonical,
+    StylebookOrganizationCanonical,
+    StylebookPersonCanonical,
+)
 from backfield_entities.catalog.resolve import resolve_stylebook_id_for_project_id
 from backfield_entities.registry.entity_types import all_entity_types
 from fastapi import HTTPException
@@ -84,9 +88,35 @@ def _person_display_name(
     return (row.label or "").strip() or None
 
 
+def _organization_display_name(
+    session: Session,
+    *,
+    project_id: int,
+    organization_canonical_id: str,
+    catalog_stylebook_id: int | None = None,
+) -> str | None:
+    try:
+        stylebook_id = (
+            int(catalog_stylebook_id)
+            if catalog_stylebook_id is not None
+            else resolve_stylebook_id_for_project_id(session, project_id)
+        )
+    except LookupError:
+        return None
+    row = session.exec(
+        select(StylebookOrganizationCanonical).where(
+            StylebookOrganizationCanonical.id == organization_canonical_id,
+            StylebookOrganizationCanonical.stylebook_id == int(stylebook_id),
+        )
+    ).first()
+    if row is None:
+        return None
+    return (row.label or "").strip() or None
+
+
 def normalize_connection_entity_id(entity_type: str, entity_id: str | int | UUID) -> str:
     """Normalize API ids to the TEXT stored on ``stylebook_connections``."""
-    if entity_type in ("location", "person"):
+    if entity_type in ("location", "person", "organization"):
         if isinstance(entity_id, UUID):
             return str(entity_id)
         s = str(entity_id).strip()
@@ -121,6 +151,13 @@ def get_canonical_display_name(
             session,
             project_id=project_id,
             person_canonical_id=eid,
+            catalog_stylebook_id=catalog_stylebook_id,
+        )
+    if entity_type == "organization":
+        return _organization_display_name(
+            session,
+            project_id=project_id,
+            organization_canonical_id=eid,
             catalog_stylebook_id=catalog_stylebook_id,
         )
     return None

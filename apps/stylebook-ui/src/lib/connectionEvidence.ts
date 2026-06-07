@@ -1,18 +1,31 @@
 /** User-facing helpers for automatic connection evidence on Stylebook edges. */
 
 export interface ConnectionCreationEvidenceView {
-  sourceLabel: string
-  confidenceLabel: string
+  confidencePercent: number | null
   quote: string
+  showReason: boolean
   reason: string
 }
-
-const AUTO_SOURCE_LABEL = 'Added automatically while processing a story'
 
 export function hasConnectionEvidence(
   evidence: Record<string, unknown> | null | undefined,
 ): boolean {
   return Boolean(evidence && typeof evidence === 'object' && Object.keys(evidence).length > 0)
+}
+
+export function shouldShowEvidenceReason(quote: string, reason: string): boolean {
+  if (!reason.trim() || reason.trim() === quote.trim()) {
+    return false
+  }
+  const q = quote.trim().toLowerCase()
+  const r = reason.trim().toLowerCase()
+  if (q && (r.includes(q) || q.includes(r))) {
+    return false
+  }
+  if (/supports?\s+[\w_]+\s+relationship\.?$/i.test(reason.trim())) {
+    return false
+  }
+  return reason.trim().length <= 160
 }
 
 export function formatConnectionEvidence(
@@ -27,18 +40,16 @@ export function formatConnectionEvidence(
   if (!quote && !reason) {
     return null
   }
-  const sourceRaw = row.source
-  const sourceLabel =
-    typeof sourceRaw === 'string' && sourceRaw.trim() ? AUTO_SOURCE_LABEL : AUTO_SOURCE_LABEL
   const confidenceRaw = row.confidence
-  let confidenceLabel = ''
+  let confidencePercent: number | null = null
   if (typeof confidenceRaw === 'number' && !Number.isNaN(confidenceRaw)) {
-    confidenceLabel = `${Math.round(confidenceRaw * 100)}% confidence`
+    confidencePercent = Math.round(confidenceRaw * 100)
   }
+  const resolvedReason = reason || quote
   return {
-    sourceLabel,
-    confidenceLabel,
+    confidencePercent,
     quote,
-    reason: reason || quote,
+    showReason: shouldShowEvidenceReason(quote, resolvedReason),
+    reason: resolvedReason,
   }
 }

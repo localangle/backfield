@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge'
 import { formatConnectionEvidence } from '@/lib/connectionEvidence'
 
 interface ConnectionEvidenceBlockProps {
@@ -11,18 +12,24 @@ export default function ConnectionEvidenceBlock({ evidence }: ConnectionEvidence
   }
 
   return (
-    <div className="mt-2 rounded-md border bg-muted/30 px-3 py-2 text-sm space-y-1.5">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-        <span>{view.sourceLabel}</span>
-        {view.confidenceLabel ? <span>· {view.confidenceLabel}</span> : null}
+    <div className="mt-1.5 max-w-xl space-y-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal">
+          Automatic
+        </Badge>
+        {view.confidencePercent != null ? (
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            {view.confidencePercent}% sure
+          </span>
+        ) : null}
       </div>
       {view.quote ? (
-        <blockquote className="border-l-2 border-border pl-3 text-sm italic text-foreground/90">
+        <p className="text-xs leading-snug text-muted-foreground border-l-2 border-muted-foreground/25 pl-2">
           {view.quote}
-        </blockquote>
+        </p>
       ) : null}
-      {view.reason && view.reason !== view.quote ? (
-        <p className="text-xs text-muted-foreground">{view.reason}</p>
+      {view.showReason ? (
+        <p className="text-[11px] leading-snug text-muted-foreground/80">{view.reason}</p>
       ) : null}
     </div>
   )

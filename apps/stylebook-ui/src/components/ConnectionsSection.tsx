@@ -3,6 +3,8 @@ import { useAppMessage } from "@/components/AppMessageProvider"
 import type { Connection } from "@/lib/stylebook-api/connections"
 import {
   listStylebookConnectionsForLocation,
+  listStylebookConnectionsForOrganization,
+  listStylebookConnectionsForPerson,
   listStylebookConnectionNatures,
   createStylebookConnectionForLocation,
   updateStylebookConnectionForLocation,
@@ -112,8 +114,15 @@ export default function ConnectionsSection({
     setLoading(true)
     setError(null)
     try {
+      const canonicalId = String(entityId)
       if (entityType === "location") {
-        const res = await listStylebookConnectionsForLocation(stylebookSlug, String(entityId))
+        const res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId)
+        setConnections(res.connections)
+      } else if (entityType === "person") {
+        const res = await listStylebookConnectionsForPerson(stylebookSlug, canonicalId)
+        setConnections(res.connections)
+      } else if (entityType === "organization") {
+        const res = await listStylebookConnectionsForOrganization(stylebookSlug, canonicalId)
         setConnections(res.connections)
       } else {
         setConnections([])
@@ -274,50 +283,59 @@ export default function ConnectionsSection({
                   <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Direction</TableHead>
-                  <TableHead>Nature</TableHead>
-                  <TableHead>Other entity</TableHead>
+                  <TableHead>Connection</TableHead>
                   <TableHead className="w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {connections.map((conn) => (
                   <TableRow key={conn.id}>
-                    <TableCell>
-                      {isFrom(conn) ? (
-                        <>
-                          <span className="font-medium">{entityDisplayName}</span>
-                          <span className="mx-1">—</span>
-                          <span className="text-muted-foreground">{conn.nature}</span>
-                          <span className="mx-1">→</span>
-                          <span>{conn.to_display_name}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>{conn.from_display_name}</span>
-                          <span className="mx-1">—</span>
-                          <span className="text-muted-foreground">{conn.nature}</span>
-                          <span className="mx-1">→</span>
-                          <span className="font-medium">{entityDisplayName}</span>
-                        </>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div>{conn.nature}</div>
+                    <TableCell className="align-top">
+                      <div className="text-sm">
+                        {isFrom(conn) ? (
+                          <>
+                            <span className="font-medium">{entityDisplayName}</span>
+                            <span className="mx-1 text-muted-foreground">→</span>
+                            <a
+                              href={getDetailUrl(
+                                otherType(conn),
+                                otherId(conn),
+                                catalogBasePath,
+                                filterScopeSuffix,
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline inline-flex items-center gap-0.5"
+                            >
+                              {conn.to_display_name}
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                            </a>
+                          </>
+                        ) : (
+                          <>
+                            <a
+                              href={getDetailUrl(
+                                otherType(conn),
+                                otherId(conn),
+                                catalogBasePath,
+                                filterScopeSuffix,
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline inline-flex items-center gap-0.5"
+                            >
+                              {conn.from_display_name}
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                            </a>
+                            <span className="mx-1 text-muted-foreground">→</span>
+                            <span className="font-medium">{entityDisplayName}</span>
+                          </>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{conn.nature}</p>
                       <ConnectionEvidenceBlock evidence={conn.evidence_json} />
                     </TableCell>
-                    <TableCell>
-                      <a
-                        href={getDetailUrl(otherType(conn), otherId(conn), catalogBasePath, filterScopeSuffix)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline inline-flex items-center gap-1"
-                      >
-                        {otherDisplayName(conn)}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className="align-top">
                       <div className="flex gap-2">
                         <Button
                           variant="outline"

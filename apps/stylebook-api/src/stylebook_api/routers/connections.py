@@ -7,7 +7,13 @@ from typing import Any
 from uuid import UUID
 
 from backfield_auth.gate import require_project_access
-from backfield_db import BackfieldProject, StylebookConnection, StylebookLocationCanonical
+from backfield_db import (
+    BackfieldProject,
+    StylebookConnection,
+    StylebookLocationCanonical,
+    StylebookOrganizationCanonical,
+    StylebookPersonCanonical,
+)
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_
@@ -186,6 +192,28 @@ def _canonical_in_stylebook_or_404(
     canon = session.get(StylebookLocationCanonical, str(canonical_id))
     if canon is None or int(canon.stylebook_id) != int(stylebook_id):
         raise HTTPException(status_code=404, detail="Canonical location not found")
+
+
+def _canonical_person_in_stylebook_or_404(
+    session: Session,
+    *,
+    stylebook_id: int,
+    canonical_id: UUID,
+) -> None:
+    canon = session.get(StylebookPersonCanonical, str(canonical_id))
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
+        raise HTTPException(status_code=404, detail="Canonical person not found")
+
+
+def _canonical_organization_in_stylebook_or_404(
+    session: Session,
+    *,
+    stylebook_id: int,
+    canonical_id: UUID,
+) -> None:
+    canon = session.get(StylebookOrganizationCanonical, str(canonical_id))
+    if canon is None or int(canon.stylebook_id) != int(stylebook_id):
+        raise HTTPException(status_code=404, detail="Canonical organization not found")
 
 
 def _connection_dedupe_key(c: StylebookConnection) -> tuple[str, str, str, str, str]:
@@ -488,6 +516,70 @@ def list_stylebook_location_connections(
         project_ids=project_ids,
         entity_type="location",
         entity_id=str(location_id),
+        catalog_stylebook_id=int(sb.id),
+        display_project_id=project_ids[0],
+    )
+    return ConnectionListResponse(connections=rows)
+
+
+@locations_connections_router.get(
+    "/stylebooks/{stylebook_slug}/canonical-people/{person_id}/connections",
+    response_model=ConnectionListResponse,
+)
+def list_stylebook_person_connections(
+    stylebook_slug: str,
+    person_id: UUID,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> ConnectionListResponse:
+    sb = require_stylebook_by_slug_in_auth_org(
+        session, auth=auth, stylebook_slug=stylebook_slug
+    )
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    _canonical_person_in_stylebook_or_404(
+        session, stylebook_id=int(sb.id), canonical_id=person_id
+    )
+    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
+    if not project_ids:
+        return ConnectionListResponse(connections=[])
+    rows = _list_stylebook_connections_for_entity(
+        session,
+        project_ids=project_ids,
+        entity_type="person",
+        entity_id=str(person_id),
+        catalog_stylebook_id=int(sb.id),
+        display_project_id=project_ids[0],
+    )
+    return ConnectionListResponse(connections=rows)
+
+
+@locations_connections_router.get(
+    "/stylebooks/{stylebook_slug}/canonical-organizations/{organization_id}/connections",
+    response_model=ConnectionListResponse,
+)
+def list_stylebook_organization_connections(
+    stylebook_slug: str,
+    organization_id: UUID,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> ConnectionListResponse:
+    sb = require_stylebook_by_slug_in_auth_org(
+        session, auth=auth, stylebook_slug=stylebook_slug
+    )
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    _canonical_organization_in_stylebook_or_404(
+        session, stylebook_id=int(sb.id), canonical_id=organization_id
+    )
+    project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
+    if not project_ids:
+        return ConnectionListResponse(connections=[])
+    rows = _list_stylebook_connections_for_entity(
+        session,
+        project_ids=project_ids,
+        entity_type="organization",
+        entity_id=str(organization_id),
         catalog_stylebook_id=int(sb.id),
         display_project_id=project_ids[0],
     )

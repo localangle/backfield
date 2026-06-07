@@ -17,6 +17,8 @@ from backfield_db import (
     StylebookLocationCanonical,
     StylebookLocationMeta,
     StylebookMembership,
+    StylebookOrganizationCanonical,
+    StylebookPersonCanonical,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
@@ -2881,6 +2883,73 @@ def test_stylebook_canonical_location_connections_roundtrip(
     with Session(engine) as s:
         row = s.get(StylebookConnection, conn_id)
         assert row is None
+
+
+def test_stylebook_person_and_organization_connections_list(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    """Auto-created person↔organization edges must list from both canonical detail pages."""
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        sb_id = int(stylebook.id)  # type: ignore[arg-type]
+        person = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Conn Person",
+            slug="conn-person",
+            status="active",
+        )
+        organization = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Conn Org",
+            slug="conn-org",
+            organization_type="government",
+            status="active",
+        )
+        s.add(person)
+        s.add(organization)
+        s.commit()
+        s.refresh(person)
+        s.refresh(organization)
+        person_id = str(person.id)
+        org_id = str(organization.id)
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        s.add(
+            StylebookConnection(
+                project_id=int(proj.id),
+                from_entity_type="person",
+                from_entity_id=person_id,
+                to_entity_type="organization",
+                to_entity_id=org_id,
+                nature="works_for",
+                evidence_json={
+                    "source": "dboutput_auto_connections",
+                    "confidence": 0.95,
+                    "quote": "Jane works for Conn Org.",
+                    "reason": "Explicit employment in text.",
+                },
+            )
+        )
+        s.commit()
+
+    person_res = editor_client.get(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections"
+    )
+    assert person_res.status_code == 200
+    person_rows = person_res.json()["connections"]
+    assert len(person_rows) == 1
+    assert person_rows[0]["nature"] == "works_for"
+    assert person_rows[0]["to_display_name"] == "Conn Org"
+    assert person_rows[0]["evidence_json"]["quote"] == "Jane works for Conn Org."
+
+    org_res = editor_client.get(
+        f"/v1/stylebooks/default/canonical-organizations/{org_id}/connections"
+    )
+    assert org_res.status_code == 200
+    org_rows = org_res.json()["connections"]
+    assert len(org_rows) == 1
+    assert org_rows[0]["from_display_name"] == "Conn Person"
 
 
 def test_stylebook_connection_lists_auto_connection_evidence(
