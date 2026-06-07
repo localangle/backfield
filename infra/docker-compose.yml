@@ -164,6 +164,7 @@ services:
       # STYLEBOOK_BUNDLE_* from env_file (../.env); avoid empty compose override (see stylebook-api).
       # LLM / geocoder keys: repo-root .env via env_file above.
       PROJECT_SLUG: ${PROJECT_SLUG:-}
+      BACKFIELD_PARALLEL_GRAPH_LEVELS: ${BACKFIELD_PARALLEL_GRAPH_LEVELS:-1}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}
       TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-4200}
     depends_on:
