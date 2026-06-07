@@ -7,7 +7,7 @@ import { organizationConfig } from "@/lib/entityConfigs/organization"
 import { personConfig } from "@/lib/entityConfigs/person"
 import type { EntityConfig, EntityType } from "@/lib/entityTypes"
 import type { LucideIcon } from "lucide-react"
-import { BookOpen, Building2, MapPin, Users } from "lucide-react"
+import { Building2, MapPin, Users } from "lucide-react"
 
 export const ENTITY_REGISTRY: Record<EntityType, EntityConfig<unknown>> = {
   location: locationPickerConfig as EntityConfig<unknown>,
@@ -47,12 +47,6 @@ export const ENTITY_HOME_CARDS: EntityHomeCard[] = [
     icon: Building2,
     description: "Canonical organizations and institutions",
     canonicalFirst: true,
-  },
-  {
-    entityType: "work",
-    routeSegment: "works",
-    icon: BookOpen,
-    description: "Canonical works (laws, reports, books, products, artworks)",
   },
 ]
 
