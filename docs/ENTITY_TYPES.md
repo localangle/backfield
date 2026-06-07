@@ -180,6 +180,10 @@ Minimum pytest targets per slice (global ladder: [`TESTING.md`](TESTING.md)). Re
 
 Run `make lint` and `make test` after each issue; `make smoke` when cross-service ingest or review behavior changes.
 
+## Automatic entity connections (planned)
+
+Manual Stylebook connections use free-form **`nature`** strings. Automatic connection inference (Backfield Output, post-canonicalization) uses a **narrower** fixed taxonomy in **`backfield_entities.connections`**: only **`person → organization`**, **`organization → location`**, and **`person → location`**, with machine-slug natures and location-granularity gates. Auto-created rows may store optional **`evidence_json`** on **`stylebook_connections`**; exact edges are unique per **`(project_id, from, to, nature)`**. See **`prd/automatic-entity-connections/prd.md`** and **`docs/DATABASE.md`** revision **`040_sb_conn_evidence`**.
+
 ## Directory conventions by layer
 
 ### Worker (current)

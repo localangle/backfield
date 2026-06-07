@@ -2850,7 +2850,10 @@ def test_stylebook_canonical_location_connections_roundtrip(
         json={"to_entity_type": "location", "to_entity_id": bid, "nature": "near"},
     )
     assert r1.status_code == 200
-    conn_id = int(r1.json()["id"])
+    body = r1.json()
+    conn_id = int(body["id"])
+    assert body["nature"] == "near"
+    assert body.get("evidence_json") is None
 
     r2 = editor_client.get(
         f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
@@ -2878,3 +2881,35 @@ def test_stylebook_canonical_location_connections_roundtrip(
     with Session(engine) as s:
         row = s.get(StylebookConnection, conn_id)
         assert row is None
+
+
+def test_stylebook_connection_exact_edge_unique_constraint(
+    stylebook_test_engine: Engine,
+) -> None:
+    engine = stylebook_test_engine
+    from sqlalchemy.exc import IntegrityError
+
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        first = StylebookConnection(
+            project_id=int(proj.id),
+            from_entity_type="location",
+            from_entity_id="loc-a",
+            to_entity_type="person",
+            to_entity_id="person-a",
+            nature="custom_edge",
+        )
+        duplicate = StylebookConnection(
+            project_id=int(proj.id),
+            from_entity_type="location",
+            from_entity_id="loc-a",
+            to_entity_type="person",
+            to_entity_id="person-a",
+            nature="custom_edge",
+        )
+        s.add(first)
+        s.commit()
+        s.add(duplicate)
+        with pytest.raises(IntegrityError):
+            s.commit()
+        s.rollback()

@@ -9,6 +9,7 @@ export interface Connection {
   to_entity_id: string
   to_display_name: string
   nature: string
+  evidence_json?: Record<string, unknown> | null
   created_at?: string | null
 }
 

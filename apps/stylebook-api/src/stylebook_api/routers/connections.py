@@ -49,6 +49,7 @@ class ConnectionResponse(BaseModel):
     to_entity_id: str
     to_display_name: str
     nature: str
+    evidence_json: dict[str, Any] | None = None
     created_at: datetime | None = None
 
 
@@ -89,6 +90,39 @@ def _display_name(
     return f"{entity_type} #{sid}"
 
 
+def _connection_response_from_row(
+    session: Session,
+    *,
+    project_id: int,
+    conn: StylebookConnection,
+    catalog_stylebook_id: int | None = None,
+) -> ConnectionResponse:
+    return ConnectionResponse(
+        id=int(conn.id),  # type: ignore[arg-type]
+        from_entity_type=conn.from_entity_type,
+        from_entity_id=conn.from_entity_id,
+        from_display_name=_display_name(
+            session,
+            project_id,
+            conn.from_entity_type,
+            conn.from_entity_id,
+            catalog_stylebook_id,
+        ),
+        to_entity_type=conn.to_entity_type,
+        to_entity_id=conn.to_entity_id,
+        to_display_name=_display_name(
+            session,
+            project_id,
+            conn.to_entity_type,
+            conn.to_entity_id,
+            catalog_stylebook_id,
+        ),
+        nature=conn.nature,
+        evidence_json=conn.evidence_json if isinstance(conn.evidence_json, dict) else None,
+        created_at=conn.created_at,
+    )
+
+
 def _list_connections_for_entity(
     session: Session,
     project_id: int,
@@ -113,34 +147,15 @@ def _list_connections_for_entity(
         )
         .order_by(StylebookConnection.created_at)
     ).all()
-    out: list[ConnectionResponse] = []
-    for c in conns:
-        out.append(
-            ConnectionResponse(
-                id=int(c.id),  # type: ignore[arg-type]
-                from_entity_type=c.from_entity_type,
-                from_entity_id=c.from_entity_id,
-                from_display_name=_display_name(
-                    session,
-                    project_id,
-                    c.from_entity_type,
-                    c.from_entity_id,
-                    catalog_stylebook_id,
-                ),
-                to_entity_type=c.to_entity_type,
-                to_entity_id=c.to_entity_id,
-                to_display_name=_display_name(
-                    session,
-                    project_id,
-                    c.to_entity_type,
-                    c.to_entity_id,
-                    catalog_stylebook_id,
-                ),
-                nature=c.nature,
-                created_at=c.created_at,
-            )
+    return [
+        _connection_response_from_row(
+            session,
+            project_id=project_id,
+            conn=c,
+            catalog_stylebook_id=catalog_stylebook_id,
         )
-    return out
+        for c in conns
+    ]
 
 
 def _stylebook_project_ids(session: Session, *, organization_id: int) -> list[int]:
@@ -217,34 +232,15 @@ def _list_stylebook_connections_for_entity(
             continue
         seen.add(key)
         deduped.append(conn)
-    out: list[ConnectionResponse] = []
-    for c in deduped:
-        out.append(
-            ConnectionResponse(
-                id=int(c.id),  # type: ignore[arg-type]
-                from_entity_type=c.from_entity_type,
-                from_entity_id=c.from_entity_id,
-                from_display_name=_display_name(
-                    session,
-                    display_project_id,
-                    c.from_entity_type,
-                    c.from_entity_id,
-                    catalog_stylebook_id,
-                ),
-                to_entity_type=c.to_entity_type,
-                to_entity_id=c.to_entity_id,
-                to_display_name=_display_name(
-                    session,
-                    display_project_id,
-                    c.to_entity_type,
-                    c.to_entity_id,
-                    catalog_stylebook_id,
-                ),
-                nature=c.nature,
-                created_at=c.created_at,
-            )
+    return [
+        _connection_response_from_row(
+            session,
+            project_id=display_project_id,
+            conn=c,
+            catalog_stylebook_id=catalog_stylebook_id,
         )
-    return out
+        for c in deduped
+    ]
 
 
 def _matching_stylebook_connection_rows(
@@ -350,24 +346,11 @@ def create_location_connection(
     session.add(conn)
     session.commit()
     session.refresh(conn)
-    return ConnectionResponse(
-        id=int(conn.id),  # type: ignore[arg-type]
-        from_entity_type=conn.from_entity_type,
-        from_entity_id=conn.from_entity_id,
-        from_display_name=_display_name(
-            session, int(proj.id), "location", location_id, sb_id
-        ),
-        to_entity_type=conn.to_entity_type,
-        to_entity_id=conn.to_entity_id,
-        to_display_name=_display_name(
-            session,
-            int(proj.id),
-            conn.to_entity_type,
-            conn.to_entity_id,
-            sb_id,
-        ),
-        nature=conn.nature,
-        created_at=conn.created_at,
+    return _connection_response_from_row(
+        session,
+        project_id=int(proj.id),
+        conn=conn,
+        catalog_stylebook_id=sb_id,
     )
 
 
@@ -411,28 +394,11 @@ def update_location_connection(
     session.add(conn)
     session.commit()
     session.refresh(conn)
-    return ConnectionResponse(
-        id=int(conn.id),  # type: ignore[arg-type]
-        from_entity_type=conn.from_entity_type,
-        from_entity_id=conn.from_entity_id,
-        from_display_name=_display_name(
-            session,
-            int(proj.id),
-            conn.from_entity_type,
-            conn.from_entity_id,
-            sb_id,
-        ),
-        to_entity_type=conn.to_entity_type,
-        to_entity_id=conn.to_entity_id,
-        to_display_name=_display_name(
-            session,
-            int(proj.id),
-            conn.to_entity_type,
-            conn.to_entity_id,
-            sb_id,
-        ),
-        nature=conn.nature,
-        created_at=conn.created_at,
+    return _connection_response_from_row(
+        session,
+        project_id=int(proj.id),
+        conn=conn,
+        catalog_stylebook_id=sb_id,
     )
 
 
@@ -593,24 +559,11 @@ def create_stylebook_location_connection(
         session.add(existing)
         session.commit()
         session.refresh(existing)
-    return ConnectionResponse(
-        id=int(existing.id),  # type: ignore[arg-type]
-        from_entity_type=existing.from_entity_type,
-        from_entity_id=existing.from_entity_id,
-        from_display_name=_display_name(
-            session, storage_project_id, "location", location_id, int(sb.id)
-        ),
-        to_entity_type=existing.to_entity_type,
-        to_entity_id=existing.to_entity_id,
-        to_display_name=_display_name(
-            session,
-            storage_project_id,
-            existing.to_entity_type,
-            existing.to_entity_id,
-            int(sb.id),
-        ),
-        nature=existing.nature,
-        created_at=existing.created_at,
+    return _connection_response_from_row(
+        session,
+        project_id=storage_project_id,
+        conn=existing,
+        catalog_stylebook_id=int(sb.id),
     )
 
 
@@ -667,28 +620,11 @@ def update_stylebook_location_connection(
         session.add(row)
     session.commit()
     session.refresh(conn)
-    return ConnectionResponse(
-        id=int(conn.id),  # type: ignore[arg-type]
-        from_entity_type=conn.from_entity_type,
-        from_entity_id=conn.from_entity_id,
-        from_display_name=_display_name(
-            session,
-            storage_project_id,
-            conn.from_entity_type,
-            conn.from_entity_id,
-            int(sb.id),
-        ),
-        to_entity_type=conn.to_entity_type,
-        to_entity_id=conn.to_entity_id,
-        to_display_name=_display_name(
-            session,
-            storage_project_id,
-            conn.to_entity_type,
-            conn.to_entity_id,
-            int(sb.id),
-        ),
-        nature=new_nature,
-        created_at=conn.created_at,
+    return _connection_response_from_row(
+        session,
+        project_id=storage_project_id,
+        conn=conn,
+        catalog_stylebook_id=int(sb.id),
     )
 
 
