@@ -55,6 +55,18 @@ export function useProjectCatalogScope() {
     : ""
   const filterScopeSuffix = filterScopeQueryString ? `?${filterScopeQueryString}` : ""
 
+  /** Full catalog query for cross-page links (workflow scope + optional evidence filter). */
+  const catalogScopeQueryString = useMemo(() => {
+    const p = new URLSearchParams()
+    if (explicitWorkflowScope) p.set("project_scope", explicitWorkflowScope)
+    if (projectParam) p.set("project", projectParam)
+    return p.toString()
+  }, [explicitWorkflowScope, projectParam])
+
+  const catalogScopeSuffix = catalogScopeQueryString
+    ? `?${catalogScopeQueryString}`
+    : ""
+
   return {
     projectScopeSlug,
     projectFilterSlug,
@@ -64,5 +76,7 @@ export function useProjectCatalogScope() {
     workflowScopeSuffix,
     filterScopeQueryString,
     filterScopeSuffix,
+    catalogScopeQueryString,
+    catalogScopeSuffix,
   }
 }

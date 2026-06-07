@@ -2952,6 +2952,75 @@ def test_stylebook_person_and_organization_connections_list(
     assert org_rows[0]["from_display_name"] == "Conn Person"
 
 
+def test_stylebook_person_connection_crud(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    """Manual person connections can be created, updated, and deleted from stylebook routes."""
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        sb_id = int(stylebook.id)  # type: ignore[arg-type]
+        person = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Manual Conn Person",
+            slug="manual-conn-person",
+            status="active",
+        )
+        location = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Manual Conn Place",
+            slug="manual-conn-place",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(person)
+        s.add(location)
+        s.commit()
+        s.refresh(person)
+        s.refresh(location)
+        person_id = str(person.id)
+        location_id = str(location.id)
+
+    create_res = editor_client.post(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections",
+        json={
+            "to_entity_type": "location",
+            "to_entity_id": location_id,
+            "nature": "born in",
+        },
+    )
+    assert create_res.status_code == 200
+    body = create_res.json()
+    conn_id = int(body["id"])
+    assert body["nature"] == "born in"
+    assert body["to_display_name"] == "Manual Conn Place"
+    assert body.get("evidence_json") is None
+
+    list_res = editor_client.get(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections"
+    )
+    assert list_res.status_code == 200
+    assert len(list_res.json()["connections"]) == 1
+
+    update_res = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections/{conn_id}",
+        json={"nature": "lives in"},
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["nature"] == "lives in"
+
+    delete_res = editor_client.delete(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections/{conn_id}"
+    )
+    assert delete_res.status_code == 200
+
+    with Session(engine) as s:
+        row = s.get(StylebookConnection, conn_id)
+        assert row is None
+
+
 def test_stylebook_connection_lists_auto_connection_evidence(
     editor_client: TestClient,
     stylebook_test_engine: Engine,

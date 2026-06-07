@@ -7,8 +7,14 @@ import {
   listStylebookConnectionsForPerson,
   listStylebookConnectionNatures,
   createStylebookConnectionForLocation,
+  createStylebookConnectionForOrganization,
+  createStylebookConnectionForPerson,
   updateStylebookConnectionForLocation,
+  updateStylebookConnectionForOrganization,
+  updateStylebookConnectionForPerson,
   deleteStylebookConnectionForLocation,
+  deleteStylebookConnectionForOrganization,
+  deleteStylebookConnectionForPerson,
 } from "@/lib/stylebook-api/connections"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -70,7 +76,7 @@ export default function ConnectionsSection({
   stylebookSlug,
   entityDisplayName,
 }: ConnectionsSectionProps) {
-  const { filterScopeSuffix, catalogBasePath, projectScopeSlug } = useProjectCatalogScope()
+  const { catalogScopeSuffix, catalogBasePath, projectScopeSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
@@ -169,16 +175,23 @@ export default function ConnectionsSection({
   const handleAddSubmit = async () => {
     if (selectedTargetId == null || !nature.trim()) return
     const toType = addTargetType
+    const body = {
+      to_entity_type: toType,
+      to_entity_id: selectedTargetId,
+      nature: nature.trim(),
+    }
+    const canonicalId = String(entityId)
     setSubmitting(true)
     try {
-      if (entityType !== "location") {
-        throw new Error("Connections can only be edited from canonical location detail in this build.")
+      if (entityType === "location") {
+        await createStylebookConnectionForLocation(stylebookSlug, canonicalId, body)
+      } else if (entityType === "person") {
+        await createStylebookConnectionForPerson(stylebookSlug, canonicalId, body)
+      } else if (entityType === "organization") {
+        await createStylebookConnectionForOrganization(stylebookSlug, canonicalId, body)
+      } else {
+        throw new Error("Connections cannot be added from this entity type yet.")
       }
-      await createStylebookConnectionForLocation(stylebookSlug, String(entityId), {
-        to_entity_type: toType,
-        to_entity_id: selectedTargetId,
-        nature: nature.trim(),
-      })
       setAddOpen(false)
       fetchConnections()
     } catch (e) {
@@ -195,14 +208,34 @@ export default function ConnectionsSection({
 
   const handleEditSubmit = async () => {
     if (!editConnection) return
+    const canonicalId = String(entityId)
+    const body = { nature: editNature.trim() }
     setEditSubmitting(true)
     try {
-      if (entityType !== "location") {
-        throw new Error("Connections can only be edited from canonical location detail in this build.")
+      if (entityType === "location") {
+        await updateStylebookConnectionForLocation(
+          stylebookSlug,
+          canonicalId,
+          editConnection.id,
+          body,
+        )
+      } else if (entityType === "person") {
+        await updateStylebookConnectionForPerson(
+          stylebookSlug,
+          canonicalId,
+          editConnection.id,
+          body,
+        )
+      } else if (entityType === "organization") {
+        await updateStylebookConnectionForOrganization(
+          stylebookSlug,
+          canonicalId,
+          editConnection.id,
+          body,
+        )
+      } else {
+        throw new Error("Connections cannot be edited from this entity type yet.")
       }
-      await updateStylebookConnectionForLocation(stylebookSlug, String(entityId), editConnection.id, {
-        nature: editNature.trim(),
-      })
       setEditConnection(null)
       fetchConnections()
     } catch (e) {
@@ -214,12 +247,30 @@ export default function ConnectionsSection({
 
   const handleDeleteConfirm = async () => {
     if (!deleteConnection) return
+    const canonicalId = String(entityId)
     setDeleting(true)
     try {
-      if (entityType !== "location") {
-        throw new Error("Connections can only be edited from canonical location detail in this build.")
+      if (entityType === "location") {
+        await deleteStylebookConnectionForLocation(
+          stylebookSlug,
+          canonicalId,
+          deleteConnection.id,
+        )
+      } else if (entityType === "person") {
+        await deleteStylebookConnectionForPerson(
+          stylebookSlug,
+          canonicalId,
+          deleteConnection.id,
+        )
+      } else if (entityType === "organization") {
+        await deleteStylebookConnectionForOrganization(
+          stylebookSlug,
+          canonicalId,
+          deleteConnection.id,
+        )
+      } else {
+        throw new Error("Connections cannot be deleted from this entity type yet.")
       }
-      await deleteStylebookConnectionForLocation(stylebookSlug, String(entityId), deleteConnection.id)
       setDeleteConnection(null)
       fetchConnections()
     } catch (e) {
@@ -252,7 +303,7 @@ export default function ConnectionsSection({
               type="button"
               className="shrink-0"
               onClick={handleAddOpen}
-              disabled={loading || entityType !== "location"}
+              disabled={loading || entityType === "work"}
             >
               <Plus className="h-4 w-4 mr-2" />
               Add connection
@@ -301,7 +352,7 @@ export default function ConnectionsSection({
                                 otherType(conn),
                                 otherId(conn),
                                 catalogBasePath,
-                                filterScopeSuffix,
+                                catalogScopeSuffix,
                               )}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -318,7 +369,7 @@ export default function ConnectionsSection({
                                 otherType(conn),
                                 otherId(conn),
                                 catalogBasePath,
-                                filterScopeSuffix,
+                                catalogScopeSuffix,
                               )}
                               target="_blank"
                               rel="noopener noreferrer"

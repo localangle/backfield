@@ -145,3 +145,71 @@ export async function deleteStylebookConnectionForLocation(
     { method: "DELETE" },
   )
 }
+
+export async function createStylebookConnectionForPerson(
+  stylebookSlug: string,
+  personCanonicalId: string,
+  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
+}
+
+export async function updateStylebookConnectionForPerson(
+  stylebookSlug: string,
+  personCanonicalId: string,
+  connectionId: number,
+  body: { nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections/${connectionId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )
+}
+
+export async function deleteStylebookConnectionForPerson(
+  stylebookSlug: string,
+  personCanonicalId: string,
+  connectionId: number,
+): Promise<{ ok: boolean }> {
+  return stylebookJsonFetch<{ ok: boolean }>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections/${connectionId}`,
+    { method: "DELETE" },
+  )
+}
+
+export async function createStylebookConnectionForOrganization(
+  stylebookSlug: string,
+  organizationCanonicalId: string,
+  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
+}
+
+export async function updateStylebookConnectionForOrganization(
+  stylebookSlug: string,
+  organizationCanonicalId: string,
+  connectionId: number,
+  body: { nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections/${connectionId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )
+}
+
+export async function deleteStylebookConnectionForOrganization(
+  stylebookSlug: string,
+  organizationCanonicalId: string,
+  connectionId: number,
+): Promise<{ ok: boolean }> {
+  return stylebookJsonFetch<{ ok: boolean }>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections/${connectionId}`,
+    { method: "DELETE" },
+  )
+}

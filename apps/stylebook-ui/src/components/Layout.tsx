@@ -257,11 +257,14 @@ export default function Layout({ children, headerContent }: LayoutProps) {
     if (!routeSlug || projects.length === 0 || workflowProjectSlug) return
     const slug = defaultWorkflowProjectSlug(projects)
     if (!slug) return
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
-      next.set("project_scope", slug)
-      return next
-    })
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set("project_scope", slug)
+        return next
+      },
+      { replace: true },
+    )
   }, [routeSlug, projects, workflowProjectSlug, setSearchParams])
 
   /** Drop legacy ``?stylebook=`` when the slug already lives in the path. */
