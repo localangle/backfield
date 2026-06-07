@@ -413,7 +413,7 @@ export default function LocationDetail() {
             stylebookSlug={stylebookSlug}
             geometry={geometry}
             canEdit={canEdit}
-            onGeometrySaved={() => loadCanonical(canonical.id, stylebookSlug, true)}
+            onGeometrySaved={() => void loadCanonical(canonical.id, stylebookSlug, true)}
           />
         ) : null
       }

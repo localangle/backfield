@@ -9,6 +9,9 @@ import type { EntityConfig, EntityType } from "@/lib/entityTypes"
 import type { LucideIcon } from "lucide-react"
 import { Building2, MapPin, Users } from "lucide-react"
 
+/** Entity types shown on the Stylebook home dashboard (Works omitted until product-ready). */
+export type EntityHomeCardType = Exclude<EntityType, "work">
+
 export const ENTITY_REGISTRY: Record<EntityType, EntityConfig<unknown>> = {
   location: locationPickerConfig as EntityConfig<unknown>,
   person: personConfig as EntityConfig<unknown>,
@@ -17,7 +20,7 @@ export const ENTITY_REGISTRY: Record<EntityType, EntityConfig<unknown>> = {
 }
 
 export interface EntityHomeCard {
-  entityType: EntityType
+  entityType: EntityHomeCardType
   /** URL segment under the catalog base path (e.g. ``locations``, ``people``). */
   routeSegment: string
   icon: LucideIcon
