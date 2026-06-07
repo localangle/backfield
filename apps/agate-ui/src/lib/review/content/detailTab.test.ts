@@ -7,14 +7,14 @@ import {
 } from './detailTab'
 
 describe('processedItemDetailTab', () => {
-  it('defaults by synthetic flag', () => {
-    expect(defaultProcessedItemDetailTab(false)).toBe('places')
+  it('defaults to info tab', () => {
+    expect(defaultProcessedItemDetailTab(false)).toBe('info')
     expect(defaultProcessedItemDetailTab(true)).toBe('info')
   })
 
   it('parses valid tab ids and falls back', () => {
     expect(parseProcessedItemDetailTab('json', { synthetic: false })).toBe('json')
-    expect(parseProcessedItemDetailTab('bogus', { synthetic: false })).toBe('places')
+    expect(parseProcessedItemDetailTab('bogus', { synthetic: false })).toBe('info')
     expect(parseProcessedItemDetailTab(null, { synthetic: true })).toBe('info')
   })
 
