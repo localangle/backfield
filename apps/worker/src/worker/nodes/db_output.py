@@ -6,6 +6,8 @@ import os
 from typing import Any
 
 from agate_runtime.output_node import consolidated_body_from_dboutput
+from agate_utils.llm import call_llm
+from backfield_entities.connections.db_output import run_auto_connections_for_db_output
 from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
 from backfield_entities.ingest.semantic_indexing.db_output import (
     build_semantic_indexing_summary,
@@ -88,6 +90,22 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
         else:
             semantic_indexing = build_semantic_indexing_summary(enabled=False)
 
+        article_text = str(body.get("text") or "")
+        connections = run_auto_connections_for_db_output(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+            article_text=article_text,
+            settings=settings,
+            run_id=run_id,
+            processed_item_id=processed_item_id,
+            call_llm=lambda prompt, **kwargs: call_llm(
+                prompt,
+                openai_api_key=os.getenv("OPENAI_API_KEY"),
+                **kwargs,
+            ),
+        )
+
         clear_replace_article_geography_flags(
             session,
             run_id=run_id,
@@ -122,5 +140,6 @@ def run_db_output(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, A
             "domains": domain_summaries,
         },
         "semantic_indexing": semantic_indexing,
+        "connections": connections,
         "message": message,
     }

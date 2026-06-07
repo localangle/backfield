@@ -45,6 +45,11 @@ class DbOutputCanonicalSettings(BaseModel):
         description="When true, Backfield Output synchronizes semantic search documents "
         "after substrate persistence.",
     )
+    auto_connections_enabled: bool = Field(
+        default=True,
+        description="When true and canonicalization is AI-assisted with auto-apply, "
+        "Backfield Output infers high-confidence Stylebook connections after persistence.",
+    )
 
     @model_validator(mode="before")
     @classmethod
