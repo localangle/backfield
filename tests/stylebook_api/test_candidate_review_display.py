@@ -41,6 +41,33 @@ def test_adjudication_outcome_without_rationale() -> None:
     ]
 
 
+def test_organization_type_mismatch_message() -> None:
+    raw = [
+        {
+            "code": "organization_canonical_type_mismatch",
+            "canonical_id": "canon-1",
+            "substrate_type": "sports_team",
+            "canonical_type": "government",
+        }
+    ]
+    assert format_candidate_review_lines(raw) == [
+        "Could not find Stylebook entry with matching type.",
+    ]
+
+
+def test_borderline_organization_boundary_line() -> None:
+    raw = [
+        {
+            "code": "borderline_organization_boundary",
+            "boundary": "place_business",
+        }
+    ]
+    assert format_candidate_review_lines(raw) == [
+        "Business or venue mention; confirm this refers to people or operations, "
+        "not just a location.",
+    ]
+
+
 def test_deferred_policy_needs_review_line() -> None:
     raw = [
         {

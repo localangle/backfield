@@ -135,6 +135,20 @@ export default function RunGraph() {
     try {
       setRunning(true)
       setShowRunPanel(true)
+      const inputsReady = (await builderRef.current?.flushRunInputs()) ?? true
+      if (!inputsReady) {
+        setRunning(false)
+        setShowRunPanel(false)
+        showModal({
+          title: 'Run failed',
+          description:
+            'Could not save the latest flow inputs before starting the run. Fix any issues and try again.',
+          type: 'error',
+          confirmText: 'OK',
+          onConfirm: () => {},
+        })
+        return
+      }
       const run = await createRun(graphId, { input: {} })
       setCurrentRun(run)
 

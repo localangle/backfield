@@ -20,6 +20,7 @@ from worker.substrate.content.geography_reset import (
 )
 from worker.substrate.entities.location.handler import LocationPersistHandler  # noqa: F401
 from worker.substrate.entities.location.span import _find_mention_span
+from worker.substrate.entities.organization.handler import OrganizationPersistHandler  # noqa: F401
 from worker.substrate.entities.person.handler import PersonPersistHandler  # noqa: F401
 from worker.substrate.entities.registry import (
     DomainReconciliationSummary,
@@ -29,7 +30,7 @@ from worker.substrate.entities.registry import (
 
 logger = logging.getLogger(__name__)
 
-_HANDLER_DISPATCH_ORDER: tuple[str, ...] = ("places", "people")
+_HANDLER_DISPATCH_ORDER: tuple[str, ...] = ("places", "people", "organizations")
 
 __all__ = [
     "persist_from_consolidated",
@@ -63,6 +64,9 @@ def _active_handler_keys(consolidated: dict[str, Any]) -> tuple[str, ...]:
     people = consolidated.get("people")
     if isinstance(people, list):
         active.append("people")
+    organizations = consolidated.get("organizations")
+    if isinstance(organizations, list):
+        active.append("organizations")
     return tuple(key for key in _HANDLER_DISPATCH_ORDER if key in active)
 
 
@@ -90,7 +94,8 @@ def persist_from_consolidated(
     active_keys = _active_handler_keys(consolidated)
     if not active_keys:
         raise RuntimeError(
-            "DBOutput persistence requires consolidated['places'] and/or consolidated['people']"
+            "DBOutput persistence requires consolidated['places'], consolidated['people'], "
+            "and/or consolidated['organizations']"
         )
 
     article = _upsert_article(

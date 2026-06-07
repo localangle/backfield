@@ -468,6 +468,7 @@ export default function ConnectionsSection({
                   open={selectorOpen}
                   onOpenChange={setSelectorOpen}
                   projectSlug={selectorProjectSlug}
+                  stylebookSlug={stylebookSlug}
                   excludeIds={entityType === 'organization' ? [entityId] : undefined}
                   onSelect={(id, displayName) => {
                     setSelectedTargetId(id)

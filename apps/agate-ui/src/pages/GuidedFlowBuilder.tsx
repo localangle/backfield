@@ -198,7 +198,9 @@ export type GuidedFlowBuilderProps = {
 export type GuidedFlowBuilderHandle = {
   takeSnapshot: () => void
   restoreSnapshot: () => void
-  save: () => Promise<boolean>
+  save: (options?: { stayInEditMode?: boolean }) => Promise<boolean>
+  /** Flush debounced input auto-save and persist the current flow spec (run variant). */
+  flushRunInputs: () => Promise<boolean>
   hasNodeType: (type: string) => boolean
   isSaving: () => boolean
 }
@@ -227,6 +229,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     variantProp ?? (routeGraphId ? 'edit' : 'create')
   const isRunVariant = variant === 'run'
   const snapshotRef = useRef<GuidedFlowSnapshot | null>(null)
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const capabilities = useMemo(
     () => getGuidedFlowCapabilities({ readOnly }),
     [readOnly],
@@ -277,6 +280,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         window.clearTimeout(timer)
       }
       deleteAnimationTimersRef.current.clear()
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current)
+        autoSaveTimeoutRef.current = null
+      }
     },
     [],
   )
@@ -762,6 +769,62 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [applyInputBookendSwap, applyOutputBookendSwap, bookendSwapKind],
   )
 
+  const persistRunVariantGraphSpec = useCallback(async (): Promise<void> => {
+    if (!isRunVariant || !existingGraphId || !resolvedFlowProject || !inputNode || !outputNode) {
+      return
+    }
+    const saveModel = buildSaveModel(inputNode, outputNode, scaffoldModel)
+    const draftSpec = modelToGraphSpec(saveModel)
+    await updateGraph(existingGraphId, {
+      name: graphName,
+      project_id: resolvedFlowProject.id,
+      spec: {
+        name: graphName.toLowerCase().replace(/\s+/g, '_'),
+        nodes: draftSpec.nodes.map((node) => ({
+          id: node.id,
+          type: node.type,
+          params: paramsForGraphSave({
+            id: node.id,
+            type: node.type,
+            data: node.params,
+          }),
+          position: node.position,
+        })),
+        edges: draftSpec.edges,
+      },
+    })
+  }, [
+    existingGraphId,
+    graphName,
+    inputNode,
+    isRunVariant,
+    outputNode,
+    resolvedFlowProject,
+    scaffoldModel,
+  ])
+
+  const scheduleAutoSaveForRun = useCallback(() => {
+    if (!isRunVariant || !existingGraphId) return
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current)
+    }
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSaveTimeoutRef.current = null
+      void persistRunVariantGraphSpec().catch((error) => {
+        console.error('Failed to auto-save flow inputs:', error)
+      })
+    }, 1000)
+  }, [existingGraphId, isRunVariant, persistRunVariantGraphSpec])
+
+  const maybeScheduleAutoSaveForInputBookend = useCallback(
+    (nodeId: string, nodeType: string | undefined, dataChanged: boolean) => {
+      if (!dataChanged || !isRunVariant || inputNode?.id !== nodeId) return
+      if (nodeType !== 'TextInput' && nodeType !== 'JSONInput') return
+      scheduleAutoSaveForRun()
+    },
+    [inputNode?.id, isRunVariant, scheduleAutoSaveForRun],
+  )
+
   const setNodes = useCallback(
     (updater: Node[] | ((nodes: Node[]) => Node[])) => {
       if (activeStep === 'scaffold' && scaffoldModel) {
@@ -775,7 +838,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         const previousById = new Map(reactNodes.map((node) => [node.id, node]))
         let nextModel = scaffoldModel
         for (const n of list) {
-          if (previousById.get(n.id)?.data !== n.data) {
+          const dataChanged = previousById.get(n.id)?.data !== n.data
+          if (dataChanged) {
             setDirtyPanelNodeIds((prev) => new Set(prev).add(n.id))
             setSavedPanelNodeIds((prev) => {
               if (!prev.has(n.id)) return prev
@@ -783,6 +847,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
               next.delete(n.id)
               return next
             })
+            maybeScheduleAutoSaveForInputBookend(n.id, n.type, true)
           }
           if (n.id === scaffoldModel.inputNode.id) {
             setInputNode((prev) => (prev ? { ...prev, data: n.data } : prev))
@@ -810,7 +875,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       let nextInput = inputNode
       let nextOutput = outputNode
       for (const n of list) {
-        if (previousById.get(n.id)?.data !== n.data) {
+        const dataChanged = previousById.get(n.id)?.data !== n.data
+        if (dataChanged) {
           setDirtyPanelNodeIds((prev) => new Set(prev).add(n.id))
           setSavedPanelNodeIds((prev) => {
             if (!prev.has(n.id)) return prev
@@ -818,6 +884,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             next.delete(n.id)
             return next
           })
+          maybeScheduleAutoSaveForInputBookend(n.id, n.type, true)
         }
         if (inputNode?.id === n.id) nextInput = n
         if (outputNode?.id === n.id) nextOutput = n
@@ -845,7 +912,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         })
       }
     },
-    [activeStep, scaffoldModel, inputNode, outputNode],
+    [activeStep, maybeScheduleAutoSaveForInputBookend, scaffoldModel, inputNode, outputNode],
   )
 
   const handleTextInputChange = useCallback(
@@ -861,8 +928,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         next.delete(selectedNodeId)
         return next
       })
+      scheduleAutoSaveForRun()
     },
-    [selectedNodeId],
+    [scheduleAutoSaveForRun, selectedNodeId],
   )
 
   const handleInputContinue = useCallback(() => {
@@ -1139,6 +1207,14 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     ],
   )
 
+  const flushRunInputs = useCallback(async (): Promise<boolean> => {
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current)
+      autoSaveTimeoutRef.current = null
+    }
+    return handleSave({ stayInEditMode: true })
+  }, [handleSave])
+
   useImperativeHandle(
     ref,
     () => ({
@@ -1157,7 +1233,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         setSelectedNodeId(snap.selectedNodeId)
         setConfigureGateActive(snap.configureGateActive)
       },
-      save: () => handleSave(),
+      save: (options) => handleSave(options),
+      flushRunInputs,
       hasNodeType: (type: string) => {
         if (inputNode?.type === type) return true
         if (outputNode?.type === type) return true
@@ -1165,7 +1242,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       },
       isSaving: () => saving,
     }),
-    [buildSnapshot, handleSave, inputNode, outputNode, scaffoldModel, saving],
+    [buildSnapshot, flushRunInputs, handleSave, inputNode, outputNode, scaffoldModel, saving],
   )
 
   const handleAddNodeClick = useCallback((parentNodeId: string, anchorRect: DOMRect) => {

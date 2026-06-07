@@ -14,6 +14,12 @@ from api.processed_item.entities.location.locations_merge import (
     _select_geocoded_places_node_id,
     build_merged_locations_lane,
 )
+from api.processed_item.entities.organization.organizations_merge import (
+    _anchor_for_organization_dict,
+    build_merged_organizations_lane,
+    normalize_organizations_overlay,
+    select_organizations_node_id,
+)
 from api.processed_item.entities.person.people_merge import (
     _anchor_for_person_dict,
     build_merged_people_lane,
@@ -31,7 +37,7 @@ ARTICLE_OVERLAY_KEYS: tuple[str, ...] = (
 
 
 def overlay_has_review_content(overlay: dict[str, Any] | None) -> bool:
-    """True when overlay carries location, people, or article review edits."""
+    """True when overlay carries location, people, organizations, or article review edits."""
     if not overlay or not isinstance(overlay, dict):
         return False
     loc_root = overlay.get("locations")
@@ -56,6 +62,19 @@ def overlay_has_review_content(overlay: dict[str, Any] | None) -> bool:
         if isinstance(user_added, list) and len(user_added) > 0:
             return True
         removed = people_root.get("removed_anchors")
+        if isinstance(removed, list):
+            for anchor in removed:
+                if isinstance(anchor, str) and anchor.strip():
+                    return True
+    organizations_root = overlay.get("organizations")
+    if isinstance(organizations_root, dict):
+        by_anchor = organizations_root.get("by_anchor")
+        if isinstance(by_anchor, dict) and len(by_anchor) > 0:
+            return True
+        user_added = organizations_root.get("user_added")
+        if isinstance(user_added, list) and len(user_added) > 0:
+            return True
+        removed = organizations_root.get("removed_anchors")
         if isinstance(removed, list):
             for anchor in removed:
                 if isinstance(anchor, str) and anchor.strip():
@@ -298,10 +317,70 @@ def build_reviewed_output(
                 payload["people"] = new_people
                 _sync_consolidated_people_in_output(reviewed, new_people)
 
+    merged_organizations_rows, _stale_organizations = build_merged_organizations_lane(
+        output=output, overlay=overlay
+    )
+    _organization_patches, _organization_user_added, removed_organization_anchors = (
+        normalize_organizations_overlay(overlay)
+    )
+    anchor_to_organization: dict[str, dict[str, Any]] = {}
+    user_organizations: list[dict[str, Any]] = []
+    for row in merged_organizations_rows:
+        if not isinstance(row, dict):
+            continue
+        anchor = row.get("anchor")
+        organization = row.get("organization")
+        if not isinstance(anchor, str) or not isinstance(organization, dict):
+            continue
+        if row.get("source") == "user":
+            user_organizations.append(organization)
+        else:
+            anchor_to_organization[anchor] = organization
+
+    org_node_id = select_organizations_node_id(reviewed)
+    if org_node_id:
+        payload = reviewed.get(org_node_id)
+        if isinstance(payload, dict):
+            organizations_list = payload.get("organizations")
+            if isinstance(organizations_list, list):
+                new_organizations: list[dict[str, Any]] = []
+                idx = 0
+                for organization in organizations_list:
+                    if not isinstance(organization, dict):
+                        continue
+                    anchor = _anchor_for_organization_dict(organization, org_node_id, idx)
+                    idx += 1
+                    if anchor in removed_organization_anchors:
+                        continue
+                    if anchor in anchor_to_organization:
+                        new_organizations.append(copy.deepcopy(anchor_to_organization[anchor]))
+                    else:
+                        new_organizations.append(copy.deepcopy(organization))
+                for organization in user_organizations:
+                    new_organizations.append(copy.deepcopy(organization))
+                payload["organizations"] = new_organizations
+                _sync_consolidated_organizations_in_output(reviewed, new_organizations)
+
     if overlay and isinstance(overlay, dict):
         _apply_article_overlay_to_output(reviewed, overlay)
 
     return reviewed
+
+
+def _sync_consolidated_organizations_in_output(
+    output: dict[str, Any],
+    merged_organizations: list[dict[str, Any]],
+) -> None:
+    """Copy canonical merged ``organizations`` onto every ``consolidated.organizations``."""
+    organizations_copy = copy.deepcopy(merged_organizations)
+    for payload in output.values():
+        if not isinstance(payload, dict):
+            continue
+        consolidated = payload.get("consolidated")
+        if isinstance(consolidated, dict):
+            consolidated["organizations"] = copy.deepcopy(organizations_copy)
+        if isinstance(payload.get("organizations"), list):
+            payload["organizations"] = copy.deepcopy(organizations_copy)
 
 
 def _sync_consolidated_people_in_output(

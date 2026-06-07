@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 CONSOLIDATED_DOMAIN_TO_SEMANTIC_ENTITY_TYPE: dict[str, SemanticBuilderEntityType] = {
     "people": "person",
     "places": "location",
+    "organizations": "organization",
 }
 
 

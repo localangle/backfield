@@ -42,7 +42,8 @@ export function getMiddleNodeDefaultData(
 ): Record<string, unknown> {
   switch (type) {
     case 'PlaceExtract':
-    case 'PersonExtract': {
+    case 'PersonExtract':
+    case 'OrganizationExtract': {
       const meta = nodeMetadata.find((m) => m.type === type)
       return (
         meta?.defaultParams ?? {

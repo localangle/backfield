@@ -85,6 +85,8 @@ export interface ProcessedItemVerificationSectionProps {
   catalogStylebookSlug?: string | null
   /** Agate project slug for Stylebook ``?project=`` context. */
   catalogProjectSlug?: string | null
+  /** When a rerun is in flight; place review cannot be edited. */
+  reviewLocked?: boolean
 }
 
 export function ProcessedItemVerificationSection({
@@ -95,6 +97,7 @@ export function ProcessedItemVerificationSection({
   onVerificationDirtyChange,
   catalogStylebookSlug = null,
   catalogProjectSlug = null,
+  reviewLocked = false,
 }: ProcessedItemVerificationSectionProps) {
   const { showError, showConfirm, showMessage } = useAppMessage()
   const [baselineOverlay, setBaselineOverlay] = useState<Record<string, unknown>>(() =>
@@ -841,6 +844,9 @@ export function ProcessedItemVerificationSection({
   const addPlaceWorkflowActive = addPlaceMode || addPlaceSelection !== null
 
   const articleInteractionMode = useMemo(() => {
+    if (reviewLocked) {
+      return 'locked' as const
+    }
     if (addPlaceSelection && !awaitingAddPlaceReselection) {
       return 'locked' as const
     }
@@ -848,7 +854,13 @@ export function ProcessedItemVerificationSection({
       return 'select-passage' as const
     }
     return 'normal' as const
-  }, [addPlaceSelection, awaitingAddPlaceReselection, addPlaceMode])
+  }, [reviewLocked, addPlaceSelection, awaitingAddPlaceReselection, addPlaceMode])
+
+  useEffect(() => {
+    if (!reviewLocked) return
+    cancelGeometryEdit()
+    cancelAddPlaceWorkflow()
+  }, [reviewLocked, cancelGeometryEdit, cancelAddPlaceWorkflow])
 
   useEffect(() => {
     if (!addPlaceWorkflowActive || addPlaceSelection) return
@@ -962,9 +974,9 @@ export function ProcessedItemVerificationSection({
                   addPlaceMode ? undefined : 'bg-black text-white hover:bg-black/90',
                 )}
                 variant={addPlaceMode ? 'outline' : 'default'}
-                disabled={addPlaceSelection !== null}
+                disabled={reviewLocked || addPlaceSelection !== null}
                 onClick={() => {
-                  if (addPlaceSelection) return
+                  if (reviewLocked || addPlaceSelection) return
                   if (articleTextSelection) {
                     handleBeginAddPlace(articleTextSelection)
                     return
@@ -1043,7 +1055,7 @@ export function ProcessedItemVerificationSection({
                     placeLabels={placeLabelsByAnchor}
                     interactionMode={articleInteractionMode}
                     onSelectPlace={
-                      addPlaceWorkflowActive ? undefined : selectPlaceAnchor
+                      reviewLocked || addPlaceWorkflowActive ? undefined : selectPlaceAnchor
                     }
                     onTextSelectionChange={(selection) => {
                       if (addPlaceSelection && !awaitingAddPlaceReselection) return
@@ -1112,6 +1124,7 @@ export function ProcessedItemVerificationSection({
               geocodedPlaceRows={geocodedPlaceRows}
               staleAnchorSet={staleAnchorSet}
               saving={saving}
+              reviewLocked={reviewLocked}
               startGeometryEdit={startGeometryEdit}
               setGeometryAddMode={setGeometryAddMode}
               clearGeometry={() => {

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from backfield_db import SubstrateLocationSemanticDocument, SubstratePersonSemanticDocument
+from backfield_db import (
+    SubstrateLocationSemanticDocument,
+    SubstrateOrganizationSemanticDocument,
+    SubstratePersonSemanticDocument,
+)
 from backfield_db.semantic_indexing import (
     SEMANTIC_EMBEDDING_STATUS_FAILED,
     SEMANTIC_EMBEDDING_STATUS_PENDING,
@@ -82,6 +86,36 @@ def _collect_location_pending(
     return pending
 
 
+def _collect_organization_pending(
+    session: Session,
+    *,
+    project_id: int,
+    article_id: int,
+) -> list[PendingSemanticDocument]:
+    rows = session.exec(
+        select(SubstrateOrganizationSemanticDocument).where(
+            SubstrateOrganizationSemanticDocument.project_id == project_id,
+            SubstrateOrganizationSemanticDocument.article_id == article_id,
+            SubstrateOrganizationSemanticDocument.active.is_(True),
+            col(SubstrateOrganizationSemanticDocument.embedding_status).in_(
+                (SEMANTIC_EMBEDDING_STATUS_PENDING, SEMANTIC_EMBEDDING_STATUS_FAILED)
+            ),
+        )
+    ).all()
+    pending: list[PendingSemanticDocument] = []
+    for row in rows:
+        if row.id is None:
+            continue
+        pending.append(
+            PendingSemanticDocument(
+                entity_type="organization",
+                document_id=int(row.id),
+                search_text=str(row.search_text),
+            )
+        )
+    return pending
+
+
 def collect_pending_semantic_documents(
     session: Session,
     *,
@@ -99,6 +133,14 @@ def collect_pending_semantic_documents(
         elif entity_type == "location":
             documents.extend(
                 _collect_location_pending(session, project_id=project_id, article_id=article_id)
+            )
+        elif entity_type == "organization":
+            documents.extend(
+                _collect_organization_pending(
+                    session,
+                    project_id=project_id,
+                    article_id=article_id,
+                )
             )
     return documents
 
@@ -160,6 +202,26 @@ def _apply_location_outcome(
         row.embedding_error = (error_message or "Embedding failed.")[:2000]
 
 
+def _apply_organization_outcome(
+    row: SubstrateOrganizationSemanticDocument,
+    *,
+    vector: list[float] | None,
+    error_message: str | None,
+    embedding_model: str,
+    embedding_dimensions: int | None,
+) -> None:
+    if vector is not None:
+        row.embedding = vector
+        row.embedding_status = SEMANTIC_EMBEDDING_STATUS_READY
+        row.embedding_model = embedding_model
+        row.embedding_dimensions = embedding_dimensions
+        row.embedding_error = None
+        row.embedded_at = datetime.now(UTC)
+    else:
+        row.embedding_status = SEMANTIC_EMBEDDING_STATUS_FAILED
+        row.embedding_error = (error_message or "Embedding failed.")[:2000]
+
+
 def apply_embedding_batch_outcomes(
     session: Session,
     *,
@@ -173,8 +235,10 @@ def apply_embedding_batch_outcomes(
         doc = outcome.document
         if doc.entity_type == "person":
             row = session.get(SubstratePersonSemanticDocument, doc.document_id)
-        else:
+        elif doc.entity_type == "location":
             row = session.get(SubstrateLocationSemanticDocument, doc.document_id)
+        else:
+            row = session.get(SubstrateOrganizationSemanticDocument, doc.document_id)
         if row is None or not row.active:
             summary.skipped += 1
             continue
@@ -186,8 +250,16 @@ def apply_embedding_batch_outcomes(
                 embedding_model=embedding_model,
                 embedding_dimensions=embedding_dimensions,
             )
-        else:
+        elif doc.entity_type == "location":
             _apply_location_outcome(
+                row,
+                vector=outcome.vector,
+                error_message=outcome.error_message,
+                embedding_model=embedding_model,
+                embedding_dimensions=embedding_dimensions,
+            )
+        else:
+            _apply_organization_outcome(
                 row,
                 vector=outcome.vector,
                 error_message=outcome.error_message,

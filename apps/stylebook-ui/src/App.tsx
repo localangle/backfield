@@ -26,6 +26,11 @@ import PersonDetail from "@/pages/PersonDetail"
 import CreatePerson from "@/pages/CreatePerson"
 import ImportLocations from "@/pages/ImportLocations"
 import ImportPeople from "@/pages/ImportPeople"
+import ImportOrganizations from "@/pages/ImportOrganizations"
+import Organizations from "@/pages/Organizations"
+import OrganizationCandidates from "@/pages/OrganizationCandidates"
+import OrganizationDetail from "@/pages/OrganizationDetail"
+import CreateOrganization from "@/pages/CreateOrganization"
 import StubPage from "@/pages/StubPage"
 
 function ProtectedLayout() {
@@ -89,6 +94,17 @@ function LegacyPersonCanonicalDetailRedirect() {
   const slug = parseLegacyStylebookQuery(search) ?? "default"
   const qs = stripLegacyStylebookFromSearch(search)
   const tail = `/people/canonical/${encodeURIComponent(id ?? "")}`
+  return (
+    <Navigate to={`/stylebook/${encodeURIComponent(slug)}${tail}${qs}`} replace />
+  )
+}
+
+function LegacyOrganizationCanonicalDetailRedirect() {
+  const { id } = useParams<{ id: string }>()
+  const { search } = useLocation()
+  const slug = parseLegacyStylebookQuery(search) ?? "default"
+  const qs = stripLegacyStylebookFromSearch(search)
+  const tail = `/organizations/canonical/${encodeURIComponent(id ?? "")}`
   return (
     <Navigate to={`/stylebook/${encodeURIComponent(slug)}${tail}${qs}`} replace />
   )
@@ -175,6 +191,22 @@ export default function App() {
               element={<LegacyStylebookNavigate tail="/import/people" />}
             />
             <Route
+              path="/organizations/canonical"
+              element={<LegacyStylebookNavigate tail="/organizations/canonical" />}
+            />
+            <Route
+              path="/organizations/canonical/:id"
+              element={<LegacyOrganizationCanonicalDetailRedirect />}
+            />
+            <Route
+              path="/organizations/create"
+              element={<LegacyStylebookNavigate tail="/organizations/create" />}
+            />
+            <Route
+              path="/import/organizations"
+              element={<LegacyStylebookNavigate tail="/import/organizations" />}
+            />
+            <Route
               path="/organizations/candidates"
               element={<LegacyStylebookNavigate tail="/organizations/candidates" />}
             />
@@ -196,10 +228,11 @@ export default function App() {
               <Route path="people/canonical/:id" element={<PersonDetail />} />
               <Route path="people/create" element={<CreatePerson />} />
               <Route path="import/people" element={<ImportPeople />} />
-              <Route
-                path="organizations/candidates"
-                element={<StubPage title="Organization candidates" />}
-              />
+              <Route path="organizations/candidates" element={<OrganizationCandidates />} />
+              <Route path="organizations/canonical" element={<Organizations />} />
+              <Route path="organizations/canonical/:id" element={<OrganizationDetail />} />
+              <Route path="organizations/create" element={<CreateOrganization />} />
+              <Route path="import/organizations" element={<ImportOrganizations />} />
               <Route
                 path="works/candidates"
                 element={<StubPage title="Works candidates" />}

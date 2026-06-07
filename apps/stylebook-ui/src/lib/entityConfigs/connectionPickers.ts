@@ -1,15 +1,19 @@
 /**
  * EntityConfig objects for connection target pickers (canonical list APIs).
- * Person / organization / work use empty-list stubs until those entities are migrated.
  */
 
+import {
+  createListOrganizationPickerRows,
+  organizationConfig,
+  type OrganizationPickerRow,
+} from "@/lib/entityConfigs/organization"
 import {
   createListPersonPickerRows,
   personConfig,
   type PersonPickerRow,
 } from "@/lib/entityConfigs/person"
 import { listCanonicalLocations } from "@/lib/stylebook-api/locations"
-import { listOrganizations, listWorks } from "@/lib/stylebook-api/entityListStubs"
+import { listWorks } from "@/lib/stylebook-api/entityListStubs"
 import type { EntityConfig } from "@/lib/entityTypes"
 
 /** Canonical location row as used by EntitySelector (name matches agate ``Location`` shape). */
@@ -23,17 +27,7 @@ export interface LocationPickerRow {
   updated_at: string
 }
 
-export type { PersonPickerRow }
-
-export interface OrganizationPickerRow {
-  id: number
-  project_id: number
-  name: string
-  organization_type?: string
-  status: string
-  created_at: string
-  updated_at: string
-}
+export type { PersonPickerRow, OrganizationPickerRow }
 
 export interface WorkPickerRow {
   id: number
@@ -176,6 +170,37 @@ export function createPersonPickerConfig(stylebookSlug: string): EntityConfig<Pe
   } as unknown as EntityConfig<PersonPickerRow>
 }
 
+export function createOrganizationPickerConfig(
+  stylebookSlug: string,
+): EntityConfig<OrganizationPickerRow> {
+  const listRows = createListOrganizationPickerRows(stylebookSlug)
+  return {
+    ...organizationConfig,
+    api: {
+      ...organizationConfig.api,
+      listCandidates: noopListCandidates,
+      listCanonical: listRows,
+      listCanonicalForSelector: listRows,
+      getDetail: notImplemented,
+      createCanonical: notImplemented,
+      updateCanonical: notImplemented,
+      deleteCanonical: notImplemented,
+      acceptCandidate: notImplemented,
+      bulkAcceptCandidates: notImplemented,
+      linkCandidateToExisting: notImplemented,
+      createCanonicalFromCluster: notImplemented,
+      getMentions: notImplemented,
+      unlink: notImplemented,
+      bulkUnlink: notImplemented,
+      getMeta: notImplemented,
+      createMeta: notImplemented,
+      updateMeta: notImplemented,
+      deleteMeta: notImplemented,
+    },
+  } as unknown as EntityConfig<OrganizationPickerRow>
+}
+
+/** @deprecated Use ``createOrganizationPickerConfig(stylebookSlug)`` — requires catalog scope. */
 export const organizationPickerConfig = {
   type: "organization",
   displayName: { singular: "Organization", plural: "Organizations" },
@@ -186,8 +211,8 @@ export const organizationPickerConfig = {
   },
   api: {
     listCandidates: noopListCandidates,
-    listCanonical: listOrganizations,
-    listCanonicalForSelector: listOrganizations,
+    listCanonical: notImplemented,
+    listCanonicalForSelector: notImplemented,
     getDetail: notImplemented,
     createCanonical: notImplemented,
     updateCanonical: notImplemented,

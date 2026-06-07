@@ -1,0 +1,38 @@
+{
+  "type": "OrganizationExtract",
+  "name": "OrganizationExtract",
+  "label": "Organization Extract",
+  "description": "Extract editorially relevant organizations from text using an LLM.",
+  "category": "extraction",
+  "icon": "Building2",
+  "color": "bg-amber-500",
+  "requiredUpstreamNodes": [],
+  "inputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
+    },
+    {
+      "id": "organizations",
+      "label": "Organizations",
+      "type": "array"
+    }
+  ],
+  "defaultParams": {
+    "model": "",
+    "aiModelConfigId": null,
+    "prompt_file": "prompts/extract.md",
+    "prompt": "",
+    "output_format_file": "prompts/_output_format.json",
+    "llmTimeout": 600
+  }
+}

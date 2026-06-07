@@ -28,10 +28,16 @@ def test_db_output_settings_semantic_indexing_can_be_enabled() -> None:
 def test_semantic_entity_types_for_consolidated_domains() -> None:
     assert semantic_entity_types_for_consolidated_domains(("people",)) == ("person",)
     assert semantic_entity_types_for_consolidated_domains(("places",)) == ("location",)
+    assert semantic_entity_types_for_consolidated_domains(("organizations",)) == (
+        "organization",
+    )
     assert semantic_entity_types_for_consolidated_domains(("people", "places")) == (
         "person",
         "location",
     )
+    assert semantic_entity_types_for_consolidated_domains(
+        ("people", "places", "organizations")
+    ) == ("person", "location", "organization")
     assert semantic_entity_types_for_consolidated_domains(()) == ()
 
 
@@ -81,11 +87,11 @@ def test_build_semantic_indexing_summary_with_embedding_partial() -> None:
     assert summary["embedding"]["status"] == "not_configured"
 
 
-def test_sync_semantic_documents_after_db_output_no_supported_domains() -> None:
+def test_sync_semantic_documents_after_db_output_unknown_domain() -> None:
     result = sync_semantic_documents_after_db_output(
         session=None,  # type: ignore[arg-type]
         project_id=1,
         article_id=1,
-        consolidated_domain_keys=("organizations",),
+        consolidated_domain_keys=("works",),
     )
     assert result.summaries == ()

@@ -13,7 +13,7 @@ export type UsePromptDeleteEmptyCanonicalOptions = {
   onDelete: () => void | Promise<void>
 }
 
-/** After the last mention is unlinked and no substrates remain, offer to delete the canonical. */
+/** After the last linked substrate is removed and nothing remains, offer to delete the canonical. */
 export function usePromptDeleteEmptyCanonical({
   canonicalKey,
   enabled = true,
@@ -53,10 +53,11 @@ export function usePromptDeleteEmptyCanonical({
       return
     }
 
+    const substratesCleared = prevSubs > 0 && substrateCount === 0
     const mentionsCleared = prevMentions > 0 && mentionCount === 0
-    const noLinkedSubstrates = substrateCount === 0
+    const fullyEmpty = substrateCount === 0 && mentionCount === 0
 
-    if (mentionsCleared && noLinkedSubstrates) {
+    if (fullyEmpty && (substratesCleared || mentionsCleared)) {
       void (async () => {
         const ok = await showConfirm(
           "All mentions for this canonical have been removed. Would you like to delete it?",

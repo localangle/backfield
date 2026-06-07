@@ -1,0 +1,57 @@
+{
+  "organizations": [
+    {
+      "name": "Chicago City Hall",
+      "type": "government",
+      "role_in_story": "Announced a new park initiative",
+      "nature": "actor",
+      "nature_secondary_tags": [],
+      "mentions": [
+        {
+          "text": "Chicago City Hall announced a new park initiative Monday.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "Brother Rice boys basketball team",
+      "type": "sports_team",
+      "role_in_story": "Won the regional semifinal",
+      "nature": "subject",
+      "nature_secondary_tags": [],
+      "mentions": [
+        {
+          "text": "Brother Rice beat Marist 48-41 in the regional semifinal.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "Dear Abby",
+      "type": "media",
+      "organization_boundary": "borderline_work_title",
+      "role_in_story": "Advice column central to the story",
+      "nature": "source",
+      "nature_secondary_tags": [],
+      "mentions": [
+        {
+          "text": "Dear Abby advised the reader to seek counseling.",
+          "quote": false
+        }
+      ]
+    },
+    {
+      "name": "National Basketball Association",
+      "type": "sports_league",
+      "role_in_story": "Announced a new policy",
+      "nature": "actor",
+      "nature_secondary_tags": [],
+      "mentions": [
+        {
+          "text": "The NBA announced a new policy on Tuesday.",
+          "quote": false
+        }
+      ]
+    }
+  ]
+}

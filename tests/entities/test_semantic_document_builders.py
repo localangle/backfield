@@ -9,6 +9,7 @@ from backfield_entities.ingest.semantic_indexing import (
     SemanticDocumentDraft,
     build_location_occurrence_document,
     build_location_occurrence_documents,
+    build_organization_occurrence_document,
     build_person_occurrence_document,
     build_person_occurrence_documents,
     semantic_builder_supported,
@@ -20,6 +21,12 @@ from backfield_entities.ingest.semantic_indexing.location.sources import (
     LocationEntitySource,
     LocationMentionSource,
     LocationOccurrenceSource,
+)
+from backfield_entities.ingest.semantic_indexing.organization.sources import (
+    OrganizationCanonicalSource,
+    OrganizationEntitySource,
+    OrganizationMentionSource,
+    OrganizationOccurrenceSource,
 )
 from backfield_entities.ingest.semantic_indexing.person.sources import (
     PersonCanonicalSource,
@@ -302,8 +309,59 @@ def test_location_builder_documents_batch_ordering() -> None:
     ]
 
 
-@pytest.mark.parametrize("entity_type", ["organization", "work"])
+def test_organization_occurrence_document_includes_role_and_type() -> None:
+    organization = OrganizationEntitySource(
+        id=60,
+        name="Chicago City Hall",
+        organization_type="government",
+        stylebook_organization_canonical_id="canon-org-1",
+    )
+    canonical = OrganizationCanonicalSource(
+        id="canon-org-1",
+        label="Chicago City Hall",
+        organization_type="government",
+    )
+    mention = OrganizationMentionSource(
+        id=61,
+        article_id=10,
+        organization_id=60,
+        role_in_story="Announced a new policy",
+        nature="actor",
+        nature_secondary_tags=("source",),
+        deleted=False,
+    )
+    occurrence = OrganizationOccurrenceSource(
+        id=62,
+        organization_mention_id=61,
+        mention_text="Chicago City Hall announced a new policy Monday.",
+        quote_text=None,
+        start_char=0,
+        end_char=48,
+        occurrence_order=1,
+        labels=(),
+        suppressed=False,
+    )
+    draft = build_organization_occurrence_document(
+        project_id=1,
+        article=_article(),
+        organization=organization,
+        mention=mention,
+        occurrence=occurrence,
+        canonical=canonical,
+    )
+    assert isinstance(draft, SemanticDocumentDraft)
+    assert draft.entity_id == 60
+    assert "Chicago City Hall" in draft.search_text
+    assert "government" in draft.search_text
+    assert "Announced a new policy" in draft.search_text
+
+
+@pytest.mark.parametrize("entity_type", ["work"])
 def test_unsupported_entity_type_result(entity_type: str) -> None:
     assert semantic_builder_supported(entity_type) is False
     unsupported = unsupported_semantic_builder_type(entity_type)
     assert unsupported.entity_type == entity_type
+
+
+def test_organization_entity_type_is_supported() -> None:
+    assert semantic_builder_supported("organization") is True

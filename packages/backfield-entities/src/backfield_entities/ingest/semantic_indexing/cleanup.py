@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from backfield_db import SubstrateLocationSemanticDocument, SubstratePersonSemanticDocument
+from backfield_db import (
+    SubstrateLocationSemanticDocument,
+    SubstrateOrganizationSemanticDocument,
+    SubstratePersonSemanticDocument,
+)
 from sqlalchemy import delete
 from sqlmodel import Session
 
@@ -19,6 +23,22 @@ def delete_semantic_documents_for_person(
     )
     if project_id is not None:
         stmt = stmt.where(SubstratePersonSemanticDocument.project_id == project_id)
+    result = session.exec(stmt)
+    return int(result.rowcount or 0)
+
+
+def delete_semantic_documents_for_organization(
+    session: Session,
+    *,
+    organization_id: int,
+    project_id: int | None = None,
+) -> int:
+    """Remove all semantic documents for one substrate organization (before row delete)."""
+    stmt = delete(SubstrateOrganizationSemanticDocument).where(
+        SubstrateOrganizationSemanticDocument.organization_id == organization_id,
+    )
+    if project_id is not None:
+        stmt = stmt.where(SubstrateOrganizationSemanticDocument.project_id == project_id)
     result = session.exec(stmt)
     return int(result.rowcount or 0)
 

@@ -15,11 +15,17 @@ import {
 } from "@/components/ui/card"
 import { Loader2 } from "lucide-react"
 
+const ENTITY_STATS_KEYS: Record<
+  (typeof ENTITY_HOME_CARDS)[number]["entityType"],
+  keyof Stats
+> = {
+  location: "locations",
+  person: "people",
+  organization: "organizations",
+}
+
 function entityStatsKey(entityType: (typeof ENTITY_HOME_CARDS)[number]["entityType"]): keyof Stats {
-  if (entityType === "location") return "locations"
-  if (entityType === "person") return "people"
-  if (entityType === "organization") return "organizations"
-  return "works"
+  return ENTITY_STATS_KEYS[entityType]
 }
 
 export default function Index() {

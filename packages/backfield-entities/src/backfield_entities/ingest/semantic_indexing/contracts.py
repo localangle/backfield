@@ -9,11 +9,12 @@ from backfield_db.semantic_indexing import SEMANTIC_DOCUMENT_KIND_MENTION_OCCURR
 
 from backfield_entities.registry.entity_types import EntityType
 
-SemanticBuilderEntityType = Literal["person", "location"]
+SemanticBuilderEntityType = Literal["person", "location", "organization"]
 
 SUPPORTED_SEMANTIC_BUILDER_ENTITY_TYPES: tuple[SemanticBuilderEntityType, ...] = (
     "person",
     "location",
+    "organization",
 )
 
 

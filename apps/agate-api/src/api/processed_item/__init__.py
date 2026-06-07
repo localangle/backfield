@@ -5,6 +5,12 @@ from api.processed_item.entities.location.locations_merge import build_merged_lo
 from api.processed_item.entities.location.review_enrichment import (
     enrich_merged_locations_for_review,
 )
+from api.processed_item.entities.organization.organizations_merge import (
+    build_merged_organizations_lane,
+)
+from api.processed_item.entities.organization.review_enrichment import (
+    enrich_merged_organizations_for_review,
+)
 from api.processed_item.entities.person.people_merge import build_merged_people_lane
 from api.processed_item.entities.person.review_enrichment import enrich_merged_people_for_review
 from api.processed_item.overlay.reviewed_output import (
@@ -19,10 +25,12 @@ from api.processed_item.overlay.validate import (
 __all__ = [
     "OverlayGeometryValidationError",
     "build_merged_locations_lane",
+    "build_merged_organizations_lane",
     "build_merged_people_lane",
     "build_processed_item_article_context",
     "build_reviewed_output",
     "enrich_merged_locations_for_review",
+    "enrich_merged_organizations_for_review",
     "enrich_merged_people_for_review",
     "overlay_has_review_content",
     "validate_processed_item_overlay_geometry",

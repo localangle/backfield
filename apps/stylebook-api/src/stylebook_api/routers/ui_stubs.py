@@ -7,8 +7,10 @@ from typing import Any
 from backfield_auth.gate import require_project_access
 from backfield_db import (
     StylebookLocationCanonical,
+    StylebookOrganizationCanonical,
     StylebookPersonCanonical,
     SubstrateLocation,
+    SubstrateOrganization,
     SubstratePerson,
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
@@ -93,7 +95,31 @@ def get_stats(
         "canonical_count": people_canon_cnt,
         "candidate_count": people_cand_cnt,
     }
-    return StatsOut(locations=loc, people=people_stats, organizations=z, works=z)
+    org_canon_cnt = int(
+        session.scalar(
+            select(func.count())
+            .select_from(StylebookOrganizationCanonical)
+            .where(StylebookOrganizationCanonical.stylebook_id == int(stylebook_id))
+        )
+        or 0
+    )
+    org_cand_cnt = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SubstrateOrganization)
+            .where(
+                SubstrateOrganization.project_id == int(proj.id),
+                col(SubstrateOrganization.stylebook_organization_canonical_id).is_(None),
+                SubstrateOrganization.canonical_link_status == CANONICAL_LINK_PENDING,
+            )
+        )
+        or 0
+    )
+    org_stats = {
+        "canonical_count": org_canon_cnt,
+        "candidate_count": org_cand_cnt,
+    }
+    return StatsOut(locations=loc, people=people_stats, organizations=org_stats, works=z)
 
 
 @router.get("/agents/types", response_model=list[dict[str, Any]])

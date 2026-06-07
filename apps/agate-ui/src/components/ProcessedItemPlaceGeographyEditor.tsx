@@ -29,6 +29,7 @@ export interface ProcessedItemPlaceGeographyEditorProps {
   geocodedPlaceRows: Record<string, unknown>[]
   staleAnchorSet: Set<string>
   saving: boolean
+  reviewLocked?: boolean
   startGeometryEdit: () => void
   setGeometryAddMode: (mode: 'point' | 'rectangle' | null) => void
   clearGeometry: () => void
@@ -70,6 +71,7 @@ export function ProcessedItemPlaceGeographyEditor({
   geocodedPlaceRows,
   staleAnchorSet,
   saving,
+  reviewLocked = false,
   startGeometryEdit,
   setGeometryAddMode,
   clearGeometry,
@@ -88,7 +90,7 @@ export function ProcessedItemPlaceGeographyEditor({
   onFindOnMap,
   cancelLabel = 'Cancel',
 }: ProcessedItemPlaceGeographyEditorProps) {
-  const mapActionsDisabled = saving || geometrySaving
+  const mapActionsDisabled = saving || geometrySaving || reviewLocked
   return (
     <div
       className={cn(
@@ -257,7 +259,7 @@ export function ProcessedItemPlaceGeographyEditor({
                 <GeocodedPlaceEditForm
                   embeddedInTab
                   fields={placeFieldsDraft}
-                  disabled={geometrySaving}
+                  disabled={geometrySaving || reviewLocked}
                   selectedOccurrenceClientId={selectedOccurrenceClientId}
                   onSelectOccurrence={onSelectedOccurrenceChange}
                   onChange={onPlaceFieldsDraftChange}
@@ -298,9 +300,9 @@ export function ProcessedItemPlaceGeographyEditor({
             onSelectAnchor={onSelectAnchor}
             onOpenStylebookPlace={onOpenStylebookPlace}
             onAdoptForStylebook={onAdoptForStylebook}
-            adoptDisabled={saving || geometrySaving}
+            adoptDisabled={mapActionsDisabled}
             onDeletePlace={onDeletePlace}
-            deleteDisabled={saving || geometrySaving}
+            deleteDisabled={mapActionsDisabled}
             onFindOnMap={onFindOnMap}
           />
         </div>

@@ -2,25 +2,25 @@
  * Central registry of Stylebook entity types and their EntityConfig objects.
  */
 
-import {
-  locationPickerConfig,
-  organizationPickerConfig,
-  workPickerConfig,
-} from "@/lib/entityConfigs/connectionPickers"
+import { locationPickerConfig, workPickerConfig } from "@/lib/entityConfigs/connectionPickers"
+import { organizationConfig } from "@/lib/entityConfigs/organization"
 import { personConfig } from "@/lib/entityConfigs/person"
 import type { EntityConfig, EntityType } from "@/lib/entityTypes"
 import type { LucideIcon } from "lucide-react"
-import { BookOpen, Building2, MapPin, Users } from "lucide-react"
+import { Building2, MapPin, Users } from "lucide-react"
+
+/** Entity types shown on the Stylebook home dashboard (Works omitted until product-ready). */
+export type EntityHomeCardType = Exclude<EntityType, "work">
 
 export const ENTITY_REGISTRY: Record<EntityType, EntityConfig<unknown>> = {
   location: locationPickerConfig as EntityConfig<unknown>,
   person: personConfig as EntityConfig<unknown>,
-  organization: organizationPickerConfig as EntityConfig<unknown>,
+  organization: organizationConfig as EntityConfig<unknown>,
   work: workPickerConfig as EntityConfig<unknown>,
 }
 
 export interface EntityHomeCard {
-  entityType: EntityType
+  entityType: EntityHomeCardType
   /** URL segment under the catalog base path (e.g. ``locations``, ``people``). */
   routeSegment: string
   icon: LucideIcon
@@ -49,12 +49,7 @@ export const ENTITY_HOME_CARDS: EntityHomeCard[] = [
     routeSegment: "organizations",
     icon: Building2,
     description: "Canonical organizations and institutions",
-  },
-  {
-    entityType: "work",
-    routeSegment: "works",
-    icon: BookOpen,
-    description: "Canonical works (laws, reports, books, products, artworks)",
+    canonicalFirst: true,
   },
 ]
 

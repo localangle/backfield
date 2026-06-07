@@ -16,6 +16,15 @@ PEOPLE_SMOKE_DEMO_TEXT = (
     "Cubs shortstop Sam Rivera attended the ribbon-cutting as a guest."
 )
 
+ORGANIZATIONS_STARTER_FLOW_GRAPH_DISPLAY_NAME = "Organizations starter"
+
+ORGANIZATIONS_SMOKE_DEMO_TEXT = (
+    "Chicago City Hall announced a new park initiative Monday. "
+    "The Chicago Police Department said it will increase patrols near the site. "
+    "Cook County approved funding for the project. "
+    "The Chicago Cubs hosted a ribbon-cutting at Wrigley Field."
+)
+
 
 def starter_geocode_flow_graph_spec() -> GraphSpec:
     """Golden-path starter: geocode then persist, with DBOutput wired directly from GeocodeAgent.
@@ -105,5 +114,45 @@ def starter_people_flow_graph_spec() -> GraphSpec:
         edges=[
             Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
             Edge(source="n2", target="n3", sourceHandle="people", targetHandle="data"),
+        ],
+    )
+
+
+def starter_organizations_flow_graph_spec() -> GraphSpec:
+    """Golden-path organizations ingest: TextInput → OrganizationExtract → DBOutput."""
+    return GraphSpec(
+        name="starter_organizations_flow",
+        nodes=[
+            NodeConfig(
+                id="n1",
+                type="TextInput",
+                params={"text": ORGANIZATIONS_SMOKE_DEMO_TEXT},
+                position={"x": 0.0, "y": 0.0},
+            ),
+            NodeConfig(
+                id="n2",
+                type="OrganizationExtract",
+                params={},
+                position={"x": 337.0, "y": 46.0},
+            ),
+            NodeConfig(
+                id="n3",
+                type="DBOutput",
+                params={
+                    "stylebook_matching_enabled": True,
+                    "auto_apply_canonicalization": False,
+                    "reconciliation_policy": "smart_merge",
+                },
+                position={"x": 620.0, "y": 46.0},
+            ),
+        ],
+        edges=[
+            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(
+                source="n2",
+                target="n3",
+                sourceHandle="organizations",
+                targetHandle="data",
+            ),
         ],
     )

@@ -1,4 +1,5 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
+import { listCanonicalOrganizations } from "@/lib/stylebook-api/organizations"
 import { listCanonicalPeople } from "@/lib/stylebook-api/people"
 
 export interface PersonListRow {
@@ -66,28 +67,59 @@ export async function listPeople(
   }
 }
 
+export interface OrganizationListRow {
+  id: string
+  project_id: number
+  name: string
+  organization_type?: string
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+/** Canonical organizations list for EntitySelector (maps catalog ``label`` → ``name``). */
 export async function listOrganizations(
+  stylebookSlug: string,
   projectSlug: string,
   q?: string,
-  status?: string,
+  _status?: string,
   limit: number = 25,
   offset: number = 0,
+  options?: {
+    type_filter?: string
+  },
 ): Promise<{
-  organizations: Array<Record<string, unknown>>
+  organizations: OrganizationListRow[]
   total: number
   page: number
   per_page: number
   has_next: boolean
   has_prev: boolean
 }> {
-  const params = new URLSearchParams({
-    project_slug: projectSlug,
-    limit: String(limit),
-    offset: String(offset),
-  })
-  if (q) params.set("q", q)
-  if (status) params.set("status", status)
-  return stylebookJsonFetch(`/v1/organizations?${params}`)
+  const res = await listCanonicalOrganizations(
+    stylebookSlug,
+    q,
+    limit,
+    offset,
+    options?.type_filter,
+    projectSlug,
+  )
+  return {
+    organizations: res.canonicals.map((c) => ({
+      id: c.id,
+      project_id: 0,
+      name: c.label,
+      organization_type: c.organization_type ?? undefined,
+      status: c.status,
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+    })),
+    total: res.total,
+    page: res.page,
+    per_page: res.per_page,
+    has_next: res.has_next,
+    has_prev: res.has_prev,
+  }
 }
 
 export async function listWorks(

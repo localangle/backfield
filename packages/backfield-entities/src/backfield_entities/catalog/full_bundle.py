@@ -18,6 +18,7 @@ from typing import Any
 from backfield_db import (
     Stylebook,
     StylebookLocationCanonical,
+    StylebookOrganizationCanonical,
     StylebookPersonCanonical,
 )
 from sqlmodel import Session, col, select
@@ -28,6 +29,13 @@ from backfield_entities.catalog.stylebook_library import (
     create_stylebook_for_import,
 )
 from backfield_entities.entities.location.persist import seed_aliases_for_canonical_label
+from backfield_entities.entities.organization.persist import (
+    allocate_unique_organization_canonical_slug,
+    organization_canonical_to_export_dict,
+)
+from backfield_entities.entities.organization.persist import (
+    seed_aliases_for_canonical_label as seed_organization_aliases_for_canonical_label,
+)
 from backfield_entities.entities.person.persist import (
     allocate_unique_person_canonical_slug,
 )
@@ -44,6 +52,7 @@ ALLOWED_MANIFEST_SCHEMA_VERSIONS = frozenset({1, 2, 3})
 BUNDLE_KIND_LEGACY_LOCATION = "canonical"
 BUNDLE_KIND_LOCATION = "canonical_location"
 BUNDLE_KIND_PERSON = "canonical_person"
+BUNDLE_KIND_ORGANIZATION = "canonical_organization"
 ROWS_PER_SHARD = 2000
 DEFAULT_MAX_ZIP_BYTES = 512 * 1024 * 1024  # 512 MiB guardrail
 
@@ -159,6 +168,25 @@ def _iter_location_canonicals(
         offset += page
 
 
+def _iter_organization_canonicals(
+    session: Session, stylebook_id: int
+) -> Iterator[StylebookOrganizationCanonical]:
+    offset = 0
+    page = 500
+    while True:
+        batch = session.exec(
+            select(StylebookOrganizationCanonical)
+            .where(StylebookOrganizationCanonical.stylebook_id == stylebook_id)
+            .order_by(col(StylebookOrganizationCanonical.id))
+            .offset(offset)
+            .limit(page)
+        ).all()
+        if not batch:
+            break
+        yield from batch
+        offset += page
+
+
 def _iter_person_canonicals(
     session: Session, stylebook_id: int
 ) -> Iterator[StylebookPersonCanonical]:
@@ -230,6 +258,21 @@ def export_stylebook_bundle(
             rows_per_shard=rows_per_shard,
         )
         file_entries.extend(person_files)
+
+        prog({"phase": "canonical_organizations"})
+        organization_rows = (
+            organization_canonical_to_export_dict(c)
+            for c in _iter_organization_canonicals(session, stylebook_id)
+        )
+        organization_files = _write_jsonl_shards(
+            work,
+            "canonicals/organizations",
+            organization_rows,
+            kind=BUNDLE_KIND_ORGANIZATION,
+            project_slug=None,
+            rows_per_shard=rows_per_shard,
+        )
+        file_entries.extend(organization_files)
 
         project_slices: list[dict[str, Any]] = []
 
@@ -438,6 +481,42 @@ def _import_person_row(
     stats["canonical_people"] += 1
 
 
+def _import_organization_row(
+    session: Session,
+    *,
+    new_sb_id: int,
+    row: dict[str, Any],
+    id_map: dict[str, str],
+    stats: dict[str, Any],
+) -> None:
+    old_id = str(row["id"])
+    label = str(row["label"])
+    slug_new = allocate_unique_organization_canonical_slug(
+        session,
+        stylebook_id=new_sb_id,
+        label=label,
+    )
+    canon = StylebookOrganizationCanonical(
+        stylebook_id=new_sb_id,
+        label=label,
+        slug=slug_new,
+        organization_type=row.get("organization_type"),
+        primary_substrate_organization_id=None,
+        status=str(row.get("status") or "active"),
+    )
+    session.add(canon)
+    session.flush()
+    cid = str(canon.id)
+    seed_organization_aliases_for_canonical_label(
+        session,
+        canon_id=cid,
+        label=label,
+        provenance="stylebook_bundle_import",
+    )
+    id_map[old_id] = cid
+    stats["canonical_organizations"] += 1
+
+
 def _import_shard_rows(
     session: Session,
     *,
@@ -456,6 +535,10 @@ def _import_shard_rows(
             _import_location_row(session, new_sb_id=new_sb_id, row=row, id_map=id_map, stats=stats)
         elif kind == BUNDLE_KIND_PERSON:
             _import_person_row(session, new_sb_id=new_sb_id, row=row, id_map=id_map, stats=stats)
+        elif kind == BUNDLE_KIND_ORGANIZATION:
+            _import_organization_row(
+                session, new_sb_id=new_sb_id, row=row, id_map=id_map, stats=stats
+            )
 
 
 def import_stylebook_bundle(
@@ -492,6 +575,7 @@ def import_stylebook_bundle(
     stats: dict[str, Any] = {
         "canonical_locations": 0,
         "canonical_people": 0,
+        "canonical_organizations": 0,
     }
     id_map: dict[str, str] = {}
 
@@ -499,6 +583,7 @@ def import_stylebook_bundle(
         BUNDLE_KIND_LEGACY_LOCATION,
         BUNDLE_KIND_LOCATION,
         BUNDLE_KIND_PERSON,
+        BUNDLE_KIND_ORGANIZATION,
     }
 
     prog({"phase": "canonicals"})
@@ -520,6 +605,10 @@ def import_stylebook_bundle(
                 )
         session.commit()
 
-    stats["canonicals"] = stats["canonical_locations"] + stats["canonical_people"]
+    stats["canonicals"] = (
+        stats["canonical_locations"]
+        + stats["canonical_people"]
+        + stats["canonical_organizations"]
+    )
     prog({"phase": "done", "stylebook_id": new_sb_id})
     return new_book, stats

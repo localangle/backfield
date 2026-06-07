@@ -15,6 +15,7 @@ import {
   personTypeManualSelectOptions,
   placeExtractTypeLabel,
 } from "@/lib/place-extract-type-label"
+import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
@@ -93,7 +94,7 @@ export default function PersonDetail() {
   )
 
   const loadPerson = useCallback(
-    async (canonicalId: string, sbSlug: string, quiet = false) => {
+    async (canonicalId: string, sbSlug: string, quiet = false): Promise<boolean> => {
       try {
         if (!quiet) setLoading(true)
         const row = await getCanonicalPerson(
@@ -108,9 +109,15 @@ export default function PersonDetail() {
         setPersonType(row.person_type ?? "")
         setPublicFigure(row.public_figure)
         setSortKey(row.sort_key ?? derivePersonSortKey(row.label))
+        return true
       } catch (e) {
+        if (isStylebookApiNotFoundError(e)) {
+          setPerson(null)
+          return false
+        }
         console.error(e)
         if (!quiet) setPerson(null)
+        return false
       } finally {
         if (!quiet) setLoading(false)
       }
@@ -162,28 +169,33 @@ export default function PersonDetail() {
 
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
-      if (!id || !stylebookSlug) return
-      await loadPerson(id, stylebookSlug, true)
+      if (!id || !stylebookSlug || deleting) return
+      const found = await loadPerson(id, stylebookSlug, true)
+      if (!found) {
+        setSubstrates([])
+        setMentions([])
+        return
+      }
       await loadSubstrates(id, stylebookSlug, quiet)
       await loadMentions(id, stylebookSlug, quiet)
     },
-    [id, stylebookSlug, loadPerson, loadSubstrates, loadMentions],
+    [id, stylebookSlug, deleting, loadPerson, loadSubstrates, loadMentions],
   )
 
   useEffect(() => {
-    if (!id || !stylebookSlug) return
+    if (!id || !stylebookSlug || deleting) return
     void loadPerson(id, stylebookSlug)
-  }, [id, stylebookSlug, loadPerson])
+  }, [id, stylebookSlug, deleting, loadPerson])
 
   useEffect(() => {
-    if (!id || !stylebookSlug) return
+    if (!id || !stylebookSlug || deleting || person?.id !== id) return
     void loadSubstrates(id, stylebookSlug)
-  }, [id, stylebookSlug, loadSubstrates])
+  }, [id, stylebookSlug, deleting, person, loadSubstrates])
 
   useEffect(() => {
-    if (!id || !stylebookSlug) return
+    if (!id || !stylebookSlug || deleting || person?.id !== id) return
     void loadMentions(id, stylebookSlug)
-  }, [id, stylebookSlug, loadMentions])
+  }, [id, stylebookSlug, deleting, person, loadMentions])
 
   const tableLoading = substratesLoading || mentionsLoading
 
@@ -245,23 +257,27 @@ export default function PersonDetail() {
   }
 
   const onDelete = useCallback(async () => {
-    if (!person || !id || !stylebookSlug) return
+    if (!id || !stylebookSlug) return
     setDeleting(true)
     try {
       await deleteCanonicalPerson(id, stylebookSlug)
       navigate(canonicalListHref)
     } catch (e) {
+      if (isStylebookApiNotFoundError(e)) {
+        navigate(canonicalListHref)
+        return
+      }
       console.error(e)
       showError(e instanceof Error ? e.message : "Delete failed")
     } finally {
       setDeleting(false)
       setDeleteOpen(false)
     }
-  }, [person, id, stylebookSlug, navigate, canonicalListHref, showError])
+  }, [id, stylebookSlug, navigate, canonicalListHref, showError])
 
   usePromptDeleteEmptyCanonical({
     canonicalKey: `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`,
-    enabled: Boolean(id),
+    enabled: Boolean(id && !deleting),
     mentions,
     mentionsLoading,
     substrates,

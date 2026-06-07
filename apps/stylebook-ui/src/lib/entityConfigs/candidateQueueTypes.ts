@@ -134,7 +134,7 @@ export type CandidateQueueCreateDialogConfig<TCandidate extends QueueCandidateBa
 }
 
 export type CandidateQueuePageConfig<TCandidate extends QueueCandidateBase> = {
-  entitySlug: "locations" | "people"
+  entitySlug: "locations" | "people" | "organizations"
 
   copy: {
     pageTitle: string

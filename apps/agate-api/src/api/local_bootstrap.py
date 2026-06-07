@@ -10,10 +10,12 @@ import os
 from datetime import UTC, datetime
 
 from agate_runtime import (
+    ORGANIZATIONS_STARTER_FLOW_GRAPH_DISPLAY_NAME,
     PEOPLE_STARTER_FLOW_GRAPH_DISPLAY_NAME,
     STARTER_FLOW_GRAPH_DISPLAY_NAME,
     GraphSpec,
     starter_geocode_flow_graph_spec,
+    starter_organizations_flow_graph_spec,
     starter_people_flow_graph_spec,
 )
 from backfield_db import (
@@ -201,6 +203,15 @@ def _ensure_people_starter_graph(session: Session, project_id: int) -> bool:
     )
 
 
+def _ensure_organizations_starter_graph(session: Session, project_id: int) -> bool:
+    return _ensure_named_graph(
+        session,
+        project_id=project_id,
+        display_name=ORGANIZATIONS_STARTER_FLOW_GRAPH_DISPLAY_NAME,
+        spec_factory=starter_organizations_flow_graph_spec,
+    )
+
+
 def run_local_bootstrap() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     engine = get_engine()
@@ -219,6 +230,7 @@ def run_local_bootstrap() -> int:
         secret_count = _sync_secrets(session, pid)
         added_geocode_graph = _ensure_starter_graph(session, pid)
         added_people_graph = _ensure_people_starter_graph(session, pid)
+        added_organizations_graph = _ensure_organizations_starter_graph(session, pid)
         session.commit()
         if secret_count:
             logger.info("local_bootstrap: upserted %d project secret(s) for General", secret_count)
@@ -232,7 +244,17 @@ def run_local_bootstrap() -> int:
                 "local_bootstrap: starter graph %r created/updated for General",
                 PEOPLE_STARTER_FLOW_GRAPH_DISPLAY_NAME,
             )
-        if not secret_count and not added_geocode_graph and not added_people_graph:
+        if added_organizations_graph:
+            logger.info(
+                "local_bootstrap: starter graph %r created/updated for General",
+                ORGANIZATIONS_STARTER_FLOW_GRAPH_DISPLAY_NAME,
+            )
+        if (
+            not secret_count
+            and not added_geocode_graph
+            and not added_people_graph
+            and not added_organizations_graph
+        ):
             logger.info(
                 "local_bootstrap: no env secrets to sync and starter graphs already exist"
             )

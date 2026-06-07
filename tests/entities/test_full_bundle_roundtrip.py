@@ -12,11 +12,14 @@ from backfield_db import (
     Stylebook,
     StylebookLocationAlias,
     StylebookLocationCanonical,
+    StylebookOrganizationAlias,
+    StylebookOrganizationCanonical,
     StylebookPersonAlias,
     StylebookPersonCanonical,
 )
 from backfield_entities.catalog.full_bundle import (
     BUNDLE_KIND_LOCATION,
+    BUNDLE_KIND_ORGANIZATION,
     BUNDLE_KIND_PERSON,
     BUNDLE_SCHEMA_VERSION,
     export_stylebook_bundle,
@@ -214,6 +217,78 @@ def test_export_import_roundtrip_includes_people(tmp_path: Path) -> None:
         aliases = session.exec(
             select(StylebookPersonAlias).where(
                 StylebookPersonAlias.person_canonical_id == str(imported[0].id),
+            )
+        ).all()
+        assert len(aliases) >= 1
+        assert any(a.provenance == "stylebook_bundle_import" for a in aliases)
+
+
+def test_export_import_roundtrip_includes_organizations(tmp_path: Path) -> None:
+    engine = _engine()
+    zip_path = tmp_path / "bundle-organizations.zip"
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org Orgs", slug="org-orgs-bnd")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        oid = int(org.id)  # type: ignore[arg-type]
+
+        sb = Stylebook(
+            organization_id=oid,
+            name="Organizations Book",
+            slug="organizations-book",
+            is_default=True,
+        )
+        session.add(sb)
+        session.commit()
+        session.refresh(sb)
+        sb_id = int(sb.id)  # type: ignore[arg-type]
+
+        org_id = str(uuid4())
+        organization = StylebookOrganizationCanonical(
+            id=org_id,
+            stylebook_id=sb_id,
+            label="City Hall",
+            slug="city-hall",
+            organization_type="government",
+            status="active",
+        )
+        session.add(organization)
+        session.commit()
+
+        export_stylebook_bundle(
+            session,
+            organization_id=oid,
+            stylebook_id=sb_id,
+            zip_path=zip_path,
+        )
+
+    manifest = read_manifest_from_zip(zip_path)
+    kinds = {fe["kind"] for fe in manifest["files"] if fe.get("kind") != "manifest"}
+    assert BUNDLE_KIND_ORGANIZATION in kinds
+
+    with Session(engine) as session:
+        new_book, stats = import_stylebook_bundle(
+            session,
+            organization_id=oid,
+            zip_path=zip_path,
+            new_stylebook_name="Imported Organizations Book",
+        )
+        new_id = int(new_book.id)  # type: ignore[arg-type]
+        assert stats["canonical_organizations"] == 1
+        assert stats["canonicals"] == 1
+
+        imported = session.exec(
+            select(StylebookOrganizationCanonical).where(
+                StylebookOrganizationCanonical.stylebook_id == new_id,
+            )
+        ).all()
+        assert len(imported) == 1
+        assert imported[0].label == "City Hall"
+        assert imported[0].organization_type == "government"
+        aliases = session.exec(
+            select(StylebookOrganizationAlias).where(
+                StylebookOrganizationAlias.organization_canonical_id == str(imported[0].id),
             )
         ).all()
         assert len(aliases) >= 1

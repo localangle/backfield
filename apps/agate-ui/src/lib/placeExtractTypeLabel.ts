@@ -118,3 +118,43 @@ export function personTypeManualSelectOptions(current?: string | null): string[]
   }
   return taxonomy
 }
+
+/**
+ * Mirror of ``backfield_entities.entities.organization.types.ORGANIZATION_TYPE_VALUES``.
+ */
+export const ORGANIZATION_EXTRACT_ORGANIZATION_TYPES = [
+  'government',
+  'law_enforcement',
+  'court',
+  'legislative_body',
+  'political_party',
+  'school_district',
+  'school',
+  'university',
+  'hospital',
+  'public_health',
+  'public_services',
+  'utilities',
+  'company',
+  'local_business',
+  'financial_institution',
+  'real_estate',
+  'nonprofit',
+  'community_group',
+  'religious_org',
+  'culture_arts',
+  'sports_team',
+  'sports_league',
+  'media',
+  'other',
+] as const
+
+/** Options for manual organization-type pickers (taxonomy only, plus legacy current value). */
+export function organizationTypeManualSelectOptions(current?: string | null): string[] {
+  const taxonomy = sortPlaceExtractTypeOptions(ORGANIZATION_EXTRACT_ORGANIZATION_TYPES)
+  const cur = (current ?? '').trim()
+  if (cur && !taxonomy.includes(cur)) {
+    return [...taxonomy, cur]
+  }
+  return taxonomy
+}

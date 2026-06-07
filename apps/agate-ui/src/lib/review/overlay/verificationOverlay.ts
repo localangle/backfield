@@ -93,6 +93,26 @@ export function normalizeOverlay(
       : []
     out.people = people
   }
+  const organizationsRaw = out.organizations
+  if (organizationsRaw && typeof organizationsRaw === 'object' && !Array.isArray(organizationsRaw)) {
+    const organizations = organizationsRaw as Record<string, unknown>
+    const byOrganizations = organizations.by_anchor
+    organizations.by_anchor =
+      typeof byOrganizations === 'object' &&
+      byOrganizations !== null &&
+      !Array.isArray(byOrganizations)
+        ? { ...(byOrganizations as Record<string, unknown>) }
+        : {}
+    const uaOrganizations = organizations.user_added
+    organizations.user_added = Array.isArray(uaOrganizations) ? [...uaOrganizations] : []
+    const removedOrganizations = organizations.removed_anchors
+    organizations.removed_anchors = Array.isArray(removedOrganizations)
+      ? removedOrganizations.filter(
+          (a): a is string => typeof a === 'string' && a.trim().length > 0,
+        )
+      : []
+    out.organizations = organizations
+  }
   return out
 }
 
@@ -442,5 +462,133 @@ export function appendUserAddedPersonToOverlay(
       })
     : ua
   people.user_added = [...rest, row]
+  return next
+}
+
+function ensureOrganizations(draft: Record<string, unknown>): Record<string, unknown> {
+  if (
+    !draft.organizations ||
+    typeof draft.organizations !== 'object' ||
+    Array.isArray(draft.organizations)
+  ) {
+    draft.organizations = {
+      by_anchor: {},
+      user_added: [],
+      removed_anchors: [],
+    }
+  }
+  const organizations = draft.organizations as Record<string, unknown>
+  if (
+    !organizations.by_anchor ||
+    typeof organizations.by_anchor !== 'object' ||
+    Array.isArray(organizations.by_anchor)
+  ) {
+    organizations.by_anchor = {}
+  }
+  if (!Array.isArray(organizations.user_added)) {
+    organizations.user_added = []
+  }
+  if (!Array.isArray(organizations.removed_anchors)) {
+    organizations.removed_anchors = []
+  }
+  return organizations
+}
+
+export function buildRemoveOrganizationOverlayPatch(
+  draft: Record<string, unknown>,
+  anchor: string,
+  source: 'model' | 'user',
+): Record<string, unknown> {
+  const next = cloneJson(draft) as Record<string, unknown>
+  const organizations = ensureOrganizations(next)
+  if (source === 'user') {
+    const ua = organizations.user_added as unknown[]
+    organizations.user_added = ua.filter((row) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return true
+      return (row as { id?: unknown }).id !== anchor
+    })
+  } else {
+    const removed = organizations.removed_anchors as string[]
+    if (!removed.includes(anchor)) {
+      removed.push(anchor)
+    }
+    const by = organizations.by_anchor as Record<string, unknown>
+    delete by[anchor]
+  }
+  return next
+}
+
+export function applyOrganizationAnchorPatch(
+  draft: Record<string, unknown>,
+  anchor: string,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = cloneJson(normalizeOverlay(draft)) as Record<string, unknown>
+  const organizations = ensureOrganizations(next)
+  const by = organizations.by_anchor as Record<string, unknown>
+  const cur = by[anchor]
+  by[anchor] =
+    typeof cur === 'object' && cur !== null && !Array.isArray(cur)
+      ? { ...(cur as Record<string, unknown>), ...patch }
+      : { ...patch }
+  return next
+}
+
+export type UserAddedOrganizationOverlayInput = {
+  anchor: string
+  name: string
+  organizationType: string
+  nature?: string
+  mentionText: string
+  quoteText: string
+  startChar: number
+  endChar: number
+  roleInStory?: string
+}
+
+export function buildUserAddedOrganizationOverlayRow(
+  input: UserAddedOrganizationOverlayInput,
+): Record<string, unknown> {
+  const organization: Record<string, unknown> = {
+    name: input.name.trim(),
+    type: input.organizationType.trim(),
+    nature: input.nature?.trim() || 'other',
+    mentions: [{ text: input.mentionText.trim() }],
+    mention_occurrences: [
+      {
+        mention_text: input.mentionText.trim(),
+        quote_text: input.quoteText.trim(),
+        start_char: input.startChar,
+        end_char: input.endChar,
+        occurrence_order: 0,
+        suppressed: false,
+        source_kind: 'manual_add',
+      },
+    ],
+  }
+  if (input.roleInStory?.trim()) {
+    organization.role_in_story = input.roleInStory.trim()
+  }
+  return {
+    id: input.anchor,
+    organization,
+  }
+}
+
+export function appendUserAddedOrganizationToOverlay(
+  draft: Record<string, unknown>,
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = cloneJson(normalizeOverlay(draft)) as Record<string, unknown>
+  const organizations = ensureOrganizations(next)
+  const anchor = typeof row.id === 'string' ? row.id : ''
+  const ua = organizations.user_added as unknown[]
+  const rest = anchor
+    ? ua.filter((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return true
+        return (entry as { id?: unknown }).id !== anchor
+      })
+    : ua
+  organizations.user_added = [...rest, row]
   return next
 }

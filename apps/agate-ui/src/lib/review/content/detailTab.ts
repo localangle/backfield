@@ -13,8 +13,8 @@ export const PROCESSED_ITEM_DETAIL_TABS = [
 
 export type ProcessedItemDetailTab = (typeof PROCESSED_ITEM_DETAIL_TABS)[number]
 
-export function defaultProcessedItemDetailTab(synthetic: boolean): ProcessedItemDetailTab {
-  return synthetic ? 'info' : 'places'
+export function defaultProcessedItemDetailTab(_synthetic: boolean): ProcessedItemDetailTab {
+  return 'info'
 }
 
 export function isProcessedItemDetailTab(value: string): value is ProcessedItemDetailTab {

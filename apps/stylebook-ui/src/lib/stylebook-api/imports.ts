@@ -132,3 +132,42 @@ export async function importCsvPeople(
   )
 }
 
+export type OrganizationCsvFieldMappings = {
+  label?: string
+  full_name?: string
+  organization_type?: string
+}
+
+export async function analyzeImportCsvOrganizations(
+  stylebookSlug: string,
+  csvData: string,
+): Promise<AnalyzeCsvResponse> {
+  return stylebookJsonFetch<AnalyzeCsvResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/import/csv/organizations/analyze`,
+    {
+      method: "POST",
+      body: JSON.stringify({ csv_data: csvData }),
+    },
+  )
+}
+
+export async function importCsvOrganizations(
+  stylebookSlug: string,
+  csvData: string,
+  fieldMappings?: OrganizationCsvFieldMappings,
+): Promise<ImportCsvResponse> {
+  const mappings: Record<string, string> = {}
+  if (fieldMappings) {
+    for (const [key, col] of Object.entries(fieldMappings)) {
+      if (col && col.trim()) mappings[key] = col.trim()
+    }
+  }
+  return stylebookJsonFetch<ImportCsvResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/import/csv/organizations`,
+    {
+      method: "POST",
+      body: JSON.stringify({ csv_data: csvData, field_mappings: mappings }),
+    },
+  )
+}
+

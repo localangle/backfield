@@ -141,9 +141,12 @@ export interface ProcessedItem {
   merged_locations?: Array<Record<string, unknown>>
   /** Merged model + overlay people lane (see API docs). */
   merged_people?: Array<Record<string, unknown>>
+  /** Merged model + overlay organizations lane (see API docs). */
+  merged_organizations?: Array<Record<string, unknown>>
   /** Overlay patches whose anchor no longer exists in model output. */
   stale_overlay_entries?: Array<Record<string, unknown>>
   stale_people_overlay_entries?: Array<Record<string, unknown>>
+  stale_organizations_overlay_entries?: Array<Record<string, unknown>>
   /** Materialized model output + overlay for JSON export; absent when no review saved. */
   reviewed_output?: Record<string, unknown> | null
   article_context?: ArticleContext
@@ -598,8 +601,10 @@ interface RawProcessedItemDetail {
   reviewed_output?: Record<string, unknown> | null
   merged_locations?: Array<Record<string, unknown>>
   merged_people?: Array<Record<string, unknown>>
+  merged_organizations?: Array<Record<string, unknown>>
   stale_overlay_entries?: Array<Record<string, unknown>>
   stale_people_overlay_entries?: Array<Record<string, unknown>>
+  stale_organizations_overlay_entries?: Array<Record<string, unknown>>
   article_context?: unknown
   semantic_indexing?: unknown
 }
@@ -680,11 +685,17 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
     overlay_version: overlayVersion,
     merged_locations: Array.isArray(raw.merged_locations) ? raw.merged_locations : [],
     merged_people: Array.isArray(raw.merged_people) ? raw.merged_people : [],
+    merged_organizations: Array.isArray(raw.merged_organizations)
+      ? raw.merged_organizations
+      : [],
     stale_overlay_entries: Array.isArray(raw.stale_overlay_entries)
       ? raw.stale_overlay_entries
       : [],
     stale_people_overlay_entries: Array.isArray(raw.stale_people_overlay_entries)
       ? raw.stale_people_overlay_entries
+      : [],
+    stale_organizations_overlay_entries: Array.isArray(raw.stale_organizations_overlay_entries)
+      ? raw.stale_organizations_overlay_entries
       : [],
     reviewed_output:
       raw.reviewed_output && typeof raw.reviewed_output === 'object'
