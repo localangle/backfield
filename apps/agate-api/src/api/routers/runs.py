@@ -33,6 +33,9 @@ from backfield_db import (
     BackfieldProjectSecret,
 )
 from backfield_db.crypto import decrypt_secret
+from backfield_entities.connections.processed_item import (
+    build_processed_item_connections_summary,
+)
 from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
 )
@@ -126,6 +129,32 @@ class ArticleContextOut(BaseModel):
     reason: str | None = None
 
 
+class ProcessedItemConnectionEdgeOut(BaseModel):
+    """One auto-created connection edge for processed item detail."""
+
+    from_display_name: str
+    to_display_name: str
+    nature: str
+    confidence: float | None = None
+
+
+class ProcessedItemConnectionsOut(BaseModel):
+    """Compact automatic connections status for processed item detail."""
+
+    status: Literal[
+        "disabled",
+        "ineligible",
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+    ]
+    enabled: bool = False
+    created_count: int = 0
+    edges: list[ProcessedItemConnectionEdgeOut] = Field(default_factory=list)
+    error: str | None = None
+
+
 class ProcessedItemSemanticIndexingOut(BaseModel):
     """Compact semantic indexing status for processed item detail."""
 
@@ -186,6 +215,8 @@ class ProcessedItemDetailOut(BaseModel):
     article_context: ArticleContextOut
     #: Semantic search indexing status from Backfield Output (see ``docs/API.md``).
     semantic_indexing: ProcessedItemSemanticIndexingOut
+    #: Automatic Stylebook connections status from Backfield Output.
+    connections: ProcessedItemConnectionsOut
 
 
 class ProcessedItemOverlayPatchIn(BaseModel):
@@ -251,6 +282,18 @@ def _processed_item_semantic_indexing(
         item_updated_at=item_updated_at,
     )
     return ProcessedItemSemanticIndexingOut.model_validate(summary)
+
+
+def _processed_item_connections(
+    *,
+    item_status: str,
+    output_obj: dict[str, Any] | None,
+) -> ProcessedItemConnectionsOut:
+    summary = build_processed_item_connections_summary(
+        item_status=item_status,
+        result_obj=output_obj,
+    )
+    return ProcessedItemConnectionsOut.model_validate(summary)
 
 
 def _rollup_ai_costs_for_run(
@@ -748,6 +791,10 @@ def _detail_from_agate_processed_row(
         article_id=article_ctx_dict.get("article_id"),
         item_updated_at=row.updated_at,
     )
+    connections = _processed_item_connections(
+        item_status=row.status,
+        output_obj=output_obj,
+    )
 
     rid = row.id
     if rid is None:
@@ -780,6 +827,7 @@ def _detail_from_agate_processed_row(
         stale_organizations_overlay_entries=stale_organizations_overlay_entries,
         article_context=article_ctx,
         semantic_indexing=semantic_indexing,
+        connections=connections,
     )
 
 
@@ -881,6 +929,10 @@ def _maybe_detail_whole_graph_run(
         article_id=article_ctx_dict.get("article_id"),
         item_updated_at=run.updated_at,
     )
+    connections = _processed_item_connections(
+        item_status=st,
+        output_obj=output_obj,
+    )
 
     return ProcessedItemDetailOut(
         id=1,
@@ -910,6 +962,7 @@ def _maybe_detail_whole_graph_run(
         stale_organizations_overlay_entries=stale_organizations_overlay_entries,
         article_context=article_ctx,
         semantic_indexing=semantic_indexing,
+        connections=connections,
     )
 
 

@@ -2883,6 +2883,74 @@ def test_stylebook_canonical_location_connections_roundtrip(
         assert row is None
 
 
+def test_stylebook_connection_lists_auto_connection_evidence(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        ca = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Evidence Conn A",
+            slug="evidence-conn-a",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        cb = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Evidence Conn B",
+            slug="evidence-conn-b",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(ca)
+        s.add(cb)
+        s.commit()
+        s.refresh(ca)
+        s.refresh(cb)
+        aid = str(ca.id)
+        bid = str(cb.id)
+
+    evidence = {
+        "source": "dboutput_auto_connections",
+        "confidence": 0.94,
+        "quote": "Acme operates in Chicago.",
+        "reason": "The story states where the organization operates.",
+        "from_display_name": "Evidence Conn A",
+        "to_display_name": "Evidence Conn B",
+        "from_entity_type": "location",
+        "from_entity_id": aid,
+        "to_entity_type": "location",
+        "to_entity_id": bid,
+    }
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        s.add(
+            StylebookConnection(
+                project_id=int(proj.id),
+                from_entity_type="location",
+                from_entity_id=aid,
+                to_entity_type="location",
+                to_entity_id=bid,
+                nature="near",
+                evidence_json=evidence,
+            )
+        )
+        s.commit()
+
+    response = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
+    )
+    assert response.status_code == 200
+    rows = response.json()["connections"]
+    assert len(rows) == 1
+    assert rows[0]["evidence_json"]["quote"] == "Acme operates in Chicago."
+    assert rows[0]["evidence_json"]["confidence"] == 0.94
+
+
 def test_stylebook_connection_exact_edge_unique_constraint(
     stylebook_test_engine: Engine,
 ) -> None:

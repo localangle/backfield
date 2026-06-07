@@ -20,6 +20,18 @@ def test_db_output_settings_semantic_indexing_defaults_off() -> None:
     assert settings.semantic_indexing_enabled is False
 
 
+def test_db_output_settings_auto_connections_defaults_on() -> None:
+    settings = DbOutputCanonicalSettings.from_node_params({})
+    assert settings.auto_connections_enabled is True
+
+
+def test_db_output_settings_auto_connections_can_be_disabled() -> None:
+    settings = DbOutputCanonicalSettings.from_node_params(
+        {"auto_connections_enabled": False}
+    )
+    assert settings.auto_connections_enabled is False
+
+
 def test_db_output_settings_semantic_indexing_can_be_enabled() -> None:
     settings = DbOutputCanonicalSettings.from_node_params({"semantic_indexing_enabled": True})
     assert settings.semantic_indexing_enabled is True

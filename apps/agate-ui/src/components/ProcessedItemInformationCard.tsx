@@ -16,6 +16,12 @@ import {
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/review/content/sourceDisplay'
 import { formatDate } from '@/lib/utils'
 import {
+  connectionsStatusLabel,
+  formatConnectionsDetail,
+  getConnectionsStatusColor,
+  shouldShowConnectionsSummary,
+} from '@/lib/review/content/connectionsDisplay'
+import {
   formatSemanticIndexingDetail,
   semanticIndexingStatusLabel,
   shouldShowSemanticIndexingSummary,
@@ -274,6 +280,8 @@ export function ProcessedItemInformationCard({
   const editable = !item.synthetic && !reviewLocked
   const semanticIndexing = item.semantic_indexing
   const showSemanticIndexing = shouldShowSemanticIndexingSummary(semanticIndexing)
+  const connections = item.connections
+  const showConnections = shouldShowConnectionsSummary(connections)
 
   return (
     <Card>
@@ -380,6 +388,26 @@ export function ProcessedItemInformationCard({
                 {semanticIndexing.indexed_at ? (
                   <p className="text-xs text-muted-foreground mt-1">
                     Last indexed {formatDate(semanticIndexing.indexed_at)}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {showConnections && connections ? (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">
+                  Automatic connections
+                </label>
+                <p
+                  className={cn(
+                    'text-sm mt-0.5',
+                    getConnectionsStatusColor(connections.status),
+                  )}
+                >
+                  {connectionsStatusLabel(connections.status)}
+                </p>
+                {formatConnectionsDetail(connections) ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formatConnectionsDetail(connections)}
                   </p>
                 ) : null}
               </div>

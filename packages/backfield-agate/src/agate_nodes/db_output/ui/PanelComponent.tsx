@@ -11,6 +11,13 @@ import {
 } from '@/components/ui/select'
 import { listOrgStylebooks, type OrgStylebook } from '@/lib/core-api'
 import {
+  autoConnectionsEligibility,
+  autoConnectionsIneligibleCopy,
+  autoConnectionsSelectDisabled,
+  autoConnectionsUiShowsYes,
+  resolvedAutoConnectionsEnabled,
+} from '@/lib/autoConnectionsAvailability'
+import {
   isProjectSemanticIndexingConfigured,
   semanticIndexingSelectDisabled,
   semanticIndexingUiShowsYes,
@@ -44,6 +51,7 @@ const DEFAULTS = {
   adjudication_model: '',
   adjudication_ai_model_config_id: null as string | null,
   semantic_indexing_enabled: false,
+  auto_connections_enabled: true,
 }
 
 const ORG_DEFAULT_STYLEBOOK_SELECT = '__org_default_stylebook__'
@@ -305,6 +313,15 @@ export default function DBOutputPanel({
   const semanticIndexingEnabled = Boolean(data.semantic_indexing_enabled)
   const semanticIndexingAvailable = semanticIndexingConfigured === true
   const aiAssisted = data.canonicalization_mode === 'ai_assisted'
+  const autoApplyEnabled = Boolean(data.auto_apply_canonicalization)
+  const autoConnectionsEnabled = resolvedAutoConnectionsEnabled(
+    data.auto_connections_enabled as boolean | undefined | null,
+  )
+  const autoConnectionsGate = autoConnectionsEligibility({
+    stylebook_matching_enabled: stylebookMatchingEnabled,
+    canonicalization_mode: data.canonicalization_mode,
+    auto_apply_canonicalization: autoApplyEnabled,
+  })
 
   useEffect(() => {
     if (shouldAutoClearSemanticIndexingEnabled(semanticIndexingConfigured, semanticIndexingEnabled)) {
@@ -563,6 +580,40 @@ export default function DBOutputPanel({
               <p className="text-xs text-muted-foreground">
                 When set to No, items go to the Stylebook queue for human review.
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dbout-auto-connections">Automatic connections</Label>
+              <Select
+                value={yesNoSelectValue(
+                  autoConnectionsUiShowsYes(
+                    autoConnectionsGate.eligible,
+                    autoConnectionsEnabled,
+                  ),
+                )}
+                onValueChange={(value) =>
+                  patch({ auto_connections_enabled: value === 'yes' })
+                }
+                disabled={autoConnectionsSelectDisabled(autoConnectionsGate.eligible, disabled)}
+              >
+                <SelectTrigger id="dbout-auto-connections" className="text-xs">
+                  <SelectValue placeholder="Choose whether to add clear relationships automatically" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yes">Yes</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
+              {autoConnectionsGate.eligible ? (
+                <p className="text-xs text-muted-foreground">
+                  When on, Backfield adds high-confidence connections between people,
+                  organizations, and locations found in each story.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {autoConnectionsIneligibleCopy(autoConnectionsGate.reason)}
+                </p>
+              )}
             </div>
           </div>
         )}

@@ -26,6 +26,7 @@ import LocationSelector from "@/components/LocationSelector"
 import PersonSelector from "@/components/PersonSelector"
 import OrganizationSelector from "@/components/OrganizationSelector"
 import WorkSelector from "@/components/WorkSelector"
+import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
@@ -301,7 +302,10 @@ export default function ConnectionsSection({
                         </>
                       )}
                     </TableCell>
-                    <TableCell>{conn.nature}</TableCell>
+                    <TableCell>
+                      <div>{conn.nature}</div>
+                      <ConnectionEvidenceBlock evidence={conn.evidence_json} />
+                    </TableCell>
                     <TableCell>
                       <a
                         href={getDetailUrl(otherType(conn), otherId(conn), catalogBasePath, filterScopeSuffix)}

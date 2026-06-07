@@ -3,10 +3,18 @@
  */
 
 import {
+  normalizeProcessedItemConnections,
+  type ProcessedItemConnections,
+} from '@/lib/review/content/connectionsDisplay'
+import {
   normalizeProcessedItemSemanticIndexing,
   type ProcessedItemSemanticIndexing,
 } from '@/lib/review/content/semanticIndexingDisplay'
 
+export type {
+  ProcessedItemConnections,
+  ProcessedItemConnectionsStatus,
+} from '@/lib/review/content/connectionsDisplay'
 export type {
   ProcessedItemSemanticIndexing,
   ProcessedItemSemanticIndexingStatus,
@@ -152,6 +160,8 @@ export interface ProcessedItem {
   article_context?: ArticleContext
   /** Compact semantic search indexing status from Backfield Output. */
   semantic_indexing?: ProcessedItemSemanticIndexing
+  /** Compact automatic connections status from Backfield Output. */
+  connections?: ProcessedItemConnections
 }
 
 export interface Run {
@@ -607,6 +617,7 @@ interface RawProcessedItemDetail {
   stale_organizations_overlay_entries?: Array<Record<string, unknown>>
   article_context?: unknown
   semantic_indexing?: unknown
+  connections?: unknown
 }
 
 function _normalizeArticleContext(raw: unknown): ArticleContext {
@@ -703,6 +714,7 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
         : null,
     article_context: _normalizeArticleContext(raw.article_context),
     semantic_indexing: normalizeProcessedItemSemanticIndexing(raw.semantic_indexing),
+    connections: normalizeProcessedItemConnections(raw.connections),
   }
 }
 
