@@ -24,6 +24,7 @@ Primary local services are defined in `infra/docker-compose.yml`:
 - `make logs`: inspect compose logs.
 - `make migrate`: run Alembic inside `agate-api`.
 - `make reset-db`: tear down containers and volumes.
+- `make clear-entity-data`: truncate **`substrate_*`**, **`stylebook_*`** entity tables, and Agate **runs** (`agate_run`, `agate_processed_item`, plus run-linked **`backfield_ai_call_record`** rows) while the stack is running (local dev only). Requires **`BACKFIELD_CONFIRM_CLEAR=1`**. Preserves Stylebook catalog shells (`stylebook`, `stylebook_membership`, `stylebook_slug_redirect`) and Agate **graphs/templates** (`agate_graph`, `agate_template`); does **not** remove **`backfield_*`** identity rows. Use when you want a clean entity/run slate without wiping Postgres entirely. Implementation: `packages/backfield-db/scripts/clear_entity_data.py` (connects to **`localhost:5433`** by default, same as smoke helpers).
 
 When a migration is **destructive** toward existing Stylebook catalog data (for example revision **`019_stylebook_loc_canon_uuid`**), wipe the Postgres volume with **`make reset-db`** before **`make up`** / **`make migrate`** so Alembic applies cleanly; do not expect in-place upgrades from pre-UUID canonical integer ids.
 - `make smoke-fast`: run the fast live-stack smoke bundle (`smoke-auth`, `smoke-agate-basic`, `smoke-stylebook-basic`).

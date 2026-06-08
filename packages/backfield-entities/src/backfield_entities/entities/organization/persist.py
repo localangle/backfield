@@ -22,6 +22,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_entities.canonical.slug import flush_new_canonical_with_slug_retry
 from backfield_entities.entities.organization.catalog_provenance import (
     is_organization_catalog_editorial_provenance,
 )
@@ -224,21 +225,25 @@ def create_standalone_canonical(
     clean = label.strip()
     if not clean:
         raise ValueError("label is required")
-    slug = allocate_unique_organization_canonical_slug(
+    def _build_row(slug: str) -> StylebookOrganizationCanonical:
+        return StylebookOrganizationCanonical(
+            stylebook_id=stylebook_id,
+            label=clean,
+            slug=slug,
+            organization_type=normalize_organization_type(organization_type),
+            primary_substrate_organization_id=None,
+            status="active",
+        )
+
+    canon = flush_new_canonical_with_slug_retry(
         session,
         stylebook_id=stylebook_id,
         label=clean,
+        allocate_slug=lambda sess, sb_id, lbl: allocate_unique_organization_canonical_slug(
+            sess, stylebook_id=sb_id, label=lbl
+        ),
+        build_row=_build_row,
     )
-    canon = StylebookOrganizationCanonical(
-        stylebook_id=stylebook_id,
-        label=clean,
-        slug=slug,
-        organization_type=normalize_organization_type(organization_type),
-        primary_substrate_organization_id=None,
-        status="active",
-    )
-    session.add(canon)
-    session.flush()
     cid = str(canon.id)
     for norm in organization_alias_lookup_keys(clean):
         upsert_alias_for_canonical_text(
@@ -266,22 +271,27 @@ def materialize_new_canonical_and_link(
     clean = (label or organization.name or "").strip()
     if not clean:
         return
-    slug = allocate_unique_organization_canonical_slug(
+    fields = _mirror_fields_from_substrate(organization)
+
+    def _build_row(slug: str) -> StylebookOrganizationCanonical:
+        return StylebookOrganizationCanonical(
+            stylebook_id=stylebook_id,
+            label=clean,
+            slug=slug,
+            primary_substrate_organization_id=None,
+            status="active",
+            **fields,
+        )
+
+    canon = flush_new_canonical_with_slug_retry(
         session,
         stylebook_id=stylebook_id,
         label=clean,
+        allocate_slug=lambda sess, sb_id, lbl: allocate_unique_organization_canonical_slug(
+            sess, stylebook_id=sb_id, label=lbl
+        ),
+        build_row=_build_row,
     )
-    fields = _mirror_fields_from_substrate(organization)
-    canon = StylebookOrganizationCanonical(
-        stylebook_id=stylebook_id,
-        label=clean,
-        slug=slug,
-        primary_substrate_organization_id=None,
-        status="active",
-        **fields,
-    )
-    session.add(canon)
-    session.flush()
     cid = str(canon.id)
     organization.stylebook_organization_canonical_id = cid
     organization.canonical_link_status = CANONICAL_LINK_LINKED
