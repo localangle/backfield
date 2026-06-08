@@ -6,7 +6,7 @@ text and a mocked LLM (no API keys required). Use ``--live-llm`` to call a real 
 
 Use ``--via-agate-api`` to enqueue the Organizations starter graph on a running stack
 (``make up``); requires ``SMOKE_ORGANIZATIONS_GRAPH_ID`` or a graph named **Organizations starter**
-on the General project.
+on the General project (local bootstrap does not create this graph).
 """
 
 from __future__ import annotations
