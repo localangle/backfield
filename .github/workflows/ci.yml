@@ -57,7 +57,6 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          MAPBOX_API_TOKEN: ${{ secrets.MAPBOX_API_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
@@ -67,7 +66,6 @@ jobs:
           : > .env
           [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
           [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
-          [ -n "${MAPBOX_API_TOKEN:-}" ] && printf 'MAPBOX_API_TOKEN=%s\n' "$MAPBOX_API_TOKEN" >> .env
           docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api core-api agate-api worker
       - name: Wait for API health
         run: |
@@ -126,13 +124,11 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          MAPBOX_API_TOKEN: ${{ secrets.MAPBOX_API_TOKEN }}
         run: |
           set -euo pipefail
           : > .env
           [ -n "${OPENAI_API_KEY:-}" ] && printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
           [ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
-          [ -n "${MAPBOX_API_TOKEN:-}" ] && printf 'MAPBOX_API_TOKEN=%s\n' "$MAPBOX_API_TOKEN" >> .env
           docker compose -f infra/docker-compose.yml up -d --build postgres redis stylebook-api core-api agate-api worker
       - name: Wait for API health
         run: |

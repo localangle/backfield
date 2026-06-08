@@ -30,9 +30,7 @@ from backfield_db import (
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
-    BackfieldProjectSecret,
 )
-from backfield_db.crypto import decrypt_secret
 from backfield_entities.connections.processed_item import (
     build_processed_item_connections_summary,
 )
@@ -51,26 +49,6 @@ DEFAULT_AI_COST_CURRENCY = "USD"
 _RUN_CANCELLED_MESSAGE = "Run cancelled by user"
 
 router = APIRouter(prefix="/runs", tags=["runs"])
-
-_MAPBOX_SECRET_KEY = "MAPBOX_API_TOKEN"
-
-
-def _mapbox_api_token_for_project(session: Session, project_id: int) -> str | None:
-    """Decrypt MAPBOX_API_TOKEN for map UIs (browser-side Mapbox GL)."""
-    if project_id <= 0:
-        return None
-    row = session.exec(
-        select(BackfieldProjectSecret).where(
-            BackfieldProjectSecret.project_id == project_id,
-            BackfieldProjectSecret.key == _MAPBOX_SECRET_KEY,
-        )
-    ).first()
-    if row is None:
-        return None
-    try:
-        return decrypt_secret(row.value_encrypted)
-    except (RuntimeError, ValueError):
-        return None
 
 celery_app = Celery(
     "agate_worker",
@@ -241,7 +219,6 @@ class RunOut(BaseModel):
     status: str
     result: dict | list | None = None
     error_message: str | None = None
-    mapbox_api_token: str | None = None
     created_at: datetime
     updated_at: datetime
     total_items: int = 0
@@ -629,7 +606,6 @@ def create_run(
         graph_id=run.graph_id,
         project_id=g.project_id,
         status=run.status,
-        mapbox_api_token=_mapbox_api_token_for_project(session, g.project_id),
         created_at=run.created_at,
         updated_at=run.updated_at,
         total_items=total_items,
@@ -685,7 +661,6 @@ def list_runs(
                 status=r.status,
                 result=result,
                 error_message=r.error_message,
-                mapbox_api_token=_mapbox_api_token_for_project(session, pid),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
                 total_items=total_items,
@@ -1220,7 +1195,6 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         status=r.status,
         result=result,
         error_message=r.error_message,
-        mapbox_api_token=_mapbox_api_token_for_project(session, pid),
         created_at=r.created_at,
         updated_at=r.updated_at,
         total_items=total_items,

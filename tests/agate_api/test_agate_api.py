@@ -27,7 +27,6 @@ from backfield_db import (
     SubstrateArticle,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
-from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -1722,34 +1721,6 @@ def test_get_run_processed_item_article_context_inline_only(tmp_path, monkeypatc
         assert ac["headline"] == "Inline title"
     finally:
         app.dependency_overrides.clear()
-
-
-def test_run_includes_mapbox_api_token_from_project_secrets(monkeypatch, client: TestClient):
-    def fake_send_task(*_a, **_k):
-        pass
-
-    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
-    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-
-    project = client.post("/projects", json={"name": "Mapbox Project", "slug": "mapbox-p"}).json()
-    assert (
-        client.put(
-            f"/projects/{project['id']}/secrets/MAPBOX_API_TOKEN",
-            json={"value": "pk.test_mapbox_token"},
-        ).status_code
-        == 200
-    )
-    graph = client.post(
-        "/graphs",
-        json={
-            "name": "Empty",
-            "project_id": project["id"],
-            "spec": _minimal_text_input_spec(name="empty"),
-        },
-    ).json()
-    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
-    assert run.get("mapbox_api_token") == "pk.test_mapbox_token"
-    assert client.get(f"/runs/{run['id']}").json().get("mapbox_api_token") == "pk.test_mapbox_token"
 
 
 def test_create_project_with_workspace_id(tmp_path):

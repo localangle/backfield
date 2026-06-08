@@ -493,8 +493,6 @@ export default function ProcessedItemDetail() {
     })
   }, [item, graph])
 
-  const mapboxToken = run?.mapbox_api_token ?? (import.meta.env.VITE_MAPBOX_API_TOKEN as string | undefined) ?? null
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -800,8 +798,6 @@ export default function ProcessedItemDetail() {
                   nodeId={viz.nodeId}
                   nodeLabel={viz.description || viz.title}
                   output={output}
-                  mapboxToken={mapboxToken || undefined}
-                  data={viz.data}
                 />
               )
             })}

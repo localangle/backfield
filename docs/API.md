@@ -129,7 +129,6 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 4. Worker transitions the run to `running`, executes the graph (or S3 batch orchestration + per-file graph runs), then stores `succeeded` or `failed`.
 5. Client may call `**POST /runs/{id}/cancel**` while the run is `**pending**` or `**running**` to stop it; the worker cooperates by not overwriting a cancelled run when it finishes.
 6. Client polls `GET /runs/{id}` until the run reaches a terminal state (refresh `**processed_items**` for per-file batch progress). `**POST /runs/{id}/items/{item_id}/rerun**` re-queues a single batch file or a whole-graph run (`**items/1**` when there are no batch rows) without starting a new run; it also clears review overlay. Saved places are reconciled only when Backfield Output runs.
-7. `POST /runs`, `GET /runs`, and `GET /runs/{id}` include `mapbox_api_token` when the run’s project has a stored `MAPBOX_API_TOKEN` secret (decrypted server-side for browser map visualizations). Otherwise the field is `null`.
 
 ## Backfield Output reconciliation (places v1)
 

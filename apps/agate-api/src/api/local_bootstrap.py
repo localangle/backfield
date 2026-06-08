@@ -45,7 +45,6 @@ _BOOTSTRAP_SECRET_KEYS: tuple[str, ...] = (
     "OPENROUTER_API_KEY",
     "AZURE_API_KEY",
     "AZURE_API_BASE",
-    "MAPBOX_API_TOKEN",
 )
 
 

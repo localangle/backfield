@@ -75,10 +75,6 @@
   }
 }
 
-.agate-map-popup .mapboxgl-popup-close-button {
-  padding: 0.4rem;
-}
-
 /* Guided flow builder: edges are system-managed; hide handles without breaking layout. */
 .guided-flow-canvas .react-flow__handle {
   opacity: 0;

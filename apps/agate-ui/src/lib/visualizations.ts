@@ -12,37 +12,10 @@ import { getNodeOutputById, nodeOutputLookupFromGraphSpec } from '@/lib/nodeOutp
 import { visualizationComponents } from '@/nodes/registry'
 import type React from 'react'
 
-// Shared types for visualizations
-export interface MapPointFeature {
-  id: string
-  coordinates: [number, number] // [longitude, latitude]
-  label?: string
-  description?: string
-  group?: string
-}
-
-export interface MapBoundingBoxFeature {
-  id: string
-  bbox: [number, number, number, number] // [west, south, east, north]
-  label?: string
-  description?: string
-  group?: string
-  // Optional: full GeoJSON geometry (Polygon or MultiPolygon) - takes precedence over bbox
-  geometry?: {
-    type: 'Polygon' | 'MultiPolygon'
-    coordinates: number[][][] | number[][][][]
-  }
-}
-
 export interface VisualizationProps {
   nodeId: string
   nodeLabel: string
   output: any
-  mapboxToken?: string
-  data?: {
-    points: MapPointFeature[]
-    polygons: MapBoundingBoxFeature[]
-  }
 }
 
 export interface VisualizationDescriptor {
@@ -51,11 +24,6 @@ export interface VisualizationDescriptor {
   title: string
   description?: string
   component: React.ComponentType<VisualizationProps>
-  requiresMapboxToken?: boolean
-  data?: {
-    points: MapPointFeature[]
-    polygons: MapBoundingBoxFeature[]
-  }
   nodeOutput?: any // Store the node-specific output for the component to use
 }
 
@@ -80,17 +48,22 @@ export async function getVisualizationsForItem(params: {
   const processOne = async (nodeId: string, output: unknown) => {
     const nodeConfig = nodeById.get(nodeId)
     const nodeType = nodeConfig?.type ?? 'Unknown'
-    const nodeLabel =
+    const nodeLabel = String(
       nodeConfig?.params?.name ??
-      nodeConfig?.params?.label ??
-      `${nodeType} (${nodeId})`
+        nodeConfig?.params?.label ??
+        `${nodeType} (${nodeId})`,
+    )
 
     const visualizationLoader = visualizationComponents[nodeType as keyof typeof visualizationComponents]
     if (visualizationLoader) {
       try {
         const visualizationModule = await visualizationLoader()
         if (visualizationModule && typeof visualizationModule.buildVisualization === 'function') {
-          const viz = visualizationModule.buildVisualization(nodeId, nodeLabel, output)
+          const viz = visualizationModule.buildVisualization(
+            nodeId,
+            nodeLabel,
+            output,
+          ) as VisualizationDescriptor | null
           if (viz) {
             viz.nodeOutput = output
             visuals.push(viz)
@@ -120,4 +93,3 @@ export async function getVisualizationsForItem(params: {
 
   return visuals
 }
-
