@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from backfield_entities.connections.caps import MAX_SNIPPET_CHARS
+from backfield_entities.connections.match_tokens import entity_comention_tokens
 from backfield_entities.connections.types import LinkedEntitySnapshot
 
 
@@ -34,7 +35,12 @@ def collect_pair_snippets(
             window_start = max(0, left_idx - 120)
             window_end = min(len(haystack), left_idx + len(left.label) + 180)
             window = haystack[window_start:window_end]
-            if right.label not in window:
+            lower_window = window.lower()
+            right_tokens = entity_comention_tokens(
+                label=right.label,
+                affiliation=right.affiliation,
+            )
+            if not any(token in lower_window for token in right_tokens):
                 continue
             snippet = _trim(window)
             if snippet and snippet not in seen:

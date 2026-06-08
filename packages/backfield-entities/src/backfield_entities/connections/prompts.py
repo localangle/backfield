@@ -54,6 +54,8 @@ def build_family_classification_prompt(
         "- For organization→location, prefer located_at over based_in when a specific "
         "address/place is supported.\n"
         "- For person→organization, prefer leads over works_for when leadership is explicit.\n"
+        "- Athletes and coaches: team nicknames before a player name or role descriptor "
+        '(e.g. "Phillies masher Kyle Schwarber") support member_of to that sports_team.\n'
         "- Person→location must not use address-like locations.\n"
         "- Prefer the most specific supported geography.\n\n"
         f"From entities ({from_type}):\n{from_section}\n\n"

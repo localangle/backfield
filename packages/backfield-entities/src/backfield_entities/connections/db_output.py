@@ -8,6 +8,9 @@ from typing import Any
 
 from sqlmodel import Session
 
+from backfield_entities.connections.affiliation_links import (
+    infer_affiliation_person_organization_edges,
+)
 from backfield_entities.connections.caps import MAX_CREATED_EDGES_PER_ITEM
 from backfield_entities.connections.context import (
     AutoConnectionArticleContext,
@@ -93,6 +96,7 @@ def run_auto_connections_for_db_output(
                 AutoConnectionEdgeProposal,
             ]
         ] = []
+        pending_edge_keys: set[tuple[str, str, str, str, str]] = set()
 
         for from_type, to_type in AUTO_CONNECTION_FAMILIES:
             from_entities, to_entities = _family_entities(
@@ -102,6 +106,25 @@ def run_auto_connections_for_db_output(
             )
             if not from_entities or not to_entities:
                 continue
+            if from_type == "person" and to_type == "organization":
+                for edge in infer_affiliation_person_organization_edges(
+                    people=from_entities,
+                    organizations=to_entities,
+                    article_text=context.article_text,
+                ):
+                    edge_key = (
+                        from_type,
+                        to_type,
+                        edge.from_entity_id,
+                        edge.to_entity_id,
+                        edge.nature.strip().lower(),
+                    )
+                    if edge_key in pending_edge_keys:
+                        continue
+                    pending_edge_keys.add(edge_key)
+                    pending_edges.append(
+                        (from_type, to_type, from_entities, to_entities, edge)
+                    )
             result = classify_connection_family(
                 from_entity_type=from_type,
                 to_entity_type=to_type,
@@ -114,6 +137,16 @@ def run_auto_connections_for_db_output(
             )
             family_results.append(result)
             for edge in result.edges:
+                edge_key = (
+                    from_type,
+                    to_type,
+                    edge.from_entity_id,
+                    edge.to_entity_id,
+                    edge.nature.strip().lower(),
+                )
+                if edge_key in pending_edge_keys:
+                    continue
+                pending_edge_keys.add(edge_key)
                 pending_edges.append((from_type, to_type, from_entities, to_entities, edge))
 
         created_cap_skipped = 0

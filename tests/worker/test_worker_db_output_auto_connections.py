@@ -24,6 +24,7 @@ from backfield_db import (
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from backfield_entities.connections.db_output import run_auto_connections_for_db_output
+from backfield_entities.connections.taxonomy import AUTO_CONNECTION_MIN_CONFIDENCE
 from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker.nodes.db_output import run_db_output
@@ -59,7 +60,11 @@ def _eligible_settings(**overrides: object) -> DbOutputCanonicalSettings:
     return DbOutputCanonicalSettings.model_validate(base)
 
 
-def _seed_linked_person_org(session: Session) -> LinkedPersonOrgFixture:
+def _seed_linked_person_org(
+    session: Session,
+    *,
+    person_affiliation: str = "Chicago City Hall",
+) -> LinkedPersonOrgFixture:
     project_id = _bootstrap_project(session, org_slug="org-conn", project_slug="proj-conn")
     proj = session.get(BackfieldProject, project_id)
     assert proj is not None
@@ -71,7 +76,7 @@ def _seed_linked_person_org(session: Session) -> LinkedPersonOrgFixture:
         stylebook_id=sb_id,
         label="Jane Smith",
         slug="jane-smith",
-        affiliation="Chicago City Hall",
+        affiliation=person_affiliation or None,
         status="active",
     )
     org_canon = StylebookOrganizationCanonical(
@@ -105,7 +110,7 @@ def _seed_linked_person_org(session: Session) -> LinkedPersonOrgFixture:
         project_id=project_id,
         name="Jane Smith",
         normalized_name="jane smith",
-        affiliation="Chicago City Hall",
+        affiliation=person_affiliation or None,
         identity_fingerprint="fp-conn-person",
         canonical_link_status=CANONICAL_LINK_LINKED,
         stylebook_person_canonical_id=person_cid,
@@ -276,14 +281,14 @@ def test_auto_connections_creates_high_confidence_edge() -> None:
         assert row.to_entity_id == fixture.organization_canonical_id
         assert row.nature == "works_for"
         assert row.evidence_json is not None
-        assert row.evidence_json["quote"] == quote
-        assert row.evidence_json["confidence"] == 0.95
+        assert "Chicago City Hall" in row.evidence_json["quote"]
+        assert row.evidence_json["confidence"] == AUTO_CONNECTION_MIN_CONFIDENCE
 
 
 def test_auto_connections_skips_low_confidence_edge() -> None:
     engine = _engine()
     with Session(engine) as session:
-        fixture = _seed_linked_person_org(session)
+        fixture = _seed_linked_person_org(session, person_affiliation="")
         quote = "Mayor Jane Smith works for Chicago City Hall"
         mock_llm = MagicMock(
             return_value=_llm_edges_response(
@@ -352,7 +357,7 @@ def test_auto_connections_skips_duplicate_existing_edge() -> None:
 def test_auto_connections_skips_invalid_llm_json() -> None:
     engine = _engine()
     with Session(engine) as session:
-        fixture = _seed_linked_person_org(session)
+        fixture = _seed_linked_person_org(session, person_affiliation="")
         summary = run_auto_connections_for_db_output(
             session,
             project_id=fixture.project_id,
