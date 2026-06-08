@@ -46,6 +46,35 @@ def _seed(session: Session) -> tuple[int, int]:
     return sb_id, int(proj.id)  # type: ignore[arg-type]
 
 
+def test_person_strong_identity_requires_canonical_label_name_match() -> None:
+    """Same affiliation must not tier-1 link when display names differ (Faith vs Keith)."""
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Faith Hernandez",
+            slug="faith-hernandez",
+            title="Resident",
+            affiliation="Chicago Housing Authority",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        for name, title in (
+            ("Keith Pettigrew", "CEO"),
+            ("Matthew Aguilar", "Spokesperson"),
+        ):
+            person = SubstratePerson(
+                project_id=pid,
+                name=name,
+                normalized_name=name.lower(),
+                title=title,
+                affiliation="Chicago Housing Authority",
+            )
+            assert not person_strong_identity_matches_canonical(person, canon)
+
+
 def test_person_strong_identity_ignores_title() -> None:
     engine = _engine()
     with Session(engine) as session:
@@ -183,3 +212,29 @@ def test_alias_hit_with_affiliation_mismatch_defers_not_links() -> None:
         session.refresh(person)
         plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
         assert plan.decision == CanonicalPersistDecision.DEFER
+
+
+def test_same_affiliation_different_name_does_not_tier1_link() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Faith Hernandez",
+            slug="faith-hernandez",
+            affiliation="Chicago Housing Authority",
+        )
+        session.add(canon)
+        session.commit()
+        person = SubstratePerson(
+            project_id=pid,
+            name="Keith Pettigrew",
+            normalized_name="keith pettigrew",
+            title="CEO",
+            affiliation="Chicago Housing Authority",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+        plan = decide_person_canonical_persist_plan(session, stylebook_id=sb_id, person=person)
+        assert plan.decision != CanonicalPersistDecision.LINK_EXISTING

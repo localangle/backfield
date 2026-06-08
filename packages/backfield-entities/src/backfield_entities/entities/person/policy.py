@@ -58,9 +58,7 @@ def person_name_matches_canonical(
     person_name = str(person.normalized_name or person.name or "")
     if not person_match_key(person_name):
         return False
-    return person_names_match(person_name, str(canon.label)) or person_names_match(
-        person_name, str(person.name or "")
-    )
+    return person_names_match(person_name, str(canon.label))
 
 
 def person_affiliation_matches_canonical(
