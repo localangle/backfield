@@ -456,3 +456,62 @@ def test_enrich_omits_stylebook_link_when_mention_deleted_for_article() -> None:
         )
         assert "stylebook_link" not in out[0]
         assert "persisted_location_id" not in out[0]
+
+
+def test_enrich_skips_run_wide_substrate_when_article_id_missing() -> None:
+    """Failed or in-flight items must not inherit sibling batch entities."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org Batch", slug="org-batch-bleed")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+
+        project = BackfieldProject(
+            organization_id=int(org.id),
+            name="Proj Batch",
+            slug="proj-batch-bleed",
+        )
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
+        other_article = SubstrateArticle(
+            project_id=int(project.id),
+            headline="Sibling story",
+            text="Other article body",
+        )
+        session.add(other_article)
+        session.commit()
+        session.refresh(other_article)
+
+        loc = SubstrateLocation(
+            project_id=int(project.id),
+            name="Chicago",
+            normalized_name="chicago",
+            canonical_link_status=CANONICAL_LINK_PENDING,
+            source_details_json={"run_id": "run-batch", "raw_entry_id": "loc-1"},
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+        session.add(
+            SubstrateLocationMention(
+                article_id=int(other_article.id),
+                location_id=int(loc.id),
+            )
+        )
+        session.commit()
+
+        out = enrich_merged_locations_for_review(
+            session,
+            project_id=int(project.id),
+            run_id="run-batch",
+            article_id=None,
+            merged_locations=[],
+        )
+        assert out == []

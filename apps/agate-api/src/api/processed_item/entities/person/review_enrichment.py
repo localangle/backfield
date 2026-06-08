@@ -163,10 +163,9 @@ def _load_substrate_people_for_review(
         ).all()
         return _index_substrate_people(list(rows), run_id=run_id)
 
-    rows = session.exec(
-        select(SubstratePerson).where(SubstratePerson.project_id == project_id)
-    ).all()
-    return _index_substrate_people(list(rows), run_id=run_id)
+    # Without a persisted article scope, do not fan in run-wide substrate rows (batch runs
+    # would otherwise bleed entities from sibling items onto failed or in-flight items).
+    return {}
 
 
 def _load_canonicals_by_id(
