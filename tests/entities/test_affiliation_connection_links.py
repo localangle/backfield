@@ -17,6 +17,7 @@ def _person(
     canonical_id: str = "person-1",
     label: str = "Kyle Schwarber",
     affiliation: str = "Philadelphia Phillies",
+    person_type: str = "athlete",
     snippets: tuple[str, ...] = (),
 ) -> LinkedEntitySnapshot:
     return LinkedEntitySnapshot(
@@ -25,6 +26,7 @@ def _person(
         canonical_id=canonical_id,
         label=label,
         affiliation=affiliation,
+        person_type=person_type,
         snippets=snippets,
     )
 
@@ -51,6 +53,36 @@ def test_team_nickname_affiliation_matches_full_organization_label() -> None:
         "Philadelphia Phillies",
     )
     assert not person_affiliation_matches_organization_label("Chicago", "Chicago Cubs")
+
+
+def test_infer_works_for_edge_when_affiliation_matches_but_prose_uses_short_nickname() -> None:
+    """Affiliation names the org; quote cites the person without re-matching team nicknames."""
+    article_text = (
+        "Hawks general manager Kyle Davidson was resourceful to recoup "
+        "his third-round-pick investment in this tricky situation."
+    )
+    person = _person(
+        canonical_id="davidson",
+        label="Kyle Davidson",
+        affiliation="Chicago Blackhawks",
+        person_type="sports_executive",
+        snippets=(article_text,),
+    )
+    org = _org(
+        canonical_id="blackhawks",
+        label="Chicago Blackhawks",
+        organization_type="sports_team",
+    )
+    edges = infer_affiliation_person_organization_edges(
+        people=(person,),
+        organizations=(org,),
+        article_text=article_text,
+    )
+    assert len(edges) == 1
+    assert edges[0].nature == "works_for"
+    assert edges[0].from_entity_id == "davidson"
+    assert edges[0].to_entity_id == "blackhawks"
+    assert "Kyle Davidson" in edges[0].quote
 
 
 def test_infer_member_of_edge_for_athlete_team_affiliation() -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from backfield_entities.connections.match_tokens import (
-    organization_match_tokens,
     person_affiliation_matches_organization_label,
 )
 from backfield_entities.connections.snippets import quote_is_supported
@@ -12,9 +11,15 @@ from backfield_entities.connections.types import AutoConnectionEdgeProposal, Lin
 from backfield_entities.connections.validation import validate_auto_connection_candidate
 
 
-def _nature_for_affiliation_link(org: LinkedEntitySnapshot) -> str:
+def _nature_for_affiliation_link(
+    person: LinkedEntitySnapshot,
+    org: LinkedEntitySnapshot,
+) -> str:
     if (org.organization_type or "").strip().lower() == "sports_team":
-        return "member_of"
+        person_type = (person.person_type or "").strip().lower()
+        if person_type in {"athlete", "coach", "player"}:
+            return "member_of"
+        return "works_for"
     return "works_for"
 
 
@@ -24,33 +29,29 @@ def _select_affiliation_quote(
     org: LinkedEntitySnapshot,
     article_text: str,
 ) -> str | None:
-    team_tokens = organization_match_tokens(org.label)
-    if person.affiliation:
-        team_tokens = tuple(
-            dict.fromkeys((*team_tokens, *organization_match_tokens(person.affiliation)))
-        )
+    """Evidence for an affiliation link: where the person appears in the story.
+
+    Called only after ``person_affiliation_matches_organization_label`` succeeds, so the
+    affiliation field (not prose team nicknames) is the link basis. The quote cites the
+    person in context; it does not re-require the organization name in the same span.
+    """
+    _ = org
     person_label = person.label.strip()
     if not person_label:
         return None
+    label_lower = person_label.lower()
 
     for snippet in person.snippets:
-        lower = snippet.lower()
-        if person_label.lower() not in lower:
-            continue
-        if any(token in lower for token in team_tokens):
+        if label_lower in snippet.lower():
             return snippet.strip()
 
     haystack = article_text or ""
-    idx = haystack.find(person_label)
+    idx = haystack.lower().find(label_lower)
     if idx < 0:
         return None
     window_start = max(0, idx - 120)
     window_end = min(len(haystack), idx + len(person_label) + 180)
-    window = haystack[window_start:window_end]
-    lower_window = window.lower()
-    if any(token in lower_window for token in team_tokens):
-        return window.strip()
-    return None
+    return haystack[window_start:window_end].strip()
 
 
 def infer_affiliation_person_organization_edges(
@@ -72,7 +73,7 @@ def infer_affiliation_person_organization_edges(
         for org in organizations:
             if not person_affiliation_matches_organization_label(person.affiliation, org.label):
                 continue
-            nature = _nature_for_affiliation_link(org)
+            nature = _nature_for_affiliation_link(person, org)
             key = (person.canonical_id, org.canonical_id, nature)
             if key in seen:
                 continue

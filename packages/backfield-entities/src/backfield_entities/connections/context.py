@@ -115,6 +115,10 @@ def _collect_people(
                     person.affiliation or (canon.affiliation if canon else None) or ""
                 ).strip()
                 or None,
+                person_type=(
+                    person.person_type or (canon.person_type if canon else None) or ""
+                ).strip()
+                or None,
                 snippets=_snippets_from_occurrences(occurrences),
             )
         )

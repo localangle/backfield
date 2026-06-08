@@ -15,6 +15,7 @@ class LinkedEntitySnapshot:
     label: str
     location_type: str | None = None
     affiliation: str | None = None
+    person_type: str | None = None
     organization_type: str | None = None
     snippets: tuple[str, ...] = ()
 
