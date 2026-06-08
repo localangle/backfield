@@ -113,26 +113,11 @@ export function formatConnectionsDetail(summary: ProcessedItemConnections): stri
     return summary.error ?? 'Automatic connections could not finish for this item.'
   }
   if (summary.created_count === 0) {
-    return 'No new connections were added for this item.'
-  }
-  if (summary.edges.length > 0) {
-    const preview = summary.edges
-      .slice(0, 3)
-      .map((edge) => {
-        const conf =
-          edge.confidence != null ? ` (${Math.round(edge.confidence * 100)}%)` : ''
-        return `${edge.from_display_name} — ${edge.nature} → ${edge.to_display_name}${conf}`
-      })
-      .join(' · ')
-    const extra =
-      summary.created_count > summary.edges.length
-        ? ` · +${summary.created_count - summary.edges.length} more`
-        : ''
-    return preview + extra
+    return 'No connections created'
   }
   return `${summary.created_count.toLocaleString()} connection${
     summary.created_count === 1 ? '' : 's'
-  } added`
+  } created`
 }
 
 export function shouldShowConnectionsSummary(

@@ -16,6 +16,8 @@ describe('processedItemDetailTab', () => {
     expect(parseProcessedItemDetailTab('json', { synthetic: false })).toBe('json')
     expect(parseProcessedItemDetailTab('bogus', { synthetic: false })).toBe('info')
     expect(parseProcessedItemDetailTab(null, { synthetic: true })).toBe('info')
+    expect(parseProcessedItemDetailTab('events', { synthetic: false })).toBe('info')
+    expect(parseProcessedItemDetailTab('works', { synthetic: false })).toBe('info')
   })
 
   it('reads tab from query before hash', () => {

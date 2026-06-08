@@ -46,8 +46,6 @@ const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
   places: 'Places',
   people: 'People',
   organizations: 'Organizations',
-  events: 'Events',
-  works: 'Works',
   images: 'Images',
   meta: 'Meta',
   json: 'JSON',
@@ -871,8 +869,6 @@ export default function ProcessedItemDetail() {
 
         {(
           [
-            ['events', 'Events'],
-            ['works', 'Works'],
             ['images', 'Images'],
             ['meta', 'Meta'],
           ] as const

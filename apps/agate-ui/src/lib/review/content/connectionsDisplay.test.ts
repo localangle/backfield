@@ -40,12 +40,12 @@ describe('connectionsDisplay helpers', () => {
     ).toBe(true)
   })
 
-  it('formats readable edge preview', () => {
+  it('formats succeeded summary as a created count only', () => {
     const detail = formatConnectionsDetail(
       normalizeProcessedItemConnections({
         status: 'succeeded',
         enabled: true,
-        created_count: 1,
+        created_count: 3,
         edges: [
           {
             from_display_name: 'Jane Smith',
@@ -56,9 +56,7 @@ describe('connectionsDisplay helpers', () => {
         ],
       }),
     )
-    expect(detail).toContain('Jane Smith')
-    expect(detail).toContain('works_for')
-    expect(detail).toContain('95%')
+    expect(detail).toBe('3 connections created')
   })
 
   it('labels failed status', () => {
