@@ -22,4 +22,4 @@ RUN pip install --no-cache-dir -e /app/packages/backfield-db \
 ENV PYTHONPATH=/app/apps/worker/src
 
 WORKDIR /app/apps/worker
-CMD ["celery", "-A", "worker.tasks", "worker", "--loglevel=info", "-Q", "agate", "--concurrency=8"]
+CMD ["celery", "-A", "worker.tasks", "worker", "--loglevel=info", "-Q", "agate", "--concurrency=16"]

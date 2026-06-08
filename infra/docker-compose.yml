@@ -145,7 +145,7 @@ services:
         "-Q",
         "agate",
         "--concurrency",
-        "${CELERY_WORKER_CONCURRENCY:-8}",
+        "${CELERY_WORKER_CONCURRENCY:-16}",
       ]
     env_file:
       - path: ../.env
