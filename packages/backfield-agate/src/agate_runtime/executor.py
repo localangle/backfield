@@ -1,4 +1,4 @@
-"""Execute an Agate graph synchronously or with parallel same-level nodes."""
+"""Execute an Agate graph synchronously or with predecessor-ready parallel scheduling."""
 
 from __future__ import annotations
 
@@ -75,8 +75,11 @@ def _topo_order(spec: GraphSpec) -> list[str]:
     return order
 
 
+_INPUT_NODE_TYPES = frozenset({"TextInput", "JSONInput", "S3Input"})
+
+
 def build_execution_levels(spec: GraphSpec) -> list[list[str]]:
-    """Group node ids by graph depth for parallel execution (agate-ai-platform parity)."""
+    """Group node ids by graph depth (legacy level-barrier helper; agate-ai-platform parity)."""
     sorted_ids = _topo_order(spec)
     node_ids = {n.id for n in spec.nodes}
     depths: dict[str, int] = {}
@@ -92,6 +95,44 @@ def build_execution_levels(spec: GraphSpec) -> list[list[str]]:
     for node_id, depth in depths.items():
         levels_dict[depth].append(node_id)
     return [levels_dict[i] for i in sorted(levels_dict.keys())]
+
+
+def _direct_upstream_ids(target_id: str, edges: list[Edge], node_ids: set[str]) -> frozenset[str]:
+    return frozenset(
+        edge.source
+        for edge in edges
+        if edge.target == target_id and edge.source in node_ids
+    )
+
+
+def _all_other_nodes_complete(
+    exclude_id: str,
+    *,
+    by_id: dict[str, NodeConfig],
+    completed_ids: set[str],
+) -> bool:
+    required = {
+        node.id
+        for node in by_id.values()
+        if node.id != exclude_id and node.type != "ArraySplitter"
+    }
+    return required <= completed_ids
+
+
+def _node_is_ready(
+    node: NodeConfig,
+    *,
+    completed_ids: set[str],
+    by_id: dict[str, NodeConfig],
+    edges: list[Edge],
+    node_ids: set[str],
+) -> bool:
+    if node.type == "Output":
+        return _all_other_nodes_complete(node.id, by_id=by_id, completed_ids=completed_ids)
+    upstream = _direct_upstream_ids(node.id, edges, node_ids)
+    if not upstream and node.type in _INPUT_NODE_TYPES:
+        return True
+    return upstream <= completed_ids
 
 
 def _namespaced_upstream_inputs(
@@ -200,6 +241,35 @@ def _run_sync_node(
     return result
 
 
+async def _run_node_async(
+    node: NodeConfig,
+    inputs: dict[str, Any],
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+    ctx: AgateEnvContext,
+    async_runners: Mapping[str, AsyncNodeRunner],
+) -> tuple[str, dict[str, Any]]:
+    if before_each_node is not None:
+        before_each_node(node.id, node.type)
+    async_runner = async_runners.get(node.type)
+    try:
+        if async_runner is not None:
+            result = await async_runner(node.params, inputs, ctx)
+        else:
+            sync_runner = runners.get(node.type)
+            if sync_runner is None:
+                raise GraphExecutionError(f"Unknown node type: {node.type}")
+            result = await asyncio.to_thread(sync_runner, node.params, inputs)
+    except GraphExecutionError:
+        raise
+    except Exception as exc:
+        raise GraphExecutionError(f"Node {node.id} ({node.type}) failed: {exc}") from exc
+    if not isinstance(result, dict):
+        raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
+    return node.id, result
+
+
 async def _execute_level_async(
     level_nodes: list[NodeConfig],
     level_inputs: dict[str, dict[str, Any]],
@@ -209,28 +279,19 @@ async def _execute_level_async(
     ctx: AgateEnvContext,
     async_runners: Mapping[str, AsyncNodeRunner],
 ) -> dict[str, dict[str, Any]]:
-    async def run_one(node: NodeConfig) -> tuple[str, dict[str, Any]]:
-        inputs = level_inputs[node.id]
-        if before_each_node is not None:
-            before_each_node(node.id, node.type)
-        async_runner = async_runners.get(node.type)
-        try:
-            if async_runner is not None:
-                result = await async_runner(node.params, inputs, ctx)
-            else:
-                sync_runner = runners.get(node.type)
-                if sync_runner is None:
-                    raise GraphExecutionError(f"Unknown node type: {node.type}")
-                result = await asyncio.to_thread(sync_runner, node.params, inputs)
-        except GraphExecutionError:
-            raise
-        except Exception as exc:
-            raise GraphExecutionError(f"Node {node.id} ({node.type}) failed: {exc}") from exc
-        if not isinstance(result, dict):
-            raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
-        return node.id, result
-
-    pairs = await asyncio.gather(*[run_one(node) for node in level_nodes])
+    pairs = await asyncio.gather(
+        *[
+            _run_node_async(
+                node,
+                level_inputs[node.id],
+                runners,
+                before_each_node=before_each_node,
+                ctx=ctx,
+                async_runners=async_runners,
+            )
+            for node in level_nodes
+        ]
+    )
     return dict(pairs)
 
 
@@ -297,6 +358,87 @@ def _execute_graph_parallel_levels(
     return _remap_outputs_for_json(by_id, order, node_outputs)
 
 
+async def _execute_graph_ready_parallel_async(
+    spec: GraphSpec,
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+    async_runners: Mapping[str, AsyncNodeRunner],
+) -> dict[str, Any]:
+    by_id = {node.id: node for node in spec.nodes}
+    order = _topo_order(spec)
+    node_ids = set(by_id)
+    pending_ids = set(by_id)
+    completed_ids: set[str] = set()
+    node_outputs: dict[str, dict[str, Any]] = {}
+    in_flight: dict[str, asyncio.Task[tuple[str, dict[str, Any]]]] = {}
+    ctx = default_context()
+
+    def _ready_nodes() -> list[NodeConfig]:
+        return [
+            by_id[node_id]
+            for node_id in pending_ids
+            if _node_is_ready(
+                by_id[node_id],
+                completed_ids=completed_ids,
+                by_id=by_id,
+                edges=spec.edges,
+                node_ids=node_ids,
+            )
+        ]
+
+    def _launch_ready() -> None:
+        for node in _ready_nodes():
+            pending_ids.discard(node.id)
+            inputs = _inputs_for_node(
+                node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
+            )
+            in_flight[node.id] = asyncio.create_task(
+                _run_node_async(
+                    node,
+                    inputs,
+                    runners,
+                    before_each_node=before_each_node,
+                    ctx=ctx,
+                    async_runners=async_runners,
+                )
+            )
+
+    _launch_ready()
+    while in_flight:
+        done, _pending = await asyncio.wait(
+            in_flight.values(),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in done:
+            node_id, result = task.result()
+            node_outputs[node_id] = result
+            completed_ids.add(node_id)
+            del in_flight[node_id]
+        _launch_ready()
+        if not in_flight and pending_ids:
+            raise GraphExecutionError("Deadlock: no nodes ready to execute")
+
+    return _remap_outputs_for_json(by_id, order, node_outputs)
+
+
+def _execute_graph_ready_parallel(
+    spec: GraphSpec,
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+    async_runners: Mapping[str, AsyncNodeRunner],
+) -> dict[str, Any]:
+    return asyncio.run(
+        _execute_graph_ready_parallel_async(
+            spec,
+            runners,
+            before_each_node=before_each_node,
+            async_runners=async_runners,
+        )
+    )
+
+
 def execute_graph(
     spec: GraphSpec,
     node_runners: Mapping[str, NodeRunner] | None = None,
@@ -306,8 +448,10 @@ def execute_graph(
     """
     Run all nodes in dependency order.
 
-    When ``BACKFIELD_PARALLEL_GRAPH_LEVELS`` is ``1``/``true``/``yes``, nodes at the
-    same graph depth run concurrently via ``asyncio.gather`` (agate-ai-platform parity).
+    When ``BACKFIELD_PARALLEL_GRAPH_LEVELS`` is ``1``/``true``/``yes``, each node runs
+    as soon as its readiness rules are satisfied (direct upstream for most nodes;
+    JSON ``Output`` waits for every other node). Ready nodes in a batch run concurrently
+    via ``asyncio.gather``.
 
     ``before_each_node``, when provided, is invoked as ``(node_id, node_type)`` immediately
     before each node's runner (used by the worker for LLM attempt attribution).
@@ -320,7 +464,7 @@ def execute_graph(
     runners = NODE_RUNNERS if node_runners is None else dict(NODE_RUNNERS) | dict(node_runners)
 
     if _parallel_levels_enabled():
-        return _execute_graph_parallel_levels(
+        return _execute_graph_ready_parallel(
             spec,
             runners,
             before_each_node=before_each_node,
