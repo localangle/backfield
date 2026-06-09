@@ -26,6 +26,9 @@ from backfield_entities.canonical.plan_types import (
 from backfield_entities.entities.location.policy import (
     substrate_may_materialize_canonical_after_recall,
 )
+from backfield_entities.ingest.geocode_cache.sanity import (
+    substrate_canonical_link_blocked_by_content_sanity,
+)
 from sqlmodel import Session, select
 
 
@@ -34,7 +37,10 @@ class LocationAdjudicationPrepared:
     location: SubstrateLocation
     model: str
     model_config_id: str | None
-    candidates: tuple[tuple[str, str, str | None, str | None, str | None, str | None], ...]
+    candidates: tuple[
+        tuple[str, str, str | None, str | None, str | None, str | None, str | None, str | None],
+        ...,
+    ]
     prompt: str
 
 
@@ -83,7 +89,7 @@ def _candidate_rows(
     *,
     stylebook_id: int,
     canonical_ids: list[str],
-) -> list[tuple[str, str, str | None, str | None, str | None, str | None]]:
+) -> list[tuple[str, str, str | None, str | None, str | None, str | None, str | None, str | None]]:
     if not canonical_ids:
         return []
     rows = session.exec(
@@ -92,7 +98,9 @@ def _candidate_rows(
             StylebookLocationCanonical.id.in_(canonical_ids[:24]),
         )
     ).all()
-    out: list[tuple[str, str, str | None, str | None, str | None, str | None]] = []
+    out: list[
+        tuple[str, str, str | None, str | None, str | None, str | None, str | None, str | None]
+    ] = []
     for c in rows:
         if c.id is None:
             continue
@@ -104,6 +112,8 @@ def _candidate_rows(
                 c.district_key,
                 c.district_kind,
                 c.district_number,
+                c.formatted_address,
+                c.geometry_type,
             )
         )
     return out
@@ -148,7 +158,7 @@ def prepare_location_adjudication(
     lines = "\n".join(
         f"- id={cid} label={label!r} location_type={lt!r} district_key={dk!r} "
         f"district_kind={kind!r} district_number={num!r}"
-        for cid, label, lt, dk, kind, num in candidates
+        for cid, label, lt, dk, kind, num, _fa, _gt in candidates
     )
     floor = ADJUDICATION_LINK_MIN_CONFIDENCE
     district_block = ""
@@ -183,6 +193,9 @@ def prepare_location_adjudication(
         "- Do NOT link: suburb to parent core city; city A to city B because they are in the "
         "same metro; a regional nickname (e.g. southern part of a state) to the whole state; "
         "two distinct places that only share a broader region.\n"
+        "- When the substrate name's leading segment (before the first comma) names a distinct "
+        "venue, building, or landmark, do NOT link to a broader park or place canonical that "
+        "only appears as geographic context in the suffix (e.g. a restaurant inside a park).\n"
         f"{district_rules}"
         "- When any candidate is only a rough geographic association, return canonical_id null. "
         "Prefer null (new canonical / human review) over a stretched link.\n"
@@ -281,11 +294,25 @@ def resolve_location_adjudication_plan(
     if candidate_row is None:
         return _reject_link_extra(outcome="no_high_confidence_link")
 
-    _cid, _label, canon_location_type, canon_district_key, _kind, _num = candidate_row
+    _cid, canon_label, canon_location_type, canon_district_key, _kind, _num, canon_fa, canon_gt = (
+        candidate_row
+    )
     if not link_pair_allowed(location.location_type, canon_location_type):
         return _reject_link_extra(outcome="no_high_confidence_link")
     if autolink_container_to_fine_denied(location.location_type, canon_location_type):
         return _reject_link_extra(outcome="no_high_confidence_link")
+
+    comps = place_extract_components_from_entry(location, None)
+    if substrate_canonical_link_blocked_by_content_sanity(
+        substrate_location_type=location.location_type,
+        location_text=str(location.name),
+        components=comps,
+        match_label=str(canon_label),
+        match_formatted_address=canon_fa,
+        match_location_type=canon_location_type,
+        match_geometry_type=canon_gt,
+    ):
+        return _reject_link_extra(outcome="content_sanity_coerced")
 
     sub_key = district_identity_key(
         district_identity_from_components(place_extract_components_from_entry(location, None))
