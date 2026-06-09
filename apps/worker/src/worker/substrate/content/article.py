@@ -3,13 +3,98 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Any
 
 from backfield_db import SubstrateArticle, SubstrateImage
 from backfield_db.text_sanitize import strip_nul_bytes
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from worker.substrate.common import _parse_date, _sha256_hex, _utcnow
+
+
+def _text_fingerprint(*, project_id: int, text_str: str) -> str:
+    return _sha256_hex(json.dumps({"project_id": project_id, "text": text_str}, sort_keys=True))
+
+
+def _find_existing_article(
+    session: Session,
+    *,
+    project_id: int,
+    url_str: str | None,
+    external_source: str | None,
+    external_id: str | None,
+    text_fingerprint: str,
+) -> SubstrateArticle | None:
+    if external_source and external_id:
+        article = session.exec(
+            select(SubstrateArticle).where(
+                col(SubstrateArticle.project_id) == project_id,
+                col(SubstrateArticle.external_source) == external_source,
+                col(SubstrateArticle.external_id) == external_id,
+            )
+        ).first()
+        if article is not None:
+            return article
+
+    if url_str:
+        article = session.exec(
+            select(SubstrateArticle).where(
+                col(SubstrateArticle.project_id) == project_id,
+                col(SubstrateArticle.url) == url_str,
+            )
+        ).first()
+        if article is not None:
+            return article
+
+    return session.exec(
+        select(SubstrateArticle).where(
+            col(SubstrateArticle.project_id) == project_id,
+            col(SubstrateArticle.external_source) == "backfield_text_fingerprint",
+            col(SubstrateArticle.external_id) == text_fingerprint,
+        )
+    ).first()
+
+
+def _fetch_substrate_article_after_unique_violation(
+    session: Session,
+    *,
+    project_id: int,
+    url_str: str | None,
+    external_source: str | None,
+    external_id: str | None,
+    text_fingerprint: str,
+) -> SubstrateArticle | None:
+    return _find_existing_article(
+        session,
+        project_id=project_id,
+        url_str=url_str,
+        external_source=external_source,
+        external_id=external_id,
+        text_fingerprint=text_fingerprint,
+    )
+
+
+def _apply_article_merge(
+    article: SubstrateArticle,
+    *,
+    url_str: str | None,
+    headline_str: str,
+    author_str: str | None,
+    pub_date: date | None,
+    text_str: str,
+    run_id: str,
+) -> None:
+    now = _utcnow()
+    article.headline = headline_str
+    article.author = author_str
+    article.pub_date = pub_date
+    article.text = text_str
+    article.url = url_str or article.url
+    article.source_run_id = run_id
+    article.updated_at = now
+    article.edited = True
 
 
 def _upsert_article(
@@ -48,38 +133,18 @@ def _upsert_article(
     if entry_id is not None and str(entry_id).strip():
         external_id = str(entry_id).strip()
 
-    article: SubstrateArticle | None = None
-    if url_str:
-        article = session.exec(
-            select(SubstrateArticle).where(
-                col(SubstrateArticle.project_id) == project_id,
-                col(SubstrateArticle.url) == url_str,
-            )
-        ).first()
+    text_fingerprint = _text_fingerprint(project_id=project_id, text_str=text_str)
+    resolved_external_source = external_source or "backfield_text_fingerprint"
+    resolved_external_id = external_id or text_fingerprint
 
-    if article is None and external_source and external_id:
-        article = session.exec(
-            select(SubstrateArticle).where(
-                col(SubstrateArticle.project_id) == project_id,
-                col(SubstrateArticle.external_source) == external_source,
-                col(SubstrateArticle.external_id) == external_id,
-            )
-        ).first()
-
-    if article is None:
-        fingerprint = _sha256_hex(
-            json.dumps(
-                {"project_id": project_id, "text": text_str},
-                sort_keys=True,
-            )
-        )
-        article = session.exec(
-            select(SubstrateArticle).where(
-                col(SubstrateArticle.project_id) == project_id,
-                col(SubstrateArticle.external_source) == "backfield_text_fingerprint",
-                col(SubstrateArticle.external_id) == fingerprint,
-            )
-        ).first()
+    article = _find_existing_article(
+        session,
+        project_id=project_id,
+        url_str=url_str,
+        external_source=external_source,
+        external_id=external_id,
+        text_fingerprint=text_fingerprint,
+    )
 
     headline = consolidated.get("headline")
     if isinstance(headline, str) and headline.strip():
@@ -90,15 +155,10 @@ def _upsert_article(
     else:
         headline_str = "Article"
 
-    now = _utcnow()
     if article is None:
-        text_fingerprint = _sha256_hex(
-            json.dumps({"project_id": project_id, "text": text_str}, sort_keys=True)
-        )
-        resolved_external_id = external_id or text_fingerprint
-        article = SubstrateArticle(
+        new_article = SubstrateArticle(
             project_id=project_id,
-            external_source=external_source or "backfield_text_fingerprint",
+            external_source=resolved_external_source,
             external_id=resolved_external_id,
             url=url_str,
             headline=headline_str,
@@ -108,18 +168,56 @@ def _upsert_article(
             source_run_id=run_id,
             edited=True,
         )
-        session.add(article)
-        session.flush()
-        return article
+        try:
+            with session.begin_nested():
+                session.add(new_article)
+                session.flush()
+        except IntegrityError as exc:
+            article = _fetch_substrate_article_after_unique_violation(
+                session,
+                project_id=project_id,
+                url_str=url_str,
+                external_source=external_source,
+                external_id=external_id,
+                text_fingerprint=text_fingerprint,
+            )
+            if article is None:
+                article = _fetch_substrate_article_after_unique_violation(
+                    session,
+                    project_id=project_id,
+                    url_str=url_str,
+                    external_source=resolved_external_source,
+                    external_id=resolved_external_id,
+                    text_fingerprint=text_fingerprint,
+                )
+            if article is None:
+                raise RuntimeError(
+                    "substrate_article insert collided on unique key but concurrent row "
+                    "was not visible; retry the persistence step"
+                ) from exc
+            _apply_article_merge(
+                article,
+                url_str=url_str,
+                headline_str=headline_str,
+                author_str=author_str,
+                pub_date=pub_date,
+                text_str=text_str,
+                run_id=run_id,
+            )
+            session.add(article)
+            session.flush()
+            return article
+        return new_article
 
-    article.headline = headline_str
-    article.author = author_str
-    article.pub_date = pub_date
-    article.text = text_str
-    article.url = url_str or article.url
-    article.source_run_id = run_id
-    article.updated_at = now
-    article.edited = True
+    _apply_article_merge(
+        article,
+        url_str=url_str,
+        headline_str=headline_str,
+        author_str=author_str,
+        pub_date=pub_date,
+        text_str=text_str,
+        run_id=run_id,
+    )
     session.add(article)
     session.flush()
     return article

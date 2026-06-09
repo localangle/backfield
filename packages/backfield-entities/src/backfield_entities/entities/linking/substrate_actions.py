@@ -51,7 +51,7 @@ def rank_canonical_suggestions_for_substrate(
             eid = str(exact_cid)
             out.append((eid, str(canon.label)))
             seen.add(eid)
-    for cid, lab, _sc, _idx in ranked:
+    for cid, lab, _sc, _idx, _raw in ranked:
         if cid in seen:
             continue
         out.append((cid, lab))

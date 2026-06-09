@@ -22,6 +22,7 @@ from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_or
 from backfield_entities.entities.location.persist import assert_canonical_link_invariant
 from sqlmodel import Session, SQLModel, col, create_engine, select
 from worker.substrate import _find_mention_span, persist_from_consolidated
+from worker.substrate.content.article import _upsert_article
 from worker.substrate.content.geography_reset import replace_machine_geography_for_article
 
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
@@ -157,6 +158,58 @@ def _empty_places() -> dict:
         "points": [],
         "needs_review": [],
     }
+
+
+def test_upsert_article_reuses_existing_row_by_publication_and_entry_id() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    article_url = (
+        "https://chicago.suntimes.com/letters-to-the-editor/2026/06/05/"
+        "bears-stadium-joe-sedelmaier-commercials-teen-takeovers-safety"
+    )
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-art", project_slug="proj-art")
+        session.add(AgateRun(id="run-a1", graph_id="graph-a1", status="pending"))
+        session.add(
+            SubstrateArticle(
+                project_id=project_id,
+                external_source="Chicago Sun-Times",
+                external_id=article_url,
+                url=article_url,
+                headline="Original headline",
+                text="Original body",
+                source_run_id="run-a1",
+            )
+        )
+        session.commit()
+
+        consolidated = {
+            "url": article_url,
+            "publication": "Chicago Sun-Times",
+            "entry_id": article_url,
+            "headline": "Updated headline",
+            "text": "Updated body",
+            "author": "Letters to the Editor",
+            "pub_date": "2026-06-05",
+        }
+        article = _upsert_article(
+            session,
+            project_id=project_id,
+            consolidated=consolidated,
+            run_id="run-a2",
+        )
+        article_id = int(article.id)  # type: ignore[arg-type]
+        session.commit()
+
+    with Session(engine) as session:
+        rows = list(session.exec(select(SubstrateArticle)).all())
+        assert len(rows) == 1
+        row = rows[0]
+        assert int(row.id) == article_id
+        assert row.headline == "Updated headline"
+        assert row.text == "Updated body"
+        assert row.source_run_id == "run-a2"
 
 
 def test_persist_graph_outputs_writes_article_location_mention_occurrence() -> None:

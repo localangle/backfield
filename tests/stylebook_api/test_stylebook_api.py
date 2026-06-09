@@ -2732,6 +2732,26 @@ def test_get_suggested_canonicals_for_pending_candidate(
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
         pid = int(proj.id)
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        canon = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Suggestme",
+            slug="suggestme-canon",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.flush()
+        s.add(
+            StylebookLocationAlias(
+                location_canonical_id=str(canon.id),
+                alias_text="Suggestme",
+                normalized_alias="suggestme",
+                provenance="test",
+                suppressed=False,
+            )
+        )
         loc = SubstrateLocation(
             project_id=pid,
             name="Suggestme",
@@ -2754,6 +2774,7 @@ def test_get_suggested_canonicals_for_pending_candidate(
     body = r.json()
     assert "suggestions" in body
     assert isinstance(body["suggestions"], list)
+    assert len(body["suggestions"]) >= 1
 
 
 def test_stylebook_canonical_location_meta_crud(
