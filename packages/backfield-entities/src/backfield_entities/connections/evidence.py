@@ -43,6 +43,7 @@ class ConnectionCreationEvidence(BaseModel):
     processed_item_id: int | None = None
     adjudication_model: str | None = None
     adjudication_ai_model_config_id: int | None = None
+    match_basis: str | None = None
 
     @field_validator("quote", "reason", "from_display_name", "to_display_name")
     @classmethod
@@ -77,6 +78,7 @@ def build_connection_creation_evidence(
     adjudication_model: str | None = None,
     adjudication_ai_model_config_id: int | None = None,
     prompt_version: str = AUTO_CONNECTION_PROMPT_VERSION,
+    match_basis: str | None = None,
 ) -> ConnectionCreationEvidence:
     return ConnectionCreationEvidence(
         prompt_version=prompt_version,
@@ -94,4 +96,5 @@ def build_connection_creation_evidence(
         processed_item_id=processed_item_id,
         adjudication_model=adjudication_model,
         adjudication_ai_model_config_id=adjudication_ai_model_config_id,
+        match_basis=match_basis,
     )

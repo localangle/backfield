@@ -22,6 +22,7 @@ from backfield_entities.connections.inference import (
     FamilyInferenceResult,
     classify_connection_family,
 )
+from backfield_entities.connections.same_site_hints import discover_same_site_org_location_hints
 from backfield_entities.connections.summary import build_auto_connections_summary
 from backfield_entities.connections.types import (
     AutoConnectionEdgeProposal,
@@ -125,6 +126,13 @@ def run_auto_connections_for_db_output(
                     pending_edges.append(
                         (from_type, to_type, from_entities, to_entities, edge)
                     )
+            same_site_hints = ()
+            if from_type == "organization" and to_type == "location":
+                same_site_hints = discover_same_site_org_location_hints(
+                    organizations=from_entities,
+                    locations=to_entities,
+                    article_text=context.article_text,
+                )
             result = classify_connection_family(
                 from_entity_type=from_type,
                 to_entity_type=to_type,
@@ -134,6 +142,7 @@ def run_auto_connections_for_db_output(
                 model=model,
                 model_config_id=model_config_id,
                 call_llm=call_llm,
+                same_site_hints=same_site_hints,
             )
             family_results.append(result)
             for edge in result.edges:

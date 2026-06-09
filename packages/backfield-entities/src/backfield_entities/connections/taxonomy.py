@@ -7,6 +7,7 @@ from backfield_entities.entities.location.types import ADDRESS_LIKE_LOCATION_TYP
 AUTO_CONNECTION_MIN_CONFIDENCE = 0.9
 AUTO_CONNECTION_EVIDENCE_SOURCE = "dboutput_auto_connections"
 AUTO_CONNECTION_PROMPT_VERSION = "auto_connections_v1"
+AUTO_CONNECTION_PROMPT_VERSION_WITH_HINTS = "auto_connections_v2"
 
 AUTO_LINK_ENDPOINT_PAIRS: frozenset[tuple[str, str]] = frozenset(
     {

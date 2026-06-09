@@ -43,15 +43,28 @@ def person_affiliation_matches_organization_label(
     return False
 
 
-def entity_comention_tokens(
-    *,
-    label: str | None,
-    affiliation: str | None = None,
-) -> tuple[str, ...]:
-    """Case-folded tokens used to detect co-mentions in article windows."""
+def head_name_segment(label: str | None) -> str:
+    """Primary name before the first comma (normalized)."""
+    if not label:
+        return ""
+    return normalize_organization_text(str(label).split(",")[0])
+
+
+def location_comention_tokens(label: str | None) -> tuple[str, ...]:
+    """Search tokens for a location label (head name + optional neighborhood segment)."""
     tokens: list[str] = []
-    for source in (label, affiliation):
-        tokens.extend(organization_match_tokens(source))
+    tokens.extend(organization_match_tokens(head_name_segment(label)))
+    if not label:
+        return _dedupe_tokens(tokens)
+    parts = [part.strip() for part in str(label).split(",")]
+    if len(parts) >= 2:
+        neighborhood = normalize_organization_text(parts[1])
+        if neighborhood:
+            tokens.append(neighborhood)
+    return _dedupe_tokens(tokens)
+
+
+def _dedupe_tokens(tokens: list[str]) -> tuple[str, ...]:
     out: list[str] = []
     seen: set[str] = set()
     for token in tokens:
@@ -59,3 +72,18 @@ def entity_comention_tokens(
             seen.add(token)
             out.append(token)
     return tuple(out)
+
+
+def entity_comention_tokens(
+    *,
+    label: str | None,
+    affiliation: str | None = None,
+    entity_type: str | None = None,
+) -> tuple[str, ...]:
+    """Case-folded tokens used to detect co-mentions in article windows."""
+    if (entity_type or "").strip().lower() == "location":
+        return location_comention_tokens(label)
+    tokens: list[str] = []
+    for source in (label, affiliation):
+        tokens.extend(organization_match_tokens(source))
+    return _dedupe_tokens(tokens)

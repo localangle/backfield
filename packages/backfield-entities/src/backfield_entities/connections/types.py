@@ -27,6 +27,8 @@ class AutoConnectionEdgeProposal(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     quote: str = Field(min_length=1)
     reason: str = ""
+    match_basis: str | None = None
+    prompt_version: str | None = None
 
 
 class AutoConnectionFamilyResponse(BaseModel):

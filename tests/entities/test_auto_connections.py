@@ -120,6 +120,25 @@ def test_build_connection_creation_evidence_excludes_raw_prompt_fields() -> None
     assert "raw_response" not in payload
 
 
+def test_build_connection_creation_evidence_includes_match_basis() -> None:
+    evidence = build_connection_creation_evidence(
+        confidence=0.95,
+        quote="Clerk at Byrne Elementary in Garfield Ridge.",
+        reason="Same-site school located_at place.",
+        from_entity_type="organization",
+        from_entity_id="org-b",
+        from_display_name="Byrne Elementary",
+        to_entity_type="location",
+        to_entity_id="loc-b",
+        to_display_name="Byrne Elementary, Garfield Ridge, Chicago, IL",
+        match_basis="head_name_match",
+        prompt_version="auto_connections_same_site_pair_v1",
+    )
+    payload = evidence.to_storage_dict()
+    assert payload["match_basis"] == "head_name_match"
+    assert payload["prompt_version"] == "auto_connections_same_site_pair_v1"
+
+
 def test_build_connection_creation_evidence_rejects_empty_quote() -> None:
     with pytest.raises(ValueError):
         build_connection_creation_evidence(

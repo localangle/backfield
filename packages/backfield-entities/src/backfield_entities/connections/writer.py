@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from backfield_entities.connections.evidence import build_connection_creation_evidence
+from backfield_entities.connections.taxonomy import AUTO_CONNECTION_PROMPT_VERSION
 from backfield_entities.connections.types import AutoConnectionEdgeProposal, LinkedEntitySnapshot
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,8 @@ def write_auto_connections(
                 and str(adjudication_ai_model_config_id).isdigit()
                 else None
             ),
+            prompt_version=edge.prompt_version or AUTO_CONNECTION_PROMPT_VERSION,
+            match_basis=edge.match_basis,
         )
         row = StylebookConnection(
             project_id=int(project_id),
