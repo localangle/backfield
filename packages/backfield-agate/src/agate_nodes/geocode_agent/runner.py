@@ -7,8 +7,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from agate_runtime.context import AgateEnvContext
-from agate_runtime.runners import run_geocode_agent_runtime
+from agate_runtime.runners import default_context, run_geocode_agent_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +90,7 @@ def _build_geocode_cache_bundle(
 
 
 def run_geocode_agent(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-    ctx = AgateEnvContext()
+    ctx = default_context()
     raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
     raw_sid = params.get("stylebook_id")
     if raw_sid is None:

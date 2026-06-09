@@ -90,16 +90,13 @@ def call_llm_tracked_sync(
             fallback_litellm_model=lm_model,
         )
 
-    if project_system_prompt:
-        system_message = project_system_prompt
-    elif system_message is None:
-        if force_json:
-            system_message = "You are a helpful assistant that returns only structured JSON output."
-        else:
-            system_message = (
-                "You are a helpful assistant that returns direct, concise responses "
-                "without markdown formatting or explanations."
-            )
+    from agate_utils.llm import merge_system_messages, resolve_project_system_prompt
+
+    system_message = merge_system_messages(
+        system_message,
+        resolve_project_system_prompt(project_system_prompt),
+        force_json=force_json,
+    )
 
     messages: list[dict[str, str]] = [
         {"role": "system", "content": system_message},

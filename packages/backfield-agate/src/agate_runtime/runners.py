@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 from agate_runtime.context import AgateEnvContext
@@ -31,7 +32,18 @@ from agate_nodes.place_extract.node_port import (
 
 
 def default_context() -> AgateEnvContext:
-    return AgateEnvContext()
+    """Build run context from worker env overlays when present."""
+    prompt = os.getenv("BACKFIELD_PROJECT_SYSTEM_PROMPT", "").strip() or None
+    run_id = os.getenv("BACKFIELD_RUN_ID", "backfield")
+    raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
+    project_id: int | None = None
+    if raw_pid and str(raw_pid).strip().isdigit():
+        project_id = int(str(raw_pid).strip())
+    return AgateEnvContext(
+        run_id=str(run_id),
+        project_id=project_id,
+        project_system_prompt=prompt,
+    )
 
 
 async def run_place_extract_async(
