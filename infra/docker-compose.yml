@@ -145,7 +145,7 @@ services:
         "-Q",
         "agate",
         "--concurrency",
-        "${CELERY_WORKER_CONCURRENCY:-8}",
+        "${CELERY_WORKER_CONCURRENCY:-16}",
       ]
     env_file:
       - path: ../.env
@@ -159,11 +159,13 @@ services:
       # do not exhaust Postgres max_connections alongside agate-api / core-api / stylebook-api.
       BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-2}
       BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-3}
+      CANONICAL_ADJUDICATION_MAX_CONCURRENT: ${CANONICAL_ADJUDICATION_MAX_CONCURRENT:-8}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # STYLEBOOK_BUNDLE_* from env_file (../.env); avoid empty compose override (see stylebook-api).
       # LLM / geocoder keys: repo-root .env via env_file above.
       PROJECT_SLUG: ${PROJECT_SLUG:-}
+      BACKFIELD_PARALLEL_GRAPH_LEVELS: ${BACKFIELD_PARALLEL_GRAPH_LEVELS:-1}
       TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}
       TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-4200}
     depends_on:

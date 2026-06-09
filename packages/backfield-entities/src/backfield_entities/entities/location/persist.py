@@ -19,7 +19,10 @@ from backfield_entities.canonical.link import (
 )
 from backfield_entities.canonical.match_score import _loose_key
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
-from backfield_entities.canonical.slug import allocate_unique_canonical_slug
+from backfield_entities.canonical.slug import (
+    allocate_unique_canonical_slug,
+    flush_new_canonical_with_slug_retry,
+)
 
 
 def assert_canonical_link_invariant(location: SubstrateLocation) -> None:
@@ -199,21 +202,29 @@ def create_standalone_canonical(
     geometry_type_str = str(gt_raw) if gt_raw is not None else None
     lt = (location_type or "").strip().lower() or None
     fa = (formatted_address or "").strip() or None
-    slug = allocate_unique_canonical_slug(session, stylebook_id=stylebook_id, label=clean)
-    canon = StylebookLocationCanonical(
+    def _build_row(slug: str) -> StylebookLocationCanonical:
+        return StylebookLocationCanonical(
+            stylebook_id=stylebook_id,
+            label=clean,
+            slug=slug,
+            location_type=lt,
+            formatted_address=fa,
+            primary_substrate_location_id=None,
+            status="active",
+            geometry_json=gj,
+            geometry_type=geometry_type_str,
+            geometry=None,
+        )
+
+    canon = flush_new_canonical_with_slug_retry(
+        session,
         stylebook_id=stylebook_id,
         label=clean,
-        slug=slug,
-        location_type=lt,
-        formatted_address=fa,
-        primary_substrate_location_id=None,
-        status="active",
-        geometry_json=gj,
-        geometry_type=geometry_type_str,
-        geometry=None,
+        allocate_slug=lambda sess, sb_id, lbl: allocate_unique_canonical_slug(
+            sess, stylebook_id=sb_id, label=lbl
+        ),
+        build_row=_build_row,
     )
-    session.add(canon)
-    session.flush()
     cid = str(canon.id)
     seed_aliases_for_canonical_label(
         session, canon_id=cid, label=clean, provenance=provenance
@@ -236,32 +247,40 @@ def materialize_new_canonical_and_link(
     gj = location.geometry_json
     lt = (location.location_type or "").strip().lower() or None
     fa = (location.formatted_address or "").strip() or None
-    slug = allocate_unique_canonical_slug(
-        session, stylebook_id=stylebook_id, label=str(location.name)
-    )
     comps = place_extract_components_from_entry(location, None)
     jur = stylebook_jurisdiction_fields_from_components(comps)
     dfields = stylebook_district_fields_from_components(comps)
-    canon = StylebookLocationCanonical(
+    label = str(location.name)
+
+    def _build_row(slug: str) -> StylebookLocationCanonical:
+        return StylebookLocationCanonical(
+            stylebook_id=stylebook_id,
+            label=label,
+            slug=slug,
+            location_type=lt,
+            formatted_address=fa,
+            primary_substrate_location_id=None,
+            status="active",
+            geometry_json=dict(gj) if isinstance(gj, dict) else gj,
+            geometry_type=location.geometry_type,
+            geometry=location.geometry,
+            country_code=jur["country_code"],
+            subdivision_code=jur["subdivision_code"],
+            city_name=jur["city_name"],
+            district_kind=dfields["district_kind"],
+            district_number=dfields["district_number"],
+            district_key=dfields["district_key"],
+        )
+
+    canon = flush_new_canonical_with_slug_retry(
+        session,
         stylebook_id=stylebook_id,
-        label=str(location.name),
-        slug=slug,
-        location_type=lt,
-        formatted_address=fa,
-        primary_substrate_location_id=None,
-        status="active",
-        geometry_json=dict(gj) if isinstance(gj, dict) else gj,
-        geometry_type=location.geometry_type,
-        geometry=location.geometry,
-        country_code=jur["country_code"],
-        subdivision_code=jur["subdivision_code"],
-        city_name=jur["city_name"],
-        district_kind=dfields["district_kind"],
-        district_number=dfields["district_number"],
-        district_key=dfields["district_key"],
+        label=label,
+        allocate_slug=lambda sess, sb_id, lbl: allocate_unique_canonical_slug(
+            sess, stylebook_id=sb_id, label=lbl
+        ),
+        build_row=_build_row,
     )
-    session.add(canon)
-    session.flush()
     cid = str(canon.id)
     location.stylebook_location_canonical_id = cid
     location.canonical_link_status = CANONICAL_LINK_LINKED

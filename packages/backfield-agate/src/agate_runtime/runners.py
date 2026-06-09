@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 from agate_runtime.context import AgateEnvContext
@@ -31,10 +32,21 @@ from agate_nodes.place_extract.node_port import (
 
 
 def default_context() -> AgateEnvContext:
-    return AgateEnvContext()
+    """Build run context from worker env overlays when present."""
+    prompt = os.getenv("BACKFIELD_PROJECT_SYSTEM_PROMPT", "").strip() or None
+    run_id = os.getenv("BACKFIELD_RUN_ID", "backfield")
+    raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
+    project_id: int | None = None
+    if raw_pid and str(raw_pid).strip().isdigit():
+        project_id = int(str(raw_pid).strip())
+    return AgateEnvContext(
+        run_id=str(run_id),
+        project_id=project_id,
+        project_system_prompt=prompt,
+    )
 
 
-async def _place_extract_async(
+async def run_place_extract_async(
     params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
 ) -> dict[str, Any]:
     node = PlaceExtractNode()
@@ -52,10 +64,10 @@ def run_place_extract_runtime(
     ctx: AgateEnvContext | None = None,
 ) -> dict[str, Any]:
     ctx = ctx or default_context()
-    return asyncio.run(_place_extract_async(params, input_state, ctx))
+    return asyncio.run(run_place_extract_async(params, input_state, ctx))
 
 
-async def _person_extract_async(
+async def run_person_extract_async(
     params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
 ) -> dict[str, Any]:
     node = PersonExtractNode()
@@ -73,10 +85,10 @@ def run_person_extract_runtime(
     ctx: AgateEnvContext | None = None,
 ) -> dict[str, Any]:
     ctx = ctx or default_context()
-    return asyncio.run(_person_extract_async(params, input_state, ctx))
+    return asyncio.run(run_person_extract_async(params, input_state, ctx))
 
 
-async def _organization_extract_async(
+async def run_organization_extract_async(
     params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
 ) -> dict[str, Any]:
     node = OrganizationExtractNode()
@@ -94,10 +106,10 @@ def run_organization_extract_runtime(
     ctx: AgateEnvContext | None = None,
 ) -> dict[str, Any]:
     ctx = ctx or default_context()
-    return asyncio.run(_organization_extract_async(params, input_state, ctx))
+    return asyncio.run(run_organization_extract_async(params, input_state, ctx))
 
 
-async def _geocode_async(
+async def run_geocode_agent_async(
     params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
 ) -> dict[str, Any]:
     node = GeocodeAgent()
@@ -115,7 +127,16 @@ def run_geocode_agent_runtime(
     ctx: AgateEnvContext | None = None,
 ) -> dict[str, Any]:
     ctx = ctx or default_context()
-    return asyncio.run(_geocode_async(params, input_state, ctx))
+    return asyncio.run(run_geocode_agent_async(params, input_state, ctx))
+
+
+# Node types the parallel executor awaits directly (no nested asyncio.run).
+ASYNC_NODE_RUNNERS: dict[str, Any] = {
+    "PlaceExtract": run_place_extract_async,
+    "PersonExtract": run_person_extract_async,
+    "OrganizationExtract": run_organization_extract_async,
+    "GeocodeAgent": run_geocode_agent_async,
+}
 
 
 def run_output_runtime(merged_state: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:

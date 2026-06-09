@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
@@ -29,6 +30,8 @@ _CTX: ContextVar[LlmAttemptTrackingContext | None] = ContextVar("bf_llm_track_ct
 
 _CURRENT_NODE_ID: ContextVar[str | None] = ContextVar("bf_llm_current_node_id", default=None)
 _CURRENT_NODE_TYPE: ContextVar[str | None] = ContextVar("bf_llm_current_node_type", default=None)
+
+_PERSIST_LOCK = threading.Lock()
 
 
 def current_llm_tracking_context() -> LlmAttemptTrackingContext | None:
@@ -98,5 +101,6 @@ def persist_llm_attempt(
         error_type=error_type,
         error_message=error_message,
     )
-    ctx.session.add(row)
-    ctx.session.flush()
+    with _PERSIST_LOCK:
+        ctx.session.add(row)
+        ctx.session.flush()

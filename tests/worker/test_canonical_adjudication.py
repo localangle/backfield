@@ -521,6 +521,78 @@ def test_adjudicate_rejects_llm_choice_when_link_pair_denied(monkeypatch) -> Non
         assert adj.get("outcome") == "no_high_confidence_link"
 
 
+def test_adjudicate_rejects_llm_choice_when_content_sanity_blocks(monkeypatch) -> None:
+    """High-confidence LLM pick is coerced when POI identity is absent from the canonical label."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        park = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Jackson Park, Chicago, IL",
+            slug="jackson-park-chicago-il",
+            location_type="place",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        session.add(park)
+        session.commit()
+        session.refresh(park)
+        park_id = str(park.id)
+
+        loc = SubstrateLocation(
+            project_id=pid,
+            name="Tafari's Kitchen, Jackson Park, Chicago, IL",
+            normalized_name="tafari's kitchen, jackson park, chicago, il",
+            location_type="place",
+            identity_fingerprint="fp-adj-tafari",
+            source_details_json={
+                "place_extract_components": {
+                    "place": {"name": "Tafari's Kitchen", "addressable": True},
+                    "city": "Chicago",
+                }
+            },
+        )
+        session.add(loc)
+        session.commit()
+        session.refresh(loc)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_canonical_match",
+                    "best_canonical_id": park_id,
+                    "best_score": 0.28,
+                    "gate_demoted_recall_match": True,
+                    "recall_canonical_ids": [park_id],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                f'{{"canonical_id": "{park_id}", "confidence": 0.92, '
+                f'"rationale": "Substrate mentions Jackson Park."}}'
+            )
+
+        monkeypatch.setattr("worker.substrate.canonical.adjudication.call_llm", _fake_llm)
+
+        out = adjudicate_ambiguous_plan_with_llm(
+            session,
+            plan=plan,
+            location=loc,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+        )
+
+        assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "content_sanity_coerced"
+        assert adj.get("canonical_id") == park_id
+
+
 def test_adjudicate_political_district_fuzzy_plan_runs_llm(monkeypatch) -> None:
     """``linked_fuzzy_autolink`` + political_district is adjudicated like ambiguity."""
     engine = create_engine("sqlite://", echo=False)

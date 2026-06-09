@@ -11,6 +11,45 @@ from typing import Optional, Union
 # when the caller does not pass ``max_tokens`` (worker runs omit it and use LiteLLM defaults).
 ANTHROPIC_MESSAGES_MAX_TOKENS_FALLBACK = 128_000
 
+_DEFAULT_JSON_SYSTEM_MESSAGE = (
+    "You are a helpful assistant that returns only structured JSON output."
+)
+_DEFAULT_PLAIN_SYSTEM_MESSAGE = (
+    "You are a helpful assistant that returns direct, concise responses "
+    "without markdown formatting or explanations."
+)
+
+
+def default_system_message(*, force_json: bool) -> str:
+    """Baseline system role when a call site does not supply ``system_message``."""
+    return _DEFAULT_JSON_SYSTEM_MESSAGE if force_json else _DEFAULT_PLAIN_SYSTEM_MESSAGE
+
+
+def resolve_project_system_prompt(explicit: Optional[str] = None) -> Optional[str]:
+    """Return the project overlay: explicit kwarg, else ``BACKFIELD_PROJECT_SYSTEM_PROMPT`` env."""
+    if explicit is not None:
+        text = str(explicit).strip()
+        return text or None
+    env = os.getenv("BACKFIELD_PROJECT_SYSTEM_PROMPT", "").strip()
+    return env or None
+
+
+def merge_system_messages(
+    system_message: Optional[str],
+    project_system_prompt: Optional[str],
+    *,
+    force_json: bool,
+) -> str:
+    """Append the project system prompt after the node- or task-specific system message."""
+    base = str(system_message or "").strip()
+    if not base:
+        base = default_system_message(force_json=force_json)
+    overlay = str(project_system_prompt or "").strip()
+    if not overlay:
+        return base
+    return f"{base}\n\n{overlay}"
+
+
 def _get_anthropic_client(api_key: Optional[str] = None, timeout: float = 300.0) -> anthropic.Anthropic:
     """Get or create Anthropic client with provided API key and timeout.
     
@@ -100,7 +139,8 @@ def call_llm(
         openrouter_api_key: OpenRouter API key when using OpenRouter-routed models
         azure_api_key: Azure OpenAI API key when using Azure deployments
         azure_api_base: Azure OpenAI resource endpoint URL when using Azure deployments
-        project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
+        project_system_prompt: Optional project-level system prompt (appended after system_message;
+            when omitted, uses ``BACKFIELD_PROJECT_SYSTEM_PROMPT`` in worker runs)
         timeout: Request timeout in seconds (default: 300s / 5 minutes)
         model_config_id: Optional Backfield AI catalog row id for ``backfield_ai_call_record``.
         
@@ -141,14 +181,11 @@ def call_llm(
     if not model:
         model = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
 
-    # Set system message - project system prompt takes precedence
-    if project_system_prompt:
-        system_message = project_system_prompt
-    elif system_message is None:
-        if force_json:
-            system_message = "You are a helpful assistant that returns only structured JSON output."
-        else:
-            system_message = "You are a helpful assistant that returns direct, concise responses without markdown formatting or explanations."
+    system_message = merge_system_messages(
+        system_message,
+        resolve_project_system_prompt(project_system_prompt),
+        force_json=force_json,
+    )
 
     # Determine which client to use based on model name
     if model.startswith('gpt'):
@@ -407,7 +444,8 @@ def call_llm_with_image(
         force_json: Whether to force JSON output (default: True)
         max_retries: Maximum number of retry attempts (default: 3)
         openai_api_key: OpenAI API key (required)
-        project_system_prompt: Optional project-level system prompt (takes precedence over system_message)
+        project_system_prompt: Optional project-level system prompt (appended after system_message;
+            when omitted, uses ``BACKFIELD_PROJECT_SYSTEM_PROMPT`` in worker runs)
         
     Returns:
         The LLM response text
@@ -427,15 +465,12 @@ def call_llm_with_image(
     if not model.startswith('gpt'):
         raise ValueError(f"Image input is only supported for OpenAI models. Got model: {model}")
     
-    # Set system message - project system prompt takes precedence
-    if project_system_prompt:
-        system_message = project_system_prompt
-    elif system_message is None:
-        if force_json:
-            system_message = "You are a helpful assistant that returns only structured JSON output."
-        else:
-            system_message = "You are a helpful assistant that returns direct, concise responses without markdown formatting or explanations."
-    
+    system_message = merge_system_messages(
+        system_message,
+        resolve_project_system_prompt(project_system_prompt),
+        force_json=force_json,
+    )
+
     # Combine system message with prompt
     full_prompt = f"{system_message}\n\n{prompt}" if system_message else prompt
     

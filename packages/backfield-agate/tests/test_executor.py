@@ -1,11 +1,14 @@
 """Unit tests for graph execution."""
 
+import asyncio
 import json
 import os
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-from agate_runtime import Edge, GraphSpec, NodeConfig, execute_graph
+from agate_runtime import Edge, GraphSpec, NodeConfig, build_execution_levels, execute_graph
 from agate_runtime.executor import GraphExecutionError
 
 
@@ -433,3 +436,327 @@ def test_json_input_article_fields_reach_dboutput_after_geocode():
     assert db_out.get("url") == "https://chicago.suntimes.com/crime/2026/04/19/example"
     assert db_out.get("author") == "Sun-Times Wire"
     assert db_out.get("publication") == "Chicago Sun-Times"
+
+
+def _fanout_extract_spec() -> GraphSpec:
+    return GraphSpec(
+        name="fanout-extracts",
+        nodes=[
+            NodeConfig(
+                id="in",
+                type="TextInput",
+                params={"text": "Mayor Jane Doe works for City Hall in Chicago, IL."},
+            ),
+            NodeConfig(id="org", type="OrganizationExtract", params={}),
+            NodeConfig(id="per", type="PersonExtract", params={}),
+            NodeConfig(id="plc", type="PlaceExtract", params={}),
+        ],
+        edges=[
+            Edge(source="in", target="org", sourceHandle="text", targetHandle="text"),
+            Edge(source="in", target="per", sourceHandle="text", targetHandle="text"),
+            Edge(source="in", target="plc", sourceHandle="text", targetHandle="text"),
+        ],
+    )
+
+
+def _mock_org_json() -> str:
+    return json.dumps(
+        {
+            "organizations": [
+                {
+                    "name": "City Hall",
+                    "type": "government",
+                    "role_in_story": "Employer",
+                    "nature": "actor",
+                    "nature_secondary_tags": [],
+                    "mentions": [{"text": "City Hall", "quote": False}],
+                }
+            ]
+        }
+    )
+
+
+def _mock_person_json() -> str:
+    return json.dumps(
+        {
+            "people": [
+                {
+                    "name": "Jane Doe",
+                    "title": "Mayor",
+                    "affiliation": "City Hall",
+                    "public_figure": True,
+                    "type": "politician",
+                    "role_in_story": "Subject",
+                    "nature": "official",
+                    "nature_secondary_tags": [],
+                    "mentions": [{"text": "Mayor Jane Doe", "quote": False}],
+                }
+            ]
+        }
+    )
+
+
+def test_build_execution_levels_fan_out():
+    levels = build_execution_levels(_fanout_extract_spec())
+    assert levels == [["in"], ["org", "per", "plc"]]
+
+
+def test_build_execution_levels_linear_chain():
+    spec = GraphSpec(
+        name="linear",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "x"}),
+            NodeConfig(id="b", type="PlaceExtract", params={}),
+            NodeConfig(id="c", type="GeocodeAgent", params={}),
+        ],
+        edges=[
+            Edge(source="a", target="b", sourceHandle="text", targetHandle="text"),
+            Edge(source="b", target="c", sourceHandle="locations", targetHandle="locations"),
+        ],
+    )
+    assert build_execution_levels(spec) == [["a"], ["b"], ["c"]]
+
+
+def test_build_execution_levels_diamond_merge():
+    spec = GraphSpec(
+        name="diamond",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "x"}),
+            NodeConfig(id="b", type="PlaceExtract", params={}),
+            NodeConfig(id="c", type="PersonExtract", params={}),
+            NodeConfig(id="d", type="Output", params={}),
+        ],
+        edges=[
+            Edge(source="a", target="b", sourceHandle="text", targetHandle="text"),
+            Edge(source="a", target="c", sourceHandle="text", targetHandle="text"),
+            Edge(source="b", target="d", sourceHandle="locations", targetHandle="data"),
+            Edge(source="c", target="d", sourceHandle="people", targetHandle="data"),
+        ],
+    )
+    levels = build_execution_levels(spec)
+    assert levels[0] == ["a"]
+    assert set(levels[1]) == {"b", "c"}
+    assert levels[2] == ["d"]
+
+
+def test_build_execution_levels_cycle_raises():
+    spec = GraphSpec(
+        name="cycle",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "x"}),
+            NodeConfig(id="b", type="PlaceExtract", params={}),
+        ],
+        edges=[
+            Edge(source="a", target="b", sourceHandle="text", targetHandle="text"),
+            Edge(source="b", target="a", sourceHandle="locations", targetHandle="text"),
+        ],
+    )
+    with pytest.raises(GraphExecutionError, match="Cycle"):
+        build_execution_levels(spec)
+
+
+def test_fan_out_parallel_levels_faster_than_sequential(monkeypatch: pytest.MonkeyPatch):
+    sleep_s = 0.25
+    spec = _fanout_extract_spec()
+
+    def slow_org(*_a, **_k):
+        time.sleep(sleep_s)
+        return _mock_org_json()
+
+    def slow_person(*_a, **_k):
+        time.sleep(sleep_s)
+        return _mock_person_json()
+
+    def slow_place(*_a, **_k):
+        time.sleep(sleep_s)
+        return _mock_place_extract_json("Chicago", "Illinois", "IL")
+
+    patches = (
+        patch("agate_nodes.organization_extract.node_port.call_llm", side_effect=slow_org),
+        patch("agate_nodes.person_extract.node_port.call_llm", side_effect=slow_person),
+        patch("agate_nodes.place_extract.node_port.call_llm", side_effect=slow_place),
+    )
+    for p in patches:
+        p.start()
+    try:
+        monkeypatch.delenv("BACKFIELD_PARALLEL_GRAPH_LEVELS", raising=False)
+        t0 = time.perf_counter()
+        out_seq = execute_graph(spec)
+        seq_elapsed = time.perf_counter() - t0
+
+        monkeypatch.setenv("BACKFIELD_PARALLEL_GRAPH_LEVELS", "1")
+        t1 = time.perf_counter()
+        out_par = execute_graph(spec)
+        par_elapsed = time.perf_counter() - t1
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert seq_elapsed >= sleep_s * 3 * 0.85
+    assert par_elapsed < sleep_s * 2
+    assert set(out_seq.keys()) == set(out_par.keys())
+    assert out_seq["organization_extract"] == out_par["organization_extract"]
+    assert out_seq["person_extract"] == out_par["person_extract"]
+    assert out_seq["place_extract"] == out_par["place_extract"]
+
+
+def _fanout_with_geocode_spec(*, include_output: bool = False) -> GraphSpec:
+    nodes = [
+        NodeConfig(
+            id="in",
+            type="TextInput",
+            params={"text": "Mayor Jane Doe at City Hall in Chicago, IL."},
+        ),
+        NodeConfig(id="org", type="OrganizationExtract", params={}),
+        NodeConfig(id="plc", type="PlaceExtract", params={}),
+        NodeConfig(id="geo", type="GeocodeAgent", params={}),
+    ]
+    edges = [
+        Edge(source="in", target="org", sourceHandle="text", targetHandle="text"),
+        Edge(source="in", target="plc", sourceHandle="text", targetHandle="text"),
+        Edge(source="plc", target="geo", sourceHandle="locations", targetHandle="locations"),
+    ]
+    if include_output:
+        nodes.append(NodeConfig(id="out", type="Output", params={}))
+    return GraphSpec(name="fanout-geocode", nodes=nodes, edges=edges)
+
+
+def test_ready_geocode_starts_before_slow_sibling(monkeypatch: pytest.MonkeyPatch):
+    org_sleep_s = 1.0
+    place_sleep_s = 0.05
+    geo_sleep_s = 0.5
+    org_finished = threading.Event()
+    spec = _fanout_with_geocode_spec()
+
+    def slow_org(*_a, **_k):
+        time.sleep(org_sleep_s)
+        org_finished.set()
+        return _mock_org_json()
+
+    def slow_place(*_a, **_k):
+        time.sleep(place_sleep_s)
+        return _mock_place_extract_json("Chicago", "Illinois", "IL")
+
+    async def slow_geocode(*_a, **_k):
+        await asyncio.sleep(geo_sleep_s)
+        return await _fake_run_geocoding_agent()
+
+    def before_geo_starts_while_org_running(node_id: str, _node_type: str) -> None:
+        if node_id == "geo":
+            assert not org_finished.is_set(), "Geocode started before OrganizationExtract finished"
+
+    monkeypatch.setenv("BACKFIELD_PARALLEL_GRAPH_LEVELS", "1")
+    t0 = time.perf_counter()
+    with (
+        patch(
+            "agate_nodes.organization_extract.node_port.call_llm",
+            side_effect=slow_org,
+        ),
+        patch("agate_nodes.place_extract.node_port.call_llm", side_effect=slow_place),
+        patch(
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
+            side_effect=slow_geocode,
+        ),
+    ):
+        execute_graph(spec, before_each_node=before_geo_starts_while_org_running)
+    elapsed = time.perf_counter() - t0
+
+    level_barrier_lower_bound = org_sleep_s + geo_sleep_s
+    assert elapsed < level_barrier_lower_bound * 0.9
+    assert elapsed >= org_sleep_s * 0.85
+
+
+def test_output_waits_for_all_graph_nodes(monkeypatch: pytest.MonkeyPatch):
+    org_sleep_s = 0.6
+    execution_order: list[str] = []
+    spec = _fanout_with_geocode_spec(include_output=True)
+
+    def slow_org(*_a, **_k):
+        time.sleep(org_sleep_s)
+        return _mock_org_json()
+
+    def record_order(node_id: str, _node_type: str) -> None:
+        execution_order.append(node_id)
+
+    monkeypatch.setenv("BACKFIELD_PARALLEL_GRAPH_LEVELS", "1")
+    with (
+        patch(
+            "agate_nodes.organization_extract.node_port.call_llm",
+            side_effect=slow_org,
+        ),
+        patch(
+            "agate_nodes.place_extract.node_port.call_llm",
+            return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
+        ),
+        patch(
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
+            side_effect=_fake_run_geocoding_agent,
+        ),
+    ):
+        execute_graph(spec, before_each_node=record_order)
+
+    assert execution_order[-1] == "out"
+    assert execution_order.index("out") > execution_order.index("org")
+    assert execution_order.index("out") > execution_order.index("geo")
+
+
+def test_dboutput_waits_direct_upstream_only(monkeypatch: pytest.MonkeyPatch):
+    org_sleep_s = 1.0
+    geo_sleep_s = 0.4
+    org_finished = threading.Event()
+    spec = GraphSpec(
+        name="db-direct-upstream",
+        nodes=[
+            NodeConfig(
+                id="in",
+                type="TextInput",
+                params={"text": "Meetings at City Hall in Chicago, IL."},
+            ),
+            NodeConfig(id="org", type="OrganizationExtract", params={}),
+            NodeConfig(id="plc", type="PlaceExtract", params={}),
+            NodeConfig(id="geo", type="GeocodeAgent", params={}),
+            NodeConfig(id="db", type="DBOutput", params={}),
+        ],
+        edges=[
+            Edge(source="in", target="org", sourceHandle="text", targetHandle="text"),
+            Edge(source="in", target="plc", sourceHandle="text", targetHandle="text"),
+            Edge(source="plc", target="geo", sourceHandle="locations", targetHandle="locations"),
+            Edge(source="geo", target="db", sourceHandle="locations", targetHandle="data"),
+        ],
+    )
+
+    def slow_org(*_a, **_k):
+        time.sleep(org_sleep_s)
+        org_finished.set()
+        return _mock_org_json()
+
+    async def slow_geocode(*_a, **_k):
+        await asyncio.sleep(geo_sleep_s)
+        return await _fake_run_geocoding_agent()
+
+    def before_db_while_org_running(node_id: str, _node_type: str) -> None:
+        if node_id == "db":
+            assert not org_finished.is_set(), "DBOutput started before OrganizationExtract finished"
+
+    monkeypatch.setenv("BACKFIELD_PARALLEL_GRAPH_LEVELS", "1")
+    t0 = time.perf_counter()
+    with (
+        patch(
+            "agate_nodes.organization_extract.node_port.call_llm",
+            side_effect=slow_org,
+        ),
+        patch(
+            "agate_nodes.place_extract.node_port.call_llm",
+            return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
+        ),
+        patch(
+            "agate_nodes.geocode_agent.node.run_advanced_geocoding_agent",
+            side_effect=slow_geocode,
+        ),
+    ):
+        out = execute_graph(spec, before_each_node=before_db_while_org_running)
+    elapsed = time.perf_counter() - t0
+
+    level_barrier_lower_bound = org_sleep_s + geo_sleep_s
+    assert elapsed < level_barrier_lower_bound * 0.9
+    assert out["stylebook_output"].get("success") is True

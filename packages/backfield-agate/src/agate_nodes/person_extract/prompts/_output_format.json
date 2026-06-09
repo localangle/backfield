@@ -39,6 +39,24 @@
       ]
     },
     {
+      "name": "Kyle Schwarber",
+      "title": "",
+      "affiliation": "Philadelphia Phillies",
+      "public_figure": true,
+      "type": "athlete",
+      "sort_key": "schwarber",
+      "role_in_story": "Among major-league home run leaders",
+      "nature": "context",
+      "nature_secondary_tags": [],
+      "review_handling": "none",
+      "mentions": [
+        {
+          "text": "His 20 home runs trailed only Phillies masher Kyle Schwarber's 22 in the majors, and his 44 walks ranked fifth.",
+          "quote": false
+        }
+      ]
+    },
+    {
       "name": "Prince",
       "title": "",
       "affiliation": "",

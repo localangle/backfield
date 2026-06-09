@@ -21,6 +21,7 @@ from backfield_entities.canonical.link import (
     CANONICAL_LINK_WAIVED,
 )
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision, CanonicalPersistPlan
+from backfield_entities.canonical.slug import flush_new_canonical_with_slug_retry
 from backfield_entities.entities.person.catalog_provenance import (
     is_person_catalog_editorial_provenance,
 )
@@ -234,22 +235,31 @@ def create_standalone_canonical(
     clean = label.strip()
     if not clean:
         raise ValueError("label is required")
-    slug = allocate_unique_person_canonical_slug(session, stylebook_id=stylebook_id, label=clean)
     resolved_sort_key = derive_person_sort_key(clean, explicit=sort_key)
-    canon = StylebookPersonCanonical(
+
+    def _build_row(slug: str) -> StylebookPersonCanonical:
+        return StylebookPersonCanonical(
+            stylebook_id=stylebook_id,
+            label=clean,
+            slug=slug,
+            title=(title or "").strip() or None,
+            affiliation=(affiliation or "").strip() or None,
+            public_figure=public_figure,
+            person_type=(person_type or "").strip() or None,
+            sort_key=resolved_sort_key,
+            primary_substrate_person_id=None,
+            status="active",
+        )
+
+    canon = flush_new_canonical_with_slug_retry(
+        session,
         stylebook_id=stylebook_id,
         label=clean,
-        slug=slug,
-        title=(title or "").strip() or None,
-        affiliation=(affiliation or "").strip() or None,
-        public_figure=public_figure,
-        person_type=(person_type or "").strip() or None,
-        sort_key=resolved_sort_key,
-        primary_substrate_person_id=None,
-        status="active",
+        allocate_slug=lambda sess, sb_id, lbl: allocate_unique_person_canonical_slug(
+            sess, stylebook_id=sb_id, label=lbl
+        ),
+        build_row=_build_row,
     )
-    session.add(canon)
-    session.flush()
     cid = str(canon.id)
     for norm in person_alias_lookup_keys(clean):
         upsert_alias_for_canonical_text(
@@ -277,18 +287,27 @@ def materialize_new_canonical_and_link(
     clean = (label or person.name or "").strip()
     if not clean:
         return
-    slug = allocate_unique_person_canonical_slug(session, stylebook_id=stylebook_id, label=clean)
     fields = _mirror_fields_from_substrate(person)
-    canon = StylebookPersonCanonical(
+
+    def _build_row(slug: str) -> StylebookPersonCanonical:
+        return StylebookPersonCanonical(
+            stylebook_id=stylebook_id,
+            label=clean,
+            slug=slug,
+            primary_substrate_person_id=None,
+            status="active",
+            **fields,
+        )
+
+    canon = flush_new_canonical_with_slug_retry(
+        session,
         stylebook_id=stylebook_id,
         label=clean,
-        slug=slug,
-        primary_substrate_person_id=None,
-        status="active",
-        **fields,
+        allocate_slug=lambda sess, sb_id, lbl: allocate_unique_person_canonical_slug(
+            sess, stylebook_id=sb_id, label=lbl
+        ),
+        build_row=_build_row,
     )
-    session.add(canon)
-    session.flush()
     cid = str(canon.id)
     person.stylebook_person_canonical_id = cid
     person.canonical_link_status = CANONICAL_LINK_LINKED

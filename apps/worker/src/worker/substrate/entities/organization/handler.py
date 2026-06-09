@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
-from backfield_db import SubstrateOrganizationMention
+from backfield_db import SubstrateOrganization, SubstrateOrganizationMention
 from backfield_entities.canonical.link import CANONICAL_LINK_UNLINKED
+from backfield_entities.canonical.plan_types import CanonicalPersistPlan
 from backfield_entities.entities.organization.persist import (
     apply_canonical_persist_plan,
     apply_canonical_persist_plan_review_only,
@@ -16,6 +18,7 @@ from backfield_entities.entities.organization.policy import (
     decide_organization_canonical_persist_plan,
     plan_requires_llm_organization_canonical_adjudication,
     plan_requires_llm_organization_name_variant_recall,
+    replan_organization_canonical_after_name_variants,
 )
 from backfield_entities.entities.organization.review import (
     parse_organization_boundary_from_entry,
@@ -23,9 +26,16 @@ from backfield_entities.entities.organization.review import (
 )
 from sqlmodel import Session, col, select
 
+from worker.substrate.canonical.parallel_llm import (
+    canonical_adjudication_max_concurrent,
+    run_callables_parallel,
+)
 from worker.substrate.entities.organization.adjudication import (
-    adjudicate_ambiguous_organization_plan_with_llm,
-    enrich_materialize_plan_with_name_variant_recall,
+    OrganizationAdjudicationPrepared,
+    llm_suggest_organization_name_variants,
+    prepare_organization_adjudication,
+    resolve_organization_adjudication_plan,
+    run_organization_adjudication_llm,
 )
 from worker.substrate.entities.organization.mentions import (
     _upsert_mention_and_occurrence,
@@ -46,6 +56,19 @@ from worker.substrate.entities.registry import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class _OrgCanonicalWork:
+    organization: SubstrateOrganization
+    bucket: str
+    entry: dict[str, Any]
+    plan: CanonicalPersistPlan
+
+
+@dataclass
+class _PendingOrgAdjudication(_OrgCanonicalWork):
+    prepared: OrganizationAdjudicationPrepared
+
+
 def _active_mention_for_article_organization(
     session: Session,
     *,
@@ -63,6 +86,88 @@ def _active_mention_for_article_organization(
 
 def _editor_touched_mention(mention: Any | None) -> bool:
     return bool(mention is not None and (bool(mention.edited) or bool(mention.added)))
+
+
+def _apply_organization_plan_and_mention(
+    session: Session,
+    ctx: PersistContext,
+    *,
+    organization: SubstrateOrganization,
+    bucket: str,
+    entry: dict[str, Any],
+    plan: CanonicalPersistPlan,
+) -> None:
+    if ctx.stylebook_id is None:
+        return
+    if ctx.settings.auto_apply_canonicalization:
+        apply_canonical_persist_plan(
+            session,
+            stylebook_id=ctx.stylebook_id,
+            organization=organization,
+            plan=plan,
+            organizations_bucket=bucket,
+            provenance="substrate_ingest",
+            auto_apply_canonicalization=True,
+        )
+    else:
+        apply_canonical_persist_plan_review_only(
+            session,
+            stylebook_id=ctx.stylebook_id,
+            organization=organization,
+            plan=plan,
+            organizations_bucket=bucket,
+        )
+    _upsert_mention_and_occurrence(
+        session,
+        article_id=int(ctx.article_id),
+        organization_id=int(organization.id),  # type: ignore[arg-type]
+        article_text=ctx.article_text,
+        entry=entry,
+        run_id=ctx.run_id,
+        graph_id=ctx.graph_id,
+        bucket=bucket,
+        preserve_editor_changes=ctx.policy == "smart_merge",
+    )
+
+
+def _queue_adjudication_or_apply(
+    session: Session,
+    ctx: PersistContext,
+    *,
+    work: _OrgCanonicalWork,
+    pending_adjudication: list[_PendingOrgAdjudication],
+    adj_model: str,
+) -> None:
+    organization = work.organization
+    plan = work.plan
+    if plan_requires_llm_organization_canonical_adjudication(plan, organization):
+        prepared = prepare_organization_adjudication(
+            session,
+            plan=plan,
+            organization=organization,
+            stylebook_id=int(ctx.stylebook_id),  # type: ignore[arg-type]
+            model=adj_model,
+            model_config_id=ctx.settings.adjudication_ai_model_config_id,
+        )
+        if prepared is not None:
+            pending_adjudication.append(
+                _PendingOrgAdjudication(
+                    organization=organization,
+                    bucket=work.bucket,
+                    entry=work.entry,
+                    plan=plan,
+                    prepared=prepared,
+                )
+            )
+            return
+    _apply_organization_plan_and_mention(
+        session,
+        ctx,
+        organization=organization,
+        bucket=work.bucket,
+        entry=work.entry,
+        plan=plan,
+    )
 
 
 class OrganizationPersistHandler:
@@ -88,6 +193,10 @@ class OrganizationPersistHandler:
         updated = 0
         skipped = 0
         preserved = 0
+        pending_variant_recall: list[_OrgCanonicalWork] = []
+        pending_adjudication: list[_PendingOrgAdjudication] = []
+        adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
+        ai_assisted = ctx.settings.canonicalization_mode == "ai_assisted"
 
         for idx, (bucket, entry) in enumerate(_iter_organizations_entries(organizations)):
             anchor = entry.get("id") or entry.get("mention_id")
@@ -135,6 +244,17 @@ class OrganizationPersistHandler:
                     organization=organization,
                     provenance="substrate_ingest",
                 )
+                _upsert_mention_and_occurrence(
+                    session,
+                    article_id=int(ctx.article_id),
+                    organization_id=int(organization.id),  # type: ignore[arg-type]
+                    article_text=ctx.article_text,
+                    entry=entry,
+                    run_id=ctx.run_id,
+                    graph_id=ctx.graph_id,
+                    bucket=bucket,
+                    preserve_editor_changes=policy == "smart_merge",
+                )
             elif ctx.stylebook_id is not None:
                 plan = decide_organization_canonical_persist_plan(
                     session,
@@ -153,70 +273,165 @@ class OrganizationPersistHandler:
                         plan=plan,
                         organizations_bucket=bucket,
                     )
-                else:
-                    adj_model = (ctx.settings.adjudication_model or "").strip() or "gpt-5-nano"
-                    if (
-                        ctx.settings.canonicalization_mode == "ai_assisted"
-                        and plan_requires_llm_organization_name_variant_recall(
-                            plan, organization
-                        )
-                    ):
-                        plan = enrich_materialize_plan_with_name_variant_recall(
-                            session,
-                            plan=plan,
+                    _upsert_mention_and_occurrence(
+                        session,
+                        article_id=int(ctx.article_id),
+                        organization_id=int(organization.id),  # type: ignore[arg-type]
+                        article_text=ctx.article_text,
+                        entry=entry,
+                        run_id=ctx.run_id,
+                        graph_id=ctx.graph_id,
+                        bucket=bucket,
+                        preserve_editor_changes=policy == "smart_merge",
+                    )
+                elif (
+                    ai_assisted
+                    and plan_requires_llm_organization_name_variant_recall(plan, organization)
+                ):
+                    pending_variant_recall.append(
+                        _OrgCanonicalWork(
                             organization=organization,
-                            stylebook_id=ctx.stylebook_id,
-                            model=adj_model,
-                            model_config_id=ctx.settings.adjudication_ai_model_config_id,
-                            organizations_bucket=bucket,
-                            auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
-                        )
-                    if (
-                        ctx.settings.canonicalization_mode == "ai_assisted"
-                        and plan_requires_llm_organization_canonical_adjudication(
-                            plan, organization
-                        )
-                    ):
-                        plan = adjudicate_ambiguous_organization_plan_with_llm(
-                            session,
+                            bucket=bucket,
+                            entry=entry,
                             plan=plan,
-                            organization=organization,
-                            stylebook_id=ctx.stylebook_id,
-                            model=adj_model,
-                            model_config_id=ctx.settings.adjudication_ai_model_config_id,
                         )
-                    if ctx.settings.auto_apply_canonicalization:
-                        apply_canonical_persist_plan(
-                            session,
-                            stylebook_id=ctx.stylebook_id,
-                            organization=organization,
-                            plan=plan,
-                            organizations_bucket=bucket,
-                            provenance="substrate_ingest",
-                            auto_apply_canonicalization=True,
+                    )
+                elif ai_assisted and plan_requires_llm_organization_canonical_adjudication(
+                    plan, organization
+                ):
+                    prepared = prepare_organization_adjudication(
+                        session,
+                        plan=plan,
+                        organization=organization,
+                        stylebook_id=ctx.stylebook_id,
+                        model=adj_model,
+                        model_config_id=ctx.settings.adjudication_ai_model_config_id,
+                    )
+                    if prepared is not None:
+                        pending_adjudication.append(
+                            _PendingOrgAdjudication(
+                                organization=organization,
+                                bucket=bucket,
+                                entry=entry,
+                                plan=plan,
+                                prepared=prepared,
+                            )
                         )
                     else:
-                        apply_canonical_persist_plan_review_only(
+                        _apply_organization_plan_and_mention(
                             session,
-                            stylebook_id=ctx.stylebook_id,
+                            ctx,
                             organization=organization,
+                            bucket=bucket,
+                            entry=entry,
                             plan=plan,
-                            organizations_bucket=bucket,
                         )
+                else:
+                    _apply_organization_plan_and_mention(
+                        session,
+                        ctx,
+                        organization=organization,
+                        bucket=bucket,
+                        entry=entry,
+                        plan=plan,
+                    )
             elif organization.stylebook_organization_canonical_id is None:
                 organization.canonical_link_status = CANONICAL_LINK_UNLINKED
                 session.add(organization)
-            _upsert_mention_and_occurrence(
-                session,
-                article_id=int(ctx.article_id),
-                organization_id=int(organization.id),  # type: ignore[arg-type]
-                article_text=ctx.article_text,
-                entry=entry,
-                run_id=ctx.run_id,
-                graph_id=ctx.graph_id,
-                bucket=bucket,
-                preserve_editor_changes=policy == "smart_merge",
+                _upsert_mention_and_occurrence(
+                    session,
+                    article_id=int(ctx.article_id),
+                    organization_id=int(organization.id),  # type: ignore[arg-type]
+                    article_text=ctx.article_text,
+                    entry=entry,
+                    run_id=ctx.run_id,
+                    graph_id=ctx.graph_id,
+                    bucket=bucket,
+                    preserve_editor_changes=policy == "smart_merge",
+                )
+            else:
+                _upsert_mention_and_occurrence(
+                    session,
+                    article_id=int(ctx.article_id),
+                    organization_id=int(organization.id),  # type: ignore[arg-type]
+                    article_text=ctx.article_text,
+                    entry=entry,
+                    run_id=ctx.run_id,
+                    graph_id=ctx.graph_id,
+                    bucket=bucket,
+                    preserve_editor_changes=policy == "smart_merge",
+                )
+
+        if pending_variant_recall and ai_assisted:
+            max_workers = canonical_adjudication_max_concurrent()
+            variant_results = run_callables_parallel(
+                [
+                    lambda org=item.organization: llm_suggest_organization_name_variants(
+                        organization=org,
+                        model=adj_model,
+                        model_config_id=ctx.settings.adjudication_ai_model_config_id,
+                    )
+                    for item in pending_variant_recall
+                ],
+                max_workers=max_workers,
             )
+            for item, variants in zip(pending_variant_recall, variant_results, strict=True):
+                plan = item.plan
+                if variants:
+                    plan = replan_organization_canonical_after_name_variants(
+                        session,
+                        stylebook_id=int(ctx.stylebook_id),  # type: ignore[arg-type]
+                        organization=item.organization,
+                        variant_names=variants,
+                        organizations_bucket=item.bucket,
+                        auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
+                    )
+                if ai_assisted:
+                    _queue_adjudication_or_apply(
+                        session,
+                        ctx,
+                        work=_OrgCanonicalWork(
+                            organization=item.organization,
+                            bucket=item.bucket,
+                            entry=item.entry,
+                            plan=plan,
+                        ),
+                        pending_adjudication=pending_adjudication,
+                        adj_model=adj_model,
+                    )
+                else:
+                    _apply_organization_plan_and_mention(
+                        session,
+                        ctx,
+                        organization=item.organization,
+                        bucket=item.bucket,
+                        entry=item.entry,
+                        plan=plan,
+                    )
+
+        if pending_adjudication:
+            max_workers = canonical_adjudication_max_concurrent()
+            llm_results = run_callables_parallel(
+                [
+                    lambda p=item.prepared: run_organization_adjudication_llm(p)
+                    for item in pending_adjudication
+                ],
+                max_workers=max_workers,
+            )
+            for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
+                plan = resolve_organization_adjudication_plan(
+                    item.plan,
+                    prepared=item.prepared,
+                    llm_data=llm_data,
+                )
+                _apply_organization_plan_and_mention(
+                    session,
+                    ctx,
+                    organization=item.organization,
+                    bucket=item.bucket,
+                    entry=item.entry,
+                    plan=plan,
+                )
 
         retired_mentions = 0
         substrates_disposed = 0

@@ -17,6 +17,8 @@ from backfield_db import (
     StylebookLocationCanonical,
     StylebookLocationMeta,
     StylebookMembership,
+    StylebookOrganizationCanonical,
+    StylebookPersonCanonical,
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
@@ -2730,6 +2732,26 @@ def test_get_suggested_canonicals_for_pending_candidate(
     with Session(engine) as s:
         proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
         pid = int(proj.id)
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        canon = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Suggestme",
+            slug="suggestme-canon",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(canon)
+        s.flush()
+        s.add(
+            StylebookLocationAlias(
+                location_canonical_id=str(canon.id),
+                alias_text="Suggestme",
+                normalized_alias="suggestme",
+                provenance="test",
+                suppressed=False,
+            )
+        )
         loc = SubstrateLocation(
             project_id=pid,
             name="Suggestme",
@@ -2752,6 +2774,7 @@ def test_get_suggested_canonicals_for_pending_candidate(
     body = r.json()
     assert "suggestions" in body
     assert isinstance(body["suggestions"], list)
+    assert len(body["suggestions"]) >= 1
 
 
 def test_stylebook_canonical_location_meta_crud(
@@ -2850,7 +2873,10 @@ def test_stylebook_canonical_location_connections_roundtrip(
         json={"to_entity_type": "location", "to_entity_id": bid, "nature": "near"},
     )
     assert r1.status_code == 200
-    conn_id = int(r1.json()["id"])
+    body = r1.json()
+    conn_id = int(body["id"])
+    assert body["nature"] == "near"
+    assert body.get("evidence_json") is None
 
     r2 = editor_client.get(
         f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
@@ -2878,3 +2904,239 @@ def test_stylebook_canonical_location_connections_roundtrip(
     with Session(engine) as s:
         row = s.get(StylebookConnection, conn_id)
         assert row is None
+
+
+def test_stylebook_person_and_organization_connections_list(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    """Auto-created person↔organization edges must list from both canonical detail pages."""
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        sb_id = int(stylebook.id)  # type: ignore[arg-type]
+        person = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Conn Person",
+            slug="conn-person",
+            status="active",
+        )
+        organization = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Conn Org",
+            slug="conn-org",
+            organization_type="government",
+            status="active",
+        )
+        s.add(person)
+        s.add(organization)
+        s.commit()
+        s.refresh(person)
+        s.refresh(organization)
+        person_id = str(person.id)
+        org_id = str(organization.id)
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        s.add(
+            StylebookConnection(
+                project_id=int(proj.id),
+                from_entity_type="person",
+                from_entity_id=person_id,
+                to_entity_type="organization",
+                to_entity_id=org_id,
+                nature="works_for",
+                evidence_json={
+                    "source": "dboutput_auto_connections",
+                    "confidence": 0.95,
+                    "quote": "Jane works for Conn Org.",
+                    "reason": "Explicit employment in text.",
+                },
+            )
+        )
+        s.commit()
+
+    person_res = editor_client.get(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections"
+    )
+    assert person_res.status_code == 200
+    person_rows = person_res.json()["connections"]
+    assert len(person_rows) == 1
+    assert person_rows[0]["nature"] == "works_for"
+    assert person_rows[0]["to_display_name"] == "Conn Org"
+    assert person_rows[0]["evidence_json"]["quote"] == "Jane works for Conn Org."
+
+    org_res = editor_client.get(
+        f"/v1/stylebooks/default/canonical-organizations/{org_id}/connections"
+    )
+    assert org_res.status_code == 200
+    org_rows = org_res.json()["connections"]
+    assert len(org_rows) == 1
+    assert org_rows[0]["from_display_name"] == "Conn Person"
+
+
+def test_stylebook_person_connection_crud(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    """Manual person connections can be created, updated, and deleted from stylebook routes."""
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        sb_id = int(stylebook.id)  # type: ignore[arg-type]
+        person = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Manual Conn Person",
+            slug="manual-conn-person",
+            status="active",
+        )
+        location = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="Manual Conn Place",
+            slug="manual-conn-place",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(person)
+        s.add(location)
+        s.commit()
+        s.refresh(person)
+        s.refresh(location)
+        person_id = str(person.id)
+        location_id = str(location.id)
+
+    create_res = editor_client.post(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections",
+        json={
+            "to_entity_type": "location",
+            "to_entity_id": location_id,
+            "nature": "born in",
+        },
+    )
+    assert create_res.status_code == 200
+    body = create_res.json()
+    conn_id = int(body["id"])
+    assert body["nature"] == "born in"
+    assert body["to_display_name"] == "Manual Conn Place"
+    assert body.get("evidence_json") is None
+
+    list_res = editor_client.get(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections"
+    )
+    assert list_res.status_code == 200
+    assert len(list_res.json()["connections"]) == 1
+
+    update_res = editor_client.patch(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections/{conn_id}",
+        json={"nature": "lives in"},
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["nature"] == "lives in"
+
+    delete_res = editor_client.delete(
+        f"/v1/stylebooks/default/canonical-people/{person_id}/connections/{conn_id}"
+    )
+    assert delete_res.status_code == 200
+
+    with Session(engine) as s:
+        row = s.get(StylebookConnection, conn_id)
+        assert row is None
+
+
+def test_stylebook_connection_lists_auto_connection_evidence(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    engine = stylebook_test_engine
+    with Session(engine) as s:
+        stylebook = s.exec(select(Stylebook).where(Stylebook.slug == "default")).one()
+        ca = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Evidence Conn A",
+            slug="evidence-conn-a",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        cb = StylebookLocationCanonical(
+            stylebook_id=int(stylebook.id),  # type: ignore[arg-type]
+            label="Evidence Conn B",
+            slug="evidence-conn-b",
+            location_type="city",
+            primary_substrate_location_id=None,
+            status="active",
+        )
+        s.add(ca)
+        s.add(cb)
+        s.commit()
+        s.refresh(ca)
+        s.refresh(cb)
+        aid = str(ca.id)
+        bid = str(cb.id)
+
+    evidence = {
+        "source": "dboutput_auto_connections",
+        "confidence": 0.94,
+        "quote": "Acme operates in Chicago.",
+        "reason": "The story states where the organization operates.",
+        "from_display_name": "Evidence Conn A",
+        "to_display_name": "Evidence Conn B",
+        "from_entity_type": "location",
+        "from_entity_id": aid,
+        "to_entity_type": "location",
+        "to_entity_id": bid,
+    }
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        s.add(
+            StylebookConnection(
+                project_id=int(proj.id),
+                from_entity_type="location",
+                from_entity_id=aid,
+                to_entity_type="location",
+                to_entity_id=bid,
+                nature="near",
+                evidence_json=evidence,
+            )
+        )
+        s.commit()
+
+    response = editor_client.get(
+        f"/v1/stylebooks/default/canonical-locations/{aid}/connections"
+    )
+    assert response.status_code == 200
+    rows = response.json()["connections"]
+    assert len(rows) == 1
+    assert rows[0]["evidence_json"]["quote"] == "Acme operates in Chicago."
+    assert rows[0]["evidence_json"]["confidence"] == 0.94
+
+
+def test_stylebook_connection_exact_edge_unique_constraint(
+    stylebook_test_engine: Engine,
+) -> None:
+    engine = stylebook_test_engine
+    from sqlalchemy.exc import IntegrityError
+
+    with Session(engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        first = StylebookConnection(
+            project_id=int(proj.id),
+            from_entity_type="location",
+            from_entity_id="loc-a",
+            to_entity_type="person",
+            to_entity_id="person-a",
+            nature="custom_edge",
+        )
+        duplicate = StylebookConnection(
+            project_id=int(proj.id),
+            from_entity_type="location",
+            from_entity_id="loc-a",
+            to_entity_type="person",
+            to_entity_id="person-a",
+            nature="custom_edge",
+        )
+        s.add(first)
+        s.commit()
+        s.add(duplicate)
+        with pytest.raises(IntegrityError):
+            s.commit()
+        s.rollback()

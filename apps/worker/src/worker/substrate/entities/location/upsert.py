@@ -199,10 +199,12 @@ def _upsert_location_cache(
     )
 
     row = session.exec(
-        select(SubstrateLocationCache).where(
+        select(SubstrateLocationCache)
+        .where(
             col(SubstrateLocationCache.project_id) == project_id,
             col(SubstrateLocationCache.query_fingerprint) == fingerprint,
         )
+        .with_for_update()
     ).first()
 
     now = _utcnow()
@@ -488,6 +490,48 @@ def _geocode_meta_from_entry(entry: dict[str, Any]) -> tuple[str | None, dict[st
     return geocode_type_str, result
 
 
+def _lock_substrate_location_row(session: Session, location_id: int) -> SubstrateLocation:
+    row = session.exec(
+        select(SubstrateLocation)
+        .where(col(SubstrateLocation.id) == int(location_id))
+        .with_for_update()
+    ).first()
+    if row is None:
+        raise RuntimeError(f"substrate_location id={location_id} disappeared during upsert lock")
+    return row
+
+
+def _select_existing_substrate_location(
+    session: Session,
+    *,
+    project_id: int,
+    external_source: str | None,
+    external_id: str | None,
+    fingerprint: str,
+) -> SubstrateLocation | None:
+    """Load an existing durable location row with ``FOR UPDATE`` when found."""
+    if external_source and external_id:
+        row = session.exec(
+            select(SubstrateLocation)
+            .where(
+                col(SubstrateLocation.project_id) == project_id,
+                col(SubstrateLocation.external_source) == external_source,
+                col(SubstrateLocation.external_id) == external_id,
+            )
+            .with_for_update()
+        ).first()
+        if row is not None:
+            return row
+    return session.exec(
+        select(SubstrateLocation)
+        .where(
+            col(SubstrateLocation.project_id) == project_id,
+            col(SubstrateLocation.identity_fingerprint) == fingerprint,
+        )
+        .with_for_update()
+    ).first()
+
+
 def _fetch_substrate_location_after_unique_violation(
     session: Session,
     *,
@@ -612,23 +656,13 @@ def _upsert_location(
     if geocode_result and geometry_json:
         status = "resolved"
 
-    loc: SubstrateLocation | None = None
-    if external_source and external_id:
-        loc = session.exec(
-            select(SubstrateLocation).where(
-                col(SubstrateLocation.project_id) == project_id,
-                col(SubstrateLocation.external_source) == external_source,
-                col(SubstrateLocation.external_id) == external_id,
-            )
-        ).first()
-
-    if loc is None:
-        loc = session.exec(
-            select(SubstrateLocation).where(
-                col(SubstrateLocation.project_id) == project_id,
-                col(SubstrateLocation.identity_fingerprint) == fingerprint,
-            )
-        ).first()
+    loc = _select_existing_substrate_location(
+        session,
+        project_id=project_id,
+        external_source=external_source,
+        external_id=external_id,
+        fingerprint=fingerprint,
+    )
 
     details = {
         "graph_id": graph_id,
@@ -674,6 +708,7 @@ def _upsert_location(
                     "substrate_location insert collided on unique key but concurrent row "
                     "was not visible; retry the persistence step"
                 ) from exc
+            loc = _lock_substrate_location_row(session, int(loc.id))  # type: ignore[arg-type]
             _apply_substrate_location_merge(
                 loc,
                 display_name=display_name,

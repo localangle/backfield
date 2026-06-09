@@ -142,6 +142,8 @@ Revision **`038_substrate_semantic_docs`** enables **`vector`** on Postgres (req
 
 Revision **`039_organization_schema`** adds the organization **substrate trio**, **Stylebook trio** (`stylebook_organization_canonical`, alias, meta), and **`substrate_organization_semantic_document`**, with UUID canonical ids, slug uniqueness per Stylebook, fingerprint uniqueness per project (`normalized_name` + **`organization_type`**), and queue-oriented indexes aligned with person.
 
+Revision **`040_sb_conn_evidence`** adds nullable **`evidence_json`** on **`stylebook_connections`** (creation evidence for auto-linked edges) and unique **`uq_stylebook_connection_exact_edge`** on **`(project_id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, nature)`**. Manual connections keep free-form **`nature`** values; the automatic taxonomy lives in **`backfield_entities.connections`**.
+
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 
 Revision **`026_org_integration_secret`** adds **`backfield_organization_integration_secret`** for encrypted organization-level integration credentials (AI provider keys first).

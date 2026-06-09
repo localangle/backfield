@@ -173,6 +173,11 @@ The title should be the role/position alone (e.g., "Owner", "Mayor", "Spokespers
 
 The institution or organization tied to the title or role. Write affiliations **the way a newspaper would in AP style**: use the **fullest clear name** readers would recognize, not internal shorthand unless the story itself uses only that form.
 
+- **Athletes and sports teams:** when a team nickname or name appears directly before a player, coach, or role descriptor, treat it as that person's team affiliation even if the team is not the sentence subject. Expand to the conventional full team name when you can (`Philadelphia Phillies`, `Chicago Cubs`, `Boston Red Sox`).
+  - `"Phillies masher Kyle Schwarber"` → `name`: `Kyle Schwarber`, `affiliation`: `Philadelphia Phillies`, `type`: `athlete`
+  - `"former Yankees slugger Aaron Judge"` → `affiliation`: `New York Yankees`
+  - `"Cubs ace Shota Imanaga"` → `affiliation`: `Chicago Cubs`
+  - `"Brother Rice forward James Smith"` → `affiliation`: `Brother Rice boys basketball team` (school athletics pattern)
 - **Expand acronyms and nicknames** when you can confidently identify the full name from context: `ACLU` → `American Civil Liberties Union`; `CPS` → `Chicago Public Schools` when the story clearly means the school district.
 - **Sports teams and brands:** prefer the conventional full team or organization name (`Boston Red Sox`, not `Sox`; `Green Bay Packers`, not `Packers`) unless the article consistently uses a shorter form as the official style for that entity.
 - **Government and agencies:** use the formal or commonly published name (`U.S. Department of Homeland Security`, `Chicago Police Department`).

@@ -30,9 +30,11 @@
   - `make smoke-place-geocode`: optional in-process PlaceExtract + GeocodeAgent corpus smoke (not part of CI).
   - `make smoke-place-geocode-stack`: optional single-run stack harness for the geocode starter path.
   - `make smoke-people`: optional in-process PersonExtract + DBOutput smoke with mocked LLM (not part of CI).
-  - `make smoke-people-stack`: optional stack harness for the **People starter** graph (`starter_people_flow_graph_spec`).
+  - `make smoke-people-stack`: optional stack harness for the **People starter** graph (`starter_people_flow_graph_spec`); not created by local bootstrap—create the graph in Agate UI or set `SMOKE_PEOPLE_GRAPH_ID`.
   - `make smoke-organizations`: optional in-process OrganizationExtract + DBOutput smoke with mocked LLM (not part of CI).
-  - `make smoke-organizations-stack`: optional stack harness for the **Organizations starter** graph (`starter_organizations_flow_graph_spec`).
+  - `make smoke-organizations-stack`: optional stack harness for the **Organizations starter** graph (`starter_organizations_flow_graph_spec`); not created by local bootstrap—create the graph or set `SMOKE_ORGANIZATIONS_GRAPH_ID`.
+  - `make smoke-parallel-graph`: optional fan-out timing harness for **same-level** and **cross-level** predecessor-ready parallelism (in-process mocked LLM; not part of CI).
+  - `make smoke-parallel-graph-stack`: same script with `--via-agate-api` — asserts overlapping extract LLM records per item and concurrent run batch timing on the worker (requires LLM keys; not part of CI).
   - **Guided flow builder (manual):** on a live stack, walk through create → parallel branch → edit bookend clear-middle → run from read-only view: `/flow/new` with Text Input → Place Extract → Geocode → JSON Output; add a parallel Place Extract branch from input; save; open `/flow/:id/edit`, change output type with middle steps present (confirm clear); open `/flow/:id`, **Run flow** without **Edit flow**, then **Edit flow** and confirm **+** / delete unlock. See `docs/FRONTEND.md` → **Guided flow builder**.
   Aggregate bundles:
   - `make smoke-fast`: `smoke-auth`, `smoke-agate-basic`, `smoke-stylebook-basic`
@@ -81,4 +83,4 @@ make test
 
 The GitHub Actions **smoke** job brings up Compose (including `**core-api`**), waits for Core + Agate + Stylebook health, bootstraps a fixed CI user when the DB is empty, sets `**SMOKE_EMAIL` / `SMOKE_PASSWORD**`, then runs the fast smoke bundle plus the session-shaped handoff lane. A separate **smoke-extended** job runs on pushes to `main` and covers `smoke-worker-async`, `smoke-stylebook-editorial`, `smoke-stylebook-import-export`, and `smoke-s3-batch`.
 
-Configure at least one LLM credential your starter-flow handoff needs (`**OPENAI_API_KEY**`, `**ANTHROPIC_API_KEY**`, `**GEMINI_API_KEY**`, `**OPENROUTER_API_KEY**`, or Azure `**AZURE_API_KEY**` + `**AZURE_API_BASE**`) as a [repository secret](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions); optionally add `**MAPBOX_API_TOKEN**`. The workflow writes a short-lived repo-root `.env` so `agate-api` / `worker` receive keys (same mechanism as local dev). Fork PRs from outside contributors typically cannot read those secrets, so the handoff lane may be skipped or failed by policy.
+Configure at least one LLM credential your starter-flow handoff needs (`**OPENAI_API_KEY**`, `**ANTHROPIC_API_KEY**`, `**GEMINI_API_KEY**`, `**OPENROUTER_API_KEY**`, or Azure `**AZURE_API_KEY**` + `**AZURE_API_BASE**`) as a [repository secret](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions). The workflow writes a short-lived repo-root `.env` so `agate-api` / `worker` receive keys (same mechanism as local dev). Fork PRs from outside contributors typically cannot read those secrets, so the handoff lane may be skipped or failed by policy.

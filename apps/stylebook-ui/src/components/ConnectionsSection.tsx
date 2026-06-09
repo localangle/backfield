@@ -3,10 +3,18 @@ import { useAppMessage } from "@/components/AppMessageProvider"
 import type { Connection } from "@/lib/stylebook-api/connections"
 import {
   listStylebookConnectionsForLocation,
+  listStylebookConnectionsForOrganization,
+  listStylebookConnectionsForPerson,
   listStylebookConnectionNatures,
   createStylebookConnectionForLocation,
+  createStylebookConnectionForOrganization,
+  createStylebookConnectionForPerson,
   updateStylebookConnectionForLocation,
+  updateStylebookConnectionForOrganization,
+  updateStylebookConnectionForPerson,
   deleteStylebookConnectionForLocation,
+  deleteStylebookConnectionForOrganization,
+  deleteStylebookConnectionForPerson,
 } from "@/lib/stylebook-api/connections"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -26,6 +34,7 @@ import LocationSelector from "@/components/LocationSelector"
 import PersonSelector from "@/components/PersonSelector"
 import OrganizationSelector from "@/components/OrganizationSelector"
 import WorkSelector from "@/components/WorkSelector"
+import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
@@ -67,7 +76,7 @@ export default function ConnectionsSection({
   stylebookSlug,
   entityDisplayName,
 }: ConnectionsSectionProps) {
-  const { filterScopeSuffix, catalogBasePath, projectScopeSlug } = useProjectCatalogScope()
+  const { catalogScopeSuffix, catalogBasePath, projectScopeSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
   const [loading, setLoading] = useState(true)
@@ -111,8 +120,15 @@ export default function ConnectionsSection({
     setLoading(true)
     setError(null)
     try {
+      const canonicalId = String(entityId)
       if (entityType === "location") {
-        const res = await listStylebookConnectionsForLocation(stylebookSlug, String(entityId))
+        const res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId)
+        setConnections(res.connections)
+      } else if (entityType === "person") {
+        const res = await listStylebookConnectionsForPerson(stylebookSlug, canonicalId)
+        setConnections(res.connections)
+      } else if (entityType === "organization") {
+        const res = await listStylebookConnectionsForOrganization(stylebookSlug, canonicalId)
         setConnections(res.connections)
       } else {
         setConnections([])
@@ -159,16 +175,23 @@ export default function ConnectionsSection({
   const handleAddSubmit = async () => {
     if (selectedTargetId == null || !nature.trim()) return
     const toType = addTargetType
+    const body = {
+      to_entity_type: toType,
+      to_entity_id: selectedTargetId,
+      nature: nature.trim(),
+    }
+    const canonicalId = String(entityId)
     setSubmitting(true)
     try {
-      if (entityType !== "location") {
-        throw new Error("Connections can only be edited from canonical location detail in this build.")
+      if (entityType === "location") {
+        await createStylebookConnectionForLocation(stylebookSlug, canonicalId, body)
+      } else if (entityType === "person") {
+        await createStylebookConnectionForPerson(stylebookSlug, canonicalId, body)
+      } else if (entityType === "organization") {
+        await createStylebookConnectionForOrganization(stylebookSlug, canonicalId, body)
+      } else {
+        throw new Error("Connections cannot be added from this entity type yet.")
       }
-      await createStylebookConnectionForLocation(stylebookSlug, String(entityId), {
-        to_entity_type: toType,
-        to_entity_id: selectedTargetId,
-        nature: nature.trim(),
-      })
       setAddOpen(false)
       fetchConnections()
     } catch (e) {
@@ -185,14 +208,34 @@ export default function ConnectionsSection({
 
   const handleEditSubmit = async () => {
     if (!editConnection) return
+    const canonicalId = String(entityId)
+    const body = { nature: editNature.trim() }
     setEditSubmitting(true)
     try {
-      if (entityType !== "location") {
-        throw new Error("Connections can only be edited from canonical location detail in this build.")
+      if (entityType === "location") {
+        await updateStylebookConnectionForLocation(
+          stylebookSlug,
+          canonicalId,
+          editConnection.id,
+          body,
+        )
+      } else if (entityType === "person") {
+        await updateStylebookConnectionForPerson(
+          stylebookSlug,
+          canonicalId,
+          editConnection.id,
+          body,
+        )
+      } else if (entityType === "organization") {
+        await updateStylebookConnectionForOrganization(
+          stylebookSlug,
+          canonicalId,
+          editConnection.id,
+          body,
+        )
+      } else {
+        throw new Error("Connections cannot be edited from this entity type yet.")
       }
-      await updateStylebookConnectionForLocation(stylebookSlug, String(entityId), editConnection.id, {
-        nature: editNature.trim(),
-      })
       setEditConnection(null)
       fetchConnections()
     } catch (e) {
@@ -204,12 +247,30 @@ export default function ConnectionsSection({
 
   const handleDeleteConfirm = async () => {
     if (!deleteConnection) return
+    const canonicalId = String(entityId)
     setDeleting(true)
     try {
-      if (entityType !== "location") {
-        throw new Error("Connections can only be edited from canonical location detail in this build.")
+      if (entityType === "location") {
+        await deleteStylebookConnectionForLocation(
+          stylebookSlug,
+          canonicalId,
+          deleteConnection.id,
+        )
+      } else if (entityType === "person") {
+        await deleteStylebookConnectionForPerson(
+          stylebookSlug,
+          canonicalId,
+          deleteConnection.id,
+        )
+      } else if (entityType === "organization") {
+        await deleteStylebookConnectionForOrganization(
+          stylebookSlug,
+          canonicalId,
+          deleteConnection.id,
+        )
+      } else {
+        throw new Error("Connections cannot be deleted from this entity type yet.")
       }
-      await deleteStylebookConnectionForLocation(stylebookSlug, String(entityId), deleteConnection.id)
       setDeleteConnection(null)
       fetchConnections()
     } catch (e) {
@@ -242,7 +303,7 @@ export default function ConnectionsSection({
               type="button"
               className="shrink-0"
               onClick={handleAddOpen}
-              disabled={loading || entityType !== "location"}
+              disabled={loading || entityType === "work"}
             >
               <Plus className="h-4 w-4 mr-2" />
               Add connection
@@ -273,47 +334,59 @@ export default function ConnectionsSection({
                   <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Direction</TableHead>
-                  <TableHead>Nature</TableHead>
-                  <TableHead>Other entity</TableHead>
+                  <TableHead>Connection</TableHead>
                   <TableHead className="w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {connections.map((conn) => (
                   <TableRow key={conn.id}>
-                    <TableCell>
-                      {isFrom(conn) ? (
-                        <>
-                          <span className="font-medium">{entityDisplayName}</span>
-                          <span className="mx-1">—</span>
-                          <span className="text-muted-foreground">{conn.nature}</span>
-                          <span className="mx-1">→</span>
-                          <span>{conn.to_display_name}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span>{conn.from_display_name}</span>
-                          <span className="mx-1">—</span>
-                          <span className="text-muted-foreground">{conn.nature}</span>
-                          <span className="mx-1">→</span>
-                          <span className="font-medium">{entityDisplayName}</span>
-                        </>
-                      )}
+                    <TableCell className="align-top">
+                      <div className="text-sm">
+                        {isFrom(conn) ? (
+                          <>
+                            <span className="font-medium">{entityDisplayName}</span>
+                            <span className="mx-1 text-muted-foreground">→</span>
+                            <a
+                              href={getDetailUrl(
+                                otherType(conn),
+                                otherId(conn),
+                                catalogBasePath,
+                                catalogScopeSuffix,
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline inline-flex items-center gap-0.5"
+                            >
+                              {conn.to_display_name}
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                            </a>
+                          </>
+                        ) : (
+                          <>
+                            <a
+                              href={getDetailUrl(
+                                otherType(conn),
+                                otherId(conn),
+                                catalogBasePath,
+                                catalogScopeSuffix,
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline inline-flex items-center gap-0.5"
+                            >
+                              {conn.from_display_name}
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                            </a>
+                            <span className="mx-1 text-muted-foreground">→</span>
+                            <span className="font-medium">{entityDisplayName}</span>
+                          </>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{conn.nature}</p>
+                      <ConnectionEvidenceBlock evidence={conn.evidence_json} />
                     </TableCell>
-                    <TableCell>{conn.nature}</TableCell>
-                    <TableCell>
-                      <a
-                        href={getDetailUrl(otherType(conn), otherId(conn), catalogBasePath, filterScopeSuffix)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline inline-flex items-center gap-1"
-                      >
-                        {otherDisplayName(conn)}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className="align-top">
                       <div className="flex gap-2">
                         <Button
                           variant="outline"

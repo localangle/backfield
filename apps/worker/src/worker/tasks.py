@@ -28,7 +28,13 @@ from backfield_ai.tracking_context import (
     reset_llm_tracking_context,
     set_llm_tracking_current_node,
 )
-from backfield_db import AgateGraph, AgateProcessedItem, AgateRun, StylebookBundleJob
+from backfield_db import (
+    AgateGraph,
+    AgateProcessedItem,
+    AgateRun,
+    BackfieldProject,
+    StylebookBundleJob,
+)
 from backfield_db.session import get_engine
 from backfield_entities.catalog.full_bundle import export_stylebook_bundle, import_stylebook_bundle
 from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
@@ -72,6 +78,29 @@ def _env_overlay(updates: dict[str, str]):
                 os.environ[k] = prev
 
 
+def _project_system_prompt_from_settings(settings_json: str | None) -> str | None:
+    if not settings_json:
+        return None
+    try:
+        data = json.loads(settings_json)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("system_prompt")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
+def _load_project_system_prompt(session: Session, project_id: int) -> str | None:
+    project = session.get(BackfieldProject, int(project_id))
+    if project is None:
+        return None
+    return _project_system_prompt_from_settings(project.settings_json)
+
+
 @contextmanager
 def _run_execution_env(
     *,
@@ -80,6 +109,7 @@ def _run_execution_env(
     run_id: str,
     replace_article_geography: bool = False,
     processed_item_id: int | None = None,
+    project_system_prompt: str | None = None,
 ):
     updates: dict[str, str] = {
         "BACKFIELD_PROJECT_ID": str(project_id),
@@ -90,6 +120,8 @@ def _run_execution_env(
         updates["BACKFIELD_REPLACE_ARTICLE_GEOGRAPHY"] = "1"
     if processed_item_id is not None:
         updates["BACKFIELD_PROCESSED_ITEM_ID"] = str(int(processed_item_id))
+    if project_system_prompt:
+        updates["BACKFIELD_PROJECT_SYSTEM_PROMPT"] = project_system_prompt
     with _env_overlay(updates):
         yield
 
@@ -195,12 +227,14 @@ def execute_agate_run(run_id: str) -> None:
                 )
             )
             replace_geography = bool(run.replace_article_geography_on_persist)
+            project_system_prompt = _load_project_system_prompt(session, graph.project_id)
             try:
                 with _env_overlay(overlay), _run_execution_env(
                     project_id=graph.project_id,
                     graph_id=graph.id,
                     run_id=run.id,
                     replace_article_geography=replace_geography,
+                    project_system_prompt=project_system_prompt,
                 ):
                     outputs = execute_graph(
                         spec,
@@ -519,6 +553,7 @@ def execute_processed_item(item_id: int) -> None:
         replace_geography = bool(
             item.replace_article_geography_on_persist or run.replace_article_geography_on_persist
         )
+        project_system_prompt = _load_project_system_prompt(session, graph.project_id)
         iid = int(item.id) if item.id is not None else None
         try:
             track_tok = attach_llm_tracking_context(
@@ -536,6 +571,7 @@ def execute_processed_item(item_id: int) -> None:
                     run_id=run.id,
                     replace_article_geography=replace_geography,
                     processed_item_id=iid,
+                    project_system_prompt=project_system_prompt,
                 ):
                     outputs = execute_graph(
                         spec,

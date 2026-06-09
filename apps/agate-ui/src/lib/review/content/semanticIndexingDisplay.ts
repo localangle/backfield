@@ -109,25 +109,17 @@ export function formatSemanticIndexingDetail(
   if (summary.status === 'failed') {
     return summary.error ?? 'Semantic search could not finish for this item.'
   }
-  const parts: string[] = []
   if (summary.indexed_count > 0) {
-    parts.push(
-      `${summary.indexed_count.toLocaleString()} indexed`,
-    )
-  }
-  if (summary.pending_count > 0) {
-    parts.push(`${summary.pending_count.toLocaleString()} waiting`)
+    return `${summary.indexed_count.toLocaleString()} document${
+      summary.indexed_count === 1 ? '' : 's'
+    } indexed`
   }
   if (summary.failed_count > 0) {
-    parts.push(`${summary.failed_count.toLocaleString()} failed`)
+    return `${summary.failed_count.toLocaleString()} document${
+      summary.failed_count === 1 ? '' : 's'
+    } failed to index`
   }
-  if (parts.length === 0 && summary.document_count > 0) {
-    parts.push(`${summary.document_count.toLocaleString()} prepared`)
-  }
-  if (parts.length === 0) {
-    return 'Semantic search finished with nothing to index.'
-  }
-  return parts.join(' · ')
+  return 'No documents indexed'
 }
 
 export function shouldShowSemanticIndexingSummary(

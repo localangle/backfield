@@ -158,7 +158,7 @@ Location and person queues share the same **linking niceties**; new types must s
 
 | Pattern | When to enable | Person reference | Notes |
 |---------|----------------|------------------|-------|
-| **LLM canonical adjudication** | Ambiguous recall under `ai_assisted` | Person: [`worker/…/person/adjudication.py`](../apps/worker/src/worker/substrate/entities/person/adjudication.py). Location: [`worker/…/canonical/adjudication.py`](../apps/worker/src/worker/substrate/canonical/adjudication.py) after policy `DEFER` with `ambiguous_canonical_match` (includes **gate-demoted** recall per `entities/location/policy.py`) | Link only if model confidence ≥ `ADJUDICATION_LINK_MIN_CONFIDENCE` (0.9); declined link → `MATERIALIZE_NEW` when materialize-after-recall gates allow (person: blocked by PersonExtract `flag_review` / `auto_defer`) |
+| **LLM canonical adjudication** | Ambiguous recall under `ai_assisted` | Person: [`worker/…/person/adjudication.py`](../apps/worker/src/worker/substrate/entities/person/adjudication.py). Location: [`worker/…/canonical/adjudication.py`](../apps/worker/src/worker/substrate/canonical/adjudication.py) after policy `DEFER` with `ambiguous_canonical_match` (includes **gate-demoted** recall per `entities/location/policy.py`) | Link only if model confidence ≥ `ADJUDICATION_LINK_MIN_CONFIDENCE` (0.9); declined link → `MATERIALIZE_NEW` when materialize-after-recall gates allow (person: blocked by PersonExtract `flag_review` / `auto_defer`). Adjudication LLM calls run in parallel per domain during DBOutput (default **8** concurrent via `CANONICAL_ADJUDICATION_MAX_CONCURRENT`); catalog writes remain serial. |
 | **Extract review routing** | Extract emits review codes (waive vs flag queue) | [`entities/person/review.py`](../packages/backfield-entities/src/backfield_entities/entities/person/review.py) | PersonExtract: `child` / `animal` → waive when `auto_apply_canonicalization`; `stage_name_or_alias` / `first_name_only` → open pending + `needs_review` on mentions |
 | **Variant-name recall / search** | Display names vary (formal vs nickname, middle initials) | [`entities/person/name_match.py`](../packages/backfield-entities/src/backfield_entities/entities/person/name_match.py), recall + catalog `q` token OR | Organizations may use legal name vs DBA; skip for types with stable unique codes |
 
@@ -179,6 +179,10 @@ Minimum pytest targets per slice (global ladder: [`TESTING.md`](TESTING.md)). Re
 | **Bundle** | Extend `tests/entities/test_full_bundle_roundtrip.py` when catalog transfer ships |
 
 Run `make lint` and `make test` after each issue; `make smoke` when cross-service ingest or review behavior changes.
+
+## Automatic entity connections (planned)
+
+Manual Stylebook connections use free-form **`nature`** strings. Automatic connection inference (Backfield Output, post-canonicalization) uses a **narrower** fixed taxonomy in **`backfield_entities.connections`**: only **`person → organization`**, **`organization → location`**, and **`person → location`**, with machine-slug natures and location-granularity gates. **Person→organization** may also use deterministic affiliation hints (`affiliation_links`); **organization→location** uses **same-site name hints** (`same_site_hints`) when an org's primary name matches a co-mentioned place's primary name (e.g. school org and school place)—hints enrich the family LLM pass and may trigger a focused pair review; edges are still LLM-confirmed with quotes. Auto-created rows may store optional **`evidence_json`** (including **`match_basis`** when applicable) on **`stylebook_connections`**; exact edges are unique per **`(project_id, from, to, nature)`**. See **`prd/automatic-entity-connections/prd.md`** and **`docs/DATABASE.md`** revision **`040_sb_conn_evidence`**.
 
 ## Directory conventions by layer
 

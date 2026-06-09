@@ -16,6 +16,12 @@ import {
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/review/content/sourceDisplay'
 import { formatDate } from '@/lib/utils'
 import {
+  connectionsStatusLabel,
+  formatConnectionsDetail,
+  getConnectionsStatusColor,
+  shouldShowConnectionsSummary,
+} from '@/lib/review/content/connectionsDisplay'
+import {
   formatSemanticIndexingDetail,
   semanticIndexingStatusLabel,
   shouldShowSemanticIndexingSummary,
@@ -274,6 +280,8 @@ export function ProcessedItemInformationCard({
   const editable = !item.synthetic && !reviewLocked
   const semanticIndexing = item.semantic_indexing
   const showSemanticIndexing = shouldShowSemanticIndexingSummary(semanticIndexing)
+  const connections = item.connections
+  const showConnections = shouldShowConnectionsSummary(connections)
 
   return (
     <Card>
@@ -363,25 +371,69 @@ export function ProcessedItemInformationCard({
             </div>
             {showSemanticIndexing && semanticIndexing ? (
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Semantic search</label>
-                <p
-                  className={cn(
-                    'text-sm mt-0.5',
-                    getSemanticIndexingStatusColor(semanticIndexing.status),
-                  )}
-                >
-                  {semanticIndexingStatusLabel(semanticIndexing.status)}
-                </p>
-                {formatSemanticIndexingDetail(semanticIndexing) ? (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {formatSemanticIndexingDetail(semanticIndexing)}
+                <label className="text-sm font-medium text-muted-foreground">Semantic indexing</label>
+                {semanticIndexing.status === 'succeeded' ||
+                semanticIndexing.status === 'partial' ? (
+                  <p
+                    className={cn(
+                      'text-sm mt-0.5 flex items-center gap-1.5',
+                      getSemanticIndexingStatusColor(semanticIndexing.status),
+                    )}
+                  >
+                    <CheckCircle className="h-4 w-4 shrink-0" aria-hidden />
+                    <span>{formatSemanticIndexingDetail(semanticIndexing)}</span>
                   </p>
-                ) : null}
-                {semanticIndexing.indexed_at ? (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Last indexed {formatDate(semanticIndexing.indexed_at)}
+                ) : (
+                  <>
+                    <p
+                      className={cn(
+                        'text-sm mt-0.5',
+                        getSemanticIndexingStatusColor(semanticIndexing.status),
+                      )}
+                    >
+                      {semanticIndexingStatusLabel(semanticIndexing.status)}
+                    </p>
+                    {formatSemanticIndexingDetail(semanticIndexing) ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatSemanticIndexingDetail(semanticIndexing)}
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+            {showConnections && connections ? (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">
+                  Automatic connections
+                </label>
+                {connections.status === 'succeeded' ? (
+                  <p
+                    className={cn(
+                      'text-sm mt-0.5 flex items-center gap-1.5',
+                      getConnectionsStatusColor(connections.status),
+                    )}
+                  >
+                    <CheckCircle className="h-4 w-4 shrink-0" aria-hidden />
+                    <span>{formatConnectionsDetail(connections)}</span>
                   </p>
-                ) : null}
+                ) : (
+                  <>
+                    <p
+                      className={cn(
+                        'text-sm mt-0.5',
+                        getConnectionsStatusColor(connections.status),
+                      )}
+                    >
+                      {connectionsStatusLabel(connections.status)}
+                    </p>
+                    {formatConnectionsDetail(connections) ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatConnectionsDetail(connections)}
+                      </p>
+                    ) : null}
+                  </>
+                )}
               </div>
             ) : null}
           </div>

@@ -72,6 +72,25 @@ def test_place_blocks_neighborhood_canonical_without_poi_name() -> None:
     )
 
 
+def test_place_blocks_park_canonical_when_venue_inside_park() -> None:
+    """A named venue inside a park must not link to the park canonical."""
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="Tafari's Kitchen, Jackson Park, Chicago, IL",
+            components={
+                "place": {"name": "Tafari's Kitchen", "addressable": True},
+                "city": "Chicago",
+            },
+            match_label="Jackson Park, Chicago, IL",
+            match_formatted_address="Jackson Park, Chicago, IL",
+            match_location_type="place",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
 def test_place_blocks_place_canonical_when_label_is_only_neighborhood_name() -> None:
     """POI rows must not cache-hit a place canonical named like a neighborhood."""
     assert (

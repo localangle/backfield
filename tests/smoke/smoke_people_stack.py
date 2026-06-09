@@ -7,7 +7,7 @@ text and a mocked LLM (no API keys required). Use ``--live-llm`` to call a real 
 
 Use ``--via-agate-api`` to enqueue the People starter graph on a running stack
 (``make up``); requires ``SMOKE_PEOPLE_GRAPH_ID`` or a graph named **People starter**
-on the General project.
+on the General project (local bootstrap does not create this graph).
 """
 
 from __future__ import annotations

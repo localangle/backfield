@@ -55,7 +55,7 @@ export default function ConnectionsGraph({
   entityDisplayName,
   connections,
 }: ConnectionsGraphProps) {
-  const { filterScopeSuffix, catalogBasePath } = useProjectCatalogScope()
+  const { catalogScopeSuffix, catalogBasePath } = useProjectCatalogScope()
   const { initialNodes, initialEdges } = useMemo(() => {
     const centerId = nodeId(entityType, entityId)
     const nodeMap = new Map<string, string>()
@@ -125,13 +125,13 @@ export default function ConnectionsGraph({
         const type = match[1] as ConnectionsEntityType
         const entityId = match[2]
         window.open(
-          getDetailUrl(type, entityId, catalogBasePath, filterScopeSuffix),
+          getDetailUrl(type, entityId, catalogBasePath, catalogScopeSuffix),
           "_blank",
           "noopener,noreferrer",
         )
       }
     },
-    [filterScopeSuffix, catalogBasePath],
+    [catalogScopeSuffix, catalogBasePath],
   )
 
   if (connections.length === 0) {

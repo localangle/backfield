@@ -98,6 +98,16 @@ from sqlmodel import Session, SQLModel, create_engine
         ("city", "political_district", False),
         ("political_district", "city", False),
         ("town", "political_district", False),
+        # Linear features must not collapse onto container admin canonicals.
+        ("street_road", "county", False),
+        ("county", "street_road", False),
+        ("intersection_road", "county", False),
+        ("intersection_highway", "county", False),
+        ("span", "county", False),
+        ("street_road", "state", False),
+        ("intersection_road", "state", False),
+        ("intersection_highway", "state", False),
+        ("span", "state", False),
     ],
 )
 def test_link_pair_allowed_deny_list(s: str, c: str, expect: bool) -> None:

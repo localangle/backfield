@@ -2,7 +2,7 @@
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE)
 
-.PHONY: help up up-detached down logs migrate reset-db docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack stylebook-ui-build
+.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-parallel-graph smoke-parallel-graph-stack stylebook-ui-build
 
 help:
 	@echo "Backfield"
@@ -12,6 +12,7 @@ help:
 	@echo "  make logs        - Follow compose logs"
 	@echo "  make migrate     - Run Alembic (agate-api container)"
 	@echo "  make reset-db    - Stop stack and remove compose volumes (Postgres data, etc.)"
+	@echo "  make clear-entity-data - Truncate substrate/stylebook entity + Agate runs (BACKFIELD_CONFIRM_CLEAR=1)"
 	@echo "  make docker-prune-build   - Free build cache only (docker builder prune -f)"
 	@echo "  make docker-prune-system  - Remove stopped containers, dangling images, unused networks (docker system prune -f)"
 	@echo "  make docker-prune-volumes - Remove unused volumes (docker volume prune -f); can delete DB data after down"
@@ -33,6 +34,8 @@ help:
 	@echo "  make smoke-people-stack - Same script --via-agate-api (People starter graph)"
 	@echo "  make smoke-organizations - In-process OrganizationExtract + DBOutput demo (not CI)"
 	@echo "  make smoke-organizations-stack - Same script --via-agate-api (Organizations starter)"
+	@echo "  make smoke-parallel-graph - Fan-out level parallelism timing (in-process, not CI)"
+	@echo "  make smoke-parallel-graph-stack - Same script --via-agate-api (level + multi-item timing)"
 	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
 
 bootstrap:
@@ -60,6 +63,16 @@ migrate:
 reset-db:
 	@echo "Removing Postgres volume (all local Backfield data)."
 	$(DC) down -v
+
+clear-entity-data:
+	@if [ "$(BACKFIELD_CONFIRM_CLEAR)" != "1" ]; then \
+		echo "Destructive: truncates substrate_*, stylebook_* entity, and Agate run tables."; \
+		echo "Preserves stylebook catalog rows (stylebook, stylebook_membership, stylebook_slug_redirect)."; \
+		echo "Preserves Agate graphs/templates and backfield_* identity tables."; \
+		echo "Re-run: BACKFIELD_CONFIRM_CLEAR=1 make clear-entity-data"; \
+		exit 1; \
+	fi
+	BACKFIELD_CONFIRM_CLEAR=1 uv run python packages/backfield-db/scripts/clear_entity_data.py
 
 docker-prune-build:
 	@echo "Pruning Docker build cache..."
@@ -144,6 +157,12 @@ smoke-organizations:
 
 smoke-organizations-stack:
 	uv run python -u tests/smoke/smoke_organizations_stack.py --via-agate-api
+
+smoke-parallel-graph:
+	uv run python -u tests/smoke/smoke_parallel_graph.py
+
+smoke-parallel-graph-stack:
+	uv run python -u tests/smoke/smoke_parallel_graph.py --via-agate-api
 
 stylebook-ui-build:
 	cd packages/backfield-ui && npm ci

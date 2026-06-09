@@ -9,6 +9,7 @@ export interface Connection {
   to_entity_id: string
   to_display_name: string
   nature: string
+  evidence_json?: Record<string, unknown> | null
   created_at?: string | null
 }
 
@@ -93,6 +94,24 @@ export async function listStylebookConnectionsForLocation(
   )
 }
 
+export async function listStylebookConnectionsForPerson(
+  stylebookSlug: string,
+  personCanonicalId: string,
+): Promise<ConnectionListResponse> {
+  return stylebookJsonFetch<ConnectionListResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections`,
+  )
+}
+
+export async function listStylebookConnectionsForOrganization(
+  stylebookSlug: string,
+  organizationCanonicalId: string,
+): Promise<ConnectionListResponse> {
+  return stylebookJsonFetch<ConnectionListResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections`,
+  )
+}
+
 export async function createStylebookConnectionForLocation(
   stylebookSlug: string,
   locationCanonicalId: string,
@@ -123,6 +142,74 @@ export async function deleteStylebookConnectionForLocation(
 ): Promise<{ ok: boolean }> {
   return stylebookJsonFetch<{ ok: boolean }>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections/${connectionId}`,
+    { method: "DELETE" },
+  )
+}
+
+export async function createStylebookConnectionForPerson(
+  stylebookSlug: string,
+  personCanonicalId: string,
+  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
+}
+
+export async function updateStylebookConnectionForPerson(
+  stylebookSlug: string,
+  personCanonicalId: string,
+  connectionId: number,
+  body: { nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections/${connectionId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )
+}
+
+export async function deleteStylebookConnectionForPerson(
+  stylebookSlug: string,
+  personCanonicalId: string,
+  connectionId: number,
+): Promise<{ ok: boolean }> {
+  return stylebookJsonFetch<{ ok: boolean }>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections/${connectionId}`,
+    { method: "DELETE" },
+  )
+}
+
+export async function createStylebookConnectionForOrganization(
+  stylebookSlug: string,
+  organizationCanonicalId: string,
+  body: { to_entity_type: string; to_entity_id: number | string; nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
+}
+
+export async function updateStylebookConnectionForOrganization(
+  stylebookSlug: string,
+  organizationCanonicalId: string,
+  connectionId: number,
+  body: { nature: string },
+): Promise<Connection> {
+  return stylebookJsonFetch<Connection>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections/${connectionId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  )
+}
+
+export async function deleteStylebookConnectionForOrganization(
+  stylebookSlug: string,
+  organizationCanonicalId: string,
+  connectionId: number,
+): Promise<{ ok: boolean }> {
+  return stylebookJsonFetch<{ ok: boolean }>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections/${connectionId}`,
     { method: "DELETE" },
   )
 }

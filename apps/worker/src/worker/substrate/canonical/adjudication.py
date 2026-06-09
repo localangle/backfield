@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from agate_utils.llm import call_llm
@@ -25,7 +26,22 @@ from backfield_entities.canonical.plan_types import (
 from backfield_entities.entities.location.policy import (
     substrate_may_materialize_canonical_after_recall,
 )
+from backfield_entities.ingest.geocode_cache.sanity import (
+    substrate_canonical_link_blocked_by_content_sanity,
+)
 from sqlmodel import Session, select
+
+
+@dataclass(frozen=True)
+class LocationAdjudicationPrepared:
+    location: SubstrateLocation
+    model: str
+    model_config_id: str | None
+    candidates: tuple[
+        tuple[str, str, str | None, str | None, str | None, str | None, str | None, str | None],
+        ...,
+    ]
+    prompt: str
 
 
 def _recall_context_for_adjudication(
@@ -73,7 +89,7 @@ def _candidate_rows(
     *,
     stylebook_id: int,
     canonical_ids: list[str],
-) -> list[tuple[str, str, str | None, str | None, str | None, str | None]]:
+) -> list[tuple[str, str, str | None, str | None, str | None, str | None, str | None, str | None]]:
     if not canonical_ids:
         return []
     rows = session.exec(
@@ -82,7 +98,9 @@ def _candidate_rows(
             StylebookLocationCanonical.id.in_(canonical_ids[:24]),
         )
     ).all()
-    out: list[tuple[str, str, str | None, str | None, str | None, str | None]] = []
+    out: list[
+        tuple[str, str, str | None, str | None, str | None, str | None, str | None, str | None]
+    ] = []
     for c in rows:
         if c.id is None:
             continue
@@ -94,27 +112,23 @@ def _candidate_rows(
                 c.district_key,
                 c.district_kind,
                 c.district_number,
+                c.formatted_address,
+                c.geometry_type,
             )
         )
     return out
 
 
-def adjudicate_ambiguous_plan_with_llm(
-    session: Session,
-    *,
+def _canonical_ids_from_recall(
     plan: CanonicalPersistPlan,
     location: SubstrateLocation,
-    stylebook_id: int,
-    model: str,
-    model_config_id: str | None = None,
-) -> CanonicalPersistPlan:
-    """LLM pick for ambiguous recall or ``political_district`` fuzzy autolink."""
+) -> list[str]:
     ctx = _recall_context_for_adjudication(plan, location)
     if ctx is None:
-        return plan
+        return []
     raw_ids = ctx.get("recall_canonical_ids")
     if not isinstance(raw_ids, list) or not raw_ids:
-        return plan
+        return []
     cids: list[str] = []
     for x in raw_ids:
         if x is None:
@@ -122,16 +136,29 @@ def adjudicate_ambiguous_plan_with_llm(
         s = str(x).strip()
         if s:
             cids.append(s)
+    return cids
+
+
+def prepare_location_adjudication(
+    session: Session,
+    *,
+    plan: CanonicalPersistPlan,
+    location: SubstrateLocation,
+    stylebook_id: int,
+    model: str,
+    model_config_id: str | None = None,
+) -> LocationAdjudicationPrepared | None:
+    cids = _canonical_ids_from_recall(plan, location)
     if not cids:
-        return plan
+        return None
     candidates = _candidate_rows(session, stylebook_id=stylebook_id, canonical_ids=cids)
     if not candidates:
-        return plan
+        return None
 
     lines = "\n".join(
         f"- id={cid} label={label!r} location_type={lt!r} district_key={dk!r} "
         f"district_kind={kind!r} district_number={num!r}"
-        for cid, label, lt, dk, kind, num in candidates
+        for cid, label, lt, dk, kind, num, _fa, _gt in candidates
     )
     floor = ADJUDICATION_LINK_MIN_CONFIDENCE
     district_block = ""
@@ -166,6 +193,9 @@ def adjudicate_ambiguous_plan_with_llm(
         "- Do NOT link: suburb to parent core city; city A to city B because they are in the "
         "same metro; a regional nickname (e.g. southern part of a state) to the whole state; "
         "two distinct places that only share a broader region.\n"
+        "- When the substrate name's leading segment (before the first comma) names a distinct "
+        "venue, building, or landmark, do NOT link to a broader park or place canonical that "
+        "only appears as geographic context in the suffix (e.g. a restaurant inside a park).\n"
         f"{district_rules}"
         "- When any candidate is only a rough geographic association, return canonical_id null. "
         "Prefer null (new canonical / human review) over a stretched link.\n"
@@ -175,24 +205,51 @@ def adjudicate_ambiguous_plan_with_llm(
         "Return JSON only: canonical_id (UUID string matching one candidate id, or null), "
         "confidence (0.0-1.0), rationale (short string)."
     )
+    return LocationAdjudicationPrepared(
+        location=location,
+        model=model,
+        model_config_id=model_config_id,
+        candidates=tuple(candidates),
+        prompt=prompt,
+    )
+
+
+def run_location_adjudication_llm(prepared: LocationAdjudicationPrepared) -> dict[str, Any] | None:
     try:
         raw = call_llm(
-            prompt,
-            model=model,
+            prepared.prompt,
+            model=prepared.model,
             force_json=True,
             temperature=0.0,
             max_tokens=800,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            model_config_id=model_config_id,
+            model_config_id=prepared.model_config_id,
         )
         data = json.loads(raw)
     except Exception:
-        return plan
+        return None
     if not isinstance(data, dict):
+        return None
+    return data
+
+
+def resolve_location_adjudication_plan(
+    plan: CanonicalPersistPlan,
+    *,
+    prepared: LocationAdjudicationPrepared,
+    llm_data: dict[str, Any] | None,
+) -> CanonicalPersistPlan:
+    if llm_data is None:
         return plan
-    cid_raw = data.get("canonical_id")
-    conf_raw = data.get("confidence", 0.0)
-    rationale = str(data.get("rationale") or "").strip()
+
+    location = prepared.location
+    candidates = prepared.candidates
+    model = prepared.model
+    candidates_by_id = {str(c[0]): c for c in candidates}
+
+    cid_raw = llm_data.get("canonical_id")
+    conf_raw = llm_data.get("confidence", 0.0)
+    rationale = str(llm_data.get("rationale") or "").strip()
     chosen: str | None
     if cid_raw is None or cid_raw == "":
         chosen = None
@@ -202,7 +259,6 @@ def adjudicate_ambiguous_plan_with_llm(
         confidence = float(conf_raw)
     except (TypeError, ValueError):
         confidence = 0.0
-    canon = session.get(StylebookLocationCanonical, str(chosen)) if chosen is not None else None
 
     def _reject_link_extra(
         *,
@@ -231,21 +287,38 @@ def adjudicate_ambiguous_plan_with_llm(
             resolution_reasons=merged,
         )
 
-    if (
-        chosen is None
-        or chosen not in {str(c[0]) for c in candidates}
-        or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE
-        or canon is None
-        or not link_pair_allowed(location.location_type, canon.location_type)
-        or autolink_container_to_fine_denied(location.location_type, canon.location_type)
-    ):
+    if chosen is None or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE:
         return _reject_link_extra(outcome="no_high_confidence_link")
+
+    candidate_row = candidates_by_id.get(str(chosen))
+    if candidate_row is None:
+        return _reject_link_extra(outcome="no_high_confidence_link")
+
+    _cid, canon_label, canon_location_type, canon_district_key, _kind, _num, canon_fa, canon_gt = (
+        candidate_row
+    )
+    if not link_pair_allowed(location.location_type, canon_location_type):
+        return _reject_link_extra(outcome="no_high_confidence_link")
+    if autolink_container_to_fine_denied(location.location_type, canon_location_type):
+        return _reject_link_extra(outcome="no_high_confidence_link")
+
+    comps = place_extract_components_from_entry(location, None)
+    if substrate_canonical_link_blocked_by_content_sanity(
+        substrate_location_type=location.location_type,
+        location_text=str(location.name),
+        components=comps,
+        match_label=str(canon_label),
+        match_formatted_address=canon_fa,
+        match_location_type=canon_location_type,
+        match_geometry_type=canon_gt,
+    ):
+        return _reject_link_extra(outcome="content_sanity_coerced")
 
     sub_key = district_identity_key(
         district_identity_from_components(place_extract_components_from_entry(location, None))
     )
     if (location.location_type or "").strip().lower() == "political_district" and sub_key:
-        ck = (canon.district_key or "").strip()
+        ck = (canon_district_key or "").strip()
         if ck != sub_key:
             return _reject_link_extra(
                 outcome="district_key_mismatch_coerced",
@@ -270,3 +343,27 @@ def adjudicate_ambiguous_plan_with_llm(
         existing_canonical_id=str(chosen),
         resolution_reasons=merged,
     )
+
+
+def adjudicate_ambiguous_plan_with_llm(
+    session: Session,
+    *,
+    plan: CanonicalPersistPlan,
+    location: SubstrateLocation,
+    stylebook_id: int,
+    model: str,
+    model_config_id: str | None = None,
+) -> CanonicalPersistPlan:
+    """LLM pick for ambiguous recall or ``political_district`` fuzzy autolink."""
+    prepared = prepare_location_adjudication(
+        session,
+        plan=plan,
+        location=location,
+        stylebook_id=stylebook_id,
+        model=model,
+        model_config_id=model_config_id,
+    )
+    if prepared is None:
+        return plan
+    llm_data = run_location_adjudication_llm(prepared)
+    return resolve_location_adjudication_plan(plan, prepared=prepared, llm_data=llm_data)

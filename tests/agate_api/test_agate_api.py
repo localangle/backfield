@@ -25,9 +25,10 @@ from backfield_db import (
     BackfieldWorkspace,
     BackfieldWorkspaceMembership,
     SubstrateArticle,
+    SubstratePerson,
+    SubstratePersonMention,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
-from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -1582,6 +1583,121 @@ def test_get_run_processed_item_merged_locations_and_stale(tmp_path, monkeypatch
         app.dependency_overrides.clear()
 
 
+def test_get_run_processed_item_failed_does_not_bleed_batch_substrate(tmp_path, monkeypatch):
+    """Failed items without article_id must not show sibling batch entities in review lanes."""
+    database_path = tmp_path / "agate-failed-batch-bleed.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as s:
+        s.add(BackfieldOrganization(name="Backfield", slug="default"))
+        s.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post("/projects", json={"name": "Batch bleed", "slug": "batch-bleed"}).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch",
+                "project_id": project["id"],
+                "spec": _minimal_text_input_spec(name="b"),
+            },
+        ).json()
+        with Session(engine) as s:
+            row = _insert_pending_run(s, graph["id"])
+            rid = row.id
+        pid = int(project["id"])
+
+        with Session(engine) as s:
+            row = s.get(AgateRun, rid)
+            assert row is not None
+            row.status = "running"
+            s.add(row)
+
+            sibling_article = SubstrateArticle(
+                project_id=pid,
+                headline="Sibling story",
+                text="Other article body",
+            )
+            s.add(sibling_article)
+            s.commit()
+            s.refresh(sibling_article)
+
+            person = SubstratePerson(
+                project_id=pid,
+                name="Sibling Person",
+                normalized_name="sibling person",
+                source_details_json={"run_id": rid, "raw_entry_id": "p1"},
+            )
+            s.add(person)
+            s.commit()
+            s.refresh(person)
+            s.add(
+                SubstratePersonMention(
+                    article_id=int(sibling_article.id),
+                    person_id=int(person.id),
+                )
+            )
+
+            ok_item = AgateProcessedItem(
+                run_id=rid,
+                source_file="ok.json",
+                input_json=json.dumps({"headline": "Sibling story", "text": "Other article body"}),
+                status="succeeded",
+                result_json=json.dumps(
+                    {
+                        "stylebook_output": {
+                            "article_id": int(sibling_article.id),
+                            "people": [{"id": "p1", "name": "Sibling Person"}],
+                        }
+                    }
+                ),
+            )
+            s.add(ok_item)
+
+            failed_item = AgateProcessedItem(
+                run_id=rid,
+                source_file="failed.json",
+                input_json=json.dumps(
+                    {
+                        "headline": "Horoscope",
+                        "text": "Moon in Capricorn today.",
+                    }
+                ),
+                status="failed",
+                error_message="PlaceExtract timed out",
+                result_json=None,
+            )
+            s.add(failed_item)
+            s.commit()
+            s.refresh(failed_item)
+            failed_id = failed_item.id
+        assert failed_id is not None
+
+        resp = tc.get(f"/runs/{rid}/items/{failed_id}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "failed"
+        assert body["output"] is None
+        assert body["merged_people"] == []
+        assert body["merged_locations"] == []
+        assert body["merged_organizations"] == []
+        assert body["article_context"]["headline"] == "Horoscope"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_get_run_processed_item_article_context_substrate(tmp_path, monkeypatch):
     database_path = tmp_path / "agate-article-ctx.db"
     engine = create_engine(
@@ -1722,34 +1838,6 @@ def test_get_run_processed_item_article_context_inline_only(tmp_path, monkeypatc
         assert ac["headline"] == "Inline title"
     finally:
         app.dependency_overrides.clear()
-
-
-def test_run_includes_mapbox_api_token_from_project_secrets(monkeypatch, client: TestClient):
-    def fake_send_task(*_a, **_k):
-        pass
-
-    monkeypatch.setattr(runs.celery_app, "send_task", fake_send_task)
-    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", Fernet.generate_key().decode())
-
-    project = client.post("/projects", json={"name": "Mapbox Project", "slug": "mapbox-p"}).json()
-    assert (
-        client.put(
-            f"/projects/{project['id']}/secrets/MAPBOX_API_TOKEN",
-            json={"value": "pk.test_mapbox_token"},
-        ).status_code
-        == 200
-    )
-    graph = client.post(
-        "/graphs",
-        json={
-            "name": "Empty",
-            "project_id": project["id"],
-            "spec": _minimal_text_input_spec(name="empty"),
-        },
-    ).json()
-    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
-    assert run.get("mapbox_api_token") == "pk.test_mapbox_token"
-    assert client.get(f"/runs/{run['id']}").json().get("mapbox_api_token") == "pk.test_mapbox_token"
 
 
 def test_create_project_with_workspace_id(tmp_path):

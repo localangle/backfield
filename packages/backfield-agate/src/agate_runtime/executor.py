@@ -1,16 +1,24 @@
-"""Execute an Agate graph synchronously."""
+"""Execute an Agate graph synchronously or with predecessor-ready parallel scheduling."""
 
 from __future__ import annotations
 
+import asyncio
+import os
 import re
 from collections import defaultdict, deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from agate_runtime.context import AgateEnvContext
 from agate_runtime.nodes import NODE_RUNNERS
+from agate_runtime.runners import ASYNC_NODE_RUNNERS, default_context
 from agate_runtime.types import Edge, GraphSpec, NodeConfig
 
 NodeRunner = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+AsyncNodeRunner = Callable[
+    [dict[str, Any], dict[str, Any], AgateEnvContext],
+    Any,
+]
 
 # Stable JSON keys for run results: snake_case from node type, with palette aliases where needed.
 _NODE_TYPE_OUTPUT_SLUGS: dict[str, str] = {
@@ -29,6 +37,14 @@ def _node_type_to_output_slug(node_type: str) -> str:
 
 class GraphExecutionError(Exception):
     pass
+
+
+def _parallel_levels_enabled() -> bool:
+    return os.environ.get("BACKFIELD_PARALLEL_GRAPH_LEVELS", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _topo_order(spec: GraphSpec) -> list[str]:
@@ -59,6 +75,66 @@ def _topo_order(spec: GraphSpec) -> list[str]:
     return order
 
 
+_INPUT_NODE_TYPES = frozenset({"TextInput", "JSONInput", "S3Input"})
+
+
+def build_execution_levels(spec: GraphSpec) -> list[list[str]]:
+    """Group node ids by graph depth (legacy level-barrier helper; agate-ai-platform parity)."""
+    sorted_ids = _topo_order(spec)
+    node_ids = {n.id for n in spec.nodes}
+    depths: dict[str, int] = {}
+    for node_id in sorted_ids:
+        max_input_depth = -1
+        for edge in spec.edges:
+            if edge.source not in node_ids or edge.target not in node_ids:
+                continue
+            if edge.target == node_id and edge.source in depths:
+                max_input_depth = max(max_input_depth, depths[edge.source])
+        depths[node_id] = max_input_depth + 1
+    levels_dict: dict[int, list[str]] = defaultdict(list)
+    for node_id, depth in depths.items():
+        levels_dict[depth].append(node_id)
+    return [levels_dict[i] for i in sorted(levels_dict.keys())]
+
+
+def _direct_upstream_ids(target_id: str, edges: list[Edge], node_ids: set[str]) -> frozenset[str]:
+    return frozenset(
+        edge.source
+        for edge in edges
+        if edge.target == target_id and edge.source in node_ids
+    )
+
+
+def _all_other_nodes_complete(
+    exclude_id: str,
+    *,
+    by_id: dict[str, NodeConfig],
+    completed_ids: set[str],
+) -> bool:
+    required = {
+        node.id
+        for node in by_id.values()
+        if node.id != exclude_id and node.type != "ArraySplitter"
+    }
+    return required <= completed_ids
+
+
+def _node_is_ready(
+    node: NodeConfig,
+    *,
+    completed_ids: set[str],
+    by_id: dict[str, NodeConfig],
+    edges: list[Edge],
+    node_ids: set[str],
+) -> bool:
+    if node.type == "Output":
+        return _all_other_nodes_complete(node.id, by_id=by_id, completed_ids=completed_ids)
+    upstream = _direct_upstream_ids(node.id, edges, node_ids)
+    if not upstream and node.type in _INPUT_NODE_TYPES:
+        return True
+    return upstream <= completed_ids
+
+
 def _namespaced_upstream_inputs(
     target_id: str,
     edges: list[Edge],
@@ -78,6 +154,18 @@ def _namespaced_upstream_inputs(
             continue
         state[source_id] = dict(node_outputs[source_id])
     return state
+
+
+def _inputs_for_node(
+    node: NodeConfig,
+    *,
+    edges: list[Edge],
+    node_outputs: dict[str, dict[str, Any]],
+    by_id: dict[str, NodeConfig],
+) -> dict[str, Any]:
+    if node.type == "Output":
+        return _merged_outputs_for_output(node_outputs, by_id)
+    return _namespaced_upstream_inputs(node.id, edges, node_outputs, by_id)
 
 
 def _public_node_output_keys(
@@ -133,6 +221,224 @@ def _merged_outputs_for_output(
     return merged
 
 
+def _run_sync_node(
+    node: NodeConfig,
+    inputs: dict[str, Any],
+    runners: Mapping[str, NodeRunner],
+    before_each_node: Callable[[str, str], None] | None,
+) -> dict[str, Any]:
+    runner = runners.get(node.type)
+    if not runner:
+        raise GraphExecutionError(f"Unknown node type: {node.type}")
+    if before_each_node is not None:
+        before_each_node(node.id, node.type)
+    try:
+        result = runner(node.params, inputs)
+    except Exception as exc:
+        raise GraphExecutionError(f"Node {node.id} ({node.type}) failed: {exc}") from exc
+    if not isinstance(result, dict):
+        raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
+    return result
+
+
+async def _run_node_async(
+    node: NodeConfig,
+    inputs: dict[str, Any],
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+    ctx: AgateEnvContext,
+    async_runners: Mapping[str, AsyncNodeRunner],
+) -> tuple[str, dict[str, Any]]:
+    if before_each_node is not None:
+        before_each_node(node.id, node.type)
+    async_runner = async_runners.get(node.type)
+    try:
+        if async_runner is not None:
+            result = await async_runner(node.params, inputs, ctx)
+        else:
+            sync_runner = runners.get(node.type)
+            if sync_runner is None:
+                raise GraphExecutionError(f"Unknown node type: {node.type}")
+            result = await asyncio.to_thread(sync_runner, node.params, inputs)
+    except GraphExecutionError:
+        raise
+    except Exception as exc:
+        raise GraphExecutionError(f"Node {node.id} ({node.type}) failed: {exc}") from exc
+    if not isinstance(result, dict):
+        raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
+    return node.id, result
+
+
+async def _execute_level_async(
+    level_nodes: list[NodeConfig],
+    level_inputs: dict[str, dict[str, Any]],
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+    ctx: AgateEnvContext,
+    async_runners: Mapping[str, AsyncNodeRunner],
+) -> dict[str, dict[str, Any]]:
+    pairs = await asyncio.gather(
+        *[
+            _run_node_async(
+                node,
+                level_inputs[node.id],
+                runners,
+                before_each_node=before_each_node,
+                ctx=ctx,
+                async_runners=async_runners,
+            )
+            for node in level_nodes
+        ]
+    )
+    return dict(pairs)
+
+
+def _execute_graph_sequential(
+    spec: GraphSpec,
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+) -> dict[str, Any]:
+    by_id = {node.id: node for node in spec.nodes}
+    order = _topo_order(spec)
+    node_outputs: dict[str, dict[str, Any]] = {}
+
+    for node_id in order:
+        node = by_id[node_id]
+        inputs = _inputs_for_node(
+            node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
+        )
+        node_outputs[node_id] = _run_sync_node(node, inputs, runners, before_each_node)
+
+    return _remap_outputs_for_json(by_id, order, node_outputs)
+
+
+def _execute_graph_parallel_levels(
+    spec: GraphSpec,
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+    async_runners: Mapping[str, AsyncNodeRunner],
+) -> dict[str, Any]:
+    by_id = {node.id: node for node in spec.nodes}
+    order = _topo_order(spec)
+    node_outputs: dict[str, dict[str, Any]] = {}
+    ctx = default_context()
+
+    for level_ids in build_execution_levels(spec):
+        level_nodes = [by_id[node_id] for node_id in level_ids]
+        if len(level_nodes) == 1:
+            node = level_nodes[0]
+            inputs = _inputs_for_node(
+                node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
+            )
+            node_outputs[node.id] = _run_sync_node(node, inputs, runners, before_each_node)
+            continue
+
+        level_inputs = {
+            node.id: _inputs_for_node(
+                node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
+            )
+            for node in level_nodes
+        }
+        level_results = asyncio.run(
+            _execute_level_async(
+                level_nodes,
+                level_inputs,
+                runners,
+                before_each_node=before_each_node,
+                ctx=ctx,
+                async_runners=async_runners,
+            )
+        )
+        node_outputs.update(level_results)
+
+    return _remap_outputs_for_json(by_id, order, node_outputs)
+
+
+async def _execute_graph_ready_parallel_async(
+    spec: GraphSpec,
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+    async_runners: Mapping[str, AsyncNodeRunner],
+) -> dict[str, Any]:
+    by_id = {node.id: node for node in spec.nodes}
+    order = _topo_order(spec)
+    node_ids = set(by_id)
+    pending_ids = set(by_id)
+    completed_ids: set[str] = set()
+    node_outputs: dict[str, dict[str, Any]] = {}
+    in_flight: dict[str, asyncio.Task[tuple[str, dict[str, Any]]]] = {}
+    ctx = default_context()
+
+    def _ready_nodes() -> list[NodeConfig]:
+        return [
+            by_id[node_id]
+            for node_id in pending_ids
+            if _node_is_ready(
+                by_id[node_id],
+                completed_ids=completed_ids,
+                by_id=by_id,
+                edges=spec.edges,
+                node_ids=node_ids,
+            )
+        ]
+
+    def _launch_ready() -> None:
+        for node in _ready_nodes():
+            pending_ids.discard(node.id)
+            inputs = _inputs_for_node(
+                node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
+            )
+            in_flight[node.id] = asyncio.create_task(
+                _run_node_async(
+                    node,
+                    inputs,
+                    runners,
+                    before_each_node=before_each_node,
+                    ctx=ctx,
+                    async_runners=async_runners,
+                )
+            )
+
+    _launch_ready()
+    while in_flight:
+        done, _pending = await asyncio.wait(
+            in_flight.values(),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in done:
+            node_id, result = task.result()
+            node_outputs[node_id] = result
+            completed_ids.add(node_id)
+            del in_flight[node_id]
+        _launch_ready()
+        if not in_flight and pending_ids:
+            raise GraphExecutionError("Deadlock: no nodes ready to execute")
+
+    return _remap_outputs_for_json(by_id, order, node_outputs)
+
+
+def _execute_graph_ready_parallel(
+    spec: GraphSpec,
+    runners: Mapping[str, NodeRunner],
+    *,
+    before_each_node: Callable[[str, str], None] | None,
+    async_runners: Mapping[str, AsyncNodeRunner],
+) -> dict[str, Any]:
+    return asyncio.run(
+        _execute_graph_ready_parallel_async(
+            spec,
+            runners,
+            before_each_node=before_each_node,
+            async_runners=async_runners,
+        )
+    )
+
+
 def execute_graph(
     spec: GraphSpec,
     node_runners: Mapping[str, NodeRunner] | None = None,
@@ -142,6 +448,11 @@ def execute_graph(
     """
     Run all nodes in dependency order.
 
+    When ``BACKFIELD_PARALLEL_GRAPH_LEVELS`` is ``1``/``true``/``yes``, each node runs
+    as soon as its readiness rules are satisfied (direct upstream for most nodes;
+    JSON ``Output`` waits for every other node). Ready nodes in a batch run concurrently
+    via ``asyncio.gather``.
+
     ``before_each_node``, when provided, is invoked as ``(node_id, node_type)`` immediately
     before each node's runner (used by the worker for LLM attempt attribution).
 
@@ -150,33 +461,15 @@ def execute_graph(
     internal React Flow ids. Execution still uses internal ids for wiring; downstream
     runners receive namespaced inputs keyed by id.
     """
-    by_id = {node.id: node for node in spec.nodes}
-    order = _topo_order(spec)
-    node_outputs: dict[str, dict[str, Any]] = {}
-
     runners = NODE_RUNNERS if node_runners is None else dict(NODE_RUNNERS) | dict(node_runners)
 
-    for node_id in order:
-        node = by_id[node_id]
-        runner = runners.get(node.type)
-        if not runner:
-            raise GraphExecutionError(f"Unknown node type: {node.type}")
-
-        if node.type == "Output":
-            inputs = _merged_outputs_for_output(node_outputs, by_id)
-        else:
-            inputs = _namespaced_upstream_inputs(node_id, spec.edges, node_outputs, by_id)
-
-        if before_each_node is not None:
-            before_each_node(node_id, node.type)
-
-        try:
-            result = runner(node.params, inputs)
-        except Exception as exc:
-            raise GraphExecutionError(f"Node {node_id} ({node.type}) failed: {exc}") from exc
-
-        if not isinstance(result, dict):
-            raise GraphExecutionError(f"Node {node_id} returned non-dict: {type(result)}")
-        node_outputs[node_id] = result
-
-    return _remap_outputs_for_json(by_id, order, node_outputs)
+    if _parallel_levels_enabled():
+        return _execute_graph_ready_parallel(
+            spec,
+            runners,
+            before_each_node=before_each_node,
+            async_runners=ASYNC_NODE_RUNNERS,
+        )
+    return _execute_graph_sequential(
+        spec, runners, before_each_node=before_each_node
+    )

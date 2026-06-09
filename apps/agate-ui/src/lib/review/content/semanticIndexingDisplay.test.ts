@@ -21,7 +21,7 @@ describe('semanticIndexingDisplay', () => {
       failed_count: 0,
     })
     expect(semanticIndexingStatusLabel(summary.status)).toBe('Complete')
-    expect(formatSemanticIndexingDetail(summary)).toBe('3 indexed')
+    expect(formatSemanticIndexingDetail(summary)).toBe('3 documents indexed')
     expect(shouldShowSemanticIndexingSummary(summary)).toBe(true)
   })
 
@@ -35,7 +35,7 @@ describe('semanticIndexingDisplay', () => {
       failed_count: 1,
     })
     expect(semanticIndexingStatusLabel(summary.status)).toBe('Partial')
-    expect(formatSemanticIndexingDetail(summary)).toBe('2 indexed · 1 waiting · 1 failed')
+    expect(formatSemanticIndexingDetail(summary)).toBe('2 documents indexed')
   })
 
   it('hides not-enabled summary from the card', () => {

@@ -46,8 +46,6 @@ const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
   places: 'Places',
   people: 'People',
   organizations: 'Organizations',
-  events: 'Events',
-  works: 'Works',
   images: 'Images',
   meta: 'Meta',
   json: 'JSON',
@@ -493,8 +491,6 @@ export default function ProcessedItemDetail() {
     })
   }, [item, graph])
 
-  const mapboxToken = run?.mapbox_api_token ?? (import.meta.env.VITE_MAPBOX_API_TOKEN as string | undefined) ?? null
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -800,8 +796,6 @@ export default function ProcessedItemDetail() {
                   nodeId={viz.nodeId}
                   nodeLabel={viz.description || viz.title}
                   output={output}
-                  mapboxToken={mapboxToken || undefined}
-                  data={viz.data}
                 />
               )
             })}
@@ -875,8 +869,6 @@ export default function ProcessedItemDetail() {
 
         {(
           [
-            ['events', 'Events'],
-            ['works', 'Works'],
             ['images', 'Images'],
             ['meta', 'Meta'],
           ] as const

@@ -30,9 +30,10 @@ from backfield_db import (
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
-    BackfieldProjectSecret,
 )
-from backfield_db.crypto import decrypt_secret
+from backfield_entities.connections.processed_item import (
+    build_processed_item_connections_summary,
+)
 from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
 )
@@ -48,26 +49,6 @@ DEFAULT_AI_COST_CURRENCY = "USD"
 _RUN_CANCELLED_MESSAGE = "Run cancelled by user"
 
 router = APIRouter(prefix="/runs", tags=["runs"])
-
-_MAPBOX_SECRET_KEY = "MAPBOX_API_TOKEN"
-
-
-def _mapbox_api_token_for_project(session: Session, project_id: int) -> str | None:
-    """Decrypt MAPBOX_API_TOKEN for map UIs (browser-side Mapbox GL)."""
-    if project_id <= 0:
-        return None
-    row = session.exec(
-        select(BackfieldProjectSecret).where(
-            BackfieldProjectSecret.project_id == project_id,
-            BackfieldProjectSecret.key == _MAPBOX_SECRET_KEY,
-        )
-    ).first()
-    if row is None:
-        return None
-    try:
-        return decrypt_secret(row.value_encrypted)
-    except (RuntimeError, ValueError):
-        return None
 
 celery_app = Celery(
     "agate_worker",
@@ -124,6 +105,32 @@ class ArticleContextOut(BaseModel):
     body: str = ""
     resolution: Literal["substrate", "inline_fallback", "none"]
     reason: str | None = None
+
+
+class ProcessedItemConnectionEdgeOut(BaseModel):
+    """One auto-created connection edge for processed item detail."""
+
+    from_display_name: str
+    to_display_name: str
+    nature: str
+    confidence: float | None = None
+
+
+class ProcessedItemConnectionsOut(BaseModel):
+    """Compact automatic connections status for processed item detail."""
+
+    status: Literal[
+        "disabled",
+        "ineligible",
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+    ]
+    enabled: bool = False
+    created_count: int = 0
+    edges: list[ProcessedItemConnectionEdgeOut] = Field(default_factory=list)
+    error: str | None = None
 
 
 class ProcessedItemSemanticIndexingOut(BaseModel):
@@ -186,6 +193,8 @@ class ProcessedItemDetailOut(BaseModel):
     article_context: ArticleContextOut
     #: Semantic search indexing status from Backfield Output (see ``docs/API.md``).
     semantic_indexing: ProcessedItemSemanticIndexingOut
+    #: Automatic Stylebook connections status from Backfield Output.
+    connections: ProcessedItemConnectionsOut
 
 
 class ProcessedItemOverlayPatchIn(BaseModel):
@@ -210,7 +219,6 @@ class RunOut(BaseModel):
     status: str
     result: dict | list | None = None
     error_message: str | None = None
-    mapbox_api_token: str | None = None
     created_at: datetime
     updated_at: datetime
     total_items: int = 0
@@ -251,6 +259,18 @@ def _processed_item_semantic_indexing(
         item_updated_at=item_updated_at,
     )
     return ProcessedItemSemanticIndexingOut.model_validate(summary)
+
+
+def _processed_item_connections(
+    *,
+    item_status: str,
+    output_obj: dict[str, Any] | None,
+) -> ProcessedItemConnectionsOut:
+    summary = build_processed_item_connections_summary(
+        item_status=item_status,
+        result_obj=output_obj,
+    )
+    return ProcessedItemConnectionsOut.model_validate(summary)
 
 
 def _rollup_ai_costs_for_run(
@@ -586,7 +606,6 @@ def create_run(
         graph_id=run.graph_id,
         project_id=g.project_id,
         status=run.status,
-        mapbox_api_token=_mapbox_api_token_for_project(session, g.project_id),
         created_at=run.created_at,
         updated_at=run.updated_at,
         total_items=total_items,
@@ -642,7 +661,6 @@ def list_runs(
                 status=r.status,
                 result=result,
                 error_message=r.error_message,
-                mapbox_api_token=_mapbox_api_token_for_project(session, pid),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
                 total_items=total_items,
@@ -748,6 +766,10 @@ def _detail_from_agate_processed_row(
         article_id=article_ctx_dict.get("article_id"),
         item_updated_at=row.updated_at,
     )
+    connections = _processed_item_connections(
+        item_status=row.status,
+        output_obj=output_obj,
+    )
 
     rid = row.id
     if rid is None:
@@ -780,6 +802,7 @@ def _detail_from_agate_processed_row(
         stale_organizations_overlay_entries=stale_organizations_overlay_entries,
         article_context=article_ctx,
         semantic_indexing=semantic_indexing,
+        connections=connections,
     )
 
 
@@ -881,6 +904,10 @@ def _maybe_detail_whole_graph_run(
         article_id=article_ctx_dict.get("article_id"),
         item_updated_at=run.updated_at,
     )
+    connections = _processed_item_connections(
+        item_status=st,
+        output_obj=output_obj,
+    )
 
     return ProcessedItemDetailOut(
         id=1,
@@ -910,6 +937,7 @@ def _maybe_detail_whole_graph_run(
         stale_organizations_overlay_entries=stale_organizations_overlay_entries,
         article_context=article_ctx,
         semantic_indexing=semantic_indexing,
+        connections=connections,
     )
 
 
@@ -1167,7 +1195,6 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         status=r.status,
         result=result,
         error_message=r.error_message,
-        mapbox_api_token=_mapbox_api_token_for_project(session, pid),
         created_at=r.created_at,
         updated_at=r.updated_at,
         total_items=total_items,

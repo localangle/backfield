@@ -3,10 +3,18 @@
  */
 
 import {
+  normalizeProcessedItemConnections,
+  type ProcessedItemConnections,
+} from '@/lib/review/content/connectionsDisplay'
+import {
   normalizeProcessedItemSemanticIndexing,
   type ProcessedItemSemanticIndexing,
 } from '@/lib/review/content/semanticIndexingDisplay'
 
+export type {
+  ProcessedItemConnections,
+  ProcessedItemConnectionsStatus,
+} from '@/lib/review/content/connectionsDisplay'
 export type {
   ProcessedItemSemanticIndexing,
   ProcessedItemSemanticIndexingStatus,
@@ -152,6 +160,8 @@ export interface ProcessedItem {
   article_context?: ArticleContext
   /** Compact semantic search indexing status from Backfield Output. */
   semantic_indexing?: ProcessedItemSemanticIndexing
+  /** Compact automatic connections status from Backfield Output. */
+  connections?: ProcessedItemConnections
 }
 
 export interface Run {
@@ -167,7 +177,6 @@ export interface Run {
   succeeded_items: number
   failed_items: number
   items?: ProcessedItemSummary[] | null
-  mapbox_api_token?: string | null
   node_outputs?: Record<string, unknown> | null
   /** When there are no batch rows, LLM cost for the whole run (``processed_item_id`` null on call rows). */
   whole_run_ai_cost_estimate?: number
@@ -256,7 +265,6 @@ interface RawRun {
   status: string
   result?: unknown
   error_message?: string | null
-  mapbox_api_token?: string | null
   created_at: string
   updated_at: string
   total_items?: number
@@ -448,7 +456,6 @@ function normalizeRun(raw: RawRun): Run {
     failed_items: hasServerItemCounts ? raw.failed_items : failed,
     items,
     node_outputs: outputs,
-    mapbox_api_token: raw.mapbox_api_token ?? null,
     whole_run_ai_cost_estimate: wrEst,
     whole_run_ai_cost_incomplete: wrInc,
     whole_run_ai_cost_currency: wrCur,
@@ -607,6 +614,7 @@ interface RawProcessedItemDetail {
   stale_organizations_overlay_entries?: Array<Record<string, unknown>>
   article_context?: unknown
   semantic_indexing?: unknown
+  connections?: unknown
 }
 
 function _normalizeArticleContext(raw: unknown): ArticleContext {
@@ -703,6 +711,7 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
         : null,
     article_context: _normalizeArticleContext(raw.article_context),
     semantic_indexing: normalizeProcessedItemSemanticIndexing(raw.semantic_indexing),
+    connections: normalizeProcessedItemConnections(raw.connections),
   }
 }
 

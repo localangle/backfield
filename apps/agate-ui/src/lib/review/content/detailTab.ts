@@ -4,8 +4,6 @@ export const PROCESSED_ITEM_DETAIL_TABS = [
   'places',
   'people',
   'organizations',
-  'events',
-  'works',
   'images',
   'meta',
   'json',
