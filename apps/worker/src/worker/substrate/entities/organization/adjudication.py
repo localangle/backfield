@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from agate_utils.llm import call_llm
@@ -20,15 +21,24 @@ from backfield_entities.canonical.plan_types import (
 from backfield_entities.entities.organization.policy import (
     AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH,
     organization_may_materialize_canonical_after_recall,
-    organization_type_matches_canonical,
     plan_is_materialize_new_canonical,
     replan_organization_canonical_after_name_variants,
 )
 from backfield_entities.entities.organization.types import (
     multiword_organization_names_share_ambiguous_acronym,
     normalize_organization_text,
+    normalize_organization_type,
 )
 from sqlmodel import Session, select
+
+
+@dataclass(frozen=True)
+class OrganizationAdjudicationPrepared:
+    organization: SubstrateOrganization
+    model: str
+    model_config_id: str | None
+    candidates: tuple[tuple[str, str, str | None, tuple[str, ...]], ...]
+    prompt: str
 
 
 def _recall_context_for_adjudication(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
@@ -95,6 +105,23 @@ def _candidate_rows(
             )
         )
     return out
+
+
+def _canonical_ids_from_recall(plan: CanonicalPersistPlan) -> list[str]:
+    ctx = _recall_context_for_adjudication(plan)
+    if ctx is None:
+        return []
+    raw_ids = ctx.get("recall_canonical_ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return []
+    cids: list[str] = []
+    for x in raw_ids:
+        if x is None:
+            continue
+        s = str(x).strip()
+        if s:
+            cids.append(s)
+    return cids
 
 
 def llm_suggest_organization_name_variants(
@@ -181,7 +208,7 @@ def enrich_materialize_plan_with_name_variant_recall(
     )
 
 
-def adjudicate_ambiguous_organization_plan_with_llm(
+def prepare_organization_adjudication(
     session: Session,
     *,
     plan: CanonicalPersistPlan,
@@ -189,26 +216,13 @@ def adjudicate_ambiguous_organization_plan_with_llm(
     stylebook_id: int,
     model: str,
     model_config_id: str | None = None,
-) -> CanonicalPersistPlan:
-    """LLM pick among recalled organization canonicals; declined link may materialize."""
-    ctx = _recall_context_for_adjudication(plan)
-    if ctx is None:
-        return plan
-    raw_ids = ctx.get("recall_canonical_ids")
-    if not isinstance(raw_ids, list) or not raw_ids:
-        return plan
-    cids: list[str] = []
-    for x in raw_ids:
-        if x is None:
-            continue
-        s = str(x).strip()
-        if s:
-            cids.append(s)
+) -> OrganizationAdjudicationPrepared | None:
+    cids = _canonical_ids_from_recall(plan)
     if not cids:
-        return plan
+        return None
     candidates = _candidate_rows(session, stylebook_id=stylebook_id, canonical_ids=cids)
     if not candidates:
-        return plan
+        return None
 
     lines = "\n".join(
         f"- id={cid} label={label!r} organization_type={org_type!r} aliases={aliases!r}"
@@ -243,24 +257,66 @@ def adjudicate_ambiguous_organization_plan_with_llm(
         "Return JSON only: canonical_id (UUID string matching one candidate id, or null), "
         "confidence (0.0-1.0), rationale (short string)."
     )
+    return OrganizationAdjudicationPrepared(
+        organization=organization,
+        model=model,
+        model_config_id=model_config_id,
+        candidates=tuple(
+            (cid, label, org_type, tuple(aliases))
+            for cid, label, org_type, aliases in candidates
+        ),
+        prompt=prompt,
+    )
+
+
+def run_organization_adjudication_llm(
+    prepared: OrganizationAdjudicationPrepared,
+) -> dict[str, Any] | None:
     try:
         raw = call_llm(
-            prompt,
-            model=model,
+            prepared.prompt,
+            model=prepared.model,
             force_json=True,
             temperature=0.0,
             max_tokens=800,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            model_config_id=model_config_id,
+            model_config_id=prepared.model_config_id,
         )
         data = json.loads(raw)
     except Exception:
-        return plan
+        return None
     if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _organization_type_matches_candidate(
+    organization: SubstrateOrganization,
+    *,
+    canon_organization_type: str | None,
+) -> bool:
+    org_type = normalize_organization_type(organization.organization_type)
+    canon_type = normalize_organization_type(canon_organization_type)
+    return org_type == canon_type
+
+
+def resolve_organization_adjudication_plan(
+    plan: CanonicalPersistPlan,
+    *,
+    prepared: OrganizationAdjudicationPrepared,
+    llm_data: dict[str, Any] | None,
+) -> CanonicalPersistPlan:
+    if llm_data is None:
         return plan
-    cid_raw = data.get("canonical_id")
-    conf_raw = data.get("confidence", 0.0)
-    rationale = str(data.get("rationale") or "").strip()
+
+    organization = prepared.organization
+    candidates = prepared.candidates
+    model = prepared.model
+    candidates_by_id = {str(c[0]): c for c in candidates}
+
+    cid_raw = llm_data.get("canonical_id")
+    conf_raw = llm_data.get("confidence", 0.0)
+    rationale = str(llm_data.get("rationale") or "").strip()
     chosen: str | None
     if cid_raw is None or cid_raw == "":
         chosen = None
@@ -270,7 +326,6 @@ def adjudicate_ambiguous_organization_plan_with_llm(
         confidence = float(conf_raw)
     except (TypeError, ValueError):
         confidence = 0.0
-    canon = session.get(StylebookOrganizationCanonical, str(chosen)) if chosen is not None else None
 
     def _reject_link() -> CanonicalPersistPlan:
         extra: dict[str, Any] = {
@@ -293,19 +348,22 @@ def adjudicate_ambiguous_organization_plan_with_llm(
             resolution_reasons=merged,
         )
 
-    if (
-        chosen is None
-        or chosen not in {str(c[0]) for c in candidates}
-        or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE
-        or canon is None
+    if chosen is None or confidence < ADJUDICATION_LINK_MIN_CONFIDENCE:
+        return _reject_link()
+
+    candidate_row = candidates_by_id.get(str(chosen))
+    if candidate_row is None:
+        return _reject_link()
+
+    _cid, canon_label, canon_org_type, _aliases = candidate_row
+    if not _organization_type_matches_candidate(
+        organization,
+        canon_organization_type=canon_org_type,
     ):
         return _reject_link()
 
-    if not organization_type_matches_canonical(organization, canon):
-        return _reject_link()
-
     substrate_norm = normalize_organization_text(organization.normalized_name or organization.name)
-    canon_label_norm = normalize_organization_text(canon.label)
+    canon_label_norm = normalize_organization_text(canon_label)
     if multiword_organization_names_share_ambiguous_acronym(
         substrate_norm,
         canon_label_norm,
@@ -327,3 +385,27 @@ def adjudicate_ambiguous_organization_plan_with_llm(
         existing_canonical_id=str(chosen),
         resolution_reasons=merged,
     )
+
+
+def adjudicate_ambiguous_organization_plan_with_llm(
+    session: Session,
+    *,
+    plan: CanonicalPersistPlan,
+    organization: SubstrateOrganization,
+    stylebook_id: int,
+    model: str,
+    model_config_id: str | None = None,
+) -> CanonicalPersistPlan:
+    """LLM pick among recalled organization canonicals; declined link may materialize."""
+    prepared = prepare_organization_adjudication(
+        session,
+        plan=plan,
+        organization=organization,
+        stylebook_id=stylebook_id,
+        model=model,
+        model_config_id=model_config_id,
+    )
+    if prepared is None:
+        return plan
+    llm_data = run_organization_adjudication_llm(prepared)
+    return resolve_organization_adjudication_plan(plan, prepared=prepared, llm_data=llm_data)

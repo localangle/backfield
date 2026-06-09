@@ -159,6 +159,7 @@ services:
       # do not exhaust Postgres max_connections alongside agate-api / core-api / stylebook-api.
       BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-2}
       BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-3}
+      CANONICAL_ADJUDICATION_MAX_CONCURRENT: ${CANONICAL_ADJUDICATION_MAX_CONCURRENT:-8}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # STYLEBOOK_BUNDLE_* from env_file (../.env); avoid empty compose override (see stylebook-api).
