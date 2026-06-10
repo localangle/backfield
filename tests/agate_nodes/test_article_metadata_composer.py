@@ -64,6 +64,24 @@ def test_extract_format_categories() -> None:
     ]
 
 
+def test_extract_user_need_categories() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    prompt = load_package_file("prompts/presets/user_need.md")
+    categories = extract_categories_from_prompt(prompt)
+    assert categories == [
+        "update_me",
+        "explain_it_to_me",
+        "help_me_act",
+        "hold_power_to_account",
+        "show_me_the_community",
+        "move_me",
+        "entertain_me",
+        "catch_me_up",
+        "other",
+    ]
+
+
 def test_extract_information_needs_categories() -> None:
     from agate_nodes.article_metadata.composer import load_package_file
 

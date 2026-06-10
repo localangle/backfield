@@ -11,6 +11,7 @@ PromptPresetId = Literal[
     "format",
     "geographic_scope",
     "information_needs",
+    "user_need",
     "jobs_to_be_done",
     "custom",
 ]
@@ -22,6 +23,7 @@ PRESET_IDS: tuple[str, ...] = (
     "format",
     "geographic_scope",
     "information_needs",
+    "user_need",
     "jobs_to_be_done",
     "custom",
 )
@@ -41,6 +43,7 @@ PRESET_LABELS: dict[str, str] = {
     "format": "Format",
     "geographic_scope": "Scope",
     "information_needs": "Critical information need",
+    "user_need": "User need",
     "jobs_to_be_done": "Jobs to be done",
     "custom": "Custom",
 }

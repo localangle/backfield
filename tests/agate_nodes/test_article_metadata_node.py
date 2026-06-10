@@ -65,6 +65,32 @@ def test_run_emits_timeframe_category_for_temporal_orientation_preset() -> None:
     }
 
 
+def test_run_emits_user_need_for_user_need_preset() -> None:
+    llm_payload = {
+        "category": "update_me",
+        "rationale": "Timely information about a local government decision.",
+        "confidence": 0.95,
+    }
+
+    with patch(
+        "agate_nodes.article_metadata.node_port.call_llm",
+        return_value=json.dumps(llm_payload),
+    ):
+        out = run_article_metadata_runtime(
+            {"prompt_preset": "user_need"},
+            {"text": "City council approves budget after 5-2 vote."},
+            AgateEnvContext(run_id="run-test"),
+        )
+
+    assert out["article_metadata"] == {
+        "meta_type": "user_need",
+        "category": "update_me",
+        "rationale": "Timely information about a local government decision.",
+        "confidence": 0.95,
+        "prompt_preset": "user_need",
+    }
+
+
 def test_run_emits_needs_for_information_needs_preset() -> None:
     llm_payload = [
         {
