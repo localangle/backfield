@@ -3,6 +3,7 @@ import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
@@ -12,6 +13,7 @@ import {
   resolvedAiModelSelectValue,
 } from '@/lib/nodePanelAiModel'
 import {
+  ARTICLE_METADATA_DEFAULT_PRESET,
   ARTICLE_METADATA_PRESET_OPTIONS,
   type ArticleMetadataPresetId,
 } from './presetOptions'
@@ -19,7 +21,8 @@ import {
 const DEFAULTS = {
   model: '',
   aiModelConfigId: null as string | null,
-  prompt_preset: 'topic',
+  prompt_preset: ARTICLE_METADATA_DEFAULT_PRESET,
+  meta_type: '',
   prompt: '',
 }
 
@@ -39,9 +42,22 @@ function presetPromptsFromMetadata(): PresetPromptMap {
 }
 
 function normalizePreset(raw: unknown): ArticleMetadataPresetId {
-  const value = typeof raw === 'string' ? raw.trim().toLowerCase().replace(/-/g, '_') : 'topic'
+  const value =
+    typeof raw === 'string'
+      ? raw.trim().toLowerCase().replace(/-/g, '_')
+      : ARTICLE_METADATA_DEFAULT_PRESET
   const match = ARTICLE_METADATA_PRESET_OPTIONS.find((option) => option.id === value)
-  return match?.id ?? 'topic'
+  return match?.id ?? ARTICLE_METADATA_DEFAULT_PRESET
+}
+
+/** Keep metadata type slugs lowercase with underscores; strip disallowed characters. */
+function sanitizeMetaTypeInput(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^[_0-9]+/, '')
 }
 
 function resolvedModelSelectValue(
@@ -70,7 +86,7 @@ function promptMatchesPresetDefault(
     typeof nodeMetadata.defaultParams?.prompt === 'string'
       ? nodeMetadata.defaultParams.prompt.trim()
       : ''
-  return presetId === 'topic' && bundledDefault !== '' && trimmed === bundledDefault
+  return presetId === ARTICLE_METADATA_DEFAULT_PRESET && bundledDefault !== '' && trimmed === bundledDefault
 }
 
 interface ArticleMetadataPanelProps {
@@ -188,6 +204,8 @@ export default function ArticleMetadataPanel({
       : typeof nodeMetadata.defaultParams?.prompt === 'string'
         ? nodeMetadata.defaultParams.prompt
         : ''
+  const currentMetaType =
+    typeof paramsRecord.meta_type === 'string' ? paramsRecord.meta_type : ''
 
   const patchNodeData = (updates: Record<string, unknown>) => {
     if (!setNodes) return
@@ -211,6 +229,9 @@ export default function ArticleMetadataPanel({
     if (!setNodes) return
     const presetId = normalizePreset(nextPreset)
     const updates: Record<string, unknown> = { prompt_preset: presetId }
+    if (presetId !== 'custom') {
+      updates.meta_type = ''
+    }
     if (
       presetId !== 'custom' &&
       promptMatchesPresetDefault(currentPrompt, currentPreset, presetPrompts)
@@ -370,6 +391,37 @@ export default function ArticleMetadataPanel({
               Each preset classifies one metadata dimension for this run.
             </p>
           </div>
+
+          {currentPreset === 'custom' ? (
+            <div>
+              <Label className="text-sm font-medium">Metadata type</Label>
+              {editMode && setNodes ? (
+                <Input
+                  value={currentMetaType}
+                  onChange={(e) => {
+                    patchNodeData({ meta_type: sanitizeMetaTypeInput(e.target.value) })
+                  }}
+                  placeholder="brand_safety"
+                  className="mt-2 h-8 text-xs font-mono"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                />
+              ) : (
+                <div className="flex justify-between items-center p-2 bg-muted rounded mt-2">
+                  <span className="text-muted-foreground">Metadata type</span>
+                  <span className="font-medium text-xs font-mono">
+                    {currentMetaType.trim() || '—'}
+                  </span>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                Stored as the dimension key for this classifier (for example{' '}
+                <code className="bg-muted px-1 rounded">brand_safety</code>). Letters, numbers, and
+                underscores only — spaces become underscores as you type.
+              </p>
+            </div>
+          ) : null}
 
           <div>
             <Label className="text-sm font-medium">Prompt</Label>

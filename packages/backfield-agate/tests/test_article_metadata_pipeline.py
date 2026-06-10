@@ -17,11 +17,13 @@ from agate_runtime.starter_flow import starter_article_metadata_flow_graph_spec
 
 def _mock_article_metadata_json() -> str:
     return json.dumps(
-        {
-            "category": "Local news",
-            "rationale": "City council vote on a neighborhood park.",
-            "confidence": 0.82,
-        }
+        [
+            {
+                "category": "local_government_politics",
+                "rationale": "City council vote on a neighborhood park.",
+                "confidence": 0.82,
+            }
+        ]
     )
 
 
@@ -42,7 +44,7 @@ def test_text_to_article_metadata_to_dboutput() -> None:
                 type="TextInput",
                 params={"text": ARTICLE_METADATA_SMOKE_DEMO_TEXT},
             ),
-            NodeConfig(id="b", type="ArticleMetadata", params={"prompt_preset": "topic"}),
+            NodeConfig(id="b", type="ArticleMetadata", params={"prompt_preset": "subject"}),
             NodeConfig(
                 id="c",
                 type="DBOutput",
@@ -65,7 +67,7 @@ def test_text_to_article_metadata_to_dboutput() -> None:
     so = out["stylebook_output"]
     assert so["success"] is True
     meta = so["article_metadata"]
-    assert meta["meta_type"] == "topic"
-    assert meta["category"] == "Local news"
+    assert meta["meta_type"] == "subject"
+    assert meta["category"] == "local_government_politics"
     assert meta["confidence"] == 0.82
     assert so["text"] == ARTICLE_METADATA_SMOKE_DEMO_TEXT

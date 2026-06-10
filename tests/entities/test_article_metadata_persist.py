@@ -46,11 +46,11 @@ def _seed_article(session: Session) -> int:
 
 def _sample_block(**overrides: object) -> dict:
     base = {
-        "meta_type": "topic",
-        "category": "Local news",
+        "meta_type": "subject",
+        "category": "local_government_politics",
         "rationale": "The story covers a city council vote.",
         "confidence": 0.82,
-        "prompt_preset": "topic",
+        "prompt_preset": "subject",
     }
     base.update(overrides)
     return base
@@ -72,10 +72,10 @@ def test_persist_creates_row() -> None:
         row = session.exec(
             select(SubstrateArticleMeta).where(
                 SubstrateArticleMeta.article_id == article_id,
-                SubstrateArticleMeta.meta_type == "topic",
+                SubstrateArticleMeta.meta_type == "subject",
             )
         ).one()
-        assert row.category == "Local news"
+        assert row.category == "local_government_politics"
         assert row.source_run_id == "run-meta-1"
 
 
@@ -105,10 +105,10 @@ def test_add_only_skips_existing() -> None:
         row = session.exec(
             select(SubstrateArticleMeta).where(
                 SubstrateArticleMeta.article_id == article_id,
-                SubstrateArticleMeta.meta_type == "topic",
+                SubstrateArticleMeta.meta_type == "subject",
             )
         ).one()
-        assert row.category == "Local news"
+        assert row.category == "local_government_politics"
 
 
 def test_smart_merge_skips_unchanged() -> None:
@@ -159,7 +159,7 @@ def test_replace_updates_existing_row() -> None:
         row = session.exec(
             select(SubstrateArticleMeta).where(
                 SubstrateArticleMeta.article_id == article_id,
-                SubstrateArticleMeta.meta_type == "topic",
+                SubstrateArticleMeta.meta_type == "subject",
             )
         ).one()
         assert row.category == "Politics"
@@ -188,7 +188,7 @@ def test_missing_block_is_not_present_and_does_not_delete_existing() -> None:
         row = session.exec(
             select(SubstrateArticleMeta).where(SubstrateArticleMeta.article_id == article_id)
         ).one()
-        assert row.category == "Local news"
+        assert row.category == "local_government_politics"
 
 
 def test_persist_subject_creates_multiple_rows() -> None:

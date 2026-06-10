@@ -4,9 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { getNodeIcon, getNodeLabel, getNodeBgColor } from '@/lib/nodeUtils'
 
+import { ARTICLE_METADATA_DEFAULT_PRESET } from './presetOptions'
+
 interface ArticleMetadataData {
   model?: string
   prompt_preset?: string
+  meta_type?: string
 }
 
 function ArticleMetadataNode({ data, selected }: NodeProps<ArticleMetadataData>) {
@@ -14,10 +17,14 @@ function ArticleMetadataNode({ data, selected }: NodeProps<ArticleMetadataData>)
   const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
   const icon = getNodeIcon('ArticleMetadata', 'h-4 w-4')
   const bgColor = getNodeBgColor('ArticleMetadata')
-  const presetLabel =
+  const presetId =
     typeof data.prompt_preset === 'string' && data.prompt_preset.trim()
-      ? data.prompt_preset.replace(/_/g, ' ')
-      : 'topic'
+      ? data.prompt_preset.trim().toLowerCase().replace(/-/g, '_')
+      : ARTICLE_METADATA_DEFAULT_PRESET
+  const presetLabel =
+    presetId === 'custom' && typeof data.meta_type === 'string' && data.meta_type.trim()
+      ? data.meta_type.trim().replace(/_/g, ' ')
+      : presetId.replace(/_/g, ' ')
 
   return (
     <Card className={`w-[220px] ${selected ? 'ring-2 ring-primary' : ''}`}>

@@ -181,7 +181,7 @@ def starter_article_metadata_flow_graph_spec() -> GraphSpec:
             NodeConfig(
                 id="n2",
                 type="ArticleMetadata",
-                params={"prompt_preset": "topic"},
+                params={"prompt_preset": "subject"},
                 position={"x": 337.0, "y": 46.0},
             ),
             NodeConfig(

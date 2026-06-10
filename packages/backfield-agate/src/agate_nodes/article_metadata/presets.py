@@ -2,29 +2,30 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
+DEFAULT_PROMPT_PRESET = "subject"
+
+_META_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
 PromptPresetId = Literal[
-    "topic",
     "subject",
     "temporal_orientation",
     "format",
     "geographic_scope",
     "information_needs",
     "user_need",
-    "jobs_to_be_done",
     "custom",
 ]
 
 PRESET_IDS: tuple[str, ...] = (
-    "topic",
     "subject",
     "temporal_orientation",
     "format",
     "geographic_scope",
     "information_needs",
     "user_need",
-    "jobs_to_be_done",
     "custom",
 )
 
@@ -37,29 +38,53 @@ MULTI_VALUE_LIST_KEYS: dict[str, str] = {
 }
 
 PRESET_LABELS: dict[str, str] = {
-    "topic": "Topic",
     "subject": "Subject",
     "temporal_orientation": "Timeframe",
     "format": "Format",
     "geographic_scope": "Scope",
     "information_needs": "Critical information need",
     "user_need": "User need",
-    "jobs_to_be_done": "Jobs to be done",
     "custom": "Custom",
 }
 
 
 def normalize_prompt_preset(raw: str | None) -> str:
-    preset = (raw or "topic").strip().lower().replace("-", "_")
+    preset = (raw or DEFAULT_PROMPT_PRESET).strip().lower().replace("-", "_")
     if preset in PRESET_IDS:
         return preset
-    return "topic"
+    return DEFAULT_PROMPT_PRESET
 
 
 def meta_type_for_preset(preset_id: str) -> str:
     if preset_id == "custom":
         return "custom"
     return preset_id
+
+
+def normalize_custom_meta_type(raw: str | None) -> str:
+    """Validate a user-defined metadata dimension key for the custom preset."""
+    value = (raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not value:
+        raise ValueError(
+            "Custom preset requires a metadata type (for example brand_safety)."
+        )
+    if not _META_TYPE_PATTERN.match(value):
+        raise ValueError(
+            "Metadata type must start with a letter and use only lowercase letters, "
+            "numbers, and underscores."
+        )
+    reserved = {preset for preset in PRESET_IDS if preset != "custom"}
+    if value in reserved:
+        raise ValueError(
+            f"Metadata type {value!r} is reserved for a built-in preset; choose a different name."
+        )
+    return value
+
+
+def resolve_meta_type(preset_id: str, *, custom_meta_type: str | None = None) -> str:
+    if preset_id == "custom":
+        return normalize_custom_meta_type(custom_meta_type)
+    return meta_type_for_preset(preset_id)
 
 
 def preset_prompt_relpath(preset_id: str) -> str | None:

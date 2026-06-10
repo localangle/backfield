@@ -31,11 +31,11 @@ def _seed_article_with_meta(session: Session, *, project_id: int) -> tuple[int, 
     session.refresh(article)
     meta = SubstrateArticleMeta(
         article_id=int(article.id),  # type: ignore[arg-type]
-        meta_type="topic",
+        meta_type="subject",
         category="Local news",
         rationale="Because",
         confidence=0.82,
-        prompt_preset="topic",
+        prompt_preset="subject",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
@@ -92,7 +92,7 @@ def test_get_processed_item_includes_article_meta_rows(tmp_path, monkeypatch) ->
                 result_json=(
                     '{"stylebook_output":{"article_id":'
                     f"{article_id},"
-                    '"article_metadata":{"meta_type":"topic","category":"Local news",'
+                    '"article_metadata":{"meta_type":"subject","category":"Local news",'
                     '"rationale":"Because","confidence":0.82}}}'
                 ),
             )
@@ -106,7 +106,7 @@ def test_get_processed_item_includes_article_meta_rows(tmp_path, monkeypatch) ->
         payload = response.json()
         assert len(payload["article_meta"]) == 1
         assert payload["article_meta"][0]["category"] == "Local news"
-        assert payload["article_meta"][0]["meta_type"] == "topic"
+        assert payload["article_meta"][0]["meta_type"] == "subject"
     finally:
         app.dependency_overrides.clear()
 
@@ -158,7 +158,7 @@ def test_patch_article_meta_category_updates_substrate_and_overlay(tmp_path, mon
                 result_json=(
                     '{"stylebook_output":{"article_id":'
                     f"{article_id},"
-                    '"article_metadata":{"meta_type":"topic","category":"Local news",'
+                    '"article_metadata":{"meta_type":"subject","category":"Local news",'
                     '"rationale":"Because","confidence":0.82}}}'
                 ),
             )

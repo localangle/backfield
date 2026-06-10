@@ -10,14 +10,12 @@ export type ProcessedItemArticleMetaRow = {
 }
 
 const META_TYPE_LABELS: Record<string, string> = {
-  topic: 'Topic',
   subject: 'Subject',
   temporal_orientation: 'Timeframe',
   format: 'Format',
   geographic_scope: 'Scope',
   information_needs: 'Critical information need',
   user_need: 'User need',
-  jobs_to_be_done: 'Jobs to be done',
   custom: 'Custom',
 }
 

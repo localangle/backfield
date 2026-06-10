@@ -25,11 +25,11 @@ def _engine():
 
 def _sample_metadata_block() -> dict:
     return {
-        "meta_type": "topic",
-        "category": "Local news",
+        "meta_type": "subject",
+        "category": "local_government_politics",
         "rationale": "The story focuses on a neighborhood zoning decision.",
         "confidence": 0.86,
-        "prompt_preset": "topic",
+        "prompt_preset": "subject",
     }
 
 
@@ -105,8 +105,8 @@ def test_run_db_output_persists_article_metadata_without_extract_nodes() -> None
         row = session.exec(
             select(SubstrateArticleMeta).where(
                 SubstrateArticleMeta.article_id == out["article_id"],
-                SubstrateArticleMeta.meta_type == "topic",
+                SubstrateArticleMeta.meta_type == "subject",
             )
         ).one()
-        assert row.category == "Local news"
+        assert row.category == "local_government_politics"
         assert row.source_run_id == "run-meta-db"

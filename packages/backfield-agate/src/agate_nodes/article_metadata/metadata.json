@@ -32,9 +32,10 @@
   "defaultParams": {
     "model": "",
     "aiModelConfigId": null,
-    "prompt_preset": "topic",
+    "prompt_preset": "subject",
+    "meta_type": "",
     "prompt": "",
-    "prompt_file": "prompts/presets/topic.md",
+    "prompt_file": "prompts/presets/subject.md",
     "output_format_file": "prompts/_output_format.json",
     "llmTimeout": 600
   }

@@ -164,7 +164,7 @@ def test_compose_subject_prompt_requests_json_array() -> None:
 def test_compose_places_article_text_before_output_instructions() -> None:
     from agate_nodes.article_metadata.composer import load_package_file
 
-    template = load_package_file("prompts/presets/topic.md")
+    template = load_package_file("prompts/presets/user_need.md")
     flattened = {"text": "Council voted Tuesday."}
     output_format = '{"category": "Local news", "rationale": "...", "confidence": 0.5}'
     prompt, _categories = compose_article_metadata_prompt(

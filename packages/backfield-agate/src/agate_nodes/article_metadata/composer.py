@@ -95,7 +95,7 @@ def compose_article_metadata_prompt(
     prompt_template: str,
     flattened: dict[str, Any],
     output_format_json: str,
-    preset_id: str = "topic",
+    preset_id: str = "subject",
 ) -> tuple[str, list[str]]:
     body = substitute_prompt_placeholders(prompt_template, flattened)
     categories = extract_categories_from_prompt(body)

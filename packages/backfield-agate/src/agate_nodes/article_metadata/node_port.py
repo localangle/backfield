@@ -25,11 +25,11 @@ from agate_nodes.article_metadata.parse import (
 )
 from agate_nodes.article_metadata.presets import (
     is_multi_value_preset,
-    meta_type_for_preset,
     multi_value_list_key,
     normalize_prompt_preset,
     preset_output_format_relpath,
     preset_prompt_relpath,
+    resolve_meta_type,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,8 @@ class ArticleMetadataInput(BaseModel):
 class ArticleMetadataParams(BaseModel):
     model: str = Field(default="gpt-4o-mini")
     aiModelConfigId: str | None = Field(default=None)
-    prompt_preset: str = Field(default="topic")
+    prompt_preset: str = Field(default="subject")
+    meta_type: str = Field(default="")
     prompt: str = Field(default="")
     llmTimeout: int = Field(default=600, ge=60, le=1800)
 
@@ -100,6 +101,10 @@ class ArticleMetadataNode:
         text = resolve_text(flattened)
 
         preset_id, prompt_template = self._resolve_prompt_template(params)
+        resolved_meta_type = resolve_meta_type(
+            preset_id,
+            custom_meta_type=params.meta_type,
+        )
         output_format = load_package_file(preset_output_format_relpath(preset_id))
         prompt, allowed_categories = compose_article_metadata_prompt(
             prompt_template=prompt_template,
@@ -201,7 +206,7 @@ class ArticleMetadataNode:
                 for item in parsed_items
             ]
             output_data["article_metadata"] = {
-                "meta_type": meta_type_for_preset(preset_id),
+                "meta_type": resolved_meta_type,
                 "category": primary.category,
                 "rationale": primary.rationale,
                 "confidence": primary.confidence,
@@ -214,7 +219,7 @@ class ArticleMetadataNode:
                 allowed_categories=allowed_categories,
             )
             output_data["article_metadata"] = {
-                "meta_type": meta_type_for_preset(preset_id),
+                "meta_type": resolved_meta_type,
                 "category": parsed.category,
                 "rationale": parsed.rationale,
                 "confidence": parsed.confidence,

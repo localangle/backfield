@@ -45,11 +45,13 @@ SMOKE_PROJECT_SLUG = os.environ.get("SMOKE_PROJECT_SLUG", "general").strip()
 
 def _mock_article_metadata_json() -> str:
     return json.dumps(
-        {
-            "category": "Local news",
-            "rationale": "City council vote on a neighborhood park.",
-            "confidence": 0.82,
-        }
+        [
+            {
+                "category": "local_government_politics",
+                "rationale": "City council vote on a neighborhood park.",
+                "confidence": 0.82,
+            }
+        ]
     )
 
 
@@ -59,8 +61,8 @@ def _assert_stylebook_article_metadata(so: object) -> None:
     meta = so.get("article_metadata")
     if not isinstance(meta, dict):
         raise RuntimeError(f"Expected article_metadata dict, got {meta!r}")
-    if meta.get("meta_type") != "topic":
-        raise RuntimeError(f"Expected meta_type=topic, got {meta.get('meta_type')!r}")
+    if meta.get("meta_type") != "subject":
+        raise RuntimeError(f"Expected meta_type=subject, got {meta.get('meta_type')!r}")
     category = meta.get("category")
     if not isinstance(category, str) or not category.strip():
         raise RuntimeError(f"Expected non-empty category, got {category!r}")

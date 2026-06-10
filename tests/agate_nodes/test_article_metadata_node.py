@@ -12,8 +12,8 @@ from agate_runtime.runners import run_article_metadata_runtime
 
 def test_run_emits_article_metadata_with_passthrough_fields() -> None:
     llm_payload = {
-        "category": "Local news",
-        "rationale": "Neighborhood council coverage.",
+        "category": "update_me",
+        "rationale": "Timely reporting on a council vote.",
         "confidence": 0.77,
     }
 
@@ -22,7 +22,7 @@ def test_run_emits_article_metadata_with_passthrough_fields() -> None:
         return_value=json.dumps(llm_payload),
     ):
         out = run_article_metadata_runtime(
-            {"prompt_preset": "topic"},
+            {"prompt_preset": "user_need"},
             {"text": "Story body.", "headline": "Council vote", "url": "https://example.com"},
             AgateEnvContext(run_id="run-test"),
         )
@@ -31,11 +31,11 @@ def test_run_emits_article_metadata_with_passthrough_fields() -> None:
     assert out["headline"] == "Council vote"
     assert out["url"] == "https://example.com"
     assert out["article_metadata"] == {
-        "meta_type": "topic",
-        "category": "Local news",
-        "rationale": "Neighborhood council coverage.",
+        "meta_type": "user_need",
+        "category": "update_me",
+        "rationale": "Timely reporting on a council vote.",
         "confidence": 0.77,
-        "prompt_preset": "topic",
+        "prompt_preset": "user_need",
     }
 
 
@@ -218,7 +218,7 @@ def test_run_rejects_invalid_category_from_llm() -> None:
     ):
         with pytest.raises(ValueError, match="not allowed"):
             run_article_metadata_runtime(
-                {"prompt_preset": "topic"},
+                {"prompt_preset": "format"},
                 {"text": "Story body."},
                 AgateEnvContext(run_id="run-test"),
             )
