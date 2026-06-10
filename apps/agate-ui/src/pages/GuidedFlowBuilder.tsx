@@ -522,15 +522,21 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       return
     }
     let cancelled = false
-    void fetchProjectAiModels(['embedding'])
-      .then((rows) => {
+    void Promise.all([
+      fetchProjectAiModels(['embedding']),
+      fetchProjectAiModels(['text', 'json']),
+    ])
+      .then(([embeddingRows, generativeRows]) => {
         if (!cancelled) {
-          setProjectModelCapabilities({ embedding: rows.length > 0 })
+          setProjectModelCapabilities({
+            embedding: embeddingRows.length > 0,
+            generative: generativeRows.length > 0,
+          })
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setProjectModelCapabilities({ embedding: false })
+          setProjectModelCapabilities({ embedding: false, generative: false })
         }
       })
     return () => {

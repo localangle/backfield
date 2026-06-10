@@ -36,6 +36,9 @@ function missingProjectModelsReason(capabilities: string[]): string {
   if (capabilities.includes('embedding')) {
     return 'Enable at least one embedding model for this project in Models.'
   }
+  if (capabilities.includes('generative')) {
+    return 'Enable at least one generative model for this project in Models.'
+  }
   return 'Enable the required models for this project in Models.'
 }
 
@@ -198,10 +201,15 @@ function sameTypeChainFailureReason(meta: NodeMetadataEntry): string {
   return `${label} cannot follow another ${label} step.`
 }
 
+export const SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES = new Set(['ArticleMetadata'])
+
 function blocksSameTypeChain(
   candidateType: string,
   upstreamType: string,
 ): boolean {
+  if (SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES.has(candidateType)) {
+    return false
+  }
   return candidateType === upstreamType
 }
 

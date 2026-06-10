@@ -75,8 +75,17 @@ def _has_article_embedding(consolidated: dict[str, Any]) -> bool:
     return isinstance(block, dict)
 
 
+def _has_article_metadata(consolidated: dict[str, Any]) -> bool:
+    block = consolidated.get("article_metadata")
+    return isinstance(block, dict)
+
+
 def _has_persistable_consolidated_content(consolidated: dict[str, Any]) -> bool:
-    return bool(_active_handler_keys(consolidated)) or _has_article_embedding(consolidated)
+    return (
+        bool(_active_handler_keys(consolidated))
+        or _has_article_embedding(consolidated)
+        or _has_article_metadata(consolidated)
+    )
 
 
 def _empty_reconciliation_summary(
@@ -112,7 +121,8 @@ def persist_from_consolidated(
     if not _has_persistable_consolidated_content(consolidated):
         raise RuntimeError(
             "DBOutput persistence requires consolidated['places'], consolidated['people'], "
-            "consolidated['organizations'], and/or consolidated['article_embedding']"
+            "consolidated['organizations'], consolidated['article_embedding'], "
+            "and/or consolidated['article_metadata']"
         )
 
     article = _upsert_article(

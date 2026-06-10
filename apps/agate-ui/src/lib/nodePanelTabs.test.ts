@@ -48,4 +48,8 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('EmbedText')).toEqual(['settings', 'info'])
     expect(getNodePanelTabs('EmbedText', { hasRunOutput: true })).toEqual(['settings', 'info'])
   })
+
+  it('splits article metadata configuration across settings, prompt, output, and info', () => {
+    expect(getNodePanelTabs('ArticleMetadata')).toEqual(['settings', 'prompts', 'outputs', 'info'])
+  })
 })

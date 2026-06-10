@@ -87,6 +87,21 @@ for (const nodeFolder of nodeFolders) {
     }
   }
   
+  // Load preset prompt templates from prompts/presets/*.md when present
+  const presetsDir = path.join(nodePath, 'prompts/presets');
+  if (fs.existsSync(presetsDir)) {
+    const presetPrompts = {};
+    for (const file of fs.readdirSync(presetsDir)) {
+      if (!file.endsWith('.md')) continue;
+      const presetId = file.replace(/\.md$/, '');
+      presetPrompts[presetId] = fs.readFileSync(path.join(presetsDir, file), 'utf8');
+    }
+    if (Object.keys(presetPrompts).length > 0) {
+      metadata.defaultParams = metadata.defaultParams || {};
+      metadata.defaultParams.preset_prompts = presetPrompts;
+    }
+  }
+
   // If metadata has an output_format_file in defaultParams, load it and populate the output_format field
   if (metadata.defaultParams && metadata.defaultParams.output_format_file) {
     const outputFormatFilePath = metadata.defaultParams.output_format_file;

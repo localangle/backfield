@@ -5,7 +5,7 @@ import {
   BOOKEND_LAYOUT_X_STEP,
   BOOKEND_OUTPUT_POSITION,
 } from '@/lib/flowBuilderLayout'
-import { getCompatibleNextNodes, resolveEdgeHandles } from '@/lib/nodeCompatibility'
+import { getCompatibleNextNodes, resolveEdgeHandles, SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES } from '@/lib/nodeCompatibility'
 
 export type FlowGraphNode = {
   id: string
@@ -124,7 +124,9 @@ export function getInvalidFlowNodeIds(model: FlowGraphModel): Set<string> {
     const source = getNodeById(model, edge.source)
     const target = getNodeById(model, edge.target)
     if (source?.type && target?.type && source.type === target.type) {
-      invalid.add(edge.target)
+      if (!SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES.has(source.type)) {
+        invalid.add(edge.target)
+      }
     }
   }
 

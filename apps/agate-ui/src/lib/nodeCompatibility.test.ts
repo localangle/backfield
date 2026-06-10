@@ -64,6 +64,27 @@ describe('getCompatibleNextNodes', () => {
     const org = result.disabled.find((e) => e.type === 'OrganizationExtract')
     expect(org?.reason).toMatch(/cannot follow another Organization Extract step/i)
   })
+
+  it('allows serial Article Metadata dimension chains', () => {
+    const result = getCompatibleNextNodes('ArticleMetadata', ['TextInput', 'ArticleMetadata'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('ArticleMetadata')
+  })
+
+  it('disables Article Metadata when no generative models are enabled for the project', () => {
+    const withoutModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { generative: false },
+    })
+    const metadata = withoutModels.disabled.find((e) => e.type === 'ArticleMetadata')
+    expect(metadata).toBeDefined()
+    expect(metadata?.reason).toMatch(/generative model/i)
+
+    const withModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(withModels.enabled.map((e) => e.type)).toContain('ArticleMetadata')
+  })
 })
 
 describe('getCompatibleInsertNodes', () => {

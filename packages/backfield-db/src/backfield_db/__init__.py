@@ -1,4 +1,5 @@
 from backfield_db.article_embedding_models import SubstrateArticleEmbedding
+from backfield_db.article_meta_models import SubstrateArticleMeta
 from backfield_db.models import (
     AgateGraph,
     AgateProcessedItem,
@@ -87,6 +88,7 @@ __all__ = [
     "StylebookSlugRedirect",
     "SubstrateArticle",
     "SubstrateArticleEmbedding",
+    "SubstrateArticleMeta",
     "SubstrateImage",
     "SubstrateLocation",
     "SubstrateLocationCache",

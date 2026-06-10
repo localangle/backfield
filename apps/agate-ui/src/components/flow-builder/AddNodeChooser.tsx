@@ -26,6 +26,7 @@ const MENU_GAP_PX = 8
 
 /** Placeholder chooser blurbs until product copy replaces them. */
 const NODE_CHOOSER_BLURBS: Record<string, string> = {
+  ArticleMetadata: 'Consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore.',
   EmbedText: 'Excepteur sint occaecat cupidatat non proident sunt in culpa.',
   GeocodeAgent: 'Duis aute irure dolor in reprehenderit in voluptate velit.',
   OrganizationExtract: 'Ut enim ad minim veniam, quis nostrud exercitation ullamco.',

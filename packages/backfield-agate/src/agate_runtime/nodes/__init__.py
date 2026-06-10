@@ -1,5 +1,6 @@
 """Agate node implementations."""
 
+from agate_runtime.nodes.article_metadata import run_article_metadata
 from agate_runtime.nodes.db_output import run_db_output
 from agate_runtime.nodes.embed_text import run_embed_text
 from agate_runtime.nodes.geocode_agent import run_geocode_agent
@@ -18,6 +19,7 @@ NODE_RUNNERS: dict[str, callable] = {
     "PlaceExtract": run_place_extract,
     "PersonExtract": run_person_extract,
     "OrganizationExtract": run_organization_extract,
+    "ArticleMetadata": run_article_metadata,
     "EmbedText": run_embed_text,
     "GeocodeAgent": run_geocode_agent,
     "Output": run_output,
