@@ -112,7 +112,7 @@ def test_compose_information_needs_prompt_requests_json_array() -> None:
         output_format_json=output_format,
         preset_id="information_needs",
     )
-    assert "JSON: an array of 1 to 3 objects" in prompt
+    assert "JSON object with a \"needs\" key containing an array of 1 to 3 objects" in prompt
     assert "School board votes to close two schools." in prompt
 
 
@@ -157,7 +157,7 @@ def test_compose_subject_prompt_requests_json_array() -> None:
         output_format_json=output_format,
         preset_id="subject",
     )
-    assert "JSON: an array of 1 to 3 objects" in prompt
+    assert "JSON object with a \"subjects\" key containing an array of 1 to 3 objects" in prompt
     assert "Council voted on zoning." in prompt
 
 

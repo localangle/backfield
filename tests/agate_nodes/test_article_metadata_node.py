@@ -179,6 +179,32 @@ def test_run_emits_subjects_for_subject_preset() -> None:
     assert meta["subjects"][0]["category"] == "local_government_politics"
 
 
+def test_run_emits_subjects_for_subject_preset_wrapped_object() -> None:
+    llm_payload = {
+        "subjects": [
+            {
+                "category": "local_government_politics",
+                "rationale": "Council vote is central.",
+                "confidence": 0.92,
+            }
+        ]
+    }
+
+    with patch(
+        "agate_nodes.article_metadata.node_port.call_llm",
+        return_value=json.dumps(llm_payload),
+    ):
+        out = run_article_metadata_runtime(
+            {"prompt_preset": "subject"},
+            {"text": "Council vote on zoning sparks affordable housing debate."},
+            AgateEnvContext(run_id="run-test"),
+        )
+
+    meta = out["article_metadata"]
+    assert meta["category"] == "local_government_politics"
+    assert len(meta["subjects"]) == 1
+
+
 def test_run_emits_format_category_for_format_preset() -> None:
     llm_payload = {
         "category": "news_story",

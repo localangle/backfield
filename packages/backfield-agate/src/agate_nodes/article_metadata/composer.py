@@ -7,7 +7,7 @@ import os
 import re
 from typing import Any
 
-from agate_nodes.article_metadata.presets import MAX_MULTI_VALUE_COUNT
+from agate_nodes.article_metadata.presets import MAX_MULTI_VALUE_COUNT, multi_value_list_key
 
 _CATEGORIES_HEADER = "## categories"
 
@@ -100,16 +100,23 @@ def compose_article_metadata_prompt(
     body = substitute_prompt_placeholders(prompt_template, flattened)
     categories = extract_categories_from_prompt(body)
     if preset_id in {"subject", "information_needs"}:
+        list_key = multi_value_list_key(preset_id)
+        try:
+            items_example = json.loads(output_format_json.strip())
+        except json.JSONDecodeError:
+            items_example = []
+        example_shape = json.dumps({list_key: items_example}, indent=2)
         prompt = (
             f"{body.rstrip()}\n\n"
-            f"Return only valid JSON: an array of 1 to {MAX_MULTI_VALUE_COUNT} objects.\n"
+            f'Return only valid JSON object with a "{list_key}" key containing '
+            f"an array of 1 to {MAX_MULTI_VALUE_COUNT} objects.\n"
             "Each object must have exactly these keys: category, rationale, confidence.\n"
             "- category must be one of the labels listed under ## Categories.\n"
             "- rationale is a concise explanation for editors.\n"
             "- confidence is a number from 0.0 to 1.0.\n"
             "- Do not repeat the same category.\n\n"
             "Example shape:\n"
-            f"{output_format_json.strip()}\n"
+            f"{example_shape}\n"
         )
     else:
         prompt = (

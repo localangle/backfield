@@ -20,6 +20,7 @@ from agate_nodes.article_metadata.composer import (
     resolve_text,
 )
 from agate_nodes.article_metadata.parse import (
+    normalize_llm_json_payload,
     parse_article_metadata_response,
     parse_multi_value_metadata_response,
 )
@@ -180,7 +181,7 @@ class ArticleMetadataNode:
             ) from exc
 
         try:
-            response_data = json.loads(response_text)
+            response_data = normalize_llm_json_payload(json.loads(response_text))
         except json.JSONDecodeError as exc:
             preview = (response_text or "")[:800]
             raise ValueError(
