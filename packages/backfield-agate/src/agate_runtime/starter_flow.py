@@ -25,6 +25,15 @@ ORGANIZATIONS_SMOKE_DEMO_TEXT = (
     "The Chicago Cubs hosted a ribbon-cutting at Wrigley Field."
 )
 
+ARTICLE_METADATA_STARTER_FLOW_GRAPH_DISPLAY_NAME = "Article Metadata starter"
+
+ARTICLE_METADATA_SMOKE_DEMO_TEXT = (
+    "The city council voted Tuesday to fund a new neighborhood park on the "
+    "Northwest Side. Residents packed the chamber to support the plan, and "
+    "local business owners said the project could bring more foot traffic "
+    "to the corridor."
+)
+
 
 def starter_geocode_flow_graph_spec() -> GraphSpec:
     """Golden-path starter: geocode then persist, with DBOutput wired directly from GeocodeAgent.
@@ -154,5 +163,40 @@ def starter_organizations_flow_graph_spec() -> GraphSpec:
                 sourceHandle="organizations",
                 targetHandle="data",
             ),
+        ],
+    )
+
+
+def starter_article_metadata_flow_graph_spec() -> GraphSpec:
+    """Golden-path article metadata ingest: TextInput → ArticleMetadata → DBOutput."""
+    return GraphSpec(
+        name="starter_article_metadata_flow",
+        nodes=[
+            NodeConfig(
+                id="n1",
+                type="TextInput",
+                params={"text": ARTICLE_METADATA_SMOKE_DEMO_TEXT},
+                position={"x": 0.0, "y": 0.0},
+            ),
+            NodeConfig(
+                id="n2",
+                type="ArticleMetadata",
+                params={"prompt_preset": "topic"},
+                position={"x": 337.0, "y": 46.0},
+            ),
+            NodeConfig(
+                id="n3",
+                type="DBOutput",
+                params={
+                    "stylebook_matching_enabled": False,
+                    "semantic_indexing_enabled": False,
+                    "reconciliation_policy": "smart_merge",
+                },
+                position={"x": 620.0, "y": 46.0},
+            ),
+        ],
+        edges=[
+            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(source="n2", target="n3", sourceHandle="text", targetHandle="data"),
         ],
     )

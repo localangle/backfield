@@ -5,6 +5,7 @@ import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { ProcessedItemInformationCard } from '@/components/ProcessedItemInformationCard'
 import { ProcessedItemVerificationSection } from '@/components/ProcessedItemVerificationSection'
 import { ProcessedItemPeopleVerificationSection } from '@/components/ProcessedItemPeopleVerificationSection'
+import { ProcessedItemMetaVerificationSection } from '@/components/ProcessedItemMetaVerificationSection'
 import { ProcessedItemOrganizationsVerificationSection } from '@/components/ProcessedItemOrganizationsVerificationSection'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -870,7 +871,6 @@ export default function ProcessedItemDetail() {
         {(
           [
             ['images', 'Images'],
-            ['meta', 'Meta'],
           ] as const
         ).map(([value, label]) => (
           <TabsContent key={value} value={value} className="space-y-4">
@@ -881,6 +881,25 @@ export default function ProcessedItemDetail() {
             </Card>
           </TabsContent>
         ))}
+
+        <TabsContent value="meta" className="space-y-4">
+          {item && !item.synthetic ? (
+            <ProcessedItemMetaVerificationSection
+              runId={runId!}
+              item={item}
+              onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
+              onVerificationDirtyChange={handleVerificationDirtyChange}
+              reviewLocked={reviewLocked}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Meta review is available for batch stories. This run used a single input and has no
+                separate story item.
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
         <TabsContent value="json" className="space-y-4">
           {item.output && Object.keys(item.output).length > 0 ? (

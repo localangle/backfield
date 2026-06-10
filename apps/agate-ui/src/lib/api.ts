@@ -7,6 +7,10 @@ import {
   type ProcessedItemArticleEmbedding,
 } from '@/lib/review/content/articleEmbeddingDisplay'
 import {
+  normalizeProcessedItemArticleMetaRows,
+  type ProcessedItemArticleMetaRow,
+} from '@/lib/review/content/articleMetaDisplay'
+import {
   normalizeProcessedItemConnections,
   type ProcessedItemConnections,
 } from '@/lib/review/content/connectionsDisplay'
@@ -19,6 +23,9 @@ export type {
   ProcessedItemArticleEmbedding,
   ProcessedItemArticleEmbeddingStatus,
 } from '@/lib/review/content/articleEmbeddingDisplay'
+export type {
+  ProcessedItemArticleMetaRow,
+} from '@/lib/review/content/articleMetaDisplay'
 export type {
   ProcessedItemConnections,
   ProcessedItemConnectionsStatus,
@@ -170,6 +177,8 @@ export interface ProcessedItem {
   semantic_indexing?: ProcessedItemSemanticIndexing
   /** Compact article text embedding status from Embed Text. */
   article_embedding?: ProcessedItemArticleEmbedding
+  /** Persisted article metadata tags for Meta review. */
+  article_meta?: ProcessedItemArticleMetaRow[]
   /** Compact automatic connections status from Backfield Output. */
   connections?: ProcessedItemConnections
 }
@@ -625,6 +634,7 @@ interface RawProcessedItemDetail {
   article_context?: unknown
   semantic_indexing?: unknown
   article_embedding?: unknown
+  article_meta?: unknown
   connections?: unknown
 }
 
@@ -723,6 +733,7 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
     article_context: _normalizeArticleContext(raw.article_context),
     semantic_indexing: normalizeProcessedItemSemanticIndexing(raw.semantic_indexing),
     article_embedding: normalizeProcessedItemArticleEmbedding(raw.article_embedding),
+    article_meta: normalizeProcessedItemArticleMetaRows(raw.article_meta),
     connections: normalizeProcessedItemConnections(raw.connections),
   }
 }
@@ -747,6 +758,23 @@ export async function patchProcessedItemOverlay(
       'If-Match': `"${ifMatchVersion}"`,
     },
     body: JSON.stringify({ overlay }),
+  })) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
+}
+
+export async function patchProcessedItemArticleMetaCategory(
+  runId: string | number,
+  itemId: number,
+  metaRowId: number,
+  category: string,
+  ifMatchVersion: number,
+): Promise<ProcessedItem> {
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}/article-meta/${metaRowId}`, {
+    method: 'PATCH',
+    headers: {
+      'If-Match': `"${ifMatchVersion}"`,
+    },
+    body: JSON.stringify({ category }),
   })) as RawProcessedItemDetail
   return normalizeProcessedItemDetail(raw)
 }

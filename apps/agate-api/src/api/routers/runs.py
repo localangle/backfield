@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from datetime import UTC, datetime
@@ -30,12 +31,16 @@ from backfield_db import (
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
+    SubstrateArticleMeta,
 )
 from backfield_entities.connections.processed_item import (
     build_processed_item_connections_summary,
 )
 from backfield_entities.ingest.article_embedding.processed_item import (
     build_processed_item_article_embedding_summary,
+)
+from backfield_entities.ingest.article_metadata.processed_item import (
+    build_processed_item_article_meta_rows,
 )
 from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
@@ -176,6 +181,23 @@ class ProcessedItemArticleEmbeddingOut(BaseModel):
     error: str | None = None
 
 
+class ProcessedItemArticleMetaRowOut(BaseModel):
+    """One persisted article metadata tag for processed item Meta review."""
+
+    id: int
+    meta_type: str
+    category: str
+    rationale: str
+    confidence: float
+    prompt_preset: str | None = None
+    updated_at: datetime | None = None
+    source: Literal["model", "review"] = "model"
+
+
+class ProcessedItemArticleMetaPatchIn(BaseModel):
+    category: str = Field(min_length=1)
+
+
 class ProcessedItemDetailOut(BaseModel):
     """Single processed item for run detail / item drill-down."""
 
@@ -217,6 +239,8 @@ class ProcessedItemDetailOut(BaseModel):
     semantic_indexing: ProcessedItemSemanticIndexingOut
     #: Article-level text embedding from Embed Text (see ``docs/API.md``).
     article_embedding: ProcessedItemArticleEmbeddingOut
+    #: Persisted article metadata tags for Meta review (see ``docs/API.md``).
+    article_meta: list[ProcessedItemArticleMetaRowOut] = Field(default_factory=list)
     #: Automatic Stylebook connections status from Backfield Output.
     connections: ProcessedItemConnectionsOut
 
@@ -301,6 +325,20 @@ def _processed_item_article_embedding(
         item_updated_at=item_updated_at,
     )
     return ProcessedItemArticleEmbeddingOut.model_validate(summary)
+
+
+def _processed_item_article_meta(
+    session: Session,
+    *,
+    article_id: int | None,
+    overlay: dict[str, Any] | None,
+) -> list[ProcessedItemArticleMetaRowOut]:
+    rows = build_processed_item_article_meta_rows(
+        session,
+        article_id=article_id,
+        overlay=overlay,
+    )
+    return [ProcessedItemArticleMetaRowOut.model_validate(row) for row in rows]
 
 
 def _processed_item_connections(
@@ -815,6 +853,11 @@ def _detail_from_agate_processed_row(
         article_id=article_ctx_dict.get("article_id"),
         item_updated_at=row.updated_at,
     )
+    article_meta = _processed_item_article_meta(
+        session,
+        article_id=article_ctx_dict.get("article_id"),
+        overlay=overlay_obj,
+    )
     connections = _processed_item_connections(
         item_status=row.status,
         output_obj=output_obj,
@@ -852,6 +895,7 @@ def _detail_from_agate_processed_row(
         article_context=article_ctx,
         semantic_indexing=semantic_indexing,
         article_embedding=article_embedding,
+        article_meta=article_meta,
         connections=connections,
     )
 
@@ -961,6 +1005,11 @@ def _maybe_detail_whole_graph_run(
         article_id=article_ctx_dict.get("article_id"),
         item_updated_at=run.updated_at,
     )
+    article_meta = _processed_item_article_meta(
+        session,
+        article_id=article_ctx_dict.get("article_id"),
+        overlay=None,
+    )
     connections = _processed_item_connections(
         item_status=st,
         output_obj=output_obj,
@@ -995,6 +1044,7 @@ def _maybe_detail_whole_graph_run(
         article_context=article_ctx,
         semantic_indexing=semantic_indexing,
         article_embedding=article_embedding,
+        article_meta=article_meta,
         connections=connections,
     )
 
@@ -1094,6 +1144,169 @@ def patch_run_processed_item_overlay(
 
     expected_version = _parse_if_match_overlay_version(if_match)
     overlay_payload = body.overlay
+
+    try:
+        validate_processed_item_overlay_geometry(overlay_payload)
+    except OverlayGeometryValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "overlay_geometry_invalid",
+                "message": str(exc),
+            },
+        ) from exc
+
+    reviewed_json = _reviewed_output_json_for_storage(item.result_json, overlay_payload)
+
+    stmt = (
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.id == item_id,
+            AgateProcessedItem.run_id == run_id,
+            AgateProcessedItem.overlay_version == expected_version,
+        )
+        .values(
+            overlay_json=json.dumps(overlay_payload, ensure_ascii=False),
+            reviewed_output_json=reviewed_json,
+            overlay_version=AgateProcessedItem.overlay_version + 1,
+            updated_at=datetime.now(UTC),
+        )
+    )
+    result = session.execute(stmt)
+    if result.rowcount != 1:
+        session.rollback()
+        session.refresh(item)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "overlay_version_conflict",
+                "current_version": int(item.overlay_version),
+            },
+        )
+    session.commit()
+    session.refresh(item)
+
+    by_item, null_b, currency = _rollup_ai_costs_for_run(session, run_id)
+    rid = item.id
+    iid = int(rid) if rid is not None else 0
+    est, inc = by_item.get(iid, (Decimal("0"), False))
+    return _detail_from_agate_processed_row(
+        item,
+        session=session,
+        project_id=pid,
+        estimated_ai_cost=est,
+        estimated_ai_cost_incomplete=inc,
+        estimated_ai_cost_currency=currency,
+    )
+
+
+def _merge_article_meta_category_patch(
+    overlay: dict[str, Any] | None,
+    *,
+    meta_row_id: int,
+    meta_type: str,
+    category: str,
+) -> dict[str, Any]:
+    merged = copy.deepcopy(overlay) if isinstance(overlay, dict) else {}
+    root = merged.get("article_meta")
+    if not isinstance(root, dict):
+        root = {}
+        merged["article_meta"] = root
+    by_id = root.get("by_id")
+    if not isinstance(by_id, dict):
+        by_id = {}
+        root["by_id"] = by_id
+    by_id[str(meta_row_id)] = {
+        "category": category.strip(),
+        "meta_type": meta_type,
+    }
+    return merged
+
+
+@router.patch(
+    "/{run_id}/items/{item_id}/article-meta/{meta_row_id}",
+    response_model=ProcessedItemDetailOut,
+)
+def patch_run_processed_item_article_meta(
+    run_id: str,
+    item_id: int,
+    meta_row_id: int,
+    body: ProcessedItemArticleMetaPatchIn,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    """Update one article metadata row category and merge into review overlay."""
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+
+    item = session.get(AgateProcessedItem, item_id)
+    if item is None or item.run_id != run_id:
+        raise HTTPException(404, "Processed item not found")
+
+    expected_version = _parse_if_match_overlay_version(if_match)
+    category = body.category.strip()
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="category must be non-empty",
+        )
+
+    output_obj: dict[str, Any] | None = None
+    if item.result_json:
+        try:
+            parsed = json.loads(item.result_json)
+            if isinstance(parsed, dict):
+                output_obj = parsed
+        except json.JSONDecodeError:
+            output_obj = None
+
+    input_obj: dict[str, Any] = {}
+    if item.input_json:
+        try:
+            parsed_input = json.loads(item.input_json)
+            if isinstance(parsed_input, dict):
+                input_obj = parsed_input
+        except json.JSONDecodeError:
+            input_obj = {}
+
+    article_ctx_dict = build_processed_item_article_context(
+        session,
+        project_id=pid,
+        input_obj=input_obj,
+        result_obj=output_obj,
+    )
+    article_id = article_ctx_dict.get("article_id")
+    if article_id is None:
+        raise HTTPException(404, "Article metadata not found for this item")
+
+    meta_row = session.get(SubstrateArticleMeta, meta_row_id)
+    if meta_row is None or int(meta_row.article_id) != int(article_id):
+        raise HTTPException(404, "Article metadata row not found")
+
+    overlay_obj: dict[str, Any] | None = None
+    if item.overlay_json:
+        try:
+            parsed_o = json.loads(item.overlay_json)
+            if isinstance(parsed_o, dict):
+                overlay_obj = parsed_o
+        except json.JSONDecodeError:
+            overlay_obj = None
+
+    meta_row.category = category
+    meta_row.updated_at = datetime.now(UTC)
+    session.add(meta_row)
+
+    overlay_payload = _merge_article_meta_category_patch(
+        overlay_obj,
+        meta_row_id=meta_row_id,
+        meta_type=meta_row.meta_type,
+        category=category,
+    )
 
     try:
         validate_processed_item_overlay_geometry(overlay_payload)

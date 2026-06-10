@@ -28,6 +28,16 @@ def test_starter_people_flow_graph_spec_round_trip() -> None:
     assert {n.type for n in again.nodes} == {"TextInput", "PersonExtract", "DBOutput"}
 
 
+def test_starter_article_metadata_flow_graph_spec_round_trip() -> None:
+    from agate_runtime import starter_article_metadata_flow_graph_spec
+
+    spec = starter_article_metadata_flow_graph_spec()
+    raw = spec.model_dump(mode="json")
+    again = GraphSpec.model_validate(raw)
+    assert again.name == "starter_article_metadata_flow"
+    assert {n.type for n in again.nodes} == {"TextInput", "ArticleMetadata", "DBOutput"}
+
+
 def test_starter_flow_positions_match_bootstrapped_canonical() -> None:
     """Positions match the Starter flow graph seeded by local bootstrap (exported UI layout)."""
     spec = starter_geocode_flow_graph_spec()

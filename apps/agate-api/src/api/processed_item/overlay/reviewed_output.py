@@ -26,6 +26,11 @@ from api.processed_item.entities.person.people_merge import (
     normalize_people_overlay,
     select_people_node_id,
 )
+from backfield_entities.ingest.article_metadata.processed_item import (
+    apply_merged_article_meta_to_output,
+    article_meta_overlay_has_content,
+    article_meta_review_rows_from_overlay,
+)
 
 ARTICLE_OVERLAY_KEYS: tuple[str, ...] = (
     "publication",
@@ -84,6 +89,8 @@ def overlay_has_review_content(overlay: dict[str, Any] | None) -> bool:
         for key in ARTICLE_OVERLAY_KEYS:
             if key in article:
                 return True
+    if article_meta_overlay_has_content(overlay):
+        return True
     return False
 
 
@@ -363,6 +370,10 @@ def build_reviewed_output(
 
     if overlay and isinstance(overlay, dict):
         _apply_article_overlay_to_output(reviewed, overlay)
+
+    merged_article_meta = article_meta_review_rows_from_overlay(overlay)
+    if merged_article_meta:
+        apply_merged_article_meta_to_output(reviewed, merged_article_meta)
 
     return reviewed
 
