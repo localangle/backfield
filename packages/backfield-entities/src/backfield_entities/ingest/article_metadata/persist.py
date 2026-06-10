@@ -30,6 +30,194 @@ def _normalize_confidence(raw: Any) -> float | None:
     return value
 
 
+def _normalize_metadata_item(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    category = str(raw.get("category") or "").strip()
+    rationale = str(raw.get("rationale") or "").strip()
+    confidence = _normalize_confidence(raw.get("confidence"))
+    if not category or not rationale or confidence is None:
+        return None
+    return {
+        "category": category,
+        "rationale": rationale,
+        "confidence": confidence,
+    }
+
+
+def _multi_value_items_from_block(block: dict[str, Any]) -> list[dict[str, Any]]:
+    for list_key in ("subjects", "needs"):
+        raw_items = block.get(list_key)
+        if isinstance(raw_items, list):
+            items: list[dict[str, Any]] = []
+            for entry in raw_items:
+                normalized = _normalize_metadata_item(entry)
+                if normalized is not None:
+                    items.append(normalized)
+            if items:
+                return items
+
+    normalized = _normalize_metadata_item(
+        {
+            "category": block.get("category"),
+            "rationale": block.get("rationale"),
+            "confidence": block.get("confidence"),
+        }
+    )
+    return [normalized] if normalized is not None else []
+
+
+def _block_has_multi_value_list(block: dict[str, Any]) -> bool:
+    return isinstance(block.get("subjects"), list) or isinstance(block.get("needs"), list)
+
+
+def _upsert_metadata_row(
+    session: Session,
+    *,
+    article_id: int,
+    meta_type: str,
+    item: dict[str, Any],
+    prompt_preset: str | None,
+    source_run_id: str | None,
+    now: datetime,
+) -> tuple[str, bool]:
+    existing = session.exec(
+        select(SubstrateArticleMeta).where(
+            SubstrateArticleMeta.article_id == article_id,
+            SubstrateArticleMeta.meta_type == meta_type,
+            SubstrateArticleMeta.category == item["category"],
+        )
+    ).first()
+
+    if existing is None:
+        session.add(
+            SubstrateArticleMeta(
+                article_id=article_id,
+                meta_type=meta_type,
+                category=item["category"],
+                rationale=item["rationale"],
+                confidence=item["confidence"],
+                prompt_preset=prompt_preset,
+                source_run_id=source_run_id,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        return "created", True
+
+    existing_preset = existing.prompt_preset or ""
+    incoming_preset = prompt_preset or ""
+    if (
+        existing.rationale == item["rationale"]
+        and float(existing.confidence) == item["confidence"]
+        and existing_preset == incoming_preset
+    ):
+        return "unchanged", False
+
+    existing.rationale = item["rationale"]
+    existing.confidence = item["confidence"]
+    existing.prompt_preset = prompt_preset
+    existing.source_run_id = source_run_id
+    existing.updated_at = now
+    session.add(existing)
+    return "updated", True
+
+
+def _persist_multi_value_block(
+    session: Session,
+    *,
+    article_id: int,
+    block: dict[str, Any],
+    policy: ReconciliationPolicy,
+    source_run_id: str | None,
+) -> dict[str, Any]:
+    meta_type = str(block.get("meta_type") or "").strip()
+    if not meta_type:
+        return {
+            "status": "failed",
+            "persisted": False,
+            "error": "article_metadata.meta_type is required",
+        }
+
+    items = _multi_value_items_from_block(block)
+    if not items:
+        return {
+            "status": "failed",
+            "persisted": False,
+            "error": "article_metadata must include at least one valid multi-value item",
+        }
+
+    prompt_preset_raw = block.get("prompt_preset")
+    prompt_preset = (
+        prompt_preset_raw.strip()
+        if isinstance(prompt_preset_raw, str) and prompt_preset_raw.strip()
+        else None
+    )
+
+    existing_rows = session.exec(
+        select(SubstrateArticleMeta).where(
+            SubstrateArticleMeta.article_id == article_id,
+            SubstrateArticleMeta.meta_type == meta_type,
+        )
+    ).all()
+    incoming_categories = {item["category"] for item in items}
+
+    if policy == "add_only" and existing_rows:
+        existing_categories = {row.category for row in existing_rows}
+        items = [item for item in items if item["category"] not in existing_categories]
+        if not items:
+            return {
+                "status": "skipped",
+                "persisted": False,
+                "meta_type": meta_type,
+                "reason": "add_only",
+            }
+
+    now = datetime.now(UTC)
+    if policy in {"replace", "smart_merge"}:
+        for row in existing_rows:
+            if row.category not in incoming_categories:
+                session.delete(row)
+
+    actions: list[str] = []
+    persisted_any = False
+    for item in items:
+        action, persisted = _upsert_metadata_row(
+            session,
+            article_id=article_id,
+            meta_type=meta_type,
+            item=item,
+            prompt_preset=prompt_preset,
+            source_run_id=source_run_id,
+            now=now,
+        )
+        if persisted:
+            persisted_any = True
+            if action not in actions:
+                actions.append(action)
+        elif action == "unchanged" and not actions:
+            actions.append("unchanged")
+
+    if not persisted_any and actions == ["unchanged"]:
+        return {
+            "status": "skipped",
+            "persisted": False,
+            "meta_type": meta_type,
+            "categories": sorted(incoming_categories),
+            "reason": "unchanged",
+        }
+
+    session.flush()
+    return {
+        "status": "succeeded",
+        "persisted": True,
+        "action": actions[0] if len(actions) == 1 else "mixed",
+        "meta_type": meta_type,
+        "categories": sorted(incoming_categories),
+        "item_count": len(items),
+    }
+
+
 def persist_article_metadata_after_db_output(
     session: Session,
     *,
@@ -42,6 +230,15 @@ def persist_article_metadata_after_db_output(
     block = _article_metadata_block(consolidated)
     if block is None:
         return {"status": "not_present", "persisted": False}
+
+    if _block_has_multi_value_list(block):
+        return _persist_multi_value_block(
+            session,
+            article_id=article_id,
+            block=block,
+            policy=policy,
+            source_run_id=source_run_id,
+        )
 
     meta_type = str(block.get("meta_type") or "").strip()
     if not meta_type:
@@ -82,28 +279,33 @@ def persist_article_metadata_after_db_output(
         else None
     )
 
-    existing = session.exec(
+    existing_rows = session.exec(
         select(SubstrateArticleMeta).where(
             SubstrateArticleMeta.article_id == article_id,
             SubstrateArticleMeta.meta_type == meta_type,
         )
-    ).first()
+    ).all()
+    existing = next((row for row in existing_rows if row.category == category), None)
 
-    if policy == "add_only" and existing is not None:
+    if policy == "add_only" and existing_rows:
         return {
             "status": "skipped",
             "persisted": False,
             "meta_type": meta_type,
-            "category": existing.category,
+            "category": existing_rows[0].category,
             "reason": "add_only",
         }
+
+    if policy in {"replace", "smart_merge"}:
+        for row in existing_rows:
+            if row.category != category:
+                session.delete(row)
 
     if policy == "smart_merge" and existing is not None:
         existing_preset = existing.prompt_preset or ""
         incoming_preset = prompt_preset or ""
         if (
-            existing.category == category
-            and existing.rationale == rationale
+            existing.rationale == rationale
             and float(existing.confidence) == confidence
             and existing_preset == incoming_preset
         ):
@@ -116,6 +318,7 @@ def persist_article_metadata_after_db_output(
             }
 
     now = datetime.now(UTC)
+    had_existing_rows = bool(existing_rows)
     if existing is None:
         row = SubstrateArticleMeta(
             article_id=article_id,
@@ -130,9 +333,11 @@ def persist_article_metadata_after_db_output(
         )
         session.add(row)
         session.flush()
-        action = "created"
+        if policy == "replace" and had_existing_rows:
+            action = "replaced"
+        else:
+            action = "created"
     else:
-        existing.category = category
         existing.rationale = rationale
         existing.confidence = confidence
         existing.prompt_preset = prompt_preset
@@ -140,7 +345,7 @@ def persist_article_metadata_after_db_output(
         existing.updated_at = now
         session.add(existing)
         session.flush()
-        action = "updated" if policy != "replace" else "replaced"
+        action = "replaced" if policy == "replace" else "updated"
 
     return {
         "status": "succeeded",

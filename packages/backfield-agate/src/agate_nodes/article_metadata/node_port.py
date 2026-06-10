@@ -19,10 +19,16 @@ from agate_nodes.article_metadata.composer import (
     load_package_file,
     resolve_text,
 )
-from agate_nodes.article_metadata.parse import parse_article_metadata_response
+from agate_nodes.article_metadata.parse import (
+    parse_article_metadata_response,
+    parse_multi_value_metadata_response,
+)
 from agate_nodes.article_metadata.presets import (
+    is_multi_value_preset,
     meta_type_for_preset,
+    multi_value_list_key,
     normalize_prompt_preset,
+    preset_output_format_relpath,
     preset_prompt_relpath,
 )
 
@@ -94,11 +100,12 @@ class ArticleMetadataNode:
         text = resolve_text(flattened)
 
         preset_id, prompt_template = self._resolve_prompt_template(params)
-        output_format = load_package_file("prompts/_output_format.json")
+        output_format = load_package_file(preset_output_format_relpath(preset_id))
         prompt, allowed_categories = compose_article_metadata_prompt(
             prompt_template=prompt_template,
             flattened=flattened,
             output_format_json=output_format,
+            preset_id=preset_id,
         )
 
         elapsed_time = time.time() - start_time
@@ -175,19 +182,43 @@ class ArticleMetadataNode:
                 f"Failed to parse LLM response as article metadata: {exc}. Preview: {preview!r}"
             ) from exc
 
-        parsed = parse_article_metadata_response(
-            response_data,
-            allowed_categories=allowed_categories,
-        )
-
         output_data: dict[str, Any] = dict(flattened)
         output_data["text"] = text
-        output_data["article_metadata"] = {
-            "meta_type": meta_type_for_preset(preset_id),
-            "category": parsed.category,
-            "rationale": parsed.rationale,
-            "confidence": parsed.confidence,
-            "prompt_preset": preset_id,
-        }
+
+        if is_multi_value_preset(preset_id):
+            parsed_items = parse_multi_value_metadata_response(
+                response_data,
+                allowed_categories=allowed_categories,
+            )
+            primary = parsed_items[0]
+            list_key = multi_value_list_key(preset_id)
+            items_payload = [
+                {
+                    "category": item.category,
+                    "rationale": item.rationale,
+                    "confidence": item.confidence,
+                }
+                for item in parsed_items
+            ]
+            output_data["article_metadata"] = {
+                "meta_type": meta_type_for_preset(preset_id),
+                "category": primary.category,
+                "rationale": primary.rationale,
+                "confidence": primary.confidence,
+                list_key: items_payload,
+                "prompt_preset": preset_id,
+            }
+        else:
+            parsed = parse_article_metadata_response(
+                response_data,
+                allowed_categories=allowed_categories,
+            )
+            output_data["article_metadata"] = {
+                "meta_type": meta_type_for_preset(preset_id),
+                "category": parsed.category,
+                "rationale": parsed.rationale,
+                "confidence": parsed.confidence,
+                "prompt_preset": preset_id,
+            }
 
         return ArticleMetadataOutput(**output_data)

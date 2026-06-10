@@ -1,8 +1,10 @@
 export const ARTICLE_METADATA_PRESET_OPTIONS = [
   { id: 'topic', label: 'Topic' },
-  { id: 'temporal_orientation', label: 'Temporal orientation' },
-  { id: 'geographic_scope', label: 'Geographic scope' },
-  { id: 'information_needs', label: 'Information needs' },
+  { id: 'subject', label: 'Subject' },
+  { id: 'temporal_orientation', label: 'Timeframe' },
+  { id: 'format', label: 'Format' },
+  { id: 'geographic_scope', label: 'Scope' },
+  { id: 'information_needs', label: 'Critical information need' },
   { id: 'jobs_to_be_done', label: 'Jobs to be done' },
   { id: 'custom', label: 'Custom' },
 ] as const

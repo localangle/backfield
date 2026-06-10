@@ -16,7 +16,8 @@ class SubstrateArticleMeta(SQLModel, table=True):
         UniqueConstraint(
             "article_id",
             "meta_type",
-            name="uq_substrate_article_meta_article_id_meta_type",
+            "category",
+            name="uq_substrate_article_meta_article_id_meta_type_category",
         ),
     )
 

@@ -1,4 +1,6 @@
-Classify the jobs-to-be-done this article fulfills for readers using the story text below.
+### TASK: Classify the **Jobs to be done** of a local news article
+
+Choose the **single dominant job** this story helps readers accomplish.
 
 ## Categories
 - Stay informed
@@ -7,5 +9,7 @@ Classify the jobs-to-be-done this article fulfills for readers using the story t
 - Learn how-to
 - Compare options
 - Other
+
+## Article text
 
 {text}

@@ -189,3 +189,144 @@ def test_missing_block_is_not_present_and_does_not_delete_existing() -> None:
             select(SubstrateArticleMeta).where(SubstrateArticleMeta.article_id == article_id)
         ).one()
         assert row.category == "Local news"
+
+
+def test_persist_subject_creates_multiple_rows() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        article_id = _seed_article(session)
+        summary = persist_article_metadata_after_db_output(
+            session,
+            article_id=article_id,
+            consolidated={
+                "article_metadata": {
+                    "meta_type": "subject",
+                    "prompt_preset": "subject",
+                    "category": "local_government_politics",
+                    "rationale": "Council vote is central.",
+                    "confidence": 0.92,
+                    "subjects": [
+                        {
+                            "category": "local_government_politics",
+                            "rationale": "Council vote is central.",
+                            "confidence": 0.92,
+                        },
+                        {
+                            "category": "housing_affordability_homelessness",
+                            "rationale": "Affordable housing is a major theme.",
+                            "confidence": 0.86,
+                        },
+                    ],
+                }
+            },
+            policy="smart_merge",
+        )
+        assert summary["status"] == "succeeded"
+        assert summary["item_count"] == 2
+        rows = session.exec(
+            select(SubstrateArticleMeta).where(
+                SubstrateArticleMeta.article_id == article_id,
+                SubstrateArticleMeta.meta_type == "subject",
+            )
+        ).all()
+        assert {row.category for row in rows} == {
+            "local_government_politics",
+            "housing_affordability_homelessness",
+        }
+
+
+def test_persist_subject_replace_drops_removed_categories() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        article_id = _seed_article(session)
+        persist_article_metadata_after_db_output(
+            session,
+            article_id=article_id,
+            consolidated={
+                "article_metadata": {
+                    "meta_type": "subject",
+                    "prompt_preset": "subject",
+                    "category": "pro_sports",
+                    "rationale": "Sports focus.",
+                    "confidence": 0.95,
+                    "subjects": [
+                        {
+                            "category": "pro_sports",
+                            "rationale": "Sports focus.",
+                            "confidence": 0.95,
+                        }
+                    ],
+                }
+            },
+            policy="smart_merge",
+        )
+        persist_article_metadata_after_db_output(
+            session,
+            article_id=article_id,
+            consolidated={
+                "article_metadata": {
+                    "meta_type": "subject",
+                    "prompt_preset": "subject",
+                    "category": "business_economy",
+                    "rationale": "Business focus.",
+                    "confidence": 0.91,
+                    "subjects": [
+                        {
+                            "category": "business_economy",
+                            "rationale": "Business focus.",
+                            "confidence": 0.91,
+                        }
+                    ],
+                }
+            },
+            policy="replace",
+        )
+        rows = session.exec(
+            select(SubstrateArticleMeta).where(
+                SubstrateArticleMeta.article_id == article_id,
+                SubstrateArticleMeta.meta_type == "subject",
+            )
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].category == "business_economy"
+
+
+def test_persist_information_needs_creates_multiple_rows() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        article_id = _seed_article(session)
+        summary = persist_article_metadata_after_db_output(
+            session,
+            article_id=article_id,
+            consolidated={
+                "article_metadata": {
+                    "meta_type": "information_needs",
+                    "prompt_preset": "information_needs",
+                    "category": "education",
+                    "rationale": "School access is central.",
+                    "confidence": 0.94,
+                    "needs": [
+                        {
+                            "category": "education",
+                            "rationale": "School access is central.",
+                            "confidence": 0.94,
+                        },
+                        {
+                            "category": "political_information",
+                            "rationale": "Board vote with policy implications.",
+                            "confidence": 0.82,
+                        },
+                    ],
+                }
+            },
+            policy="smart_merge",
+        )
+        assert summary["status"] == "succeeded"
+        assert summary["item_count"] == 2
+        rows = session.exec(
+            select(SubstrateArticleMeta).where(
+                SubstrateArticleMeta.article_id == article_id,
+                SubstrateArticleMeta.meta_type == "information_needs",
+            )
+        ).all()
+        assert {row.category for row in rows} == {"education", "political_information"}

@@ -1,4 +1,6 @@
-Classify the article topic using the story text below.
+### TASK: Classify the **Topic** of a local news article
+
+Choose the **single dominant topic** that best describes what the story is about.
 
 ## Categories
 - Local news
@@ -7,5 +9,7 @@ Classify the article topic using the story text below.
 - Sports
 - Culture
 - Other
+
+## Article text
 
 {text}

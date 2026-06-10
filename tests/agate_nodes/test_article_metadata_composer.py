@@ -25,6 +25,139 @@ Intro text.
     assert extract_categories_from_prompt(prompt) == ["Local news", "Politics"]
 
 
+def test_extract_temporal_orientation_categories() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    prompt = load_package_file("prompts/presets/temporal_orientation.md")
+    categories = extract_categories_from_prompt(prompt)
+    assert categories == [
+        "future",
+        "present",
+        "past",
+        "ongoing",
+        "cyclical",
+        "evergreen",
+        "other",
+    ]
+
+
+def test_extract_format_categories() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    prompt = load_package_file("prompts/presets/format.md")
+    categories = extract_categories_from_prompt(prompt)
+    assert categories == [
+        "news_story",
+        "human_interest",
+        "profile",
+        "in_depth",
+        "explainer_analysis",
+        "opinion_commentary",
+        "review_criticism",
+        "guide_service",
+        "list_roundup",
+        "interview_qa",
+        "obituary",
+        "multimedia",
+        "live_update",
+        "other",
+    ]
+
+
+def test_extract_information_needs_categories() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    prompt = load_package_file("prompts/presets/information_needs.md")
+    categories = extract_categories_from_prompt(prompt)
+    assert categories == [
+        "emergencies_risks",
+        "health_welfare",
+        "education",
+        "transportation",
+        "economic_opportunities",
+        "environment",
+        "civic_information",
+        "political_information",
+        "other",
+    ]
+
+
+def test_compose_information_needs_prompt_requests_json_array() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    template = load_package_file("prompts/presets/information_needs.md")
+    flattened = {"text": "School board votes to close two schools."}
+    output_format = load_package_file("prompts/_output_format_subject.json")
+    prompt, _categories = compose_article_metadata_prompt(
+        prompt_template=template,
+        flattened=flattened,
+        output_format_json=output_format,
+        preset_id="information_needs",
+    )
+    assert "JSON: an array of 1 to 3 objects" in prompt
+    assert "School board votes to close two schools." in prompt
+
+
+def test_extract_geographic_scope_categories() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    prompt = load_package_file("prompts/presets/geographic_scope.md")
+    categories = extract_categories_from_prompt(prompt)
+    assert categories == [
+        "neighborhood_community",
+        "city_municipality",
+        "regional",
+        "statewide",
+        "national",
+        "international",
+        "elsewhere_to_local",
+        "local_to_elsewhere",
+        "other",
+    ]
+
+
+def test_extract_subject_categories() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    prompt = load_package_file("prompts/presets/subject.md")
+    categories = extract_categories_from_prompt(prompt)
+    assert "local_government_politics" in categories
+    assert "pro_sports" in categories
+    assert "other" in categories
+    assert len(categories) == 42
+
+
+def test_compose_subject_prompt_requests_json_array() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    template = load_package_file("prompts/presets/subject.md")
+    flattened = {"text": "Council voted on zoning."}
+    output_format = load_package_file("prompts/_output_format_subject.json")
+    prompt, _categories = compose_article_metadata_prompt(
+        prompt_template=template,
+        flattened=flattened,
+        output_format_json=output_format,
+        preset_id="subject",
+    )
+    assert "JSON: an array of 1 to 3 objects" in prompt
+    assert "Council voted on zoning." in prompt
+
+
+def test_compose_places_article_text_before_output_instructions() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    template = load_package_file("prompts/presets/topic.md")
+    flattened = {"text": "Council voted Tuesday."}
+    output_format = '{"category": "Local news", "rationale": "...", "confidence": 0.5}'
+    prompt, _categories = compose_article_metadata_prompt(
+        prompt_template=template,
+        flattened=flattened,
+        output_format_json=output_format,
+    )
+    assert prompt.index("## Article text") < prompt.index("Council voted Tuesday.")
+    assert prompt.index("Council voted Tuesday.") < prompt.index("Return only valid JSON")
+
+
 def test_compose_includes_headline_placeholder() -> None:
     template = "## Categories\n- Sports\n\nHeadline: {headline}\n\n{text}"
     flattened = {"text": "Body", "headline": "Big game tonight"}
