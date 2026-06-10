@@ -4,12 +4,25 @@ const nodeMetadata = {
   "label": "Gather",
   "icon": "Package",
   "description": "Wait for parallel branches to finish, then pass their outputs downstream as one collection.",
-  "category": "control",
+  "category": "other",
   "color": "bg-cyan-500",
   "requiredUpstreamNodes": [],
   "dependencyHelperText": "Waits for other nodes in the flow to finish, then combines their outputs for the next step.",
-  "inputs": [],
-  "outputs": [],
+  "inputs": [
+    {
+      "id": "data",
+      "label": "Any data",
+      "type": "any",
+      "required": false
+    }
+  ],
+  "outputs": [
+    {
+      "id": "gathered",
+      "label": "Gathered data",
+      "type": "object"
+    }
+  ],
   "defaultParams": {}
 };
 
@@ -34,11 +47,21 @@ function GatherNode({ selected }: NodeProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        <Handle type="target" position={Position.Left} className="w-3 h-3 bg-gray-700" />
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="data"
+          className="w-3 h-3 bg-gray-700"
+        />
         {dependencyHelperText ? (
           <p className="text-xs text-muted-foreground">{dependencyHelperText}</p>
         ) : null}
-        <Handle type="source" position={Position.Right} className="w-3 h-3 bg-gray-700" />
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="gathered"
+          className="w-3 h-3 bg-gray-700"
+        />
       </CardContent>
     </Card>
   )

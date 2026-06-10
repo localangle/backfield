@@ -121,6 +121,11 @@ describe('getCompatibleInsertNodes', () => {
     const org = result.disabled.find((e) => e.type === 'OrganizationExtract')
     expect(org?.reason).toMatch(/cannot follow another Organization Extract step/i)
   })
+
+  it('enables Gather before Backfield Output', () => {
+    const result = getCompatibleInsertNodes('TextInput', 'DBOutput', ['TextInput'])
+    expect(result.enabled.map((e) => e.type)).toContain('Gather')
+  })
 })
 
 describe('resolveEdgeHandles', () => {
@@ -141,6 +146,31 @@ describe('resolveEdgeHandles', () => {
   it('maps Text Input to Backfield Output on text → data', () => {
     expect(resolveEdgeHandles('TextInput', 'DBOutput')).toEqual({
       sourceHandle: 'text',
+      targetHandle: 'data',
+    })
+  })
+
+  it('maps Gather to Backfield Output on gathered → data', () => {
+    expect(resolveEdgeHandles('Gather', 'DBOutput')).toEqual({
+      sourceHandle: 'gathered',
+      targetHandle: 'data',
+    })
+  })
+
+  it('maps Gather to JSON Output on gathered → data', () => {
+    expect(resolveEdgeHandles('Gather', 'Output')).toEqual({
+      sourceHandle: 'gathered',
+      targetHandle: 'data',
+    })
+  })
+
+  it('maps any upstream node to Gather on data', () => {
+    expect(resolveEdgeHandles('TextInput', 'Gather')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'data',
+    })
+    expect(resolveEdgeHandles('PlaceExtract', 'Gather')).toEqual({
+      sourceHandle: 'locations',
       targetHandle: 'data',
     })
   })

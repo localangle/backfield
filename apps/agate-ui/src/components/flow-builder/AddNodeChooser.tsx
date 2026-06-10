@@ -49,9 +49,11 @@ const SIMPLE_CATEGORY_LABELS: Record<string, string> = {
   filter: 'Transform',
   review: 'Transform',
   text: 'Transform',
+  control: 'Other',
+  other: 'Other',
 }
 
-const CATEGORY_ORDER = ['Extract', 'Embed', 'Enrich', 'Transform']
+const CATEGORY_ORDER = ['Extract', 'Embed', 'Enrich', 'Transform', 'Other']
 
 function groupRows(rows: FlatRow[]): Group[] {
   const byCategory = new Map<string, FlatRow[]>()
@@ -198,12 +200,6 @@ export default function AddNodeChooser({
       </div>
 
       <div className="max-h-[360px] min-w-0 flex-1 overflow-y-auto p-2">
-        {compatibility.enabled.length === 0 && compatibility.disabled.length > 0 && (
-          <p className="px-3 py-2 text-xs text-neutral-300">
-            Nothing can be added here yet. Disabled steps explain what this branch needs first.
-          </p>
-        )}
-
         {activeGroup ? (
           <div className="space-y-1">
             {activeGroup.rows.map((row) => (

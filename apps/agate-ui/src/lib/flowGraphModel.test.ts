@@ -140,6 +140,18 @@ describe('flowGraphModel serial chain', () => {
     expect(edgeSet(model)).toEqual(new Set(['input-1->geo-1:branch', 'geo-1->output-1:tip']))
     expect(getInvalidFlowNodeIds(model)).toEqual(new Set(['geo-1']))
   })
+
+  it('does not mark Gather invalid when inserted before output', () => {
+    const gather: FlowGraphNode = { id: 'gather-1', type: 'Gather', data: {} }
+    let model = insertAfter(bookends(), 'input-1', gather)
+
+    expect(edgeSet(model)).toEqual(new Set(['input-1->gather-1:serial', 'gather-1->output-1:tip']))
+    expect(getInvalidFlowNodeIds(model)).toEqual(new Set())
+
+    const gatherEdge = deriveEdges(model).find((edge) => edge.target === 'gather-1')
+    expect(gatherEdge?.sourceHandle).toBe('text')
+    expect(gatherEdge?.targetHandle).toBe('data')
+  })
 })
 
 describe('flowGraphModel parallel branches', () => {

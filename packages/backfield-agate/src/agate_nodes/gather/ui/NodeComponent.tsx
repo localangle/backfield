@@ -19,11 +19,21 @@ function GatherNode({ selected }: NodeProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        <Handle type="target" position={Position.Left} className="w-3 h-3 bg-gray-700" />
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="data"
+          className="w-3 h-3 bg-gray-700"
+        />
         {dependencyHelperText ? (
           <p className="text-xs text-muted-foreground">{dependencyHelperText}</p>
         ) : null}
-        <Handle type="source" position={Position.Right} className="w-3 h-3 bg-gray-700" />
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="gathered"
+          className="w-3 h-3 bg-gray-700"
+        />
       </CardContent>
     </Card>
   )

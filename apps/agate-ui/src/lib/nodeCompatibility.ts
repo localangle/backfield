@@ -74,6 +74,8 @@ const CATEGORY_HEADINGS: Record<string, string> = {
   text: 'Text analysis',
   output: 'Output',
   input: 'Input',
+  control: 'Other',
+  other: 'Other',
 }
 
 function isBookendType(type: string): boolean {
@@ -94,6 +96,9 @@ function typesCompatible(outputType: string, inputType: string): boolean {
   return false
 }
 
+/** Sync-barrier nodes accept any upstream output in the guided flow builder. */
+export const SYNC_BARRIER_NODE_TYPES = new Set(['Gather'])
+
 /** Pick source/target handle ids for a guided edge from node metadata ports. */
 export function resolveEdgeHandles(
   sourceType: string,
@@ -104,8 +109,14 @@ export function resolveEdgeHandles(
   if (!sourceMeta || !targetMeta) return null
 
   const outputs = sourceMeta.outputs ?? []
-  const inputs = targetMeta.inputs ?? []
-  if (outputs.length === 0 || inputs.length === 0) return null
+  let inputs = targetMeta.inputs ?? []
+
+  if (inputs.length === 0 && SYNC_BARRIER_NODE_TYPES.has(targetType)) {
+    inputs = [{ id: 'data', label: 'Any data', type: 'any', required: false }]
+  }
+
+  if (outputs.length === 0) return null
+  if (inputs.length === 0) return null
 
   const requiredInputs = inputs.filter((input) => input.required)
   const inputsToTry = requiredInputs.length > 0 ? requiredInputs : inputs
@@ -141,6 +152,10 @@ function parentOutputsCompatible(
   parentMeta: NodeMetadataEntry,
   candidateMeta: NodeMetadataEntry,
 ): boolean {
+  if (SYNC_BARRIER_NODE_TYPES.has(candidateMeta.type)) {
+    return (parentMeta.outputs ?? []).length > 0
+  }
+
   const outputs = parentMeta.outputs ?? []
   const requiredInputs = (candidateMeta.inputs ?? []).filter((i) => i.required)
   const inputsToCheck =

@@ -4,12 +4,25 @@ const nodeMetadata = {
   "label": "Gather",
   "icon": "Package",
   "description": "Wait for parallel branches to finish, then pass their outputs downstream as one collection.",
-  "category": "control",
+  "category": "other",
   "color": "bg-cyan-500",
   "requiredUpstreamNodes": [],
   "dependencyHelperText": "Waits for other nodes in the flow to finish, then combines their outputs for the next step.",
-  "inputs": [],
-  "outputs": [],
+  "inputs": [
+    {
+      "id": "data",
+      "label": "Any data",
+      "type": "any",
+      "required": false
+    }
+  ],
+  "outputs": [
+    {
+      "id": "gathered",
+      "label": "Gathered data",
+      "type": "object"
+    }
+  ],
   "defaultParams": {}
 };
 
