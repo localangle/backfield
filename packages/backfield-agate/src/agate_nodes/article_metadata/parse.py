@@ -14,6 +14,26 @@ class ArticleMetadataLLMResponse(BaseModel):
     rationale: str
     confidence: float
 
+    @field_validator("category", "rationale", mode="before")
+    @classmethod
+    def _coerce_optional_str(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, str):
+            return value
+        return str(value)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _coerce_confidence(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str) and value.strip():
+            return float(value.strip())
+        return value
+
     @field_validator("category", "rationale")
     @classmethod
     def _non_empty_str(cls, value: str) -> str:
@@ -30,23 +50,79 @@ class ArticleMetadataLLMResponse(BaseModel):
         return float(value)
 
 
+_MULTI_VALUE_WRAPPER_KEYS = (
+    "subjects",
+    "needs",
+    "items",
+    "results",
+    "categories",
+    "information_needs",
+)
+
+
+def _first_non_empty_str(raw: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _normalize_subject_item(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError("each subject entry must be a JSON object")
-    category = raw.get("category")
-    if not isinstance(category, str) or not category.strip():
-        category = raw.get("subject")
-    rationale = raw.get("rationale")
-    if not isinstance(rationale, str) or not rationale.strip():
-        rationale = raw.get("subject_rationale")
+    category = _first_non_empty_str(
+        raw,
+        "category",
+        "subject",
+        "need",
+        "label",
+        "name",
+    )
+    rationale = _first_non_empty_str(
+        raw,
+        "rationale",
+        "subject_rationale",
+        "need_rationale",
+        "reason",
+        "explanation",
+    )
     confidence = raw.get("confidence")
     if confidence is None:
         confidence = raw.get("subject_confidence")
+    if confidence is None:
+        confidence = raw.get("need_confidence")
+    if confidence is None:
+        confidence = raw.get("score")
     return {
         "category": category,
         "rationale": rationale,
         "confidence": confidence,
     }
+
+
+def _looks_like_metadata_item(raw: dict[str, Any]) -> bool:
+    normalized = _normalize_subject_item(raw)
+    return any(normalized.get(key) is not None for key in ("category", "rationale", "confidence"))
+
+
+def _unwrap_multi_value_items(data: Any) -> list[Any]:
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        raise ValueError("LLM response must be a JSON array of subject objects")
+
+    if _looks_like_metadata_item(data):
+        return [data]
+
+    for key in _MULTI_VALUE_WRAPPER_KEYS:
+        wrapped = data.get(key)
+        if isinstance(wrapped, list):
+            return wrapped
+        if isinstance(wrapped, dict):
+            return [wrapped]
+
+    return [data]
 
 
 def parse_article_metadata_response(
@@ -75,12 +151,7 @@ def parse_multi_value_metadata_response(
     *,
     allowed_categories: list[str],
 ) -> list[ArticleMetadataLLMResponse]:
-    if isinstance(data, dict):
-        items_raw = [data]
-    elif isinstance(data, list):
-        items_raw = data
-    else:
-        raise ValueError("LLM response must be a JSON array of subject objects")
+    items_raw = _unwrap_multi_value_items(data)
 
     if not items_raw:
         raise ValueError("At least one item is required")

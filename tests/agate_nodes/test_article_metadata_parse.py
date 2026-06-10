@@ -85,6 +85,40 @@ def test_parse_subject_accepts_legacy_subject_keys() -> None:
     assert parsed[0].category == "pro_sports"
 
 
+def test_parse_subject_unwraps_subjects_wrapper_object() -> None:
+    parsed = parse_subject_metadata_response(
+        {
+            "subjects": [
+                {
+                    "category": "local_government_politics",
+                    "rationale": "Council vote is central.",
+                    "confidence": 0.9,
+                }
+            ]
+        },
+        allowed_categories=["local_government_politics", "other"],
+    )
+    assert len(parsed) == 1
+    assert parsed[0].category == "local_government_politics"
+
+
+def test_parse_subject_unwraps_needs_wrapper_object() -> None:
+    parsed = parse_subject_metadata_response(
+        {
+            "needs": [
+                {
+                    "category": "accountability_government_oversight",
+                    "rationale": "Investigates misuse of funds.",
+                    "confidence": "0.88",
+                }
+            ]
+        },
+        allowed_categories=["accountability_government_oversight", "other"],
+    )
+    assert parsed[0].category == "accountability_government_oversight"
+    assert parsed[0].confidence == 0.88
+
+
 def test_rejects_more_than_three_subjects() -> None:
     with pytest.raises(ValueError, match="At most 3"):
         parse_subject_metadata_response(

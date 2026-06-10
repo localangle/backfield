@@ -65,6 +65,8 @@ const DEFAULTS = {
   embeddingAiModelConfigId: null as string | null,
 }
 
+const GENERATIVE_TEXT_MODEL_CAPABILITIES = ['text', 'json'] as const
+
 const DESCRIPTION_MODEL_KEYS: AiModelFieldKeys = {
   configIdKey: 'descriptionAiModelConfigId',
   modelKey: 'descriptionModel',
@@ -180,7 +182,13 @@ function ModelSelect({
       ) : catalogError ? (
         <p className="text-sm text-destructive">{catalogError}</p>
       ) : modelSelectOptions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No models available for this project.</p>
+        <p className="text-sm text-muted-foreground">
+          {modelKeys.modelKey === 'descriptionModel'
+            ? 'Enable at least one text model for this project in Models.'
+            : modelKeys.modelKey === 'embeddingModel'
+              ? 'Enable at least one embedding model for this project in Models.'
+              : 'No models available for this project.'}
+        </p>
       ) : (
         <Select
           value={radixSelectValue}
@@ -243,7 +251,7 @@ export default function EmbedImagesPanel({
   }
   const disabled = !(editMode && setNodes)
 
-  const descriptionCatalog = useCatalogRows(graphContext, ['generative'])
+  const descriptionCatalog = useCatalogRows(graphContext, [...GENERATIVE_TEXT_MODEL_CAPABILITIES])
   const embeddingCatalog = useCatalogRows(graphContext, ['embedding'])
 
   const descriptionOptions = useMemo(
