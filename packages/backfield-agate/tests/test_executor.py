@@ -802,10 +802,12 @@ def test_gather_waits_for_parallel_branches(monkeypatch: pytest.MonkeyPatch):
     assert execution_order[-1] == "gather"
     assert execution_order.index("gather") > execution_order.index("org")
     gathered = out["gather"]
-    assert "org" in gathered
-    assert "plc" in gathered
-    assert "in" in gathered
-    assert gathered["plc"]["locations"]
+    assert "gathered" in gathered
+    branch_payload = gathered["gathered"]
+    assert "organization_extract" in branch_payload
+    assert "place_extract" in branch_payload
+    assert "text_input" in branch_payload
+    assert branch_payload["place_extract"]["locations"]
 
 
 def test_gather_waits_in_sequential_mode(monkeypatch: pytest.MonkeyPatch):
@@ -846,5 +848,6 @@ def test_gather_waits_in_sequential_mode(monkeypatch: pytest.MonkeyPatch):
         out = execute_graph(spec, before_each_node=record_order)
 
     assert execution_order[-1] == "gather"
-    assert "org" in out["gather"]
-    assert "plc" in out["gather"]
+    gathered = out["gather"]["gathered"]
+    assert "organization_extract" in gathered
+    assert "place_extract" in gathered

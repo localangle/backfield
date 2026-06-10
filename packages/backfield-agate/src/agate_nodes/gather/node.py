@@ -6,5 +6,5 @@ from typing import Any
 
 
 def run_gather(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-    """Return consolidated upstream outputs keyed by source node id."""
-    return dict(inputs)
+    """Return consolidated upstream outputs keyed by source node id under ``gathered``."""
+    return {"gathered": dict(inputs)}

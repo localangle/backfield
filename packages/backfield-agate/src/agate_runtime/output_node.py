@@ -32,7 +32,21 @@ def _merge_namespaced_upstream_inputs_for_dboutput(inputs: dict[str, Any]) -> di
     for _upstream_id, payload in inputs.items():
         if isinstance(payload, dict):
             merged.update(payload)
-    return merged
+    return _expand_gathered_payload(merged)
+
+
+def _expand_gathered_payload(merged: dict[str, Any]) -> dict[str, Any]:
+    """Hoist ``gathered`` branch payloads for OutputConsolidator / DBOutput."""
+    if not isinstance(merged, dict):
+        return merged
+    gathered = merged.get("gathered")
+    if not isinstance(gathered, dict):
+        return merged
+    expanded = {key: value for key, value in merged.items() if key != "gathered"}
+    for payload in gathered.values():
+        if isinstance(payload, dict):
+            expanded.update(payload)
+    return expanded
 
 
 def consolidated_body_from_dboutput(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:

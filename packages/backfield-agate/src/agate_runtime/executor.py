@@ -10,6 +10,10 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from agate_runtime.context import AgateEnvContext
+from agate_runtime.node_output_contract import (
+    project_gathered_contributions,
+    project_node_contribution,
+)
 from agate_runtime.nodes import NODE_RUNNERS
 from agate_runtime.runners import ASYNC_NODE_RUNNERS, default_context
 from agate_runtime.types import Edge, GraphSpec, NodeConfig
@@ -280,10 +284,24 @@ def _remap_outputs_for_json(
 ) -> dict[str, Any]:
     """Top-level keys are snake_case slugs from node types (see ``_NODE_TYPE_OUTPUT_SLUGS``)."""
     id_to_public = _public_node_output_keys(by_id, order)
+    source_id_to_type = {node_id: node.type for node_id, node in by_id.items()}
     out: dict[str, Any] = {}
     for node_id in order:
         public_key = id_to_public[node_id]
-        out[public_key] = node_outputs[node_id]
+        raw_output = node_outputs[node_id]
+        node_type = by_id[node_id].type
+        if node_type == "Gather" and isinstance(raw_output, dict):
+            gathered = raw_output.get("gathered")
+            if isinstance(gathered, dict):
+                out[public_key] = {
+                    "gathered": project_gathered_contributions(
+                        gathered,
+                        source_id_to_type=source_id_to_type,
+                        source_id_to_public=id_to_public,
+                    )
+                }
+                continue
+        out[public_key] = project_node_contribution(node_type, raw_output)
     return out
 
 

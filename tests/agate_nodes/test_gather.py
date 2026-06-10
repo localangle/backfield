@@ -11,4 +11,4 @@ def test_run_gather_passthrough_namespaced_inputs() -> None:
         "plc": {"locations": [{"location": "Chicago, IL"}]},
     }
     out = run_gather({}, inputs)
-    assert out == inputs
+    assert out == {"gathered": inputs}
