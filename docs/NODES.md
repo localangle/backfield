@@ -19,7 +19,7 @@ Branch implementation and review work by profile. Every node folder declares a p
 | **Extract** | LLM or rules extraction | `PlaceExtract`, `PersonExtract`, `OrganizationExtract` | **Canonical entity extract** → [`add-entity-type`](../.cursor/skills/add-entity-type/SKILL.md). Non-canonical extract stays here |
 | **Enrich** | Transform or resolve upstream rows | `GeocodeAgent` | May **feed entity review** (e.g. Places tab) without a new canonical type |
 | **Embed** | Vector / semantic indexing | `EmbedText`, `EmbedImages` | Embed Text: Info tab status; Embed Images: **Images** review tab (read-only) |
-| **Other** | Flow control, gather, stats, format | *(varies)* | Case-by-case; default panel + JSON |
+| **Other** | Flow control, gather, stats, format | `Gather` | Panel + JSON (Gather also shows Output tab preview) |
 
 ## When to use which skill
 

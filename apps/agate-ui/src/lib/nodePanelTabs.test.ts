@@ -54,6 +54,15 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('EmbedImages', { hasRunOutput: true })).toEqual(['settings', 'info'])
   })
 
+  it('shows settings, info, and outputs for gather when a run exists', () => {
+    expect(getNodePanelTabs('Gather')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('Gather', { hasRunOutput: true })).toEqual([
+      'settings',
+      'info',
+      'outputs',
+    ])
+  })
+
   it('splits article metadata configuration across settings, prompt, output, and info', () => {
     expect(getNodePanelTabs('ArticleMetadata')).toEqual(['settings', 'prompts', 'outputs', 'info'])
   })
