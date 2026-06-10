@@ -70,11 +70,28 @@ def _active_handler_keys(consolidated: dict[str, Any]) -> tuple[str, ...]:
     return tuple(key for key in _HANDLER_DISPATCH_ORDER if key in active)
 
 
+def _has_article_embedding(consolidated: dict[str, Any]) -> bool:
+    block = consolidated.get("article_embedding")
+    return isinstance(block, dict)
+
+
+def _has_persistable_consolidated_content(consolidated: dict[str, Any]) -> bool:
+    return bool(_active_handler_keys(consolidated)) or _has_article_embedding(consolidated)
+
+
+def _empty_reconciliation_summary(
+    policy: ReconciliationPolicy,
+) -> DomainReconciliationSummary:
+    return DomainReconciliationSummary(policy=policy, domain="article")
+
+
 def _primary_reconciliation_summary(
     summaries: tuple[DomainReconciliationSummary, ...],
+    *,
+    policy: ReconciliationPolicy,
 ) -> DomainReconciliationSummary:
     if not summaries:
-        raise RuntimeError("persist_from_consolidated produced no domain summaries")
+        return _empty_reconciliation_summary(policy)
     for summary in summaries:
         if summary.domain == "places":
             return summary
@@ -92,10 +109,10 @@ def persist_from_consolidated(
     replace_machine_geography: bool = False,
 ) -> PersistResult:
     active_keys = _active_handler_keys(consolidated)
-    if not active_keys:
+    if not _has_persistable_consolidated_content(consolidated):
         raise RuntimeError(
             "DBOutput persistence requires consolidated['places'], consolidated['people'], "
-            "and/or consolidated['organizations']"
+            "consolidated['organizations'], and/or consolidated['article_embedding']"
         )
 
     article = _upsert_article(
@@ -189,7 +206,7 @@ def persist_from_consolidated(
         retired_mentions=retired_mentions,
         disposed_substrates=disposed_substrates,
         replace_stats=replace_stats,
-        reconciliation_summary=_primary_reconciliation_summary(summaries_tuple),
+        reconciliation_summary=_primary_reconciliation_summary(summaries_tuple, policy=policy),
         domain_summaries=summaries_tuple,
         consolidated_domain_keys=active_keys,
     )

@@ -36,7 +36,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
 import { FieldLabel } from '@/components/node-panel/FieldLabel'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -199,21 +198,11 @@ export default function EmbedTextPanel({
       </NodePanelTabGate>
 
       <NodePanelTabGate tab="info">
-        <div className="space-y-4">
-          {nodeMetadata.dependencyHelperText ? (
-            <p className="text-sm text-muted-foreground border-l-2 border-muted pl-3 leading-relaxed">
-              {nodeMetadata.dependencyHelperText}
-            </p>
-          ) : null}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">About this step</Label>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              This step turns the full story text (including the headline when present) into a
-              searchable vector. When the flow saves through Backfield Output, the embedding is
-              stored with the story.
-            </p>
-          </div>
-        </div>
+        {nodeMetadata.dependencyHelperText ? (
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {nodeMetadata.dependencyHelperText}
+          </p>
+        ) : null}
       </NodePanelTabGate>
     </>
   )
