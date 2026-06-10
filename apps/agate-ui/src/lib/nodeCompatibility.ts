@@ -27,6 +27,7 @@ const CATEGORY_HEADINGS: Record<string, string> = {
   geography: 'Geography',
   filter: 'Filter results',
   review: 'Review results',
+  embedding: 'Embed',
   text: 'Text analysis',
   output: 'Output',
   input: 'Input',

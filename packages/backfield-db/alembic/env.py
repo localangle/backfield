@@ -9,6 +9,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
+from backfield_db.article_embedding_models import SubstrateArticleEmbedding  # noqa: F401
 from backfield_db.models import (  # noqa: F401
     AgateGraph,
     AgateRun,

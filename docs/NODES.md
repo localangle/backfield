@@ -180,7 +180,8 @@ Each slice should be demoable on its own.
 ### Embed
 
 - Clarify vector storage (new table vs existing semantic indexing in `backfield_entities.ingest.semantic_indexing`).
-- Default review tier: Panel + JSON.
+- **Embed Text (`EmbedText`)** stores one vector per article in `substrate_article_embedding`, emitted as consolidated `article_embedding` and persisted by **DBOutput** (honors reconciliation policy). Processed-item **Info** tab shows a compact indicator; full payload appears in the **JSON** tab.
+- Default review tier: Panel + JSON (Info indicator only).
 
 ### Other
 

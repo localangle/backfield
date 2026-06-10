@@ -26,6 +26,7 @@ const MENU_GAP_PX = 8
 
 const SIMPLE_CATEGORY_LABELS: Record<string, string> = {
   extraction: 'Extract',
+  embedding: 'Embed',
   enrichment: 'Enrich',
   geography: 'Enrich',
   filter: 'Transform',
@@ -33,7 +34,7 @@ const SIMPLE_CATEGORY_LABELS: Record<string, string> = {
   text: 'Transform',
 }
 
-const CATEGORY_ORDER = ['Extract', 'Enrich', 'Transform']
+const CATEGORY_ORDER = ['Extract', 'Embed', 'Enrich', 'Transform']
 
 function groupRows(rows: FlatRow[]): Group[] {
   const byCategory = new Map<string, FlatRow[]>()

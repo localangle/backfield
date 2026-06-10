@@ -3,6 +3,10 @@
  */
 
 import {
+  normalizeProcessedItemArticleEmbedding,
+  type ProcessedItemArticleEmbedding,
+} from '@/lib/review/content/articleEmbeddingDisplay'
+import {
   normalizeProcessedItemConnections,
   type ProcessedItemConnections,
 } from '@/lib/review/content/connectionsDisplay'
@@ -11,6 +15,10 @@ import {
   type ProcessedItemSemanticIndexing,
 } from '@/lib/review/content/semanticIndexingDisplay'
 
+export type {
+  ProcessedItemArticleEmbedding,
+  ProcessedItemArticleEmbeddingStatus,
+} from '@/lib/review/content/articleEmbeddingDisplay'
 export type {
   ProcessedItemConnections,
   ProcessedItemConnectionsStatus,
@@ -160,6 +168,8 @@ export interface ProcessedItem {
   article_context?: ArticleContext
   /** Compact semantic search indexing status from Backfield Output. */
   semantic_indexing?: ProcessedItemSemanticIndexing
+  /** Compact article text embedding status from Embed Text. */
+  article_embedding?: ProcessedItemArticleEmbedding
   /** Compact automatic connections status from Backfield Output. */
   connections?: ProcessedItemConnections
 }
@@ -614,6 +624,7 @@ interface RawProcessedItemDetail {
   stale_organizations_overlay_entries?: Array<Record<string, unknown>>
   article_context?: unknown
   semantic_indexing?: unknown
+  article_embedding?: unknown
   connections?: unknown
 }
 
@@ -711,6 +722,7 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
         : null,
     article_context: _normalizeArticleContext(raw.article_context),
     semantic_indexing: normalizeProcessedItemSemanticIndexing(raw.semantic_indexing),
+    article_embedding: normalizeProcessedItemArticleEmbedding(raw.article_embedding),
     connections: normalizeProcessedItemConnections(raw.connections),
   }
 }

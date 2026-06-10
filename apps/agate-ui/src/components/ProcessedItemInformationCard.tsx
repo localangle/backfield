@@ -22,6 +22,11 @@ import {
   shouldShowConnectionsSummary,
 } from '@/lib/review/content/connectionsDisplay'
 import {
+  articleEmbeddingStatusLabel,
+  formatArticleEmbeddingDetail,
+  shouldShowArticleEmbeddingSummary,
+} from '@/lib/review/content/articleEmbeddingDisplay'
+import {
   formatSemanticIndexingDetail,
   semanticIndexingStatusLabel,
   shouldShowSemanticIndexingSummary,
@@ -280,6 +285,8 @@ export function ProcessedItemInformationCard({
   const editable = !item.synthetic && !reviewLocked
   const semanticIndexing = item.semantic_indexing
   const showSemanticIndexing = shouldShowSemanticIndexingSummary(semanticIndexing)
+  const articleEmbedding = item.article_embedding
+  const showArticleEmbedding = shouldShowArticleEmbeddingSummary(articleEmbedding)
   const connections = item.connections
   const showConnections = shouldShowConnectionsSummary(connections)
 
@@ -396,6 +403,28 @@ export function ProcessedItemInformationCard({
                     {formatSemanticIndexingDetail(semanticIndexing) ? (
                       <p className="text-xs text-muted-foreground mt-1">
                         {formatSemanticIndexingDetail(semanticIndexing)}
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+            {showArticleEmbedding && articleEmbedding ? (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Article embedding</label>
+                {articleEmbedding.status === 'succeeded' ? (
+                  <p className="text-sm mt-0.5 flex items-center gap-1.5 text-green-700 dark:text-green-400">
+                    <CheckCircle className="h-4 w-4 shrink-0" aria-hidden />
+                    <span>{formatArticleEmbeddingDetail(articleEmbedding)}</span>
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm mt-0.5 text-muted-foreground">
+                      {articleEmbeddingStatusLabel(articleEmbedding.status)}
+                    </p>
+                    {formatArticleEmbeddingDetail(articleEmbedding) ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatArticleEmbeddingDetail(articleEmbedding)}
                       </p>
                     ) : null}
                   </>

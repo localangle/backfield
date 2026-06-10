@@ -41,7 +41,7 @@ export const geographyTypes = new Set([
   'PlaceReview',
 ])
 export const imageTypes = new Set(['EmbedImages', 'ImageEnrich'])
-export const textTypes = new Set(['Embed', 'LLMEnrich', 'StatsNode'])
+export const textTypes = new Set(['Embed', 'EmbedText', 'LLMEnrich', 'StatsNode'])
 export const peopleTypes = new Set(['PersonExtract', 'PeopleExtract', 'PeopleClassify'])
 export const organizationTypes = new Set([
   'OrganizationExtract',

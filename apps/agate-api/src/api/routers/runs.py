@@ -34,6 +34,9 @@ from backfield_db import (
 from backfield_entities.connections.processed_item import (
     build_processed_item_connections_summary,
 )
+from backfield_entities.ingest.article_embedding.processed_item import (
+    build_processed_item_article_embedding_summary,
+)
 from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
 )
@@ -154,6 +157,25 @@ class ProcessedItemSemanticIndexingOut(BaseModel):
     error: str | None = None
 
 
+class ProcessedItemArticleEmbeddingOut(BaseModel):
+    """Compact article embedding status for processed item detail."""
+
+    status: Literal[
+        "not_present",
+        "pending",
+        "running",
+        "succeeded",
+        "skipped",
+        "failed",
+    ]
+    present: bool = False
+    persisted: bool = False
+    embedding_model: str | None = None
+    embedding_dimensions: int | None = None
+    embedded_at: datetime | None = None
+    error: str | None = None
+
+
 class ProcessedItemDetailOut(BaseModel):
     """Single processed item for run detail / item drill-down."""
 
@@ -193,6 +215,8 @@ class ProcessedItemDetailOut(BaseModel):
     article_context: ArticleContextOut
     #: Semantic search indexing status from Backfield Output (see ``docs/API.md``).
     semantic_indexing: ProcessedItemSemanticIndexingOut
+    #: Article-level text embedding from Embed Text (see ``docs/API.md``).
+    article_embedding: ProcessedItemArticleEmbeddingOut
     #: Automatic Stylebook connections status from Backfield Output.
     connections: ProcessedItemConnectionsOut
 
@@ -259,6 +283,24 @@ def _processed_item_semantic_indexing(
         item_updated_at=item_updated_at,
     )
     return ProcessedItemSemanticIndexingOut.model_validate(summary)
+
+
+def _processed_item_article_embedding(
+    session: Session,
+    *,
+    item_status: str,
+    output_obj: dict[str, Any] | None,
+    article_id: int | None,
+    item_updated_at: datetime,
+) -> ProcessedItemArticleEmbeddingOut:
+    summary = build_processed_item_article_embedding_summary(
+        session,
+        item_status=item_status,
+        result_obj=output_obj,
+        article_id=article_id,
+        item_updated_at=item_updated_at,
+    )
+    return ProcessedItemArticleEmbeddingOut.model_validate(summary)
 
 
 def _processed_item_connections(
@@ -766,6 +808,13 @@ def _detail_from_agate_processed_row(
         article_id=article_ctx_dict.get("article_id"),
         item_updated_at=row.updated_at,
     )
+    article_embedding = _processed_item_article_embedding(
+        session,
+        item_status=row.status,
+        output_obj=output_obj,
+        article_id=article_ctx_dict.get("article_id"),
+        item_updated_at=row.updated_at,
+    )
     connections = _processed_item_connections(
         item_status=row.status,
         output_obj=output_obj,
@@ -802,6 +851,7 @@ def _detail_from_agate_processed_row(
         stale_organizations_overlay_entries=stale_organizations_overlay_entries,
         article_context=article_ctx,
         semantic_indexing=semantic_indexing,
+        article_embedding=article_embedding,
         connections=connections,
     )
 
@@ -904,6 +954,13 @@ def _maybe_detail_whole_graph_run(
         article_id=article_ctx_dict.get("article_id"),
         item_updated_at=run.updated_at,
     )
+    article_embedding = _processed_item_article_embedding(
+        session,
+        item_status=st,
+        output_obj=output_obj,
+        article_id=article_ctx_dict.get("article_id"),
+        item_updated_at=run.updated_at,
+    )
     connections = _processed_item_connections(
         item_status=st,
         output_obj=output_obj,
@@ -937,6 +994,7 @@ def _maybe_detail_whole_graph_run(
         stale_organizations_overlay_entries=stale_organizations_overlay_entries,
         article_context=article_ctx,
         semantic_indexing=semantic_indexing,
+        article_embedding=article_embedding,
         connections=connections,
     )
 
