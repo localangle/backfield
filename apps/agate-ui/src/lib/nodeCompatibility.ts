@@ -21,6 +21,43 @@ export type CompatibleNextNodesResult = {
   disabled: CompatibleNodeEntry[]
 }
 
+export type CompatibleNodesOptions = {
+  /** Capability name → true when at least one project model is enabled (e.g. embedding). */
+  projectModelCapabilities?: Record<string, boolean>
+}
+
+function requiredProjectModelCapabilities(meta: NodeMetadataEntry): string[] {
+  const caps = (meta as { requiredProjectModelCapabilities?: string[] })
+    .requiredProjectModelCapabilities
+  return Array.isArray(caps) ? caps : []
+}
+
+function missingProjectModelsReason(capabilities: string[]): string {
+  if (capabilities.includes('embedding')) {
+    return 'Enable at least one embedding model for this project in Models.'
+  }
+  return 'Enable the required models for this project in Models.'
+}
+
+function projectModelsRequirementMet(
+  meta: NodeMetadataEntry,
+  options?: CompatibleNodesOptions,
+): { ok: true } | { ok: false; reason: string } {
+  const required = requiredProjectModelCapabilities(meta)
+  if (required.length === 0) return { ok: true }
+
+  const availability = options?.projectModelCapabilities
+  if (availability === undefined) {
+    return { ok: false, reason: 'Loading project models…' }
+  }
+
+  if (required.every((cap) => availability[cap] === true)) {
+    return { ok: true }
+  }
+
+  return { ok: false, reason: missingProjectModelsReason(required) }
+}
+
 const CATEGORY_HEADINGS: Record<string, string> = {
   extraction: 'Extract information',
   enrichment: 'Enrich and refine',
@@ -156,6 +193,18 @@ function downstreamFailureReason(candidateMeta: NodeMetadataEntry, targetMeta: N
   return `${targetLabel} cannot use the data coming from ${candidateLabel}. Choose a different step for this connection.`
 }
 
+function sameTypeChainFailureReason(meta: NodeMetadataEntry): string {
+  const label = meta.label ?? meta.type
+  return `${label} cannot follow another ${label} step.`
+}
+
+function blocksSameTypeChain(
+  candidateType: string,
+  upstreamType: string,
+): boolean {
+  return candidateType === upstreamType
+}
+
 function toEntry(
   meta: NodeMetadataEntry,
   enabled: boolean,
@@ -174,6 +223,7 @@ function toEntry(
 export function getCompatibleNextNodes(
   parentType: string,
   branchAncestryTypes: readonly string[],
+  options?: CompatibleNodesOptions,
 ): CompatibleNextNodesResult {
   const parentMeta = nodeMetadata.find((m) => m.type === parentType)
   if (!parentMeta) {
@@ -202,6 +252,17 @@ export function getCompatibleNextNodes(
       continue
     }
 
+    if (blocksSameTypeChain(meta.type, parentType)) {
+      disabled.push(toEntry(meta, false, sameTypeChainFailureReason(meta)))
+      continue
+    }
+
+    const modelRequirement = projectModelsRequirementMet(meta, options)
+    if (!modelRequirement.ok) {
+      disabled.push(toEntry(meta, false, modelRequirement.reason))
+      continue
+    }
+
     enabled.push(toEntry(meta, true, null))
   }
 
@@ -215,6 +276,7 @@ export function getCompatibleInsertNodes(
   sourceType: string,
   targetType: string,
   sourceAncestryTypes: readonly string[],
+  options?: CompatibleNodesOptions,
 ): CompatibleNextNodesResult {
   const sourceMeta = nodeMetadata.find((m) => m.type === sourceType)
   const targetMeta = nodeMetadata.find((m) => m.type === targetType)
@@ -243,6 +305,11 @@ export function getCompatibleInsertNodes(
       continue
     }
 
+    if (blocksSameTypeChain(meta.type, sourceType) || blocksSameTypeChain(meta.type, targetType)) {
+      disabled.push(toEntry(meta, false, sameTypeChainFailureReason(meta)))
+      continue
+    }
+
     if (!parentOutputsCompatible(meta, targetMeta)) {
       disabled.push(toEntry(meta, false, downstreamFailureReason(meta, targetMeta)))
       continue
@@ -252,6 +319,12 @@ export function getCompatibleInsertNodes(
     const targetAncestry = [...ancestryWithSource, meta.type]
     if (!upstreamRequirementsMet(targetRequired, targetAncestry)) {
       disabled.push(toEntry(meta, false, upstreamFailureReason(targetMeta, targetAncestry)))
+      continue
+    }
+
+    const modelRequirement = projectModelsRequirementMet(meta, options)
+    if (!modelRequirement.ok) {
+      disabled.push(toEntry(meta, false, modelRequirement.reason))
       continue
     }
 

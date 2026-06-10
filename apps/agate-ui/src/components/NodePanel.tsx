@@ -172,6 +172,7 @@ export default function NodePanel({
           <p className="text-sm text-muted-foreground leading-relaxed">{nodeMeta.description}</p>
         ) : null}
         {nodeType !== 'GeocodeAgent' &&
+        !panelTabs.includes('info') &&
         'dependencyHelperText' in (nodeMeta ?? {}) &&
         typeof (nodeMeta as { dependencyHelperText?: string }).dependencyHelperText === 'string' ? (
           <p className="text-sm text-muted-foreground border-l-2 border-muted pl-3 leading-relaxed">

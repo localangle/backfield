@@ -512,6 +512,32 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [flowProjectId],
   )
 
+  const [projectModelCapabilities, setProjectModelCapabilities] = useState<
+    Record<string, boolean> | undefined
+  >(undefined)
+
+  useEffect(() => {
+    if (flowProjectId == null) {
+      setProjectModelCapabilities(undefined)
+      return
+    }
+    let cancelled = false
+    void fetchProjectAiModels(['embedding'])
+      .then((rows) => {
+        if (!cancelled) {
+          setProjectModelCapabilities({ embedding: rows.length > 0 })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProjectModelCapabilities({ embedding: false })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [flowProjectId, fetchProjectAiModels])
+
   const graphContext = useMemo(() => {
     if (flowProjectLoading) {
       return {
@@ -1397,6 +1423,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         source.type,
         target.type,
         getBranchAncestry(scaffoldModel, addIntoEdge.sourceId),
+        { projectModelCapabilities },
       )
     }
     const parentId = addFromParentId
@@ -1405,8 +1432,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     }
     const parent = getNodeById(scaffoldModel, parentId)
     if (!parent?.type) return { enabled: [], disabled: [] }
-    return getCompatibleNextNodes(parent.type, getBranchAncestry(scaffoldModel, parentId))
-  }, [addFromParentId, addIntoEdge, scaffoldModel])
+    return getCompatibleNextNodes(parent.type, getBranchAncestry(scaffoldModel, parentId), {
+      projectModelCapabilities,
+    })
+  }, [addFromParentId, addIntoEdge, scaffoldModel, projectModelCapabilities])
 
   const handleAddNodeTypeSelect = useCallback(
     (type: string) => {

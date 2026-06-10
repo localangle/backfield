@@ -120,6 +120,12 @@ export function getInvalidFlowNodeIds(model: FlowGraphModel): Set<string> {
     if (edge.sourceHandle == null || edge.targetHandle == null) {
       invalid.add(edge.target)
     }
+
+    const source = getNodeById(model, edge.source)
+    const target = getNodeById(model, edge.target)
+    if (source?.type && target?.type && source.type === target.type) {
+      invalid.add(edge.target)
+    }
   }
 
   for (const node of [model.inputNode, ...model.middleNodes, model.outputNode]) {

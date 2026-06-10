@@ -7,6 +7,9 @@ const nodeMetadata = {
   "icon": "FileText",
   "color": "bg-orange-500",
   "requiredUpstreamNodes": [],
+  "requiredProjectModelCapabilities": [
+    "embedding"
+  ],
   "dependencyHelperText": "Requires upstream text, such as from Text Input or JSON Input.",
   "inputs": [
     {

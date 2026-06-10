@@ -29,7 +29,7 @@ export function getNodePanelTabs(
     case 'GeocodeAgent':
       return ['settings', 'models']
     case 'EmbedText':
-      return ['settings']
+      return ['settings', 'info']
     case 'Output':
       return hasRunOutput ? ['outputs'] : []
     case 'DBOutput':

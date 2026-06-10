@@ -39,6 +39,31 @@ describe('getCompatibleNextNodes', () => {
     expect(result.enabled.map((e) => e.type)).toContain('PlaceExtract')
     expect(result.enabled.map((e) => e.type)).toContain('PersonExtract')
   })
+
+  it('disables Embed Text when no embedding models are enabled for the project', () => {
+    const withoutModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { embedding: false },
+    })
+    const embed = withoutModels.disabled.find((e) => e.type === 'EmbedText')
+    expect(embed).toBeDefined()
+    expect(embed?.reason).toMatch(/embedding model/i)
+
+    const withModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { embedding: true },
+    })
+    expect(withModels.enabled.map((e) => e.type)).toContain('EmbedText')
+  })
+
+  it('disables chaining the same step type directly after itself', () => {
+    const result = getCompatibleNextNodes('OrganizationExtract', [
+      'TextInput',
+      'OrganizationExtract',
+    ])
+    expect(result.enabled.map((e) => e.type)).not.toContain('OrganizationExtract')
+
+    const org = result.disabled.find((e) => e.type === 'OrganizationExtract')
+    expect(org?.reason).toMatch(/cannot follow another Organization Extract step/i)
+  })
 })
 
 describe('getCompatibleInsertNodes', () => {
@@ -51,6 +76,18 @@ describe('getCompatibleInsertNodes', () => {
     const result = getCompatibleInsertNodes('TextInput', 'GeocodeAgent', ['TextInput'])
     const geocode = result.disabled.find((e) => e.type === 'GeocodeAgent')
     expect(geocode?.reason).toMatch(/extracted places/i)
+  })
+
+  it('disables inserting the same step type adjacent to itself', () => {
+    const result = getCompatibleInsertNodes(
+      'OrganizationExtract',
+      'DBOutput',
+      ['TextInput', 'OrganizationExtract'],
+    )
+    expect(result.enabled.map((e) => e.type)).not.toContain('OrganizationExtract')
+
+    const org = result.disabled.find((e) => e.type === 'OrganizationExtract')
+    expect(org?.reason).toMatch(/cannot follow another Organization Extract step/i)
   })
 })
 

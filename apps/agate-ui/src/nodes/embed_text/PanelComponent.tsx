@@ -7,6 +7,9 @@ const nodeMetadata = {
   "icon": "FileText",
   "color": "bg-orange-500",
   "requiredUpstreamNodes": [],
+  "requiredProjectModelCapabilities": [
+    "embedding"
+  ],
   "dependencyHelperText": "Requires upstream text, such as from Text Input or JSON Input.",
   "inputs": [
     {
@@ -118,7 +121,7 @@ export default function EmbedTextPanel({
   const modelSelectOptions = useMemo(() => catalogToSelectOptions(catalogRows), [catalogRows])
   const enabledOptions = modelSelectOptions
 
-  const resolvedUnderlying = resolvedAiModelSelectValue(paramsRecord, catalogRows)
+  const resolvedUnderlying = resolvedAiModelSelectValue(paramsRecord, catalogRows, MODEL_KEYS)
   const selectionValid =
     resolvedUnderlying !== '' &&
     modelSelectOptions.some((option) => option.selectValue === resolvedUnderlying)
@@ -155,8 +158,8 @@ export default function EmbedTextPanel({
   }
 
   return (
-    <NodePanelTabGate tab="settings">
-      <div className="space-y-4">
+    <>
+      <NodePanelTabGate tab="settings">
         <div className="space-y-2">
           <FieldLabel required htmlFor="embed-text-model">
             Embedding model
@@ -193,16 +196,25 @@ export default function EmbedTextPanel({
             </Select>
           )}
         </div>
+      </NodePanelTabGate>
 
-        <div className="space-y-2 border-t pt-4">
-          <Label className="text-sm font-medium">About this step</Label>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            This step turns the full story text (including the headline when present) into a
-            searchable vector. When the flow saves through Backfield Output, the embedding is stored
-            with the story.
-          </p>
+      <NodePanelTabGate tab="info">
+        <div className="space-y-4">
+          {nodeMetadata.dependencyHelperText ? (
+            <p className="text-sm text-muted-foreground border-l-2 border-muted pl-3 leading-relaxed">
+              {nodeMetadata.dependencyHelperText}
+            </p>
+          ) : null}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">About this step</Label>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              This step turns the full story text (including the headline when present) into a
+              searchable vector. When the flow saves through Backfield Output, the embedding is
+              stored with the story.
+            </p>
+          </div>
         </div>
-      </div>
-    </NodePanelTabGate>
+      </NodePanelTabGate>
+    </>
   )
 }

@@ -44,8 +44,8 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('DBOutput')).toEqual(['settings', 'stylebook'])
   })
 
-  it('shows settings only for embed text', () => {
-    expect(getNodePanelTabs('EmbedText')).toEqual(['settings'])
-    expect(getNodePanelTabs('EmbedText', { hasRunOutput: true })).toEqual(['settings'])
+  it('shows settings and info for embed text', () => {
+    expect(getNodePanelTabs('EmbedText')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('EmbedText', { hasRunOutput: true })).toEqual(['settings', 'info'])
   })
 })

@@ -235,7 +235,7 @@ The app owns the right drawer; panels only render inner content.
 | Header | `p-4 border-b`; icon `h-9 w-9 rounded-full` + title `font-semibold text-lg` |
 | Body scroll | `flex-1 overflow-y-auto p-4 space-y-4` |
 | Description | `text-sm text-muted-foreground leading-relaxed` from metadata |
-| Dependency hint | `text-sm text-muted-foreground border-l-2 border-muted pl-3` when `dependencyHelperText` is set |
+| Dependency hint | `text-sm text-muted-foreground border-l-2 border-muted pl-3` when `dependencyHelperText` is set and the node has no **Info** tab (otherwise show it on the Info tab in the panel) |
 | Tabs | Shown when `getNodePanelTabs` returns more than one id; `TabsList` grid with `text-xs sm:text-sm` triggers |
 | Invalid connection | Amber callout above tabs when the builder passes `invalidConnectionMessage` |
 
@@ -256,6 +256,7 @@ Tab ids and labels are centralized:
 | JSONInput | Settings, Info | Output |
 | PlaceExtract | Settings, Prompt, Output, Info | (Output tab always listed) |
 | GeocodeAgent | Settings, Models | — |
+| EmbedText | Settings, Info | — |
 | DBOutput | Settings, Stylebook | — |
 | Output (JSON) | — | Output only |
 

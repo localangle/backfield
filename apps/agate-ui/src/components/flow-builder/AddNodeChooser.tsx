@@ -19,10 +19,26 @@ type AddNodeChooserProps = {
 type FlatRow = CompatibleNodeEntry & { rowKey: string }
 type Group = { category: string; heading: string; rows: FlatRow[] }
 
-const MENU_WIDTH_PX = 300
-const MENU_MAX_HEIGHT_PX = 320
-const MENU_PLACEMENT_HEIGHT_PX = 160
+const MENU_WIDTH_PX = 340
+const MENU_MAX_HEIGHT_PX = 360
+const MENU_PLACEMENT_HEIGHT_PX = 180
 const MENU_GAP_PX = 8
+
+/** Placeholder chooser blurbs until product copy replaces them. */
+const NODE_CHOOSER_BLURBS: Record<string, string> = {
+  EmbedText: 'Excepteur sint occaecat cupidatat non proident sunt in culpa.',
+  GeocodeAgent: 'Duis aute irure dolor in reprehenderit in voluptate velit.',
+  OrganizationExtract: 'Ut enim ad minim veniam, quis nostrud exercitation ullamco.',
+  PersonExtract: 'Sed do eiusmod tempor incididunt ut labore et dolore magna.',
+  PlaceExtract: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+}
+
+function chooserBlurb(row: CompatibleNodeEntry): string {
+  const placeholder = NODE_CHOOSER_BLURBS[row.type]
+  if (placeholder) return placeholder
+  const fromMeta = row.description.trim()
+  return fromMeta !== '' ? fromMeta : 'Lorem ipsum dolor sit amet.'
+}
 
 const SIMPLE_CATEGORY_LABELS: Record<string, string> = {
   extraction: 'Extract',
@@ -150,7 +166,7 @@ export default function AddNodeChooser({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 flex max-h-[320px] w-[300px] overflow-hidden rounded-lg border bg-neutral-900 text-neutral-50 shadow-xl"
+      className="fixed z-50 flex max-h-[360px] w-[340px] overflow-hidden rounded-lg border bg-neutral-900 text-neutral-50 shadow-xl"
       style={{ left: menuPosition.left, top: menuPosition.top }}
       role="dialog"
       aria-label="Add a step"
@@ -180,7 +196,7 @@ export default function AddNodeChooser({
         )}
       </div>
 
-      <div className="max-h-[320px] min-w-0 flex-1 overflow-y-auto p-2">
+      <div className="max-h-[360px] min-w-0 flex-1 overflow-y-auto p-2">
         {compatibility.enabled.length === 0 && compatibility.disabled.length > 0 && (
           <p className="px-3 py-2 text-xs text-neutral-300">
             Nothing can be added here yet. Disabled steps explain what this branch needs first.
@@ -196,14 +212,22 @@ export default function AddNodeChooser({
                 disabled={!row.enabled}
                 onClick={() => row.enabled && handleSelect(row.type)}
                 className={cn(
-                  'w-full rounded-md px-3 py-2.5 text-left transition-colors',
+                  'w-full rounded-md px-3 py-3 text-left transition-colors',
                   row.enabled && 'text-white hover:bg-white/10',
                   !row.enabled && 'cursor-not-allowed text-neutral-500',
                 )}
               >
-                <span className="block text-sm font-medium">{row.label}</span>
+                <span className="block text-sm font-medium leading-snug">{row.label}</span>
+                <span
+                  className={cn(
+                    'mt-0.5 block text-xs leading-snug',
+                    row.enabled ? 'text-neutral-400' : 'text-neutral-500',
+                  )}
+                >
+                  {chooserBlurb(row)}
+                </span>
                 {!row.enabled && row.reason ? (
-                  <span className="mt-1 block text-xs text-amber-300/80">{row.reason}</span>
+                  <span className="mt-1.5 block text-xs leading-snug text-amber-300/80">{row.reason}</span>
                 ) : null}
               </button>
             ))}
