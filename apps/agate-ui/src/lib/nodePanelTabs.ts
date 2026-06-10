@@ -30,6 +30,8 @@ export function getNodePanelTabs(
       return ['settings', 'models']
     case 'EmbedText':
       return ['settings', 'info']
+    case 'EmbedImages':
+      return ['settings', 'info']
     case 'ArticleMetadata':
       return ['settings', 'prompts', 'outputs', 'info']
     case 'Output':

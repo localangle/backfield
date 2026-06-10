@@ -1,0 +1,33 @@
+{
+  "type": "EmbedImages",
+  "label": "Embed Images",
+  "description": "Describe each image with a vision model, then embed those descriptions for search and analysis.",
+  "category": "embedding",
+  "icon": "Image",
+  "color": "bg-orange-500",
+  "requiredUpstreamNodes": [],
+  "requiredProjectModelCapabilities": ["generative", "embedding"],
+  "dependencyHelperText": "Requires upstream images, such as from JSON Input with an images field.",
+  "inputs": [
+    {
+      "id": "images",
+      "label": "Images",
+      "type": "object",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "image_embeddings",
+      "label": "Image embeddings",
+      "type": "array"
+    }
+  ],
+  "defaultParams": {
+    "prompt": "Describe this image in detail. Use the provided context (caption and article text) to inform your description, but focus primarily on what you see in the image itself.",
+    "visionModel": "",
+    "visionAiModelConfigId": null,
+    "embeddingModel": "",
+    "embeddingAiModelConfigId": null
+  }
+}

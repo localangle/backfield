@@ -49,6 +49,11 @@ describe('getNodePanelTabs', () => {
     expect(getNodePanelTabs('EmbedText', { hasRunOutput: true })).toEqual(['settings', 'info'])
   })
 
+  it('shows settings and info for embed images', () => {
+    expect(getNodePanelTabs('EmbedImages')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('EmbedImages', { hasRunOutput: true })).toEqual(['settings', 'info'])
+  })
+
   it('splits article metadata configuration across settings, prompt, output, and info', () => {
     expect(getNodePanelTabs('ArticleMetadata')).toEqual(['settings', 'prompts', 'outputs', 'info'])
   })

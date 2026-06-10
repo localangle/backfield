@@ -33,6 +33,9 @@ function requiredProjectModelCapabilities(meta: NodeMetadataEntry): string[] {
 }
 
 function missingProjectModelsReason(capabilities: string[]): string {
+  if (capabilities.includes('embedding') && capabilities.includes('generative')) {
+    return 'Enable generative and embedding models for this project in Models.'
+  }
   if (capabilities.includes('embedding')) {
     return 'Enable at least one embedding model for this project in Models.'
   }

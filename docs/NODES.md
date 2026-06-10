@@ -18,7 +18,7 @@ Branch implementation and review work by profile. Every node folder declares a p
 | **Output** | Egress JSON or substrate persist | `Output`, `DBOutput` | `DBOutput` persists via worker; review only via downstream entity tabs |
 | **Extract** | LLM or rules extraction | `PlaceExtract`, `PersonExtract`, `OrganizationExtract` | **Canonical entity extract** → [`add-entity-type`](../.cursor/skills/add-entity-type/SKILL.md). Non-canonical extract stays here |
 | **Enrich** | Transform or resolve upstream rows | `GeocodeAgent` | May **feed entity review** (e.g. Places tab) without a new canonical type |
-| **Embed** | Vector / semantic indexing | *(not ported yet)* | Usually panel + JSON only |
+| **Embed** | Vector / semantic indexing | `EmbedText`, `EmbedImages` | Embed Text: Info tab status; Embed Images: **Images** review tab (read-only) |
 | **Other** | Flow control, gather, stats, format | *(varies)* | Case-by-case; default panel + JSON |
 
 ## When to use which skill

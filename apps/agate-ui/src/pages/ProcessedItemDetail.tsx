@@ -7,6 +7,7 @@ import { ProcessedItemVerificationSection } from '@/components/ProcessedItemVeri
 import { ProcessedItemPeopleVerificationSection } from '@/components/ProcessedItemPeopleVerificationSection'
 import { ProcessedItemMetaVerificationSection } from '@/components/ProcessedItemMetaVerificationSection'
 import { ProcessedItemOrganizationsVerificationSection } from '@/components/ProcessedItemOrganizationsVerificationSection'
+import ProcessedItemImagesSection from '@/components/ProcessedItemImagesSection'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -667,125 +668,6 @@ export default function ProcessedItemDetail() {
         </Card>
       )}
 
-          {/* Image Embeddings */}
-          {(() => {
-            if (!item.output) return null
-            
-            const output = item.output as any
-            
-            // Find image embedding arrays in the output
-            // Look for arrays that contain objects with generated_text and embedding_model
-            const findImageEmbeddings = (obj: any, path: string = ''): Array<{ data: any[], fieldName: string }> => {
-              const results: Array<{ data: any[], fieldName: string }> = []
-              
-              if (Array.isArray(obj)) {
-                // Check if this array contains image embedding objects
-                const hasImageEmbeddings = obj.length > 0 && 
-                  obj.every((item: any) => 
-                    item && 
-                    typeof item === 'object' && 
-                    'generated_text' in item && 
-                    'embedding_model' in item &&
-                    ('url' in item || 'base64' in item)
-                  )
-                
-                if (hasImageEmbeddings) {
-                  results.push({ data: obj, fieldName: path || 'results' })
-                }
-              } else if (obj && typeof obj === 'object') {
-                // Recursively search through object properties
-                for (const [key, value] of Object.entries(obj)) {
-                  if (Array.isArray(value)) {
-                    const hasImageEmbeddings = value.length > 0 && 
-                      value.every((item: any) => 
-                        item && 
-                        typeof item === 'object' && 
-                        'generated_text' in item && 
-                        'embedding_model' in item &&
-                        ('url' in item || 'base64' in item)
-                      )
-                    
-                    if (hasImageEmbeddings) {
-                      results.push({ data: value, fieldName: key })
-                    }
-                  } else if (value && typeof value === 'object') {
-                    results.push(...findImageEmbeddings(value, key))
-                  }
-                }
-              }
-              
-              return results
-            }
-            
-            const imageEmbeddingArrays = findImageEmbeddings(output)
-            
-            if (imageEmbeddingArrays.length === 0) return null
-            
-            // Flatten all image embeddings from all arrays
-            const allImageEmbeddings = imageEmbeddingArrays.flatMap(({ data }) => data)
-            
-            if (allImageEmbeddings.length === 0) return null
-            
-            return (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Image Embeddings ({allImageEmbeddings.length})</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {allImageEmbeddings.map((embedding: any, idx: number) => {
-                      const imgUrl = embedding.url || embedding.base64
-                      const generatedText = embedding.generated_text
-                      const embeddingModel = embedding.embedding_model || 'text-embedding-3-small'
-                      const embeddingDimensions = embedding.embedding_dimensions || embedding.embedding?.length || 0
-                      
-                      return (
-                        <Card key={idx} className="overflow-hidden">
-                          <CardContent className="p-0">
-                            <div className="flex flex-col md:flex-row">
-                              {imgUrl && (
-                                <div className="relative w-full md:w-1/2 aspect-video md:aspect-square bg-muted flex-shrink-0">
-                                  <img
-                                    src={imgUrl}
-                                    alt={embedding.caption || `Image ${idx + 1}`}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).style.display = 'none'
-                                    }}
-                                  />
-                                </div>
-                              )}
-                              <div className="p-4 space-y-2 flex-1">
-                                {generatedText && (
-                                  <div>
-                                    <label className="text-xs font-medium text-muted-foreground">Generated Description</label>
-                                    <p className="text-sm mt-1 whitespace-pre-wrap break-words">
-                                      {String(generatedText)}
-                                    </p>
-                                  </div>
-                                )}
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t">
-                                  <span className="font-medium">Model:</span>
-                                  <span>{embeddingModel}</span>
-                                  {embeddingDimensions > 0 && (
-                                    <>
-                                      <span className="mx-1">•</span>
-                                      <span>{embeddingDimensions} dimensions</span>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })()}
-
           {visualizations.length > 0 && visualizations.map((viz: VisualizationDescriptor, vizIndex: number) => {
               const VisualizationComponent = viz.component
               // Use node-specific output if available, otherwise fall back to item.output
@@ -872,13 +754,18 @@ export default function ProcessedItemDetail() {
           [
             ['images', 'Images'],
           ] as const
-        ).map(([value, label]) => (
+        ).map(([value]) => (
           <TabsContent key={value} value={value} className="space-y-4">
-            <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                {label} review is not available yet.
-              </CardContent>
-            </Card>
+            {item && !item.synthetic ? (
+              <ProcessedItemImagesSection item={item} />
+            ) : (
+              <Card>
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  Images review is available for batch stories. This run used a single input and
+                  has no separate story item.
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         ))}
 
