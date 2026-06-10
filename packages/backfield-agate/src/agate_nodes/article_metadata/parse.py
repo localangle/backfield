@@ -57,12 +57,45 @@ _MULTI_VALUE_WRAPPER_KEYS = (
     "results",
     "categories",
     "information_needs",
+    "article_metadata",
+    "metadata",
+    "response",
+    "result",
+    "data",
+    "output",
 )
+
+
+def _get_field(raw: dict[str, Any], *keys: str) -> Any:
+    lower_map = {str(key).lower(): key for key in raw if isinstance(key, str)}
+    for key in keys:
+        if key in raw:
+            return raw[key]
+        alt = lower_map.get(key.lower())
+        if alt is not None:
+            return raw[alt]
+    return None
+
+
+def _coerce_category_value(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, list):
+        for item in value:
+            coerced = _coerce_category_value(item)
+            if coerced:
+                return coerced
+    if isinstance(value, dict):
+        for key in ("category", "label", "name", "value", "id", "slug", "subject"):
+            inner = value.get(key)
+            if isinstance(inner, str) and inner.strip():
+                return inner.strip()
+    return None
 
 
 def _first_non_empty_str(raw: dict[str, Any], *keys: str) -> str | None:
     for key in keys:
-        value = raw.get(key)
+        value = _get_field(raw, key)
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
@@ -71,13 +104,17 @@ def _first_non_empty_str(raw: dict[str, Any], *keys: str) -> str | None:
 def _normalize_subject_item(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError("each subject entry must be a JSON object")
-    category = _first_non_empty_str(
-        raw,
-        "category",
-        "subject",
-        "need",
-        "label",
-        "name",
+    category = _coerce_category_value(
+        _get_field(
+            raw,
+            "category",
+            "categories",
+            "category_name",
+            "subject",
+            "need",
+            "label",
+            "name",
+        )
     )
     rationale = _first_non_empty_str(
         raw,
@@ -87,13 +124,7 @@ def _normalize_subject_item(raw: Any) -> dict[str, Any]:
         "reason",
         "explanation",
     )
-    confidence = raw.get("confidence")
-    if confidence is None:
-        confidence = raw.get("subject_confidence")
-    if confidence is None:
-        confidence = raw.get("need_confidence")
-    if confidence is None:
-        confidence = raw.get("score")
+    confidence = _get_field(raw, "confidence", "subject_confidence", "need_confidence", "score")
     return {
         "category": category,
         "rationale": rationale,
@@ -103,24 +134,50 @@ def _normalize_subject_item(raw: Any) -> dict[str, Any]:
 
 def _looks_like_metadata_item(raw: dict[str, Any]) -> bool:
     normalized = _normalize_subject_item(raw)
-    return any(normalized.get(key) is not None for key in ("category", "rationale", "confidence"))
+    return normalized.get("category") is not None
 
 
 def _unwrap_multi_value_items(data: Any) -> list[Any]:
+    if data is None:
+        return []
+
     if isinstance(data, list):
-        return data
+        if not data:
+            return []
+        cleaned = [item for item in data if item is not None]
+        if cleaned and all(
+            isinstance(item, dict) and _looks_like_metadata_item(item) for item in cleaned
+        ):
+            return cleaned
+        out: list[Any] = []
+        for item in cleaned:
+            out.extend(_unwrap_multi_value_items(item))
+        return out
+
     if not isinstance(data, dict):
         raise ValueError("LLM response must be a JSON array of subject objects")
 
+    for key in _MULTI_VALUE_WRAPPER_KEYS:
+        if key not in data:
+            continue
+        wrapped = data[key]
+        if wrapped is None:
+            continue
+        if isinstance(wrapped, list):
+            out: list[Any] = []
+            for item in wrapped:
+                if item is None:
+                    continue
+                out.extend(_unwrap_multi_value_items(item))
+            if out:
+                return out
+        elif isinstance(wrapped, dict):
+            unwrapped = _unwrap_multi_value_items(wrapped)
+            if unwrapped:
+                return unwrapped
+
     if _looks_like_metadata_item(data):
         return [data]
-
-    for key in _MULTI_VALUE_WRAPPER_KEYS:
-        wrapped = data.get(key)
-        if isinstance(wrapped, list):
-            return wrapped
-        if isinstance(wrapped, dict):
-            return [wrapped]
 
     return [data]
 
@@ -164,6 +221,14 @@ def parse_multi_value_metadata_response(
 
     for raw_item in items_raw:
         normalized = _normalize_subject_item(raw_item)
+        if all(normalized.get(key) is None for key in ("category", "rationale", "confidence")):
+            if isinstance(raw_item, dict) and any(
+                key in raw_item for key in _MULTI_VALUE_WRAPPER_KEYS
+            ):
+                raise ValueError(
+                    "LLM returned a wrapper object instead of subject entries; "
+                    f"keys={sorted(raw_item.keys())!r}"
+                )
         try:
             parsed = ArticleMetadataLLMResponse.model_validate(normalized)
         except Exception as exc:

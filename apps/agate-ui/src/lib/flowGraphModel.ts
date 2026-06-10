@@ -5,7 +5,7 @@ import {
   BOOKEND_LAYOUT_X_STEP,
   BOOKEND_OUTPUT_POSITION,
 } from '@/lib/flowBuilderLayout'
-import { resolveEdgeHandles, SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES } from '@/lib/nodeCompatibility'
+import { resolveEdgeHandles, SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES, SYNC_BARRIER_NODE_TYPES } from '@/lib/nodeCompatibility'
 
 export type FlowGraphNode = {
   id: string
@@ -293,6 +293,45 @@ export function insertAfter(
   })
 }
 
+/** Insert a sync-barrier node before output, wiring every branch tip into it. */
+export function insertConvergingBeforeOutput(
+  model: FlowGraphModel,
+  newNode: FlowGraphNode,
+): FlowGraphModel {
+  const tips = getBranchTipIds(model)
+  if (tips.length === 0) {
+    throw new Error('No branch tips to converge before output')
+  }
+
+  const positioned = positionedNodesById(model)
+  const tipPositions = tips
+    .map((tipId) => positioned.get(tipId)?.position)
+    .filter((position): position is { x: number; y: number } => position != null)
+  const maxX =
+    tipPositions.length > 0 ? Math.max(...tipPositions.map((position) => position.x)) : LAYOUT_INPUT_X
+  const avgY =
+    tipPositions.length > 0
+      ? tipPositions.reduce((sum, position) => sum + position.y, 0) / tipPositions.length
+      : LAYOUT_INPUT_Y
+
+  const positionedNewNode = {
+    ...newNode,
+    position: newNode.position ?? { x: maxX + LAYOUT_X_STEP, y: avgY },
+  }
+
+  const serialLinks = { ...model.serialLinks }
+  for (const tipId of tips) {
+    serialLinks[tipId] = newNode.id
+  }
+
+  return applyLayoutToModel({
+    ...model,
+    outputNode: outputAfterNodes(model.outputNode, [positionedNewNode]),
+    middleNodes: [...model.middleNodes, positionedNewNode],
+    serialLinks,
+  })
+}
+
 export function insertBetween(
   model: FlowGraphModel,
   sourceId: string,
@@ -304,6 +343,9 @@ export function insertBetween(
   }
 
   if (targetId === model.outputNode.id && getBranchTipIds(model).includes(sourceId)) {
+    if (SYNC_BARRIER_NODE_TYPES.has(newNode.type ?? '')) {
+      return insertConvergingBeforeOutput(model, newNode)
+    }
     return insertAfter(model, sourceId, newNode)
   }
 
@@ -359,9 +401,12 @@ export function deleteMiddleNode(model: FlowGraphModel, nodeId: string): FlowGra
   }
 
   const branchParent = findBranchParentId(model, nodeId)
-  const serialParent = findSerialParentId(model, nodeId)
   const serialChild = model.serialLinks[nodeId]
   const parallelChildren = [...(model.branchChildren[nodeId] ?? [])]
+  const incomingSerialParents = Object.entries(model.serialLinks)
+    .filter(([, targetId]) => targetId === nodeId)
+    .map(([parentId]) => parentId)
+  const serialParent = incomingSerialParents[0] ?? null
 
   const branchChildren: Record<string, string[]> = { ...model.branchChildren }
   const serialLinks: Record<string, string> = { ...model.serialLinks }
@@ -369,8 +414,8 @@ export function deleteMiddleNode(model: FlowGraphModel, nodeId: string): FlowGra
   delete branchChildren[nodeId]
   delete serialLinks[nodeId]
 
-  if (serialParent && serialLinks[serialParent] === nodeId) {
-    delete serialLinks[serialParent]
+  for (const parentId of incomingSerialParents) {
+    delete serialLinks[parentId]
   }
 
   const downstream: string[] = []

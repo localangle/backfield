@@ -119,6 +119,74 @@ def test_parse_subject_unwraps_needs_wrapper_object() -> None:
     assert parsed[0].confidence == 0.88
 
 
+def test_parse_subject_unwraps_nested_subjects_array() -> None:
+    parsed = parse_subject_metadata_response(
+        [
+            {
+                "subjects": [
+                    {
+                        "category": "local_government_politics",
+                        "rationale": "Council vote is central.",
+                        "confidence": 0.9,
+                    }
+                ]
+            }
+        ],
+        allowed_categories=["local_government_politics", "other"],
+    )
+    assert parsed[0].category == "local_government_politics"
+
+
+def test_parse_subject_unwraps_article_metadata_wrapper() -> None:
+    parsed = parse_subject_metadata_response(
+        {
+            "article_metadata": {
+                "subjects": [
+                    {
+                        "category": "pro_sports",
+                        "rationale": "Game recap is the focus.",
+                        "confidence": 0.95,
+                    }
+                ]
+            }
+        },
+        allowed_categories=["pro_sports", "other"],
+    )
+    assert parsed[0].category == "pro_sports"
+
+
+def test_parse_subject_prefers_subjects_wrapper_over_partial_top_level_fields() -> None:
+    parsed = parse_subject_metadata_response(
+        {
+            "confidence": 0.5,
+            "subjects": [
+                {
+                    "category": "community_life",
+                    "rationale": "Neighborhood festival coverage.",
+                    "confidence": 0.88,
+                }
+            ],
+        },
+        allowed_categories=["community_life", "other"],
+    )
+    assert parsed[0].category == "community_life"
+    assert parsed[0].confidence == 0.88
+
+
+def test_parse_subject_accepts_category_list() -> None:
+    parsed = parse_subject_metadata_response(
+        [
+            {
+                "categories": ["local_government_politics"],
+                "rationale": "Council vote is central.",
+                "confidence": 0.9,
+            }
+        ],
+        allowed_categories=["local_government_politics", "other"],
+    )
+    assert parsed[0].category == "local_government_politics"
+
+
 def test_rejects_more_than_three_subjects() -> None:
     with pytest.raises(ValueError, match="At most 3"):
         parse_subject_metadata_response(
