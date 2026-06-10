@@ -21,15 +21,15 @@ import {
 
 const DEFAULTS = {
   prompt: '',
-  visionModel: '',
-  visionAiModelConfigId: null as string | null,
+  descriptionModel: '',
+  descriptionAiModelConfigId: null as string | null,
   embeddingModel: '',
   embeddingAiModelConfigId: null as string | null,
 }
 
-const VISION_MODEL_KEYS: AiModelFieldKeys = {
-  configIdKey: 'visionAiModelConfigId',
-  modelKey: 'visionModel',
+const DESCRIPTION_MODEL_KEYS: AiModelFieldKeys = {
+  configIdKey: 'descriptionAiModelConfigId',
+  modelKey: 'descriptionModel',
 }
 
 const EMBEDDING_MODEL_KEYS: AiModelFieldKeys = {
@@ -191,10 +191,31 @@ export default function EmbedImagesPanel({
     ...(node.data || {}),
   }
   const paramsRecord = merged as Record<string, unknown>
+  if (
+    typeof paramsRecord.descriptionModel !== 'string' ||
+    !String(paramsRecord.descriptionModel).trim()
+  ) {
+    const legacyModel = paramsRecord.visionModel
+    if (typeof legacyModel === 'string' && legacyModel.trim()) {
+      paramsRecord.descriptionModel = legacyModel
+    }
+  }
+  if (paramsRecord.descriptionAiModelConfigId == null && paramsRecord.visionAiModelConfigId != null) {
+    paramsRecord.descriptionAiModelConfigId = paramsRecord.visionAiModelConfigId
+  }
   const disabled = !(editMode && setNodes)
 
-  const visionCatalog = useCatalogRows(graphContext, ['generative'])
+  const descriptionCatalog = useCatalogRows(graphContext, ['generative'])
   const embeddingCatalog = useCatalogRows(graphContext, ['embedding'])
+
+  const descriptionOptions = useMemo(
+    () => catalogToSelectOptions(descriptionCatalog.rows),
+    [descriptionCatalog.rows],
+  )
+  const embeddingOptions = useMemo(
+    () => catalogToSelectOptions(embeddingCatalog.rows),
+    [embeddingCatalog.rows],
+  )
 
   const patch = (updates: Record<string, unknown>) => {
     if (!setNodes) return
@@ -204,6 +225,44 @@ export default function EmbedImagesPanel({
       ),
     )
   }
+
+  useEffect(() => {
+    if (disabled || descriptionCatalog.loading || descriptionCatalog.rows.length === 0) return
+    const data = (node.data || {}) as Record<string, unknown>
+    if (hasExplicitAiModelChoice(data, DESCRIPTION_MODEL_KEYS)) return
+    const first = descriptionOptions[0]
+    if (!first) return
+    patch({
+      descriptionModel: first.providerModelId,
+      descriptionAiModelConfigId: first.configId ?? null,
+    })
+  }, [
+    disabled,
+    descriptionCatalog.loading,
+    descriptionCatalog.rows,
+    descriptionOptions,
+    node.id,
+    node.data,
+  ])
+
+  useEffect(() => {
+    if (disabled || embeddingCatalog.loading || embeddingCatalog.rows.length === 0) return
+    const data = (node.data || {}) as Record<string, unknown>
+    if (hasExplicitAiModelChoice(data, EMBEDDING_MODEL_KEYS)) return
+    const first = embeddingOptions[0]
+    if (!first) return
+    patch({
+      embeddingModel: first.providerModelId,
+      embeddingAiModelConfigId: first.configId ?? null,
+    })
+  }, [
+    disabled,
+    embeddingCatalog.loading,
+    embeddingCatalog.rows,
+    embeddingOptions,
+    node.id,
+    node.data,
+  ])
 
   const currentPrompt =
     typeof paramsRecord.prompt === 'string' && paramsRecord.prompt.trim()
@@ -215,15 +274,15 @@ export default function EmbedImagesPanel({
       <NodePanelTabGate tab="settings">
         <div className="space-y-4">
           <ModelSelect
-            id="embed-images-vision-model"
-            label="Vision model"
+            id="embed-images-description-model"
+            label="Description model"
             required
             disabled={disabled}
-            modelKeys={VISION_MODEL_KEYS}
+            modelKeys={DESCRIPTION_MODEL_KEYS}
             paramsRecord={paramsRecord}
-            catalogRows={visionCatalog.rows}
-            catalogLoading={visionCatalog.loading}
-            catalogError={visionCatalog.error}
+            catalogRows={descriptionCatalog.rows}
+            catalogLoading={descriptionCatalog.loading}
+            catalogError={descriptionCatalog.error}
             nodeData={(node.data || {}) as Record<string, unknown>}
             onChange={patch}
           />
@@ -255,7 +314,8 @@ export default function EmbedImagesPanel({
               />
             )}
             <p className="text-xs text-muted-foreground">
-              Caption and article text from upstream inputs are added automatically as context.
+              Caption, alt text, and article text from upstream inputs are added automatically as
+              context. The model does not see the image itself.
             </p>
           </div>
         </div>

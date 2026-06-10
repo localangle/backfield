@@ -40,6 +40,17 @@ describe('getCompatibleNextNodes', () => {
     expect(result.enabled.map((e) => e.type)).toContain('PersonExtract')
   })
 
+  it('enables Article Metadata from JSON Input when generative models are available', () => {
+    const result = getCompatibleNextNodes('JSONInput', ['JSONInput'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('ArticleMetadata')
+    expect(resolveEdgeHandles('JSONInput', 'ArticleMetadata')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'text',
+    })
+  })
+
   it('disables Embed Text when no embedding models are enabled for the project', () => {
     const withoutModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
       projectModelCapabilities: { embedding: false },

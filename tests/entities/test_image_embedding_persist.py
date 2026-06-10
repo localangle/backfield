@@ -26,7 +26,7 @@ def _sample_image_embedding_block() -> dict:
         "embedding": [0.1, 0.2, 0.3],
         "embedding_model": "text-embedding-3-small",
         "embedding_dimensions": 3,
-        "vision_model": "gpt-4o-mini",
+        "description_model": "gpt-4o-mini",
     }
 
 

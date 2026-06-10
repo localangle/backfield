@@ -5,7 +5,7 @@ import {
   BOOKEND_LAYOUT_X_STEP,
   BOOKEND_OUTPUT_POSITION,
 } from '@/lib/flowBuilderLayout'
-import { getCompatibleNextNodes, resolveEdgeHandles, SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES } from '@/lib/nodeCompatibility'
+import { resolveEdgeHandles, SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES } from '@/lib/nodeCompatibility'
 
 export type FlowGraphNode = {
   id: string
@@ -763,13 +763,10 @@ export function canReplaceInputBookend(model: FlowGraphModel, newType: string): 
   const childIds = model.branchChildren[model.inputNode.id] ?? []
   if (childIds.length === 0) return { ok: true }
 
-  const { enabled } = getCompatibleNextNodes(newType, [newType])
-  const enabledTypes = new Set(enabled.map((entry) => entry.type))
-
   for (const childId of childIds) {
     const child = getNodeById(model, childId)
     if (!child?.type) continue
-    if (!enabledTypes.has(child.type)) {
+    if (!resolveEdgeHandles(newType, child.type)) {
       return {
         ok: false,
         reason: `“${nodeTypeLabel(child.type)}” cannot connect to this content source. Remove or change that step first.`,

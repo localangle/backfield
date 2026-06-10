@@ -1,7 +1,7 @@
 {
   "type": "EmbedImages",
   "label": "Embed Images",
-  "description": "Describe each image with a vision model, then embed those descriptions for search and analysis.",
+  "description": "Write a text description for each image from caption and article context, then embed those descriptions for search and analysis.",
   "category": "embedding",
   "icon": "Image",
   "color": "bg-orange-500",
@@ -24,9 +24,9 @@
     }
   ],
   "defaultParams": {
-    "prompt": "Describe this image in detail. Use the provided context (caption and article text) to inform your description, but focus primarily on what you see in the image itself.",
-    "visionModel": "",
-    "visionAiModelConfigId": null,
+    "prompt": "Write a clear, detailed description of the image using only the caption and article context provided. Do not invent visual details that are not supported by the context.",
+    "descriptionModel": "",
+    "descriptionAiModelConfigId": null,
     "embeddingModel": "",
     "embeddingAiModelConfigId": null
   }

@@ -124,13 +124,15 @@ def persist_image_embeddings_after_db_output(
             if isinstance(embedding_config_id_raw, str) and embedding_config_id_raw.strip()
             else None
         )
-        vision_model_raw = block.get("vision_model")
+        vision_model_raw = block.get("description_model") or block.get("vision_model")
         vision_model = (
             vision_model_raw.strip()
             if isinstance(vision_model_raw, str) and vision_model_raw.strip()
             else None
         )
-        vision_config_id_raw = block.get("vision_ai_model_config_id")
+        vision_config_id_raw = (
+            block.get("description_ai_model_config_id") or block.get("vision_ai_model_config_id")
+        )
         vision_config_id = (
             vision_config_id_raw.strip()
             if isinstance(vision_config_id_raw, str) and vision_config_id_raw.strip()

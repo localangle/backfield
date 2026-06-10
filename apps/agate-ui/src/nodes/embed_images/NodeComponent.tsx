@@ -2,7 +2,7 @@
 const nodeMetadata = {
   "type": "EmbedImages",
   "label": "Embed Images",
-  "description": "Describe each image with a vision model, then embed those descriptions for search and analysis.",
+  "description": "Write a text description for each image from caption and article context, then embed those descriptions for search and analysis.",
   "category": "embedding",
   "icon": "Image",
   "color": "bg-orange-500",
@@ -28,9 +28,9 @@ const nodeMetadata = {
     }
   ],
   "defaultParams": {
-    "prompt": "Describe this image in detail. Use the provided context (caption and article text) to inform your description, but focus primarily on what you see in the image itself.",
-    "visionModel": "",
-    "visionAiModelConfigId": null,
+    "prompt": "Write a clear, detailed description of the image using only the caption and article context provided. Do not invent visual details that are not supported by the context.",
+    "descriptionModel": "",
+    "descriptionAiModelConfigId": null,
     "embeddingModel": "",
     "embeddingAiModelConfigId": null
   }
@@ -43,6 +43,8 @@ import { Label } from '@/components/ui/label'
 import { getNodeIcon, getNodeBgColor } from '@/lib/nodeUtils'
 
 interface EmbedImagesData {
+  descriptionModel?: string
+  /** @deprecated Legacy vision model param */
   visionModel?: string
   embeddingModel?: string
 }
@@ -52,7 +54,8 @@ function EmbedImagesNode({ data, selected }: NodeProps<EmbedImagesData>) {
   const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
   const icon = getNodeIcon('EmbedImages', 'h-4 w-4')
   const bgColor = getNodeBgColor('EmbedImages')
-  const visionLabel = data.visionModel?.trim() ? data.visionModel.trim() : 'Vision model not set'
+  const descriptionLabel =
+    data.descriptionModel?.trim() || data.visionModel?.trim() || 'Description model not set'
   const embeddingLabel = data.embeddingModel?.trim()
     ? data.embeddingModel.trim()
     : 'Embedding model not set'
@@ -92,8 +95,8 @@ function EmbedImagesNode({ data, selected }: NodeProps<EmbedImagesData>) {
             </div>
           )}
           {dependencyHelperText ? <p>{dependencyHelperText}</p> : null}
-          <p className="truncate" title={visionLabel}>
-            {visionLabel}
+          <p className="truncate" title={descriptionLabel}>
+            {descriptionLabel}
           </p>
           <p className="truncate" title={embeddingLabel}>
             {embeddingLabel}

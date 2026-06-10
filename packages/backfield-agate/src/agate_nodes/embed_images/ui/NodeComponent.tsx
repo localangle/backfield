@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label'
 import { getNodeIcon, getNodeBgColor } from '@/lib/nodeUtils'
 
 interface EmbedImagesData {
+  descriptionModel?: string
+  /** @deprecated Legacy vision model param */
   visionModel?: string
   embeddingModel?: string
 }
@@ -14,7 +16,8 @@ function EmbedImagesNode({ data, selected }: NodeProps<EmbedImagesData>) {
   const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
   const icon = getNodeIcon('EmbedImages', 'h-4 w-4')
   const bgColor = getNodeBgColor('EmbedImages')
-  const visionLabel = data.visionModel?.trim() ? data.visionModel.trim() : 'Vision model not set'
+  const descriptionLabel =
+    data.descriptionModel?.trim() || data.visionModel?.trim() || 'Description model not set'
   const embeddingLabel = data.embeddingModel?.trim()
     ? data.embeddingModel.trim()
     : 'Embedding model not set'
@@ -54,8 +57,8 @@ function EmbedImagesNode({ data, selected }: NodeProps<EmbedImagesData>) {
             </div>
           )}
           {dependencyHelperText ? <p>{dependencyHelperText}</p> : null}
-          <p className="truncate" title={visionLabel}>
-            {visionLabel}
+          <p className="truncate" title={descriptionLabel}>
+            {descriptionLabel}
           </p>
           <p className="truncate" title={embeddingLabel}>
             {embeddingLabel}

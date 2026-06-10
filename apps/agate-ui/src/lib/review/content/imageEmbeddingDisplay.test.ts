@@ -15,7 +15,7 @@ describe('imageEmbeddingDisplay', () => {
             generated_text: 'A red barn.',
             embedding_model: 'text-embedding-3-small',
             embedding_dimensions: 1536,
-            vision_model: 'gpt-4o-mini',
+            description_model: 'gpt-4o-mini',
           },
         ],
       },

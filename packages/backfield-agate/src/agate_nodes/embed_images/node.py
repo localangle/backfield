@@ -1,14 +1,19 @@
-"""EmbedImages node — vision description + text embedding per image."""
+"""EmbedImages node — text description + embedding per image (no vision input)."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
-from agate_utils.llm import call_llm_with_image
+from agate_utils.llm import call_llm
 from backfield_ai.embeddings import EmbeddingConfigurationError, embed_texts_for_model_config
 from sqlmodel import Session
 
+from agate_nodes.embed_images.descriptions import (
+    DEFAULT_PROMPT,
+    build_description_prompt,
+    image_text_fields,
+)
 from agate_nodes.embed_images.images import (
     extract_images,
     find_article_text,
@@ -16,69 +21,57 @@ from agate_nodes.embed_images.images import (
     resolve_image_id,
 )
 
-DEFAULT_PROMPT = (
-    "Describe this image in detail. Use the provided context (caption and article text) "
-    "to inform your description, but focus primarily on what you see in the image itself."
-)
 
-MAX_ARTICLE_CONTEXT_CHARS = 2000
-
-
-def _resolve_model_config_id(params: dict[str, Any], *keys: str) -> str:
-    for key in keys:
-        raw = params.get(key)
-        if isinstance(raw, str) and raw.strip():
-            return raw.strip()
-    raise EmbeddingConfigurationError(
-        "Select models from the project catalog on the Embed Images node."
-    )
-
-
-def _resolve_vision_model(params: dict[str, Any], project_id: int) -> tuple[str, str | None]:
-    config_id = None
-    for key in ("visionAiModelConfigId", "vision_ai_model_config_id"):
+def _resolve_description_model(params: dict[str, Any], project_id: int) -> tuple[str, str | None]:
+    config_id: str | None = None
+    for key in (
+        "descriptionAiModelConfigId",
+        "description_ai_model_config_id",
+        "visionAiModelConfigId",
+        "vision_ai_model_config_id",
+    ):
         raw = params.get(key)
         if isinstance(raw, str) and raw.strip():
             config_id = raw.strip()
             break
 
-    fallback = str(params.get("visionModel") or params.get("vision_model") or "gpt-4o-mini").strip()
+    model_str = ""
+    for key in ("descriptionModel", "description_model", "visionModel", "vision_model"):
+        raw = params.get(key)
+        if isinstance(raw, str) and raw.strip():
+            model_str = raw.strip()
+            break
+
     if not config_id:
-        if params.get("visionModel") or params.get("vision_model"):
-            return fallback, None
+        if model_str:
+            return model_str, None
         raise EmbeddingConfigurationError(
-            "Embed Images requires a vision model. Choose one in the node settings."
+            "Embed Images requires a description model. Choose one in the node settings."
         )
 
     from backfield_ai.model_resolve import resolve_place_extract_litellm_model
     from backfield_db.session import get_engine
 
-    class _VisionParams:
-        model = fallback
+    class _DescriptionParams:
+        model = model_str
         aiModelConfigId = config_id
 
     with Session(get_engine()) as session:
-        resolved = resolve_place_extract_litellm_model(session, project_id, _VisionParams())
+        resolved = resolve_place_extract_litellm_model(session, project_id, _DescriptionParams())
     return resolved, config_id
 
 
-def _build_enhanced_prompt(
-    prompt: str,
-    *,
-    caption: str | None,
-    article_text: str | None,
-) -> str:
-    context_parts: list[str] = []
-    if caption:
-        context_parts.append(f"Image caption: {caption}")
-    if article_text:
-        truncated = article_text[:MAX_ARTICLE_CONTEXT_CHARS]
-        if len(article_text) > MAX_ARTICLE_CONTEXT_CHARS:
-            truncated += "..."
-        context_parts.append(f"Article text: {truncated}")
-    if not context_parts:
-        return prompt
-    return prompt + "\n\nContext:\n" + "\n".join(context_parts)
+def _resolve_embedding_model_config_id(params: dict[str, Any], project_id: int) -> str:
+    for key in ("embeddingAiModelConfigId", "embedding_ai_model_config_id", "aiModelConfigId"):
+        raw = params.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+
+    from backfield_ai.model_resolve import resolve_semantic_embedding_model_config_id
+    from backfield_db.session import get_engine
+
+    with Session(get_engine()) as session:
+        return resolve_semantic_embedding_model_config_id(session, project_id)
 
 
 def run_embed_images(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
@@ -107,22 +100,8 @@ def run_embed_images(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str
         )
     project_id = int(project_id_raw)
 
-    vision_model, vision_config_id = _resolve_vision_model(params, project_id)
-    if not vision_model.startswith("gpt"):
-        raise EmbeddingConfigurationError(
-            f"Image description requires an OpenAI vision model. Got: {vision_model!r}"
-        )
-
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        raise EmbeddingConfigurationError("OPENAI_API_KEY is required for image description.")
-
-    embedding_config_id = _resolve_model_config_id(
-        params,
-        "embeddingAiModelConfigId",
-        "embedding_ai_model_config_id",
-        "aiModelConfigId",
-    )
+    description_model, description_config_id = _resolve_description_model(params, project_id)
+    embedding_config_id = _resolve_embedding_model_config_id(params, project_id)
 
     descriptions: list[str] = []
     prepared: list[dict[str, Any]] = []
@@ -134,37 +113,33 @@ def run_embed_images(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str
         if not isinstance(image_input, str) or not image_input.strip():
             raise ValueError(f"Image at index {index} must have a url or base64 field.")
 
-        caption_raw = image_obj.get("caption") or image_obj.get("alt")
-        caption = (
-            str(caption_raw).strip()
-            if isinstance(caption_raw, str) and caption_raw.strip()
-            else None
-        )
-        enhanced_prompt = _build_enhanced_prompt(
+        caption, alt, existing_description = image_text_fields(image_obj)
+        description_prompt = build_description_prompt(
             prompt,
             caption=caption,
+            alt=alt,
+            description=existing_description,
             article_text=article_text,
         )
 
         try:
-            generated_text = call_llm_with_image(
-                prompt=enhanced_prompt,
-                image=image_input,
-                model=vision_model,
+            generated_text = call_llm(
+                prompt=description_prompt,
+                model=description_model,
                 force_json=False,
-                openai_api_key=openai_api_key,
+                model_config_id=description_config_id,
             )
         except Exception as exc:
-            generated_text = f"Error processing image: {exc}"
+            generated_text = f"Error generating description: {exc}"
 
         result_data = dict(image_obj)
         image_id = resolve_image_id(image_obj)
         result_data["id"] = image_id
         result_data["image_id"] = image_id
         result_data["generated_text"] = generated_text.strip()
-        result_data["vision_model"] = vision_model
-        if vision_config_id:
-            result_data["vision_ai_model_config_id"] = vision_config_id
+        result_data["description_model"] = description_model
+        if description_config_id:
+            result_data["description_ai_model_config_id"] = description_config_id
         prepared.append(result_data)
         descriptions.append(result_data["generated_text"])
 

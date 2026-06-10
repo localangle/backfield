@@ -565,6 +565,14 @@ describe('flowGraphModel hydrate and edit helpers', () => {
     expect(canReplaceInputBookend(model, 'TextInput').ok).toBe(true)
   })
 
+  it('canReplaceInputBookend allows JSON Input with Article Metadata attached', () => {
+    const metadata: FlowGraphNode = { id: 'meta-1', type: 'ArticleMetadata', data: {} }
+    const model = addSiblingBranch(bookends(), 'input-1', metadata)
+
+    expect(canReplaceInputBookend(model, 'JSONInput').ok).toBe(true)
+    expect(canReplaceInputBookend(model, 'TextInput').ok).toBe(true)
+  })
+
   it('canReplaceOutputBookend checks tip compatibility', () => {
     const place: FlowGraphNode = { id: 'place-1', type: 'PlaceExtract', data: {} }
     const model = addSiblingBranch(bookends(), 'input-1', place)

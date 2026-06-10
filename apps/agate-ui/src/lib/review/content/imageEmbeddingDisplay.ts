@@ -7,6 +7,8 @@ export interface ProcessedItemImageEmbeddingRow {
   generated_text?: string | null
   embedding_model?: string | null
   embedding_dimensions?: number | null
+  description_model?: string | null
+  /** @deprecated Use description_model */
   vision_model?: string | null
 }
 
@@ -62,7 +64,8 @@ export function imageEmbeddingSource(row: ProcessedItemImageEmbeddingRow): strin
 
 export function formatImageEmbeddingModelDetail(row: ProcessedItemImageEmbeddingRow): string {
   const parts: string[] = []
-  if (row.vision_model) parts.push(String(row.vision_model))
+  const descriptionModel = row.description_model ?? row.vision_model
+  if (descriptionModel) parts.push(String(descriptionModel))
   if (row.embedding_model) {
     parts.push(String(row.embedding_model))
   }
