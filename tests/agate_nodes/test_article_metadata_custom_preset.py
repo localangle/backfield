@@ -15,8 +15,8 @@ from agate_runtime.runners import run_article_metadata_runtime
 
 
 def test_normalize_custom_meta_type_accepts_slug() -> None:
-    assert normalize_custom_meta_type("brand_safety") == "brand_safety"
-    assert normalize_custom_meta_type(" Brand-Safety ") == "brand_safety"
+    assert normalize_custom_meta_type("new_category") == "new_category"
+    assert normalize_custom_meta_type(" New-Category ") == "new_category"
 
 
 def test_normalize_custom_meta_type_rejects_empty() -> None:
@@ -35,17 +35,17 @@ def test_resolve_meta_type_uses_bundled_preset_id() -> None:
 
 def test_run_custom_preset_emits_user_meta_type() -> None:
     prompt = (
-        "Classify brand safety.\n\n"
+        "Classify this dimension.\n\n"
         "## Categories\n"
-        "- safe\n"
-        "- unsafe\n"
+        "- category_a\n"
+        "- category_b\n"
         "- other\n\n"
         "## Article text\n\n"
         "{text}"
     )
     llm_payload = {
-        "category": "safe",
-        "rationale": "No controversial content detected.",
+        "category": "category_a",
+        "rationale": "Best fit for the article.",
         "confidence": 0.91,
     }
 
@@ -56,7 +56,7 @@ def test_run_custom_preset_emits_user_meta_type() -> None:
         out = run_article_metadata_runtime(
             {
                 "prompt_preset": "custom",
-                "meta_type": "brand_safety",
+                "meta_type": "new_category",
                 "prompt": prompt,
             },
             {"text": "Local bakery opens on Main Street."},
@@ -64,9 +64,9 @@ def test_run_custom_preset_emits_user_meta_type() -> None:
         )
 
     assert out["article_metadata"] == {
-        "meta_type": "brand_safety",
-        "category": "safe",
-        "rationale": "No controversial content detected.",
+        "meta_type": "new_category",
+        "category": "category_a",
+        "rationale": "Best fit for the article.",
         "confidence": 0.91,
         "prompt_preset": "custom",
     }

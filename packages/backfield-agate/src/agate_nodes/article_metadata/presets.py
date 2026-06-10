@@ -66,7 +66,7 @@ def normalize_custom_meta_type(raw: str | None) -> str:
     value = (raw or "").strip().lower().replace("-", "_").replace(" ", "_")
     if not value:
         raise ValueError(
-            "Custom preset requires a metadata type (for example brand_safety)."
+            "Custom preset requires a metadata type (for example new_category)."
         )
     if not _META_TYPE_PATTERN.match(value):
         raise ValueError(

@@ -232,11 +232,14 @@ export default function ArticleMetadataPanel({
     if (presetId !== 'custom') {
       updates.meta_type = ''
     }
-    if (
-      presetId !== 'custom' &&
+    const shouldReplacePrompt =
+      !currentPrompt.trim() ||
       promptMatchesPresetDefault(currentPrompt, currentPreset, presetPrompts)
-    ) {
-      updates.prompt = presetPrompts[presetId] ?? ''
+    if (shouldReplacePrompt) {
+      const nextPrompt = presetPrompts[presetId]
+      if (typeof nextPrompt === 'string') {
+        updates.prompt = nextPrompt
+      }
     }
     patchNodeData(updates)
   }
@@ -401,7 +404,7 @@ export default function ArticleMetadataPanel({
                   onChange={(e) => {
                     patchNodeData({ meta_type: sanitizeMetaTypeInput(e.target.value) })
                   }}
-                  placeholder="brand_safety"
+                  placeholder="new_category"
                   className="mt-2 h-8 text-xs font-mono"
                   spellCheck={false}
                   autoCapitalize="off"
@@ -417,7 +420,7 @@ export default function ArticleMetadataPanel({
               )}
               <p className="text-xs text-muted-foreground mt-1">
                 Stored as the dimension key for this classifier (for example{' '}
-                <code className="bg-muted px-1 rounded">brand_safety</code>). Letters, numbers, and
+                <code className="bg-muted px-1 rounded">new_category</code>). Letters, numbers, and
                 underscores only — spaces become underscores as you type.
               </p>
             </div>
