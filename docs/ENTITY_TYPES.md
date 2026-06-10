@@ -370,6 +370,8 @@ Non-location tabs: **People** review is implemented (issue 06); other entity tab
 
 One folder per node under `packages/backfield-agate/src/agate_nodes/<snake_case>/`.
 
+**Non-entity pipeline nodes** (Input, Output, Enrich, Embed, Other): see [`NODES.md`](NODES.md) and [`.cursor/skills/add-agate-node/SKILL.md`](../.cursor/skills/add-agate-node/SKILL.md).
+
 Current extract nodes: `place_extract`, `person_extract`, `organization_extract`. Run `npm run sync-nodes` in `apps/agate-ui` after adding or changing node UI/metadata.
 
 For **run AI cost and step labels**, the worker records React Flow `node_id` and node type on each `backfield_ai_call_record` row; Agate UI shows user-facing names from synced `metadata.json` `label` (via `getNodeStepDisplayName`, with `node_type` fallback when the graph id is missing). New extract nodes must ship `metadata.json` with a product **`label`** before merge.

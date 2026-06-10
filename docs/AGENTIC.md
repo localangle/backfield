@@ -12,7 +12,7 @@ This page orients **people and coding assistants** on how work is organized in B
 ## Cursor / IDE conventions
 
 - **Rules:** [`.cursor/rules/`](../.cursor/rules/) — workspace rules (workflow, Python, DB, frontend, docs freshness). Treat them as binding alongside `AGENTS.md`. For **UI copy**, follow [docs/FRONTEND.md](FRONTEND.md) → **User-facing copy** (non-technical users; no code-y interface strings).
-- **Skills:** [`.cursor/skills/`](../.cursor/skills/) — optional playbooks (e.g. DB changes, smoke, doc updates, self-review). Use when the task matches the skill’s description. For **Plan mode** or explicit design stress-tests, see [`grill-me`](../.cursor/skills/grill-me/SKILL.md). Before opening a PR, run [`pre-pr-code-review`](../.cursor/skills/pre-pr-code-review/SKILL.md) and [`pre-pr-architecture-review`](../.cursor/skills/pre-pr-architecture-review/SKILL.md).
+- **Skills:** [`.cursor/skills/`](../.cursor/skills/) — optional playbooks (e.g. DB changes, smoke, doc updates, self-review). Use when the task matches the skill’s description. Adding Agate pipeline nodes: [`add-agate-node`](../.cursor/skills/add-agate-node/SKILL.md). Adding Stylebook entity types: [`add-entity-type`](../.cursor/skills/add-entity-type/SKILL.md). For **Plan mode** or explicit design stress-tests, see [`grill-me`](../.cursor/skills/grill-me/SKILL.md). Before opening a PR, run [`pre-pr-code-review`](../.cursor/skills/pre-pr-code-review/SKILL.md) and [`pre-pr-architecture-review`](../.cursor/skills/pre-pr-architecture-review/SKILL.md).
 
 ## Recommended workflow
 

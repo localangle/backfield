@@ -173,7 +173,7 @@ Developer guide for adding or changing pipeline nodes in the guided flow builder
 | **Canvas chrome** | `apps/agate-ui/src/lib/nodeUtils.ts`, `nodeColors.ts` | **Yes** — icons and category colors from synced metadata |
 | **Guided builder** | `apps/agate-ui/src/pages/GuidedFlowBuilder.tsx`, `components/flow-builder/` | **Yes** — bookends, **+** chooser, configure gate |
 
-Runtime Python stays in the package; React panels are authored in `ui/` under the same folder so one PR can ship behavior + configuration UI. See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) (Agate nodes) and [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/skills/add-entity-type/SKILL.md) for full-stack node work.
+Runtime Python stays in the package; React panels are authored in `ui/` under the same folder so one PR can ship behavior + configuration UI. For **end-to-end node work** (worker → graph builder → review), start at [`NODES.md`](NODES.md) and [`.cursor/skills/add-agate-node/SKILL.md`](../.cursor/skills/add-agate-node/SKILL.md). Canonical entity extracts use [`ENTITY_TYPES.md`](ENTITY_TYPES.md) and [`.cursor/skills/add-entity-type/SKILL.md`](../.cursor/skills/add-entity-type/SKILL.md).
 
 ### Build and sync (`npm run sync-nodes`)
 
