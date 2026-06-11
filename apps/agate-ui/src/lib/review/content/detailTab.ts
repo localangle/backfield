@@ -6,6 +6,7 @@ export const PROCESSED_ITEM_DETAIL_TABS = [
   'organizations',
   'images',
   'meta',
+  'custom',
   'json',
 ] as const
 

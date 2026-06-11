@@ -8,6 +8,7 @@ import { ProcessedItemPeopleVerificationSection } from '@/components/ProcessedIt
 import { ProcessedItemMetaVerificationSection } from '@/components/ProcessedItemMetaVerificationSection'
 import { ProcessedItemOrganizationsVerificationSection } from '@/components/ProcessedItemOrganizationsVerificationSection'
 import ProcessedItemImagesSection from '@/components/ProcessedItemImagesSection'
+import { ProcessedItemCustomRecordsSection } from '@/components/ProcessedItemCustomRecordsSection'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -50,6 +51,7 @@ const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
   organizations: 'Organizations',
   images: 'Images',
   meta: 'Meta',
+  custom: 'Custom',
   json: 'JSON',
 }
 
@@ -783,6 +785,19 @@ export default function ProcessedItemDetail() {
               <CardContent className="py-10 text-center text-sm text-muted-foreground">
                 Meta review is available for batch stories. This run used a single input and has no
                 separate story item.
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="custom" className="space-y-4">
+          {item && !item.synthetic ? (
+            <ProcessedItemCustomRecordsSection item={item} />
+          ) : (
+            <Card>
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Custom records review is available for batch stories. This run used a single input
+                and has no separate story item.
               </CardContent>
             </Card>
           )}

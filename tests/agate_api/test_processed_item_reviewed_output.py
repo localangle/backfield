@@ -214,6 +214,34 @@ def test_build_reviewed_output_article_on_consolidated() -> None:
     assert consolidated["publication"] == "Review pub"
 
 
+def test_build_reviewed_output_passes_custom_records_through_untouched() -> None:
+    custom_records = {
+        "ingredients": {
+            "label": "Ingredients",
+            "schema": [{"name": "name", "label": "Name", "type": "string"}],
+            "records": [
+                {
+                    "key": "abc123",
+                    "fields": {"name": "Flour"},
+                    "mentions": [{"text": "two cups of flour", "quote": False}],
+                    "confidence": 0.9,
+                }
+            ],
+            "dropped_ungrounded": 0,
+        }
+    }
+    output = _geocode_output(cities=[_place("orig", id="p1")])
+    output["custom_extract"] = {"custom_records": custom_records}
+    output["json_output"] = {"consolidated": {"custom_records": custom_records}}
+
+    overlay = {"locations": {"by_anchor": {"p1": {"description": "edited"}}}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    assert reviewed["geocode_agent"]["places"]["areas"]["cities"][0]["description"] == "edited"
+    assert reviewed["custom_extract"]["custom_records"] == custom_records
+    assert reviewed["json_output"]["consolidated"]["custom_records"] == custom_records
+
+
 def test_build_reviewed_output_article_on_hoisted_stylebook_output() -> None:
     output = {
         "geocode_agent": {"places": {"areas": _empty_areas(), "points": [], "needs_review": []}},
