@@ -12,8 +12,13 @@ export default function GatherPanel({ node, currentRun }: GatherPanelProps) {
     currentRun?.node_outputs as Record<string, unknown> | undefined,
     node.id,
   )
-  const gatheredKeys =
+  const gatheredValue =
     nodeOutput && typeof nodeOutput === 'object' && nodeOutput !== null
+      ? (nodeOutput as Record<string, unknown>).gathered
+      : undefined
+  const gatheredKeys = Array.isArray(gatheredValue)
+    ? gatheredValue.filter((key): key is string => typeof key === 'string')
+    : nodeOutput && typeof nodeOutput === 'object' && nodeOutput !== null
       ? Object.keys(nodeOutput as Record<string, unknown>)
       : []
 

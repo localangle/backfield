@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from agate_runtime.node_output_contract import (
-    project_gathered_contributions,
+    project_gathered_branch_refs,
     project_node_contribution,
 )
 
@@ -41,28 +41,18 @@ def test_project_embed_images_keeps_embeddings_only() -> None:
     assert projected == {"image_embeddings": [{"id": "image:1", "embedding": [0.1, 0.2]}]}
 
 
-def test_project_gathered_uses_public_slugs_and_contributions() -> None:
-    projected = project_gathered_contributions(
+def test_project_gathered_branch_refs_uses_execution_order() -> None:
+    refs = project_gathered_branch_refs(
         {
-            "node-7": {
-                "headline": "Title",
-                "text": "Body",
-            },
-            "node-11": {
-                "headline": "Title",
-                "text": "Body",
-                "article_metadata": {"category": "political_information"},
-            },
-        },
-        source_id_to_type={
-            "node-7": "JSONInput",
-            "node-11": "ArticleMetadata",
+            "node-7": {"headline": "Title", "text": "Body"},
+            "node-11": {"article_metadata": {"category": "political_information"}},
+            "node-12": {"image_embeddings": [{"id": "image:1"}]},
         },
         source_id_to_public={
             "node-7": "json_input",
             "node-11": "article_metadata",
+            "node-12": "embed_images",
         },
+        execution_order=["node-7", "node-11", "node-12", "gather-1"],
     )
-    assert projected["json_input"]["headline"] == "Title"
-    assert "text" not in projected["article_metadata"]
-    assert projected["article_metadata"]["article_metadata"]["category"] == "political_information"
+    assert refs == ["json_input", "article_metadata", "embed_images"]

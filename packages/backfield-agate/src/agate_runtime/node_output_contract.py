@@ -54,18 +54,27 @@ def project_node_contribution(node_type: str, output: dict[str, Any]) -> dict[st
     return {key: output[key] for key in keys if key in output}
 
 
-def project_gathered_contributions(
+def project_gathered_branch_refs(
     gathered: dict[str, Any],
     *,
-    source_id_to_type: dict[str, str],
     source_id_to_public: dict[str, str],
-) -> dict[str, Any]:
-    """Map gathered branch payloads to public slugs with contribution-only values."""
-    projected: dict[str, Any] = {}
-    for source_id, payload in gathered.items():
-        if not isinstance(payload, dict):
+    execution_order: list[str],
+) -> list[str]:
+    """Return public node slugs gathered by a sync barrier (no payload duplication)."""
+    refs: list[str] = []
+    seen: set[str] = set()
+    for node_id in execution_order:
+        if node_id not in gathered:
             continue
+        public_key = source_id_to_public.get(node_id, node_id)
+        if public_key in seen:
+            continue
+        refs.append(public_key)
+        seen.add(public_key)
+    for source_id in gathered:
         public_key = source_id_to_public.get(source_id, source_id)
-        node_type = source_id_to_type.get(source_id, "")
-        projected[public_key] = project_node_contribution(node_type, payload)
-    return projected
+        if public_key in seen:
+            continue
+        refs.append(public_key)
+        seen.add(public_key)
+    return refs

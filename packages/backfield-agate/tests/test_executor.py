@@ -804,10 +804,7 @@ def test_gather_waits_for_parallel_branches(monkeypatch: pytest.MonkeyPatch):
     gathered = out["gather"]
     assert "gathered" in gathered
     branch_payload = gathered["gathered"]
-    assert "organization_extract" in branch_payload
-    assert "place_extract" in branch_payload
-    assert "text_input" in branch_payload
-    assert branch_payload["place_extract"]["locations"]
+    assert branch_payload == ["text_input", "organization_extract", "place_extract"]
 
 
 def test_gather_waits_in_sequential_mode(monkeypatch: pytest.MonkeyPatch):
@@ -849,5 +846,4 @@ def test_gather_waits_in_sequential_mode(monkeypatch: pytest.MonkeyPatch):
 
     assert execution_order[-1] == "gather"
     gathered = out["gather"]["gathered"]
-    assert "organization_extract" in gathered
-    assert "place_extract" in gathered
+    assert gathered == ["text_input", "organization_extract", "place_extract"]

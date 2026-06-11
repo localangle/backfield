@@ -11,7 +11,7 @@ from typing import Any
 
 from agate_runtime.context import AgateEnvContext
 from agate_runtime.node_output_contract import (
-    project_gathered_contributions,
+    project_gathered_branch_refs,
     project_node_contribution,
 )
 from agate_runtime.nodes import NODE_RUNNERS
@@ -284,7 +284,6 @@ def _remap_outputs_for_json(
 ) -> dict[str, Any]:
     """Top-level keys are snake_case slugs from node types (see ``_NODE_TYPE_OUTPUT_SLUGS``)."""
     id_to_public = _public_node_output_keys(by_id, order)
-    source_id_to_type = {node_id: node.type for node_id, node in by_id.items()}
     out: dict[str, Any] = {}
     for node_id in order:
         public_key = id_to_public[node_id]
@@ -294,10 +293,10 @@ def _remap_outputs_for_json(
             gathered = raw_output.get("gathered")
             if isinstance(gathered, dict):
                 out[public_key] = {
-                    "gathered": project_gathered_contributions(
+                    "gathered": project_gathered_branch_refs(
                         gathered,
-                        source_id_to_type=source_id_to_type,
                         source_id_to_public=id_to_public,
+                        execution_order=order,
                     )
                 }
                 continue
