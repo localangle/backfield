@@ -3,7 +3,7 @@ const nodeMetadata = {
   "type": "ArticleMetadata",
   "name": "ArticleMetadata",
   "label": "Article Metadata",
-  "description": "Classify the article with an LLM using a category, rationale, and confidence score.",
+  "description": "Classify the article with a category, rationale, and confidence score.",
   "category": "enrichment",
   "icon": "Tag",
   "color": "bg-green-500",

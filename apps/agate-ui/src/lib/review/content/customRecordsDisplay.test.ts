@@ -5,6 +5,8 @@ import {
   customMentionHighlightRanges,
   customRecordCellListItems,
   customRecordCellText,
+  customRecordConfidenceLabel,
+  customRecordConfidenceTier,
   extractCustomRecordsBlock,
 } from './customRecordsDisplay'
 
@@ -113,6 +115,19 @@ describe('buildCustomRecordTables', () => {
 
   it('returns no tables when output has no custom records', () => {
     expect(buildCustomRecordTables({ 'node-1': { text: 'hello' } })).toEqual([])
+  })
+})
+
+describe('customRecordConfidenceTier', () => {
+  it('maps scores to high, medium, and low labels', () => {
+    expect(customRecordConfidenceTier(0.95)).toBe('high')
+    expect(customRecordConfidenceLabel(0.95)).toBe('High')
+    expect(customRecordConfidenceTier(0.9)).toBe('high')
+    expect(customRecordConfidenceTier(0.85)).toBe('medium')
+    expect(customRecordConfidenceLabel(0.7)).toBe('Medium')
+    expect(customRecordConfidenceTier(0.69)).toBe('low')
+    expect(customRecordConfidenceLabel(0.5)).toBe('Low')
+    expect(customRecordConfidenceTier(null)).toBeNull()
   })
 })
 

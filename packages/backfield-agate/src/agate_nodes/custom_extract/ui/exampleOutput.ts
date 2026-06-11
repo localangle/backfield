@@ -53,7 +53,7 @@ export function buildExampleRecordFields(
 function buildExampleRecord(fields: CustomExtractFieldPreview[]) {
   return {
     fields: buildExampleRecordFields(fields),
-    mentions: [{ text: 'exact passage from the article', quote: false }],
+    mentions: [{ text: 'exact passage from the article' }],
     confidence: 0.9,
   }
 }

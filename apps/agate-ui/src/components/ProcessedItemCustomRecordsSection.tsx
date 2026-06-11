@@ -22,6 +22,8 @@ import {
   customMentionHighlightRanges,
   customRecordCellListItems,
   customRecordCellText,
+  customRecordConfidenceLabel,
+  customRecordConfidenceTier,
   type CustomRecordColumn,
   type CustomRecordMentionDisplay,
   type CustomRecordRow,
@@ -66,9 +68,32 @@ function cloneOverlay(overlay: Record<string, unknown> | null | undefined): Reco
   return JSON.parse(JSON.stringify(overlay)) as Record<string, unknown>
 }
 
-function confidenceLabel(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return '—'
-  return value.toFixed(2)
+function confidenceTierPillClass(tier: 'high' | 'medium' | 'low'): string {
+  if (tier === 'high') {
+    return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300'
+  }
+  if (tier === 'medium') {
+    return 'bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200'
+  }
+  return 'bg-muted text-muted-foreground'
+}
+
+function ConfidencePill({ value }: { value: number | null }) {
+  const tier = customRecordConfidenceTier(value)
+  const label = customRecordConfidenceLabel(value)
+  if (!tier || !label) {
+    return <span className="text-xs text-muted-foreground">—</span>
+  }
+  return (
+    <span
+      className={cn(
+        'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+        confidenceTierPillClass(tier),
+      )}
+    >
+      {label}
+    </span>
+  )
 }
 
 function blankFieldsForColumns(columns: CustomRecordColumn[]): Record<string, unknown> {
@@ -270,6 +295,7 @@ function MentionChips({
   onRemoveMention,
   mentionTargetActive,
   onToggleMentionTarget,
+  compactLabels = false,
 }: {
   record: CustomRecordRow
   selectedMention: SelectedMention | null
@@ -279,6 +305,7 @@ function MentionChips({
   onRemoveMention: (mentionIndex: number) => void
   mentionTargetActive: boolean
   onToggleMentionTarget: () => void
+  compactLabels?: boolean
 }) {
   const lastModelMention = record.source === 'model' && record.mentions.length <= 1
   return (
@@ -310,7 +337,7 @@ function MentionChips({
                 mentionsClickable && 'cursor-pointer hover:text-foreground',
               )}
             >
-              {mention.text}
+              {compactLabels ? `Passage ${mentionIndex + 1}` : mention.text}
             </button>
             {editing ? (
               <button
@@ -356,7 +383,9 @@ function CustomRecordTable({
   table,
   selectedMention,
   onSelectMention,
+  onSelectRecord,
   mentionsClickable,
+  rowsClickable,
   editing,
   mentionTarget,
   onToggleMentionTarget,
@@ -368,7 +397,9 @@ function CustomRecordTable({
   table: CustomRecordTableModel
   selectedMention: SelectedMention | null
   onSelectMention: (recordKey: string, mentionIndex: number) => void
+  onSelectRecord: (record: CustomRecordRow) => void
   mentionsClickable: boolean
+  rowsClickable: boolean
   editing: boolean
   mentionTarget: MentionTarget | null
   onToggleMentionTarget: (record: CustomRecordRow) => void
@@ -409,14 +440,28 @@ function CustomRecordTable({
                     {column.label}
                   </th>
                 ))}
-                <th className="px-3 py-2 font-medium">Mentions</th>
+                {editing ? <th className="px-3 py-2 font-medium">Mentions</th> : null}
                 {showConfidence ? <th className="px-3 py-2 font-medium">Confidence</th> : null}
                 {editing ? <th className="w-10 px-2 py-2" /> : null}
               </tr>
             </thead>
             <tbody>
-              {table.records.map((record: CustomRecordRow) => (
-                <tr key={record.key} className="border-t align-top">
+              {table.records.map((record: CustomRecordRow) => {
+                const rowSelected = selectedMention?.recordKey === record.key
+                return (
+                <tr
+                  key={record.key}
+                  className={cn(
+                    'border-t align-top',
+                    rowsClickable && record.mentions.length > 0 && 'cursor-pointer hover:bg-muted/40',
+                    rowSelected && !editing && 'bg-amber-50/80 dark:bg-amber-500/10',
+                  )}
+                  onClick={
+                    rowsClickable && record.mentions.length > 0
+                      ? () => onSelectRecord(record)
+                      : undefined
+                  }
+                >
                   {table.columns.map((column) => (
                     <td key={`${record.key}-${column.name}`} className="px-3 py-2">
                       {editing ? (
@@ -430,13 +475,15 @@ function CustomRecordTable({
                       )}
                     </td>
                   ))}
-                  <td className="px-3 py-2">
+                  {editing ? (
+                  <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
                     <MentionChips
                       record={record}
                       selectedMention={selectedMention}
                       onSelectMention={onSelectMention}
                       mentionsClickable={mentionsClickable}
                       editing={editing}
+                      compactLabels
                       onRemoveMention={(mentionIndex) => onRemoveMention(record, mentionIndex)}
                       mentionTargetActive={
                         mentionTarget?.recordType === table.recordType &&
@@ -448,13 +495,14 @@ function CustomRecordTable({
                       <p className="mt-1 text-[11px] text-muted-foreground">Added in review</p>
                     ) : null}
                   </td>
+                  ) : null}
                   {showConfidence ? (
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {confidenceLabel(record.confidence)}
+                    <td className="px-3 py-2">
+                      <ConfidencePill value={record.confidence} />
                     </td>
                   ) : null}
                   {editing ? (
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                       <button
                         type="button"
                         aria-label="Delete this record"
@@ -467,7 +515,8 @@ function CustomRecordTable({
                     </td>
                   ) : null}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -570,6 +619,17 @@ export function ProcessedItemCustomRecordsSection({
     return []
   }, [selectedMention, tables, articleBody])
 
+  const handleSelectRecord = useCallback((record: CustomRecordRow) => {
+    if (record.mentions.length === 0) return
+    setSelectedMention((current) => {
+      if (current?.recordKey !== record.key) {
+        return { recordKey: record.key, mentionIndex: 0 }
+      }
+      const nextIndex = (current.mentionIndex + 1) % record.mentions.length
+      return { recordKey: record.key, mentionIndex: nextIndex }
+    })
+  }, [])
+
   const handleSelectMention = (recordKey: string, mentionIndex: number) => {
     setSelectedMention((current) =>
       current?.recordKey === recordKey && current?.mentionIndex === mentionIndex
@@ -648,14 +708,14 @@ export function ProcessedItemCustomRecordsSection({
   }, [])
 
   const handleAddMentionFromSelection = useCallback(
-    (selection: ArticleTextSelection, kind: 'mention' | 'quote') => {
+    (selection: ArticleTextSelection) => {
       if (!mentionTarget) return
       const record = findRecord(mentionTarget.recordType, mentionTarget.recordKey)
       const text = selection.text.trim()
       if (!record || !text) return
       commitMentions(mentionTarget.recordType, record, [
         ...record.mentions,
-        { text, quote: kind === 'quote' },
+        { text, quote: false },
       ])
       setMentionTarget(null)
       setArticleTextSelection(null)
@@ -718,7 +778,9 @@ export function ProcessedItemCustomRecordsSection({
           table={table}
           selectedMention={selectedMention}
           onSelectMention={handleSelectMention}
+          onSelectRecord={handleSelectRecord}
           mentionsClickable={hasArticleBody}
+          rowsClickable={hasArticleBody && !editing}
           editing={editing}
           mentionTarget={mentionTarget}
           onToggleMentionTarget={(record) => handleToggleMentionTarget(table.recordType, record)}
@@ -745,7 +807,7 @@ export function ProcessedItemCustomRecordsSection({
               ? mentionTargetArmed
                 ? 'Select a passage in the story to attach it as a mention.'
                 : 'Edit values directly in the table. Changes are kept as a draft until you save.'
-              : 'Records your flow pulled from this story. Select a mention to see the supporting passage in the story.'}
+              : 'Records your flow pulled from this story. Passages are highlighted in the story; select a row to focus one record.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -799,8 +861,11 @@ export function ProcessedItemCustomRecordsSection({
               onTextSelectionChange={mentionTargetArmed ? setArticleTextSelection : undefined}
               activeTextSelection={mentionTargetArmed ? articleTextSelection : null}
               onAddOccurrenceFromSelection={
-                mentionTargetArmed ? handleAddMentionFromSelection : undefined
+                mentionTargetArmed
+                  ? (selection) => handleAddMentionFromSelection(selection)
+                  : undefined
               }
+              addOccurrenceQuoteEnabled={false}
             />
             {selectedMention && selectedHighlights.length === 0 ? (
               <p className="mt-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">

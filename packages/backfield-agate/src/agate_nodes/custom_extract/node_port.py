@@ -11,6 +11,7 @@ from typing import Any
 
 from agate_runtime.context import AgateEnvContext
 from agate_utils.llm import call_llm
+from agate_utils.prompt_placeholders import substitute_prompt_placeholders
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agate_nodes.custom_extract.composer import (
@@ -82,9 +83,10 @@ class CustomExtractNode:
         text = resolve_text(flattened)
 
         record_schema = params.record_schema()
+        instructions = substitute_prompt_placeholders(params.instructions, flattened)
         prompt = compose_custom_extract_prompt(
             record_schema=record_schema,
-            instructions=params.instructions,
+            instructions=instructions,
             text=text,
         )
 

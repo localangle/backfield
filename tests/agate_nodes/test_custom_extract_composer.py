@@ -29,6 +29,7 @@ def test_prompt_includes_field_contract_and_text() -> None:
     assert '"records"' in prompt
     assert "Mix 2 cups of flour with a pinch of salt." in prompt
     assert "at least one object" in prompt
+    assert '"quote"' not in prompt
 
 
 def test_prompt_omits_instructions_block_when_empty() -> None:

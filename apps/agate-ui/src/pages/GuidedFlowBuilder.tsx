@@ -4,6 +4,7 @@ import type { Node } from 'reactflow'
 
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { FlowTitleRow } from '@/components/flow-builder/FlowTitleRow'
+import { FlowDescriptionField } from '@/components/flow-builder/FlowDescriptionField'
 import AddNodeChooser, {
   type AddNodeChooserAnchorRect,
 } from '@/components/flow-builder/AddNodeChooser'
@@ -195,6 +196,8 @@ export type GuidedFlowBuilderProps = {
 export type GuidedFlowBuilderHandle = {
   takeSnapshot: () => void
   restoreSnapshot: () => void
+  /** Sync description edited in an external header (RunGraph with hideHeader). */
+  setGraphDescription: (description: string) => void
   save: (options?: { stayInEditMode?: boolean }) => Promise<boolean>
   /** Flush debounced input auto-save and persist the current flow spec (run variant). */
   flushRunInputs: () => Promise<boolean>
@@ -232,6 +235,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [readOnly],
   )
   const [graphName, setGraphName] = useState('Untitled Flow')
+  const [graphDescription, setGraphDescription] = useState('')
   const [activeStep, setActiveStep] = useState<FlowBuilderStep>('input')
   const [completedSteps, setCompletedSteps] = useState<Set<FlowBuilderStep>>(new Set())
   const [inputNode, setInputNode] = useState<Node | null>(null)
@@ -400,6 +404,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         syncNodeIdCounter(graph.spec.nodes)
         setExistingGraphId(graph.id)
         setGraphName(graph.name)
+        setGraphDescription(graph.description ?? '')
         setResolvedFlowProject(project)
         setScaffoldModel(applyLayoutToModel(model))
         setInputNode(toReactFlowBookend(model.inputNode))
@@ -473,11 +478,27 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       const current = await getGraph(existingGraphId)
       await updateGraph(existingGraphId, {
         name: nextName,
+        description: graphDescription.trim(),
         project_id: resolvedFlowProject.id,
         spec: {
           ...current.spec,
           name: nextName.toLowerCase().replace(/\s+/g, '_'),
         },
+      })
+    },
+    [existingGraphId, graphDescription, resolvedFlowProject],
+  )
+
+  const handleFlowDescriptionSave = useCallback(
+    async (nextDescription: string) => {
+      setGraphDescription(nextDescription)
+      if (!existingGraphId || !resolvedFlowProject) return
+      const current = await getGraph(existingGraphId)
+      await updateGraph(existingGraphId, {
+        name: current.name,
+        description: nextDescription,
+        project_id: resolvedFlowProject.id,
+        spec: current.spec,
       })
     },
     [existingGraphId, resolvedFlowProject],
@@ -806,6 +827,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     const draftSpec = modelToGraphSpec(saveModel)
     await updateGraph(existingGraphId, {
       name: graphName,
+      description: graphDescription.trim(),
       project_id: resolvedFlowProject.id,
       spec: {
         name: graphName.toLowerCase().replace(/\s+/g, '_'),
@@ -823,6 +845,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       },
     })
   }, [
+    graphDescription,
     existingGraphId,
     graphName,
     inputNode,
@@ -1122,6 +1145,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
 
       const graphSpec = {
         name: graphName,
+        description: graphDescription.trim(),
         project_id: resolvedFlowProject.id,
         spec: {
           name: graphName.toLowerCase().replace(/\s+/g, '_'),
@@ -1188,6 +1212,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     inputNode,
     outputNode,
     scaffoldModel,
+    graphDescription,
     graphName,
     existingGraphId,
     flowProjectLoading,
@@ -1216,6 +1241,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     (): GuidedFlowSnapshot =>
       captureGuidedFlowSnapshot({
         graphName,
+        graphDescription,
         activeStep,
         completedSteps: [...completedSteps],
         inputNode,
@@ -1226,6 +1252,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       }),
     [
       graphName,
+      graphDescription,
       activeStep,
       completedSteps,
       inputNode,
@@ -1254,6 +1281,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         const snap = snapshotRef.current
         if (!snap) return
         setGraphName(snap.graphName)
+        setGraphDescription(snap.graphDescription)
         setActiveStep(snap.activeStep)
         setCompletedSteps(new Set(snap.completedSteps))
         setInputNode(snap.inputNode)
@@ -1261,6 +1289,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         setScaffoldModel(snap.scaffoldModel)
         setSelectedNodeId(snap.selectedNodeId)
         setConfigureGateActive(snap.configureGateActive)
+      },
+      setGraphDescription: (description: string) => {
+        setGraphDescription(description)
       },
       save: (options) => handleSave(options),
       flushRunInputs,
@@ -1594,6 +1625,13 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             <PageBreadcrumbs items={headerBreadcrumbItems} />
             <div>
               <FlowTitleRow name={graphName} onSave={handleFlowNameSave} canEdit={!readOnly} />
+              <FlowDescriptionField
+                value={graphDescription}
+                onChange={setGraphDescription}
+                onBlurSave={existingGraphId ? handleFlowDescriptionSave : undefined}
+                canEdit={!readOnly}
+                className="mt-1"
+              />
               {activeStep !== 'scaffold' ? (
                 <p className="mt-1 text-xs text-muted-foreground">
                   {activeStep === 'input'

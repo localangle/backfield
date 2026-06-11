@@ -230,7 +230,7 @@ function mentionsFromUnknown(raw: unknown): CustomRecordMentionDisplay[] {
     if (!isPlainObject(entry)) continue
     const text = typeof entry.text === 'string' ? entry.text.trim() : ''
     if (!text) continue
-    mentions.push({ text, quote: entry.quote === true })
+    mentions.push({ text, quote: false })
   }
   return mentions
 }

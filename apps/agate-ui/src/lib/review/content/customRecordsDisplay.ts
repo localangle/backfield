@@ -102,7 +102,7 @@ function normalizeMentions(raw: unknown): CustomRecordMentionDisplay[] {
     if (!isPlainObject(entry)) continue
     const text = typeof entry.text === 'string' ? entry.text.trim() : ''
     if (!text) continue
-    mentions.push({ text, quote: entry.quote === true })
+    mentions.push({ text, quote: false })
   }
   return mentions
 }
@@ -147,6 +147,24 @@ export function buildCustomRecordTables(
     })
   }
   return tables
+}
+
+export type CustomRecordConfidenceTier = 'high' | 'medium' | 'low'
+
+/** Map a numeric confidence score to High (≥0.9), Medium (≥0.7), or Low. */
+export function customRecordConfidenceTier(
+  value: number | null,
+): CustomRecordConfidenceTier | null {
+  if (value === null || !Number.isFinite(value)) return null
+  if (value >= 0.9) return 'high'
+  if (value >= 0.7) return 'medium'
+  return 'low'
+}
+
+export function customRecordConfidenceLabel(value: number | null): string | null {
+  const tier = customRecordConfidenceTier(value)
+  if (!tier) return null
+  return tier.charAt(0).toUpperCase() + tier.slice(1)
 }
 
 /** User-facing cell text for a field value (lists handled separately as chips). */

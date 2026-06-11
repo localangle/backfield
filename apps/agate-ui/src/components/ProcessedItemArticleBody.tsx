@@ -43,6 +43,8 @@ export interface ProcessedItemArticleBodyProps {
   onSelectOccurrenceClientId?: (clientId: string) => void
   onRemoveOccurrenceClientId?: (clientId: string) => void
   onAddOccurrenceFromSelection?: (selection: ArticleTextSelection, kind: 'mention' | 'quote') => void
+  /** When false, passage attach UI offers mention only (Custom Extract review). */
+  addOccurrenceQuoteEnabled?: boolean
   className?: string
 }
 
@@ -263,6 +265,7 @@ export function ProcessedItemArticleBody({
   onSelectOccurrenceClientId,
   onRemoveOccurrenceClientId,
   onAddOccurrenceFromSelection,
+  addOccurrenceQuoteEnabled = true,
   className,
 }: ProcessedItemArticleBodyProps) {
   const firstSelectedMarkRef = useRef<HTMLElement>(null)
@@ -431,6 +434,7 @@ export function ProcessedItemArticleBody({
         <AddOccurrenceSelectionAction
           selection={activeTextSelection}
           onAdd={onAddOccurrenceFromSelection}
+          quoteEnabled={addOccurrenceQuoteEnabled}
         />
       ) : null}
       {activeTextSelection && onAddPlaceFromSelection && !onAddOccurrenceFromSelection ? (
@@ -447,12 +451,15 @@ export function ProcessedItemArticleBody({
 function AddOccurrenceSelectionAction({
   selection,
   onAdd,
+  quoteEnabled = true,
 }: {
   selection: ArticleTextSelection
   onAdd: (selection: ArticleTextSelection, kind: 'mention' | 'quote') => void
+  quoteEnabled?: boolean
 }) {
   const top = Math.max(8, selection.rect.top - 44)
-  const left = Math.max(8, selection.rect.left + selection.rect.width / 2 - 72)
+  const buttonCount = quoteEnabled ? 2 : 1
+  const left = Math.max(8, selection.rect.left + selection.rect.width / 2 - 36 * buttonCount)
   return createPortal(
     <div
       className="fixed z-[210] flex gap-1 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
@@ -466,13 +473,15 @@ function AddOccurrenceSelectionAction({
       >
         Add mention
       </button>
-      <button
-        type="button"
-        className="rounded-sm px-2 py-1 text-xs font-medium hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring"
-        onClick={() => onAdd(selection, 'quote')}
-      >
-        Add quote
-      </button>
+      {quoteEnabled ? (
+        <button
+          type="button"
+          className="rounded-sm px-2 py-1 text-xs font-medium hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring"
+          onClick={() => onAdd(selection, 'quote')}
+        >
+          Add quote
+        </button>
+      ) : null}
     </div>,
     document.body,
   )

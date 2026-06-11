@@ -21,6 +21,8 @@ type InlineNameEditorProps = {
   saveAriaLabel?: string
   titleClassName?: string
   inputClassName?: string
+  /** Tighter title row (flow headers). */
+  compact?: boolean
 }
 
 /**
@@ -37,6 +39,7 @@ export function InlineNameEditor({
   saveAriaLabel = 'Save name',
   titleClassName = 'text-2xl font-semibold tracking-tight',
   inputClassName = 'min-w-0 flex-1 max-w-xl text-2xl font-semibold h-auto py-2 px-3 tracking-tight',
+  compact = false,
 }: InlineNameEditorProps) {
   const display = value.trim() || emptyFallback || value
   const [editingName, setEditingName] = useState(false)
@@ -125,7 +128,12 @@ export function InlineNameEditor({
   }
 
   return (
-    <div className="inline-flex max-w-full min-h-[2.5rem] items-center gap-2">
+    <div
+      className={cn(
+        'inline-flex max-w-full items-center gap-2',
+        compact ? 'min-h-0' : 'min-h-[2.5rem]',
+      )}
+    >
       <h1
         className={cn(
           'inline-block min-w-0 max-w-[min(100%,42rem)] truncate',

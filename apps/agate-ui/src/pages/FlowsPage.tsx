@@ -20,6 +20,7 @@ import {
   type Graph,
   type GraphCreate,
 } from '@/lib/api'
+import { flowDescriptionTableText } from '@/components/flow-builder/FlowDescriptionField'
 import { formatDate } from '@/lib/utils'
 import { Loader2, Copy, Trash2 } from 'lucide-react'
 import {
@@ -64,6 +65,7 @@ export default function FlowsPage() {
     try {
       const duplicateData: GraphCreate = {
         name: `Copy of ${flow.name}`,
+        description: flow.description ?? '',
         project_id: flow.project_id,
         spec: flow.spec,
       }
@@ -91,6 +93,7 @@ export default function FlowsPage() {
     try {
       const updateData: GraphCreate = {
         name: graph.name,
+        description: graph.description ?? '',
         project_id: newProjectId,
         spec: graph.spec,
       }
@@ -136,6 +139,7 @@ export default function FlowsPage() {
                 <thead className="border-b bg-muted/50">
                   <tr>
                     <th className="text-left p-4 font-medium">Name</th>
+                    <th className="text-left p-4 font-medium hidden lg:table-cell">Description</th>
                     <th className="text-left p-4 font-medium">Project</th>
                     <th className="text-left p-4 font-medium">Nodes</th>
                     <th className="text-left p-4 font-medium">Created</th>
@@ -153,6 +157,14 @@ export default function FlowsPage() {
                         onClick={() => navigate(`/flow/${graph.id}`)}
                       >
                         <div className="font-medium">{graph.name}</div>
+                      </td>
+                      <td
+                        className="p-4 cursor-pointer align-top hidden lg:table-cell"
+                        onClick={() => navigate(`/flow/${graph.id}`)}
+                      >
+                        <div className="line-clamp-2 max-w-md text-sm text-muted-foreground">
+                          {flowDescriptionTableText(graph.description)}
+                        </div>
                       </td>
                       <td className="p-4" onClick={(e) => e.stopPropagation()}>
                         <Select

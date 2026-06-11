@@ -104,11 +104,29 @@ def custom_records_overlay_has_content(overlay: dict[str, Any] | None) -> bool:
     return bool(normalize_custom_records_overlay(overlay))
 
 
+def _normalize_mentions(raw: Any) -> list[dict[str, Any]]:
+    """Custom records support passage mentions only (``quote`` is always false)."""
+    if not isinstance(raw, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for entry in raw:
+        if isinstance(entry, str):
+            text = entry.strip()
+            if text:
+                normalized.append({"text": text, "quote": False})
+            continue
+        if not _is_dict(entry):
+            continue
+        text = entry.get("text")
+        if isinstance(text, str) and text.strip():
+            normalized.append({"text": text.strip(), "quote": False})
+    return normalized
+
+
 def _normalized_user_added_record(row: dict[str, Any]) -> dict[str, Any]:
     record = copy.deepcopy(row)
     record["source"] = "review"
-    mentions = record.get("mentions")
-    record["mentions"] = mentions if isinstance(mentions, list) else []
+    record["mentions"] = _normalize_mentions(record.get("mentions"))
     return record
 
 
@@ -125,7 +143,7 @@ def _merge_record_with_patch(
         merged["fields"] = merged_fields
     patch_mentions = patch.get("mentions")
     if isinstance(patch_mentions, list):
-        merged["mentions"] = copy.deepcopy(patch_mentions)
+        merged["mentions"] = _normalize_mentions(patch_mentions)
     return merged
 
 

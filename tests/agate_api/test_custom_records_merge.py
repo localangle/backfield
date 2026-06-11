@@ -145,7 +145,7 @@ class TestMergeCustomRecordsBlock:
                         {
                             "key": "user_record:1",
                             "fields": {"name": "Sugar"},
-                            "mentions": [{"text": "a cup of sugar", "quote": False}],
+                            "mentions": [{"text": "a cup of sugar", "quote": True}],
                         }
                     ]
                 }

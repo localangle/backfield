@@ -4,6 +4,7 @@ import type { Node } from 'reactflow'
 
 export type GuidedFlowSnapshot = {
   graphName: string
+  graphDescription: string
   activeStep: FlowBuilderStep
   completedSteps: FlowBuilderStep[]
   inputNode: Node | null
@@ -16,6 +17,7 @@ export type GuidedFlowSnapshot = {
 export function captureGuidedFlowSnapshot(state: GuidedFlowSnapshot): GuidedFlowSnapshot {
   return {
     graphName: state.graphName,
+    graphDescription: state.graphDescription,
     activeStep: state.activeStep,
     completedSteps: [...state.completedSteps],
     inputNode: state.inputNode ? { ...state.inputNode, data: { ...state.inputNode.data } } : null,

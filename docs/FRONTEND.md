@@ -60,6 +60,8 @@ See [`ENTITY_TYPES.md`](ENTITY_TYPES.md) for the full cross-repo map. Adding a n
 
 All create, edit, and run routes share one guided builder (`GuidedFlowBuilder.tsx` + `components/flow-builder/`). There is **no left node palette**, **no drag-to-connect**, and **no manual connection handles** on the canvas (`.guided-flow-canvas` hides React Flow handles in `index.css`).
 
+- **Flow description:** optional plain-text summary below the flow title on create/edit/run headers (`FlowDescriptionField.tsx`). Existing flows blur-save the description via Agate API; flow list tables (`FlowsPage`, project **Flows** tab) show a **Description** column (truncated with ellipsis when long).
+
 ### Stepper and bookends
 
 - Three steps: **Choose an input** → **Choose an output** → **Build your flow** (`FlowStepper`, `flowBuilderSteps.ts`). On input/output steps the stepper is a compact text row (no card chrome). Each bookend chooser shows centered step copy with explainer text above the cards (`STEP_CHOOSER_COPY`: **Where will your input data come from?** / **Where would you like to save your output?**). On the scaffold step the stepper and page heading are hidden so the canvas uses the full height. Hover the source or destination node and use the swap control to open the bookend swap dialog (`BookendSwapDialog`) — middle steps stay in place when the new bookend type is compatible (`canReplaceInputBookend` / `canReplaceOutputBookend` in `flowGraphModel.ts`).

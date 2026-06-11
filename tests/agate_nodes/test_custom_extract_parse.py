@@ -111,6 +111,15 @@ def test_string_mentions_are_coerced() -> None:
     assert result.records[0].mentions[0].quote is False
 
 
+def test_llm_quote_flag_is_stripped_to_mention_only() -> None:
+    record = {
+        "fields": {"item": "flour", "quantity": "2 cups"},
+        "mentions": [{"text": '"Mix well," she said.', "quote": True}],
+    }
+    result = parse_custom_extract_response({"records": [record]}, record_schema=_schema())
+    assert result.records[0].mentions[0].quote is False
+
+
 def test_out_of_range_confidence_raises() -> None:
     record = _grounded_record()
     record["confidence"] = 1.5

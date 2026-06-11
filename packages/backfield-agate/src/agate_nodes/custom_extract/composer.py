@@ -72,7 +72,7 @@ def _example_record(fields: list[CustomFieldSpec]) -> dict[str, Any]:
     }
     return {
         "fields": {spec.name: example_values[spec.type] for spec in fields},
-        "mentions": [{"text": "exact passage from the article", "quote": False}],
+        "mentions": [{"text": "exact passage from the article"}],
         "confidence": 0.9,
     }
 
@@ -103,8 +103,8 @@ def compose_custom_extract_prompt(
         '- "fields" holds the field values listed above; use null when a value is not '
         "stated in the article. Never guess.\n"
         '- "mentions" must contain at least one object with "text" (a verbatim snippet '
-        'from the article that supports this record) and "quote" (true only for direct '
-        "quotations). Records without supporting text in the article must be omitted.\n"
+        "from the article that supports this record). Records without supporting text in "
+        "the article must be omitted.\n"
         '- "confidence" is a number from 0.0 to 1.0.\n'
         "- Return an empty array when no records of this type appear in the article.\n\n"
         "Example shape:\n"

@@ -1656,6 +1656,7 @@ class AgateGraph(SQLModel, table=True):
 
     id: str = Field(default_factory=_uuid, primary_key=True)
     name: str = Field(sa_column=Column(Text, nullable=False))
+    description: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))
     spec_json: str = Field(sa_column=Column(Text, nullable=False))
     project_id: int = Field(foreign_key="backfield_project.id")
     created_at: datetime = Field(

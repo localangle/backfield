@@ -6,13 +6,13 @@ import hashlib
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from agate_nodes.custom_extract.schema import CustomRecordSchema, build_record_fields_model
 
 
 class CustomRecordMention(BaseModel):
-    """One evidence snippet grounding a record (same shape as entity extract mentions)."""
+    """One evidence snippet grounding a record (passage only — no attributed quotes)."""
 
     text: str
     quote: bool = False
@@ -24,6 +24,11 @@ class CustomRecordMention(BaseModel):
         if not cleaned:
             raise ValueError("mention text must be a non-empty string")
         return cleaned
+
+    @model_validator(mode="after")
+    def _mentions_only(self) -> CustomRecordMention:
+        self.quote = False
+        return self
 
 
 class ParsedCustomRecord(BaseModel):

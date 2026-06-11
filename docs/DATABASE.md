@@ -89,7 +89,7 @@ New entity types (person, organization, work, …) follow the same **substrate t
 
 ### Agate execution (`agate_*`)
 
-- `agate_graph` — stored graph spec (JSON), FK to `backfield_project`.
+- `agate_graph` — stored graph spec (JSON), optional human-readable **`description`** (plain text, default empty), FK to `backfield_project`.
 - `agate_run` — execution record, status, result/error JSON. Boolean **`replace_article_geography_on_persist`** remains for legacy queued-run compatibility, but saved geography behavior now comes from the Backfield Output `reconciliation_policy` stored in graph node params.
 - `agate_processed_item` — per-S3-object work unit for **S3Input** batch runs: FK to `agate_run.id`, optional `source_file` (S3 key), optional `input_json` (full valid document), `status` (`pending` / `running` / `succeeded` / `failed` / `skipped`), optional `error_message` / `result_json` (immutable model output), optional **`overlay_json`** (human review overlay) and integer **`overlay_version`** (optimistic concurrency for overlay PATCH; default `0`), optional **`reviewed_output_json`** (materialized `result_json` + overlay for export/display; cleared with overlay on rerun), legacy boolean **`replace_article_geography_on_persist`** (default `false`), timestamps. Indexed on `run_id`.
 - `agate_template` — curated template flows (`spec_json`); instantiated as new `agate_graph` rows.
@@ -147,6 +147,8 @@ Revision **`038_substrate_semantic_docs`** enables **`vector`** on Postgres (req
 Revision **`039_organization_schema`** adds the organization **substrate trio**, **Stylebook trio** (`stylebook_organization_canonical`, alias, meta), and **`substrate_organization_semantic_document`**, with UUID canonical ids, slug uniqueness per Stylebook, fingerprint uniqueness per project (`normalized_name` + **`organization_type`**), and queue-oriented indexes aligned with person.
 
 Revision **`040_sb_conn_evidence`** adds nullable **`evidence_json`** on **`stylebook_connections`** (creation evidence for auto-linked edges) and unique **`uq_stylebook_connection_exact_edge`** on **`(project_id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, nature)`**. Manual connections keep free-form **`nature`** values; the automatic taxonomy lives in **`backfield_entities.connections`**.
+
+Revision **`046_agate_graph_description`** adds nullable-by-default **`description`** (`TEXT NOT NULL DEFAULT ''`) on **`agate_graph`** for optional flow summaries shown in Agate UI lists and on create/edit screens.
 
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 

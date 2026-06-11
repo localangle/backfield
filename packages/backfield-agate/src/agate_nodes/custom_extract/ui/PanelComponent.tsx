@@ -298,15 +298,35 @@ export default function CustomExtractPanel({
     <>
       <NodePanelTabGate tab="info">
         <div className="space-y-2">
-          <Label className="text-sm font-medium">How this step works</Label>
+          <Label className="text-sm font-medium">Input placeholders</Label>
           <p className="text-sm text-muted-foreground mt-1">
-            This step reads the story text and pulls out records you define — like ingredients
-            from a recipe or artists from arts coverage. Each record keeps the passage from the
-            story that supports it, so reviewers can always check the source.
+            Pull fields from upstream JSON into extraction instructions using these tokens:
           </p>
-          {nodeMetadata.dependencyHelperText ? (
-            <p className="text-sm text-muted-foreground mt-3">{nodeMetadata.dependencyHelperText}</p>
-          ) : null}
+          <ul className="list-disc list-inside text-xs mt-2 space-y-1 text-muted-foreground">
+            <li>
+              <code className="bg-muted px-1 rounded">{'{text}'}</code> — plain text or the{' '}
+              <code className="bg-muted px-1 rounded">text</code> field from JSON input
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{url}'}</code> —{' '}
+              <code className="bg-muted px-1 rounded">url</code> field
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{results.images}'}</code> — nested paths
+              (e.g. <code className="bg-muted px-1 rounded">results.images</code>)
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{results.caption}'}</code> — one field from
+              each item in an array
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{results.caption, id}'}</code> — multiple
+              fields per array element
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{raw}'}</code> — entire input object as JSON
+            </li>
+          </ul>
         </div>
       </NodePanelTabGate>
 
@@ -572,8 +592,8 @@ export default function CustomExtractPanel({
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-1">
-            Optional guidance for what to include or skip. The fields you defined on the Settings
-            tab decide what each record contains.
+            Optional guidance for what to include or skip. Use tokens from the Info tab to pull
+            fields from upstream input into these instructions.
           </p>
         </div>
       </NodePanelTabGate>

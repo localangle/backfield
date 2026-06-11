@@ -57,6 +57,7 @@ def _prepare_spec_stylebook_refs(
 
 class GraphCreate(BaseModel):
     name: str
+    description: str = ""
     spec: GraphSpec
     project_id: int
 
@@ -64,9 +65,21 @@ class GraphCreate(BaseModel):
 class GraphOut(BaseModel):
     id: str
     name: str
+    description: str
     project_id: int
     spec: GraphSpec
     created_at: datetime
+
+
+def _graph_out(graph: AgateGraph) -> GraphOut:
+    return GraphOut(
+        id=graph.id,
+        name=graph.name,
+        description=graph.description or "",
+        project_id=graph.project_id,
+        spec=GraphSpec.model_validate_json(graph.spec_json),
+        created_at=graph.created_at,
+    )
 
 
 @router.post("", response_model=GraphOut)
@@ -82,19 +95,14 @@ def create_graph(
     prepared_spec = _prepare_spec_stylebook_refs(session, body.project_id, body.spec)
     g = AgateGraph(
         name=body.name,
+        description=(body.description or "").strip(),
         spec_json=prepared_spec.model_dump_json(),
         project_id=body.project_id,
     )
     session.add(g)
     session.commit()
     session.refresh(g)
-    return GraphOut(
-        id=g.id,
-        name=g.name,
-        project_id=g.project_id,
-        spec=GraphSpec.model_validate_json(g.spec_json),
-        created_at=g.created_at,
-    )
+    return _graph_out(g)
 
 
 @router.get("", response_model=list[GraphOut])
@@ -107,16 +115,7 @@ def list_graphs(
     if visible is not None:
         allowed = set(visible)
         rows = [r for r in rows if r.project_id in allowed]
-    return [
-        GraphOut(
-            id=r.id,
-            name=r.name,
-            project_id=r.project_id,
-            spec=GraphSpec.model_validate_json(r.spec_json),
-            created_at=r.created_at,
-        )
-        for r in rows
-    ]
+    return [_graph_out(r) for r in rows]
 
 
 @router.get("/{graph_id}", response_model=GraphOut)
@@ -129,13 +128,7 @@ def get_graph(
     if not g:
         raise HTTPException(404, "Graph not found")
     require_project_access(session, auth, int(g.project_id))
-    return GraphOut(
-        id=g.id,
-        name=g.name,
-        project_id=g.project_id,
-        spec=GraphSpec.model_validate_json(g.spec_json),
-        created_at=g.created_at,
-    )
+    return _graph_out(g)
 
 
 @router.put("/{graph_id}", response_model=GraphOut)
@@ -155,18 +148,13 @@ def update_graph(
         raise HTTPException(404, "Project not found")
     prepared_spec = _prepare_spec_stylebook_refs(session, body.project_id, body.spec)
     g.name = body.name
+    g.description = (body.description or "").strip()
     g.spec_json = prepared_spec.model_dump_json()
     g.project_id = body.project_id
     session.add(g)
     session.commit()
     session.refresh(g)
-    return GraphOut(
-        id=g.id,
-        name=g.name,
-        project_id=g.project_id,
-        spec=GraphSpec.model_validate_json(g.spec_json),
-        created_at=g.created_at,
-    )
+    return _graph_out(g)
 
 
 @router.delete("/{graph_id}", status_code=204)

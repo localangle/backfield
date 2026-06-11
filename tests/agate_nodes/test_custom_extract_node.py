@@ -83,6 +83,25 @@ def test_serial_chain_accumulates_record_types() -> None:
     assert set(out["custom_records"].keys()) == {"recipe_steps", "ingredients"}
 
 
+def test_run_substitutes_placeholders_in_instructions() -> None:
+    params = {
+        **_PARAMS,
+        "instructions": "Source URL: {url}. Extract from the recipe card only.",
+    }
+    with patch(
+        "agate_nodes.custom_extract.node_port.call_llm",
+        return_value=json.dumps(_LLM_PAYLOAD),
+    ) as mock_llm:
+        run_custom_extract_runtime(
+            params,
+            {"text": "Recipe body.", "url": "https://example.com/recipe"},
+            AgateEnvContext(run_id="run-test"),
+        )
+
+    prompt = mock_llm.call_args.kwargs["prompt"]
+    assert "Source URL: https://example.com/recipe." in prompt
+
+
 def test_missing_record_type_fails_with_clear_error() -> None:
     with pytest.raises(ValueError, match="Record type"):
         run_custom_extract_runtime(
