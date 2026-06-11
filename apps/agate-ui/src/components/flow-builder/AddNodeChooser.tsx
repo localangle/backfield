@@ -221,9 +221,9 @@ export default function AddNodeChooser({
     if (!open || !anchorRect) {
       return
     }
-    const measuredHeight = menuRef.current?.offsetHeight ?? MENU_MAX_HEIGHT_PX
-    setMenuPosition(positionMenu(anchorRect, measuredHeight))
-  }, [open, anchorRect, grouped, activeCategory, activeGroup?.rows.length, compatibility])
+    // Position once per open/anchor — category hover must not resize or reposition the menu.
+    setMenuPosition(positionMenu(anchorRect, MENU_MAX_HEIGHT_PX))
+  }, [open, anchorRect])
 
   useEffect(() => {
     if (!open) return
@@ -266,7 +266,7 @@ export default function AddNodeChooser({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 flex max-h-[360px] w-[340px] overflow-hidden rounded-lg border bg-neutral-900 text-neutral-50 shadow-xl"
+      className="fixed z-50 flex h-[360px] w-[340px] overflow-hidden rounded-lg border bg-neutral-900 text-neutral-50 shadow-xl"
       style={{ left: menuPosition.left, top: menuPosition.top }}
       role="dialog"
       aria-label="Add a step"
@@ -296,7 +296,7 @@ export default function AddNodeChooser({
         )}
       </div>
 
-      <div className="max-h-[360px] min-w-0 flex-1 overflow-y-auto p-2">
+      <div className="h-full min-w-0 flex-1 overflow-y-auto p-2">
         {activeGroup ? (
           <div className="space-y-1">
             {activeGroup.rows.map((row) => {
