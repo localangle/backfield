@@ -330,3 +330,43 @@ def test_persist_information_needs_creates_multiple_rows() -> None:
             )
         ).all()
         assert {row.category for row in rows} == {"education", "political_information"}
+
+
+def test_persist_multiple_article_metadata_blocks() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        article_id = _seed_article(session)
+        summary = persist_article_metadata_after_db_output(
+            session,
+            article_id=article_id,
+            consolidated={
+                "article_metadata": {
+                    "meta_type": "format",
+                    "category": "news_story",
+                    "rationale": "News report.",
+                    "confidence": 0.78,
+                },
+                "article_metadata_all": [
+                    {
+                        "meta_type": "subject",
+                        "category": "public_safety_crime",
+                        "rationale": "Crime story.",
+                        "confidence": 0.82,
+                    },
+                    {
+                        "meta_type": "format",
+                        "category": "news_story",
+                        "rationale": "News report.",
+                        "confidence": 0.78,
+                    },
+                ],
+            },
+            policy="smart_merge",
+        )
+        assert summary["status"] == "succeeded"
+        assert summary["persisted"] is True
+        assert summary["count"] == 2
+        rows = session.exec(
+            select(SubstrateArticleMeta).where(SubstrateArticleMeta.article_id == article_id)
+        ).all()
+        assert {row.meta_type for row in rows} == {"subject", "format"}

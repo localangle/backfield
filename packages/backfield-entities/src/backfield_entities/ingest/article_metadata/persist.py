@@ -218,19 +218,28 @@ def _persist_multi_value_block(
     }
 
 
-def persist_article_metadata_after_db_output(
+def _article_metadata_blocks(consolidated: dict[str, Any]) -> list[dict[str, Any]]:
+    all_raw = consolidated.get("article_metadata_all")
+    if isinstance(all_raw, list):
+        blocks = [
+            block
+            for block in all_raw
+            if isinstance(block, dict) and str(block.get("meta_type") or "").strip()
+        ]
+        if blocks:
+            return blocks
+    single = _article_metadata_block(consolidated)
+    return [single] if single is not None else []
+
+
+def _persist_one_article_metadata_block(
     session: Session,
     *,
     article_id: int,
-    consolidated: dict[str, Any],
+    block: dict[str, Any],
     policy: ReconciliationPolicy,
     source_run_id: str | None = None,
 ) -> dict[str, Any]:
-    """Upsert ``substrate_article_meta`` when ``article_metadata`` is present."""
-    block = _article_metadata_block(consolidated)
-    if block is None:
-        return {"status": "not_present", "persisted": False}
-
     if _block_has_multi_value_list(block):
         return _persist_multi_value_block(
             session,
@@ -354,4 +363,64 @@ def persist_article_metadata_after_db_output(
         "meta_type": meta_type,
         "category": category,
         "confidence": confidence,
+    }
+
+
+def persist_article_metadata_after_db_output(
+    session: Session,
+    *,
+    article_id: int,
+    consolidated: dict[str, Any],
+    policy: ReconciliationPolicy,
+    source_run_id: str | None = None,
+) -> dict[str, Any]:
+    """Upsert ``substrate_article_meta`` when ``article_metadata`` is present."""
+    blocks = _article_metadata_blocks(consolidated)
+    if not blocks:
+        return {"status": "not_present", "persisted": False}
+
+    if len(blocks) == 1:
+        return _persist_one_article_metadata_block(
+            session,
+            article_id=article_id,
+            block=blocks[0],
+            policy=policy,
+            source_run_id=source_run_id,
+        )
+
+    summaries: list[dict[str, Any]] = []
+    any_persisted = False
+    any_failed = False
+    for block in blocks:
+        summary = _persist_one_article_metadata_block(
+            session,
+            article_id=article_id,
+            block=block,
+            policy=policy,
+            source_run_id=source_run_id,
+        )
+        summaries.append(summary)
+        any_persisted = any_persisted or bool(summary.get("persisted"))
+        if summary.get("status") == "failed":
+            any_failed = True
+
+    if any_failed:
+        status: ArticleMetadataPersistStatus = "failed"
+    elif any_persisted:
+        status = "succeeded"
+    else:
+        status = "skipped"
+
+    return {
+        "status": status,
+        "persisted": any_persisted,
+        "count": len(blocks),
+        "meta_types": sorted(
+            {
+                str(summary.get("meta_type"))
+                for summary in summaries
+                if isinstance(summary.get("meta_type"), str)
+            }
+        ),
+        "blocks": summaries,
     }

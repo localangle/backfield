@@ -72,3 +72,52 @@ def test_custom_records_from_direct_parallel_upstreams_union_record_types() -> N
         },
     )
     assert set(body["custom_records"].keys()) == {"ingredients", "recipe_steps"}
+
+
+def test_dboutput_consolidates_all_node_outputs_not_only_direct_upstreams() -> None:
+    """Embed-only DBOutput wiring still carries article text, places, and metadata."""
+    body = consolidated_body_from_dboutput(
+        {},
+        {
+            "s3": {
+                "headline": "Shooting in Country Club Hills",
+                "text": "Story body from S3.",
+                "url": "https://example.com/story",
+            },
+            "geo": {
+                "places": {
+                    "areas": {"cities": [{"location": "Country Club Hills, IL"}]},
+                    "points": [],
+                },
+            },
+            "meta-subject": {
+                "article_metadata": {
+                    "meta_type": "subject",
+                    "category": "public_safety_crime",
+                    "rationale": "Crime story.",
+                    "confidence": 0.82,
+                }
+            },
+            "meta-format": {
+                "article_metadata": {
+                    "meta_type": "format",
+                    "category": "news_story",
+                    "rationale": "News report.",
+                    "confidence": 0.78,
+                }
+            },
+            "embed-text": {
+                "article_embedding": {"embedded_text": "Story body from S3.", "embedding": [0.1]},
+            },
+            "embed-images": {
+                "image_embeddings": [{"image_id": "image:abc", "embedding": [0.2]}],
+            },
+        },
+    )
+    assert body["text"] == "Story body from S3."
+    assert body["headline"] == "Shooting in Country Club Hills"
+    assert "places" in body
+    assert body["article_metadata"]["meta_type"] == "format"
+    assert len(body["article_metadata_all"]) == 2
+    assert body["article_embedding"]["embedded_text"] == "Story body from S3."
+    assert body["image_embeddings"][0]["image_id"] == "image:abc"

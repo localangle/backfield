@@ -185,6 +185,20 @@ def _node_is_ready(
     return upstream <= completed_ids
 
 
+def _all_namespaced_node_outputs(
+    node_outputs: dict[str, dict[str, Any]],
+    by_id: dict[str, NodeConfig],
+) -> dict[str, Any]:
+    """One namespace key per completed node (used by DBOutput consolidation)."""
+    state: dict[str, Any] = {}
+    for source_id, output in node_outputs.items():
+        source_node = by_id.get(source_id)
+        if source_node and source_node.type == "ArraySplitter":
+            continue
+        state[source_id] = dict(output)
+    return state
+
+
 def _namespaced_upstream_inputs(
     target_id: str,
     edges: list[Edge],
@@ -241,6 +255,8 @@ def _inputs_for_node(
     node_ids = set(by_id)
     if node.type == "Output":
         return _merged_outputs_for_output(node_outputs, by_id)
+    if node.type == "DBOutput":
+        return _all_namespaced_node_outputs(node_outputs, by_id)
     if node.type == "Gather":
         return _namespaced_barrier_inputs(
             node.id,
@@ -567,7 +583,8 @@ def execute_graph(
     as soon as its readiness rules are satisfied (direct upstream for most nodes;
     JSON ``Output`` and ``Gather`` wait for every non-downstream node in the graph
     (``Gather`` returns namespaced upstream outputs; ``Output`` shallow-merges them);
-    ``DBOutput`` waits for direct wired upstream only). Ready nodes in a batch run
+    ``DBOutput`` waits for direct wired upstream only but consolidates **all** completed
+    node outputs for persistence). Ready nodes in a batch run
     concurrently via ``asyncio.gather``.
 
     ``before_each_node``, when provided, is invoked as ``(node_id, node_type)`` immediately

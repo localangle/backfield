@@ -63,6 +63,26 @@ def _resolve_display_headline(
     return input_hl or (sub_hl or None)
 
 
+def _is_missing_substrate_body(text: str | None) -> bool:
+    if not isinstance(text, str):
+        return True
+    stripped = text.strip()
+    return not stripped or stripped == "(empty)"
+
+
+def _fallback_body_from_result(result_obj: dict[str, Any] | None) -> str:
+    if not isinstance(result_obj, dict):
+        return ""
+    for key in ("s3_input", "text_input", "json_input", "stylebook_output"):
+        block = result_obj.get(key)
+        if not isinstance(block, dict):
+            continue
+        text = block.get("text")
+        if isinstance(text, str) and text.strip() and text.strip() != "(empty)":
+            return text.strip()
+    return ""
+
+
 def build_processed_item_article_context(
     session: Session,
     *,
@@ -140,10 +160,21 @@ def build_processed_item_article_context(
         }
 
     rid = art.id
+    substrate_body = art.text if isinstance(art.text, str) else ""
+    body = substrate_body
+    resolution = "substrate"
+    reason: str | None = None
+    if _is_missing_substrate_body(substrate_body):
+        alt = fallback_body.strip() or _fallback_body_from_result(result_obj)
+        if alt:
+            body = alt
+            resolution = "inline_fallback"
+            reason = "substrate_text_empty"
+
     return {
         "article_id": int(rid) if rid is not None else aid,
         "headline": _resolve_display_headline(input_obj=input_obj, substrate_headline=art.headline),
-        "body": art.text,
-        "resolution": "substrate",
-        "reason": None,
+        "body": body,
+        "resolution": resolution,
+        "reason": reason,
     }
