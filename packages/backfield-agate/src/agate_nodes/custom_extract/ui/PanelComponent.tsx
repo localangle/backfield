@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
+import { buildExampleCustomRecordsOutput } from './exampleOutput'
 import {
   INVALID_AI_MODEL_SELECTION_VALUE as INVALID_SELECTION_VALUE,
   catalogToSelectOptions,
@@ -283,6 +284,15 @@ export default function CustomExtractPanel({
     nodeOutputLookupSpec ?? undefined,
   )
   const recordSets = recordSetsFromOutput(nodeOutput)
+  const exampleOutputPreview = useMemo(
+    () =>
+      buildExampleCustomRecordsOutput({
+        recordType: currentRecordType,
+        label: currentLabel,
+        fields,
+      }),
+    [currentLabel, currentRecordType, fields],
+  )
 
   return (
     <>
@@ -570,12 +580,27 @@ export default function CustomExtractPanel({
 
       <NodePanelTabGate tab="outputs">
         <div className="space-y-4">
-          {recordSets.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Run this flow to see the records extracted from the latest item.
+          <div>
+            <Label className="text-sm font-medium">Example output</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Based on the fields you set up in Settings. Run the flow to see real records from
+              your story.
             </p>
-          ) : (
-            recordSets.map(([recordType, recordSet]) => {
+            {exampleOutputPreview === null ? (
+              <p className="text-xs text-muted-foreground mt-2 p-2 bg-muted rounded">
+                Add at least one field on the Settings tab to see a preview here.
+              </p>
+            ) : (
+              <pre className="mt-2 max-h-64 overflow-y-auto rounded-md border bg-muted/50 p-3 text-xs font-mono whitespace-pre-wrap break-words">
+                {JSON.stringify(exampleOutputPreview, null, 2)}
+              </pre>
+            )}
+          </div>
+
+          {recordSets.length > 0 ? (
+            <div className="border-t pt-4 space-y-4">
+              <Label className="text-sm font-medium">Latest run</Label>
+              {recordSets.map(([recordType, recordSet]) => {
               const schema = Array.isArray(recordSet.schema) ? recordSet.schema : []
               const records = Array.isArray(recordSet.records) ? recordSet.records : []
               const dropped =
@@ -632,8 +657,9 @@ export default function CustomExtractPanel({
                   ) : null}
                 </div>
               )
-            })
-          )}
+            })}
+            </div>
+          ) : null}
         </div>
       </NodePanelTabGate>
     </>

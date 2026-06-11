@@ -60,7 +60,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { getNodeIcon, getNodeLabel, getNodeBgColor } from '@/lib/nodeUtils'
 
-import { ARTICLE_METADATA_DEFAULT_PRESET } from './presetOptions'
+import { getArticleMetadataPresetDisplayLabel } from './presetOptions'
 
 interface ArticleMetadataData {
   model?: string
@@ -73,14 +73,7 @@ function ArticleMetadataNode({ data, selected }: NodeProps<ArticleMetadataData>)
   const dependencyHelperText = nodeMetadata?.dependencyHelperText || ''
   const icon = getNodeIcon('ArticleMetadata', 'h-4 w-4')
   const bgColor = getNodeBgColor('ArticleMetadata')
-  const presetId =
-    typeof data.prompt_preset === 'string' && data.prompt_preset.trim()
-      ? data.prompt_preset.trim().toLowerCase().replace(/-/g, '_')
-      : ARTICLE_METADATA_DEFAULT_PRESET
-  const presetLabel =
-    presetId === 'custom' && typeof data.meta_type === 'string' && data.meta_type.trim()
-      ? data.meta_type.trim().replace(/_/g, ' ')
-      : presetId.replace(/_/g, ' ')
+  const presetLabel = getArticleMetadataPresetDisplayLabel(data)
 
   return (
     <Card className={`w-[220px] ${selected ? 'ring-2 ring-primary' : ''}`}>
@@ -120,7 +113,7 @@ function ArticleMetadataNode({ data, selected }: NodeProps<ArticleMetadataData>)
           {dependencyHelperText ? (
             <p className="text-xs text-muted-foreground mt-1">{dependencyHelperText}</p>
           ) : null}
-          <p className="text-xs text-muted-foreground capitalize">{presetLabel}</p>
+          <p className="text-xs text-muted-foreground">{presetLabel}</p>
         </div>
         <Handle
           type="source"

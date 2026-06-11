@@ -1,6 +1,6 @@
 import { ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
-import { AGATE_PRODUCT_MARK, ShellProductBrand, UserAccountMenu } from "@backfield/ui"
+import { AgateProductMark, ShellProductBrand, UserAccountMenu } from "@backfield/ui"
 import AppSidebar from "./AppSidebar"
 import { useAuth } from "@/lib/auth"
 
@@ -18,7 +18,7 @@ export default function HubLayout({ children }: HubLayoutProps) {
         <div className="px-4 py-4 flex justify-between items-center">
           <ShellProductBrand
             to="/"
-            productMark={AGATE_PRODUCT_MARK}
+            productMark={<AgateProductMark />}
             productTitle="Agate"
             platformSubtitle="Backfield Platform"
           />

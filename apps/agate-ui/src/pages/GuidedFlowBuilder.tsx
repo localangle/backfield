@@ -4,7 +4,9 @@ import type { Node } from 'reactflow'
 
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { FlowTitleRow } from '@/components/flow-builder/FlowTitleRow'
-import AddNodeChooser from '@/components/flow-builder/AddNodeChooser'
+import AddNodeChooser, {
+  type AddNodeChooserAnchorRect,
+} from '@/components/flow-builder/AddNodeChooser'
 import BookendChooser from '@/components/flow-builder/BookendChooser'
 import BookendSwapDialog from '@/components/flow-builder/BookendSwapDialog'
 import ConfigureGatePanel from '@/components/flow-builder/ConfigureGatePanel'
@@ -81,12 +83,7 @@ import { Save } from 'lucide-react'
 let nodeIdCounter = 0
 const nextNodeId = () => `node-${nodeIdCounter++}`
 
-type AddNodeChooserAnchor = {
-  top: number
-  right: number
-  bottom: number
-  left: number
-}
+type AddNodeChooserAnchor = AddNodeChooserAnchorRect
 
 type AddNodeInsertionEdge = {
   sourceId: string
@@ -1277,7 +1274,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [buildSnapshot, flushRunInputs, handleSave, inputNode, outputNode, scaffoldModel, saving],
   )
 
-  const handleAddNodeClick = useCallback((parentNodeId: string, anchorRect: DOMRect) => {
+  const handleAddNodeClick = useCallback((parentNodeId: string, anchorRect: AddNodeChooserAnchorRect) => {
     if (configureGateActive) return
     setAddFromParentId(parentNodeId)
     setAddIntoEdge(null)
@@ -1291,7 +1288,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   }, [configureGateActive])
 
   const handleAddEdgeClick = useCallback(
-    (sourceId: string, targetId: string, anchorRect: DOMRect) => {
+    (sourceId: string, targetId: string, anchorRect: AddNodeChooserAnchorRect) => {
       if (configureGateActive) return
       setAddFromParentId(null)
       setAddIntoEdge({ sourceId, targetId })

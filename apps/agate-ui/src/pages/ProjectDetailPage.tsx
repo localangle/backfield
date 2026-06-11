@@ -105,7 +105,6 @@ export default function ProjectDetailPage() {
       const [p, s] = await Promise.all([getProjectBySlug(slug), getProjectStatsBySlug(slug)])
       setProject(p)
       setStats(s)
-      setNameDraft(p.name)
     } catch (e) {
       console.error(e)
       setError('Failed to load project')

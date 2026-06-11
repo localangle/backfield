@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { getNodeBgColor, getNodeIcon } from '@/lib/nodeUtils'
 import {
   categoryHeading,
   type CompatibleNodeEntry,
@@ -13,7 +14,7 @@ type AddNodeChooserProps = {
   onOpenChange: (open: boolean) => void
   compatibility: CompatibleNextNodesResult
   onSelect: (type: string) => void
-  anchorRect: { top: number; right: number; bottom: number; left: number } | null
+  anchorRect: AddNodeChooserAnchorRect | null
 }
 
 type FlatRow = CompatibleNodeEntry & { rowKey: string }
@@ -22,20 +23,78 @@ type Group = { category: string; heading: string; rows: FlatRow[] }
 const MENU_WIDTH_PX = 340
 const MENU_MAX_HEIGHT_PX = 360
 const MENU_GAP_PX = 8
+const ANCHOR_FALLBACK_SIZE_PX = 24
 
-/** Placeholder chooser blurbs until product copy replaces them. */
+export type AddNodeChooserAnchorRect = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+/** Anchor the menu to the click point so edge labels stay aligned after viewport transforms. */
+export function anchorRectFromPointerEvent(event: {
+  clientX: number
+  clientY: number
+  currentTarget: EventTarget & Element
+}): AddNodeChooserAnchorRect {
+  const rect = event.currentTarget.getBoundingClientRect()
+  const halfW = Math.max(rect.width / 2, ANCHOR_FALLBACK_SIZE_PX / 2)
+  const halfH = Math.max(rect.height / 2, ANCHOR_FALLBACK_SIZE_PX / 2)
+  return {
+    left: event.clientX - halfW,
+    right: event.clientX + halfW,
+    top: event.clientY - halfH,
+    bottom: event.clientY + halfH,
+  }
+}
+
+/** Short descriptions shown in the guided flow add-step menu. */
 const NODE_CHOOSER_BLURBS: Record<string, string> = {
-  ArticleMetadata: 'Consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore.',
-  EmbedText: 'Excepteur sint occaecat cupidatat non proident sunt in culpa.',
-  GeocodeAgent: 'Duis aute irure dolor in reprehenderit in voluptate velit.',
-  OrganizationExtract: 'Ut enim ad minim veniam, quis nostrud exercitation ullamco.',
-  PersonExtract: 'Sed do eiusmod tempor incididunt ut labore et dolore magna.',
-  PlaceExtract: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+  ArticleMetadata: 'Tag article with custom metadata',
+  CustomExtract: 'Extract custom data',
+  EmbedImages: 'Describe and semantically embed images',
+  EmbedText: 'Semantically embed article text',
+  Gather: 'Consolidate output from upstream nodes',
+  GeocodeAgent: 'Assign coordinates to extracted places',
+  OrganizationExtract: 'Extract and standardize organizations',
+  PersonExtract: 'Extract and standardize people and quotes',
+  PlaceExtract: 'Extract and standardize places',
+}
+
+/** Custom Extract stays last; other extract steps stay alphabetical. */
+const EXTRACT_NODE_ORDER: Record<string, number> = {
+  OrganizationExtract: 0,
+  PersonExtract: 1,
+  PlaceExtract: 2,
+  CustomExtract: 3,
+}
+
+function sortCategoryRows(heading: string, rows: FlatRow[]): FlatRow[] {
+  if (heading !== 'Extract') return rows
+  return sortExtractChooserRows(rows)
+}
+
+/** @internal Exported for unit tests. */
+export function sortExtractChooserRows(rows: FlatRow[]): FlatRow[] {
+  return [...rows].sort((a, b) => {
+    const aOrder = EXTRACT_NODE_ORDER[a.type]
+    const bOrder = EXTRACT_NODE_ORDER[b.type]
+    if (aOrder !== undefined && bOrder !== undefined) return aOrder - bOrder
+    if (aOrder !== undefined) return -1
+    if (bOrder !== undefined) return 1
+    return a.label.localeCompare(b.label)
+  })
 }
 
 function chooserBlurb(row: CompatibleNodeEntry): string {
-  const placeholder = NODE_CHOOSER_BLURBS[row.type]
-  if (placeholder) return placeholder
+  return getNodeChooserBlurb(row)
+}
+
+/** @internal Exported for unit tests. */
+export function getNodeChooserBlurb(row: Pick<CompatibleNodeEntry, 'type' | 'description'>): string {
+  const configured = NODE_CHOOSER_BLURBS[row.type]
+  if (configured) return configured
   const fromMeta = row.description.trim()
   return fromMeta !== '' ? fromMeta : 'Lorem ipsum dolor sit amet.'
 }
@@ -75,16 +134,18 @@ function groupRows(rows: FlatRow[]): Group[] {
     .map(([heading, categoryRows]) => ({
       category: heading,
       heading,
-      rows: categoryRows,
+      rows: sortCategoryRows(heading, categoryRows),
     }))
 }
 
 function computeMenuPosition(
-  anchorRect: NonNullable<AddNodeChooserProps['anchorRect']>,
+  anchorRect: AddNodeChooserAnchorRect,
   viewport: { width: number; height: number },
+  menuHeight: number = MENU_MAX_HEIGHT_PX,
 ): { left: number; top: number } {
   const viewportWidth = viewport.width
   const viewportHeight = viewport.height
+  const menuH = Math.min(Math.max(menuHeight, 1), MENU_MAX_HEIGHT_PX)
 
   const opensRight =
     anchorRect.right + MENU_GAP_PX + MENU_WIDTH_PX <= viewportWidth - MENU_GAP_PX
@@ -96,34 +157,37 @@ function computeMenuPosition(
     Math.max(viewportWidth - MENU_WIDTH_PX - MENU_GAP_PX, MENU_GAP_PX),
   )
 
-  const spaceBelow = viewportHeight - MENU_GAP_PX - (anchorRect.bottom + MENU_GAP_PX)
-  const spaceAbove = anchorRect.top - MENU_GAP_PX - MENU_GAP_PX
+  // Top-align with the anchor; flip above only when the measured menu would overflow.
+  let top = anchorRect.top
 
-  let preferredTop: number
-  if (spaceBelow >= MENU_MAX_HEIGHT_PX) {
-    preferredTop = anchorRect.bottom + MENU_GAP_PX
-  } else if (spaceAbove >= MENU_MAX_HEIGHT_PX) {
-    preferredTop = anchorRect.top - MENU_GAP_PX - MENU_MAX_HEIGHT_PX
-  } else if (spaceBelow >= spaceAbove) {
-    preferredTop = anchorRect.bottom + MENU_GAP_PX
-  } else {
-    preferredTop = anchorRect.top - MENU_GAP_PX - MENU_MAX_HEIGHT_PX
+  if (top + menuH > viewportHeight - MENU_GAP_PX) {
+    top = anchorRect.top - menuH - MENU_GAP_PX
   }
 
-  const top = Math.min(
-    Math.max(preferredTop, MENU_GAP_PX),
-    Math.max(viewportHeight - MENU_MAX_HEIGHT_PX - MENU_GAP_PX, MENU_GAP_PX),
-  )
+  if (top + menuH > viewportHeight - MENU_GAP_PX) {
+    top = viewportHeight - MENU_GAP_PX - menuH
+  }
+
+  if (top < MENU_GAP_PX) {
+    top = MENU_GAP_PX
+  }
 
   return { left, top }
 }
 
-function positionMenu(anchorRect: AddNodeChooserProps['anchorRect']): { left: number; top: number } {
+function positionMenu(
+  anchorRect: AddNodeChooserProps['anchorRect'],
+  menuHeight: number = MENU_MAX_HEIGHT_PX,
+): { left: number; top: number } {
   if (!anchorRect || typeof window === 'undefined') return { left: 16, top: 16 }
-  return computeMenuPosition(anchorRect, {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  })
+  return computeMenuPosition(
+    anchorRect,
+    {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    },
+    menuHeight,
+  )
 }
 
 /** @internal Exported for placement unit tests. */
@@ -146,12 +210,20 @@ export default function AddNodeChooser({
 
   const grouped = useMemo(() => groupRows(allRows), [allRows])
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
-  const menuPosition = useMemo(() => positionMenu(anchorRect), [anchorRect])
+  const [menuPosition, setMenuPosition] = useState({ left: 16, top: 16 })
 
   const activeGroup = useMemo<Group | null>(() => {
     if (grouped.length === 0) return null
     return grouped.find((group) => group.category === activeCategory) ?? grouped[0] ?? null
   }, [activeCategory, grouped])
+
+  useLayoutEffect(() => {
+    if (!open || !anchorRect) {
+      return
+    }
+    const measuredHeight = menuRef.current?.offsetHeight ?? MENU_MAX_HEIGHT_PX
+    setMenuPosition(positionMenu(anchorRect, measuredHeight))
+  }, [open, anchorRect, grouped, activeCategory, activeGroup?.rows.length, compatibility])
 
   useEffect(() => {
     if (!open) return
@@ -227,7 +299,10 @@ export default function AddNodeChooser({
       <div className="max-h-[360px] min-w-0 flex-1 overflow-y-auto p-2">
         {activeGroup ? (
           <div className="space-y-1">
-            {activeGroup.rows.map((row) => (
+            {activeGroup.rows.map((row) => {
+              const icon = getNodeIcon(row.type, 'h-4 w-4')
+              const bgColor = getNodeBgColor(row.type)
+              return (
               <button
                 key={row.rowKey}
                 type="button"
@@ -239,20 +314,37 @@ export default function AddNodeChooser({
                   !row.enabled && 'cursor-not-allowed text-neutral-500',
                 )}
               >
-                <span className="block text-sm font-medium leading-snug">{row.label}</span>
-                <span
-                  className={cn(
-                    'mt-0.5 block text-xs leading-snug',
-                    row.enabled ? 'text-neutral-400' : 'text-neutral-500',
-                  )}
-                >
-                  {chooserBlurb(row)}
-                </span>
-                {!row.enabled && row.reason ? (
-                  <span className="mt-1.5 block text-xs leading-snug text-amber-300/80">{row.reason}</span>
-                ) : null}
+                <div className="flex items-start gap-3">
+                  <div
+                    className={cn(
+                      'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                      bgColor,
+                      !row.enabled && 'opacity-50',
+                    )}
+                    aria-hidden
+                  >
+                    {icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium leading-snug">{row.label}</span>
+                    <span
+                      className={cn(
+                        'mt-0.5 block text-xs leading-snug',
+                        row.enabled ? 'text-neutral-400' : 'text-neutral-500',
+                      )}
+                    >
+                      {chooserBlurb(row)}
+                    </span>
+                    {!row.enabled && row.reason ? (
+                      <span className="mt-1.5 block text-xs leading-snug text-amber-300/80">
+                        {row.reason}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               </button>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <p className="px-3 py-4 text-sm text-neutral-300">No steps are available yet.</p>

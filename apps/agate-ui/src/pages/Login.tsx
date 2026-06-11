@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AGATE_PRODUCT_MARK } from '@backfield/ui'
+import { AgateProductMark } from '@backfield/ui'
 import { useAuth } from '@/lib/auth'
 
 const AUTH_API_BASE = import.meta.env.VITE_AUTH_API_BASE ?? ''
@@ -52,9 +52,7 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <span aria-hidden className="text-2xl font-semibold leading-none">
-              {AGATE_PRODUCT_MARK}
-            </span>
+            <AgateProductMark className="size-6 stroke-[1.75]" />
             Agate
           </CardTitle>
           <CardDescription>Sign in with your Backfield account</CardDescription>

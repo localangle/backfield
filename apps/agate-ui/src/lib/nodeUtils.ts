@@ -2,6 +2,7 @@ import React from 'react'
 import { FileText, Tag, Zap, Database, Brain, Filter, Map, MapPinned, Package, Search, Sparkles, Braces, FileJson, Image, Eye, GitBranch, GitMerge, BarChart, Building2, User, Network, BookOpen, Table } from 'lucide-react'
 import { nodeMetadata } from '@/nodes/registry'
 import { getNodeIconColor as getNodeIconColorFromColors, getNodeBgColor as getNodeBgColorFromColors } from '@/lib/nodeColors'
+import { getArticleMetadataPresetDisplayLabel } from '@/nodes/article_metadata/presetOptions'
 
 // Icon mapping for dynamic icon rendering
 const iconMap = {
@@ -102,5 +103,33 @@ export function getNodeStepDisplayName(
  */
 export function getNodeBgColor(type: string): string {
   return getNodeBgColorFromColors(type)
+}
+
+/** Secondary line for guided compact nodes when params add useful context. */
+export function getGuidedCompactNodeSubtitle(
+  nodeType: string,
+  data: Record<string, unknown> | undefined,
+): string | null {
+  if (!data) {
+    return null
+  }
+  if (nodeType === 'CustomExtract') {
+    const label = typeof data.label === 'string' ? data.label.trim() : ''
+    if (label) {
+      return label
+    }
+    const recordType = typeof data.record_type === 'string' ? data.record_type.trim() : ''
+    if (recordType) {
+      return recordType.replace(/_/g, ' ')
+    }
+    return null
+  }
+  if (nodeType === 'ArticleMetadata') {
+    return getArticleMetadataPresetDisplayLabel({
+      prompt_preset: data.prompt_preset,
+      meta_type: data.meta_type,
+    })
+  }
+  return null
 }
 

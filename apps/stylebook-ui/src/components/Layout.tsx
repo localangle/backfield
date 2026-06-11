@@ -402,7 +402,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
               <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
                 {expanded ? (
                   <div className={sectionTitleClass}>
-                    <AgateProductMark className="size-4 text-[1.125rem]" />
+                    <AgateProductMark className="size-4 stroke-[1.75]" />
                     <span>Agate</span>
                   </div>
                 ) : (
@@ -415,7 +415,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
                     )}
                     onClick={() => expand()}
                   >
-                    <AgateProductMark className="size-5 text-[1.35rem]" />
+                    <AgateProductMark className="size-5 stroke-[1.75]" />
                   </button>
                 )}
 

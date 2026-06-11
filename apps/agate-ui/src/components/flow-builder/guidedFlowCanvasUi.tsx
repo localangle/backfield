@@ -1,5 +1,6 @@
 import { createContext, useContext, type MutableRefObject } from 'react'
 import type { Node } from 'reactflow'
+import type { AddNodeChooserAnchorRect } from '@/components/flow-builder/AddNodeChooser'
 
 /**
  * Callbacks held in a ref so that callers can swap them on every render
@@ -9,8 +10,8 @@ import type { Node } from 'reactflow'
  */
 export type GuidedFlowCanvasCallbacks = {
   onNodeClick?: (node: Node) => void
-  onAddNodeClick?: (parentNodeId: string, anchorRect: DOMRect) => void
-  onAddEdgeClick?: (sourceNodeId: string, targetNodeId: string, anchorRect: DOMRect) => void
+  onAddNodeClick?: (parentNodeId: string, anchorRect: AddNodeChooserAnchorRect) => void
+  onAddEdgeClick?: (sourceNodeId: string, targetNodeId: string, anchorRect: AddNodeChooserAnchorRect) => void
   onDeleteNodeClick?: (nodeId: string) => void
   onSwapInputBookend?: () => void
   onSwapOutputBookend?: () => void

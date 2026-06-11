@@ -8,7 +8,7 @@ export interface ShellProductBrandProps {
   to: string
   /** Primary product name — large title (e.g. Agate, Stylebook). */
   productTitle: string
-  /** Optional mark before the title (e.g. Agate ⊞, Stylebook book icon). */
+  /** Optional mark before the title (e.g. Agate boxes icon, Stylebook book icon). */
   productMark?: ReactNode
   /** Platform line under the title (e.g. Backfield Platform). */
   platformSubtitle: string

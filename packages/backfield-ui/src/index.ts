@@ -1,4 +1,4 @@
-export { AGATE_PRODUCT_MARK } from "./agateBrand"
+export { AGATE_BOXES_PATHS } from "./agateBrand"
 export { AgateProductMark } from "./AgateProductMark"
 export { STYLEBOOK_BOOK_OPEN_PATHS } from "./stylebookBrand"
 export { StylebookProductMark } from "./StylebookProductMark"
