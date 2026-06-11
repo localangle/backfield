@@ -219,7 +219,9 @@ function sameTypeChainFailureReason(meta: NodeMetadataEntry): string {
   return `${label} cannot follow another ${label} step.`
 }
 
-export const SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES = new Set(['ArticleMetadata'])
+// Each instance classifies/extracts a different dimension or record type, so
+// serial chains of the same step are intentional.
+export const SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES = new Set(['ArticleMetadata', 'CustomExtract'])
 
 function blocksSameTypeChain(
   candidateType: string,

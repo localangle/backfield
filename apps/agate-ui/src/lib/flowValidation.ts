@@ -241,6 +241,32 @@ export function validateNoOrphans(graph: FlowGraph): FlowValidationResult {
   }
 }
 
+export function validateCustomExtractRecordTypes(graph: FlowGraph): FlowValidationResult {
+  const seen = new Map<string, number>()
+  for (const node of graph.nodes) {
+    if (node.type !== 'CustomExtract') continue
+    const recordType = String(node.data?.record_type ?? '').trim()
+    if (!recordType) continue
+    seen.set(recordType, (seen.get(recordType) ?? 0) + 1)
+  }
+
+  const duplicates = [...seen.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([recordType]) => recordType)
+  if (duplicates.length === 0) {
+    return { ok: true }
+  }
+
+  return {
+    ok: false,
+    title: 'Custom Extract steps overlap',
+    description: `More than one Custom Extract step uses the same record type (${duplicates.join(
+      ', ',
+    )}), so one step's records would overwrite the other's. Give each step its own record type.`,
+    severity: 'warning',
+  }
+}
+
 export function validateInputConnections(graph: FlowGraph): FlowValidationResult {
   const nodesWithIncoming = new Set(graph.edges.map((e) => e.target))
   const nodesWithoutInput = graph.nodes.filter((n) => {
@@ -268,6 +294,7 @@ export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
     validateFlowInputOutputRules,
     validateNoOrphans,
     validateInputConnections,
+    validateCustomExtractRecordTypes,
     (g) => validateS3InputBuckets(g.nodes),
   ]
 

@@ -83,6 +83,24 @@ describe('getCompatibleNextNodes', () => {
     expect(result.enabled.map((e) => e.type)).toContain('ArticleMetadata')
   })
 
+  it('enables Custom Extract from Text Input when generative models are available', () => {
+    const result = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('CustomExtract')
+    expect(resolveEdgeHandles('TextInput', 'CustomExtract')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'text',
+    })
+  })
+
+  it('allows serial Custom Extract record-type chains', () => {
+    const result = getCompatibleNextNodes('CustomExtract', ['TextInput', 'CustomExtract'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('CustomExtract')
+  })
+
   it('disables Article Metadata when no generative models are enabled for the project', () => {
     const withoutModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
       projectModelCapabilities: { generative: false },

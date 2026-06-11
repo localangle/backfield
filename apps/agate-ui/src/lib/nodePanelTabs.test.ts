@@ -66,4 +66,8 @@ describe('getNodePanelTabs', () => {
   it('splits article metadata configuration across settings, prompt, output, and info', () => {
     expect(getNodePanelTabs('ArticleMetadata')).toEqual(['settings', 'prompts', 'outputs', 'info'])
   })
+
+  it('splits custom extract configuration across settings, prompt, output, and info', () => {
+    expect(getNodePanelTabs('CustomExtract')).toEqual(['settings', 'prompts', 'outputs', 'info'])
+  })
 })
