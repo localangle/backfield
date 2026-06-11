@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from agate_runtime.upstream_input import flatten_upstream_inputs
+
 
 def resolve_image_id(image_obj: dict[str, Any]) -> str:
     """Stable substrate image key (matches worker ``_sync_images``)."""
@@ -72,15 +74,7 @@ def _extract_images_recursive(
 
 
 def flatten_input(input_dict: dict[str, Any]) -> dict[str, Any]:
-    flattened: dict[str, Any] = {}
-    for key, value in input_dict.items():
-        if isinstance(value, dict) and (key.startswith("node-") or key.isdigit()):
-            flattened.update(value)
-        elif isinstance(value, dict):
-            flattened.update(value)
-        else:
-            flattened[key] = value
-    return flattened
+    return flatten_upstream_inputs(input_dict)
 
 
 def extract_images(input_dict: dict[str, Any]) -> list[dict[str, Any]]:

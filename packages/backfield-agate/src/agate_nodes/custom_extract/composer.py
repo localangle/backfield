@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agate_runtime.upstream_input import flatten_upstream_inputs
+
 from agate_nodes.custom_extract.schema import CustomFieldSpec, CustomRecordSchema
 
 _FIELD_TYPE_PROMPT_HINTS: dict[str, str] = {
@@ -16,31 +18,8 @@ _FIELD_TYPE_PROMPT_HINTS: dict[str, str] = {
 }
 
 
-def _assign_flattened(flattened: dict[str, Any], key: str, value: Any) -> None:
-    """Assign one key, unioning ``custom_records`` record types instead of clobbering."""
-    if (
-        key == "custom_records"
-        and isinstance(value, dict)
-        and isinstance(flattened.get(key), dict)
-    ):
-        flattened[key] = {**flattened[key], **value}
-    else:
-        flattened[key] = value
-
-
 def flatten_input(input_dict: dict[str, Any]) -> dict[str, Any]:
-    flattened: dict[str, Any] = {}
-    for key, value in input_dict.items():
-        if key == "custom_records" and isinstance(value, dict):
-            # Upstream record sets stay keyed under custom_records (never spread).
-            _assign_flattened(flattened, key, value)
-        elif isinstance(value, dict):
-            # Namespaced upstream payloads (node-N keys) and other dict values flatten.
-            for inner_key, inner_value in value.items():
-                _assign_flattened(flattened, inner_key, inner_value)
-        else:
-            flattened[key] = value
-    return flattened
+    return flatten_upstream_inputs(input_dict)
 
 
 def resolve_text(flattened: dict[str, Any]) -> str:

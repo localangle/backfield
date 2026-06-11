@@ -1,4 +1,8 @@
-import { stripJsonInputEditorMarkers } from '@/lib/jsonInputValidation'
+import {
+  isJsonInputInvalidNodeData,
+  isValidJsonInputData,
+  stripJsonInputEditorMarkers,
+} from '@/lib/jsonInputValidation'
 import { resolvedStylebookId } from '@/lib/nodePanelAiModel'
 import { isValidS3BucketName, normalizeS3BucketName, normalizeS3FolderPath, normalizeS3MaxFilesInput, S3_DEFAULT_MAX_FILES, s3BucketFieldError } from '@/lib/s3InputValidation'
 import { nodeMetadata } from '@/nodes/registry'
@@ -85,6 +89,31 @@ export function validateS3InputBuckets(nodes: FlowGraphNode[]): FlowValidationRe
     description: s3BucketFieldError(bucket) ?? 'Fix the S3 bucket name before saving.',
     severity: 'error',
   }
+}
+
+export function validateJsonInputNodes(nodes: FlowGraphNode[]): FlowValidationResult {
+  for (const node of nodes) {
+    if (node.type !== 'JSONInput') continue
+    if (isJsonInputInvalidNodeData(node.data)) {
+      return {
+        ok: false,
+        title: 'Invalid JSON input',
+        description:
+          'Fix the JSON in your content source step before saving. It must be valid JSON with a string "text" field.',
+        severity: 'error',
+      }
+    }
+    if (!isValidJsonInputData(node.data)) {
+      return {
+        ok: false,
+        title: 'Invalid JSON input',
+        description:
+          'Your content source JSON must be an object with a string "text" field.',
+        severity: 'error',
+      }
+    }
+  }
+  return { ok: true }
 }
 
 export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown> {
@@ -295,6 +324,7 @@ export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
     validateNoOrphans,
     validateInputConnections,
     validateCustomExtractRecordTypes,
+    (g) => validateJsonInputNodes(g.nodes),
     (g) => validateS3InputBuckets(g.nodes),
   ]
 

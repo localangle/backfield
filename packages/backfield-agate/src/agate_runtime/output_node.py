@@ -7,6 +7,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from agate_runtime.upstream_input import (
+    expand_gathered_payload as _expand_gathered_payload,
+    merge_upstream_payload as _merge_upstream_payload,
+)
 
 PREFERRED_KEY_ORDER = [
     "publication",
@@ -25,23 +29,6 @@ class OutputParams(BaseModel):
     include: list[str] | None = None
 
 
-def _merge_upstream_payload(merged: dict[str, Any], payload: dict[str, Any]) -> None:
-    """Shallow merge one upstream payload, deep-merging ``custom_records``.
-
-    Custom Extract branches share the ``custom_records`` key (a dict keyed by record
-    type), so parallel branches must union record types instead of clobbering.
-    """
-    for key, value in payload.items():
-        if (
-            key == "custom_records"
-            and isinstance(value, dict)
-            and isinstance(merged.get(key), dict)
-        ):
-            merged[key] = {**merged[key], **value}
-        else:
-            merged[key] = value
-
-
 def _merge_namespaced_upstream_inputs_for_dboutput(inputs: dict[str, Any]) -> dict[str, Any]:
     """Shallow-merge upstream node outputs keyed by upstream node id (DBOutput wiring)."""
 
@@ -50,20 +37,6 @@ def _merge_namespaced_upstream_inputs_for_dboutput(inputs: dict[str, Any]) -> di
         if isinstance(payload, dict):
             _merge_upstream_payload(merged, payload)
     return _expand_gathered_payload(merged)
-
-
-def _expand_gathered_payload(merged: dict[str, Any]) -> dict[str, Any]:
-    """Hoist ``gathered`` branch payloads for OutputConsolidator / DBOutput."""
-    if not isinstance(merged, dict):
-        return merged
-    gathered = merged.get("gathered")
-    if not isinstance(gathered, dict):
-        return merged
-    expanded = {key: value for key, value in merged.items() if key != "gathered"}
-    for payload in gathered.values():
-        if isinstance(payload, dict):
-            _merge_upstream_payload(expanded, payload)
-    return expanded
 
 
 def consolidated_body_from_dboutput(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:

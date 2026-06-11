@@ -56,6 +56,7 @@ import {
   STEP_CHOOSER_COPY,
   type FlowBuilderStep,
 } from '@/lib/flowBuilderSteps'
+import { isJsonInputInvalidNodeData } from '@/lib/jsonInputValidation'
 import { getCompatibleInsertNodes, getCompatibleNextNodes } from '@/lib/nodeCompatibility'
 import { getGuidedFlowCapabilities } from '@/lib/guidedFlowCapabilities'
 import { captureGuidedFlowSnapshot, type GuidedFlowSnapshot } from '@/lib/guidedFlowSnapshot'
@@ -198,6 +199,8 @@ export type GuidedFlowBuilderHandle = {
   restoreSnapshot: () => void
   /** Sync description edited in an external header (RunGraph with hideHeader). */
   setGraphDescription: (description: string) => void
+  /** Sync title edited in an external header (RunGraph with hideHeader). */
+  setGraphName: (name: string) => void
   save: (options?: { stayInEditMode?: boolean }) => Promise<boolean>
   /** Flush debounced input auto-save and persist the current flow spec (run variant). */
   flushRunInputs: () => Promise<boolean>
@@ -826,6 +829,17 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     }
     const saveModel = buildSaveModel(inputNode, outputNode, scaffoldModel)
     const draftSpec = modelToGraphSpec(saveModel)
+    const validation = validateGraphForSave({
+      nodes: draftSpec.nodes.map((node) => ({
+        id: node.id,
+        type: node.type,
+        data: node.params,
+      })),
+      edges: draftSpec.edges,
+    })
+    if (!validation.ok) {
+      return
+    }
     const nameToSave = resolveGraphNameForSave()
     setGraphName(nameToSave)
     await updateGraph(existingGraphId, {
@@ -1301,6 +1315,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       setGraphDescription: (description: string) => {
         setGraphDescription(description)
       },
+      setGraphName: (name: string) => {
+        graphNameRef.current = name
+        setGraphName(name)
+      },
       save: (options) => handleSave(options),
       flushRunInputs,
       hasNodeType: (type: string) => {
@@ -1584,6 +1602,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const showCreateCancel = variant === 'create' && !readOnly
   const selectedPanelHasChanges = selectedNodeId != null && dirtyPanelNodeIds.has(selectedNodeId)
   const selectedPanelWasSaved = selectedNodeId != null && savedPanelNodeIds.has(selectedNodeId)
+  const selectedJsonInputInvalid =
+    selectedNode?.type === 'JSONInput' &&
+    isJsonInputInvalidNodeData(selectedNode.data as Record<string, unknown>)
 
   const rootClassName = hideHeader
     ? `flex min-h-0 flex-1 flex-col ${className ?? ''}`
@@ -1840,12 +1861,14 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             }
             running={running}
             saving={saving}
-            canSave={canSavePanelChanges({
-              activeStep,
-              inputNode,
-              outputNode,
-              hasChanges: selectedPanelHasChanges,
-            })}
+            canSave={
+              canSavePanelChanges({
+                activeStep,
+                inputNode,
+                outputNode,
+                hasChanges: selectedPanelHasChanges,
+              }) && !selectedJsonInputInvalid
+            }
             saved={selectedPanelWasSaved}
             currentRun={currentRun}
             nodeOutputLookupSpec={nodeOutputLookupSpec}

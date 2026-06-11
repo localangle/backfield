@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from agate_runtime.upstream_input import flatten_upstream_inputs
 from backfield_ai.embeddings import EmbeddingConfigurationError, embed_texts_for_model_config
 from sqlmodel import Session
 
@@ -12,15 +13,7 @@ from agate_nodes.embed_text.composer import compose_article_embed_text
 
 
 def _flatten_input(input_dict: dict[str, Any]) -> dict[str, Any]:
-    flattened: dict[str, Any] = {}
-    for key, value in input_dict.items():
-        if isinstance(value, dict) and (key.startswith("node-") or key.isdigit()):
-            flattened.update(value)
-        elif isinstance(value, dict):
-            flattened.update(value)
-        else:
-            flattened[key] = value
-    return flattened
+    return flatten_upstream_inputs(input_dict)
 
 
 def _resolve_model_config_id(params: dict[str, Any]) -> str:

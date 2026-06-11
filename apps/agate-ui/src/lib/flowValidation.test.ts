@@ -6,10 +6,12 @@ import {
   validateFlowInputOutputRules,
   validateGraphForSave,
   validateInputConnections,
+  validateJsonInputNodes,
   validateNoOrphans,
   validateSingleBookends,
   type FlowGraph,
 } from './flowValidation'
+import { jsonInputInvalidNodeData } from './jsonInputValidation'
 
 function graph(overrides: Partial<FlowGraph> & Pick<FlowGraph, 'nodes'>): FlowGraph {
   return {
@@ -199,6 +201,16 @@ describe('paramsForGraphSave', () => {
       }).bucket,
     ).toBe('my-bucket')
   })
+
+  it('strips JSON input invalid marker before save', () => {
+    expect(
+      paramsForGraphSave({
+        id: 'json',
+        type: 'JSONInput',
+        data: jsonInputInvalidNodeData({ text: 'hello' }),
+      }),
+    ).toEqual({ text: 'hello' })
+  })
 })
 
 describe('sanitizeNodeStylebookRef', () => {
@@ -296,5 +308,36 @@ describe('validateGraphForSave', () => {
       }),
     )
     expect(result.ok).toBe(true)
+  })
+
+  it('fails when JSON input has an invalid editor marker', () => {
+    const result = validateGraphForSave(
+      graph({
+        nodes: [
+          {
+            id: 'json',
+            type: 'JSONInput',
+            data: jsonInputInvalidNodeData({ text: 'hello' }),
+          },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [{ source: 'json', target: 'out' }],
+      }),
+    )
+    expect(result).toMatchObject({ ok: false, severity: 'error', title: 'Invalid JSON input' })
+  })
+})
+
+describe('validateJsonInputNodes', () => {
+  it('accepts valid JSON input params', () => {
+    expect(
+      validateJsonInputNodes([{ id: 'json', type: 'JSONInput', data: { text: '' } }]).ok,
+    ).toBe(true)
+  })
+
+  it('rejects missing text field', () => {
+    expect(
+      validateJsonInputNodes([{ id: 'json', type: 'JSONInput', data: { headline: 'Hi' } }]),
+    ).toMatchObject({ ok: false })
   })
 })

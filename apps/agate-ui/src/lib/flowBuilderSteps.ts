@@ -1,4 +1,4 @@
-import { isValidJsonInputData } from '@/lib/jsonInputValidation'
+import { isJsonInputInvalidNodeData, isValidJsonInputData } from '@/lib/jsonInputValidation'
 import { isValidS3BucketName, s3BucketFieldError } from '@/lib/s3InputValidation'
 
 export type FlowBuilderStep = 'input' | 'output' | 'scaffold'
@@ -63,6 +63,9 @@ export function bookendContinueHint(node: BookendNodeLike): string | null {
     return s3BucketFieldError(bucket) ?? 'Enter the S3 bucket name before continuing.'
   }
   if (node.type === 'JSONInput' && !canContinueBookendNode(node)) {
+    if (isJsonInputInvalidNodeData(node.data)) {
+      return 'Fix the JSON syntax before continuing.'
+    }
     return 'Add valid JSON with a "text" field before continuing.'
   }
   return null

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isValidJsonInputData,
   jsonInputInvalidNodeData,
+  markJsonInputNodeDataInvalid,
   parseJsonInputEditorText,
 } from './jsonInputValidation'
 
@@ -26,5 +27,14 @@ describe('jsonInputValidation', () => {
 
   it('treats invalid-editor marker as not continuable', () => {
     expect(isValidJsonInputData(jsonInputInvalidNodeData())).toBe(false)
+    expect(isValidJsonInputData(jsonInputInvalidNodeData({ text: 'hello' }))).toBe(false)
+  })
+
+  it('preserves prior fields when marking invalid', () => {
+    expect(markJsonInputNodeDataInvalid({ text: 'hello', headline: 'Hi' })).toEqual({
+      text: 'hello',
+      headline: 'Hi',
+      __jsonInputInvalid: true,
+    })
   })
 })

@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from agate_runtime.context import AgateEnvContext
+from agate_runtime.upstream_input import flatten_upstream_inputs
 from agate_utils.llm import call_llm
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -110,16 +111,7 @@ class OrganizationExtractNode:
         return prompt.replace(esc_open, "{{").replace(esc_close, "}}")
 
     def _flatten_input(self, input_dict: dict[str, Any]) -> dict[str, Any]:
-        flattened: dict[str, Any] = {}
-        for key, value in input_dict.items():
-            is_node_key = key.startswith("node-") and len(key) > 5 and key[5:].isdigit()
-            if is_node_key and isinstance(value, dict):
-                flattened.update(value)
-            elif isinstance(value, dict):
-                flattened.update(value)
-            else:
-                flattened[key] = value
-        return flattened
+        return flatten_upstream_inputs(input_dict)
 
     def _resolve_text(self, input_dict: dict[str, Any], flattened: dict[str, Any]) -> str:
         text = flattened.get("text")

@@ -24,7 +24,8 @@ import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  jsonInputInvalidNodeData,
+  JSON_INPUT_INVALID_MARKER,
+  markJsonInputNodeDataInvalid,
   parseJsonInputEditorText,
 } from '@/lib/jsonInputValidation'
 import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
@@ -52,6 +53,7 @@ export default function JSONInputPanel({
     try {
       const base = { ...(node.data || {}), text: (node.data?.text as string) ?? '' }
       delete (base as { onChange?: unknown }).onChange
+      delete base[JSON_INPUT_INVALID_MARKER]
       setJsonText(JSON.stringify(base, null, 2))
       setJsonError('')
     } catch {
@@ -67,7 +69,11 @@ export default function JSONInputPanel({
       setJsonError(result.error)
       if (setNodes) {
         setNodes((nds: any[]) =>
-          nds.map((n: any) => (n.id === node.id ? { ...n, data: jsonInputInvalidNodeData() } : n)),
+          nds.map((n: any) =>
+            n.id === node.id
+              ? { ...n, data: markJsonInputNodeDataInvalid(n.data as Record<string, unknown>) }
+              : n,
+          ),
         )
       }
       return

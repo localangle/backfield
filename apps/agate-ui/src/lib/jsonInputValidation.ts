@@ -1,8 +1,16 @@
 /** Set on node data while the JSON editor content fails validation (not persisted on save). */
 export const JSON_INPUT_INVALID_MARKER = '__jsonInputInvalid'
 
-export function jsonInputInvalidNodeData(): Record<string, unknown> {
-  return { [JSON_INPUT_INVALID_MARKER]: true }
+export function jsonInputInvalidNodeData(
+  existing?: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...(existing ?? {}), [JSON_INPUT_INVALID_MARKER]: true }
+}
+
+export function markJsonInputNodeDataInvalid(
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  return jsonInputInvalidNodeData(data)
 }
 
 export function isJsonInputInvalidNodeData(data: unknown): boolean {

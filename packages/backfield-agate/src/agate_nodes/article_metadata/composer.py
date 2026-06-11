@@ -7,22 +7,15 @@ import os
 import re
 from typing import Any
 
+from agate_runtime.upstream_input import flatten_upstream_inputs
+
 from agate_nodes.article_metadata.presets import MAX_MULTI_VALUE_COUNT, multi_value_list_key
 
 _CATEGORIES_HEADER = "## categories"
 
 
 def flatten_input(input_dict: dict[str, Any]) -> dict[str, Any]:
-    flattened: dict[str, Any] = {}
-    for key, value in input_dict.items():
-        is_node_key = key.startswith("node-") and len(key) > 5 and key[5:].isdigit()
-        if is_node_key and isinstance(value, dict):
-            flattened.update(value)
-        elif isinstance(value, dict):
-            flattened.update(value)
-        else:
-            flattened[key] = value
-    return flattened
+    return flatten_upstream_inputs(input_dict)
 
 
 def resolve_text(flattened: dict[str, Any]) -> str:
