@@ -203,13 +203,25 @@ People review uses the same overlay PATCH transport as locations. Overlay JSON m
 
 People overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.people`** (and **`consolidated.people`** when present).
 
+## Processed item custom records overlay (v1)
+
+Custom Extract review (processed-item **Custom** tab) uses the same overlay PATCH transport. Identity is payload-based: **record type + stable per-record `key`** assigned at parse time (no substrate ids). Overlay JSON may include **`custom_records.<record_type>`** with:
+
+- **`by_key`**: record key → `{ "fields": {…partial field patch…}, "mentions": […full replacement when present…] }` for model records.
+- **`removed_keys`**: hide model records by key (reviewer-added rows are dropped from `user_added` instead).
+- **`user_added`**: reviewer-added records with keys **`user_record:*`**; carry **`source: "review"`** provenance and may have zero mentions (the mention-grounding requirement applies to model records only).
+
+Merge lives in `api/processed_item/custom_records_merge.py` (mirrored client-side by `lib/review/entities/custom/customRecordsOverlay.ts`). Edits apply to every **`custom_records`** block in reviewed output (node payloads and **`consolidated`**); record types without overlay content pass through untouched.
+
+**Substrate re-persist:** when an overlay PATCH carries custom-record edits and the item resolves to a substrate article, the same request re-persists the reviewed **`custom_records`** block through `persist_custom_records_after_db_output` with **`replace`** policy (`source_run_id` = run id), so `substrate_custom_record` rows match the reviewed state. Items without a substrate article (for example JSON Output flows) save the overlay only.
+
 ## Reviewed output (v1)
 
 When overlay PATCH carries review content (location or people patches, user-added rows, removed anchors, or **`article`** field edits), Agate API **materializes** a full node-output document into **`agate_processed_item.reviewed_output_json`** on the same request. **`GET …/items/{item_id}`** and successful overlay PATCH responses include **`reviewed_output`** (parsed JSON) when present; otherwise the field is **`null`** and clients use **`output`** only.
 
-- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket; people review updates **`stylebook_output.people`** (and **`consolidated.people`** when present). **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
+- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket; people review updates **`stylebook_output.people`** (and **`consolidated.people`** when present); custom-record review updates every **`custom_records`** block. **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
 - **Lifecycle:** Cleared with **`overlay_json`** on item rerun. Not written when overlay has no review content (for example metadata-only keys with no location or article edits).
-- **Non-effects:** Does not update **`result_json`**, geocode cache, substrate tables, or Stylebook canonicals. DBOutput and worker execution continue to read immutable model output unless product later adds an explicit persist-from-reviewed path.
+- **Non-effects:** Does not update **`result_json`**, geocode cache, or Stylebook canonicals. DBOutput and worker execution continue to read immutable model output. Exception: custom-record overlay edits re-persist **`substrate_custom_record`** rows on the same PATCH (see **Processed item custom records overlay (v1)**).
 
 ## Processed item article context (v1)
 

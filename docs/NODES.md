@@ -16,7 +16,7 @@ Branch implementation and review work by profile. Every node folder declares a p
 |---------|------|-------------------|-------------------|
 | **Input** | Ingress text, JSON, or S3 batch | `TextInput`, `JSONInput`, `S3Input` | None |
 | **Output** | Egress JSON or substrate persist | `Output`, `DBOutput` | `DBOutput` persists via worker; review only via downstream entity tabs |
-| **Extract** | LLM or rules extraction | `PlaceExtract`, `PersonExtract`, `OrganizationExtract` | **Canonical entity extract** → [`add-entity-type`](../.cursor/skills/add-entity-type/SKILL.md). Non-canonical extract stays here |
+| **Extract** | LLM or rules extraction | `PlaceExtract`, `PersonExtract`, `OrganizationExtract`, `CustomExtract` | **Canonical entity extract** → [`add-entity-type`](../.cursor/skills/add-entity-type/SKILL.md). Non-canonical extract stays here (`CustomExtract` has its own **Custom** review tab) |
 | **Enrich** | Transform or resolve upstream rows | `GeocodeAgent` | May **feed entity review** (e.g. Places tab) without a new canonical type |
 | **Embed** | Vector / semantic indexing | `EmbedText`, `EmbedImages` | Embed Text: Info tab status; Embed Images: **Images** review tab (read-only) |
 | **Other** | Flow control, gather, stats, format | `Gather` | Panel + JSON (Gather also shows Output tab preview) |
@@ -72,14 +72,14 @@ Substrate decisions to record in the PRD:
 
 ## Agate review tiers (non-entity nodes)
 
-Processed-item detail tabs today: `info`, `places`, `people`, `organizations`, `images`, `meta`, `json` (`apps/agate-ui/src/lib/review/content/detailTab.ts`). Dedicated editorial review exists for entity lanes only.
+Processed-item detail tabs today: `info`, `places`, `people`, `organizations`, `images`, `meta`, `custom`, `json` (`apps/agate-ui/src/lib/review/content/detailTab.ts`). Dedicated editorial review exists for entity lanes plus the **Custom** tab (Custom Extract records).
 
 | Tier | Use when | Work |
 |------|----------|------|
 | **None** | Diagnostic or pass-through | No review code |
 | **Panel + JSON** | Default for Enrich / Embed / Other | Node panel Output tab + item **JSON** tab |
 | **Feeds entity review** | Output merged into `places` / `people` / `organizations` | Document merge contract; may touch `agate-api` overlay / merge helpers and existing review lib — **no new tab** unless product requests |
-| **New review surface** | Human edits this node's rows in dedicated UI | Out of scope unless PRD explicitly requests |
+| **New review surface** | Human edits this node's rows in dedicated UI | Only with explicit PRD sign-off (existing example: **Custom Extract** → **Custom** tab with overlay edit verbs + substrate re-persist) |
 
 ## Checklist: net-new node
 
@@ -171,6 +171,7 @@ Each slice should be demoable on its own.
 
 - Follow LLM prompt layout in [`ENTITY_TYPES.md`](ENTITY_TYPES.md) → **Agate nodes** (`prompts/extract.md`, `{text}` last).
 - If extract rows should land in Stylebook substrate, stop — use **`add-entity-type`**.
+- **Custom Extract (`CustomExtract`)** — LLM extracts user-defined typed records (field schema declared on the node: string / number / boolean / date / string list) with grounding mentions; emits `custom_records.<record_type>` (label, schema snapshot, records with stable keys, `dropped_ungrounded` count) merged across serial chains, persisted by **DBOutput** to `substrate_custom_record` (replace per `(article, record_type)`). Processed-item **Custom** tab renders one table per record type and supports full editing — field values, record add/delete, mention attach/remove — via the overlay (`overlay.custom_records`); saving re-persists substrate rows. Smoke: `make smoke-custom-extract` (in-process, mocked LLM) or `make smoke-custom-extract-stack` (live stack; create a **Custom Extract starter** graph from `starter_custom_extract_flow_graph_spec()` or set `SMOKE_CUSTOM_EXTRACT_GRAPH_ID`).
 
 ### Enrich
 

@@ -2,7 +2,7 @@
 COMPOSE_FILE := infra/docker-compose.yml
 DC := docker compose -f $(COMPOSE_FILE)
 
-.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-parallel-graph smoke-parallel-graph-stack stylebook-ui-build
+.PHONY: help up up-detached down logs migrate reset-db clear-entity-data docker-prune-build docker-prune-system docker-prune-volumes docker-trim docker-trim-full test test-unit test-integration lint format bootstrap smoke smoke-auth smoke-agate-basic smoke-stylebook-basic smoke-agate-stylebook-handoff smoke-worker-async smoke-stylebook-editorial smoke-s3-batch smoke-stylebook-import-export smoke-fast smoke-runtime smoke-slower smoke-place-geocode smoke-place-geocode-stack smoke-people smoke-people-stack smoke-organizations smoke-organizations-stack smoke-article-metadata smoke-article-metadata-stack smoke-custom-extract smoke-custom-extract-stack smoke-parallel-graph smoke-parallel-graph-stack stylebook-ui-build
 
 help:
 	@echo "Backfield"
@@ -36,6 +36,8 @@ help:
 	@echo "  make smoke-organizations-stack - Same script --via-agate-api (Organizations starter)"
 	@echo "  make smoke-article-metadata - In-process ArticleMetadata + DBOutput demo (not CI)"
 	@echo "  make smoke-article-metadata-stack - Same script --via-agate-api (Article Metadata starter)"
+	@echo "  make smoke-custom-extract - In-process CustomExtract + DBOutput demo (not CI)"
+	@echo "  make smoke-custom-extract-stack - Same script --via-agate-api (Custom Extract starter)"
 	@echo "  make smoke-parallel-graph - Fan-out level parallelism timing (in-process, not CI)"
 	@echo "  make smoke-parallel-graph-stack - Same script --via-agate-api (level + multi-item timing)"
 	@echo "  make stylebook-ui-build - Typecheck and production-build apps/stylebook-ui"
@@ -165,6 +167,12 @@ smoke-article-metadata:
 
 smoke-article-metadata-stack:
 	uv run python -u tests/smoke/smoke_article_metadata_stack.py --via-agate-api
+
+smoke-custom-extract:
+	uv run python -u tests/smoke/smoke_custom_extract_stack.py
+
+smoke-custom-extract-stack:
+	uv run python -u tests/smoke/smoke_custom_extract_stack.py --via-agate-api
 
 smoke-parallel-graph:
 	uv run python -u tests/smoke/smoke_parallel_graph.py
