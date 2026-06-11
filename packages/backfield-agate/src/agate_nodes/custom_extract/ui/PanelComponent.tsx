@@ -48,6 +48,13 @@ function sanitizeSlugInput(raw: string): string {
     .replace(/^[_0-9]+/, '')
 }
 
+/** Record type still mirrors the set name (not manually overridden). */
+function isRecordTypeAutoFromLabel(label: string, recordType: string): boolean {
+  const slug = sanitizeSlugInput(label)
+  const trimmed = recordType.trim()
+  return trimmed === '' || trimmed === slug
+}
+
 function normalizeFieldType(raw: unknown): FieldTypeId {
   const value = typeof raw === 'string' ? raw.trim().toLowerCase() : 'string'
   const match = FIELD_TYPE_OPTIONS.find((option) => option.id === value)
@@ -340,7 +347,7 @@ export default function CustomExtractPanel({
                 onChange={(e) => {
                   const nextLabel = e.target.value
                   const updates: Record<string, unknown> = { label: nextLabel }
-                  if (!currentRecordType.trim()) {
+                  if (isRecordTypeAutoFromLabel(currentLabel, currentRecordType)) {
                     updates.record_type = sanitizeSlugInput(nextLabel)
                   }
                   patchNodeData(updates)
@@ -382,8 +389,9 @@ export default function CustomExtractPanel({
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">
-              A short id that keeps these records together across runs. Letters, numbers, and
-              underscores only — spaces become underscores as you type.
+              A short id that keeps these records together across runs. Fills in from the record set
+              name until you edit it. Letters, numbers, and underscores only — spaces become
+              underscores as you type.
             </p>
           </div>
 

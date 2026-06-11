@@ -18,6 +18,7 @@ import {
   type GraphCreate,
 } from '@/lib/api'
 import { flowDescriptionTableText } from '@/components/flow-builder/FlowDescriptionField'
+import { formatDate } from '@/lib/utils'
 import { Loader2, Copy, Trash2 } from 'lucide-react'
 
 interface ProjectDetailFlowsTabProps {

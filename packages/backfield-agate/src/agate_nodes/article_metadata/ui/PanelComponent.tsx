@@ -71,24 +71,6 @@ function hasExplicitModelChoice(data: Record<string, unknown>): boolean {
   return hasExplicitAiModelChoice(data, MODEL_KEYS)
 }
 
-function promptMatchesPresetDefault(
-  prompt: string,
-  presetId: string,
-  presetPrompts: PresetPromptMap,
-): boolean {
-  const trimmed = prompt.trim()
-  if (!trimmed) return true
-  const presetDefault = presetPrompts[presetId]
-  if (typeof presetDefault === 'string' && trimmed === presetDefault.trim()) {
-    return true
-  }
-  const bundledDefault =
-    typeof nodeMetadata.defaultParams?.prompt === 'string'
-      ? nodeMetadata.defaultParams.prompt.trim()
-      : ''
-  return presetId === ARTICLE_METADATA_DEFAULT_PRESET && bundledDefault !== '' && trimmed === bundledDefault
-}
-
 interface ArticleMetadataPanelProps {
   node: { id: string; data?: Record<string, unknown> }
   currentRun?: { node_outputs?: Record<string, unknown> }
@@ -232,10 +214,7 @@ export default function ArticleMetadataPanel({
     if (presetId !== 'custom') {
       updates.meta_type = ''
     }
-    const shouldReplacePrompt =
-      !currentPrompt.trim() ||
-      promptMatchesPresetDefault(currentPrompt, currentPreset, presetPrompts)
-    if (shouldReplacePrompt) {
+    if (presetId !== currentPreset) {
       const nextPrompt = presetPrompts[presetId]
       if (typeof nextPrompt === 'string') {
         updates.prompt = nextPrompt
