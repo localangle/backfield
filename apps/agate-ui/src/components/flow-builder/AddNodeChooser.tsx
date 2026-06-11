@@ -21,7 +21,6 @@ type Group = { category: string; heading: string; rows: FlatRow[] }
 
 const MENU_WIDTH_PX = 340
 const MENU_MAX_HEIGHT_PX = 360
-const MENU_PLACEMENT_HEIGHT_PX = 180
 const MENU_GAP_PX = 8
 
 /** Placeholder chooser blurbs until product copy replaces them. */
@@ -80,29 +79,55 @@ function groupRows(rows: FlatRow[]): Group[] {
     }))
 }
 
-function positionMenu(anchorRect: AddNodeChooserProps['anchorRect']): { left: number; top: number } {
-  if (!anchorRect || typeof window === 'undefined') return { left: 16, top: 16 }
+function computeMenuPosition(
+  anchorRect: NonNullable<AddNodeChooserProps['anchorRect']>,
+  viewport: { width: number; height: number },
+): { left: number; top: number } {
+  const viewportWidth = viewport.width
+  const viewportHeight = viewport.height
 
-  const opensRight = anchorRect.right + MENU_GAP_PX + MENU_WIDTH_PX <= window.innerWidth - MENU_GAP_PX
+  const opensRight =
+    anchorRect.right + MENU_GAP_PX + MENU_WIDTH_PX <= viewportWidth - MENU_GAP_PX
   const preferredLeft = opensRight
     ? anchorRect.right + MENU_GAP_PX
     : anchorRect.left - MENU_GAP_PX - MENU_WIDTH_PX
   const left = Math.min(
     Math.max(preferredLeft, MENU_GAP_PX),
-    Math.max(window.innerWidth - MENU_WIDTH_PX - MENU_GAP_PX, MENU_GAP_PX),
+    Math.max(viewportWidth - MENU_WIDTH_PX - MENU_GAP_PX, MENU_GAP_PX),
   )
-  const opensBelow =
-    anchorRect.bottom + MENU_GAP_PX + MENU_PLACEMENT_HEIGHT_PX <= window.innerHeight - MENU_GAP_PX
-  const preferredTop = opensBelow
-    ? anchorRect.bottom + MENU_GAP_PX
-    : anchorRect.top - MENU_GAP_PX - MENU_PLACEMENT_HEIGHT_PX
+
+  const spaceBelow = viewportHeight - MENU_GAP_PX - (anchorRect.bottom + MENU_GAP_PX)
+  const spaceAbove = anchorRect.top - MENU_GAP_PX - MENU_GAP_PX
+
+  let preferredTop: number
+  if (spaceBelow >= MENU_MAX_HEIGHT_PX) {
+    preferredTop = anchorRect.bottom + MENU_GAP_PX
+  } else if (spaceAbove >= MENU_MAX_HEIGHT_PX) {
+    preferredTop = anchorRect.top - MENU_GAP_PX - MENU_MAX_HEIGHT_PX
+  } else if (spaceBelow >= spaceAbove) {
+    preferredTop = anchorRect.bottom + MENU_GAP_PX
+  } else {
+    preferredTop = anchorRect.top - MENU_GAP_PX - MENU_MAX_HEIGHT_PX
+  }
+
   const top = Math.min(
     Math.max(preferredTop, MENU_GAP_PX),
-    Math.max(window.innerHeight - MENU_PLACEMENT_HEIGHT_PX - MENU_GAP_PX, MENU_GAP_PX),
+    Math.max(viewportHeight - MENU_MAX_HEIGHT_PX - MENU_GAP_PX, MENU_GAP_PX),
   )
 
   return { left, top }
 }
+
+function positionMenu(anchorRect: AddNodeChooserProps['anchorRect']): { left: number; top: number } {
+  if (!anchorRect || typeof window === 'undefined') return { left: 16, top: 16 }
+  return computeMenuPosition(anchorRect, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  })
+}
+
+/** @internal Exported for placement unit tests. */
+export { computeMenuPosition as positionAddNodeChooserMenu }
 
 export default function AddNodeChooser({
   open,

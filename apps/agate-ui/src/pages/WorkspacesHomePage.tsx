@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { Check, FolderOpen, Loader2, Pencil, X } from "lucide-react"
+import { FolderOpen, Loader2 } from "lucide-react"
 import { AddPlusCta } from "@/components/AddPlusCta"
+import { InlineNameEditor } from "@/components/InlineNameEditor"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -107,107 +108,20 @@ function WorkspaceHomeCard({
 function PublicationTitleRow() {
   const { organizationId, organizationName, isOrgAdmin, checkAuth } = useAuth()
   const display = organizationName ?? "Workspaces"
-  const [editingName, setEditingName] = useState(false)
-  const [nameDraft, setNameDraft] = useState(display)
-  const [savingName, setSavingName] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (!editingName) setNameDraft(display)
-  }, [display, editingName])
-
-  useEffect(() => {
-    if (editingName) inputRef.current?.focus()
-  }, [editingName])
-
-  const cancelNameEdit = () => {
-    setNameDraft(display)
-    setEditingName(false)
-  }
-
-  const saveName = async () => {
-    if (!organizationId) return
-    const next = nameDraft.trim()
-    if (!next || next === display) {
-      cancelNameEdit()
-      return
-    }
-    try {
-      setSavingName(true)
-      await patchOrganization(organizationId, { name: next })
-      setEditingName(false)
-      await checkAuth()
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSavingName(false)
-    }
-  }
-
-  if (!isOrgAdmin || organizationId == null) {
-    return <h1 className="text-2xl font-semibold tracking-tight">{display}</h1>
-  }
-
-  if (editingName) {
-    return (
-      <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
-        <Input
-          ref={inputRef}
-          value={nameDraft}
-          onChange={(e) => setNameDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void saveName()
-            if (e.key === "Escape") cancelNameEdit()
-          }}
-          disabled={savingName}
-          className="min-w-0 flex-1 max-w-xl text-2xl font-semibold h-auto py-2 px-3 tracking-tight"
-          aria-label="Publication name"
-        />
-        <Button
-          type="button"
-          size="icon"
-          variant="default"
-          className="shrink-0"
-          disabled={savingName || !nameDraft.trim()}
-          onClick={() => void saveName()}
-          aria-label="Save publication name"
-        >
-          <Check className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          className="shrink-0"
-          disabled={savingName}
-          onClick={cancelNameEdit}
-          aria-label="Cancel"
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-    )
-  }
 
   return (
-    <div className="inline-flex max-w-full min-h-[2.5rem] items-center gap-2">
-      <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-2xl font-semibold tracking-tight">
-        {display}
-      </h1>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="shrink-0 text-muted-foreground hover:text-foreground"
-        onClick={() => {
-          setNameDraft(display)
-          setEditingName(true)
-        }}
-        aria-label="Edit publication name"
-      >
-        <Pencil className="h-5 w-5" />
-      </Button>
-    </div>
+    <InlineNameEditor
+      value={display}
+      canEdit={isOrgAdmin && organizationId != null}
+      ariaLabel="Publication name"
+      editAriaLabel="Edit publication name"
+      saveAriaLabel="Save publication name"
+      onSave={async (next) => {
+        if (!organizationId) return
+        await patchOrganization(organizationId, { name: next })
+        await checkAuth()
+      }}
+    />
   )
 }
 
