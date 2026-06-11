@@ -1,6 +1,7 @@
 """Agate node implementations."""
 
 from agate_runtime.nodes.article_metadata import run_article_metadata
+from agate_runtime.nodes.custom_extract import run_custom_extract
 from agate_runtime.nodes.db_output import run_db_output
 from agate_runtime.nodes.embed_images import run_embed_images
 from agate_runtime.nodes.embed_text import run_embed_text
@@ -22,6 +23,7 @@ NODE_RUNNERS: dict[str, callable] = {
     "PersonExtract": run_person_extract,
     "OrganizationExtract": run_organization_extract,
     "ArticleMetadata": run_article_metadata,
+    "CustomExtract": run_custom_extract,
     "EmbedText": run_embed_text,
     "EmbedImages": run_embed_images,
     "Gather": run_gather,

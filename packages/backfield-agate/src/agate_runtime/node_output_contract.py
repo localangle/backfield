@@ -23,9 +23,14 @@ INPUT_NODE_TYPES: frozenset[str] = frozenset(
     }
 )
 
+# Nodes whose run JSON is the full payload: inputs (article source) and DBOutput
+# (consolidated persisted body + persist summaries).
+FULL_OUTPUT_NODE_TYPES: frozenset[str] = INPUT_NODE_TYPES | frozenset({"DBOutput"})
+
 # Explicit owned keys for run JSON. When unset, non-passthrough keys are kept.
 NODE_CONTRIBUTION_KEYS: dict[str, frozenset[str]] = {
     "ArticleMetadata": frozenset({"article_metadata"}),
+    "CustomExtract": frozenset({"custom_records"}),
     "EmbedImages": frozenset({"image_embeddings"}),
     "EmbedText": frozenset({"article_embedding"}),
     "PlaceExtract": frozenset({"locations"}),
@@ -38,7 +43,7 @@ NODE_CONTRIBUTION_KEYS: dict[str, frozenset[str]] = {
 
 
 def contribution_keys_for_node(node_type: str, output: dict[str, Any]) -> frozenset[str]:
-    if node_type in INPUT_NODE_TYPES:
+    if node_type in FULL_OUTPUT_NODE_TYPES:
         return frozenset(output.keys())
     explicit = NODE_CONTRIBUTION_KEYS.get(node_type)
     if explicit is not None:

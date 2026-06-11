@@ -30,6 +30,24 @@ def test_project_article_metadata_strips_article_passthrough() -> None:
     }
 
 
+def test_project_custom_extract_keeps_custom_records_only() -> None:
+    projected = project_node_contribution(
+        "CustomExtract",
+        {
+            "text": "Recipe body.",
+            "headline": "Best bread",
+            "custom_records": {
+                "ingredients": {"label": "Ingredients", "records": [], "dropped_ungrounded": 0}
+            },
+        },
+    )
+    assert projected == {
+        "custom_records": {
+            "ingredients": {"label": "Ingredients", "records": [], "dropped_ungrounded": 0}
+        }
+    }
+
+
 def test_project_embed_images_keeps_embeddings_only() -> None:
     projected = project_node_contribution(
         "EmbedImages",
@@ -39,6 +57,17 @@ def test_project_embed_images_keeps_embeddings_only() -> None:
         },
     )
     assert projected == {"image_embeddings": [{"id": "image:1", "embedding": [0.1, 0.2]}]}
+
+
+def test_project_dboutput_keeps_full_consolidated_payload() -> None:
+    output = {
+        "success": True,
+        "article_id": 7,
+        "headline": "Council vote",
+        "text": "Story body.",
+        "locations": [],
+    }
+    assert project_node_contribution("DBOutput", output) == output
 
 
 def test_project_gathered_branch_refs_uses_execution_order() -> None:

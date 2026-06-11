@@ -25,13 +25,30 @@ class OutputParams(BaseModel):
     include: list[str] | None = None
 
 
+def _merge_upstream_payload(merged: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Shallow merge one upstream payload, deep-merging ``custom_records``.
+
+    Custom Extract branches share the ``custom_records`` key (a dict keyed by record
+    type), so parallel branches must union record types instead of clobbering.
+    """
+    for key, value in payload.items():
+        if (
+            key == "custom_records"
+            and isinstance(value, dict)
+            and isinstance(merged.get(key), dict)
+        ):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+
+
 def _merge_namespaced_upstream_inputs_for_dboutput(inputs: dict[str, Any]) -> dict[str, Any]:
     """Shallow-merge upstream node outputs keyed by upstream node id (DBOutput wiring)."""
 
     merged: dict[str, Any] = {}
     for _upstream_id, payload in inputs.items():
         if isinstance(payload, dict):
-            merged.update(payload)
+            _merge_upstream_payload(merged, payload)
     return _expand_gathered_payload(merged)
 
 
@@ -45,7 +62,7 @@ def _expand_gathered_payload(merged: dict[str, Any]) -> dict[str, Any]:
     expanded = {key: value for key, value in merged.items() if key != "gathered"}
     for payload in gathered.values():
         if isinstance(payload, dict):
-            expanded.update(payload)
+            _merge_upstream_payload(expanded, payload)
     return expanded
 
 
