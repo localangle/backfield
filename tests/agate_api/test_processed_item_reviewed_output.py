@@ -242,6 +242,61 @@ def test_build_reviewed_output_passes_custom_records_through_untouched() -> None
     assert reviewed["json_output"]["consolidated"]["custom_records"] == custom_records
 
 
+def test_overlay_has_review_content_true_for_custom_records_edits() -> None:
+    assert overlay_has_review_content(
+        {"custom_records": {"ingredients": {"removed_keys": ["abc123"]}}}
+    )
+    assert not overlay_has_review_content({"custom_records": {}})
+
+
+def test_build_reviewed_output_applies_custom_records_overlay() -> None:
+    record_set = {
+        "label": "Ingredients",
+        "schema": [
+            {"name": "name", "label": "Name", "type": "string"},
+            {"name": "quantity", "label": "Quantity", "type": "string"},
+        ],
+        "records": [
+            {
+                "key": "abc123",
+                "fields": {"name": "Flour", "quantity": "2 cups"},
+                "mentions": [{"text": "two cups of flour", "quote": False}],
+                "confidence": 0.9,
+            },
+            {
+                "key": "def456",
+                "fields": {"name": "Salt", "quantity": "1 tsp"},
+                "mentions": [{"text": "a teaspoon of salt", "quote": False}],
+            },
+        ],
+        "dropped_ungrounded": 0,
+    }
+    output = {
+        "custom_extract": {"custom_records": {"ingredients": record_set}},
+        "json_output": {"consolidated": {"custom_records": {"ingredients": record_set}}},
+    }
+    overlay = {
+        "custom_records": {
+            "ingredients": {
+                "by_key": {"abc123": {"fields": {"quantity": "3 cups"}}},
+                "removed_keys": ["def456"],
+                "user_added": [
+                    {"key": "user_record:1", "fields": {"name": "Sugar", "quantity": "1 cup"}}
+                ],
+            }
+        }
+    }
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    for records in (
+        reviewed["custom_extract"]["custom_records"]["ingredients"]["records"],
+        reviewed["json_output"]["consolidated"]["custom_records"]["ingredients"]["records"],
+    ):
+        assert [record["key"] for record in records] == ["abc123", "user_record:1"]
+        assert records[0]["fields"]["quantity"] == "3 cups"
+        assert records[1]["source"] == "review"
+
+
 def test_build_reviewed_output_article_on_hoisted_stylebook_output() -> None:
     output = {
         "geocode_agent": {"places": {"areas": _empty_areas(), "points": [], "needs_review": []}},

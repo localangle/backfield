@@ -792,7 +792,13 @@ export default function ProcessedItemDetail() {
 
         <TabsContent value="custom" className="space-y-4">
           {item && !item.synthetic ? (
-            <ProcessedItemCustomRecordsSection item={item} />
+            <ProcessedItemCustomRecordsSection
+              runId={runId!}
+              item={item}
+              onItemUpdated={(next) => setItem({ ...next, synthetic: false })}
+              onVerificationDirtyChange={handleVerificationDirtyChange}
+              reviewLocked={reviewLocked}
+            />
           ) : (
             <Card>
               <CardContent className="py-10 text-center text-sm text-muted-foreground">

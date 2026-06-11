@@ -8,6 +8,10 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from api.processed_item.custom_records_merge import (
+    apply_custom_records_overlay_to_output,
+    custom_records_overlay_has_content,
+)
 from api.processed_item.entities.location.locations_merge import (
     _anchor_for_place_dict,
     _normalize_locations_overlay,
@@ -90,6 +94,8 @@ def overlay_has_review_content(overlay: dict[str, Any] | None) -> bool:
             if key in article:
                 return True
     if article_meta_overlay_has_content(overlay):
+        return True
+    if custom_records_overlay_has_content(overlay):
         return True
     return False
 
@@ -374,6 +380,8 @@ def build_reviewed_output(
     merged_article_meta = article_meta_review_rows_from_overlay(overlay)
     if merged_article_meta:
         apply_merged_article_meta_to_output(reviewed, merged_article_meta)
+
+    apply_custom_records_overlay_to_output(reviewed, overlay)
 
     return reviewed
 

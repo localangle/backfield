@@ -24,6 +24,8 @@ export type CustomRecordRow = {
   fields: Record<string, unknown>
   mentions: CustomRecordMentionDisplay[]
   confidence: number | null
+  /** Reviewer-added records carry review provenance; model records came from the flow. */
+  source: 'model' | 'review'
 }
 
 export type CustomRecordTableModel = {
@@ -116,6 +118,7 @@ function normalizeRecords(raw: unknown, recordType: string): CustomRecordRow[] {
       fields,
       mentions: normalizeMentions(entry.mentions),
       confidence: typeof entry.confidence === 'number' ? entry.confidence : null,
+      source: entry.source === 'review' ? 'review' : 'model',
     })
   }
   return records

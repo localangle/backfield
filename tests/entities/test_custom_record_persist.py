@@ -175,6 +175,58 @@ def test_sibling_record_types_are_untouched() -> None:
         assert len(_rows(session, article_id, "recipe_steps")) == 1
 
 
+def test_review_source_record_persists_without_mentions() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        article_id = _seed_article(session)
+        reviewer_record = {
+            "key": "user_record:1",
+            "fields": {"item": "sugar", "quantity": "1 cup"},
+            "mentions": [],
+            "source": "review",
+        }
+        summary = persist_custom_records_after_db_output(
+            session,
+            article_id=article_id,
+            consolidated={
+                "custom_records": {
+                    "ingredients": _record_set(_record("flour", "2 cups"), reviewer_record)
+                }
+            },
+            policy="replace",
+        )
+        session.commit()
+
+        assert summary["status"] == "succeeded"
+        assert summary["count"] == 2
+        rows = _rows(session, article_id, "ingredients")
+        assert len(rows) == 2
+        assert rows[1].fields_json["item"] == "sugar"
+        assert rows[1].mentions_json == []
+
+
+def test_model_record_without_mentions_is_still_dropped() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        article_id = _seed_article(session)
+        ungrounded = {
+            "key": "abc123",
+            "fields": {"item": "mystery", "quantity": "?"},
+            "mentions": [],
+        }
+        summary = persist_custom_records_after_db_output(
+            session,
+            article_id=article_id,
+            consolidated={"custom_records": {"ingredients": _record_set(ungrounded)}},
+            policy="replace",
+        )
+        session.commit()
+
+        assert summary["count"] == 0
+        assert _rows(session, article_id, "ingredients") == []
+        assert "requires at least one mention" in summary["record_types"][0]["warnings"][0]
+
+
 def test_add_only_skips_existing_record_type() -> None:
     engine = _engine()
     with Session(engine) as session:

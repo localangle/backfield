@@ -25,6 +25,10 @@ from api.processed_item import (
     enrich_merged_people_for_review,
     validate_processed_item_overlay_geometry,
 )
+from api.processed_item.custom_records_merge import (
+    custom_records_overlay_has_content,
+    reviewed_custom_records_block,
+)
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
     AgateGraph,
@@ -41,6 +45,9 @@ from backfield_entities.ingest.article_embedding.processed_item import (
 )
 from backfield_entities.ingest.article_metadata.processed_item import (
     build_processed_item_article_meta_rows,
+)
+from backfield_entities.ingest.custom_record.persist import (
+    persist_custom_records_after_db_output,
 )
 from backfield_entities.ingest.semantic_indexing.processed_item import (
     build_processed_item_semantic_indexing_summary,
@@ -1117,6 +1124,65 @@ def _parse_if_match_overlay_version(if_match: str | None) -> int:
     return version
 
 
+def _repersist_reviewed_custom_records(
+    session: Session,
+    item: AgateProcessedItem,
+    *,
+    project_id: int | None,
+    overlay_payload: dict[str, Any],
+    run_id: str,
+) -> None:
+    """Replace substrate custom-record rows with the reviewed state on overlay save.
+
+    Skipped when the overlay carries no custom-record edits or the item has no
+    substrate article (for example JSON Output flows that never persisted).
+    """
+    if not custom_records_overlay_has_content(overlay_payload):
+        return
+
+    output_obj: dict[str, Any] | None = None
+    if item.result_json:
+        try:
+            parsed = json.loads(item.result_json)
+            if isinstance(parsed, dict):
+                output_obj = parsed
+        except json.JSONDecodeError:
+            output_obj = None
+    if output_obj is None:
+        return
+
+    merged_block = reviewed_custom_records_block(output_obj, overlay_payload)
+    if not merged_block:
+        return
+
+    input_obj: dict[str, Any] = {}
+    if item.input_json:
+        try:
+            parsed_input = json.loads(item.input_json)
+            if isinstance(parsed_input, dict):
+                input_obj = parsed_input
+        except json.JSONDecodeError:
+            input_obj = {}
+
+    article_ctx = build_processed_item_article_context(
+        session,
+        project_id=project_id,
+        input_obj=input_obj,
+        result_obj=output_obj,
+    )
+    article_id = article_ctx.get("article_id")
+    if article_id is None:
+        return
+
+    persist_custom_records_after_db_output(
+        session,
+        article_id=int(article_id),
+        consolidated={"custom_records": merged_block},
+        policy="replace",
+        source_run_id=run_id,
+    )
+
+
 @router.patch("/{run_id}/items/{item_id}", response_model=ProcessedItemDetailOut)
 def patch_run_processed_item_overlay(
     run_id: str,
@@ -1157,6 +1223,14 @@ def patch_run_processed_item_overlay(
         ) from exc
 
     reviewed_json = _reviewed_output_json_for_storage(item.result_json, overlay_payload)
+
+    _repersist_reviewed_custom_records(
+        session,
+        item,
+        project_id=pid,
+        overlay_payload=overlay_payload,
+        run_id=run_id,
+    )
 
     stmt = (
         update(AgateProcessedItem)

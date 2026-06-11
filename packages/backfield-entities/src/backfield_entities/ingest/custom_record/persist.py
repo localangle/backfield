@@ -31,7 +31,11 @@ def _normalize_confidence(raw: Any) -> float | None:
 
 
 def _valid_records(record_set: dict[str, Any], *, record_type: str) -> tuple[list[dict], list[str]]:
-    """Filter the record list to rows with fields and at least one mention."""
+    """Filter the record list to rows with fields and at least one mention.
+
+    Reviewer-added records (``source == "review"``) are exempt from the mention
+    grounding requirement; model records must stay grounded.
+    """
     raw_records = record_set.get("records")
     if raw_records is None:
         return [], [f"custom_records[{record_type}] is missing a records list"]
@@ -51,7 +55,9 @@ def _valid_records(record_set: dict[str, Any], *, record_type: str) -> tuple[lis
             )
             continue
         mentions = raw.get("mentions")
-        if not isinstance(mentions, list) or not mentions:
+        if not isinstance(mentions, list):
+            mentions = [] if raw.get("source") == "review" else None
+        if mentions is None or (not mentions and raw.get("source") != "review"):
             warnings.append(
                 f"custom_records[{record_type}].records[{index}] requires at least one mention"
             )
@@ -109,7 +115,7 @@ def _persist_record_type(
                 record_type=record_type,
                 record_index=index,
                 fields_json=dict(raw["fields"]),
-                mentions_json=list(raw["mentions"]),
+                mentions_json=list(raw.get("mentions") or []),
                 field_schema_json=list(field_schema),
                 confidence=_normalize_confidence(raw.get("confidence")),
                 source_run_id=source_run_id,
