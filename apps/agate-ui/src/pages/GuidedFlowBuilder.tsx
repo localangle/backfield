@@ -235,6 +235,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [readOnly],
   )
   const [graphName, setGraphName] = useState('Untitled Flow')
+  const graphNameRef = useRef('Untitled Flow')
   const [graphDescription, setGraphDescription] = useState('')
   const [activeStep, setActiveStep] = useState<FlowBuilderStep>('input')
   const [completedSteps, setCompletedSteps] = useState<Set<FlowBuilderStep>>(new Set())
@@ -274,6 +275,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   } | null>(null)
 
   const completedStepsReadonly = completedSteps as ReadonlySet<FlowBuilderStep>
+
+  useEffect(() => {
+    graphNameRef.current = graphName
+  }, [graphName])
 
   useEffect(
     () => () => {
@@ -404,6 +409,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         syncNodeIdCounter(graph.spec.nodes)
         setExistingGraphId(graph.id)
         setGraphName(graph.name)
+        graphNameRef.current = graph.name
         setGraphDescription(graph.description ?? '')
         setResolvedFlowProject(project)
         setScaffoldModel(applyLayoutToModel(model))
@@ -471,24 +477,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     }
   }, [resolvedFlowProject?.workspace_id])
 
-  const handleFlowNameSave = useCallback(
-    async (nextName: string) => {
-      setGraphName(nextName)
-      if (!existingGraphId || !resolvedFlowProject) return
-      const current = await getGraph(existingGraphId)
-      await updateGraph(existingGraphId, {
-        name: nextName,
-        description: graphDescription.trim(),
-        project_id: resolvedFlowProject.id,
-        spec: {
-          ...current.spec,
-          name: nextName.toLowerCase().replace(/\s+/g, '_'),
-        },
-      })
-    },
-    [existingGraphId, graphDescription, resolvedFlowProject],
-  )
-
   const handleFlowDescriptionSave = useCallback(
     async (nextDescription: string) => {
       setGraphDescription(nextDescription)
@@ -503,6 +491,19 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     },
     [existingGraphId, resolvedFlowProject],
   )
+
+  const handleFlowNameChange = useCallback((nextName: string) => {
+    graphNameRef.current = nextName
+    setGraphName(nextName)
+  }, [])
+
+  const resolveGraphNameForSave = useCallback((): string => {
+    const trimmed = graphNameRef.current.trim()
+    const name = trimmed || 'Untitled Flow'
+    graphNameRef.current = name
+    setGraphName(name)
+    return name
+  }, [])
 
   const headerBreadcrumbItems = useMemo(
     () =>
@@ -825,12 +826,14 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     }
     const saveModel = buildSaveModel(inputNode, outputNode, scaffoldModel)
     const draftSpec = modelToGraphSpec(saveModel)
+    const nameToSave = resolveGraphNameForSave()
+    setGraphName(nameToSave)
     await updateGraph(existingGraphId, {
-      name: graphName,
+      name: nameToSave,
       description: graphDescription.trim(),
       project_id: resolvedFlowProject.id,
       spec: {
-        name: graphName.toLowerCase().replace(/\s+/g, '_'),
+        name: nameToSave.toLowerCase().replace(/\s+/g, '_'),
         nodes: draftSpec.nodes.map((node) => ({
           id: node.id,
           type: node.type,
@@ -847,7 +850,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   }, [
     graphDescription,
     existingGraphId,
-    graphName,
+    resolveGraphNameForSave,
     inputNode,
     isRunVariant,
     outputNode,
@@ -1143,12 +1146,15 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         }
       }
 
+      const nameToSave = resolveGraphNameForSave()
+      setGraphName(nameToSave)
+
       const graphSpec = {
-        name: graphName,
+        name: nameToSave,
         description: graphDescription.trim(),
         project_id: resolvedFlowProject.id,
         spec: {
-          name: graphName.toLowerCase().replace(/\s+/g, '_'),
+          name: nameToSave.toLowerCase().replace(/\s+/g, '_'),
           nodes: draftSpec.nodes.map((node) => {
             const baseParams = paramsForGraphSave({
               id: node.id,
@@ -1214,6 +1220,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     scaffoldModel,
     graphDescription,
     graphName,
+    resolveGraphNameForSave,
     existingGraphId,
     flowProjectLoading,
     resolvedFlowProject,
@@ -1281,6 +1288,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         const snap = snapshotRef.current
         if (!snap) return
         setGraphName(snap.graphName)
+        graphNameRef.current = snap.graphName
         setGraphDescription(snap.graphDescription)
         setActiveStep(snap.activeStep)
         setCompletedSteps(new Set(snap.completedSteps))
@@ -1624,7 +1632,12 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           <div className="min-w-0 flex-1 space-y-2">
             <PageBreadcrumbs items={headerBreadcrumbItems} />
             <div>
-              <FlowTitleRow name={graphName} onSave={handleFlowNameSave} canEdit={!readOnly} />
+              <FlowTitleRow
+                alwaysEditable
+                name={graphName}
+                onChange={handleFlowNameChange}
+                canEdit={!readOnly}
+              />
               <FlowDescriptionField
                 value={graphDescription}
                 onChange={setGraphDescription}

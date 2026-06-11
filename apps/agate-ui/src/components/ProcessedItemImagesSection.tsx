@@ -29,58 +29,56 @@ export default function ProcessedItemImagesSection({ item }: ProcessedItemImages
         <CardTitle>Images ({rows.length})</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {rows.map((row, index) => {
-            const src = imageEmbeddingSource(row)
-            const description =
-              typeof row.generated_text === 'string' ? row.generated_text.trim() : ''
-            const caption =
-              typeof row.caption === 'string' && row.caption.trim() ? row.caption.trim() : null
-            const modelDetail = formatImageEmbeddingModelDetail(row)
+        {rows.map((row, index) => {
+          const src = imageEmbeddingSource(row)
+          const description =
+            typeof row.generated_text === 'string' ? row.generated_text.trim() : ''
+          const caption =
+            typeof row.caption === 'string' && row.caption.trim() ? row.caption.trim() : null
+          const modelDetail = formatImageEmbeddingModelDetail(row)
 
-            return (
-              <Card key={`${src ?? 'image'}-${index}`} className="overflow-hidden">
-                <CardContent className="p-0">
-                  <div className="flex flex-col md:flex-row">
-                    {src ? (
-                      <div className="relative w-full md:w-1/2 aspect-video md:aspect-square bg-muted flex-shrink-0">
-                        <img
-                          src={src}
-                          alt={caption || `Image ${index + 1}`}
-                          className="w-full h-full object-cover"
-                          onError={(event) => {
-                            ;(event.target as HTMLImageElement).style.display = 'none'
-                          }}
-                        />
+          return (
+            <Card key={`${src ?? 'image'}-${index}`} className="overflow-hidden">
+              <CardContent className="p-0">
+                <div className="flex flex-col">
+                  {src ? (
+                    <div className="flex max-h-72 w-full items-center justify-center bg-muted px-4 py-3">
+                      <img
+                        src={src}
+                        alt={caption || `Image ${index + 1}`}
+                        className="max-h-64 max-w-full object-contain"
+                        onError={(event) => {
+                          ;(event.target as HTMLImageElement).style.display = 'none'
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="space-y-3 p-4">
+                    {caption ? (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">Caption</p>
+                        <p className="text-sm mt-1">{caption}</p>
                       </div>
                     ) : null}
-                    <div className="p-4 space-y-3 flex-1">
-                      {caption ? (
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground">Caption</p>
-                          <p className="text-sm mt-1">{caption}</p>
-                        </div>
-                      ) : null}
-                      {description ? (
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground">Description</p>
-                          <p className="text-sm mt-1 whitespace-pre-wrap break-words">
-                            {description}
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No description available.</p>
-                      )}
-                      {modelDetail ? (
-                        <p className="text-xs text-muted-foreground pt-2 border-t">{modelDetail}</p>
-                      ) : null}
-                    </div>
+                    {description ? (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">Description</p>
+                        <p className="text-sm mt-1 whitespace-pre-wrap break-words">
+                          {description}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No description available.</p>
+                    )}
+                    {modelDetail ? (
+                      <p className="text-xs text-muted-foreground pt-2 border-t">{modelDetail}</p>
+                    ) : null}
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </CardContent>
     </Card>
   )
