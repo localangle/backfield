@@ -14,6 +14,7 @@ from backfield_db.deadlock import is_postgres_deadlock
 from backfield_entities.connections.db_output import run_auto_connections_for_db_output
 from backfield_entities.ingest.article_embedding import persist_article_embedding_after_db_output
 from backfield_entities.ingest.article_metadata import persist_article_metadata_after_db_output
+from backfield_entities.ingest.custom_record import persist_custom_records_after_db_output
 from backfield_entities.ingest.db_output_settings import DbOutputCanonicalSettings
 from backfield_entities.ingest.image_embedding import persist_image_embeddings_after_db_output
 from backfield_entities.ingest.semantic_indexing.db_output import (
@@ -111,6 +112,14 @@ def _persist_db_output_in_session(
         policy=settings.reconciliation_policy,
     )
 
+    custom_records_persist = persist_custom_records_after_db_output(
+        session,
+        article_id=article_id,
+        consolidated=body,
+        policy=settings.reconciliation_policy,
+        source_run_id=run_id,
+    )
+
     article_text = str(body.get("text") or "")
     connections = run_auto_connections_for_db_output(
         session,
@@ -163,6 +172,7 @@ def _persist_db_output_in_session(
         "article_embedding_persist": article_embedding_persist,
         "article_metadata_persist": article_metadata_persist,
         "image_embeddings_persist": image_embeddings_persist,
+        "custom_records_persist": custom_records_persist,
         "connections": connections,
         "message": message,
     }

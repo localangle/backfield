@@ -80,11 +80,17 @@ def _has_article_metadata(consolidated: dict[str, Any]) -> bool:
     return isinstance(block, dict)
 
 
+def _has_custom_records(consolidated: dict[str, Any]) -> bool:
+    block = consolidated.get("custom_records")
+    return isinstance(block, dict) and bool(block)
+
+
 def _has_persistable_consolidated_content(consolidated: dict[str, Any]) -> bool:
     return (
         bool(_active_handler_keys(consolidated))
         or _has_article_embedding(consolidated)
         or _has_article_metadata(consolidated)
+        or _has_custom_records(consolidated)
     )
 
 
@@ -122,7 +128,7 @@ def persist_from_consolidated(
         raise RuntimeError(
             "DBOutput persistence requires consolidated['places'], consolidated['people'], "
             "consolidated['organizations'], consolidated['article_embedding'], "
-            "and/or consolidated['article_metadata']"
+            "consolidated['article_metadata'], and/or consolidated['custom_records']"
         )
 
     article = _upsert_article(
