@@ -10,9 +10,13 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 |------|--------|-------|
 | Keyword search | ✅ | `GET …/articles/search` |
 | Detail | ✅ | No full body; optional preview |
-| Mentions index | 🚧 | Optional v1 |
-| Metadata filters | ✅ | `meta_type`, `meta_category`, date range |
-| Geo filters | 🚧 | Phase 6 |
+| Detail counts embed | 🚧 | `include=counts` on detail |
+| Mentions (hub) | 🚧 | `GET …/articles/{id}/mentions`; `entity_type` filter |
+| Locations (hub) | 🚧 | `GET …/articles/{id}/locations` — map-oriented |
+| Images (hub) | 🚧 | `GET …/articles/{id}/images` |
+| Metadata filters | ✅ | On search: `meta_type`, `meta_category`, date range |
+| Geo filters (search) | 🚧 | Phase 6 |
+| Bundle (convenience) | ❌ | Not v1; optional later |
 
 ## Custom records
 

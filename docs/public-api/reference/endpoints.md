@@ -11,6 +11,18 @@ Design reference: [`../../PUBLIC_API.md`](../../PUBLIC_API.md)
 | **Local base URL** | `http://localhost:8004/public/v1` |
 | **Auth** | `Authorization: Bearer bfk_…` (project API key). Service token accepted for automation only. |
 
+## Planned (article hub — Phase 2b+)
+
+Sub-routes under `…/projects/{project_slug}/articles/{article_id}/…` (see [`PUBLIC_API.md`](../../PUBLIC_API.md) → **Article hub**):
+
+| Method | Path | Phase | Notes |
+|--------|------|-------|-------|
+| `GET` | `…/articles/{article_id}` | 2b | `include=counts` query param |
+| `GET` | `…/articles/{article_id}/mentions` | 2b | Unified mention index; `entity_type` filter |
+| `GET` | `…/articles/{article_id}/locations` | 2b | Geography / canonical + geometry |
+| `GET` | `…/articles/{article_id}/images` | 2b | `substrate_image` rows |
+| `GET` | `…/articles/{article_id}/custom-records` | 3 | Custom Extract rows |
+
 ---
 
 ## GET `/public/v1/projects/{project_slug}`

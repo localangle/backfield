@@ -135,34 +135,95 @@ Follow FastAPI conventions. Public routes use consistent JSON error bodies:
 
 ## Articles
 
-Articles are first-class public resources (`substrate_article` + related meta).
+Articles are first-class public resources (`substrate_article` + related meta). Related evidence (mentions, geography, custom records, images) uses an **article hub** layout: lean detail plus **paginated sub-routes** per slice—not a single mega-endpoint with combinatorial `include` flags.
 
-### Included fields (v1)
+### Article hub (organizing principle)
+
+| Layer | Pattern | Use when |
+|-------|---------|----------|
+| **Detail** | `GET …/articles/{article_id}` | Headline, metadata, preview; optional cheap **`include=counts`** |
+| **Sub-routes** | `GET …/articles/{article_id}/<slice>` | Heavy or paginated data: mentions, locations, custom records, images |
+| **Entity-centric** | `GET …/people/{id}/mentions`, etc. | Starting from a canonical, not a story |
+| **Bundle (later)** | `GET …/articles/{article_id}/bundle?sections=…` | Optional one-round-trip aggregator; not the primary contract |
+
+Do **not** use open-ended `?include=locations,people,custom_records,images` on detail—payload size, pagination, and caching differ too much per slice. Reserve `include` on detail for **small** embeds only (`counts`).
+
+### Detail (`GET …/articles/{article_id}`)
+
+**Core fields (v1):**
 
 - `id`, `headline`, `url`, `author`, `pub_date`, `external_source`, `external_id`, `entry_id`
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
-- Optional **`preview`**: short truncated snippet derived from stored text (fixed max length; not the full body)
-- Entity **counts or summaries** on detail when cheap to compute (optional v1)
+- Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
 
-### Excluded (v1)
+**Query:** `include_preview` (default `true`).
+
+**Optional embed:** `include=counts` adds cheap aggregates without loading evidence:
+
+```json
+{
+  "entity_counts": { "locations": 4, "people": 2, "organizations": 1 },
+  "custom_record_counts": { "contracts": 3 },
+  "image_count": 2
+}
+```
+
+### Excluded from detail
 
 - Full **`text`** / body
-- Internal provenance fields aimed at editorial UI (`source_run_id`, overlay state, etc.) unless needed for support contracts
+- Mention rows, geometry, custom record payloads, image payloads (use sub-routes)
+- Internal provenance (`source_run_id`, overlay state, …) unless a support contract requires them
 
-### Routes
+### Article sub-routes (primary pattern for rich context)
+
+All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Shared pagination: `limit`, `offset`. Returns **404** when the article is missing or not in the project.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `…/mentions` | Paginated mention evidence across entity types |
+| `GET` | `…/locations` | Geography-focused: places in the story with canonical + geometry where available |
+| `GET` | `…/custom-records` | Custom Extract rows for this article |
+| `GET` | `…/images` | Images attached to the article (`substrate_image`) |
+
+**`GET …/mentions`** — unified index for “who/what is mentioned?”
+
+- Query: `entity_type` optional filter (`location`, `person`, `organization`)
+- Each row: entity type, substrate/canonical ids, label, mention text/quote spans, optional canonical summary
+- Paginated; does not return full article body
+
+**`GET …/locations`** — map-oriented view (may overlap mentions but different shape)
+
+- Resolved Stylebook canonical fields where linked
+- Geometry / formatted address when present
+- Paginated list of location mentions or deduplicated places (exact dedupe rules documented at ship time)
+
+**`GET …/custom-records`** — see [Custom records](#custom-records) (same response shape as project search, scoped to one article).
+
+**`GET …/images`** — `image_id`, `url`, `caption` from `substrate_image`.
+
+**Future (non-primary):** `GET …/bundle?sections=locations,custom_records,images` composes the above for clients that need one round trip; implemented as a thin aggregator over sub-route query helpers.
+
+### Article list / search
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `…/articles/search` | Keyword search + metadata filters + date range |
 | `GET` | `…/articles/{article_id}` | Article detail |
-| `GET` | `…/articles/{article_id}/mentions` | Cross-entity mention index for one article (optional v1) |
 
-**Search parameters (articles):**
+**Search parameters:**
 
-- `q` — keyword (headline, optional preview index if added)
+- `q` — keyword (headline, URL)
 - `meta_type`, `meta_category` — filter on `substrate_article_meta`
 - `pub_date_from`, `pub_date_to` — ISO dates (`YYYY-MM-DD`)
 - Standard pagination
+- `include_preview` (default `false` on search)
+
+### Two valid entry points
+
+- **Story-first:** article detail → sub-routes (`/articles/{id}/mentions`, …)
+- **Entity-first:** canonical detail → `/people/{id}/mentions` (etc.)
+
+Sub-routes and entity-centric routes share query helpers in `backfield-entities`; only URL shape and default filters differ.
 
 ---
 
@@ -326,6 +387,19 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 
 **Validation:** `make lint`, `make test`, targeted integration tests
 
+### Phase 2b — Article hub slices
+
+**Goal:** Rich article context via sub-routes (not combinatorial `include` on detail).
+
+- [ ] `include=counts` on `GET …/articles/{article_id}`
+- [ ] `GET …/articles/{article_id}/mentions` — paginated; optional `entity_type`
+- [ ] `GET …/articles/{article_id}/locations` — geography / map-oriented shape
+- [ ] `GET …/articles/{article_id}/images`
+- [ ] Registry entries in **`endpoints.md`** for each shipped sub-route
+- [ ] Shared mention/location serializers in `backfield_entities.public.*`
+
+**Validation:** `make lint`, `make test`
+
 ### Phase 3 — Custom records
 
 **Goal:** Expose Custom Extract persistence publicly.
@@ -400,7 +474,9 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 
 | Resource | Keyword | Entity detail | Mentions | Connections | Semantic | Geo filters |
 |----------|---------|---------------|----------|-------------|----------|-------------|
-| Articles | ✅ | ✅ | Planned | — | — | Planned |
+| Articles (core) | ✅ | ✅ | — | — | — | — |
+| Articles (hub) | — | — | 🚧 | — | — | 🚧 |
+| Article images | — | 🚧 | — | — | — | — |
 | Custom records | Planned | Planned | — | — | — | — |
 | Locations | Planned | Planned | Planned | Planned | Planned | Planned |
 | People | Planned | Planned | Planned | Planned | Planned | Partial |
@@ -419,3 +495,5 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 5. **Custom record search:** which field types support substring vs exact match in v1.
 
 **Resolved (Phase 2):** article preview uses **280 characters** max (`PUBLIC_ARTICLE_PREVIEW_MAX_LEN` in `backfield_entities.public.articles`).
+
+**Resolved (article hub):** use **lean detail + paginated sub-routes** (`/mentions`, `/locations`, `/custom-records`, `/images`); optional `include=counts` on detail only; optional `/bundle` later—not combinatorial `include` for heavy slices.
