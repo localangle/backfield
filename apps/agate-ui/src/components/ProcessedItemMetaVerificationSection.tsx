@@ -39,7 +39,6 @@ export function ProcessedItemMetaVerificationSection({
 }: ProcessedItemMetaVerificationSectionProps) {
   const { showError, showMessage } = useAppMessage()
   const rows = useMemo(() => item.article_meta ?? [], [item.article_meta])
-  const hasPersistedRows = rows.some((row) => row.id > 0)
   const [editMode, setEditMode] = useState(false)
   const [drafts, setDrafts] = useState<Record<number, RowDraft>>({})
   const [savingId, setSavingId] = useState<number | null>(null)
@@ -99,8 +98,8 @@ export function ProcessedItemMetaVerificationSection({
     return (
       <Card>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          No article metadata tags were saved for this story yet. Run a flow with Article Metadata
-          and Backfield Output to classify this story.
+          No article metadata tags were assigned for this story yet. Run a flow with Article
+          Metadata to classify this story.
         </CardContent>
       </Card>
     )
@@ -113,7 +112,7 @@ export function ProcessedItemMetaVerificationSection({
           Tags assigned by your flow. You can adjust the category label; rationale and confidence
           stay as the model produced them.
         </p>
-        {!reviewLocked && hasPersistedRows ? (
+        {!reviewLocked ? (
           <Button
             type="button"
             variant={editMode ? 'secondary' : 'outline'}
@@ -140,7 +139,7 @@ export function ProcessedItemMetaVerificationSection({
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor={`meta-category-${row.id}`}>Category</Label>
-                {editMode && !reviewLocked && row.id > 0 ? (
+                {editMode && !reviewLocked ? (
                   <Input
                     id={`meta-category-${row.id}`}
                     value={draft?.category ?? row.category}
@@ -173,7 +172,7 @@ export function ProcessedItemMetaVerificationSection({
                 <p className="text-sm text-muted-foreground">{confidenceLabel(row.confidence)}</p>
               </div>
 
-              {editMode && !reviewLocked && rowDirty && row.id > 0 ? (
+              {editMode && !reviewLocked && rowDirty ? (
                 <Button
                   type="button"
                   size="sm"

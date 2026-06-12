@@ -213,6 +213,17 @@ Organizations review mirrors people: overlay JSON may include **`organizations.b
 - **`stale_organizations_overlay_entries`**: orphan **`by_anchor`** keys after rerun.
 
 Organizations overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.organizations`** (and **`consolidated.organizations`** when present). JSON Output–only flows read and write **`json_output.consolidated.organizations`** directly.
+
+## Processed item article metadata overlay (v1)
+
+Article Metadata review (processed-item **Meta** tab) uses overlay transport for **category** edits only (rationale and confidence stay model-produced). Overlay JSON may include **`article_meta.by_id`**: row id → `{ "category", "meta_type" }`.
+
+**GET additive fields:**
+
+- **`article_meta`**: array of `{ "id", "meta_type", "category", "rationale", "confidence", "prompt_preset", "source", … }`. Baseline is built from **`substrate_article_meta`** when the item has a persisted article; otherwise from **`article_metadata`** blocks in run output (including **`json_output.consolidated`**). Synthetic negative **`id`** values identify model-only rows.
+
+**PATCH:** **`PATCH /runs/{run_id}/items/{item_id}/article-meta/{meta_row_id}`** with body `{ "category" }` and **`If-Match`** = **`overlay_version`**. Persisted rows (**`id` > 0**) update substrate and overlay; JSON Output–only rows (**`id` < 0**) update overlay and **`reviewed_output`** only.
+
 ## Processed item custom records overlay (v1)
 
 Custom Extract review (processed-item **Custom** tab) uses the same overlay PATCH transport. Identity is payload-based: **record type + stable per-record `key`** assigned at parse time (no substrate ids). Overlay JSON may include **`custom_records.<record_type>`** with:
@@ -229,7 +240,7 @@ Merge lives in `api/processed_item/custom_records_merge.py` (mirrored client-sid
 
 When overlay PATCH carries review content (location or people patches, user-added rows, removed anchors, or **`article`** field edits), Agate API **materializes** a full node-output document into **`agate_processed_item.reviewed_output_json`** on the same request. **`GET …/items/{item_id}`** and successful overlay PATCH responses include **`reviewed_output`** (parsed JSON) when present; otherwise the field is **`null`** and clients use **`output`** only.
 
-- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket (or **`json_output.consolidated.places`** when no geocode node is present). People review updates **`stylebook_output.people`** or **`json_output.consolidated.people`**; organizations review updates **`stylebook_output.organizations`** or **`json_output.consolidated.organizations`**; custom-record review updates every **`custom_records`** block. **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
+- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket (or **`json_output.consolidated.places`** when no geocode node is present). People review updates **`stylebook_output.people`** or **`json_output.consolidated.people`**; organizations review updates **`stylebook_output.organizations`** or **`json_output.consolidated.organizations`**; article metadata review updates **`article_metadata`** blocks (including **`json_output.consolidated`**); custom-record review updates every **`custom_records`** block. **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
 - **Lifecycle:** Cleared with **`overlay_json`** on item rerun. Not written when overlay has no review content (for example metadata-only keys with no location or article edits).
 - **Non-effects:** Does not update **`result_json`**, geocode cache, or Stylebook canonicals. DBOutput and worker execution continue to read immutable model output. Exception: custom-record overlay edits re-persist **`substrate_custom_record`** rows on the same PATCH (see **Processed item custom records overlay (v1)**).
 

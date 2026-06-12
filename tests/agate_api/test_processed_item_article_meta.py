@@ -186,3 +186,76 @@ def test_patch_article_meta_category_updates_substrate_and_overlay(tmp_path, mon
             assert row.category == "Politics"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_patch_article_meta_category_overlay_only_json_output(tmp_path, monkeypatch) -> None:
+    database_path = tmp_path / "agate-meta-overlay.db"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        session.add(BackfieldOrganization(name="Backfield", slug="default"))
+        session.commit()
+
+    def get_test_session() -> Generator[Session, None, None]:
+        with Session(engine) as session:
+            yield session
+
+    app.dependency_overrides[get_session] = get_test_session
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *_a, **_k: None)
+
+    try:
+        tc = TestClient(app, headers={"Authorization": "Bearer backfield-dev"})
+        project = tc.post(
+            "/projects",
+            json={"name": "Meta Overlay", "slug": "meta-overlay-api"},
+        ).json()
+        graph = tc.post(
+            "/graphs",
+            json={
+                "name": "Batch",
+                "project_id": project["id"],
+                "spec": _minimal_text_input_spec(name="meta-overlay"),
+            },
+        ).json()
+        with Session(engine) as session:
+            run_row = _insert_pending_run(session, graph["id"])
+            rid = run_row.id
+            run_row.status = "succeeded"
+            session.add(run_row)
+            item = AgateProcessedItem(
+                run_id=rid,
+                source_file="x.json",
+                input_json='{"headline":"Story","text":"Body"}',
+                status="succeeded",
+                result_json=(
+                    '{"json_output":{"consolidated":{"headline":"Story","text":"Body",'
+                    '"article_metadata":{"meta_type":"subject","category":"Local news",'
+                    '"rationale":"Because","confidence":0.82}}}}'
+                ),
+            )
+            session.add(item)
+            session.commit()
+            session.refresh(item)
+            iid = item.id
+
+        detail = tc.get(f"/runs/{rid}/items/{iid}").json()
+        synthetic_id = detail["article_meta"][0]["id"]
+        assert synthetic_id < 0
+
+        response = tc.patch(
+            f"/runs/{rid}/items/{iid}/article-meta/{synthetic_id}",
+            json={"category": "Politics"},
+            headers={"If-Match": '"0"'},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["article_meta"][0]["category"] == "Politics"
+        assert payload["article_meta"][0]["source"] == "review"
+        reviewed = payload["reviewed_output"]
+        assert reviewed["json_output"]["consolidated"]["article_metadata"]["category"] == "Politics"
+    finally:
+        app.dependency_overrides.clear()

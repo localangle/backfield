@@ -172,6 +172,16 @@ def collect_article_metadata_blocks_from_output(
                 add_block(entry)
         add_block(stylebook.get("article_metadata"))
 
+    json_output = output.get("json_output")
+    if isinstance(json_output, dict):
+        consolidated = json_output.get("consolidated")
+        if isinstance(consolidated, dict):
+            all_raw = consolidated.get("article_metadata_all")
+            if isinstance(all_raw, list):
+                for entry in all_raw:
+                    add_block(entry)
+            add_block(consolidated.get("article_metadata"))
+
     for payload in output.values():
         if not isinstance(payload, dict):
             continue
@@ -246,9 +256,7 @@ def apply_merged_article_meta_to_output(
         if isinstance(category, str) and category.strip():
             block["category"] = category.strip()
 
-    for payload in output.values():
-        if not isinstance(payload, dict):
-            continue
+    def patch_payload(payload: dict[str, Any]) -> None:
         direct = payload.get("article_metadata")
         if isinstance(direct, dict):
             patch_block(direct)
@@ -257,12 +265,40 @@ def apply_merged_article_meta_to_output(
             nested = consolidated.get("article_metadata")
             if isinstance(nested, dict):
                 patch_block(nested)
+            all_raw = consolidated.get("article_metadata_all")
+            if isinstance(all_raw, list):
+                for block in all_raw:
+                    if isinstance(block, dict):
+                        patch_block(block)
+
+    for payload in output.values():
+        if isinstance(payload, dict):
+            patch_payload(payload)
 
     stylebook = output.get("stylebook_output")
     if isinstance(stylebook, dict):
-        nested = stylebook.get("article_metadata")
-        if isinstance(nested, dict):
-            patch_block(nested)
+        patch_payload(stylebook)
+
+
+def find_article_meta_row_by_id(
+    session: Session | None,
+    *,
+    article_id: int | None,
+    output: dict[str, Any] | None,
+    overlay: dict[str, Any] | None,
+    meta_row_id: int,
+) -> dict[str, Any] | None:
+    """Resolve one merged article-meta row by synthetic or substrate id."""
+    rows = build_processed_item_article_meta_rows(
+        session,
+        article_id=article_id,
+        overlay=overlay,
+        output=output,
+    )
+    for row in rows:
+        if row.get("id") == meta_row_id:
+            return row
+    return None
 
 
 def article_meta_review_rows_from_overlay(

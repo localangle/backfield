@@ -451,9 +451,10 @@ def build_reviewed_output(
     if overlay and isinstance(overlay, dict):
         _apply_article_overlay_to_output(reviewed, overlay)
 
-    merged_article_meta = article_meta_review_rows_from_overlay(overlay)
-    if merged_article_meta:
-        apply_merged_article_meta_to_output(reviewed, merged_article_meta)
+    if article_meta_overlay_has_content(overlay):
+        merged_article_meta = article_meta_review_rows_from_overlay(overlay)
+        if merged_article_meta:
+            apply_merged_article_meta_to_output(reviewed, merged_article_meta)
 
     apply_custom_records_overlay_to_output(reviewed, overlay)
 

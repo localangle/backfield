@@ -45,6 +45,7 @@ from backfield_entities.ingest.article_embedding.processed_item import (
 )
 from backfield_entities.ingest.article_metadata.processed_item import (
     build_processed_item_article_meta_rows,
+    find_article_meta_row_by_id,
 )
 from backfield_entities.ingest.custom_record.persist import (
     persist_custom_records_after_db_output,
@@ -1359,12 +1360,6 @@ def patch_run_processed_item_article_meta(
         result_obj=output_obj,
     )
     article_id = article_ctx_dict.get("article_id")
-    if article_id is None:
-        raise HTTPException(404, "Article metadata not found for this item")
-
-    meta_row = session.get(SubstrateArticleMeta, meta_row_id)
-    if meta_row is None or int(meta_row.article_id) != int(article_id):
-        raise HTTPException(404, "Article metadata row not found")
 
     overlay_obj: dict[str, Any] | None = None
     if item.overlay_json:
@@ -1375,14 +1370,32 @@ def patch_run_processed_item_article_meta(
         except json.JSONDecodeError:
             overlay_obj = None
 
-    meta_row.category = category
-    meta_row.updated_at = datetime.now(UTC)
-    session.add(meta_row)
+    meta_row = find_article_meta_row_by_id(
+        session,
+        article_id=article_id,
+        output=output_obj,
+        overlay=overlay_obj,
+        meta_row_id=meta_row_id,
+    )
+    if meta_row is None:
+        raise HTTPException(404, "Article metadata row not found")
+
+    meta_type = str(meta_row["meta_type"])
+
+    if meta_row_id > 0:
+        if article_id is None:
+            raise HTTPException(404, "Article metadata not found for this item")
+        substrate_row = session.get(SubstrateArticleMeta, meta_row_id)
+        if substrate_row is None or int(substrate_row.article_id) != int(article_id):
+            raise HTTPException(404, "Article metadata row not found")
+        substrate_row.category = category
+        substrate_row.updated_at = datetime.now(UTC)
+        session.add(substrate_row)
 
     overlay_payload = _merge_article_meta_category_patch(
         overlay_obj,
         meta_row_id=meta_row_id,
-        meta_type=meta_row.meta_type,
+        meta_type=meta_type,
         category=category,
     )
 
