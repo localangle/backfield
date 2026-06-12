@@ -81,6 +81,7 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 - [AGENTS.md](AGENTS.md) — top-level operating guide for agent and human contributors  
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — package boundaries and runtime flow  
 - [docs/API.md](docs/API.md) — Agate API conventions and orchestration  
+- [docs/PUBLIC_API.md](docs/PUBLIC_API.md) — public `/public/v1` API design and rollout plan  
 - [docs/FRONTEND.md](docs/FRONTEND.md) — frontend conventions and node sync flow  
 - [docs/LAYOUT.md](docs/LAYOUT.md) — monorepo structure and naming  
 - [docs/DATABASE.md](docs/DATABASE.md) — schema ownership and redesign space  

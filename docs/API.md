@@ -1,6 +1,8 @@
 # API
 
-This document covers the Agate API in `apps/agate-api` and summarizes **Core API** routes used by the Agate UI for auth and org administration (`apps/core-api`).
+This document covers **internal and editorial** HTTP: the Agate API in `apps/agate-api`, Stylebook API in `apps/stylebook-api`, and Core API routes for auth and org administration (`apps/core-api`).
+
+**Consumer-facing public routes** (`/public/v1`, project API key, read queries + run trigger) are specified in [`PUBLIC_API.md`](PUBLIC_API.md) and implemented on Core API — they are not duplicated here.
 
 ## Core API (session and org admin)
 

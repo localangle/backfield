@@ -50,6 +50,7 @@ When porting features, fixing bugs, or matching UX, **compare against that tree*
   - Owns signed session tokens, service Bearer validation, FastAPI dependencies, and **`gate.py`** (DB-backed session + project API key resolution against `backfield-db`) shared by Core API and Agate API.
 - `apps/core-api`
   - Owns Core domain HTTP routes (auth, org admin, project API credentials, future article import); uses `backfield-db` for users and credentials and `backfield-auth` for session and service authentication.
+  - Owns the **physical public API** at **`/public/v1`** (read-only queries plus run trigger) — see [`PUBLIC_API.md`](PUBLIC_API.md). Public routes call shared query helpers in `backfield-entities`; editorial Stylebook and Agate routes stay on their respective apps.
 
 ## Dependency direction
 

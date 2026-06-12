@@ -46,6 +46,7 @@ See also `docs/ARCHITECTURE.md` (reference section).
 - `docs/ENTITY_TYPES.md`: entity layout, catalog transfer, **per-type implementation patterns** (required shell vs opt-in); use with `.cursor/skills/add-entity-type` when adding types.
 - `docs/NODES.md`: Agate pipeline node profiles, end-to-end layer map, review tiers, and checklists; use with `.cursor/skills/add-agate-node` when adding net-new nodes.
 - `docs/API.md`: Agate API conventions, route responsibilities, and run orchestration.
+- `docs/PUBLIC_API.md`: consumer-facing `/public/v1` design (Core API), endpoint taxonomy, and rollout phases; see `docs/public-api/reference/` for agent-ready route docs.
 - `docs/FRONTEND.md`: Agate UI conventions, node sync flow, and API client usage.
 - `docs/DATABASE.md`: schema ownership, prefixes, migrations, and indexing expectations.
 - `docs/OPERATIONS.md`: compose lifecycle, env vars, queue names, and troubleshooting.
