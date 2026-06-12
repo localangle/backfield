@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlmodel import Session, col, select
 
+from backfield_entities.public.article_hub import PublicArticleCountsOut, article_hub_counts
+
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
 
 
@@ -30,6 +32,7 @@ class PublicArticleOut(BaseModel):
     entry_id: str | None = None
     preview: str | None = None
     metadata: list[PublicArticleMetaOut] = Field(default_factory=list)
+    counts: PublicArticleCountsOut | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,7 @@ def _article_to_public_out(
     metadata: list[PublicArticleMetaOut],
     include_preview: bool,
     include_provenance: bool,
+    counts: PublicArticleCountsOut | None = None,
 ) -> PublicArticleOut:
     preview = article_preview(article.text) if include_preview else None
     return PublicArticleOut(
@@ -99,6 +103,7 @@ def _article_to_public_out(
         entry_id=article.entry_id if include_provenance else None,
         preview=preview,
         metadata=metadata,
+        counts=counts,
     )
 
 
@@ -172,6 +177,7 @@ def get_public_article(
     project_id: int,
     article_id: int,
     include_preview: bool = True,
+    include_counts: bool = False,
 ) -> PublicArticleOut | None:
     article = session.exec(
         select(SubstrateArticle).where(
@@ -183,9 +189,13 @@ def get_public_article(
     if article is None or article.id is None:
         return None
     meta_by_id = _meta_rows_for_articles(session, [int(article.id)])
+    counts = None
+    if include_counts:
+        counts = article_hub_counts(session, article_id=int(article.id))
     return _article_to_public_out(
         article,
         metadata=meta_by_id.get(int(article.id), []),
         include_preview=include_preview,
         include_provenance=True,
+        counts=counts,
     )

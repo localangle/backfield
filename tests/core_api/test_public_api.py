@@ -12,6 +12,17 @@ from backfield_db import (
     BackfieldWorkspace,
     SubstrateArticle,
     SubstrateArticleMeta,
+    SubstrateCustomRecord,
+    SubstrateImage,
+    SubstrateLocation,
+    SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
+    SubstrateOrganization,
+    SubstrateOrganizationMention,
+    SubstrateOrganizationMentionOccurrence,
+    SubstratePerson,
+    SubstratePersonMention,
+    SubstratePersonMentionOccurrence,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from core_api.deps import get_session
@@ -84,9 +95,100 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
                 confidence=0.92,
             )
         )
+        project_id = int(general.id)  # type: ignore[arg-type]
+        article_id = int(article.id)  # type: ignore[arg-type]
+        location = SubstrateLocation(
+            project_id=project_id,
+            name="City Hall",
+            normalized_name="city hall",
+            location_type="place",
+            formatted_address="123 Main St",
+            geometry_type="Point",
+            geometry_json={"type": "Point", "coordinates": [-87.6, 41.8]},
+        )
+        s.add(location)
+        s.commit()
+        s.refresh(location)
+        location_mention = SubstrateLocationMention(
+            article_id=article_id,
+            location_id=int(location.id),  # type: ignore[arg-type]
+            nature="primary",
+        )
+        s.add(location_mention)
+        s.commit()
+        s.refresh(location_mention)
+        s.add(
+            SubstrateLocationMentionOccurrence(
+                location_mention_id=int(location_mention.id),  # type: ignore[arg-type]
+                mention_text="City Hall",
+                quote_text="debate downtown",
+                start_char=40,
+                end_char=55,
+            )
+        )
+        person = SubstratePerson(
+            project_id=project_id,
+            name="Jane Doe",
+            normalized_name="jane doe",
+        )
+        s.add(person)
+        s.commit()
+        s.refresh(person)
+        person_mention = SubstratePersonMention(
+            article_id=article_id,
+            person_id=int(person.id),  # type: ignore[arg-type]
+        )
+        s.add(person_mention)
+        s.commit()
+        s.refresh(person_mention)
+        s.add(
+            SubstratePersonMentionOccurrence(
+                person_mention_id=int(person_mention.id),  # type: ignore[arg-type]
+                mention_text="Jane Doe",
+            )
+        )
+        organization = SubstrateOrganization(
+            project_id=project_id,
+            name="City Council",
+            normalized_name="city council",
+        )
+        s.add(organization)
+        s.commit()
+        s.refresh(organization)
+        organization_mention = SubstrateOrganizationMention(
+            article_id=article_id,
+            organization_id=int(organization.id),  # type: ignore[arg-type]
+        )
+        s.add(organization_mention)
+        s.commit()
+        s.refresh(organization_mention)
+        s.add(
+            SubstrateOrganizationMentionOccurrence(
+                organization_mention_id=int(organization_mention.id),  # type: ignore[arg-type]
+                mention_text="City Council",
+            )
+        )
+        s.add(
+            SubstrateImage(
+                article_id=article_id,
+                image_id="img-1",
+                url="https://example.com/photo.jpg",
+                caption="Council chamber",
+            )
+        )
+        s.add(
+            SubstrateCustomRecord(
+                article_id=article_id,
+                record_type="contracts",
+                record_index=0,
+                fields_json={"vendor": "Acme"},
+                mentions_json=[],
+                field_schema_json=[{"name": "vendor", "field_type": "string"}],
+            )
+        )
         s.add(
             SubstrateArticle(
-                project_id=int(general.id),  # type: ignore[arg-type]
+                project_id=project_id,
                 headline="Other headline",
                 text="Other body",
                 pub_date=date(2023, 12, 1),
@@ -261,3 +363,86 @@ def test_public_article_detail_not_found(public_client: TestClient) -> None:
         headers={"Authorization": f"Bearer {raw_key}"},
     )
     assert r.status_code == 404
+
+
+def test_public_article_detail_include_counts(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    listed = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "budget"},
+    ).json()
+    article_id = listed["items"][0]["id"]
+    r = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}",
+        headers=headers,
+        params={"include": "counts"},
+    )
+    assert r.status_code == 200
+    counts = r.json()["counts"]
+    assert counts["entity_counts"]["locations"] == 1
+    assert counts["entity_counts"]["people"] == 1
+    assert counts["entity_counts"]["organizations"] == 1
+    assert counts["custom_record_counts"]["contracts"] == 1
+    assert counts["image_count"] == 1
+
+
+def test_public_article_mentions(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    article_id = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "budget"},
+    ).json()["items"][0]["id"]
+    r = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}/mentions",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pagination"]["total"] == 3
+    types = {item["entity_type"] for item in body["items"]}
+    assert types == {"location", "person", "organization"}
+
+
+def test_public_article_mentions_entity_type_filter(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    article_id = 1
+    r = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}/mentions",
+        headers=headers,
+        params={"entity_type": "location"},
+    )
+    assert r.status_code == 200
+    assert r.json()["pagination"]["total"] == 1
+    assert r.json()["items"][0]["label"] == "City Hall"
+    assert r.json()["items"][0]["evidence"]["mention_text"] == "City Hall"
+
+
+def test_public_article_locations(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/1/locations",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["label"] == "City Hall"
+    assert item["geometry_json"]["type"] == "Point"
+
+
+def test_public_article_images(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/1/images",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["image_id"] == "img-1"
+    assert item["caption"] == "Council chamber"

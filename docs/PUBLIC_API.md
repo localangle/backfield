@@ -391,12 +391,12 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 
 **Goal:** Rich article context via sub-routes (not combinatorial `include` on detail).
 
-- [ ] `include=counts` on `GET …/articles/{article_id}`
-- [ ] `GET …/articles/{article_id}/mentions` — paginated; optional `entity_type`
-- [ ] `GET …/articles/{article_id}/locations` — geography / map-oriented shape
-- [ ] `GET …/articles/{article_id}/images`
-- [ ] Registry entries in **`endpoints.md`** for each shipped sub-route
-- [ ] Shared mention/location serializers in `backfield_entities.public.*`
+- [x] `include=counts` on `GET …/articles/{article_id}`
+- [x] `GET …/articles/{article_id}/mentions` — paginated; optional `entity_type`
+- [x] `GET …/articles/{article_id}/locations` — geography / map-oriented shape
+- [x] `GET …/articles/{article_id}/images`
+- [x] Registry entries in **`endpoints.md`** for each shipped sub-route
+- [x] Shared mention/location serializers in `backfield_entities.public.*`
 
 **Validation:** `make lint`, `make test`
 
@@ -475,8 +475,8 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 | Resource | Keyword | Entity detail | Mentions | Connections | Semantic | Geo filters |
 |----------|---------|---------------|----------|-------------|----------|-------------|
 | Articles (core) | ✅ | ✅ | — | — | — | — |
-| Articles (hub) | — | — | 🚧 | — | — | 🚧 |
-| Article images | — | 🚧 | — | — | — | — |
+| Articles (hub) | — | — | ✅ | — | — | ✅ |
+| Article images | — | ✅ | — | — | — | — |
 | Custom records | Planned | Planned | — | — | — | — |
 | Locations | Planned | Planned | Planned | Planned | Planned | Planned |
 | People | Planned | Planned | Planned | Planned | Planned | Partial |

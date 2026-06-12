@@ -11,16 +11,10 @@ Design reference: [`../../PUBLIC_API.md`](../../PUBLIC_API.md)
 | **Local base URL** | `http://localhost:8004/public/v1` |
 | **Auth** | `Authorization: Bearer bfk_…` (project API key). Service token accepted for automation only. |
 
-## Planned (article hub — Phase 2b+)
-
-Sub-routes under `…/projects/{project_slug}/articles/{article_id}/…` (see [`PUBLIC_API.md`](../../PUBLIC_API.md) → **Article hub**):
+## Planned (article hub)
 
 | Method | Path | Phase | Notes |
 |--------|------|-------|-------|
-| `GET` | `…/articles/{article_id}` | 2b | `include=counts` query param |
-| `GET` | `…/articles/{article_id}/mentions` | 2b | Unified mention index; `entity_type` filter |
-| `GET` | `…/articles/{article_id}/locations` | 2b | Geography / canonical + geometry |
-| `GET` | `…/articles/{article_id}/images` | 2b | `substrate_image` rows |
 | `GET` | `…/articles/{article_id}/custom-records` | 3 | Custom Extract rows |
 
 ---
@@ -175,10 +169,21 @@ Return one article by id. Does **not** include full body text. Includes metadata
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `include_preview` | boolean | `true` | Include truncated text preview (max 280 characters) |
+| `include` | string | — | Optional embeds: `counts` (entity, custom-record, and image counts) |
 
 ### Response `200`
 
-Same article object shape as search `items[]`, with `external_source`, `external_id`, and `entry_id` populated when present.
+Same article object shape as search `items[]`, with `external_source`, `external_id`, and `entry_id` populated when present. When `include=counts`, adds a `counts` object:
+
+```json
+{
+  "counts": {
+    "entity_counts": { "locations": 1, "people": 1, "organizations": 0 },
+    "custom_record_counts": { "contracts": 2 },
+    "image_count": 1
+  }
+}
+```
 
 ### Errors
 
@@ -187,6 +192,81 @@ Same article object shape as search `items[]`, with `external_source`, `external
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown project, unknown article, or article not in project |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/{article_id}/mentions`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 2b) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles.py`](../../../apps/core-api/src/core_api/routers/public/articles.py) — `list_project_article_mentions` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Paginated mention evidence for one article across location, person, and organization entities. Unified index ordered by mention `created_at` descending.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `entity_type` | string | — | Filter: `location`, `person`, or `organization` |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+### Response `200`
+
+Paginated list of mention objects with `entity_type`, `mention_id`, `substrate_entity_id`, `label`, optional `canonical`, and optional `evidence` (mention/quote spans).
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/{article_id}/locations`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 2b) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles.py`](../../../apps/core-api/src/core_api/routers/public/articles.py) — `list_project_article_locations` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Map-oriented list of location mentions in one article, including geometry and formatted address when present.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/{article_id}/images`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 2b) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles.py`](../../../apps/core-api/src/core_api/routers/public/articles.py) — `list_project_article_images` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+List images attached to the article (`substrate_image`).
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+### Response `200`
+
+Each item includes `id`, `image_id`, `url`, and optional `caption`.
 
 ---
 
