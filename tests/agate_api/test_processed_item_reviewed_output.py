@@ -214,6 +214,115 @@ def test_build_reviewed_output_article_on_consolidated() -> None:
     assert consolidated["publication"] == "Review pub"
 
 
+def test_build_reviewed_output_passes_custom_records_through_untouched() -> None:
+    custom_records = {
+        "ingredients": {
+            "label": "Ingredients",
+            "schema": [{"name": "name", "label": "Name", "type": "string"}],
+            "records": [
+                {
+                    "key": "abc123",
+                    "fields": {"name": "Flour"},
+                    "mentions": [{"text": "two cups of flour", "quote": False}],
+                    "confidence": 0.9,
+                }
+            ],
+            "dropped_ungrounded": 0,
+        }
+    }
+    output = _geocode_output(cities=[_place("orig", id="p1")])
+    output["custom_extract"] = {"custom_records": custom_records}
+    output["json_output"] = {"consolidated": {"custom_records": custom_records}}
+
+    overlay = {"locations": {"by_anchor": {"p1": {"description": "edited"}}}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    assert reviewed["geocode_agent"]["places"]["areas"]["cities"][0]["description"] == "edited"
+    assert reviewed["custom_extract"]["custom_records"] == custom_records
+    assert reviewed["json_output"]["consolidated"]["custom_records"] == custom_records
+
+
+def test_overlay_has_review_content_true_for_custom_records_edits() -> None:
+    assert overlay_has_review_content(
+        {"custom_records": {"ingredients": {"removed_keys": ["abc123"]}}}
+    )
+    assert not overlay_has_review_content({"custom_records": {}})
+
+
+def test_build_reviewed_output_creates_block_for_reviewer_defined_type() -> None:
+    output = {"json_output": {"consolidated": {"headline": "Story", "text": "Body"}}}
+    overlay = {
+        "custom_records": {
+            "quotes": {
+                "definition": {
+                    "label": "Quotes",
+                    "schema": [{"name": "speaker", "label": "Speaker", "type": "string"}],
+                },
+                "user_added": [
+                    {"key": "user_record:1", "fields": {"speaker": "Mayor Lee"}}
+                ],
+            }
+        }
+    }
+    assert overlay_has_review_content(overlay)
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    block = reviewed["json_output"]["consolidated"]["custom_records"]
+    assert block["quotes"]["label"] == "Quotes"
+    records = block["quotes"]["records"]
+    assert len(records) == 1
+    assert records[0]["fields"]["speaker"] == "Mayor Lee"
+    assert records[0]["source"] == "review"
+
+
+def test_build_reviewed_output_applies_custom_records_overlay() -> None:
+    record_set = {
+        "label": "Ingredients",
+        "schema": [
+            {"name": "name", "label": "Name", "type": "string"},
+            {"name": "quantity", "label": "Quantity", "type": "string"},
+        ],
+        "records": [
+            {
+                "key": "abc123",
+                "fields": {"name": "Flour", "quantity": "2 cups"},
+                "mentions": [{"text": "two cups of flour", "quote": False}],
+                "confidence": 0.9,
+            },
+            {
+                "key": "def456",
+                "fields": {"name": "Salt", "quantity": "1 tsp"},
+                "mentions": [{"text": "a teaspoon of salt", "quote": False}],
+            },
+        ],
+        "dropped_ungrounded": 0,
+    }
+    output = {
+        "custom_extract": {"custom_records": {"ingredients": record_set}},
+        "json_output": {"consolidated": {"custom_records": {"ingredients": record_set}}},
+    }
+    overlay = {
+        "custom_records": {
+            "ingredients": {
+                "by_key": {"abc123": {"fields": {"quantity": "3 cups"}}},
+                "removed_keys": ["def456"],
+                "user_added": [
+                    {"key": "user_record:1", "fields": {"name": "Sugar", "quantity": "1 cup"}}
+                ],
+            }
+        }
+    }
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    for records in (
+        reviewed["custom_extract"]["custom_records"]["ingredients"]["records"],
+        reviewed["json_output"]["consolidated"]["custom_records"]["ingredients"]["records"],
+    ):
+        assert [record["key"] for record in records] == ["abc123", "user_record:1"]
+        assert records[0]["fields"]["quantity"] == "3 cups"
+        assert records[1]["source"] == "review"
+
+
 def test_build_reviewed_output_article_on_hoisted_stylebook_output() -> None:
     output = {
         "geocode_agent": {"places": {"areas": _empty_areas(), "points": [], "needs_review": []}},
@@ -233,3 +342,83 @@ def test_build_reviewed_output_article_on_hoisted_stylebook_output() -> None:
     assert so["author"] == "Pat"
     assert so["publication"] == "Model pub"
     assert reviewed["geocode_agent"]["places"]["points"] == []
+
+
+def _person(name: str, **extra: object) -> dict:
+    return {
+        "name": name,
+        "title": "",
+        "affiliation": "",
+        "public_figure": False,
+        "type": "",
+        "role_in_story": "",
+        "nature": "other",
+        "nature_secondary_tags": [],
+        "mentions": [{"text": f"Mention of {name}.", "quote": False}],
+        **extra,
+    }
+
+
+def _organization(name: str, **extra: object) -> dict:
+    return {
+        "name": name,
+        "type": "",
+        "role_in_story": "",
+        "nature": "other",
+        "nature_secondary_tags": [],
+        "mentions": [{"text": f"Mention of {name}.", "quote": False}],
+        **extra,
+    }
+
+
+def test_build_reviewed_output_applies_people_patch_json_output_only() -> None:
+    output = {
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "people": [_person("Jane Doe", id="p1")],
+            },
+        },
+    }
+    overlay = {"people": {"by_anchor": {"p1": {"title": "Mayor"}}}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    people = reviewed["json_output"]["consolidated"]["people"]
+    assert len(people) == 1
+    assert people[0]["title"] == "Mayor"
+
+
+def test_build_reviewed_output_applies_organizations_patch_json_output_only() -> None:
+    output = {
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "organizations": [_organization("City Hall", id="o1")],
+            },
+        },
+    }
+    overlay = {"organizations": {"by_anchor": {"o1": {"type": "government"}}}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    organizations = reviewed["json_output"]["consolidated"]["organizations"]
+    assert len(organizations) == 1
+    assert organizations[0]["type"] == "government"
+
+
+def test_build_reviewed_output_people_and_orgs_independent_json_output_only() -> None:
+    output = {
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "people": [_person("Jane Doe", id="p1")],
+                "organizations": [_organization("City Hall", id="o1")],
+            },
+        },
+    }
+    overlay = {"people": {"by_anchor": {"p1": {"title": "Mayor"}}}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    consolidated = reviewed["json_output"]["consolidated"]
+    assert consolidated["people"][0]["title"] == "Mayor"
+    assert consolidated["organizations"][0]["name"] == "City Hall"
+    assert consolidated["organizations"][0]["type"] == ""

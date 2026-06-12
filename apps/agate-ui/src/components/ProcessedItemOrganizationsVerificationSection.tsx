@@ -9,6 +9,7 @@ import {
   type ArticleTextSelection,
 } from '@/components/ProcessedItemArticleBody'
 import { ProcessedItemOrganizationsEditor } from '@/components/ProcessedItemOrganizationsEditor'
+import { ProcessedItemEditorReviewBanner } from '@/components/ProcessedItemEditorReviewBanner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import type { Graph, ProcessedItem } from '@/lib/api'
@@ -724,6 +725,8 @@ export function ProcessedItemOrganizationsVerificationSection({
 
   return (
     <div className="space-y-4">
+      <ProcessedItemEditorReviewBanner item={item} section="organizations" />
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Review and edit organizations</h2>

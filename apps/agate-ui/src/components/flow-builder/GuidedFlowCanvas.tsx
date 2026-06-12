@@ -56,6 +56,7 @@ import GuidedCompactNode, {
   GUIDED_COMPACT_NODE_HEIGHT,
   GUIDED_COMPACT_NODE_WIDTH,
 } from '@/components/flow-builder/GuidedCompactNode'
+import { anchorRectFromPointerEvent, type AddNodeChooserAnchorRect } from '@/components/flow-builder/AddNodeChooser'
 import { ArrowLeftRight, GitBranch, Plus, Sparkles, Trash2 } from 'lucide-react'
 
 type NodeBottomHoverButtonProps = {
@@ -80,7 +81,7 @@ function NodeRightAddButton({
   onClick,
 }: {
   nodeSelected: boolean
-  onClick?: (anchorRect: DOMRect) => void
+  onClick?: (anchorRect: AddNodeChooserAnchorRect) => void
 }) {
   return (
     <div className="pointer-events-auto absolute right-0 top-1/2 z-20 -translate-y-1/2 translate-x-1/2">
@@ -95,7 +96,7 @@ function NodeRightAddButton({
         title="Add another path"
         onClick={(event) => {
           event.stopPropagation()
-          onClick?.(event.currentTarget.getBoundingClientRect())
+          onClick?.(anchorRectFromPointerEvent(event))
         }}
       >
         <GitBranch className="h-3.5 w-3.5" />
@@ -173,7 +174,7 @@ function GuidedAddEdge({
                 callbacks.current.onAddEdgeClick?.(
                   source,
                   target,
-                  event.currentTarget.getBoundingClientRect(),
+                  anchorRectFromPointerEvent(event),
                 )
               }}
             >
@@ -249,7 +250,7 @@ function GuidedNodeShell({ NodeComponent, ...nodeProps }: GuidedNodeShellProps) 
     } as Node)
   }
 
-  const handleAddClick = (anchorRect: DOMRect) =>
+  const handleAddClick = (anchorRect: AddNodeChooserAnchorRect) =>
     callbacks.current.onAddNodeClick?.(nodeProps.id, anchorRect)
   const handleDeleteClick = () => callbacks.current.onDeleteNodeClick?.(nodeProps.id)
   const handleSwapClick = isInputBookend
@@ -431,8 +432,8 @@ type GuidedFlowCanvasProps = {
   outputBookendId?: string | null
   reserveRightPx?: number
   selectedNodeId?: string | null
-  onAddNodeClick?: (parentNodeId: string, anchorRect: DOMRect) => void
-  onAddEdgeClick?: (sourceNodeId: string, targetNodeId: string, anchorRect: DOMRect) => void
+  onAddNodeClick?: (parentNodeId: string, anchorRect: AddNodeChooserAnchorRect) => void
+  onAddEdgeClick?: (sourceNodeId: string, targetNodeId: string, anchorRect: AddNodeChooserAnchorRect) => void
   onDeleteNodeClick?: (nodeId: string) => void
   onSwapInputBookend?: () => void
   onSwapOutputBookend?: () => void

@@ -1,0 +1,42 @@
+{
+  "type": "ArticleMetadata",
+  "name": "ArticleMetadata",
+  "label": "Article Metadata",
+  "description": "Classify the article with a category, rationale, and confidence score.",
+  "category": "enrichment",
+  "icon": "Tag",
+  "color": "bg-green-500",
+  "requiredProjectModelCapabilities": ["generative"],
+  "requiredUpstreamNodes": [],
+  "dependencyHelperText": "Requires upstream text, such as from Text Input or JSON Input.",
+  "inputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
+    },
+    {
+      "id": "article_metadata",
+      "label": "Article metadata",
+      "type": "object"
+    }
+  ],
+  "defaultParams": {
+    "model": "",
+    "aiModelConfigId": null,
+    "prompt_preset": "subject",
+    "meta_type": "",
+    "prompt": "",
+    "prompt_file": "prompts/presets/subject.md",
+    "output_format_file": "prompts/_output_format.json",
+    "llmTimeout": 600
+  }
+}

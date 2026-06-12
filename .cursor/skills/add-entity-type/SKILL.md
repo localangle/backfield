@@ -20,7 +20,7 @@ Use this skill when adding a **canonical entity type** (person, organization, wo
 3. [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) — package boundaries
 4. **agate-ai-platform** sibling repo — copy-then-adapt per `AGENTS.md`
 
-**Related skills:** [`write-a-prd`](../write-a-prd/SKILL.md), [`prd-to-issues`](../prd-to-issues/SKILL.md)
+**Related skills:** [`add-agate-node`](../add-agate-node/SKILL.md) (non-entity pipeline nodes), [`write-a-prd`](../write-a-prd/SKILL.md), [`prd-to-issues`](../prd-to-issues/SKILL.md)
 
 ---
 
@@ -187,14 +187,9 @@ Use for organization/work and other non-location types. Waive rows marked opt-in
 
 ---
 
-## Add a pipeline node only (no new EntityType)
+## Pipeline nodes (no new EntityType)
 
-When adding a node that does **not** introduce a new Stylebook `EntityType`:
-
-1. Create `packages/backfield-agate/src/agate_nodes/<snake_case>/` with `metadata.json`, `node.py`, `ui/`
-2. Run `npm run sync-nodes` in `apps/agate-ui`
-3. If the node writes substrate, match consolidated keys registered in `entity_types.py` and extend orchestration deliberately
-4. `db_output` remains the standard persist node
+For nodes that do **not** introduce a new Stylebook `EntityType` (Input, Output, Enrich, Embed, Other, or non-canonical Extract), use [`add-agate-node`](../add-agate-node/SKILL.md) and [`docs/NODES.md`](../../docs/NODES.md). Entity extract nodes for **this** type stay in issue **05** of the per-type template above.
 
 ---
 

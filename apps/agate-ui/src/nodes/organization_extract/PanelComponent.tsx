@@ -3,7 +3,7 @@ const nodeMetadata = {
   "type": "OrganizationExtract",
   "name": "OrganizationExtract",
   "label": "Organization Extract",
-  "description": "Extract editorially relevant organizations from text using an LLM.",
+  "description": "Extract editorially relevant organizations from text.",
   "category": "extraction",
   "icon": "Building2",
   "color": "bg-amber-500",

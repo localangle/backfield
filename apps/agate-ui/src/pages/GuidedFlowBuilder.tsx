@@ -4,7 +4,10 @@ import type { Node } from 'reactflow'
 
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { FlowTitleRow } from '@/components/flow-builder/FlowTitleRow'
-import AddNodeChooser from '@/components/flow-builder/AddNodeChooser'
+import { FlowDescriptionField } from '@/components/flow-builder/FlowDescriptionField'
+import AddNodeChooser, {
+  type AddNodeChooserAnchorRect,
+} from '@/components/flow-builder/AddNodeChooser'
 import BookendChooser from '@/components/flow-builder/BookendChooser'
 import BookendSwapDialog from '@/components/flow-builder/BookendSwapDialog'
 import ConfigureGatePanel from '@/components/flow-builder/ConfigureGatePanel'
@@ -53,6 +56,7 @@ import {
   STEP_CHOOSER_COPY,
   type FlowBuilderStep,
 } from '@/lib/flowBuilderSteps'
+import { isJsonInputInvalidNodeData } from '@/lib/jsonInputValidation'
 import { getCompatibleInsertNodes, getCompatibleNextNodes } from '@/lib/nodeCompatibility'
 import { getGuidedFlowCapabilities } from '@/lib/guidedFlowCapabilities'
 import { captureGuidedFlowSnapshot, type GuidedFlowSnapshot } from '@/lib/guidedFlowSnapshot'
@@ -81,12 +85,7 @@ import { Save } from 'lucide-react'
 let nodeIdCounter = 0
 const nextNodeId = () => `node-${nodeIdCounter++}`
 
-type AddNodeChooserAnchor = {
-  top: number
-  right: number
-  bottom: number
-  left: number
-}
+type AddNodeChooserAnchor = AddNodeChooserAnchorRect
 
 type AddNodeInsertionEdge = {
   sourceId: string
@@ -198,6 +197,10 @@ export type GuidedFlowBuilderProps = {
 export type GuidedFlowBuilderHandle = {
   takeSnapshot: () => void
   restoreSnapshot: () => void
+  /** Sync description edited in an external header (RunGraph with hideHeader). */
+  setGraphDescription: (description: string) => void
+  /** Sync title edited in an external header (RunGraph with hideHeader). */
+  setGraphName: (name: string) => void
   save: (options?: { stayInEditMode?: boolean }) => Promise<boolean>
   /** Flush debounced input auto-save and persist the current flow spec (run variant). */
   flushRunInputs: () => Promise<boolean>
@@ -235,6 +238,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [readOnly],
   )
   const [graphName, setGraphName] = useState('Untitled Flow')
+  const graphNameRef = useRef('Untitled Flow')
+  const [graphDescription, setGraphDescription] = useState('')
   const [activeStep, setActiveStep] = useState<FlowBuilderStep>('input')
   const [completedSteps, setCompletedSteps] = useState<Set<FlowBuilderStep>>(new Set())
   const [inputNode, setInputNode] = useState<Node | null>(null)
@@ -273,6 +278,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   } | null>(null)
 
   const completedStepsReadonly = completedSteps as ReadonlySet<FlowBuilderStep>
+
+  useEffect(() => {
+    graphNameRef.current = graphName
+  }, [graphName])
 
   useEffect(
     () => () => {
@@ -403,6 +412,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         syncNodeIdCounter(graph.spec.nodes)
         setExistingGraphId(graph.id)
         setGraphName(graph.name)
+        graphNameRef.current = graph.name
+        setGraphDescription(graph.description ?? '')
         setResolvedFlowProject(project)
         setScaffoldModel(applyLayoutToModel(model))
         setInputNode(toReactFlowBookend(model.inputNode))
@@ -469,22 +480,33 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     }
   }, [resolvedFlowProject?.workspace_id])
 
-  const handleFlowNameSave = useCallback(
-    async (nextName: string) => {
-      setGraphName(nextName)
+  const handleFlowDescriptionSave = useCallback(
+    async (nextDescription: string) => {
+      setGraphDescription(nextDescription)
       if (!existingGraphId || !resolvedFlowProject) return
       const current = await getGraph(existingGraphId)
       await updateGraph(existingGraphId, {
-        name: nextName,
+        name: current.name,
+        description: nextDescription,
         project_id: resolvedFlowProject.id,
-        spec: {
-          ...current.spec,
-          name: nextName.toLowerCase().replace(/\s+/g, '_'),
-        },
+        spec: current.spec,
       })
     },
     [existingGraphId, resolvedFlowProject],
   )
+
+  const handleFlowNameChange = useCallback((nextName: string) => {
+    graphNameRef.current = nextName
+    setGraphName(nextName)
+  }, [])
+
+  const resolveGraphNameForSave = useCallback((): string => {
+    const trimmed = graphNameRef.current.trim()
+    const name = trimmed || 'Untitled Flow'
+    graphNameRef.current = name
+    setGraphName(name)
+    return name
+  }, [])
 
   const headerBreadcrumbItems = useMemo(
     () =>
@@ -511,6 +533,38 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     },
     [flowProjectId],
   )
+
+  const [projectModelCapabilities, setProjectModelCapabilities] = useState<
+    Record<string, boolean> | undefined
+  >(undefined)
+
+  useEffect(() => {
+    if (flowProjectId == null) {
+      setProjectModelCapabilities(undefined)
+      return
+    }
+    let cancelled = false
+    void Promise.all([
+      fetchProjectAiModels(['embedding']),
+      fetchProjectAiModels(['text', 'json']),
+    ])
+      .then(([embeddingRows, generativeRows]) => {
+        if (!cancelled) {
+          setProjectModelCapabilities({
+            embedding: embeddingRows.length > 0,
+            generative: generativeRows.length > 0,
+          })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProjectModelCapabilities({ embedding: false, generative: false })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [flowProjectId, fetchProjectAiModels])
 
   const graphContext = useMemo(() => {
     if (flowProjectLoading) {
@@ -775,11 +829,25 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     }
     const saveModel = buildSaveModel(inputNode, outputNode, scaffoldModel)
     const draftSpec = modelToGraphSpec(saveModel)
+    const validation = validateGraphForSave({
+      nodes: draftSpec.nodes.map((node) => ({
+        id: node.id,
+        type: node.type,
+        data: node.params,
+      })),
+      edges: draftSpec.edges,
+    })
+    if (!validation.ok) {
+      return
+    }
+    const nameToSave = resolveGraphNameForSave()
+    setGraphName(nameToSave)
     await updateGraph(existingGraphId, {
-      name: graphName,
+      name: nameToSave,
+      description: graphDescription.trim(),
       project_id: resolvedFlowProject.id,
       spec: {
-        name: graphName.toLowerCase().replace(/\s+/g, '_'),
+        name: nameToSave.toLowerCase().replace(/\s+/g, '_'),
         nodes: draftSpec.nodes.map((node) => ({
           id: node.id,
           type: node.type,
@@ -794,8 +862,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       },
     })
   }, [
+    graphDescription,
     existingGraphId,
-    graphName,
+    resolveGraphNameForSave,
     inputNode,
     isRunVariant,
     outputNode,
@@ -1091,11 +1160,15 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         }
       }
 
+      const nameToSave = resolveGraphNameForSave()
+      setGraphName(nameToSave)
+
       const graphSpec = {
-        name: graphName,
+        name: nameToSave,
+        description: graphDescription.trim(),
         project_id: resolvedFlowProject.id,
         spec: {
-          name: graphName.toLowerCase().replace(/\s+/g, '_'),
+          name: nameToSave.toLowerCase().replace(/\s+/g, '_'),
           nodes: draftSpec.nodes.map((node) => {
             const baseParams = paramsForGraphSave({
               id: node.id,
@@ -1159,7 +1232,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     inputNode,
     outputNode,
     scaffoldModel,
+    graphDescription,
     graphName,
+    resolveGraphNameForSave,
     existingGraphId,
     flowProjectLoading,
     resolvedFlowProject,
@@ -1187,6 +1262,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     (): GuidedFlowSnapshot =>
       captureGuidedFlowSnapshot({
         graphName,
+        graphDescription,
         activeStep,
         completedSteps: [...completedSteps],
         inputNode,
@@ -1197,6 +1273,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
       }),
     [
       graphName,
+      graphDescription,
       activeStep,
       completedSteps,
       inputNode,
@@ -1225,6 +1302,8 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         const snap = snapshotRef.current
         if (!snap) return
         setGraphName(snap.graphName)
+        graphNameRef.current = snap.graphName
+        setGraphDescription(snap.graphDescription)
         setActiveStep(snap.activeStep)
         setCompletedSteps(new Set(snap.completedSteps))
         setInputNode(snap.inputNode)
@@ -1232,6 +1311,13 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         setScaffoldModel(snap.scaffoldModel)
         setSelectedNodeId(snap.selectedNodeId)
         setConfigureGateActive(snap.configureGateActive)
+      },
+      setGraphDescription: (description: string) => {
+        setGraphDescription(description)
+      },
+      setGraphName: (name: string) => {
+        graphNameRef.current = name
+        setGraphName(name)
       },
       save: (options) => handleSave(options),
       flushRunInputs,
@@ -1245,7 +1331,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     [buildSnapshot, flushRunInputs, handleSave, inputNode, outputNode, scaffoldModel, saving],
   )
 
-  const handleAddNodeClick = useCallback((parentNodeId: string, anchorRect: DOMRect) => {
+  const handleAddNodeClick = useCallback((parentNodeId: string, anchorRect: AddNodeChooserAnchorRect) => {
     if (configureGateActive) return
     setAddFromParentId(parentNodeId)
     setAddIntoEdge(null)
@@ -1259,7 +1345,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   }, [configureGateActive])
 
   const handleAddEdgeClick = useCallback(
-    (sourceId: string, targetId: string, anchorRect: DOMRect) => {
+    (sourceId: string, targetId: string, anchorRect: AddNodeChooserAnchorRect) => {
       if (configureGateActive) return
       setAddFromParentId(null)
       setAddIntoEdge({ sourceId, targetId })
@@ -1397,6 +1483,7 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
         source.type,
         target.type,
         getBranchAncestry(scaffoldModel, addIntoEdge.sourceId),
+        { projectModelCapabilities },
       )
     }
     const parentId = addFromParentId
@@ -1405,8 +1492,10 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
     }
     const parent = getNodeById(scaffoldModel, parentId)
     if (!parent?.type) return { enabled: [], disabled: [] }
-    return getCompatibleNextNodes(parent.type, getBranchAncestry(scaffoldModel, parentId))
-  }, [addFromParentId, addIntoEdge, scaffoldModel])
+    return getCompatibleNextNodes(parent.type, getBranchAncestry(scaffoldModel, parentId), {
+      projectModelCapabilities,
+    })
+  }, [addFromParentId, addIntoEdge, scaffoldModel, projectModelCapabilities])
 
   const handleAddNodeTypeSelect = useCallback(
     (type: string) => {
@@ -1513,6 +1602,9 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
   const showCreateCancel = variant === 'create' && !readOnly
   const selectedPanelHasChanges = selectedNodeId != null && dirtyPanelNodeIds.has(selectedNodeId)
   const selectedPanelWasSaved = selectedNodeId != null && savedPanelNodeIds.has(selectedNodeId)
+  const selectedJsonInputInvalid =
+    selectedNode?.type === 'JSONInput' &&
+    isJsonInputInvalidNodeData(selectedNode.data as Record<string, unknown>)
 
   const rootClassName = hideHeader
     ? `flex min-h-0 flex-1 flex-col ${className ?? ''}`
@@ -1561,16 +1653,19 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
           <div className="min-w-0 flex-1 space-y-2">
             <PageBreadcrumbs items={headerBreadcrumbItems} />
             <div>
-              <FlowTitleRow name={graphName} onSave={handleFlowNameSave} canEdit={!readOnly} />
-              {activeStep !== 'scaffold' ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {activeStep === 'input'
-                    ? 'Build your flow step-by-step'
-                    : 'Choose where results are saved'}
-                </p>
-              ) : (
-                <p className="mt-1 text-xs text-muted-foreground">Set up your flow step by step</p>
-              )}
+              <FlowTitleRow
+                alwaysEditable
+                name={graphName}
+                onChange={handleFlowNameChange}
+                canEdit={!readOnly}
+              />
+              <FlowDescriptionField
+                value={graphDescription}
+                onChange={setGraphDescription}
+                onBlurSave={existingGraphId ? handleFlowDescriptionSave : undefined}
+                canEdit={!readOnly}
+                className="mt-1"
+              />
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1757,12 +1852,14 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
             }
             running={running}
             saving={saving}
-            canSave={canSavePanelChanges({
-              activeStep,
-              inputNode,
-              outputNode,
-              hasChanges: selectedPanelHasChanges,
-            })}
+            canSave={
+              canSavePanelChanges({
+                activeStep,
+                inputNode,
+                outputNode,
+                hasChanges: selectedPanelHasChanges,
+              }) && !selectedJsonInputInvalid
+            }
             saved={selectedPanelWasSaved}
             currentRun={currentRun}
             nodeOutputLookupSpec={nodeOutputLookupSpec}

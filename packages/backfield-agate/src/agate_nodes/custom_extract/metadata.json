@@ -1,0 +1,41 @@
+{
+  "type": "CustomExtract",
+  "name": "CustomExtract",
+  "label": "Custom Extract",
+  "description": "Extract records you define — like ingredients, artists, or event details — with supporting passages from the text.",
+  "category": "extraction",
+  "icon": "Table",
+  "color": "bg-amber-500",
+  "requiredProjectModelCapabilities": ["generative"],
+  "requiredUpstreamNodes": [],
+  "dependencyHelperText": "Requires upstream text, such as from Text Input or JSON Input.",
+  "inputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
+    },
+    {
+      "id": "custom_records",
+      "label": "Custom records",
+      "type": "object"
+    }
+  ],
+  "defaultParams": {
+    "model": "",
+    "aiModelConfigId": null,
+    "record_type": "",
+    "label": "",
+    "fields": [],
+    "instructions": "",
+    "llmTimeout": 600
+  }
+}

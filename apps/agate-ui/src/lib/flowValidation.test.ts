@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   paramsForGraphSave,
   sanitizeNodeStylebookRef,
+  validateCustomExtractRecordTypes,
   validateFlowInputOutputRules,
   validateGraphForSave,
   validateInputConnections,
+  validateJsonInputNodes,
   validateNoOrphans,
   validateSingleBookends,
   type FlowGraph,
 } from './flowValidation'
+import { jsonInputInvalidNodeData } from './jsonInputValidation'
 
 function graph(overrides: Partial<FlowGraph> & Pick<FlowGraph, 'nodes'>): FlowGraph {
   return {
@@ -198,6 +201,16 @@ describe('paramsForGraphSave', () => {
       }).bucket,
     ).toBe('my-bucket')
   })
+
+  it('strips JSON input invalid marker before save', () => {
+    expect(
+      paramsForGraphSave({
+        id: 'json',
+        type: 'JSONInput',
+        data: jsonInputInvalidNodeData({ text: 'hello' }),
+      }),
+    ).toEqual({ text: 'hello' })
+  })
 })
 
 describe('sanitizeNodeStylebookRef', () => {
@@ -218,6 +231,51 @@ describe('sanitizeNodeStylebookRef', () => {
         10,
       ),
     ).toEqual({ useCache: true, stylebook_id: 10 })
+  })
+})
+
+describe('validateCustomExtractRecordTypes', () => {
+  it('passes when custom extract steps use distinct record types', () => {
+    const result = validateCustomExtractRecordTypes(
+      graph({
+        nodes: [
+          { id: 'ce1', type: 'CustomExtract', data: { record_type: 'ingredients' } },
+          { id: 'ce2', type: 'CustomExtract', data: { record_type: 'steps' } },
+        ],
+      }),
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('ignores custom extract steps without a record type yet', () => {
+    const result = validateCustomExtractRecordTypes(
+      graph({
+        nodes: [
+          { id: 'ce1', type: 'CustomExtract', data: { record_type: '' } },
+          { id: 'ce2', type: 'CustomExtract' },
+        ],
+      }),
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('warns when two custom extract steps share a record type', () => {
+    const result = validateCustomExtractRecordTypes(
+      graph({
+        nodes: [
+          { id: 'ce1', type: 'CustomExtract', data: { record_type: 'ingredients' } },
+          { id: 'ce2', type: 'CustomExtract', data: { record_type: 'ingredients' } },
+        ],
+      }),
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      title: 'Custom Extract steps overlap',
+      severity: 'warning',
+    })
+    if (!result.ok) {
+      expect(result.description).toContain('ingredients')
+    }
   })
 })
 
@@ -250,5 +308,36 @@ describe('validateGraphForSave', () => {
       }),
     )
     expect(result.ok).toBe(true)
+  })
+
+  it('fails when JSON input has an invalid editor marker', () => {
+    const result = validateGraphForSave(
+      graph({
+        nodes: [
+          {
+            id: 'json',
+            type: 'JSONInput',
+            data: jsonInputInvalidNodeData({ text: 'hello' }),
+          },
+          { id: 'out', type: 'Output' },
+        ],
+        edges: [{ source: 'json', target: 'out' }],
+      }),
+    )
+    expect(result).toMatchObject({ ok: false, severity: 'error', title: 'Invalid JSON input' })
+  })
+})
+
+describe('validateJsonInputNodes', () => {
+  it('accepts valid JSON input params', () => {
+    expect(
+      validateJsonInputNodes([{ id: 'json', type: 'JSONInput', data: { text: '' } }]).ok,
+    ).toBe(true)
+  })
+
+  it('rejects missing text field', () => {
+    expect(
+      validateJsonInputNodes([{ id: 'json', type: 'JSONInput', data: { headline: 'Hi' } }]),
+    ).toMatchObject({ ok: false })
   })
 })

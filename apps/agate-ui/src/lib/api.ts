@@ -3,6 +3,14 @@
  */
 
 import {
+  normalizeProcessedItemArticleEmbedding,
+  type ProcessedItemArticleEmbedding,
+} from '@/lib/review/content/articleEmbeddingDisplay'
+import {
+  normalizeProcessedItemArticleMetaRows,
+  type ProcessedItemArticleMetaRow,
+} from '@/lib/review/content/articleMetaDisplay'
+import {
   normalizeProcessedItemConnections,
   type ProcessedItemConnections,
 } from '@/lib/review/content/connectionsDisplay'
@@ -11,6 +19,13 @@ import {
   type ProcessedItemSemanticIndexing,
 } from '@/lib/review/content/semanticIndexingDisplay'
 
+export type {
+  ProcessedItemArticleEmbedding,
+  ProcessedItemArticleEmbeddingStatus,
+} from '@/lib/review/content/articleEmbeddingDisplay'
+export type {
+  ProcessedItemArticleMetaRow,
+} from '@/lib/review/content/articleMetaDisplay'
 export type {
   ProcessedItemConnections,
   ProcessedItemConnectionsStatus,
@@ -66,6 +81,7 @@ export interface ProjectStats {
 export interface Graph {
   id: string
   name: string
+  description: string
   project_id: number
   spec: {
     name: string
@@ -160,6 +176,10 @@ export interface ProcessedItem {
   article_context?: ArticleContext
   /** Compact semantic search indexing status from Backfield Output. */
   semantic_indexing?: ProcessedItemSemanticIndexing
+  /** Compact article text embedding status from Embed Text. */
+  article_embedding?: ProcessedItemArticleEmbedding
+  /** Persisted article metadata tags for Meta review. */
+  article_meta?: ProcessedItemArticleMetaRow[]
   /** Compact automatic connections status from Backfield Output. */
   connections?: ProcessedItemConnections
 }
@@ -200,6 +220,7 @@ export interface ApiKeyCreate {
 
 export interface GraphCreate {
   name: string
+  description?: string
   project_id: number
   spec: {
     name: string
@@ -239,6 +260,7 @@ export interface ProjectUpdate {
 interface RawGraph {
   id: string
   name: string
+  description?: string | null
   project_id: number
   spec: Graph['spec']
   created_at: string
@@ -295,6 +317,7 @@ function normalizeGraph(raw: RawGraph): Graph {
   return {
     id: raw.id,
     name: raw.name,
+    description: typeof raw.description === 'string' ? raw.description : '',
     project_id: raw.project_id,
     spec: raw.spec,
     created_at: raw.created_at,
@@ -499,6 +522,7 @@ export async function createGraph(data: GraphCreate): Promise<Graph> {
     method: 'POST',
     body: JSON.stringify({
       name: data.name,
+      description: data.description ?? '',
       project_id: data.project_id,
       spec: data.spec,
     }),
@@ -521,6 +545,7 @@ export async function updateGraph(id: string | number, data: GraphCreate): Promi
     method: 'PUT',
     body: JSON.stringify({
       name: data.name,
+      description: data.description ?? '',
       project_id: data.project_id,
       spec: data.spec,
     }),
@@ -614,6 +639,8 @@ interface RawProcessedItemDetail {
   stale_organizations_overlay_entries?: Array<Record<string, unknown>>
   article_context?: unknown
   semantic_indexing?: unknown
+  article_embedding?: unknown
+  article_meta?: unknown
   connections?: unknown
 }
 
@@ -711,6 +738,8 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
         : null,
     article_context: _normalizeArticleContext(raw.article_context),
     semantic_indexing: normalizeProcessedItemSemanticIndexing(raw.semantic_indexing),
+    article_embedding: normalizeProcessedItemArticleEmbedding(raw.article_embedding),
+    article_meta: normalizeProcessedItemArticleMetaRows(raw.article_meta),
     connections: normalizeProcessedItemConnections(raw.connections),
   }
 }
@@ -739,6 +768,60 @@ export async function patchProcessedItemOverlay(
   return normalizeProcessedItemDetail(raw)
 }
 
+export async function createProcessedItemArticleMeta(
+  runId: string | number,
+  itemId: number,
+  body: {
+    meta_type: string
+    category: string
+    rationale?: string
+    confidence?: number
+    prompt_preset?: string
+  },
+  ifMatchVersion: number,
+): Promise<ProcessedItem> {
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}/article-meta`, {
+    method: 'POST',
+    headers: {
+      'If-Match': `"${ifMatchVersion}"`,
+    },
+    body: JSON.stringify(body),
+  })) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
+}
+
+export async function patchProcessedItemArticleMetaCategory(
+  runId: string | number,
+  itemId: number,
+  metaRowId: number,
+  category: string,
+  ifMatchVersion: number,
+): Promise<ProcessedItem> {
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}/article-meta/${metaRowId}`, {
+    method: 'PATCH',
+    headers: {
+      'If-Match': `"${ifMatchVersion}"`,
+    },
+    body: JSON.stringify({ category }),
+  })) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
+}
+
+export async function deleteProcessedItemArticleMeta(
+  runId: string | number,
+  itemId: number,
+  metaRowId: number,
+  ifMatchVersion: number,
+): Promise<ProcessedItem> {
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}/article-meta/${metaRowId}`, {
+    method: 'DELETE',
+    headers: {
+      'If-Match': `"${ifMatchVersion}"`,
+    },
+  })) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
+}
+
 export interface RerunItemResponse {
   item_id: number
   run_id: string
@@ -753,6 +836,22 @@ export async function rerunProcessedItem(
   return fetchAPI(`/runs/${runId}/items/${itemId}/rerun`, {
     method: 'POST',
   }) as Promise<RerunItemResponse>
+}
+
+export interface S3SyncItemResponse {
+  item_id: number
+  run_id: string
+  message: string
+}
+
+/** Queue a worker upload that overwrites the story's S3 Output file with current JSON. */
+export async function syncProcessedItemS3Output(
+  runId: string | number,
+  itemId: number
+): Promise<S3SyncItemResponse> {
+  return fetchAPI(`/runs/${runId}/items/${itemId}/s3-sync`, {
+    method: 'POST',
+  }) as Promise<S3SyncItemResponse>
 }
 
 export async function cancelRun(runId: string | number): Promise<Run> {

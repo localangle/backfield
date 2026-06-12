@@ -137,6 +137,33 @@ def test_s3_input_requires_bucket():
         run_s3_input({"bucket": "", "folder_path": ""}, {})
 
 
+def test_text_input_to_s3_output_records_upload():
+    spec = GraphSpec(
+        name="s3o",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "Story body."}),
+            NodeConfig(
+                id="o",
+                type="S3Output",
+                params={"bucket": "out-bucket", "output_path": "out"},
+            ),
+        ],
+        edges=[
+            Edge(source="a", target="o", sourceHandle="text", targetHandle="data"),
+        ],
+    )
+    fake_client = MagicMock()
+    with patch("agate_nodes.s3_output.node._s3_client", return_value=fake_client):
+        out = execute_graph(spec)
+
+    payload = out["s3_output"]
+    assert payload["s3_bucket"] == "out-bucket"
+    assert payload["s3_key"].startswith("out/")
+    assert payload["s3_key"].endswith(".json")
+    assert payload["consolidated"]["text"] == "Story body."
+    assert fake_client.put_object.call_count == 1
+
+
 def test_s3_input_strips_s3_uri_prefix_from_bucket():
     from agate_runtime.nodes.s3_input import run_s3_input
 
@@ -760,3 +787,90 @@ def test_dboutput_waits_direct_upstream_only(monkeypatch: pytest.MonkeyPatch):
     level_barrier_lower_bound = org_sleep_s + geo_sleep_s
     assert elapsed < level_barrier_lower_bound * 0.9
     assert out["stylebook_output"].get("success") is True
+
+
+def test_gather_waits_for_parallel_branches(monkeypatch: pytest.MonkeyPatch):
+    org_sleep_s = 0.6
+    execution_order: list[str] = []
+    spec = GraphSpec(
+        name="gather-barrier",
+        nodes=[
+            NodeConfig(id="in", type="TextInput", params={"text": "Story in Chicago, IL."}),
+            NodeConfig(id="org", type="OrganizationExtract", params={}),
+            NodeConfig(id="plc", type="PlaceExtract", params={}),
+            NodeConfig(id="gather", type="Gather", params={}),
+        ],
+        edges=[
+            Edge(source="in", target="org", sourceHandle="text", targetHandle="text"),
+            Edge(source="in", target="plc", sourceHandle="text", targetHandle="text"),
+        ],
+    )
+
+    def slow_org(*_a, **_k):
+        time.sleep(org_sleep_s)
+        return _mock_org_json()
+
+    def record_order(node_id: str, _node_type: str) -> None:
+        execution_order.append(node_id)
+
+    monkeypatch.setenv("BACKFIELD_PARALLEL_GRAPH_LEVELS", "1")
+    with (
+        patch(
+            "agate_nodes.organization_extract.node_port.call_llm",
+            side_effect=slow_org,
+        ),
+        patch(
+            "agate_nodes.place_extract.node_port.call_llm",
+            return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
+        ),
+    ):
+        out = execute_graph(spec, before_each_node=record_order)
+
+    assert execution_order[-1] == "gather"
+    assert execution_order.index("gather") > execution_order.index("org")
+    gathered = out["gather"]
+    assert "gathered" in gathered
+    branch_payload = gathered["gathered"]
+    assert branch_payload == ["text_input", "organization_extract", "place_extract"]
+
+
+def test_gather_waits_in_sequential_mode(monkeypatch: pytest.MonkeyPatch):
+    org_sleep_s = 0.4
+    execution_order: list[str] = []
+    spec = GraphSpec(
+        name="gather-sequential",
+        nodes=[
+            NodeConfig(id="in", type="TextInput", params={"text": "Story in Chicago, IL."}),
+            NodeConfig(id="org", type="OrganizationExtract", params={}),
+            NodeConfig(id="plc", type="PlaceExtract", params={}),
+            NodeConfig(id="gather", type="Gather", params={}),
+        ],
+        edges=[
+            Edge(source="in", target="org", sourceHandle="text", targetHandle="text"),
+            Edge(source="in", target="plc", sourceHandle="text", targetHandle="text"),
+        ],
+    )
+
+    def slow_org(*_a, **_k):
+        time.sleep(org_sleep_s)
+        return _mock_org_json()
+
+    def record_order(node_id: str, _node_type: str) -> None:
+        execution_order.append(node_id)
+
+    monkeypatch.delenv("BACKFIELD_PARALLEL_GRAPH_LEVELS", raising=False)
+    with (
+        patch(
+            "agate_nodes.organization_extract.node_port.call_llm",
+            side_effect=slow_org,
+        ),
+        patch(
+            "agate_nodes.place_extract.node_port.call_llm",
+            return_value=_mock_place_extract_json("Chicago", "Illinois", "IL"),
+        ),
+    ):
+        out = execute_graph(spec, before_each_node=record_order)
+
+    assert execution_order[-1] == "gather"
+    gathered = out["gather"]["gathered"]
+    assert gathered == ["text_input", "organization_extract", "place_extract"]

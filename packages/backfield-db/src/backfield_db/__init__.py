@@ -1,3 +1,7 @@
+from backfield_db.article_embedding_models import SubstrateArticleEmbedding
+from backfield_db.article_meta_models import SubstrateArticleMeta
+from backfield_db.custom_record_models import SubstrateCustomRecord
+from backfield_db.image_embedding_models import SubstrateImageEmbedding
 from backfield_db.models import (
     AgateGraph,
     AgateProcessedItem,
@@ -85,7 +89,11 @@ __all__ = [
     "StylebookPersonMeta",
     "StylebookSlugRedirect",
     "SubstrateArticle",
+    "SubstrateArticleEmbedding",
+    "SubstrateArticleMeta",
+    "SubstrateCustomRecord",
     "SubstrateImage",
+    "SubstrateImageEmbedding",
     "SubstrateLocation",
     "SubstrateLocationCache",
     "SubstrateLocationMention",

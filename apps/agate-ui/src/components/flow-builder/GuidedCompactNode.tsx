@@ -3,7 +3,12 @@ import { Handle, Position, type NodeProps } from 'reactflow'
 import { useGuidedFlowCanvasUi } from '@/components/flow-builder/guidedFlowCanvasUi'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { getNodeBgColor, getNodeIcon, getNodeLabel } from '@/lib/nodeUtils'
+import {
+  getGuidedCompactNodeSubtitle,
+  getNodeBgColor,
+  getNodeIcon,
+  getNodeLabel,
+} from '@/lib/nodeUtils'
 import { nodeMetadata } from '@/nodes/registry'
 import { AlertTriangle } from 'lucide-react'
 
@@ -43,6 +48,10 @@ export default function GuidedCompactNode({
       outputs.find((output) => output.id === 'text') ??
       outputs[outputs.length - 1])
   const label = getNodeLabel(nodeType)
+  const subtitle = getGuidedCompactNodeSubtitle(
+    nodeType,
+    data as Record<string, unknown> | undefined,
+  )
   const icon = getNodeIcon(nodeType, 'h-4 w-4')
   const bgColor = getNodeBgColor(nodeType)
 
@@ -86,16 +95,28 @@ export default function GuidedCompactNode({
             <AlertTriangle className="h-3 w-3" />
           </div>
         ) : null}
-        <CardHeader className="flex w-full flex-row items-center gap-2 space-y-0 p-3">
-          <div
-            className={cn(
-              'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-              bgColor,
-            )}
-          >
-            {icon}
+        <CardHeader
+          className={cn(
+            'flex w-full space-y-0 p-3',
+            subtitle ? 'flex-col items-start gap-0.5' : 'flex-row items-center gap-2',
+          )}
+        >
+          <div className="flex w-full min-w-0 flex-row items-center gap-2">
+            <div
+              className={cn(
+                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
+                bgColor,
+              )}
+            >
+              {icon}
+            </div>
+            <CardTitle className="truncate text-sm font-medium leading-5">{label}</CardTitle>
           </div>
-          <CardTitle className="truncate text-sm font-medium leading-5">{label}</CardTitle>
+          {subtitle ? (
+            <p className="truncate pl-8 text-xs font-medium text-foreground" title={subtitle}>
+              {subtitle}
+            </p>
+          ) : null}
         </CardHeader>
       </Card>
     </div>

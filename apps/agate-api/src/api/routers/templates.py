@@ -8,7 +8,7 @@ from typing import Any
 from agate_runtime import GraphSpec
 from agate_runtime.types import Edge, NodeConfig
 from api.deps import get_auth, get_session
-from api.routers.graphs import GraphOut, _prepare_spec_stylebook_refs
+from api.routers.graphs import GraphOut, _graph_out, _prepare_spec_stylebook_refs
 from backfield_auth.gate import require_project_access
 from backfield_db import AgateGraph, AgateTemplate, BackfieldProject
 from fastapi import APIRouter, Depends, HTTPException
@@ -95,18 +95,14 @@ def instantiate(
     remapped = _remap_spec(spec)
     prepared = _prepare_spec_stylebook_refs(session, body.project_id, remapped)
     graph_name = body.name.strip() if body.name else f"{t.name} (copy)"
+    graph_description = (t.description or "").strip() if t.description else ""
     g = AgateGraph(
         name=graph_name,
+        description=graph_description,
         spec_json=prepared.model_dump_json(),
         project_id=body.project_id,
     )
     session.add(g)
     session.commit()
     session.refresh(g)
-    return GraphOut(
-        id=g.id,
-        name=g.name,
-        project_id=g.project_id,
-        spec=GraphSpec.model_validate_json(g.spec_json),
-        created_at=g.created_at,
-    )
+    return _graph_out(g)

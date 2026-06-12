@@ -14,6 +14,7 @@ describe('processedItemDetailTab', () => {
 
   it('parses valid tab ids and falls back', () => {
     expect(parseProcessedItemDetailTab('json', { synthetic: false })).toBe('json')
+    expect(parseProcessedItemDetailTab('custom', { synthetic: false })).toBe('custom')
     expect(parseProcessedItemDetailTab('bogus', { synthetic: false })).toBe('info')
     expect(parseProcessedItemDetailTab(null, { synthetic: true })).toBe('info')
     expect(parseProcessedItemDetailTab('events', { synthetic: false })).toBe('info')

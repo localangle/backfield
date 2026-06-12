@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { ProcessedItemEditorReviewBanner } from '@/components/ProcessedItemEditorReviewBanner'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,6 +22,11 @@ import {
   getConnectionsStatusColor,
   shouldShowConnectionsSummary,
 } from '@/lib/review/content/connectionsDisplay'
+import {
+  articleEmbeddingStatusLabel,
+  formatArticleEmbeddingDetail,
+  shouldShowArticleEmbeddingSummary,
+} from '@/lib/review/content/articleEmbeddingDisplay'
 import {
   formatSemanticIndexingDetail,
   semanticIndexingStatusLabel,
@@ -280,6 +286,8 @@ export function ProcessedItemInformationCard({
   const editable = !item.synthetic && !reviewLocked
   const semanticIndexing = item.semantic_indexing
   const showSemanticIndexing = shouldShowSemanticIndexingSummary(semanticIndexing)
+  const articleEmbedding = item.article_embedding
+  const showArticleEmbedding = shouldShowArticleEmbeddingSummary(articleEmbedding)
   const connections = item.connections
   const showConnections = shouldShowConnectionsSummary(connections)
 
@@ -306,6 +314,8 @@ export function ProcessedItemInformationCard({
         )}
       </CardHeader>
       <CardContent className="space-y-6">
+        <ProcessedItemEditorReviewBanner item={item} section="story" />
+
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {ARTICLE_FIELD_KEYS.map((key) => {
             const isEditing = editingKey === key
@@ -396,6 +406,28 @@ export function ProcessedItemInformationCard({
                     {formatSemanticIndexingDetail(semanticIndexing) ? (
                       <p className="text-xs text-muted-foreground mt-1">
                         {formatSemanticIndexingDetail(semanticIndexing)}
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : null}
+            {showArticleEmbedding && articleEmbedding ? (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Article embedding</label>
+                {articleEmbedding.status === 'succeeded' ? (
+                  <p className="text-sm mt-0.5 flex items-center gap-1.5 text-green-700 dark:text-green-400">
+                    <CheckCircle className="h-4 w-4 shrink-0" aria-hidden />
+                    <span>{formatArticleEmbeddingDetail(articleEmbedding)}</span>
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm mt-0.5 text-muted-foreground">
+                      {articleEmbeddingStatusLabel(articleEmbedding.status)}
+                    </p>
+                    {formatArticleEmbeddingDetail(articleEmbedding) ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatArticleEmbeddingDetail(articleEmbedding)}
                       </p>
                     ) : null}
                   </>

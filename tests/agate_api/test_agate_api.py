@@ -403,6 +403,72 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     assert len(list_response.json()) == 1
 
 
+def test_graph_description_round_trip(client: TestClient):
+    project_response = client.post("/projects", json={"name": "Desc Project", "slug": "desc-proj"})
+    assert project_response.status_code == 200
+    project = project_response.json()
+
+    minimal_spec = {
+        "name": "desc_flow",
+        "nodes": [
+            {
+                "id": "n1",
+                "type": "TextInput",
+                "params": {"text": "Hello"},
+                "position": {"x": 0, "y": 0},
+            },
+            {
+                "id": "n2",
+                "type": "Output",
+                "params": {},
+                "position": {"x": 220, "y": 0},
+            },
+        ],
+        "edges": [
+            {
+                "source": "n1",
+                "target": "n2",
+                "sourceHandle": "text",
+                "targetHandle": "data",
+            },
+        ],
+    }
+
+    create_response = client.post(
+        "/graphs",
+        json={
+            "name": "Flow with description",
+            "description": "Extracts places from articles",
+            "project_id": project["id"],
+            "spec": minimal_spec,
+        },
+    )
+    assert create_response.status_code == 200
+    graph = create_response.json()
+    assert graph["description"] == "Extracts places from articles"
+
+    update_response = client.put(
+        f"/graphs/{graph['id']}",
+        json={
+            "name": graph["name"],
+            "description": "Updated description",
+            "project_id": project["id"],
+            "spec": graph["spec"],
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["description"] == "Updated description"
+
+    get_response = client.get(f"/graphs/{graph['id']}")
+    assert get_response.status_code == 200
+    assert get_response.json()["description"] == "Updated description"
+
+    list_response = client.get("/graphs")
+    assert list_response.status_code == 200
+    listed = next(row for row in list_response.json() if row["id"] == graph["id"])
+    assert listed["description"] == "Updated description"
+
+
 def test_project_api_key_scopes_agate_api_access(tmp_path):
     database_path = tmp_path / "agate-project-key-scope.db"
     engine = create_engine(

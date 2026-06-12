@@ -103,9 +103,9 @@ Authorization is enforced in-process with the same Postgres tables as Core (`bac
 - `routers/projects.py`
   - Project CRUD, stats, and encrypted project secrets. `**POST /projects`** accepts optional `workspace_id` (default org only). **Session callers:** `org_admin` may set `workspace_id` to any workspace in that org; **members** may only set it to a workspace where they have a `backfield_workspace_membership` row (otherwise **403**). Omitting `workspace_id` leaves the project unassigned. **Service token** calls are not restricted by workspace membership (automation). `**GET /projects`**, `**GET /projects/{id}**`, and `**GET /projects/by-slug/...**` include `workspace_id`, `workspace_stylebook_id`, `workspace_stylebook_name`, and `**workspace_stylebook_slug**` when the project’s workspace resolves a Stylebook. `**GET /projects/{id}/stats**` and `**GET /projects/by-slug/{slug}/stats**` include `**runs_succeeded**`, `**runs_in_progress**` (pending + running), and `**runs_failed**` (includes cancelled runs, which are stored as `**failed**`); `**median_duration_ms_per_run**` is median wall time `(updated_at - created_at)` over **succeeded** runs, with `**min_duration_ms_per_run**` and `**max_duration_ms_per_run**` over the same set; `**median_estimated_ai_cost_per_run`** is the median of per-run tracked LLM spend on **succeeded** runs (sum of `**backfield_ai_call_record**` rows per run, same cost fields as the project total cost endpoint), with `**min_estimated_ai_cost_per_run**` and `**max_estimated_ai_cost_per_run**`, plus `**median_estimated_ai_cost_currency**` and `**median_estimated_ai_cost_incomplete**`. `**GET /projects/{id}/semantic-indexing-configured**` returns `{ configured: true }` when the project (or organization fallback) has a **semantic.embedding** default that is active in the catalog and **not** turned off for this project via project model availability. `**GET /projects/{id}/estimated-ai-cost**` includes the overall cost fields plus `**model_breakdown**`, a descending-by-cost list of provider model totals (`**provider_model_id**` + `**estimated_total**`). `**median_duration_ms_per_item**` is the median of per-row durations on `**agate_processed_item**` for **succeeded** runs (terminal item statuses only: succeeded / failed / timed_out / skipped); when there are no such rows (single-graph runs), it matches `**median_duration_ms_per_run`**.
 - `routers/graphs.py`
-  - Graph CRUD and `GraphSpec` validation. Node params may include integer `**stylebook_id**` (catalog row id) on supported node types; Agate API rejects create/update when any referenced id is missing or belongs to another organization (**400**), using `backfield_entities.catalog.graph_stylebook_refs` for checks. Deleting a graph also removes its run metadata (`**agate_run**`, `**agate_processed_item**`, `**backfield_ai_call_record**`) and clears `**substrate_article.source_run_id**` / `**source_item_id**` so durable article rows are not orphaned by old execution provenance. Impact counts for a future admin delete flow use the same key via `count_stylebook_usage_in_graphs`.
+  - Graph CRUD and `GraphSpec` validation. **`POST /graphs`** and **`PUT /graphs/{id}`** accept optional **`description`** (plain text, trimmed server-side; default empty). List/get responses include **`description`**. Node params may include integer `**stylebook_id**` (catalog row id) on supported node types; Agate API rejects create/update when any referenced id is missing or belongs to another organization (**400**), using `backfield_entities.catalog.graph_stylebook_refs` for checks. Deleting a graph also removes its run metadata (`**agate_run**`, `**agate_processed_item**`, `**backfield_ai_call_record**`) and clears `**substrate_article.source_run_id**` / `**source_item_id**` so durable article rows are not orphaned by old execution provenance. Impact counts for a future admin delete flow use the same key via `count_stylebook_usage_in_graphs`.
 - `routers/templates.py`
-  - List templates and instantiate them into project graphs.
+  - List templates and instantiate them into project graphs. Instantiation copies the template’s **`description`** onto the new graph when present.
 - `processed_item/` (package under `apps/agate-api/src/api/`)
   - Review helpers for `agate_processed_item` rows (imported by `routers/runs.py` via `api.processed_item`): `content/article_context.py`, `entities/location/locations_merge.py`, `entities/location/review_enrichment.py`, `overlay/validate.py`, `overlay/reviewed_output.py`, shared `mention_occurrences.py`.
 - `routers/runs.py`
@@ -194,22 +194,68 @@ People review uses the same overlay PATCH transport as locations. Overlay JSON m
 
 **GET additive fields:**
 
-- **`merged_people`**: array of `{ "anchor", "source", "node_id", "index_in_node", "stale", "person", "mention_occurrences", … }`. Baseline is built from one canonical node carrying **`people`** (priority: **`stylebook_output`** → **`DBOutput`**; excludes **`PersonExtract`** when a persist node is present). Enrichment may add **`persisted_person_id`**, **`stylebook_person_canonical_id`**, **`canonical_link_status`**, and **`stylebook_link`**.
+- **`merged_people`**: array of `{ "anchor", "source", "node_id", "index_in_node", "stale", "person", "mention_occurrences", … }`. Baseline is built from one canonical node carrying **`people`** (priority: **`stylebook_output`** → **`DBOutput`**; excludes **`PersonExtract`** when a persist node is present). When no persist node is present, falls back to **`json_output.consolidated.people`**. Enrichment may add **`persisted_person_id`**, **`stylebook_person_canonical_id`**, **`canonical_link_status`**, and **`stylebook_link`**.
 - **`stale_people_overlay_entries`**: orphan **`by_anchor`** keys after rerun.
 
 **Stylebook substrate saves from review:** **`PATCH /v1/people/{person_id}?project_slug=…&article_id=…`** updates substrate person fields and mention editorial fields; **`DELETE /v1/people/{person_id}?project_slug=…&article_id=…`** soft-deletes story mentions and removes the substrate row when no active mentions remain.
 
 **Saved person from article evidence:** **`POST /v1/people/from-article-evidence?project_slug=…`** creates a project-scoped saved person plus its first article mention in one transaction. Body: **`article_id`**, **`run_id`**, **`name`**, **`mention_text`**, **`quote_text`**, **`start_char`**, **`end_char`**, optional **`person_type`**, **`title`**, **`affiliation`**, **`public_figure`**, **`nature`**, **`role_in_story`**. Validates quote offsets against project article text; returns substrate person fields, **`mention_id`**, **`occurrence_id`**, and **`anchor`** (`**user_person:<person_id>**`). Agate Review appends a matching **`people.user_added`** overlay row.
 
-People overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.people`** (and **`consolidated.people`** when present).
+People overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.people`** (and **`consolidated.people`** when present). JSON Output–only flows (no Gather / Stylebook persist node) read and write **`json_output.consolidated.people`** directly.
+
+## Processed item organizations overlay (v1)
+
+Organizations review mirrors people: overlay JSON may include **`organizations.by_anchor`**, **`organizations.removed_anchors`**, and **`organizations.user_added`** (ids **`user_organization:*`**).
+
+**GET additive fields:**
+
+- **`merged_organizations`**: same row shape as **`merged_people`**, with **`organization`** instead of **`person`**. Baseline priority: **`stylebook_output`** → **`DBOutput`**; when no persist node is present, falls back to **`json_output.consolidated.organizations`**.
+- **`stale_organizations_overlay_entries`**: orphan **`by_anchor`** keys after rerun.
+
+Organizations overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.organizations`** (and **`consolidated.organizations`** when present). JSON Output–only flows read and write **`json_output.consolidated.organizations`** directly.
+
+## Processed item article metadata overlay (v1)
+
+Article Metadata review (processed-item **Meta** tab) uses overlay transport for **category** edits, **manual tag adds**, and **removals**. Overlay JSON may include **`article_meta.by_id`**: row id → `{ "category", "meta_type" }`, **`article_meta.user_added`**: reviewer-added rows `{ "id", "meta_type", "category", "rationale", "confidence", "prompt_preset" }`, **`article_meta.removed_ids`**: row ids hidden from review, and **`article_meta.removed_meta_types`**: preset types removed from review and reviewed output.
+
+**GET additive fields:**
+
+- **`article_meta`**: array of `{ "id", "meta_type", "category", "rationale", "confidence", "prompt_preset", "source", … }`. Baseline is built from **`substrate_article_meta`** when the item has a persisted article; otherwise from **`article_metadata`** blocks in run output (including **`json_output.consolidated`**). Synthetic negative **`id`** values identify model-only rows; reviewer-added overlay-only rows use ids below **`-900000`**. Rows listed in **`removed_ids`** are omitted. **`user_added`** rows are appended when not already present from substrate or model output.
+
+**POST:** **`POST /runs/{run_id}/items/{item_id}/article-meta`** with body `{ "meta_type", "category", "rationale?", "confidence?", "prompt_preset?" }` and **`If-Match`** = **`overlay_version`**. Creates a new tag (defaults: rationale **`Added during review.`**, confidence **`1.0`**). When the item has a persisted article, the row is inserted into **`substrate_article_meta`**; otherwise it is stored in **`article_meta.user_added`** with a synthetic negative id. Re-adding a removed type clears that type from **`removed_meta_types`**. Returns **409** when a tag for the same **`meta_type`** already exists.
+
+**PATCH:** **`PATCH /runs/{run_id}/items/{item_id}/article-meta/{meta_row_id}`** with body `{ "category" }` and **`If-Match`** = **`overlay_version`**. Persisted rows (**`id` > 0**) update substrate and overlay; JSON Output–only rows (**`id` < 0**) update overlay and **`reviewed_output`** only.
+
+**DELETE:** **`DELETE /runs/{run_id}/items/{item_id}/article-meta/{meta_row_id}`** with **`If-Match`** = **`overlay_version`**. Persisted rows are deleted from substrate; all flows record the id in **`article_meta.removed_ids`** and materialize **`reviewed_output`** without that tag.
+
+## Processed item custom records overlay (v1)
+
+Custom Extract review (processed-item **Custom** tab) uses the same overlay PATCH transport. Identity is payload-based: **record type + stable per-record `key`** assigned at parse time (no substrate ids). Overlay JSON may include **`custom_records.<record_type>`** with:
+
+- **`by_key`**: record key → `{ "fields": {…partial field patch…}, "mentions": […full replacement when present…] }` for model records.
+- **`removed_keys`**: hide model records by key (reviewer-added rows are dropped from `user_added` instead).
+- **`user_added`**: reviewer-added records with keys **`user_record:*`**; carry **`source: "review"`** provenance and may have zero mentions (the mention-grounding requirement applies to model records only).
+- **`definition`**: reviewer-defined record type `{ "label", "schema": [{ "name", "label", "type" }, …] }` for types created entirely in review (no Custom Extract step upstream). Validation mirrors the Custom Extract node schema: slug record type and field names, field types `string` / `number` / `boolean` / `date` / `string_list`, reserved names rejected, max 20 fields; invalid definitions are dropped at normalize time. When the run output already carries the record type, the model schema wins and the definition is ignored.
+
+Merge lives in `api/processed_item/custom_records_merge.py` (mirrored client-side by `lib/review/entities/custom/customRecordsOverlay.ts`). Edits apply to every **`custom_records`** block in reviewed output (node payloads and **`consolidated`**); record types without overlay content pass through untouched. Reviewer-defined types are synthesized into each merged block; when the run produced no **`custom_records`** block at all, one is created on **`json_output.consolidated`** (or **`stylebook_output`** as a fallback).
+
+**Substrate re-persist:** when an overlay PATCH carries custom-record edits and the item resolves to a substrate article, the same request re-persists the reviewed **`custom_records`** block through `persist_custom_records_after_db_output` with **`replace`** policy (`source_run_id` = run id), so `substrate_custom_record` rows match the reviewed state. Items without a substrate article (for example JSON Output flows) save the overlay only.
 
 ## Reviewed output (v1)
 
 When overlay PATCH carries review content (location or people patches, user-added rows, removed anchors, or **`article`** field edits), Agate API **materializes** a full node-output document into **`agate_processed_item.reviewed_output_json`** on the same request. **`GET …/items/{item_id}`** and successful overlay PATCH responses include **`reviewed_output`** (parsed JSON) when present; otherwise the field is **`null`** and clients use **`output`** only.
 
-- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket; people review updates **`stylebook_output.people`** (and **`consolidated.people`** when present). **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
+- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket (or **`json_output.consolidated.places`** when no geocode node is present). People review updates **`stylebook_output.people`** or **`json_output.consolidated.people`**; organizations review updates **`stylebook_output.organizations`** or **`json_output.consolidated.organizations`**; article metadata review updates **`article_metadata`** blocks (including **`json_output.consolidated`**); custom-record review updates every **`custom_records`** block. **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
 - **Lifecycle:** Cleared with **`overlay_json`** on item rerun. Not written when overlay has no review content (for example metadata-only keys with no location or article edits).
-- **Non-effects:** Does not update **`result_json`**, geocode cache, substrate tables, or Stylebook canonicals. DBOutput and worker execution continue to read immutable model output unless product later adds an explicit persist-from-reviewed path.
+- **Non-effects:** Does not update **`result_json`**, geocode cache, or Stylebook canonicals. DBOutput and worker execution continue to read immutable model output. Exception: custom-record overlay edits re-persist **`substrate_custom_record`** rows on the same PATCH (see **Processed item custom records overlay (v1)**).
+
+## Processed item S3 Output re-sync (v1)
+
+When a flow includes an **S3 Output** node, each item's run JSON records the upload under that node's payload: `{ "consolidated": <file body>, "s3_bucket", "s3_key" }`. Because the reviewed-output materialization patches every payload carrying a **`consolidated`** dict, review edits flow into the S3 Output payload automatically.
+
+- **`POST /runs/{id}/items/{item_id}/s3-sync`**: queues `**worker.tasks.sync_processed_item_s3_output**` on the `**agate**` queue. Requires a **succeeded** batch item whose run JSON contains an S3 Output upload record; synthetic whole-graph `**items/1**` views return **400**, items without an S3 upload record return **400**, unknown items **404**. Response: `{ "item_id", "run_id", "message" }`.
+- **Worker behavior:** uploads **`reviewed_output_json`**'s S3 Output **`consolidated`** body when review edits exist (otherwise the original **`result_json`** body) to the **same** `s3_bucket` / `s3_key` recorded at run time, overwriting the existing object. The `public_read` node param from the saved graph spec controls the ACL. AWS credentials resolve from organization platform integration secrets / project secrets via the worker env overlay (same as S3 Input).
+- **Sync state:** on success the worker stamps **`s3_synced_at`** (ISO timestamp) on the S3 Output payload in both **`result_json`** and **`reviewed_output_json`**; on failure it stamps **`s3_sync_error`** instead. The item detail JSON tab surfaces both.
 
 ## Processed item article context (v1)
 

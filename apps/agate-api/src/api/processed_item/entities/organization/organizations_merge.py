@@ -79,17 +79,12 @@ def _anchor_for_organization_dict(
     return f"{node_id}:{index}"
 
 
-def _iter_rows_from_organizations_node(
-    output: dict[str, Any],
+def _iter_rows_from_organizations_list(
+    organizations: list[Any],
+    *,
     node_id: str,
 ) -> list[BaselineRow]:
     rows: list[BaselineRow] = []
-    payload = output.get(node_id)
-    if not isinstance(payload, dict):
-        return rows
-    organizations = payload.get("organizations")
-    if not isinstance(organizations, list):
-        return rows
     for idx, organization in enumerate(organizations):
         if not isinstance(organization, dict):
             continue
@@ -98,11 +93,47 @@ def _iter_rows_from_organizations_node(
     return rows
 
 
-def _merge_baseline_organizations_rows(output: dict[str, Any] | None) -> list[BaselineRow]:
-    node_id = _select_organizations_node_id(output)
-    if not node_id or not output:
+def _iter_rows_from_organizations_node(
+    output: dict[str, Any],
+    node_id: str,
+) -> list[BaselineRow]:
+    payload = output.get(node_id)
+    if not isinstance(payload, dict):
         return []
-    return _iter_rows_from_organizations_node(output, node_id)
+    organizations = payload.get("organizations")
+    if not isinstance(organizations, list):
+        return []
+    return _iter_rows_from_organizations_list(organizations, node_id=node_id)
+
+
+def json_output_consolidated_organizations(
+    output: dict[str, Any] | None,
+) -> list[dict[str, Any]] | None:
+    """``json_output.consolidated.organizations`` when present (JSON Output node)."""
+    if not output or not isinstance(output, dict):
+        return None
+    payload = output.get("json_output")
+    if not isinstance(payload, dict):
+        return None
+    consolidated = payload.get("consolidated")
+    if not isinstance(consolidated, dict):
+        return None
+    organizations = consolidated.get("organizations")
+    if isinstance(organizations, list):
+        return organizations
+    return None
+
+
+def _merge_baseline_organizations_rows(output: dict[str, Any] | None) -> list[BaselineRow]:
+    if not output:
+        return []
+    node_id = _select_organizations_node_id(output)
+    if node_id:
+        return _iter_rows_from_organizations_node(output, node_id)
+    json_organizations = json_output_consolidated_organizations(output)
+    if json_organizations is not None:
+        return _iter_rows_from_organizations_list(json_organizations, node_id="json_output")
+    return []
 
 
 def _normalize_organizations_overlay(

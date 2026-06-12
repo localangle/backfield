@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { FlowTitleRow } from '@/components/flow-builder/FlowTitleRow'
+import { FlowDescriptionField } from '@/components/flow-builder/FlowDescriptionField'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Button } from '@/components/ui/button'
 import GuidedFlowBuilder, { type GuidedFlowBuilderHandle } from '@/pages/GuidedFlowBuilder'
@@ -27,6 +28,7 @@ export default function RunGraph() {
   const [saving, setSaving] = useState(false)
   const [showRunPanel, setShowRunPanel] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [flowName, setFlowName] = useState('')
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { project: flowProject, workspace: flowWorkspace } = useProjectAndWorkspace(
@@ -38,9 +40,9 @@ export default function RunGraph() {
       buildProjectBreadcrumbItems({
         project: flowProject,
         workspace: flowWorkspace,
-        tail: [{ label: graph?.name?.trim() || 'Flow' }],
+        tail: [{ label: (editMode ? flowName : graph?.name)?.trim() || 'Flow' }],
       }),
-    [flowProject, flowWorkspace, graph?.name],
+    [editMode, flowName, flowProject, flowWorkspace, graph?.name],
   )
 
   const graphInvalid = useMemo(() => {
@@ -71,6 +73,7 @@ export default function RunGraph() {
       setLoading(true)
       const data = await getGraph(id)
       setGraph(data)
+      setFlowName(data.name)
     } catch (error) {
       console.error('Failed to load graph:', error)
       setGraph(null)
@@ -113,12 +116,17 @@ export default function RunGraph() {
 
   const handleCancelEdit = useCallback(() => {
     builderRef.current?.restoreSnapshot()
+    if (graphId) void loadGraph(graphId)
     setEditMode(false)
-  }, [])
+  }, [graphId, loadGraph])
 
   const handleSaveGraph = useCallback(async () => {
     setSaving(true)
     try {
+      if (graph) {
+        builderRef.current?.setGraphDescription(graph.description ?? '')
+        builderRef.current?.setGraphName(flowName)
+      }
       const ok = (await builderRef.current?.save()) ?? false
       if (ok) {
         setEditMode(false)
@@ -127,7 +135,7 @@ export default function RunGraph() {
     } finally {
       setSaving(false)
     }
-  }, [graphId, loadGraph])
+  }, [flowName, graph, graphId, loadGraph])
 
   const executeRun = useCallback(async () => {
     if (!graphId) return
@@ -232,16 +240,19 @@ export default function RunGraph() {
     void executeRun()
   }, [graphId, graphInvalid, executeRun, showModal])
 
-  const handleFlowNameSave = useCallback(
-    async (nextName: string) => {
+  const handleFlowNameChange = useCallback((nextName: string) => {
+    setFlowName(nextName)
+    builderRef.current?.setGraphName(nextName)
+  }, [])
+
+  const handleFlowDescriptionSave = useCallback(
+    async (nextDescription: string) => {
       if (!graph) return
       await updateGraph(graph.id, {
-        name: nextName,
+        name: graph.name,
+        description: nextDescription,
         project_id: graph.project_id,
-        spec: {
-          ...graph.spec,
-          name: nextName.toLowerCase().replace(/\s+/g, '_'),
-        },
+        spec: graph.spec,
       })
       await loadGraph(graph.id)
     },
@@ -293,22 +304,20 @@ export default function RunGraph() {
   return (
     <div className="flex h-screen flex-col">
       <div className="sticky top-0 z-10 border-b bg-background">
-        <div className="container mx-auto flex items-center justify-between px-4 py-4">
-          <div className="min-w-0 flex-1 space-y-2">
-            <PageBreadcrumbs items={breadcrumbItems} />
-            <div>
-              <FlowTitleRow name={graph?.name ?? 'Flow'} onSave={handleFlowNameSave} />
-              <p className="text-sm text-muted-foreground">
-                {editMode
-                  ? 'Edit mode — add steps, change bookends, or save your changes'
-                  : 'Click any step to view details and run this flow'}
-              </p>
+        <div className="container mx-auto px-4 py-3">
+          <PageBreadcrumbs items={breadcrumbItems} />
+          <div className="mt-1.5 flex items-center justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <FlowTitleRow
+                alwaysEditable={editMode}
+                name={editMode ? flowName : (graph?.name ?? 'Flow')}
+                onChange={editMode ? handleFlowNameChange : undefined}
+                canEdit={editMode}
+              />
             </div>
-          </div>
-
-          <div className="flex shrink-0 gap-2">
+            <div className="flex shrink-0 items-center gap-2">
           {editMode ? (
-            <div className="flex gap-2">
+            <>
               <Button variant="outline" onClick={handleCancelEdit}>
                 Cancel
               </Button>
@@ -320,9 +329,9 @@ export default function RunGraph() {
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete flow
               </Button>
-            </div>
+            </>
           ) : (
-            <div className="flex gap-2">
+            <>
               <Button
                 onClick={handleRunFlow}
                 disabled={running || graphInvalid}
@@ -349,9 +358,21 @@ export default function RunGraph() {
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete flow
               </Button>
-            </div>
+            </>
           )}
+            </div>
           </div>
+          <FlowDescriptionField
+            value={graph?.description ?? ''}
+            onChange={(next) => {
+              if (!graph) return
+              setGraph({ ...graph, description: next })
+              builderRef.current?.setGraphDescription(next)
+            }}
+            onBlurSave={editMode ? handleFlowDescriptionSave : undefined}
+            canEdit={editMode}
+            className="mt-1"
+          />
         </div>
       </div>
 

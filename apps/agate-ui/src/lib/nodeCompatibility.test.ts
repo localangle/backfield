@@ -39,6 +39,81 @@ describe('getCompatibleNextNodes', () => {
     expect(result.enabled.map((e) => e.type)).toContain('PlaceExtract')
     expect(result.enabled.map((e) => e.type)).toContain('PersonExtract')
   })
+
+  it('enables Article Metadata from JSON Input when generative models are available', () => {
+    const result = getCompatibleNextNodes('JSONInput', ['JSONInput'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('ArticleMetadata')
+    expect(resolveEdgeHandles('JSONInput', 'ArticleMetadata')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'text',
+    })
+  })
+
+  it('disables Embed Text when no embedding models are enabled for the project', () => {
+    const withoutModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { embedding: false },
+    })
+    const embed = withoutModels.disabled.find((e) => e.type === 'EmbedText')
+    expect(embed).toBeDefined()
+    expect(embed?.reason).toMatch(/embedding model/i)
+
+    const withModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { embedding: true },
+    })
+    expect(withModels.enabled.map((e) => e.type)).toContain('EmbedText')
+  })
+
+  it('disables chaining the same step type directly after itself', () => {
+    const result = getCompatibleNextNodes('OrganizationExtract', [
+      'TextInput',
+      'OrganizationExtract',
+    ])
+    expect(result.enabled.map((e) => e.type)).not.toContain('OrganizationExtract')
+
+    const org = result.disabled.find((e) => e.type === 'OrganizationExtract')
+    expect(org?.reason).toMatch(/cannot follow another Organization Extract step/i)
+  })
+
+  it('allows serial Article Metadata dimension chains', () => {
+    const result = getCompatibleNextNodes('ArticleMetadata', ['TextInput', 'ArticleMetadata'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('ArticleMetadata')
+  })
+
+  it('enables Custom Extract from Text Input when generative models are available', () => {
+    const result = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('CustomExtract')
+    expect(resolveEdgeHandles('TextInput', 'CustomExtract')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'text',
+    })
+  })
+
+  it('allows serial Custom Extract record-type chains', () => {
+    const result = getCompatibleNextNodes('CustomExtract', ['TextInput', 'CustomExtract'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(result.enabled.map((e) => e.type)).toContain('CustomExtract')
+  })
+
+  it('disables Article Metadata when no generative models are enabled for the project', () => {
+    const withoutModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { generative: false },
+    })
+    const metadata = withoutModels.disabled.find((e) => e.type === 'ArticleMetadata')
+    expect(metadata).toBeDefined()
+    expect(metadata?.reason).toMatch(/generative model/i)
+
+    const withModels = getCompatibleNextNodes('TextInput', ['TextInput'], {
+      projectModelCapabilities: { generative: true },
+    })
+    expect(withModels.enabled.map((e) => e.type)).toContain('ArticleMetadata')
+  })
 })
 
 describe('getCompatibleInsertNodes', () => {
@@ -51,6 +126,23 @@ describe('getCompatibleInsertNodes', () => {
     const result = getCompatibleInsertNodes('TextInput', 'GeocodeAgent', ['TextInput'])
     const geocode = result.disabled.find((e) => e.type === 'GeocodeAgent')
     expect(geocode?.reason).toMatch(/extracted places/i)
+  })
+
+  it('disables inserting the same step type adjacent to itself', () => {
+    const result = getCompatibleInsertNodes(
+      'OrganizationExtract',
+      'DBOutput',
+      ['TextInput', 'OrganizationExtract'],
+    )
+    expect(result.enabled.map((e) => e.type)).not.toContain('OrganizationExtract')
+
+    const org = result.disabled.find((e) => e.type === 'OrganizationExtract')
+    expect(org?.reason).toMatch(/cannot follow another Organization Extract step/i)
+  })
+
+  it('enables Gather before Backfield Output', () => {
+    const result = getCompatibleInsertNodes('TextInput', 'DBOutput', ['TextInput'])
+    expect(result.enabled.map((e) => e.type)).toContain('Gather')
   })
 })
 
@@ -72,6 +164,31 @@ describe('resolveEdgeHandles', () => {
   it('maps Text Input to Backfield Output on text → data', () => {
     expect(resolveEdgeHandles('TextInput', 'DBOutput')).toEqual({
       sourceHandle: 'text',
+      targetHandle: 'data',
+    })
+  })
+
+  it('maps Gather to Backfield Output on gathered → data', () => {
+    expect(resolveEdgeHandles('Gather', 'DBOutput')).toEqual({
+      sourceHandle: 'gathered',
+      targetHandle: 'data',
+    })
+  })
+
+  it('maps Gather to JSON Output on gathered → data', () => {
+    expect(resolveEdgeHandles('Gather', 'Output')).toEqual({
+      sourceHandle: 'gathered',
+      targetHandle: 'data',
+    })
+  })
+
+  it('maps any upstream node to Gather on data', () => {
+    expect(resolveEdgeHandles('TextInput', 'Gather')).toEqual({
+      sourceHandle: 'text',
+      targetHandle: 'data',
+    })
+    expect(resolveEdgeHandles('PlaceExtract', 'Gather')).toEqual({
+      sourceHandle: 'locations',
       targetHandle: 'data',
     })
   })

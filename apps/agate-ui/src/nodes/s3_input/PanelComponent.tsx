@@ -2,7 +2,7 @@
 const nodeMetadata = {
   "type": "S3Input",
   "label": "S3 Input",
-  "icon": "Database",
+  "icon": "Archive",
   "color": "bg-blue-500",
   "description": "Load article text from JSON files in S3.",
   "category": "input",

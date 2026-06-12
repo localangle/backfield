@@ -9,7 +9,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { InlineNameEditor } from '@/components/InlineNameEditor'
 import { PageBreadcrumbs } from '@/components/PageBreadcrumbs'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ProjectSettings, { type ProjectSettingsHandle } from '@/components/ProjectSettings'
@@ -31,7 +31,7 @@ import {
 import { formatDurationMs } from '@/lib/formatDuration'
 import { useAuth } from '@/lib/auth'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
-import { Loader2, Pencil, Plus, RefreshCw, Check, X } from 'lucide-react'
+import { Loader2, Plus, RefreshCw } from 'lucide-react'
 
 function formatCurrencySummary(
   value: string | number | null | undefined,
@@ -86,10 +86,6 @@ export default function ProjectDetailPage() {
   const [stats, setStats] = useState<ProjectStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [editingName, setEditingName] = useState(false)
-  const [nameDraft, setNameDraft] = useState('')
-  const [savingName, setSavingName] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
   const [workspaceTab, setWorkspaceTab] = useState('flows')
   const runsTabRef = useRef<ProjectDetailRunsTabHandle>(null)
   const [runsRefreshBusy, setRunsRefreshBusy] = useState(false)
@@ -109,7 +105,6 @@ export default function ProjectDetailPage() {
       const [p, s] = await Promise.all([getProjectBySlug(slug), getProjectStatsBySlug(slug)])
       setProject(p)
       setStats(s)
-      setNameDraft(p.name)
     } catch (e) {
       console.error(e)
       setError('Failed to load project')
@@ -284,35 +279,6 @@ export default function ProjectDetailPage() {
     }
   }, [project?.workspace_id])
 
-  useEffect(() => {
-    if (editingName) inputRef.current?.focus()
-  }, [editingName])
-
-  const cancelNameEdit = () => {
-    setNameDraft(project?.name ?? '')
-    setEditingName(false)
-  }
-
-  const saveName = async () => {
-    if (!project) return
-    const next = nameDraft.trim()
-    if (!next || next === project.name) {
-      cancelNameEdit()
-      return
-    }
-    try {
-      setSavingName(true)
-      await updateProject(project.id, { name: next })
-      setEditingName(false)
-      await reload()
-      window.dispatchEvent(new CustomEvent('agate:projects-changed'))
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSavingName(false)
-    }
-  }
-
   if (!slug) {
     return <p className="text-muted-foreground">Invalid project.</p>
   }
@@ -347,62 +313,21 @@ export default function ProjectDetailPage() {
           ]}
         />
         <div className="min-h-[2.5rem]">
-          {editingName ? (
-            <div className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2">
-              <Input
-                ref={inputRef}
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void saveName()
-                  if (e.key === 'Escape') cancelNameEdit()
-                }}
-                disabled={savingName}
-                className="min-w-0 flex-1 max-w-xl text-3xl font-bold h-auto py-2 px-3"
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="default"
-                className="shrink-0"
-                disabled={savingName || !nameDraft.trim()}
-                onClick={() => void saveName()}
-                aria-label="Save name"
-              >
-                <Check className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                className="shrink-0"
-                disabled={savingName}
-                onClick={cancelNameEdit}
-                aria-label="Cancel"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : (
-            <div className="inline-flex max-w-full items-center gap-2">
-              <h1 className="inline-block min-w-0 max-w-[min(100%,42rem)] truncate text-3xl font-bold">
-                {project.name}
-              </h1>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setNameDraft(project.name)
-                  setEditingName(true)
-                }}
-                aria-label="Edit project name"
-              >
-                <Pencil className="h-5 w-5" />
-              </Button>
-            </div>
-          )}
+          {project ? (
+            <InlineNameEditor
+              value={project.name}
+              ariaLabel="Project name"
+              editAriaLabel="Edit project name"
+              saveAriaLabel="Save project name"
+              titleClassName="text-3xl font-bold"
+              inputClassName="min-w-0 flex-1 max-w-xl text-3xl font-bold h-auto py-2 px-3"
+              onSave={async (next) => {
+                await updateProject(project.id, { name: next })
+                await reload()
+                window.dispatchEvent(new CustomEvent('agate:projects-changed'))
+              }}
+            />
+          ) : null}
         </div>
       </div>
 

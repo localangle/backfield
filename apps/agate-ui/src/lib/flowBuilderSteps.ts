@@ -1,4 +1,4 @@
-import { isValidJsonInputData } from '@/lib/jsonInputValidation'
+import { isJsonInputInvalidNodeData, isValidJsonInputData } from '@/lib/jsonInputValidation'
 import { isValidS3BucketName, s3BucketFieldError } from '@/lib/s3InputValidation'
 
 export type FlowBuilderStep = 'input' | 'output' | 'scaffold'
@@ -42,7 +42,7 @@ export type BookendNodeLike = {
 
 /** Whether the user may Continue past a bookend configure gate. */
 export function canContinueBookendNode(node: BookendNodeLike): boolean {
-  if (node.type === 'S3Input') {
+  if (node.type === 'S3Input' || node.type === 'S3Output') {
     const bucket = node.data?.bucket
     return typeof bucket === 'string' && isValidS3BucketName(bucket)
   }
@@ -58,11 +58,14 @@ export function canContinueMiddleNode(node: BookendNodeLike): boolean {
 }
 
 export function bookendContinueHint(node: BookendNodeLike): string | null {
-  if (node.type === 'S3Input' && !canContinueBookendNode(node)) {
+  if ((node.type === 'S3Input' || node.type === 'S3Output') && !canContinueBookendNode(node)) {
     const bucket = typeof node.data?.bucket === 'string' ? node.data.bucket : ''
     return s3BucketFieldError(bucket) ?? 'Enter the S3 bucket name before continuing.'
   }
   if (node.type === 'JSONInput' && !canContinueBookendNode(node)) {
+    if (isJsonInputInvalidNodeData(node.data)) {
+      return 'Fix the JSON syntax before continuing.'
+    }
     return 'Add valid JSON with a "text" field before continuing.'
   }
   return null

@@ -21,19 +21,65 @@ export type CompatibleNextNodesResult = {
   disabled: CompatibleNodeEntry[]
 }
 
+export type CompatibleNodesOptions = {
+  /** Capability name → true when at least one project model is enabled (e.g. embedding). */
+  projectModelCapabilities?: Record<string, boolean>
+}
+
+function requiredProjectModelCapabilities(meta: NodeMetadataEntry): string[] {
+  const caps = (meta as { requiredProjectModelCapabilities?: string[] })
+    .requiredProjectModelCapabilities
+  return Array.isArray(caps) ? caps : []
+}
+
+function missingProjectModelsReason(capabilities: string[]): string {
+  if (capabilities.includes('embedding') && capabilities.includes('generative')) {
+    return 'Enable generative and embedding models for this project in Models.'
+  }
+  if (capabilities.includes('embedding')) {
+    return 'Enable at least one embedding model for this project in Models.'
+  }
+  if (capabilities.includes('generative')) {
+    return 'Enable at least one generative model for this project in Models.'
+  }
+  return 'Enable the required models for this project in Models.'
+}
+
+function projectModelsRequirementMet(
+  meta: NodeMetadataEntry,
+  options?: CompatibleNodesOptions,
+): { ok: true } | { ok: false; reason: string } {
+  const required = requiredProjectModelCapabilities(meta)
+  if (required.length === 0) return { ok: true }
+
+  const availability = options?.projectModelCapabilities
+  if (availability === undefined) {
+    return { ok: false, reason: 'Loading project models…' }
+  }
+
+  if (required.every((cap) => availability[cap] === true)) {
+    return { ok: true }
+  }
+
+  return { ok: false, reason: missingProjectModelsReason(required) }
+}
+
 const CATEGORY_HEADINGS: Record<string, string> = {
   extraction: 'Extract information',
   enrichment: 'Enrich and refine',
   geography: 'Geography',
   filter: 'Filter results',
   review: 'Review results',
+  embedding: 'Embed',
   text: 'Text analysis',
   output: 'Output',
   input: 'Input',
+  control: 'Other',
+  other: 'Other',
 }
 
 function isBookendType(type: string): boolean {
-  return isInputBookendType(type) || isOutputBookendType(type) || type === 'S3Output'
+  return isInputBookendType(type) || isOutputBookendType(type)
 }
 
 export function categoryHeading(category: string): string {
@@ -50,6 +96,9 @@ function typesCompatible(outputType: string, inputType: string): boolean {
   return false
 }
 
+/** Sync-barrier nodes accept any upstream output in the guided flow builder. */
+export const SYNC_BARRIER_NODE_TYPES = new Set(['Gather'])
+
 /** Pick source/target handle ids for a guided edge from node metadata ports. */
 export function resolveEdgeHandles(
   sourceType: string,
@@ -60,8 +109,14 @@ export function resolveEdgeHandles(
   if (!sourceMeta || !targetMeta) return null
 
   const outputs = sourceMeta.outputs ?? []
-  const inputs = targetMeta.inputs ?? []
-  if (outputs.length === 0 || inputs.length === 0) return null
+  let inputs = targetMeta.inputs ?? []
+
+  if (inputs.length === 0 && SYNC_BARRIER_NODE_TYPES.has(targetType)) {
+    inputs = [{ id: 'data', label: 'Any data', type: 'any', required: false }]
+  }
+
+  if (outputs.length === 0) return null
+  if (inputs.length === 0) return null
 
   const requiredInputs = inputs.filter((input) => input.required)
   const inputsToTry = requiredInputs.length > 0 ? requiredInputs : inputs
@@ -97,6 +152,10 @@ function parentOutputsCompatible(
   parentMeta: NodeMetadataEntry,
   candidateMeta: NodeMetadataEntry,
 ): boolean {
+  if (SYNC_BARRIER_NODE_TYPES.has(candidateMeta.type)) {
+    return (parentMeta.outputs ?? []).length > 0
+  }
+
   const outputs = parentMeta.outputs ?? []
   const requiredInputs = (candidateMeta.inputs ?? []).filter((i) => i.required)
   const inputsToCheck =
@@ -155,6 +214,25 @@ function downstreamFailureReason(candidateMeta: NodeMetadataEntry, targetMeta: N
   return `${targetLabel} cannot use the data coming from ${candidateLabel}. Choose a different step for this connection.`
 }
 
+function sameTypeChainFailureReason(meta: NodeMetadataEntry): string {
+  const label = meta.label ?? meta.type
+  return `${label} cannot follow another ${label} step.`
+}
+
+// Each instance classifies/extracts a different dimension or record type, so
+// serial chains of the same step are intentional.
+export const SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES = new Set(['ArticleMetadata', 'CustomExtract'])
+
+function blocksSameTypeChain(
+  candidateType: string,
+  upstreamType: string,
+): boolean {
+  if (SAME_TYPE_CHAIN_EXEMPT_NODE_TYPES.has(candidateType)) {
+    return false
+  }
+  return candidateType === upstreamType
+}
+
 function toEntry(
   meta: NodeMetadataEntry,
   enabled: boolean,
@@ -173,6 +251,7 @@ function toEntry(
 export function getCompatibleNextNodes(
   parentType: string,
   branchAncestryTypes: readonly string[],
+  options?: CompatibleNodesOptions,
 ): CompatibleNextNodesResult {
   const parentMeta = nodeMetadata.find((m) => m.type === parentType)
   if (!parentMeta) {
@@ -201,6 +280,17 @@ export function getCompatibleNextNodes(
       continue
     }
 
+    if (blocksSameTypeChain(meta.type, parentType)) {
+      disabled.push(toEntry(meta, false, sameTypeChainFailureReason(meta)))
+      continue
+    }
+
+    const modelRequirement = projectModelsRequirementMet(meta, options)
+    if (!modelRequirement.ok) {
+      disabled.push(toEntry(meta, false, modelRequirement.reason))
+      continue
+    }
+
     enabled.push(toEntry(meta, true, null))
   }
 
@@ -214,6 +304,7 @@ export function getCompatibleInsertNodes(
   sourceType: string,
   targetType: string,
   sourceAncestryTypes: readonly string[],
+  options?: CompatibleNodesOptions,
 ): CompatibleNextNodesResult {
   const sourceMeta = nodeMetadata.find((m) => m.type === sourceType)
   const targetMeta = nodeMetadata.find((m) => m.type === targetType)
@@ -242,6 +333,11 @@ export function getCompatibleInsertNodes(
       continue
     }
 
+    if (blocksSameTypeChain(meta.type, sourceType) || blocksSameTypeChain(meta.type, targetType)) {
+      disabled.push(toEntry(meta, false, sameTypeChainFailureReason(meta)))
+      continue
+    }
+
     if (!parentOutputsCompatible(meta, targetMeta)) {
       disabled.push(toEntry(meta, false, downstreamFailureReason(meta, targetMeta)))
       continue
@@ -251,6 +347,12 @@ export function getCompatibleInsertNodes(
     const targetAncestry = [...ancestryWithSource, meta.type]
     if (!upstreamRequirementsMet(targetRequired, targetAncestry)) {
       disabled.push(toEntry(meta, false, upstreamFailureReason(targetMeta, targetAncestry)))
+      continue
+    }
+
+    const modelRequirement = projectModelsRequirementMet(meta, options)
+    if (!modelRequirement.ok) {
+      disabled.push(toEntry(meta, false, modelRequirement.reason))
       continue
     }
 

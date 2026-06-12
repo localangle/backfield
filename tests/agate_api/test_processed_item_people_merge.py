@@ -47,3 +47,21 @@ def test_merge_removed_anchor() -> None:
     merged, _stale = build_merged_people_lane(output=output, overlay=overlay)
     assert len(merged) == 1
     assert merged[0]["anchor"] == "p2"
+
+
+def test_merge_json_output_consolidated_baseline() -> None:
+    output = {
+        "person_extract": {"people": [_person("Extract only", id="x1")], "success": True},
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "people": [_person("Jane Doe", id="p1")],
+            },
+        },
+    }
+    merged, stale = build_merged_people_lane(output=output, overlay=None)
+    assert stale == []
+    assert len(merged) == 1
+    assert merged[0]["anchor"] == "p1"
+    assert merged[0]["node_id"] == "json_output"
+    assert merged[0]["person"]["name"] == "Jane Doe"

@@ -109,6 +109,60 @@ def run_organization_extract_runtime(
     return asyncio.run(run_organization_extract_async(params, input_state, ctx))
 
 
+async def run_article_metadata_async(
+    params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
+) -> dict[str, Any]:
+    from agate_nodes.article_metadata.node_port import (
+        ArticleMetadataInput,
+        ArticleMetadataNode,
+        ArticleMetadataParams,
+    )
+
+    node = ArticleMetadataNode()
+    out = await node.run(
+        ArticleMetadataInput.model_validate(input_state),
+        ArticleMetadataParams.model_validate(params),
+        ctx,
+    )
+    return out.model_dump()
+
+
+def run_article_metadata_runtime(
+    params: dict[str, Any],
+    input_state: dict[str, Any],
+    ctx: AgateEnvContext | None = None,
+) -> dict[str, Any]:
+    ctx = ctx or default_context()
+    return asyncio.run(run_article_metadata_async(params, input_state, ctx))
+
+
+async def run_custom_extract_async(
+    params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
+) -> dict[str, Any]:
+    from agate_nodes.custom_extract.node_port import (
+        CustomExtractInput,
+        CustomExtractNode,
+        CustomExtractParams,
+    )
+
+    node = CustomExtractNode()
+    out = await node.run(
+        CustomExtractInput.model_validate(input_state),
+        CustomExtractParams.model_validate(params),
+        ctx,
+    )
+    return out.model_dump()
+
+
+def run_custom_extract_runtime(
+    params: dict[str, Any],
+    input_state: dict[str, Any],
+    ctx: AgateEnvContext | None = None,
+) -> dict[str, Any]:
+    ctx = ctx or default_context()
+    return asyncio.run(run_custom_extract_async(params, input_state, ctx))
+
+
 async def run_geocode_agent_async(
     params: dict[str, Any], input_state: dict[str, Any], ctx: AgateEnvContext
 ) -> dict[str, Any]:
@@ -135,6 +189,8 @@ ASYNC_NODE_RUNNERS: dict[str, Any] = {
     "PlaceExtract": run_place_extract_async,
     "PersonExtract": run_person_extract_async,
     "OrganizationExtract": run_organization_extract_async,
+    "ArticleMetadata": run_article_metadata_async,
+    "CustomExtract": run_custom_extract_async,
     "GeocodeAgent": run_geocode_agent_async,
 }
 

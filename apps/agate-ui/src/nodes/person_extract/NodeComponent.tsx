@@ -3,7 +3,7 @@ const nodeMetadata = {
   "type": "PersonExtract",
   "name": "PersonExtract",
   "label": "Person Extract",
-  "description": "Extract editorially relevant people from text using an LLM.",
+  "description": "Extract editorially relevant people from text.",
   "category": "extraction",
   "icon": "User",
   "color": "bg-indigo-500",

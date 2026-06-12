@@ -1,0 +1,33 @@
+{
+  "type": "EmbedImages",
+  "label": "Embed Images",
+  "description": "Write a text description for each image from caption and article context, then embed those descriptions for search and analysis.",
+  "category": "embedding",
+  "icon": "Image",
+  "color": "bg-orange-500",
+  "requiredUpstreamNodes": [],
+  "requiredProjectModelCapabilities": ["generative", "embedding"],
+  "dependencyHelperText": "Requires upstream images, such as from JSON Input with an images field.",
+  "inputs": [
+    {
+      "id": "images",
+      "label": "Images",
+      "type": "object",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "image_embeddings",
+      "label": "Image embeddings",
+      "type": "array"
+    }
+  ],
+  "defaultParams": {
+    "prompt": "Write a clear, detailed description of the image using only the caption and article context provided. Do not invent visual details that are not supported by the context.",
+    "descriptionModel": "",
+    "descriptionAiModelConfigId": null,
+    "embeddingModel": "",
+    "embeddingAiModelConfigId": null
+  }
+}

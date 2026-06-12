@@ -1,4 +1,8 @@
-import { stripJsonInputEditorMarkers } from '@/lib/jsonInputValidation'
+import {
+  isJsonInputInvalidNodeData,
+  isValidJsonInputData,
+  stripJsonInputEditorMarkers,
+} from '@/lib/jsonInputValidation'
 import { resolvedStylebookId } from '@/lib/nodePanelAiModel'
 import { isValidS3BucketName, normalizeS3BucketName, normalizeS3FolderPath, normalizeS3MaxFilesInput, S3_DEFAULT_MAX_FILES, s3BucketFieldError } from '@/lib/s3InputValidation'
 import { nodeMetadata } from '@/nodes/registry'
@@ -15,11 +19,11 @@ export const INPUT_NODE_TYPES = [
 ] as const
 
 /** Guided builder: exactly one of these per flow. */
-export const OUTPUT_BOOKEND_TYPES = ['Output', 'DBOutput'] as const
+export const OUTPUT_BOOKEND_TYPES = ['Output', 'DBOutput', 'S3Output'] as const
 export type OutputBookendType = (typeof OUTPUT_BOOKEND_TYPES)[number]
 
 /** All node types treated as flow outputs (presence checks). */
-export const OUTPUT_NODE_TYPES = [...OUTPUT_BOOKEND_TYPES, 'S3Output'] as const
+export const OUTPUT_NODE_TYPES = [...OUTPUT_BOOKEND_TYPES] as const
 
 export type FlowValidationSeverity = 'warning' | 'error'
 
@@ -72,7 +76,9 @@ export function isOutputBookendType(type: string | undefined): boolean {
 
 export function validateS3InputBuckets(nodes: FlowGraphNode[]): FlowValidationResult {
   const invalid = nodes.filter(
-    (n) => n.type === 'S3Input' && !isValidS3BucketName(String(n.data?.bucket ?? '')),
+    (n) =>
+      (n.type === 'S3Input' || n.type === 'S3Output') &&
+      !isValidS3BucketName(String(n.data?.bucket ?? '')),
   )
   if (invalid.length === 0) {
     return { ok: true }
@@ -85,6 +91,31 @@ export function validateS3InputBuckets(nodes: FlowGraphNode[]): FlowValidationRe
     description: s3BucketFieldError(bucket) ?? 'Fix the S3 bucket name before saving.',
     severity: 'error',
   }
+}
+
+export function validateJsonInputNodes(nodes: FlowGraphNode[]): FlowValidationResult {
+  for (const node of nodes) {
+    if (node.type !== 'JSONInput') continue
+    if (isJsonInputInvalidNodeData(node.data)) {
+      return {
+        ok: false,
+        title: 'Invalid JSON input',
+        description:
+          'Fix the JSON in your content source step before saving. It must be valid JSON with a string "text" field.',
+        severity: 'error',
+      }
+    }
+    if (!isValidJsonInputData(node.data)) {
+      return {
+        ok: false,
+        title: 'Invalid JSON input',
+        description:
+          'Your content source JSON must be an object with a string "text" field.',
+        severity: 'error',
+      }
+    }
+  }
+  return { ok: true }
 }
 
 export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown> {
@@ -104,6 +135,14 @@ export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown>
       bucket: normalizeS3BucketName(String(raw.bucket ?? '')),
       folder_path: normalizeS3FolderPath(String(raw.folder_path ?? '')),
       max_files: normalizeS3MaxFilesInput(String(raw.max_files ?? S3_DEFAULT_MAX_FILES)),
+    }
+  }
+  if (node.type === 'S3Output') {
+    raw = {
+      ...raw,
+      bucket: normalizeS3BucketName(String(raw.bucket ?? '')),
+      output_path: normalizeS3FolderPath(String(raw.output_path ?? '')),
+      public_read: Boolean(raw.public_read),
     }
   }
   return raw
@@ -241,6 +280,32 @@ export function validateNoOrphans(graph: FlowGraph): FlowValidationResult {
   }
 }
 
+export function validateCustomExtractRecordTypes(graph: FlowGraph): FlowValidationResult {
+  const seen = new Map<string, number>()
+  for (const node of graph.nodes) {
+    if (node.type !== 'CustomExtract') continue
+    const recordType = String(node.data?.record_type ?? '').trim()
+    if (!recordType) continue
+    seen.set(recordType, (seen.get(recordType) ?? 0) + 1)
+  }
+
+  const duplicates = [...seen.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([recordType]) => recordType)
+  if (duplicates.length === 0) {
+    return { ok: true }
+  }
+
+  return {
+    ok: false,
+    title: 'Custom Extract steps overlap',
+    description: `More than one Custom Extract step uses the same record type (${duplicates.join(
+      ', ',
+    )}), so one step's records would overwrite the other's. Give each step its own record type.`,
+    severity: 'warning',
+  }
+}
+
 export function validateInputConnections(graph: FlowGraph): FlowValidationResult {
   const nodesWithIncoming = new Set(graph.edges.map((e) => e.target))
   const nodesWithoutInput = graph.nodes.filter((n) => {
@@ -268,6 +333,8 @@ export function validateGraphForSave(graph: FlowGraph): FlowValidationResult {
     validateFlowInputOutputRules,
     validateNoOrphans,
     validateInputConnections,
+    validateCustomExtractRecordTypes,
+    (g) => validateJsonInputNodes(g.nodes),
     (g) => validateS3InputBuckets(g.nodes),
   ]
 

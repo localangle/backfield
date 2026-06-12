@@ -25,6 +25,26 @@ ORGANIZATIONS_SMOKE_DEMO_TEXT = (
     "The Chicago Cubs hosted a ribbon-cutting at Wrigley Field."
 )
 
+ARTICLE_METADATA_STARTER_FLOW_GRAPH_DISPLAY_NAME = "Article Metadata starter"
+
+ARTICLE_METADATA_SMOKE_DEMO_TEXT = (
+    "The city council voted Tuesday to fund a new neighborhood park on the "
+    "Northwest Side. Residents packed the chamber to support the plan, and "
+    "local business owners said the project could bring more foot traffic "
+    "to the corridor."
+)
+
+CUSTOM_EXTRACT_STARTER_FLOW_GRAPH_DISPLAY_NAME = "Custom Extract starter"
+
+CUSTOM_EXTRACT_SMOKE_DEMO_HEADLINE = "Riverside Bakery shares its classic banana bread recipe"
+
+CUSTOM_EXTRACT_SMOKE_DEMO_TEXT = (
+    "The Riverside Bakery shared its classic banana bread recipe this week. "
+    "The recipe calls for two cups of flour, one teaspoon of baking soda, and "
+    "a pinch of salt. Bakers should mash three ripe bananas, then fold in "
+    "half a cup of melted butter before pouring the batter into a greased pan."
+)
+
 
 def starter_geocode_flow_graph_spec() -> GraphSpec:
     """Golden-path starter: geocode then persist, with DBOutput wired directly from GeocodeAgent.
@@ -154,5 +174,101 @@ def starter_organizations_flow_graph_spec() -> GraphSpec:
                 sourceHandle="organizations",
                 targetHandle="data",
             ),
+        ],
+    )
+
+
+def starter_custom_extract_flow_graph_spec() -> GraphSpec:
+    """Golden-path custom records ingest: JSONInput (recipe) → CustomExtract → DBOutput."""
+    return GraphSpec(
+        name="starter_custom_extract_flow",
+        nodes=[
+            NodeConfig(
+                id="n1",
+                type="JSONInput",
+                params={
+                    "headline": CUSTOM_EXTRACT_SMOKE_DEMO_HEADLINE,
+                    "text": CUSTOM_EXTRACT_SMOKE_DEMO_TEXT,
+                },
+                position={"x": 0.0, "y": 0.0},
+            ),
+            NodeConfig(
+                id="n2",
+                type="CustomExtract",
+                params={
+                    "record_type": "ingredients",
+                    "label": "Ingredients",
+                    "fields": [
+                        {
+                            "name": "name",
+                            "label": "Name",
+                            "type": "string",
+                            "description": "The ingredient as named in the story.",
+                        },
+                        {
+                            "name": "quantity",
+                            "label": "Quantity",
+                            "type": "string",
+                            "description": "The amount called for, as written.",
+                        },
+                    ],
+                    "instructions": "Extract every ingredient the recipe calls for.",
+                },
+                position={"x": 337.0, "y": 46.0},
+            ),
+            NodeConfig(
+                id="n3",
+                type="DBOutput",
+                params={
+                    "stylebook_matching_enabled": False,
+                    "semantic_indexing_enabled": False,
+                    "reconciliation_policy": "smart_merge",
+                },
+                position={"x": 620.0, "y": 46.0},
+            ),
+        ],
+        edges=[
+            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(
+                source="n2",
+                target="n3",
+                sourceHandle="custom_records",
+                targetHandle="data",
+            ),
+        ],
+    )
+
+
+def starter_article_metadata_flow_graph_spec() -> GraphSpec:
+    """Golden-path article metadata ingest: TextInput → ArticleMetadata → DBOutput."""
+    return GraphSpec(
+        name="starter_article_metadata_flow",
+        nodes=[
+            NodeConfig(
+                id="n1",
+                type="TextInput",
+                params={"text": ARTICLE_METADATA_SMOKE_DEMO_TEXT},
+                position={"x": 0.0, "y": 0.0},
+            ),
+            NodeConfig(
+                id="n2",
+                type="ArticleMetadata",
+                params={"prompt_preset": "subject"},
+                position={"x": 337.0, "y": 46.0},
+            ),
+            NodeConfig(
+                id="n3",
+                type="DBOutput",
+                params={
+                    "stylebook_matching_enabled": False,
+                    "semantic_indexing_enabled": False,
+                    "reconciliation_policy": "smart_merge",
+                },
+                position={"x": 620.0, "y": 46.0},
+            ),
+        ],
+        edges=[
+            Edge(source="n1", target="n2", sourceHandle="text", targetHandle="text"),
+            Edge(source="n2", target="n3", sourceHandle="text", targetHandle="data"),
         ],
     )

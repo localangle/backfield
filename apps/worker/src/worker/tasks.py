@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any
 
 import boto3
+from agate_nodes.s3_output.node import (
+    normalize_s3_output_bucket,
+    s3_output_payloads_in_run_output,
+    upload_s3_output_body,
+)
 from agate_runtime import GraphSpec, execute_graph
 from agate_runtime.nodes import NODE_RUNNERS
 from agate_runtime.nodes.json_input import json_input_output_from_dict
@@ -608,6 +613,125 @@ def finalize_s3_parent_run(header_results: list[Any], run_id: str) -> None:
     engine = get_engine()
     with Session(engine) as session:
         _finalize_s3_parent_run(session, run_id)
+
+
+def _s3_output_public_read_by_bucket(spec: GraphSpec) -> dict[str, bool]:
+    """``public_read`` per S3Output bucket from graph node params (first node wins)."""
+    out: dict[str, bool] = {}
+    for node in spec.nodes:
+        if node.type != "S3Output":
+            continue
+        bucket = normalize_s3_output_bucket(str(node.params.get("bucket") or ""))
+        if bucket and bucket not in out:
+            out[bucket] = bool(node.params.get("public_read"))
+    return out
+
+
+def _stamp_s3_sync_state(
+    docs: list[dict[str, Any] | None],
+    payload_keys: list[str],
+    *,
+    synced_at: str,
+    error: str | None,
+) -> None:
+    """Record sync success/failure on each S3Output payload in run + reviewed JSON."""
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        for key in payload_keys:
+            target = doc.get(key)
+            if not isinstance(target, dict):
+                continue
+            if error is None:
+                target["s3_synced_at"] = synced_at
+                target.pop("s3_sync_error", None)
+            else:
+                target["s3_sync_error"] = error
+
+
+@celery_app.task(name="worker.tasks.sync_processed_item_s3_output")
+def sync_processed_item_s3_output(item_id: int) -> None:
+    """Overwrite the S3Output file(s) for one item with its current (reviewed) JSON.
+
+    Uses ``reviewed_output_json`` when review edits exist, otherwise the original
+    ``result_json``. The upload targets the same ``s3_bucket``/``s3_key`` recorded
+    by the S3Output node at run time, and sync state is stamped back onto the
+    item so the review UI can surface it.
+    """
+    engine = get_engine()
+    with Session(engine) as session:
+        item = session.get(AgateProcessedItem, item_id)
+        if not item or not item.result_json:
+            return
+        run = session.get(AgateRun, item.run_id)
+        if not run:
+            return
+        graph = session.get(AgateGraph, run.graph_id)
+        if not graph:
+            return
+
+        try:
+            output = json.loads(item.result_json)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(output, dict):
+            return
+        reviewed: dict[str, Any] | None = None
+        if item.reviewed_output_json:
+            try:
+                parsed = json.loads(item.reviewed_output_json)
+                reviewed = parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                reviewed = None
+
+        source = reviewed if reviewed is not None else output
+        payloads = s3_output_payloads_in_run_output(source)
+        if not payloads:
+            logger.info("S3 sync skipped for item %s: no S3 Output upload recorded", item_id)
+            return
+
+        spec = GraphSpec.model_validate_json(
+            resolve_run_graph_spec_json(
+                run_result_json=run.result_json,
+                graph_spec_json=graph.spec_json,
+            )
+        )
+        public_read_by_bucket = _s3_output_public_read_by_bucket(spec)
+        overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
+
+        error: str | None = None
+        try:
+            with _env_overlay(overlay):
+                s3_client = _s3_client_from_env()
+                for payload in payloads.values():
+                    bucket = str(payload["s3_bucket"])
+                    key = str(payload["s3_key"])
+                    logger.info(
+                        "S3 sync uploading item %s to s3://%s/%s", item_id, bucket, key
+                    )
+                    upload_s3_output_body(
+                        s3_client,
+                        bucket=bucket,
+                        key=key,
+                        body=payload["consolidated"],
+                        public_read=public_read_by_bucket.get(bucket, False),
+                    )
+        except Exception as e:
+            logger.exception("S3 sync failed for item %s", item_id)
+            error = str(e)
+
+        _stamp_s3_sync_state(
+            [output, reviewed],
+            list(payloads.keys()),
+            synced_at=datetime.now(UTC).isoformat(),
+            error=error,
+        )
+        item.result_json = json.dumps(output)
+        if reviewed is not None:
+            item.reviewed_output_json = json.dumps(reviewed)
+        item.updated_at = datetime.now(UTC)
+        session.add(item)
+        session.commit()
 
 
 def _stylebook_bundle_bucket_prefix() -> tuple[str, str]:

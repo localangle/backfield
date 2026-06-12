@@ -10,6 +10,10 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from agate_runtime.context import AgateEnvContext
+from agate_runtime.node_output_contract import (
+    project_gathered_branch_refs,
+    project_node_contribution,
+)
 from agate_runtime.nodes import NODE_RUNNERS
 from agate_runtime.runners import ASYNC_NODE_RUNNERS, default_context
 from agate_runtime.types import Edge, GraphSpec, NodeConfig
@@ -119,6 +123,46 @@ def _all_other_nodes_complete(
     return required <= completed_ids
 
 
+def _transitive_downstream_ids(
+    source_id: str,
+    edges: list[Edge],
+    node_ids: set[str],
+) -> frozenset[str]:
+    downstream: set[str] = set()
+    queue: deque[str] = deque(
+        edge.target for edge in edges if edge.source == source_id and edge.target in node_ids
+    )
+    while queue:
+        current = queue.popleft()
+        if current in downstream:
+            continue
+        downstream.add(current)
+        queue.extend(
+            edge.target
+            for edge in edges
+            if edge.source == current and edge.target in node_ids and edge.target not in downstream
+        )
+    return frozenset(downstream)
+
+
+def _sync_barrier_prerequisite_ids(
+    node_id: str,
+    *,
+    by_id: dict[str, NodeConfig],
+    edges: list[Edge],
+    node_ids: set[str],
+) -> frozenset[str]:
+    """Nodes that must finish before Gather runs (every node except downstream branches)."""
+    downstream = _transitive_downstream_ids(node_id, edges, node_ids)
+    return frozenset(
+        nid
+        for nid in node_ids
+        if nid != node_id
+        and nid not in downstream
+        and by_id[nid].type != "ArraySplitter"
+    )
+
+
 def _node_is_ready(
     node: NodeConfig,
     *,
@@ -127,12 +171,32 @@ def _node_is_ready(
     edges: list[Edge],
     node_ids: set[str],
 ) -> bool:
-    if node.type == "Output":
-        return _all_other_nodes_complete(node.id, by_id=by_id, completed_ids=completed_ids)
+    if node.type in ("Output", "Gather"):
+        required = _sync_barrier_prerequisite_ids(
+            node.id,
+            by_id=by_id,
+            edges=edges,
+            node_ids=node_ids,
+        )
+        return required <= completed_ids
     upstream = _direct_upstream_ids(node.id, edges, node_ids)
     if not upstream and node.type in _INPUT_NODE_TYPES:
         return True
     return upstream <= completed_ids
+
+
+def _all_namespaced_node_outputs(
+    node_outputs: dict[str, dict[str, Any]],
+    by_id: dict[str, NodeConfig],
+) -> dict[str, Any]:
+    """One namespace key per completed node (used by DBOutput consolidation)."""
+    state: dict[str, Any] = {}
+    for source_id, output in node_outputs.items():
+        source_node = by_id.get(source_id)
+        if source_node and source_node.type == "ArraySplitter":
+            continue
+        state[source_id] = dict(output)
+    return state
 
 
 def _namespaced_upstream_inputs(
@@ -156,6 +220,31 @@ def _namespaced_upstream_inputs(
     return state
 
 
+def _namespaced_barrier_inputs(
+    node_id: str,
+    *,
+    by_id: dict[str, NodeConfig],
+    edges: list[Edge],
+    node_outputs: dict[str, dict[str, Any]],
+    node_ids: set[str],
+) -> dict[str, Any]:
+    required = _sync_barrier_prerequisite_ids(
+        node_id,
+        by_id=by_id,
+        edges=edges,
+        node_ids=node_ids,
+    )
+    state: dict[str, Any] = {}
+    for source_id in sorted(required):
+        if source_id not in node_outputs:
+            continue
+        source_node = by_id.get(source_id)
+        if source_node and source_node.type == "ArraySplitter":
+            continue
+        state[source_id] = dict(node_outputs[source_id])
+    return state
+
+
 def _inputs_for_node(
     node: NodeConfig,
     *,
@@ -163,8 +252,19 @@ def _inputs_for_node(
     node_outputs: dict[str, dict[str, Any]],
     by_id: dict[str, NodeConfig],
 ) -> dict[str, Any]:
+    node_ids = set(by_id)
     if node.type == "Output":
         return _merged_outputs_for_output(node_outputs, by_id)
+    if node.type in ("DBOutput", "S3Output"):
+        return _all_namespaced_node_outputs(node_outputs, by_id)
+    if node.type == "Gather":
+        return _namespaced_barrier_inputs(
+            node.id,
+            by_id=by_id,
+            edges=edges,
+            node_outputs=node_outputs,
+            node_ids=node_ids,
+        )
     return _namespaced_upstream_inputs(node.id, edges, node_outputs, by_id)
 
 
@@ -203,7 +303,20 @@ def _remap_outputs_for_json(
     out: dict[str, Any] = {}
     for node_id in order:
         public_key = id_to_public[node_id]
-        out[public_key] = node_outputs[node_id]
+        raw_output = node_outputs[node_id]
+        node_type = by_id[node_id].type
+        if node_type == "Gather" and isinstance(raw_output, dict):
+            gathered = raw_output.get("gathered")
+            if isinstance(gathered, dict):
+                out[public_key] = {
+                    "gathered": project_gathered_branch_refs(
+                        gathered,
+                        source_id_to_public=id_to_public,
+                        execution_order=order,
+                    )
+                }
+                continue
+        out[public_key] = project_node_contribution(node_type, raw_output)
     return out
 
 
@@ -303,14 +416,32 @@ def _execute_graph_sequential(
 ) -> dict[str, Any]:
     by_id = {node.id: node for node in spec.nodes}
     order = _topo_order(spec)
+    node_ids = set(by_id)
     node_outputs: dict[str, dict[str, Any]] = {}
+    completed_ids: set[str] = set()
+    pending = set(by_id)
 
-    for node_id in order:
-        node = by_id[node_id]
-        inputs = _inputs_for_node(
-            node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
-        )
-        node_outputs[node_id] = _run_sync_node(node, inputs, runners, before_each_node)
+    while pending:
+        ready = [
+            by_id[node_id]
+            for node_id in pending
+            if _node_is_ready(
+                by_id[node_id],
+                completed_ids=completed_ids,
+                by_id=by_id,
+                edges=spec.edges,
+                node_ids=node_ids,
+            )
+        ]
+        if not ready:
+            raise GraphExecutionError("Deadlock: no nodes ready to execute")
+        for node in ready:
+            pending.discard(node.id)
+            inputs = _inputs_for_node(
+                node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
+            )
+            node_outputs[node.id] = _run_sync_node(node, inputs, runners, before_each_node)
+            completed_ids.add(node.id)
 
     return _remap_outputs_for_json(by_id, order, node_outputs)
 
@@ -450,8 +581,11 @@ def execute_graph(
 
     When ``BACKFIELD_PARALLEL_GRAPH_LEVELS`` is ``1``/``true``/``yes``, each node runs
     as soon as its readiness rules are satisfied (direct upstream for most nodes;
-    JSON ``Output`` waits for every other node). Ready nodes in a batch run concurrently
-    via ``asyncio.gather``.
+    JSON ``Output`` and ``Gather`` wait for every non-downstream node in the graph
+    (``Gather`` returns namespaced upstream outputs; ``Output`` shallow-merges them);
+    ``DBOutput`` waits for direct wired upstream only but consolidates **all** completed
+    node outputs for persistence). Ready nodes in a batch run
+    concurrently via ``asyncio.gather``.
 
     ``before_each_node``, when provided, is invoked as ``(node_id, node_type)`` immediately
     before each node's runner (used by the worker for LLM attempt attribution).

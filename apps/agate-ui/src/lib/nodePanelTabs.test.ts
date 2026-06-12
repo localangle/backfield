@@ -43,4 +43,31 @@ describe('getNodePanelTabs', () => {
   it('shows settings and stylebook for backfield output', () => {
     expect(getNodePanelTabs('DBOutput')).toEqual(['settings', 'stylebook'])
   })
+
+  it('shows settings and info for embed text', () => {
+    expect(getNodePanelTabs('EmbedText')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('EmbedText', { hasRunOutput: true })).toEqual(['settings', 'info'])
+  })
+
+  it('shows settings and info for embed images', () => {
+    expect(getNodePanelTabs('EmbedImages')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('EmbedImages', { hasRunOutput: true })).toEqual(['settings', 'info'])
+  })
+
+  it('shows settings, info, and outputs for gather when a run exists', () => {
+    expect(getNodePanelTabs('Gather')).toEqual(['settings', 'info'])
+    expect(getNodePanelTabs('Gather', { hasRunOutput: true })).toEqual([
+      'settings',
+      'info',
+      'outputs',
+    ])
+  })
+
+  it('splits article metadata configuration across settings, prompt, output, and info', () => {
+    expect(getNodePanelTabs('ArticleMetadata')).toEqual(['settings', 'prompts', 'outputs', 'info'])
+  })
+
+  it('splits custom extract configuration across settings, prompt, output, and info', () => {
+    expect(getNodePanelTabs('CustomExtract')).toEqual(['settings', 'prompts', 'outputs', 'info'])
+  })
 })

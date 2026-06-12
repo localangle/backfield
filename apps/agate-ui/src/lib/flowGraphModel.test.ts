@@ -17,6 +17,7 @@ import {
   hydrateFromSpec,
   insertAfter,
   insertBetween,
+  insertConvergingBeforeOutput,
   isMiddleNodeId,
   LAYOUT_NODE_WIDTH,
   TIDY_LAYOUT_X_STEP,
@@ -139,6 +140,45 @@ describe('flowGraphModel serial chain', () => {
 
     expect(edgeSet(model)).toEqual(new Set(['input-1->geo-1:branch', 'geo-1->output-1:tip']))
     expect(getInvalidFlowNodeIds(model)).toEqual(new Set(['geo-1']))
+  })
+
+  it('does not mark Gather invalid when inserted before output', () => {
+    const gather: FlowGraphNode = { id: 'gather-1', type: 'Gather', data: {} }
+    let model = insertAfter(bookends(), 'input-1', gather)
+
+    expect(edgeSet(model)).toEqual(new Set(['input-1->gather-1:serial', 'gather-1->output-1:tip']))
+    expect(getInvalidFlowNodeIds(model)).toEqual(new Set())
+
+    const gatherEdge = deriveEdges(model).find((edge) => edge.target === 'gather-1')
+    expect(gatherEdge?.sourceHandle).toBe('text')
+    expect(gatherEdge?.targetHandle).toBe('data')
+  })
+
+  it('inserts Gather before output from parallel branch tips', () => {
+    const inputNode: FlowGraphNode = { id: 'input-1', type: 'JSONInput', data: {} }
+    const outputNode: FlowGraphNode = { id: 'output-1', type: 'DBOutput', data: {} }
+    const base = createFlowGraphModel(inputNode, outputNode)
+    const embed: FlowGraphNode = { id: 'embed-1', type: 'EmbedImages', data: {} }
+    const metadata: FlowGraphNode = { id: 'meta-1', type: 'ArticleMetadata', data: {} }
+    const gather: FlowGraphNode = { id: 'gather-1', type: 'Gather', data: {} }
+    let model = addSiblingBranch(base, 'input-1', embed)
+    model = addSiblingBranch(model, 'input-1', metadata)
+
+    model = insertBetween(model, 'embed-1', 'output-1', gather)
+
+    expect(model.serialLinks['embed-1']).toBe('gather-1')
+    expect(model.serialLinks['meta-1']).toBe('gather-1')
+    expect(getBranchTipIds(model)).toEqual(['gather-1'])
+    expect(edgeSet(model)).toEqual(
+      new Set([
+        'input-1->embed-1:branch',
+        'input-1->meta-1:branch',
+        'embed-1->gather-1:serial',
+        'meta-1->gather-1:serial',
+        'gather-1->output-1:tip',
+      ]),
+    )
+    expect(getInvalidFlowNodeIds(model)).toEqual(new Set())
   })
 })
 
@@ -560,6 +600,14 @@ describe('flowGraphModel hydrate and edit helpers', () => {
     const person: FlowGraphNode = { id: 'person-1', type: 'PersonExtract', data: {} }
     let model = addSiblingBranch(bookends(), 'input-1', place)
     model = addSiblingBranch(model, 'input-1', person)
+
+    expect(canReplaceInputBookend(model, 'JSONInput').ok).toBe(true)
+    expect(canReplaceInputBookend(model, 'TextInput').ok).toBe(true)
+  })
+
+  it('canReplaceInputBookend allows JSON Input with Article Metadata attached', () => {
+    const metadata: FlowGraphNode = { id: 'meta-1', type: 'ArticleMetadata', data: {} }
+    const model = addSiblingBranch(bookends(), 'input-1', metadata)
 
     expect(canReplaceInputBookend(model, 'JSONInput').ok).toBe(true)
     expect(canReplaceInputBookend(model, 'TextInput').ok).toBe(true)

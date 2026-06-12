@@ -40,7 +40,7 @@ Backfield is a refactor of **agate-ai-platform** (`/Users/cjdd3b/apps/agate-ai-p
 - Read `docs/FRONTEND.md` (including **User-facing copy**: all UI strings for **non-technical** users—**no** code-y jargon, API/DB internals, or developer shorthand in labels, errors, or empty states).
 - Update `src/lib/api.ts` when API contracts move.
 - Reuse existing UI patterns before creating new ones.
-- **Agate node UI:** edit `packages/backfield-agate/src/agate_nodes/<node>/ui/` (and `metadata.json`), then run `npm run sync-nodes` in `apps/agate-ui`. Do not edit `apps/agate-ui/src/nodes/<node>/PanelComponent.tsx` (or other synced node files) directly — sync will overwrite them.
+- **Agate node UI:** edit `packages/backfield-agate/src/agate_nodes/<node>/ui/` (and `metadata.json`), then run `npm run sync-nodes` in `apps/agate-ui`. Do not edit `apps/agate-ui/src/nodes/<node>/PanelComponent.tsx` (or other synced node files) directly — sync will overwrite them. Net-new nodes: read [`NODES.md`](NODES.md) and use [`.cursor/skills/add-agate-node`](../.cursor/skills/add-agate-node/SKILL.md).
 - **Node panel field labels:** use the default shadcn `Label` styling (`text-sm font-medium`) for primary field labels — see `docs/FRONTEND.md` → **Node panel field labels**.
 - Run the relevant lint/build flow and smoke checks for user-visible behavior changes.
 

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
 from typing import Any
 
 from pydantic import BaseModel
 
+from agate_runtime.upstream_input import (
+    expand_gathered_payload as _expand_gathered_payload,
+    merge_upstream_payload as _merge_upstream_payload,
+)
 
 PREFERRED_KEY_ORDER = [
     "publication",
@@ -25,24 +30,52 @@ class OutputParams(BaseModel):
     include: list[str] | None = None
 
 
+def _collect_article_metadata_blocks(obj: Any, *, seen: set[str], blocks: list[dict[str, Any]]) -> None:
+    """Gather ``article_metadata`` dicts from nested Gather payloads (deduped)."""
+    if not isinstance(obj, dict):
+        return
+    meta = obj.get("article_metadata")
+    if isinstance(meta, dict) and str(meta.get("meta_type") or "").strip():
+        key = json.dumps(meta, sort_keys=True, default=str)
+        if key not in seen:
+            seen.add(key)
+            blocks.append(meta)
+    gathered = obj.get("gathered")
+    if isinstance(gathered, dict):
+        for branch in gathered.values():
+            _collect_article_metadata_blocks(branch, seen=seen, blocks=blocks)
+
+
+def _collect_article_metadata_blocks_from_inputs(inputs: dict[str, Any]) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for payload in inputs.values():
+        _collect_article_metadata_blocks(payload, seen=seen, blocks=blocks)
+    return blocks
+
+
 def _merge_namespaced_upstream_inputs_for_dboutput(inputs: dict[str, Any]) -> dict[str, Any]:
     """Shallow-merge upstream node outputs keyed by upstream node id (DBOutput wiring)."""
 
     merged: dict[str, Any] = {}
     for _upstream_id, payload in inputs.items():
         if isinstance(payload, dict):
-            merged.update(payload)
-    return merged
+            _merge_upstream_payload(merged, payload)
+    return _expand_gathered_payload(merged)
 
 
 def consolidated_body_from_dboutput(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
     """Run the same consolidation path as the DBOutput node before persistence (worker or stub)."""
 
+    metadata_blocks = _collect_article_metadata_blocks_from_inputs(inputs)
     merged = _merge_namespaced_upstream_inputs_for_dboutput(inputs)
     merged = expand_upstream_merge_for_output_consolidator(merged)
     cons = OutputConsolidator()
     p = OutputParams.model_validate(params)
-    return cons.run(merged, p.model_dump())
+    body = cons.run(merged, p.model_dump())
+    if len(metadata_blocks) >= 1:
+        body["article_metadata_all"] = metadata_blocks
+    return body
 
 
 def expand_upstream_merge_for_output_consolidator(merged: dict[str, Any]) -> dict[str, Any]:

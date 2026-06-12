@@ -3,7 +3,7 @@ const nodeMetadata = {
   "type": "PlaceExtract",
   "name": "PlaceExtract",
   "label": "Place Extract",
-  "description": "Extract editorially relevant, geocodable place information from text using an LLM.",
+  "description": "Extract editorially relevant, geocodable place information from text.",
   "category": "extraction",
   "icon": "Map",
   "color": "bg-purple-500",

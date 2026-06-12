@@ -17,6 +17,7 @@ import {
   type Graph,
   type GraphCreate,
 } from '@/lib/api'
+import { flowDescriptionTableText } from '@/components/flow-builder/FlowDescriptionField'
 import { formatDate } from '@/lib/utils'
 import { Loader2, Copy, Trash2 } from 'lucide-react'
 
@@ -62,6 +63,7 @@ export default function ProjectDetailFlowsTab({
     try {
       const duplicateData: GraphCreate = {
         name: `Copy of ${flow.name}`,
+        description: flow.description ?? '',
         project_id: flow.project_id,
         spec: flow.spec,
       }
@@ -117,6 +119,7 @@ export default function ProjectDetailFlowsTab({
                 <thead className="border-b bg-muted/50">
                   <tr>
                     <th className="text-left p-3 sm:p-4 font-medium">Name</th>
+                    <th className="text-left p-3 sm:p-4 font-medium hidden md:table-cell">Description</th>
                     <th className="text-left p-3 sm:p-4 font-medium hidden sm:table-cell">Created</th>
                     <th className="text-right p-3 sm:p-4 font-medium">Actions</th>
                   </tr>
@@ -132,6 +135,14 @@ export default function ProjectDetailFlowsTab({
                         onClick={() => navigate(`/flow/${graph.id}`)}
                       >
                         <div className="font-medium">{graph.name}</div>
+                      </td>
+                      <td
+                        className="p-3 sm:p-4 text-sm text-muted-foreground cursor-pointer align-top hidden md:table-cell"
+                        onClick={() => navigate(`/flow/${graph.id}`)}
+                      >
+                        <div className="line-clamp-2 max-w-md">
+                          {flowDescriptionTableText(graph.description)}
+                        </div>
                       </td>
                       <td
                         className="p-3 sm:p-4 text-muted-foreground cursor-pointer align-top hidden sm:table-cell whitespace-nowrap"

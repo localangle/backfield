@@ -1,0 +1,30 @@
+{
+  "type": "EmbedText",
+  "label": "Embed Text",
+  "description": "Create a vector embedding of the full article text for search and analysis.",
+  "category": "embedding",
+  "icon": "FileText",
+  "color": "bg-orange-500",
+  "requiredUpstreamNodes": [],
+  "requiredProjectModelCapabilities": ["embedding"],
+  "dependencyHelperText": "Requires upstream text, such as from Text Input or JSON Input.",
+  "inputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "article_embedding",
+      "label": "Article embedding",
+      "type": "object"
+    }
+  ],
+  "defaultParams": {
+    "model": "",
+    "aiModelConfigId": null
+  }
+}

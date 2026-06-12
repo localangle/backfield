@@ -41,7 +41,7 @@ export const geographyTypes = new Set([
   'PlaceReview',
 ])
 export const imageTypes = new Set(['EmbedImages', 'ImageEnrich'])
-export const textTypes = new Set(['Embed', 'LLMEnrich', 'StatsNode'])
+export const textTypes = new Set(['Embed', 'EmbedText', 'LLMEnrich', 'StatsNode'])
 export const peopleTypes = new Set(['PersonExtract', 'PeopleExtract', 'PeopleClassify'])
 export const organizationTypes = new Set([
   'OrganizationExtract',
@@ -102,7 +102,14 @@ export function getNodeCategory(nodeType: string): NodeCategory {
 /**
  * Get the icon color class for a node type
  */
+/** S3 Input uses the input blue; S3 Output shares the output slate palette with other bookends. */
+const S3_INPUT_ICON_COLOR = 'text-blue-600'
+const S3_INPUT_BG_COLOR = 'bg-blue-100'
+
 export function getNodeIconColor(nodeType: string): string {
+  if (nodeType === 'S3Input') {
+    return S3_INPUT_ICON_COLOR
+  }
   const category = getNodeCategory(nodeType)
   return categoryColors[category] || 'text-gray-500'
 }
@@ -111,6 +118,9 @@ export function getNodeIconColor(nodeType: string): string {
  * Get the background color class for a node type
  */
 export function getNodeBgColor(nodeType: string): string {
+  if (nodeType === 'S3Input') {
+    return S3_INPUT_BG_COLOR
+  }
   const category = getNodeCategory(nodeType)
   return categoryBgColors[category] || 'bg-gray-100'
 }

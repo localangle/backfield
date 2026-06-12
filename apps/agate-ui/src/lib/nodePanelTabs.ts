@@ -25,13 +25,24 @@ export function getNodePanelTabs(
     case 'PlaceExtract':
     case 'PersonExtract':
     case 'OrganizationExtract':
+    case 'CustomExtract':
       return ['settings', 'prompts', 'outputs', 'info']
     case 'GeocodeAgent':
       return ['settings', 'models']
+    case 'EmbedText':
+      return ['settings', 'info']
+    case 'EmbedImages':
+      return ['settings', 'info']
+    case 'Gather':
+      return hasRunOutput ? ['settings', 'info', 'outputs'] : ['settings', 'info']
+    case 'ArticleMetadata':
+      return ['settings', 'prompts', 'outputs', 'info']
     case 'Output':
       return hasRunOutput ? ['outputs'] : []
     case 'DBOutput':
       return ['settings', 'stylebook']
+    case 'S3Output':
+      return hasRunOutput ? ['settings', 'outputs'] : ['settings']
     default:
       return ['settings']
   }

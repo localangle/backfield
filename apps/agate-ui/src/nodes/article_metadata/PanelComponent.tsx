@@ -1,0 +1,528 @@
+// Auto-injected metadata for ArticleMetadata
+const nodeMetadata = {
+  "type": "ArticleMetadata",
+  "name": "ArticleMetadata",
+  "label": "Article Metadata",
+  "description": "Classify the article with a category, rationale, and confidence score.",
+  "category": "enrichment",
+  "icon": "Tag",
+  "color": "bg-green-500",
+  "requiredProjectModelCapabilities": [
+    "generative"
+  ],
+  "requiredUpstreamNodes": [],
+  "dependencyHelperText": "Requires upstream text, such as from Text Input or JSON Input.",
+  "inputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "outputs": [
+    {
+      "id": "text",
+      "label": "Text",
+      "type": "string"
+    },
+    {
+      "id": "article_metadata",
+      "label": "Article metadata",
+      "type": "object"
+    }
+  ],
+  "defaultParams": {
+    "model": "",
+    "aiModelConfigId": null,
+    "prompt_preset": "subject",
+    "meta_type": "",
+    "prompt": "### TASK: Classify the **Subject** of a local news article\n\nIdentify the article's **primary subject areas** — what the story is fundamentally *about*.\nSelect **1 to 3 subjects maximum**.\nOnly assign multiple subjects when the article clearly covers more than one major domain.\nBe conservative: most stories should have **one** subject.\n\nSubjects reflect **what is being covered**, not the article's format, timeliness, or geographic scope.\n\n## Categories\n- local_government_politics\n- state_government_politics\n- global_national_politics\n- courts_legal_system\n- accountability_government_oversight\n- public_safety_crime\n- health_public_health\n- weather_natural_hazards\n- disaster_recovery\n- roads_traffic\n- transportation_transit\n- housing_development\n- land_use_zoning\n- housing_affordability_homelessness\n- real_estate_market\n- climate_environment\n- utilities_energy\n- k12_education\n- higher_education\n- science_technology\n- business_economy\n- labor_workforce\n- agriculture_rural\n- immigration_demographics\n- military_veterans\n- consumer_affairs\n- nonprofits_philanthropy\n- media_journalism\n- community_life\n- religion_faith\n- food_restaurants\n- arts_culture\n- animals_pets\n- events_festivals\n- travel\n- outdoor_recreation\n- pro_sports\n- college_sports\n- prep_youth_sports\n- obituaries\n- recipes\n- other\n\n## Subject definitions\n\n### Government, Law & Politics\n`local_government_politics`, `state_government_politics`, `global_national_politics`, `courts_legal_system`, `accountability_government_oversight`\n\n### Public Services & Safety\n`public_safety_crime`, `health_public_health`, `weather_natural_hazards`, `disaster_recovery`\n\n### Infrastructure, Space & Environment\n`roads_traffic`, `transportation_transit`, `housing_development`, `land_use_zoning`, `housing_affordability_homelessness`, `real_estate_market`, `climate_environment`, `utilities_energy`\n\n### Economy, Education & Institutions\n`k12_education`, `higher_education`, `science_technology`, `business_economy`, `labor_workforce`, `agriculture_rural`, `immigration_demographics`, `military_veterans`, `consumer_affairs`, `nonprofits_philanthropy`, `media_journalism`\n\n### Community, Culture & Lifestyle\n`community_life`, `religion_faith`, `food_restaurants`, `arts_culture`, `animals_pets`, `events_festivals`\n\n### Travel & Recreation\n`travel`, `outdoor_recreation`\n\n### Sports\n`pro_sports`, `college_sports`, `prep_youth_sports`\n\n### Special Content\n`obituaries`, `recipes`, `other`\n\n### Rules\n\n- Select **only subjects that are core to the article's focus**.\n- Assign **1 subject** unless two or three clearly apply.\n- Do **not** select broad categories unless supported by the story.\n- When the story touches multiple areas, choose the **most central** domains.\n- Use `other` only when no category fits.\n\n**Clarifying examples (not few-shot):**\n- Rent burden story → `housing_affordability_homelessness`\n- New mall opening → `business_economy`\n- City festival → `events_festivals`\n\n### Few-shot examples\n\n#### Example 1 — Single subject\n**Headline:** \"City council approves $2.3B budget after 5–2 vote\"\n\n```json\n[\n  {\n    \"category\": \"local_government_politics\",\n    \"confidence\": 0.95,\n    \"rationale\": \"The story is fundamentally about a local government budget decision.\"\n  }\n]\n```\n\n#### Example 2 — Two subjects\n**Headline:** \"Council vote on zoning change sparks debate over affordable housing\"\n\n```json\n[\n  {\n    \"category\": \"local_government_politics\",\n    \"confidence\": 0.90,\n    \"rationale\": \"A city council zoning vote is a core focus of the story.\"\n  },\n  {\n    \"category\": \"housing_affordability_homelessness\",\n    \"confidence\": 0.88,\n    \"rationale\": \"Affordable housing impacts are a major secondary theme.\"\n  }\n]\n```\n\n#### Example 3 — Single subject (sports)\n**Headline:** \"Twins clinch division title with walk-off home run\"\n\n```json\n[\n  {\n    \"category\": \"pro_sports\",\n    \"confidence\": 0.97,\n    \"rationale\": \"Professional sports game outcome is the central focus.\"\n  }\n]\n```\n\n## Article text\n\n{text}\n",
+    "prompt_file": "prompts/presets/subject.md",
+    "output_format_file": "prompts/_output_format.json",
+    "llmTimeout": 600,
+    "preset_prompts": {
+      "custom": "### TASK: Classify the article\n\nDescribe what this metadata dimension measures and how the model should choose a label.\n\nChoose **one** category — the single **dominant** label that best fits.\n\n## Categories\n- example_one\n- example_two\n- other\n\n## Article text\n\n{text}\n",
+      "format": "### TASK: Classify the **Format** of a local news article\n\nYou are an assistant that categorizes the **format (story type)** of a local news article.\nFormat describes the story's **structural form and narrative purpose**, not its subject, timeframe, or geographic scope.\n\nChoose **one** format — the single **dominant** format that best reflects how the story is structured.\n\n## Categories\n- news_story\n- human_interest\n- profile\n- in_depth\n- explainer_analysis\n- opinion_commentary\n- review_criticism\n- guide_service\n- list_roundup\n- interview_qa\n- obituary\n- multimedia\n- live_update\n- other\n\n## Format definitions\n\n| Label | Definition | Key Signals |\n|-------|------------|-------------|\n| `news_story` | Timely reporting on events, decisions, incidents, or announcements. | Inverted pyramid; \"what happened.\" |\n| `human_interest` | Narrative storytelling focused on people, emotion, character, or lived experience. | Scenes, anecdotes, descriptive writing |\n| `profile` | Centered on a person or organization's identity, background, or motivations. | Biographical structure; \"who this person is\" |\n| `in_depth` | Comprehensive reporting on a complex issue, system, or pattern. | Context-rich; multi-layered; deeply reported |\n| `explainer_analysis` | Breaks down *how* or *why* something works; clarifies concepts or context. | Instructional tone; conceptual framing |\n| `opinion_commentary` | Argument, perspective, editorial stance, or columnist voice. | Subjective language; persuasion; critiques |\n| `review_criticism` | Evaluation of restaurants, performances, products, events, or cultural works. | Judgments; ratings; pros/cons |\n| `guide_service` | Actionable, how-to, or resource-based service journalism. | Steps; instructions; eligibility; \"what to do\" |\n| `list_roundup` | Structured primarily as a numbered or curated list. | \"5 things to know…,\" list items as core structure |\n| `interview_qa` | Structured as a Q&A or transcript between interviewer and subject. | Alternating Q and A; dialogue format |\n| `obituary` | Story about a person's life and passing. | Life chronology; legacy; survivors |\n| `multimedia` | Visuals, audio, or interactive elements are primary. | Photo essay; scrollytelling; video-first |\n| `live_update` | Rolling, timestamped coverage of an ongoing situation. | Modular updates; time-stamped entries |\n| `other` | Does not fit any standard format. | Experimental, hybrid, or meta structures |\n\n### Rules\n\n- Select **only one** format — the **dominant** structural form.\n- Primarily a **numbered list** → `list_roundup`, even with explanatory text.\n- Visuals or interactivity central, text secondary → `multimedia`.\n- Structured as **Q&A** → `interview_qa`.\n- Structured around **argument** → `opinion_commentary`, regardless of subject.\n- **Deep, comprehensive examination** → `in_depth` over explainer.\n- Purpose is to **teach how something works** → `explainer_analysis`.\n- Unusual or hybrid structures → `other`.\n\n### Few-shot examples\n\n#### Example 1 — News Story\n**Headline:** \"City council approves $2.3B budget after 5–2 vote\"\n\n```json\n{\n  \"category\": \"news_story\",\n  \"confidence\": 0.95,\n  \"rationale\": \"Straightforward reporting on a decision that occurred today.\"\n}\n```\n\n#### Example 2 — Human Interest\n**Headline:** \"How a neighborhood bus driver became a local hero\"\n\n```json\n{\n  \"category\": \"human_interest\",\n  \"confidence\": 0.93,\n  \"rationale\": \"Narrative storytelling centered on a person's lived experience.\"\n}\n```\n\n#### Example 3 — Profile\n**Headline:** \"Meet the teen robotics champion reshaping STEM in St. Paul\"\n\n```json\n{\n  \"category\": \"profile\",\n  \"confidence\": 0.94,\n  \"rationale\": \"Focused on a single individual's background and identity.\"\n}\n```\n\n#### Example 4 — In-Depth\n**Headline:** \"Why rising housing costs are transforming the Twin Cities economy\"\n\n```json\n{\n  \"category\": \"in_depth\",\n  \"confidence\": 0.96,\n  \"rationale\": \"Comprehensive examination of a complex, systemic issue.\"\n}\n```\n\n#### Example 5 — Explainer / Analysis\n**Headline:** \"How Minnesota's new school funding formula works\"\n\n```json\n{\n  \"category\": \"explainer_analysis\",\n  \"confidence\": 0.95,\n  \"rationale\": \"Breaks down how a complex policy functions.\"\n}\n```\n\n#### Example 6 — List / Roundup\n**Headline:** \"10 things to do around the metro this weekend\"\n\n```json\n{\n  \"category\": \"list_roundup\",\n  \"confidence\": 0.97,\n  \"rationale\": \"Story structured around an enumerated list of items.\"\n}\n```\n\n#### Example 7 — Live Update\n**Headline:** \"Live updates: Winter storm sweeps across Minnesota\"\n\n```json\n{\n  \"category\": \"live_update\",\n  \"confidence\": 0.98,\n  \"rationale\": \"Timestamped rolling coverage of an ongoing event.\"\n}\n```\n\n#### Example 8 — Multimedia\n**Headline:** \"Inside the historic theater restoration: A visual tour\"\n\n```json\n{\n  \"category\": \"multimedia\",\n  \"confidence\": 0.92,\n  \"rationale\": \"Visual and interactive components drive the storytelling.\"\n}\n```\n\n#### Example 9 — Other\n**Headline:** \"A behind-the-scenes look at our newsroom on election night (photo diary)\"\n\n```json\n{\n  \"category\": \"other\",\n  \"confidence\": 0.70,\n  \"rationale\": \"Hybrid structure that does not clearly fit any defined format.\"\n}\n```\n\n## Article text\n\n{text}\n",
+      "geographic_scope": "### TASK: Classify the **Scope** of a local news article\n\nYou are an assistant that identifies the article's **geographic scope of impact** — the primary level at which the story's events, decisions, or effects matter.\nScope reflects **who is affected**, not who is mentioned, quoted, or referenced.\n\nChoose **one** scope — the single **dominant** level of impact.\n\n## Categories\n- neighborhood_community\n- city_municipality\n- regional\n- statewide\n- national\n- international\n- elsewhere_to_local\n- local_to_elsewhere\n- other\n\n## Scope definitions\n\n| Label | Definition | Key Signals |\n|-------|------------|-------------|\n| `neighborhood_community` | Impacts a single neighborhood, district, school, or hyperlocal community. | Street-level issues; school boundary debates; neighborhood conflicts; park changes. |\n| `city_municipality` | Impacts residents of an entire city or town. | Citywide policy, mayoral decisions, municipal services, city elections. |\n| `regional` | Impacts multiple communities or counties within a broader geographic area (metro or non-metro). Includes multi-county regions, tribal nations, and multi-state regions like the Upper Midwest. | Metro-wide transit; Northern Minnesota wildfires; Iron Range mining issues. |\n| `statewide` | Impacts residents across the entire state. | State legislation, state programs, governor's actions, state agency decisions. |\n| `national` | Impacts people across the United States; no specific local or state focus. | Federal elections; national economic trends; Supreme Court decisions (unless localized). |\n| `international` | Impacts multiple countries or deals with global affairs; no specific U.S. or local focus. | Global conflicts; international markets; WHO guidelines; diplomatic issues. |\n| `elsewhere_to_local` | A national or global trend, policy, or event **that directly affects the local area**. | Federal loan changes affecting MN graduates; global inflation hitting local stores; Canadian wildfire smoke impacting MN air. |\n| `local_to_elsewhere` | A local action, innovation, discovery, or event with **impact beyond the local area**. | Mayo Clinic breakthrough; local court ruling shaping national precedent; Minnesota climate research used worldwide. |\n| `other` | Does not clearly fit any category. | Meta stories about journalism; personal essays; ambiguous or mixed-scope content. |\n\n### Rules\n\n- **Choose only one scope** — the level at which the story's *impact* is primarily felt.\n- **Mention is not impact.** If Congress is mentioned but does not affect locals, the story is not national.\n- **Choose the smallest scale** that accurately describes who is affected.\n- Use `regional` for metro areas, multi-county regions, non-metro regions, multi-state regions, and tribal nations.\n- Use `elsewhere_to_local` when the story's main dynamic is external forces affecting locals.\n- Use `local_to_elsewhere` only when the local action **creates meaningful broader influence**, not merely symbolic attention.\n- If the story is national or global with **no local impact**, use `national` or `international`.\n- Use `other` when scope is unclear, meta, or does not map to geography.\n\n### Few-shot examples\n\n#### Example 1 — Neighborhood / Community\n**Headline:** \"Residents push back on proposed bike lanes in Linden Hills\"\n\n```json\n{\n  \"category\": \"neighborhood_community\",\n  \"confidence\": 0.94,\n  \"rationale\": \"The impact is limited to a single neighborhood within the city.\"\n}\n```\n\n#### Example 2 — City / Municipality\n**Headline:** \"Mayor proposes $2.3B Minneapolis budget with expanded youth programs\"\n\n```json\n{\n  \"category\": \"city_municipality\",\n  \"confidence\": 0.93,\n  \"rationale\": \"The proposed budget affects residents across the entire city.\"\n}\n```\n\n#### Example 3 — Regional\n**Headline:** \"New transit line will link multiple suburbs to downtown\"\n\n```json\n{\n  \"category\": \"regional\",\n  \"confidence\": 0.91,\n  \"rationale\": \"The project spans several communities across the metro area.\"\n}\n```\n\n#### Example 4 — Statewide\n**Headline:** \"Minnesota passes law raising minimum teacher salary statewide\"\n\n```json\n{\n  \"category\": \"statewide\",\n  \"confidence\": 0.94,\n  \"rationale\": \"The policy applies across the entire state.\"\n}\n```\n\n#### Example 5 — National\n**Headline:** \"Supreme Court limits EPA authority in major environmental ruling\"\n\n```json\n{\n  \"category\": \"national\",\n  \"confidence\": 0.92,\n  \"rationale\": \"The ruling has nationwide implications without a specific local focus.\"\n}\n```\n\n#### Example 6 — International\n**Headline:** \"World Health Organization declares new global health emergency\"\n\n```json\n{\n  \"category\": \"international\",\n  \"confidence\": 0.93,\n  \"rationale\": \"The story addresses a global issue with no specific local emphasis.\"\n}\n```\n\n#### Example 7 — Elsewhere → Local\n**Headline:** \"Federal student loan changes leave Minnesota graduates uncertain\"\n\n```json\n{\n  \"category\": \"elsewhere_to_local\",\n  \"confidence\": 0.92,\n  \"rationale\": \"A national policy imposes direct consequences on local residents.\"\n}\n```\n\n#### Example 8 — Local → Elsewhere\n**Headline:** \"Mayo Clinic discovery could reshape cancer treatment nationwide\"\n\n```json\n{\n  \"category\": \"local_to_elsewhere\",\n  \"confidence\": 0.95,\n  \"rationale\": \"A local development has influence beyond the region.\"\n}\n```\n\n#### Example 9 — Other\n**Headline:** \"A behind-the-scenes look at how our newsroom covered election night\"\n\n```json\n{\n  \"category\": \"other\",\n  \"confidence\": 0.70,\n  \"rationale\": \"Meta content without a clear geographic impact.\"\n}\n```\n\n## Article text\n\n{text}\n",
+      "information_needs": "### TASK: Classify the **Critical Information Need** of a local news article\n\nIdentify the article's **critical information need(s)** — the practical civic or community information need the story helps readers meet.\n\nCritical information needs describe the kinds of information people require to navigate everyday life, participate in their communities, make decisions, stay safe, and understand local conditions.\n\nSelect **1 to 3 critical information needs maximum**.\nOnly assign multiple needs when the article clearly serves more than one major information need.\nBe conservative: most stories should have **one** critical information need.\n\nCritical information needs reflect **what public need the article serves**, not the article's subject label, format, popularity, timeliness, or geographic scope.\n\n## Categories\n- emergencies_risks\n- health_welfare\n- education\n- transportation\n- economic_opportunities\n- environment\n- civic_information\n- political_information\n- other\n\n## Critical information need definitions\n\n| Label | Definition | Key Signals |\n|-------|------------|-------------|\n| `emergencies_risks` | Information people need to prepare for, respond to, or recover from immediate or long-term risks. | Severe weather, fires, floods, crime threats, public safety alerts, disaster warnings |\n| `health_welfare` | Information about physical health, mental health, public health, social services, care access, benefits, or basic well-being. | Hospitals, clinics, disease outbreaks, insurance, food assistance, shelter, child care |\n| `education` | Information about schools, colleges, educational access, school quality, student outcomes, education policy, or choices for families and students. | K-12 schools, districts, colleges, school boards, curriculum, funding, enrollment |\n| `transportation` | Information about how people move through the community, including systems, routes, costs, access, safety, and disruptions. | Roads, transit, traffic, construction, bike/pedestrian access, airports, rail, bus routes |\n| `economic_opportunities` | Information about jobs, wages, business conditions, job training, entrepreneurship, household finances, or local economic opportunity. | Employment, layoffs, hiring, workforce training, small business help, wages, consumer costs |\n| `environment` | Information about local environmental conditions, environmental risks, natural resources, climate impacts, or access to restoration and recreation. | Air and water quality, pollution, land conservation, climate change, parks, outdoor access |\n| `civic_information` | Information people need to understand, access, or participate in community institutions, services, associations, and shared civic life. | Local institutions, public meetings, nonprofits, community groups, civic participation |\n| `political_information` | Information about candidates, elected officials, campaigns, elections, voting, public policy, legislation, or government decisions affecting communities. | Elections, candidates, officeholders, ballot measures, laws, ordinances, governance |\n| `other` | The article does not clearly serve one of the standard critical information needs. | Entertainment-only, lifestyle-only, unusual, or unclear public information need |\n\n### Rules\n\n- Select **only critical information needs that are core to the article's public value**.\n- Assign **1 need** unless two or three clearly apply.\n- Do **not** classify based only on a passing mention or newsroom beat.\n- Choose the need the reader could reasonably act on, use, or understand better because of the article.\n- Use `other` only when no category fits.\n\n### Distinguishing guidance\n\n- A city council story about budget, ordinance, election, or policy usually serves `political_information`.\n- Public meeting access, services, neighborhood efforts, or local institutions may serve `civic_information`.\n- Crime stories about safety threats, risk, response, or prevention serve `emergencies_risks`.\n- School funding generally serves `education`; legislation-focused debate may also serve `political_information`.\n- Housing rent burden, homelessness, or shelter access may serve `health_welfare`; jobs/income focus may serve `economic_opportunities`.\n- Road closures or transit changes serve `transportation`; crashes or dangerous conditions may also serve `emergencies_risks`.\n- Park, pollution, or climate stories usually serve `environment`.\n- Restaurant reviews, arts previews, sports gamers, recipes, or entertainment features should be `other` unless they clearly serve a public information need above.\n\n**Clarifying examples (not few-shot):**\n- Tornado warning and shelter locations → `emergencies_risks`\n- Local clinic closing → `health_welfare`\n- School district changes attendance boundaries → `education`\n- Bus route changes begin Monday → `transportation`\n- New job training program for laid-off workers → `economic_opportunities`\n- Report finds unsafe drinking water levels → `environment`\n- Neighborhood association seeks volunteers for cleanup → `civic_information`\n- County commission candidates debate tax proposal → `political_information`\n- Restaurant opens downtown → `other`\n\n### Few-shot examples\n\n#### Example 1 — Political information\n**Headline:** \"City council approves $2.3B budget after 5–2 vote\"\n\n```json\n[\n  {\n    \"category\": \"political_information\",\n    \"confidence\": 0.95,\n    \"rationale\": \"The story helps residents understand a government decision and public policy affecting the community.\"\n  }\n]\n```\n\n#### Example 2 — Education and political information\n**Headline:** \"School board votes to close two elementary schools next year\"\n\n```json\n[\n  {\n    \"category\": \"education\",\n    \"confidence\": 0.94,\n    \"rationale\": \"The story provides information families need about local school access and district changes.\"\n  },\n  {\n    \"category\": \"political_information\",\n    \"confidence\": 0.82,\n    \"rationale\": \"The closures were decided through a public board vote with policy implications.\"\n  }\n]\n```\n\n#### Example 3 — Transportation\n**Headline:** \"Metro Transit will cut three bus routes starting in July\"\n\n```json\n[\n  {\n    \"category\": \"transportation\",\n    \"confidence\": 0.96,\n    \"rationale\": \"The story provides practical information about transit access, routes, and service changes.\"\n  }\n]\n```\n\n#### Example 4 — Emergencies and risks\n**Headline:** \"Officials order evacuations as wildfire spreads toward rural subdivision\"\n\n```json\n[\n  {\n    \"category\": \"emergencies_risks\",\n    \"confidence\": 0.98,\n    \"rationale\": \"The story provides urgent information residents need to respond to an immediate safety threat.\"\n  }\n]\n```\n\n#### Example 5 — Health and welfare\n**Headline:** \"County opens new walk-in mental health crisis center\"\n\n```json\n[\n  {\n    \"category\": \"health_welfare\",\n    \"confidence\": 0.96,\n    \"rationale\": \"The story helps residents understand and access a local health and social support service.\"\n  }\n]\n```\n\n#### Example 6 — Economic opportunities\n**Headline:** \"New manufacturing training program aims to connect workers with local jobs\"\n\n```json\n[\n  {\n    \"category\": \"economic_opportunities\",\n    \"confidence\": 0.95,\n    \"rationale\": \"The story provides information about job training and access to local employment opportunities.\"\n  }\n]\n```\n\n#### Example 7 — Environment and health welfare\n**Headline:** \"State finds elevated nitrate levels in private wells near farming region\"\n\n```json\n[\n  {\n    \"category\": \"environment\",\n    \"confidence\": 0.93,\n    \"rationale\": \"The story informs residents about local water quality and environmental health risks.\"\n  },\n  {\n    \"category\": \"health_welfare\",\n    \"confidence\": 0.80,\n    \"rationale\": \"The contamination may affect residents' health and well-being.\"\n  }\n]\n```\n\n#### Example 8 — Civic information\n**Headline:** \"Neighborhood group launches tool library for residents\"\n\n```json\n[\n  {\n    \"category\": \"civic_information\",\n    \"confidence\": 0.90,\n    \"rationale\": \"The story helps residents understand and access a community resource.\"\n  }\n]\n```\n\n#### Example 9 — Other\n**Headline:** \"Twins clinch division title with walk-off home run\"\n\n```json\n[\n  {\n    \"category\": \"other\",\n    \"confidence\": 0.85,\n    \"rationale\": \"The story is about a professional sports result and does not clearly serve one of the defined critical information needs.\"\n  }\n]\n```\n\n## Article text\n\n{text}\n",
+      "subject": "### TASK: Classify the **Subject** of a local news article\n\nIdentify the article's **primary subject areas** — what the story is fundamentally *about*.\nSelect **1 to 3 subjects maximum**.\nOnly assign multiple subjects when the article clearly covers more than one major domain.\nBe conservative: most stories should have **one** subject.\n\nSubjects reflect **what is being covered**, not the article's format, timeliness, or geographic scope.\n\n## Categories\n- local_government_politics\n- state_government_politics\n- global_national_politics\n- courts_legal_system\n- accountability_government_oversight\n- public_safety_crime\n- health_public_health\n- weather_natural_hazards\n- disaster_recovery\n- roads_traffic\n- transportation_transit\n- housing_development\n- land_use_zoning\n- housing_affordability_homelessness\n- real_estate_market\n- climate_environment\n- utilities_energy\n- k12_education\n- higher_education\n- science_technology\n- business_economy\n- labor_workforce\n- agriculture_rural\n- immigration_demographics\n- military_veterans\n- consumer_affairs\n- nonprofits_philanthropy\n- media_journalism\n- community_life\n- religion_faith\n- food_restaurants\n- arts_culture\n- animals_pets\n- events_festivals\n- travel\n- outdoor_recreation\n- pro_sports\n- college_sports\n- prep_youth_sports\n- obituaries\n- recipes\n- other\n\n## Subject definitions\n\n### Government, Law & Politics\n`local_government_politics`, `state_government_politics`, `global_national_politics`, `courts_legal_system`, `accountability_government_oversight`\n\n### Public Services & Safety\n`public_safety_crime`, `health_public_health`, `weather_natural_hazards`, `disaster_recovery`\n\n### Infrastructure, Space & Environment\n`roads_traffic`, `transportation_transit`, `housing_development`, `land_use_zoning`, `housing_affordability_homelessness`, `real_estate_market`, `climate_environment`, `utilities_energy`\n\n### Economy, Education & Institutions\n`k12_education`, `higher_education`, `science_technology`, `business_economy`, `labor_workforce`, `agriculture_rural`, `immigration_demographics`, `military_veterans`, `consumer_affairs`, `nonprofits_philanthropy`, `media_journalism`\n\n### Community, Culture & Lifestyle\n`community_life`, `religion_faith`, `food_restaurants`, `arts_culture`, `animals_pets`, `events_festivals`\n\n### Travel & Recreation\n`travel`, `outdoor_recreation`\n\n### Sports\n`pro_sports`, `college_sports`, `prep_youth_sports`\n\n### Special Content\n`obituaries`, `recipes`, `other`\n\n### Rules\n\n- Select **only subjects that are core to the article's focus**.\n- Assign **1 subject** unless two or three clearly apply.\n- Do **not** select broad categories unless supported by the story.\n- When the story touches multiple areas, choose the **most central** domains.\n- Use `other` only when no category fits.\n\n**Clarifying examples (not few-shot):**\n- Rent burden story → `housing_affordability_homelessness`\n- New mall opening → `business_economy`\n- City festival → `events_festivals`\n\n### Few-shot examples\n\n#### Example 1 — Single subject\n**Headline:** \"City council approves $2.3B budget after 5–2 vote\"\n\n```json\n[\n  {\n    \"category\": \"local_government_politics\",\n    \"confidence\": 0.95,\n    \"rationale\": \"The story is fundamentally about a local government budget decision.\"\n  }\n]\n```\n\n#### Example 2 — Two subjects\n**Headline:** \"Council vote on zoning change sparks debate over affordable housing\"\n\n```json\n[\n  {\n    \"category\": \"local_government_politics\",\n    \"confidence\": 0.90,\n    \"rationale\": \"A city council zoning vote is a core focus of the story.\"\n  },\n  {\n    \"category\": \"housing_affordability_homelessness\",\n    \"confidence\": 0.88,\n    \"rationale\": \"Affordable housing impacts are a major secondary theme.\"\n  }\n]\n```\n\n#### Example 3 — Single subject (sports)\n**Headline:** \"Twins clinch division title with walk-off home run\"\n\n```json\n[\n  {\n    \"category\": \"pro_sports\",\n    \"confidence\": 0.97,\n    \"rationale\": \"Professional sports game outcome is the central focus.\"\n  }\n]\n```\n\n## Article text\n\n{text}\n",
+      "temporal_orientation": "### TASK: Classify the **Timeframe** of a local news article\n\nYou are an assistant that categorizes a story's **timeframe** — its primary temporal orientation.\nThe timeframe describes **how the story relates to time**: future, present, past, ongoing trends, recurring cycles, or timeless relevance.\n\nChoose the **single dominant timeframe** that best reflects the story's focus.\n\n## Categories\n- future\n- present\n- past\n- ongoing\n- cyclical\n- evergreen\n- other\n\n## Timeframe definitions\n\n| Label | Definition | Key Signals |\n|-------|------------|-------------|\n| `future` | Oriented toward events, decisions, or conditions that **have not yet happened**. | Upcoming votes, deadlines, forecasts, planned policies |\n| `present` | Centered on something **happening now** or **just happened** in a non-breaking way. | Meeting summaries, same-day coverage, immediate reactions |\n| `past` | Looks **backward** at events that already happened — consequences, analysis, or reflection. | Anniversaries, impact reporting, retrospective pieces |\n| `ongoing` | Covers a **durational phenomenon** without a single defining event. | Trends, crises, demographic shifts, persistent problems |\n| `cyclical` | Concerns **recurring or seasonal patterns** on a predictable cadence. | Annual events, seasonal tips, school-year cycles |\n| `evergreen` | **Not tied to any timeframe**; remains relevant whenever it is read. | How-tos, foundational explainers, general education |\n| `other` | No clear temporal orientation, or mixed timeframes obscure the dominant one. | Meta coverage, behind-the-scenes pieces |\n\n### Rules\n\n- Primary orientation is **the future** → `future`, even with past context.\n- **Recent event** → `present`.\n- **Consequences or reflections** → `past`, even if new facts appear.\n- **Trend**, not a moment → `ongoing`.\n- **Seasonal or recurring cycles** → `cyclical`, not evergreen.\n- **Useful anytime** → `evergreen`.\n- No clear fit → `other`.\n\n### Few-shot examples\n\n#### Example 1 — Future\n**Headline:** \"What to expect as the city prepares to vote on a new zoning plan next week\"\n\n```json\n{\n  \"category\": \"future\",\n  \"confidence\": 0.94,\n  \"rationale\": \"The story is oriented toward a vote that has not yet happened.\"\n}\n```\n\n#### Example 2 — Present\n**Headline:** \"City council approves $2.3B budget after 5–2 vote\"\n\n```json\n{\n  \"category\": \"present\",\n  \"confidence\": 0.95,\n  \"rationale\": \"Describes an event that happened today with immediate relevance.\"\n}\n```\n\n#### Example 3 — Past\n**Headline:** \"A year after the floods, residents are still rebuilding\"\n\n```json\n{\n  \"category\": \"past\",\n  \"confidence\": 0.96,\n  \"rationale\": \"Reflects on the long-term consequences of a previous event.\"\n}\n```\n\n#### Example 4 — Ongoing\n**Headline:** \"Rising housing costs continue to reshape the metro area\"\n\n```json\n{\n  \"category\": \"ongoing\",\n  \"confidence\": 0.93,\n  \"rationale\": \"Focuses on a long-term trend not tied to a specific moment.\"\n}\n```\n\n#### Example 5 — Cyclical\n**Headline:** \"Your guide to staying safe during icy sidewalk season\"\n\n```json\n{\n  \"category\": \"cyclical\",\n  \"confidence\": 0.90,\n  \"rationale\": \"Information tied to a recurring seasonal pattern.\"\n}\n```\n\n#### Example 6 — Evergreen\n**Headline:** \"How to contest your property tax assessment\"\n\n```json\n{\n  \"category\": \"evergreen\",\n  \"confidence\": 0.95,\n  \"rationale\": \"Relevant regardless of timing and not tied to any event or cycle.\"\n}\n```\n\n#### Example 7 — Other\n**Headline:** \"A day in the life inside our newsroom during election night (photo diary)\"\n\n```json\n{\n  \"category\": \"other\",\n  \"confidence\": 0.72,\n  \"rationale\": \"Meta, behind-the-scenes structure that does not map cleanly to temporal orientation.\"\n}\n```\n\n## Article text\n\n{text}\n",
+      "user_need": "### TASK: Classify the **User Need** of a local news article\n\nIdentify the article's **primary user need** — the reader motivation or audience need the story is mainly designed to satisfy.\n\nUser need describes **why a reader would seek out or value this story**, not the article's subject, format, timeliness, or geographic scope.\n\nChoose **one** user need — the single **dominant** need the article serves.\n\n## Categories\n- update_me\n- explain_it_to_me\n- help_me_act\n- hold_power_to_account\n- show_me_the_community\n- move_me\n- entertain_me\n- catch_me_up\n- other\n\n## User need definitions\n\n| Label | Definition | Key Signals |\n|-------|------------|-------------|\n| `update_me` | Provides timely information about what happened, what changed, or what was announced. | Breaking news, votes, incidents, decisions, results, announcements |\n| `explain_it_to_me` | Helps the reader understand what something means, how it works, why it matters, or what context is needed. | Explainers, analysis, background, causes, consequences, policy mechanics |\n| `help_me_act` | Gives practical information to make a decision, solve a problem, access a resource, or take action. | How-to guidance, deadlines, eligibility, routes, schedules, safety steps, voting info |\n| `hold_power_to_account` | Investigates, scrutinizes, or challenges people, institutions, systems, or decisions with power over public life. | Watchdog reporting, investigations, wrongdoing, failures, inequity, broken systems |\n| `show_me_the_community` | Helps the reader understand the people, places, institutions, traditions, and shared life of a community. | Neighborhood life, local identity, civic groups, community rituals, belonging |\n| `move_me` | Creates emotional connection through human experience, narrative, surprise, grief, joy, resilience, or meaning. | Human-interest storytelling, personal journeys, emotional scenes, lived experience |\n| `entertain_me` | Gives enjoyment, diversion, recommendations, cultural discovery, or something interesting to talk about. | Sports, arts, food, reviews, events, things to do, lifestyle, leisure |\n| `catch_me_up` | Orients the reader within an ongoing story, controversy, process, campaign, trial, project, or public conversation. | Recaps, follow-ups, \"what we know,\" timelines, status checks, ongoing developments |\n| `other` | The article does not clearly serve one of the standard user needs. | Unusual, hybrid, unclear, or primarily administrative content |\n\n### Rules\n\n- Select **only one** user need — the **dominant** audience motivation.\n- Do **not** classify based only on the article's topic or format.\n- Ask: **What reader need is this story mainly satisfying?**\n- New event or decision → `update_me`.\n- Explains context, causes, implications, or how something works → `explain_it_to_me`.\n- Practical instructions or usable information → `help_me_act`.\n- Exposes wrongdoing or scrutinizes power → `hold_power_to_account`.\n- Local people, places, institutions, or community life → `show_me_the_community`.\n- Emotional connection through lived experience → `move_me`.\n- Enjoyment, recommendations, or diversion → `entertain_me`.\n- Recap or status of an ongoing story → `catch_me_up`.\n- No clear fit → `other`.\n\n### Distinguishing guidance\n\n- `update_me` vs. `catch_me_up`: New development → `update_me`. Recap, status check, or orientation to ongoing issue → `catch_me_up`.\n- `update_me` vs. `explain_it_to_me`: Knowing what happened → `update_me`. Understanding meaning, context, or consequences → `explain_it_to_me`.\n- `explain_it_to_me` vs. `help_me_act`: Learning how or why → `explain_it_to_me`. Taking a specific action → `help_me_act`.\n- `hold_power_to_account` vs. `explain_it_to_me`: Scrutiny or investigation → `hold_power_to_account`. Understanding a system or issue → `explain_it_to_me`.\n- `show_me_the_community` vs. `move_me`: Local identity and civic texture → `show_me_the_community`. Emotional narrative → `move_me`.\n- `move_me` vs. `entertain_me`: Emotional resonance → `move_me`. Enjoyment or diversion → `entertain_me`.\n- `entertain_me` vs. `help_me_act`: \"Things to do\" roundups are usually `entertain_me` unless practical action is the central purpose.\n\n**Clarifying examples (not few-shot):**\n- City council approves budget → `update_me`\n- How the school funding formula works → `explain_it_to_me`\n- Where to find cooling centers during a heat wave → `help_me_act`\n- Investigation finds county failed to inspect rental units → `hold_power_to_account`\n- Inside the neighborhood festival that has lasted 100 years → `show_me_the_community`\n- Family rebuilds after tornado destroys their home → `move_me`\n- 10 restaurants to try this summer → `entertain_me`\n- What to know as the corruption trial enters week three → `catch_me_up`\n\n### Few-shot examples\n\n#### Example 1 — Update me\n**Headline:** \"City council approves $2.3B budget after 5–2 vote\"\n\n```json\n{\n  \"category\": \"update_me\",\n  \"confidence\": 0.95,\n  \"rationale\": \"The story's main value is timely information about a local government decision.\"\n}\n```\n\n#### Example 2 — Explain it to me\n**Headline:** \"How Minnesota's new school funding formula works\"\n\n```json\n{\n  \"category\": \"explain_it_to_me\",\n  \"confidence\": 0.96,\n  \"rationale\": \"The story helps readers understand how a complex policy functions and why it matters.\"\n}\n```\n\n#### Example 3 — Help me act\n**Headline:** \"How to apply for property tax relief before the deadline\"\n\n```json\n{\n  \"category\": \"help_me_act\",\n  \"confidence\": 0.97,\n  \"rationale\": \"The story gives readers practical steps they can use to access a public benefit.\"\n}\n```\n\n#### Example 4 — Hold power to account\n**Headline:** \"Audit finds city ignored years of complaints about unsafe apartments\"\n\n```json\n{\n  \"category\": \"hold_power_to_account\",\n  \"confidence\": 0.96,\n  \"rationale\": \"The story scrutinizes government failures and accountability for unsafe housing conditions.\"\n}\n```\n\n#### Example 5 — Show me the community\n**Headline:** \"At a century-old church supper, a town keeps its traditions alive\"\n\n```json\n{\n  \"category\": \"show_me_the_community\",\n  \"confidence\": 0.92,\n  \"rationale\": \"The story helps readers understand a local tradition and the community built around it.\"\n}\n```\n\n#### Example 6 — Move me\n**Headline:** \"After losing his wife, a retired teacher finds purpose mentoring young readers\"\n\n```json\n{\n  \"category\": \"move_me\",\n  \"confidence\": 0.94,\n  \"rationale\": \"The story is centered on emotional connection, personal loss, resilience, and meaning.\"\n}\n```\n\n#### Example 7 — Entertain me\n**Headline:** \"10 things to do around the metro this weekend\"\n\n```json\n{\n  \"category\": \"entertain_me\",\n  \"confidence\": 0.97,\n  \"rationale\": \"The story provides leisure recommendations and diversion.\"\n}\n```\n\n#### Example 8 — Catch me up\n**Headline:** \"What to know as the light rail extension faces another delay\"\n\n```json\n{\n  \"category\": \"catch_me_up\",\n  \"confidence\": 0.90,\n  \"rationale\": \"The story orients readers to the current status of an ongoing public project.\"\n}\n```\n\n#### Example 9 — Other\n**Headline:** \"Editor's note: How we corrected yesterday's newsletter\"\n\n```json\n{\n  \"category\": \"other\",\n  \"confidence\": 0.75,\n  \"rationale\": \"The story is primarily administrative and does not clearly serve one of the defined user needs.\"\n}\n```\n\n## Article text\n\n{text}\n"
+    },
+    "output_format": "{\n  \"category\": \"Local news\",\n  \"rationale\": \"The story focuses on a city council decision affecting residents.\",\n  \"confidence\": 0.86\n}\n"
+  }
+};
+
+import { useEffect, useMemo, useState } from 'react'
+import { NodePanelTabGate } from '@/components/node-panel/NodePanelTabContext'
+import type { GraphPanelContext, ProjectAiModelOption } from '@/components/NodePanel'
+import { getNodeOutputById, type NodeOutputLookupSpec } from '@/lib/nodeOutputs'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  INVALID_AI_MODEL_SELECTION_VALUE as INVALID_SELECTION_VALUE,
+  catalogToSelectOptions,
+  hasExplicitAiModelChoice,
+  resolvedAiModelSelectValue,
+} from '@/lib/nodePanelAiModel'
+import {
+  ARTICLE_METADATA_DEFAULT_PRESET,
+  ARTICLE_METADATA_PRESET_OPTIONS,
+  type ArticleMetadataPresetId,
+} from './presetOptions'
+
+const DEFAULTS = {
+  model: '',
+  aiModelConfigId: null as string | null,
+  prompt_preset: ARTICLE_METADATA_DEFAULT_PRESET,
+  meta_type: '',
+  prompt: '',
+}
+
+const MODEL_KEYS = {
+  configIdKey: 'aiModelConfigId',
+  modelKey: 'model',
+} as const
+
+type PresetPromptMap = Record<string, string>
+
+function presetPromptsFromMetadata(): PresetPromptMap {
+  const raw = nodeMetadata.defaultParams?.preset_prompts
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as PresetPromptMap
+  }
+  return {}
+}
+
+function normalizePreset(raw: unknown): ArticleMetadataPresetId {
+  const value =
+    typeof raw === 'string'
+      ? raw.trim().toLowerCase().replace(/-/g, '_')
+      : ARTICLE_METADATA_DEFAULT_PRESET
+  const match = ARTICLE_METADATA_PRESET_OPTIONS.find((option) => option.id === value)
+  return match?.id ?? ARTICLE_METADATA_DEFAULT_PRESET
+}
+
+/** Keep metadata type slugs lowercase with underscores; strip disallowed characters. */
+function sanitizeMetaTypeInput(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^[_0-9]+/, '')
+}
+
+function resolvedModelSelectValue(
+  params: Record<string, unknown>,
+  catalog: ProjectAiModelOption[],
+): string {
+  return resolvedAiModelSelectValue(params, catalog, MODEL_KEYS)
+}
+
+function hasExplicitModelChoice(data: Record<string, unknown>): boolean {
+  return hasExplicitAiModelChoice(data, MODEL_KEYS)
+}
+
+interface ArticleMetadataPanelProps {
+  node: { id: string; data?: Record<string, unknown> }
+  currentRun?: { node_outputs?: Record<string, unknown> }
+  editMode?: boolean
+  setNodes?: (nodes: unknown) => void
+  graphContext?: GraphPanelContext
+  nodeOutputLookupSpec?: NodeOutputLookupSpec | null
+}
+
+export default function ArticleMetadataPanel({
+  node,
+  editMode,
+  setNodes,
+  currentRun,
+  graphContext,
+  nodeOutputLookupSpec,
+}: ArticleMetadataPanelProps) {
+  const merged = {
+    ...DEFAULTS,
+    ...(nodeMetadata.defaultParams || {}),
+    ...(node.data || {}),
+  }
+  const paramsRecord = merged as Record<string, unknown>
+  const presetPrompts = useMemo(() => presetPromptsFromMetadata(), [])
+
+  const projectId = graphContext?.projectId ?? null
+  const [catalogRows, setCatalogRows] = useState<ProjectAiModelOption[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(false)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fetcher = graphContext?.fetchProjectAiModels
+    if (projectId == null || fetcher == null) {
+      setCatalogRows([])
+      setCatalogError(null)
+      setCatalogLoading(false)
+      return
+    }
+    let cancelled = false
+    setCatalogLoading(true)
+    setCatalogError(null)
+    void fetcher(['text', 'json'])
+      .then((rows) => {
+        if (!cancelled) {
+          setCatalogRows(rows)
+          setCatalogLoading(false)
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setCatalogRows([])
+          setCatalogError(e instanceof Error ? e.message : 'Could not load models.')
+          setCatalogLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, graphContext?.fetchProjectAiModels])
+
+  const modelSelectOptions = useMemo(() => catalogToSelectOptions(catalogRows), [catalogRows])
+
+  const resolvedUnderlying = resolvedModelSelectValue(paramsRecord, catalogRows)
+  const selectionValid =
+    resolvedUnderlying !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedUnderlying)
+
+  const showInvalidPersisted =
+    Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
+    hasExplicitModelChoice((node.data || {}) as Record<string, unknown>) &&
+    !selectionValid
+
+  const radixSelectValue = selectionValid
+    ? resolvedUnderlying
+    : showInvalidPersisted
+      ? INVALID_SELECTION_VALUE
+      : undefined
+
+  useEffect(() => {
+    if (!editMode || !setNodes || catalogLoading || catalogRows.length === 0) return
+    const data = (node.data || {}) as Record<string, unknown>
+    if (hasExplicitModelChoice(data)) return
+    const first = modelSelectOptions[0]
+    if (!first) return
+    setNodes((nds: { id: string; data?: Record<string, unknown> }[]) =>
+      nds.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: {
+                ...(n.data || {}),
+                model: first.providerModelId,
+                aiModelConfigId: first.configId ?? null,
+              },
+            }
+          : n,
+      ),
+    )
+  }, [
+    editMode,
+    setNodes,
+    catalogLoading,
+    catalogRows,
+    modelSelectOptions,
+    node.id,
+    node.data,
+  ])
+
+  const isDisabled = !(editMode && setNodes)
+  const currentPreset = normalizePreset(paramsRecord.prompt_preset)
+  const currentPrompt =
+    typeof paramsRecord.prompt === 'string'
+      ? paramsRecord.prompt
+      : typeof nodeMetadata.defaultParams?.prompt === 'string'
+        ? nodeMetadata.defaultParams.prompt
+        : ''
+  const currentMetaType =
+    typeof paramsRecord.meta_type === 'string' ? paramsRecord.meta_type : ''
+
+  const patchNodeData = (updates: Record<string, unknown>) => {
+    if (!setNodes) return
+    setNodes((nds: { id: string; data?: Record<string, unknown> }[]) =>
+      nds.map((n) =>
+        n.id === node.id ? { ...n, data: { ...(n.data || {}), ...updates } } : n,
+      ),
+    )
+  }
+
+  const handleModelChange = (selectValue: string) => {
+    if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
+    const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
+    patchNodeData({
+      model: row?.providerModelId ?? selectValue,
+      aiModelConfigId: row?.configId ?? null,
+    })
+  }
+
+  const handlePresetChange = (nextPreset: string) => {
+    if (!setNodes) return
+    const presetId = normalizePreset(nextPreset)
+    const updates: Record<string, unknown> = { prompt_preset: presetId }
+    if (presetId !== 'custom') {
+      updates.meta_type = ''
+    }
+    if (presetId !== currentPreset) {
+      const nextPrompt = presetPrompts[presetId]
+      if (typeof nextPrompt === 'string') {
+        updates.prompt = nextPrompt
+      }
+    }
+    patchNodeData(updates)
+  }
+
+  const displayModelLabel =
+    modelSelectOptions.find((o) => o.selectValue === resolvedUnderlying)?.label ??
+    (showInvalidPersisted
+      ? 'Previous model unavailable'
+      : resolvedUnderlying !== ''
+        ? String(paramsRecord.model ?? resolvedUnderlying)
+        : '—')
+
+  const nodeOutput = getNodeOutputById(
+    currentRun?.node_outputs as Record<string, unknown> | undefined,
+    node.id,
+    nodeOutputLookupSpec ?? undefined,
+  )
+  const latestMetadata =
+    nodeOutput &&
+    typeof nodeOutput === 'object' &&
+    nodeOutput !== null &&
+    'article_metadata' in nodeOutput
+      ? (nodeOutput as { article_metadata?: Record<string, unknown> }).article_metadata
+      : null
+
+  return (
+    <>
+      <NodePanelTabGate tab="info">
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Input placeholders</Label>
+          <p className="text-sm text-muted-foreground mt-1">
+            Pull fields from upstream JSON into the prompt using these tokens:
+          </p>
+          <ul className="list-disc list-inside text-xs mt-2 space-y-1 text-muted-foreground">
+            <li>
+              <code className="bg-muted px-1 rounded">{'{text}'}</code> — plain text or the{' '}
+              <code className="bg-muted px-1 rounded">text</code> field from JSON input
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{headline}'}</code> —{' '}
+              <code className="bg-muted px-1 rounded">headline</code> field when present
+            </li>
+            <li>
+              <code className="bg-muted px-1 rounded">{'{raw}'}</code> — entire input object as JSON
+            </li>
+          </ul>
+          {nodeMetadata.dependencyHelperText ? (
+            <p className="text-sm text-muted-foreground mt-3">{nodeMetadata.dependencyHelperText}</p>
+          ) : null}
+        </div>
+      </NodePanelTabGate>
+
+      <NodePanelTabGate tab="settings">
+        <div>
+          <Label className="text-sm font-medium">Classification model</Label>
+          {editMode && setNodes ? (
+            <>
+              {(projectId == null || graphContext?.fetchProjectAiModels == null) && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Save this flow under a project to choose models your organization enabled for
+                  this project.
+                </p>
+              )}
+              {projectId != null && catalogLoading && (
+                <p className="text-xs text-muted-foreground mt-2">Loading models…</p>
+              )}
+              {catalogError != null && catalogError !== '' ? (
+                <p className="text-xs text-destructive mt-2">{catalogError}</p>
+              ) : null}
+              {!catalogLoading &&
+                !catalogError &&
+                projectId != null &&
+                graphContext?.fetchProjectAiModels != null &&
+                modelSelectOptions.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    No models available for this project yet. Ask an administrator to enable
+                    models for your organization, then turn them on for this project in project
+                    settings if needed.
+                  </p>
+                )}
+              {showInvalidPersisted && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  The saved model is no longer available. Choose another model below.
+                </p>
+              )}
+              <Select
+                value={radixSelectValue}
+                onValueChange={handleModelChange}
+                disabled={isDisabled || modelSelectOptions.length === 0}
+              >
+                <SelectTrigger className="h-8 text-xs mt-2">
+                  <SelectValue placeholder="Choose a model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {showInvalidPersisted ? (
+                    <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                      Saved model unavailable
+                    </SelectItem>
+                  ) : null}
+                  {modelSelectOptions.map((m) => (
+                    <SelectItem key={`am-${m.selectValue}`} value={m.selectValue}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Set available models in your organization settings.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-between items-center p-2 bg-muted rounded mt-2">
+                <span className="text-muted-foreground">Classification model</span>
+                <span className="font-medium text-xs">{displayModelLabel}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Set available models in your organization settings.
+              </p>
+            </>
+          )}
+        </div>
+      </NodePanelTabGate>
+
+      <NodePanelTabGate tab="prompts">
+        <div className="space-y-3">
+          <div>
+            <Label className="text-sm font-medium">Preset</Label>
+            {editMode && setNodes ? (
+              <Select value={currentPreset} onValueChange={handlePresetChange} disabled={isDisabled}>
+                <SelectTrigger className="h-8 text-xs mt-2">
+                  <SelectValue placeholder="Choose a preset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ARTICLE_METADATA_PRESET_OPTIONS.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex justify-between items-center p-2 bg-muted rounded mt-2">
+                <span className="text-muted-foreground">Preset</span>
+                <span className="font-medium text-xs capitalize">
+                  {ARTICLE_METADATA_PRESET_OPTIONS.find((option) => option.id === currentPreset)
+                    ?.label ?? currentPreset.replace(/_/g, ' ')}
+                </span>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              Each preset classifies one metadata dimension for this run.
+            </p>
+          </div>
+
+          {currentPreset === 'custom' ? (
+            <div>
+              <Label className="text-sm font-medium">Metadata type</Label>
+              {editMode && setNodes ? (
+                <Input
+                  value={currentMetaType}
+                  onChange={(e) => {
+                    patchNodeData({ meta_type: sanitizeMetaTypeInput(e.target.value) })
+                  }}
+                  placeholder="new_category"
+                  className="mt-2 h-8 text-xs font-mono"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                />
+              ) : (
+                <div className="flex justify-between items-center p-2 bg-muted rounded mt-2">
+                  <span className="text-muted-foreground">Metadata type</span>
+                  <span className="font-medium text-xs font-mono">
+                    {currentMetaType.trim() || '—'}
+                  </span>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                Stored as the dimension key for this classifier (for example{' '}
+                <code className="bg-muted px-1 rounded">new_category</code>). Letters, numbers, and
+                underscores only — spaces become underscores as you type.
+              </p>
+            </div>
+          ) : null}
+
+          <div>
+            <Label className="text-sm font-medium">Prompt</Label>
+            {editMode && setNodes ? (
+              <Textarea
+                value={currentPrompt}
+                onChange={(e) => {
+                  patchNodeData({ prompt: e.target.value })
+                }}
+                placeholder="Enter custom prompt"
+                className="mt-2 min-h-[200px] px-3 py-2 text-xs border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 font-mono"
+              />
+            ) : (
+              <div className="mt-2 p-2 bg-muted rounded max-h-48 overflow-y-auto">
+                <pre className="text-xs whitespace-pre-wrap font-mono">
+                  {currentPrompt || 'Using default prompt'}
+                </pre>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              Include a <code className="bg-muted px-1 rounded">## Categories</code> section with
+              bullet labels the model must choose from.
+            </p>
+          </div>
+        </div>
+      </NodePanelTabGate>
+
+      <NodePanelTabGate tab="outputs">
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium">Output format</Label>
+            <Textarea
+              readOnly
+              value={nodeMetadata.defaultParams?.output_format?.trim() || ''}
+              placeholder="Run node sync (apps/agate-ui) after changing prompts/_output_format.json"
+              className="mt-2 min-h-[120px] px-3 py-2 text-xs border border-input bg-muted/50 rounded-md font-mono cursor-default"
+              spellCheck={false}
+            />
+            <p className="text-xs text-muted-foreground mt-1">For reference only.</p>
+          </div>
+
+          {latestMetadata && (
+            <div className="border-t pt-4">
+              <Label className="text-sm font-medium">Latest run</Label>
+              <div className="mt-2 space-y-2 text-xs">
+                {typeof latestMetadata.category === 'string' && latestMetadata.category ? (
+                  <div className="p-2 bg-muted rounded">
+                    <div className="font-medium">{latestMetadata.category}</div>
+                    {typeof latestMetadata.rationale === 'string' && latestMetadata.rationale ? (
+                      <div className="text-muted-foreground mt-1">{latestMetadata.rationale}</div>
+                    ) : null}
+                    {typeof latestMetadata.confidence === 'number' ? (
+                      <div className="text-muted-foreground mt-1">
+                        Confidence: {latestMetadata.confidence.toFixed(2)}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </div>
+      </NodePanelTabGate>
+    </>
+  )
+}
