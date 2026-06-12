@@ -15,7 +15,7 @@ Branch implementation and review work by profile. Every node folder declares a p
 | Profile | Role | Backfield examples | Stylebook / review |
 |---------|------|-------------------|-------------------|
 | **Input** | Ingress text, JSON, or S3 batch | `TextInput`, `JSONInput`, `S3Input` | None |
-| **Output** | Egress JSON or substrate persist | `Output`, `DBOutput` | `DBOutput` persists via worker; review only via downstream entity tabs |
+| **Output** | Egress JSON, substrate persist, or S3 files | `Output`, `DBOutput`, `S3Output` | `DBOutput` persists via worker; review only via downstream entity tabs; `S3Output` supports JSON-tab re-sync |
 | **Extract** | LLM or rules extraction | `PlaceExtract`, `PersonExtract`, `OrganizationExtract`, `CustomExtract` | **Canonical entity extract** → [`add-entity-type`](../.cursor/skills/add-entity-type/SKILL.md). Non-canonical extract stays here (`CustomExtract` has its own **Custom** review tab) |
 | **Enrich** | Transform or resolve upstream rows | `GeocodeAgent` | May **feed entity review** (e.g. Places tab) without a new canonical type |
 | **Embed** | Vector / semantic indexing | `EmbedText`, `EmbedImages` | Embed Text: Info tab status; Embed Images: **Images** review tab (read-only) |
@@ -164,8 +164,10 @@ Each slice should be demoable on its own.
 
 ### Output
 
+- Bookend types: `Output`, `DBOutput`, `S3Output` (`flowValidation.ts`) — the guided builder's destination step offers all three; exactly one per flow.
 - `Output` — consolidated JSON view only.
 - `DBOutput` — worker-local persist (`apps/worker/src/worker/nodes/db_output.py`); stub in package for offline runs.
+- `S3Output` — writes the consolidated body as a JSON file to `s3://{bucket}/{output_path}/{YYYY-MM-DD}/{source basename}-output.json` (timestamped fallback name when there is no source file; stale outputs for the same article id + older update key are deleted). Executor gives it DBOutput-style namespaced inputs; run JSON contribution is `{"consolidated", "s3_bucket", "s3_key"}` so review merges land inside `consolidated`. The processed-item **JSON** tab offers **Sync to S3**, which overwrites the original S3 object with the reviewed output via `worker.tasks.sync_processed_item_s3_output` (see `docs/API.md` → **Processed item S3 Output re-sync (v1)**). AWS credentials resolve like S3Input (org platform secrets / project secrets via worker env overlay).
 
 ### Extract (non-canonical)
 

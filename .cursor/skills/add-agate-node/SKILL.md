@@ -83,7 +83,7 @@ Record decisions; plan **issue 00** (migration) via [`backfield-db-change`](../b
 | Profile | Extra questions |
 |---------|-----------------|
 | **Input** | Bookend type (`TextInput` / `JSONInput` / `S3Input`)? Batch vs inline? |
-| **Output** | `Output` (JSON only) vs `DBOutput` (persist)? Stylebook override on DBOutput? |
+| **Output** | `Output` (JSON only) vs `DBOutput` (persist) vs `S3Output` (S3 files)? Stylebook override on DBOutput? |
 | **Extract** | Non-canonical only here. Prompt layout per [`ENTITY_TYPES.md`](../../docs/ENTITY_TYPES.md) |
 | **Enrich** | Mutates upstream key in place vs new key? Feeds which review merge path? |
 | **Embed** | Embedding model; storage target (new table vs semantic indexing pipeline) |
@@ -96,7 +96,7 @@ Record decisions; plan **issue 00** (migration) via [`backfield-db-change`](../b
 | Profile | Examples | Stylebook |
 |---------|----------|-----------|
 | Input | `TextInput`, `JSONInput`, `S3Input` | No |
-| Output | `Output`, `DBOutput` | DBOutput persists only |
+| Output | `Output`, `DBOutput`, `S3Output` | DBOutput persists only |
 | Extract | `PlaceExtract`, … | Entity extracts → `add-entity-type` |
 | Enrich | `GeocodeAgent` | No new canonical type |
 | Embed | *(future)* | Usually no |

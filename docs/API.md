@@ -249,6 +249,14 @@ When overlay PATCH carries review content (location or people patches, user-adde
 - **Lifecycle:** Cleared with **`overlay_json`** on item rerun. Not written when overlay has no review content (for example metadata-only keys with no location or article edits).
 - **Non-effects:** Does not update **`result_json`**, geocode cache, or Stylebook canonicals. DBOutput and worker execution continue to read immutable model output. Exception: custom-record overlay edits re-persist **`substrate_custom_record`** rows on the same PATCH (see **Processed item custom records overlay (v1)**).
 
+## Processed item S3 Output re-sync (v1)
+
+When a flow includes an **S3 Output** node, each item's run JSON records the upload under that node's payload: `{ "consolidated": <file body>, "s3_bucket", "s3_key" }`. Because the reviewed-output materialization patches every payload carrying a **`consolidated`** dict, review edits flow into the S3 Output payload automatically.
+
+- **`POST /runs/{id}/items/{item_id}/s3-sync`**: queues `**worker.tasks.sync_processed_item_s3_output**` on the `**agate**` queue. Requires a **succeeded** batch item whose run JSON contains an S3 Output upload record; synthetic whole-graph `**items/1**` views return **400**, items without an S3 upload record return **400**, unknown items **404**. Response: `{ "item_id", "run_id", "message" }`.
+- **Worker behavior:** uploads **`reviewed_output_json`**'s S3 Output **`consolidated`** body when review edits exist (otherwise the original **`result_json`** body) to the **same** `s3_bucket` / `s3_key` recorded at run time, overwriting the existing object. The `public_read` node param from the saved graph spec controls the ACL. AWS credentials resolve from organization platform integration secrets / project secrets via the worker env overlay (same as S3 Input).
+- **Sync state:** on success the worker stamps **`s3_synced_at`** (ISO timestamp) on the S3 Output payload in both **`result_json`** and **`reviewed_output_json`**; on failure it stamps **`s3_sync_error`** instead. The item detail JSON tab surfaces both.
+
 ## Processed item article context (v1)
 
 **`GET /runs/{id}/items/{item_id}`** includes an **`article_context`** object for the verification UI:

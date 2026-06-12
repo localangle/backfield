@@ -137,6 +137,33 @@ def test_s3_input_requires_bucket():
         run_s3_input({"bucket": "", "folder_path": ""}, {})
 
 
+def test_text_input_to_s3_output_records_upload():
+    spec = GraphSpec(
+        name="s3o",
+        nodes=[
+            NodeConfig(id="a", type="TextInput", params={"text": "Story body."}),
+            NodeConfig(
+                id="o",
+                type="S3Output",
+                params={"bucket": "out-bucket", "output_path": "out"},
+            ),
+        ],
+        edges=[
+            Edge(source="a", target="o", sourceHandle="text", targetHandle="data"),
+        ],
+    )
+    fake_client = MagicMock()
+    with patch("agate_nodes.s3_output.node._s3_client", return_value=fake_client):
+        out = execute_graph(spec)
+
+    payload = out["s3_output"]
+    assert payload["s3_bucket"] == "out-bucket"
+    assert payload["s3_key"].startswith("out/")
+    assert payload["s3_key"].endswith(".json")
+    assert payload["consolidated"]["text"] == "Story body."
+    assert fake_client.put_object.call_count == 1
+
+
 def test_s3_input_strips_s3_uri_prefix_from_bucket():
     from agate_runtime.nodes.s3_input import run_s3_input
 

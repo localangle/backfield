@@ -255,7 +255,7 @@ def _inputs_for_node(
     node_ids = set(by_id)
     if node.type == "Output":
         return _merged_outputs_for_output(node_outputs, by_id)
-    if node.type == "DBOutput":
+    if node.type in ("DBOutput", "S3Output"):
         return _all_namespaced_node_outputs(node_outputs, by_id)
     if node.type == "Gather":
         return _namespaced_barrier_inputs(

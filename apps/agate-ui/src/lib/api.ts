@@ -838,6 +838,22 @@ export async function rerunProcessedItem(
   }) as Promise<RerunItemResponse>
 }
 
+export interface S3SyncItemResponse {
+  item_id: number
+  run_id: string
+  message: string
+}
+
+/** Queue a worker upload that overwrites the story's S3 Output file with current JSON. */
+export async function syncProcessedItemS3Output(
+  runId: string | number,
+  itemId: number
+): Promise<S3SyncItemResponse> {
+  return fetchAPI(`/runs/${runId}/items/${itemId}/s3-sync`, {
+    method: 'POST',
+  }) as Promise<S3SyncItemResponse>
+}
+
 export async function cancelRun(runId: string | number): Promise<Run> {
   const raw = (await fetchAPI(`/runs/${runId}/cancel`, {
     method: 'POST',

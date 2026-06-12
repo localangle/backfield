@@ -13,6 +13,7 @@ from agate_runtime.nodes.output import run_output
 from agate_runtime.nodes.person_extract import run_person_extract
 from agate_runtime.nodes.place_extract import run_place_extract
 from agate_runtime.nodes.s3_input import run_s3_input
+from agate_runtime.nodes.s3_output import run_s3_output
 from agate_runtime.nodes.text_input import run_text_input
 
 NODE_RUNNERS: dict[str, callable] = {
@@ -30,6 +31,7 @@ NODE_RUNNERS: dict[str, callable] = {
     "GeocodeAgent": run_geocode_agent,
     "Output": run_output,
     "DBOutput": run_db_output,
+    "S3Output": run_s3_output,
 }
 
 __all__ = ["NODE_RUNNERS"]

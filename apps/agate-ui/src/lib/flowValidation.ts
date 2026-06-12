@@ -19,11 +19,11 @@ export const INPUT_NODE_TYPES = [
 ] as const
 
 /** Guided builder: exactly one of these per flow. */
-export const OUTPUT_BOOKEND_TYPES = ['Output', 'DBOutput'] as const
+export const OUTPUT_BOOKEND_TYPES = ['Output', 'DBOutput', 'S3Output'] as const
 export type OutputBookendType = (typeof OUTPUT_BOOKEND_TYPES)[number]
 
 /** All node types treated as flow outputs (presence checks). */
-export const OUTPUT_NODE_TYPES = [...OUTPUT_BOOKEND_TYPES, 'S3Output'] as const
+export const OUTPUT_NODE_TYPES = [...OUTPUT_BOOKEND_TYPES] as const
 
 export type FlowValidationSeverity = 'warning' | 'error'
 
@@ -76,7 +76,9 @@ export function isOutputBookendType(type: string | undefined): boolean {
 
 export function validateS3InputBuckets(nodes: FlowGraphNode[]): FlowValidationResult {
   const invalid = nodes.filter(
-    (n) => n.type === 'S3Input' && !isValidS3BucketName(String(n.data?.bucket ?? '')),
+    (n) =>
+      (n.type === 'S3Input' || n.type === 'S3Output') &&
+      !isValidS3BucketName(String(n.data?.bucket ?? '')),
   )
   if (invalid.length === 0) {
     return { ok: true }
@@ -133,6 +135,14 @@ export function paramsForGraphSave(node: FlowGraphNode): Record<string, unknown>
       bucket: normalizeS3BucketName(String(raw.bucket ?? '')),
       folder_path: normalizeS3FolderPath(String(raw.folder_path ?? '')),
       max_files: normalizeS3MaxFilesInput(String(raw.max_files ?? S3_DEFAULT_MAX_FILES)),
+    }
+  }
+  if (node.type === 'S3Output') {
+    raw = {
+      ...raw,
+      bucket: normalizeS3BucketName(String(raw.bucket ?? '')),
+      output_path: normalizeS3FolderPath(String(raw.output_path ?? '')),
+      public_read: Boolean(raw.public_read),
     }
   }
   return raw

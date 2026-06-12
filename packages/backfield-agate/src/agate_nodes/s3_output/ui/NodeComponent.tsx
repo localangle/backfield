@@ -1,41 +1,18 @@
-// Auto-injected metadata for S3Input
-const nodeMetadata = {
-  "type": "S3Input",
-  "label": "S3 Input",
-  "icon": "Archive",
-  "color": "bg-blue-500",
-  "description": "Load article text from JSON files in S3.",
-  "category": "input",
-  "inputs": [],
-  "outputs": [
-    {
-      "id": "text",
-      "label": "Text",
-      "type": "string"
-    }
-  ],
-  "defaultParams": {
-    "bucket": "",
-    "folder_path": "",
-    "max_files": 500
-  }
-};
-
 import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getNodeIcon, getNodeBgColor } from '@/lib/nodeUtils'
 
-interface S3InputData {
+interface S3OutputData {
   bucket?: string
-  folder_path?: string
+  output_path?: string
 }
 
-function S3InputNode({ data, selected }: NodeProps<S3InputData>) {
+function S3OutputNode({ data, selected }: NodeProps<S3OutputData>) {
   const bucketDisplay = data.bucket || 'No bucket configured'
-  const folderDisplay = data.folder_path ? `/${data.folder_path}` : ''
-  const icon = getNodeIcon('S3Input', 'h-4 w-4')
-  const bgColor = getNodeBgColor('S3Input')
+  const folderDisplay = data.output_path ? `/${data.output_path}` : ''
+  const icon = getNodeIcon('S3Output', 'h-4 w-4')
+  const bgColor = getNodeBgColor('S3Output')
 
   return (
     <Card className={`w-[200px] ${selected ? 'ring-2 ring-primary' : ''}`}>
@@ -44,10 +21,16 @@ function S3InputNode({ data, selected }: NodeProps<S3InputData>) {
           <div className={`flex items-center justify-center w-6 h-6 rounded-full ${bgColor}`}>
             {icon}
           </div>
-          S3 Input
+          S3 Output
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="data"
+          className="w-3 h-3 bg-gray-700"
+        />
         <div className="text-xs text-gray-600">
           <div className="font-mono truncate" title={`s3://${bucketDisplay}${folderDisplay}`}>
             s3://{bucketDisplay.substring(0, 20)}
@@ -55,15 +38,9 @@ function S3InputNode({ data, selected }: NodeProps<S3InputData>) {
             {folderDisplay}
           </div>
         </div>
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="text"
-          className="w-3 h-3 bg-gray-700"
-        />
       </CardContent>
     </Card>
   )
 }
 
-export default memo(S3InputNode)
+export default memo(S3OutputNode)

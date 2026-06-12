@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
+from agate_nodes.s3_output.node import s3_output_payloads_in_run_output
 from agate_runtime.run_graph_spec import merge_run_result_payload
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
 from agate_runtime.single_item import build_single_item_input_from_graph_spec_json
@@ -277,6 +278,14 @@ class RerunItemResponse(BaseModel):
     item_id: int
     run_id: str
     status: str
+    message: str
+
+
+class S3SyncItemResponse(BaseModel):
+    """Response when queueing an S3 Output re-sync for a processed item."""
+
+    item_id: int
+    run_id: str
     message: str
 
 
@@ -1924,6 +1933,55 @@ def rerun_run_processed_item(
         run_id=r.id,
         status=item.status,
         message=f"Item {iid} reset to pending and re-queued for processing",
+    )
+
+
+@router.post("/{run_id}/items/{item_id}/s3-sync", response_model=S3SyncItemResponse)
+def sync_run_processed_item_s3_output(
+    run_id: str,
+    item_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> S3SyncItemResponse:
+    """Queue a worker task that overwrites the item's S3 Output file with current JSON.
+
+    Requires a succeeded batch item whose run output recorded an S3 Output upload
+    (``s3_bucket`` + ``s3_key``). When review edits exist, the worker uploads the
+    reviewed output; otherwise it re-uploads the original output.
+    """
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+
+    if _is_synthetic_whole_graph_item_view(session, run_id, item_id):
+        raise HTTPException(400, "S3 sync is available for batch stories only")
+
+    item = session.get(AgateProcessedItem, item_id)
+    if item is None or item.run_id != run_id:
+        raise HTTPException(404, "Processed item not found")
+    if item.status != "succeeded" or not item.result_json:
+        raise HTTPException(400, "S3 sync requires a completed story with output")
+
+    try:
+        output = json.loads(item.result_json)
+    except json.JSONDecodeError:
+        output = None
+    if not isinstance(output, dict) or not s3_output_payloads_in_run_output(output):
+        raise HTTPException(400, "This story has no S3 Output file to sync")
+
+    celery_app.send_task(
+        "worker.tasks.sync_processed_item_s3_output",
+        args=[item.id],
+        queue=_celery_queue(),
+    )
+
+    return S3SyncItemResponse(
+        item_id=int(item_id),
+        run_id=r.id,
+        message="S3 sync queued; the file in S3 will be overwritten shortly",
     )
 
 

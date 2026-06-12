@@ -41,6 +41,8 @@ export function getNodePanelTabs(
       return hasRunOutput ? ['outputs'] : []
     case 'DBOutput':
       return ['settings', 'stylebook']
+    case 'S3Output':
+      return hasRunOutput ? ['settings', 'outputs'] : ['settings']
     default:
       return ['settings']
   }

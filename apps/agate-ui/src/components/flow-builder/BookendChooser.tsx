@@ -28,6 +28,10 @@ const OUTPUT_CARD_COPY: Record<string, { title: string; description: string }> =
     title: 'Backfield Output',
     description: 'Save places and related results to Backfield.',
   },
+  S3Output: {
+    title: 'Files in Amazon S3',
+    description: 'Write the flow results as JSON files to a cloud storage bucket.',
+  },
 }
 
 type BookendChooserProps = {

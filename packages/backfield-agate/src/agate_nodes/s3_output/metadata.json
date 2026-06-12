@@ -1,0 +1,25 @@
+{
+  "type": "S3Output",
+  "label": "S3 Output",
+  "icon": "Archive",
+  "color": "bg-slate-500",
+  "description": "Save the results as JSON files in an S3 bucket.",
+  "category": "output",
+  "requiredUpstreamNodes": [],
+  "inputs": [
+    {
+      "id": "data",
+      "label": "Any Data",
+      "type": "any",
+      "required": true
+    }
+  ],
+  "outputs": [],
+  "defaultParams": {
+    "bucket": "",
+    "output_path": "",
+    "public_read": false,
+    "exclude": null,
+    "include": null
+  }
+}

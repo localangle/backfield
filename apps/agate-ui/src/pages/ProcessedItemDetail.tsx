@@ -13,7 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
+import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, syncProcessedItemS3Output, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
+import { s3OutputUploadsFromItemOutput } from '@/lib/review/content/s3OutputSync'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { processedItemDisplayTitle } from '@/lib/review/content/displayTitle'
@@ -39,6 +40,7 @@ import {
   FileText,
   ExternalLink,
   RotateCcw,
+  RefreshCw,
 } from 'lucide-react'
 import JsonView from '@uiw/react-json-view'
 
@@ -56,7 +58,7 @@ const PROCESSED_ITEM_TAB_LABELS: Record<ProcessedItemDetailTab, string> = {
 }
 
 export default function ProcessedItemDetail() {
-  const { showError, showConfirm } = useAppMessage()
+  const { showError, showConfirm, showMessage } = useAppMessage()
   const { runId, itemId } = useParams<{ runId: string; itemId: string }>()
   const navigate = useNavigate()
   const location = useLocation()
@@ -76,6 +78,7 @@ export default function ProcessedItemDetail() {
   const [catalogProject, setCatalogProject] = useState<Project | null>(null)
   const [projectWorkspace, setProjectWorkspace] = useState<WorkspaceWithProjects | null>(null)
   const [jsonOutputView, setJsonOutputView] = useState<JsonOutputView>('reviewed')
+  const [s3Syncing, setS3Syncing] = useState(false)
 
   const hasReviewedOutput = Boolean(
     item?.reviewed_output &&
@@ -322,6 +325,36 @@ export default function ProcessedItemDetail() {
     }
     return item.output
   }, [item?.output, item?.reviewed_output, jsonOutputView])
+
+  const s3OutputUploads = useMemo(
+    () => s3OutputUploadsFromItemOutput(item?.output ?? null),
+    [item?.output],
+  )
+
+  const handleS3Sync = useCallback(async () => {
+    if (!runId || !itemId || s3OutputUploads.length === 0) return
+    const fileList = s3OutputUploads.map((u) => `s3://${u.bucket}/${u.key}`).join(', ')
+    const ok = await showConfirm(
+      `This will overwrite the existing file in S3 (${fileList}) with the current output data, including any changes made in review. This cannot be undone.`,
+      {
+        title: 'Sync to S3',
+        confirmLabel: 'Overwrite file',
+        destructive: true,
+      },
+    )
+    if (!ok) return
+    setS3Syncing(true)
+    try {
+      await syncProcessedItemS3Output(runId, Number(itemId))
+      showMessage('Sync started. The file in S3 will be overwritten shortly.', {
+        title: 'Sync to S3',
+      })
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Failed to start the S3 sync.')
+    } finally {
+      setS3Syncing(false)
+    }
+  }, [runId, itemId, s3OutputUploads, showConfirm, showMessage, showError])
 
   const downloadJsonOutput = useCallback(
     (view: JsonOutputView) => {
@@ -820,9 +853,39 @@ export default function ProcessedItemDetail() {
                       Reviewed output includes changes made through the review interface.
                     </p>
                   ) : null}
+                  {s3OutputUploads.map((upload) => (
+                    <p key={`${upload.bucket}/${upload.key}`} className="text-sm text-muted-foreground">
+                      Saved to{' '}
+                      <span className="font-mono text-xs break-all">
+                        s3://{upload.bucket}/{upload.key}
+                      </span>
+                      {upload.syncedAt ? (
+                        <> · last synced {new Date(upload.syncedAt).toLocaleString()}</>
+                      ) : null}
+                      {upload.syncError ? (
+                        <span className="text-destructive"> · last sync failed: {upload.syncError}</span>
+                      ) : null}
+                    </p>
+                  ))}
                 </div>
                 {item.status === 'succeeded' && item.output ? (
                   <div className="flex flex-wrap items-center gap-2">
+                    {!item.synthetic && s3OutputUploads.length > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleS3Sync}
+                        disabled={s3Syncing}
+                      >
+                        {s3Syncing ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Sync to S3
+                      </Button>
+                    ) : null}
                     {hasReviewedOutput ? (
                       <div className="flex rounded-md border p-0.5" role="group" aria-label="Output data version">
                         <Button

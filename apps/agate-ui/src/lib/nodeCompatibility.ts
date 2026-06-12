@@ -79,7 +79,7 @@ const CATEGORY_HEADINGS: Record<string, string> = {
 }
 
 function isBookendType(type: string): boolean {
-  return isInputBookendType(type) || isOutputBookendType(type) || type === 'S3Output'
+  return isInputBookendType(type) || isOutputBookendType(type)
 }
 
 export function categoryHeading(category: string): string {
