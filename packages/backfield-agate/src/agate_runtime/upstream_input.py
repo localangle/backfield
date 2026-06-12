@@ -42,6 +42,8 @@ def flatten_upstream_inputs(input_dict: dict[str, Any]) -> dict[str, Any]:
     for key, value in input_dict.items():
         if isinstance(value, dict) and (_is_namespaced_node_key(key) or key.isdigit()):
             merge_upstream_payload(flattened, value)
+        elif isinstance(value, dict) and key == "custom_records":
+            merge_upstream_payload(flattened, {key: value})
         elif isinstance(value, dict):
             merge_upstream_payload(flattened, value)
         else:

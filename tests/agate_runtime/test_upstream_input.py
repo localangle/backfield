@@ -40,6 +40,19 @@ def test_custom_extract_resolve_text_after_gather() -> None:
     assert resolve_text(flattened) == "Recipe body"
 
 
+def test_flatten_upstream_inputs_preserves_top_level_custom_records() -> None:
+    flattened = flatten_upstream_inputs(
+        {
+            "text": "Recipe body",
+            "custom_records": {
+                "recipe_steps": {"label": "Recipe steps", "records": []},
+            },
+        }
+    )
+    assert flattened["text"] == "Recipe body"
+    assert set(flattened["custom_records"].keys()) == {"recipe_steps"}
+
+
 def test_expand_gathered_unions_custom_records() -> None:
     expanded = expand_gathered_payload(
         {
