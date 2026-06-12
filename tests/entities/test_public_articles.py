@@ -27,6 +27,52 @@ def test_article_preview_truncates_long_text() -> None:
     assert preview.endswith("…")
 
 
+def test_search_public_articles_matches_body_text() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-public-body-search")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        proj = BackfieldProject(
+            name="News",
+            slug="news",
+            organization_id=int(org.id),  # type: ignore[arg-type]
+        )
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+
+        session.add(
+            SubstrateArticle(
+                project_id=project_id,
+                headline="School board meeting",
+                text="The auditorium renovation will begin next month.",
+                pub_date=date(2024, 1, 10),
+            )
+        )
+        session.add(
+            SubstrateArticle(
+                project_id=project_id,
+                headline="Budget overview",
+                text="Unrelated story body.",
+                pub_date=date(2024, 1, 11),
+            )
+        )
+        session.commit()
+
+        items, total = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(q="renovation"),
+        )
+        assert total == 1
+        assert len(items) == 1
+        assert items[0].headline == "School board meeting"
+
+
 def test_search_public_articles_filters_metadata_and_dates() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

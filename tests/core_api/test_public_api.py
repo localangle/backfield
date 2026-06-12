@@ -295,6 +295,19 @@ def test_public_article_search(public_client: TestClient) -> None:
     assert "City council votes on budget" in headlines
 
 
+def test_public_article_search_body_keyword(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "downtown"},
+    )
+    assert r.status_code == 200
+    assert r.json()["pagination"]["total"] == 1
+    assert r.json()["items"][0]["headline"] == "City council votes on budget"
+
+
 def test_public_article_search_keyword(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

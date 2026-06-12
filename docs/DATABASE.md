@@ -56,7 +56,7 @@ New entity types (person, organization, work, …) follow the same **substrate t
 
 ### Shared content and locations (`substrate_*`)
 
-- `substrate_article` — project-scoped content item for stateful ingestion. Uses a project-scoped external identity hierarchy with `(project_id, url)` as the fallback uniqueness rule. `source_run_id` stores the executing `agate_run.id` (UUID string) when the row is produced from an Agate worker run.
+- `substrate_article` — project-scoped content item for stateful ingestion. Uses a project-scoped external identity hierarchy with `(project_id, url)` as the fallback uniqueness rule. `source_run_id` stores the executing `agate_run.id` (UUID string) when the row is produced from an Agate worker run. Public article keyword search uses PostgreSQL full-text search over `headline`, `text`, and `url` (GIN index **`idx_substrate_article_fulltext`**, revision **`047_substrate_article_fulltext`**); semantic article search remains a separate future surface over **`substrate_article_embedding`**.
 - `substrate_image` — images attached to a `substrate_article`.
 - `substrate_image_embedding` — one pgvector row per `substrate_image` (Embed Images node → DBOutput persist): `generated_text`, optional vision model metadata, `embedding_model`, `embedding_dimensions`, optional `embedding_ai_model_config_id`, `embedding`, timestamps. Unique on `substrate_image_id` FK to `substrate_image`.
 - `substrate_article_embedding` — one pgvector row per article (Embed Text node → DBOutput persist): `embedded_text`, `embedding_model`, `embedding_dimensions`, optional `embedding_ai_model_config_id`, `embedding`, timestamps. Unique on `article_id` FK to `substrate_article`.
@@ -149,6 +149,8 @@ Revision **`039_organization_schema`** adds the organization **substrate trio**,
 Revision **`040_sb_conn_evidence`** adds nullable **`evidence_json`** on **`stylebook_connections`** (creation evidence for auto-linked edges) and unique **`uq_stylebook_connection_exact_edge`** on **`(project_id, from_entity_type, from_entity_id, to_entity_type, to_entity_id, nature)`**. Manual connections keep free-form **`nature`** values; the automatic taxonomy lives in **`backfield_entities.connections`**.
 
 Revision **`046_agate_graph_description`** adds nullable-by-default **`description`** (`TEXT NOT NULL DEFAULT ''`) on **`agate_graph`** for optional flow summaries shown in Agate UI lists and on create/edit screens.
+
+Revision **`047_substrate_article_fulltext`** adds Postgres GIN index **`idx_substrate_article_fulltext`** on `to_tsvector('english', coalesce(headline, '') || ' ' || coalesce(text, '') || ' ' || coalesce(url, ''))` for public article keyword search.
 
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 

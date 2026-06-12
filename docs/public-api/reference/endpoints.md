@@ -78,7 +78,7 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
 
 ### Functionality
 
-Search non-deleted articles in a project by keyword (headline or URL), metadata tags, and publication date. Returns a paginated list without full body text.
+Search non-deleted articles in a project by keyword (headline, body text, or URL), metadata tags, and publication date. Returns a paginated list without full body text. On PostgreSQL, `q` uses full-text search over headline + body + URL (not semantic embeddings).
 
 ### Path parameters
 

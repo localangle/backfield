@@ -7,7 +7,7 @@ from datetime import date
 
 from backfield_db import SubstrateArticle, SubstrateArticleMeta
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_
+from sqlalchemy import func, literal, or_
 from sqlmodel import Session, col, select
 
 from backfield_entities.public.article_hub import PublicArticleCountsOut, article_hub_counts
@@ -114,6 +114,50 @@ def _active_articles_for_project(session: Session, project_id: int):
     )
 
 
+def _article_fulltext_vector():
+    """Expression matching ``idx_substrate_article_fulltext`` for index-backed search."""
+    empty = literal("")
+    space = literal(" ")
+    document = (
+        func.coalesce(SubstrateArticle.headline, empty)
+        .op("||")(space)
+        .op("||")(func.coalesce(SubstrateArticle.text, empty))
+        .op("||")(space)
+        .op("||")(func.coalesce(SubstrateArticle.url, empty))
+    )
+    return func.to_tsvector("english", document)
+
+
+def _apply_public_article_keyword_filter(
+    stmt,
+    q: str,
+    session: Session,
+):
+    """Keyword match on headline, body text, and URL.
+
+    PostgreSQL uses full-text search (``plainto_tsquery``) with optional rank for ordering.
+    Other dialects fall back to case-insensitive substring match.
+    """
+    bind = session.get_bind()
+    if bind.dialect.name == "postgresql":
+        vector = _article_fulltext_vector()
+        ts_query = func.plainto_tsquery("english", q)
+        rank = func.ts_rank_cd(vector, ts_query)
+        return stmt.where(vector.op("@@")(ts_query)), rank
+
+    pattern = f"%{q}%"
+    return (
+        stmt.where(
+            or_(
+                SubstrateArticle.headline.ilike(pattern),
+                SubstrateArticle.url.ilike(pattern),
+                SubstrateArticle.text.ilike(pattern),
+            )
+        ),
+        None,
+    )
+
+
 def search_public_articles(
     session: Session,
     *,
@@ -122,15 +166,10 @@ def search_public_articles(
 ) -> tuple[list[PublicArticleOut], int]:
     stmt = _active_articles_for_project(session, project_id)
 
+    rank_expr = None
     q = (params.q or "").strip()
     if q:
-        pattern = f"%{q}%"
-        stmt = stmt.where(
-            or_(
-                SubstrateArticle.headline.ilike(pattern),
-                SubstrateArticle.url.ilike(pattern),
-            )
-        )
+        stmt, rank_expr = _apply_public_article_keyword_filter(stmt, q, session)
 
     if params.pub_date_from is not None:
         stmt = stmt.where(col(SubstrateArticle.pub_date) >= params.pub_date_from)
@@ -150,10 +189,16 @@ def search_public_articles(
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = int(session.exec(count_stmt).one())
 
-    stmt = stmt.order_by(
-        col(SubstrateArticle.pub_date).desc().nulls_last(),
-        col(SubstrateArticle.id).desc(),
-    ).limit(params.limit).offset(params.offset)
+    order_by: list = []
+    if rank_expr is not None:
+        order_by.append(rank_expr.desc())
+    order_by.extend(
+        [
+            col(SubstrateArticle.pub_date).desc().nulls_last(),
+            col(SubstrateArticle.id).desc(),
+        ]
+    )
+    stmt = stmt.order_by(*order_by).limit(params.limit).offset(params.offset)
 
     articles = list(session.exec(stmt).all())
     article_ids = [int(a.id) for a in articles if a.id is not None]

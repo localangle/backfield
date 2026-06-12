@@ -80,7 +80,7 @@ def _parse_entity_type(value: str | None) -> PublicEntityMentionType | None:
 def search_project_articles(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
-    q: str | None = Query(None, description="Keyword match on headline or URL"),
+    q: str | None = Query(None, description="Keyword match on headline, body text, or URL"),
     meta_type: str | None = Query(None),
     meta_category: str | None = Query(None),
     pub_date_from: str | None = Query(None),
