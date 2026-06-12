@@ -319,10 +319,10 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 
 **Goal:** Prove substrate queries and documentation shape.
 
-- `GET …/articles/search` — keyword, meta filters, date range
-- `GET …/articles/{article_id}` — detail without full body; optional preview
-- Reference page + OpenAPI entries
-- Indexes: confirm `substrate_article` / `substrate_article_meta` filters are indexed (add migration if needed)
+- [x] `GET …/articles/search` — keyword, meta filters, date range
+- [x] `GET …/articles/{article_id}` — detail without full body; optional preview
+- [x] Registry entries in **`docs/public-api/reference/endpoints.md`**
+- [x] Indexes: existing `substrate_article` / `substrate_article_meta` indexes cover v1 filters
 
 **Validation:** `make lint`, `make test`, targeted integration tests
 
@@ -400,7 +400,7 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 
 | Resource | Keyword | Entity detail | Mentions | Connections | Semantic | Geo filters |
 |----------|---------|---------------|----------|-------------|----------|-------------|
-| Articles | Planned | Planned | Planned | — | — | Planned |
+| Articles | ✅ | ✅ | Planned | — | — | Planned |
 | Custom records | Planned | Planned | — | — | — | — |
 | Locations | Planned | Planned | Planned | Planned | Planned | Planned |
 | People | Planned | Planned | Planned | Planned | Planned | Partial |
@@ -417,3 +417,5 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 3. **Article preview:** max characters and whether to index preview for search.
 4. **Rate limiting:** defer to gateway vs middleware in core-api.
 5. **Custom record search:** which field types support substring vs exact match in v1.
+
+**Resolved (Phase 2):** article preview uses **280 characters** max (`PUBLIC_ARTICLE_PREVIEW_MAX_LEN` in `backfield_entities.public.articles`).

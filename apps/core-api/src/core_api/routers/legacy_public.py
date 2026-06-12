@@ -1,4 +1,4 @@
-"""Public routes (no auth)."""
+"""Legacy unauthenticated probe routes (pre-/public/v1)."""
 
 from __future__ import annotations
 

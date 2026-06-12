@@ -8,10 +8,10 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 
 | Mode | Status | Notes |
 |------|--------|-------|
-| Keyword search | 🚧 | `GET …/articles/search` |
-| Detail | 🚧 | No full body; optional preview |
+| Keyword search | ✅ | `GET …/articles/search` |
+| Detail | ✅ | No full body; optional preview |
 | Mentions index | 🚧 | Optional v1 |
-| Metadata filters | 🚧 | `meta_type`, `meta_category`, date range |
+| Metadata filters | ✅ | `meta_type`, `meta_category`, date range |
 | Geo filters | 🚧 | Phase 6 |
 
 ## Custom records
