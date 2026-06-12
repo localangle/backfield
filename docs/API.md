@@ -194,15 +194,25 @@ People review uses the same overlay PATCH transport as locations. Overlay JSON m
 
 **GET additive fields:**
 
-- **`merged_people`**: array of `{ "anchor", "source", "node_id", "index_in_node", "stale", "person", "mention_occurrences", … }`. Baseline is built from one canonical node carrying **`people`** (priority: **`stylebook_output`** → **`DBOutput`**; excludes **`PersonExtract`** when a persist node is present). Enrichment may add **`persisted_person_id`**, **`stylebook_person_canonical_id`**, **`canonical_link_status`**, and **`stylebook_link`**.
+- **`merged_people`**: array of `{ "anchor", "source", "node_id", "index_in_node", "stale", "person", "mention_occurrences", … }`. Baseline is built from one canonical node carrying **`people`** (priority: **`stylebook_output`** → **`DBOutput`**; excludes **`PersonExtract`** when a persist node is present). When no persist node is present, falls back to **`json_output.consolidated.people`**. Enrichment may add **`persisted_person_id`**, **`stylebook_person_canonical_id`**, **`canonical_link_status`**, and **`stylebook_link`**.
 - **`stale_people_overlay_entries`**: orphan **`by_anchor`** keys after rerun.
 
 **Stylebook substrate saves from review:** **`PATCH /v1/people/{person_id}?project_slug=…&article_id=…`** updates substrate person fields and mention editorial fields; **`DELETE /v1/people/{person_id}?project_slug=…&article_id=…`** soft-deletes story mentions and removes the substrate row when no active mentions remain.
 
 **Saved person from article evidence:** **`POST /v1/people/from-article-evidence?project_slug=…`** creates a project-scoped saved person plus its first article mention in one transaction. Body: **`article_id`**, **`run_id`**, **`name`**, **`mention_text`**, **`quote_text`**, **`start_char`**, **`end_char`**, optional **`person_type`**, **`title`**, **`affiliation`**, **`public_figure`**, **`nature`**, **`role_in_story`**. Validates quote offsets against project article text; returns substrate person fields, **`mention_id`**, **`occurrence_id`**, and **`anchor`** (`**user_person:<person_id>**`). Agate Review appends a matching **`people.user_added`** overlay row.
 
-People overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.people`** (and **`consolidated.people`** when present).
+People overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.people`** (and **`consolidated.people`** when present). JSON Output–only flows (no Gather / Stylebook persist node) read and write **`json_output.consolidated.people`** directly.
 
+## Processed item organizations overlay (v1)
+
+Organizations review mirrors people: overlay JSON may include **`organizations.by_anchor`**, **`organizations.removed_anchors`**, and **`organizations.user_added`** (ids **`user_organization:*`**).
+
+**GET additive fields:**
+
+- **`merged_organizations`**: same row shape as **`merged_people`**, with **`organization`** instead of **`person`**. Baseline priority: **`stylebook_output`** → **`DBOutput`**; when no persist node is present, falls back to **`json_output.consolidated.organizations`**.
+- **`stale_organizations_overlay_entries`**: orphan **`by_anchor`** keys after rerun.
+
+Organizations overlay edits participate in **`reviewed_output`** materialization on **`stylebook_output.organizations`** (and **`consolidated.organizations`** when present). JSON Output–only flows read and write **`json_output.consolidated.organizations`** directly.
 ## Processed item custom records overlay (v1)
 
 Custom Extract review (processed-item **Custom** tab) uses the same overlay PATCH transport. Identity is payload-based: **record type + stable per-record `key`** assigned at parse time (no substrate ids). Overlay JSON may include **`custom_records.<record_type>`** with:
@@ -219,7 +229,7 @@ Merge lives in `api/processed_item/custom_records_merge.py` (mirrored client-sid
 
 When overlay PATCH carries review content (location or people patches, user-added rows, removed anchors, or **`article`** field edits), Agate API **materializes** a full node-output document into **`agate_processed_item.reviewed_output_json`** on the same request. **`GET …/items/{item_id}`** and successful overlay PATCH responses include **`reviewed_output`** (parsed JSON) when present; otherwise the field is **`null`** and clients use **`output`** only.
 
-- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket; people review updates **`stylebook_output.people`** (and **`consolidated.people`** when present); custom-record review updates every **`custom_records`** block. **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
+- **Shape:** Same top-level keys as **`output`** / **`result_json`**. Location review updates the canonical geocoded node’s **`places`** bucket (or **`json_output.consolidated.places`** when no geocode node is present). People review updates **`stylebook_output.people`** or **`json_output.consolidated.people`**; organizations review updates **`stylebook_output.organizations`** or **`json_output.consolidated.organizations`**; custom-record review updates every **`custom_records`** block. **`overlay.article`** keys are shallow-merged onto consolidated payloads as for locations.
 - **Lifecycle:** Cleared with **`overlay_json`** on item rerun. Not written when overlay has no review content (for example metadata-only keys with no location or article edits).
 - **Non-effects:** Does not update **`result_json`**, geocode cache, or Stylebook canonicals. DBOutput and worker execution continue to read immutable model output. Exception: custom-record overlay edits re-persist **`substrate_custom_record`** rows on the same PATCH (see **Processed item custom records overlay (v1)**).
 

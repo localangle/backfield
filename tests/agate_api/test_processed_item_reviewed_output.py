@@ -316,3 +316,83 @@ def test_build_reviewed_output_article_on_hoisted_stylebook_output() -> None:
     assert so["author"] == "Pat"
     assert so["publication"] == "Model pub"
     assert reviewed["geocode_agent"]["places"]["points"] == []
+
+
+def _person(name: str, **extra: object) -> dict:
+    return {
+        "name": name,
+        "title": "",
+        "affiliation": "",
+        "public_figure": False,
+        "type": "",
+        "role_in_story": "",
+        "nature": "other",
+        "nature_secondary_tags": [],
+        "mentions": [{"text": f"Mention of {name}.", "quote": False}],
+        **extra,
+    }
+
+
+def _organization(name: str, **extra: object) -> dict:
+    return {
+        "name": name,
+        "type": "",
+        "role_in_story": "",
+        "nature": "other",
+        "nature_secondary_tags": [],
+        "mentions": [{"text": f"Mention of {name}.", "quote": False}],
+        **extra,
+    }
+
+
+def test_build_reviewed_output_applies_people_patch_json_output_only() -> None:
+    output = {
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "people": [_person("Jane Doe", id="p1")],
+            },
+        },
+    }
+    overlay = {"people": {"by_anchor": {"p1": {"title": "Mayor"}}}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    people = reviewed["json_output"]["consolidated"]["people"]
+    assert len(people) == 1
+    assert people[0]["title"] == "Mayor"
+
+
+def test_build_reviewed_output_applies_organizations_patch_json_output_only() -> None:
+    output = {
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "organizations": [_organization("City Hall", id="o1")],
+            },
+        },
+    }
+    overlay = {"organizations": {"by_anchor": {"o1": {"type": "government"}}}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    organizations = reviewed["json_output"]["consolidated"]["organizations"]
+    assert len(organizations) == 1
+    assert organizations[0]["type"] == "government"
+
+
+def test_build_reviewed_output_people_and_orgs_independent_json_output_only() -> None:
+    output = {
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "people": [_person("Jane Doe", id="p1")],
+                "organizations": [_organization("City Hall", id="o1")],
+            },
+        },
+    }
+    overlay = {"people": {"by_anchor": {"p1": {"title": "Mayor"}}}}
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    consolidated = reviewed["json_output"]["consolidated"]
+    assert consolidated["people"][0]["title"] == "Mayor"
+    assert consolidated["organizations"][0]["name"] == "City Hall"
+    assert consolidated["organizations"][0]["type"] == ""

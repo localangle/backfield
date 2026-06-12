@@ -77,17 +77,12 @@ def _anchor_for_person_dict(person: dict[str, Any], node_id: str, index: int) ->
     return f"{node_id}:{index}"
 
 
-def _iter_rows_from_people_node(
-    output: dict[str, Any],
+def _iter_rows_from_people_list(
+    people: list[Any],
+    *,
     node_id: str,
 ) -> list[BaselineRow]:
     rows: list[BaselineRow] = []
-    payload = output.get(node_id)
-    if not isinstance(payload, dict):
-        return rows
-    people = payload.get("people")
-    if not isinstance(people, list):
-        return rows
     for idx, person in enumerate(people):
         if not isinstance(person, dict):
             continue
@@ -96,11 +91,45 @@ def _iter_rows_from_people_node(
     return rows
 
 
-def _merge_baseline_people_rows(output: dict[str, Any] | None) -> list[BaselineRow]:
-    node_id = _select_people_node_id(output)
-    if not node_id or not output:
+def _iter_rows_from_people_node(
+    output: dict[str, Any],
+    node_id: str,
+) -> list[BaselineRow]:
+    payload = output.get(node_id)
+    if not isinstance(payload, dict):
         return []
-    return _iter_rows_from_people_node(output, node_id)
+    people = payload.get("people")
+    if not isinstance(people, list):
+        return []
+    return _iter_rows_from_people_list(people, node_id=node_id)
+
+
+def json_output_consolidated_people(output: dict[str, Any] | None) -> list[dict[str, Any]] | None:
+    """``json_output.consolidated.people`` when present (JSON Output node)."""
+    if not output or not isinstance(output, dict):
+        return None
+    payload = output.get("json_output")
+    if not isinstance(payload, dict):
+        return None
+    consolidated = payload.get("consolidated")
+    if not isinstance(consolidated, dict):
+        return None
+    people = consolidated.get("people")
+    if isinstance(people, list):
+        return people
+    return None
+
+
+def _merge_baseline_people_rows(output: dict[str, Any] | None) -> list[BaselineRow]:
+    if not output:
+        return []
+    node_id = _select_people_node_id(output)
+    if node_id:
+        return _iter_rows_from_people_node(output, node_id)
+    json_people = json_output_consolidated_people(output)
+    if json_people is not None:
+        return _iter_rows_from_people_list(json_people, node_id="json_output")
+    return []
 
 
 def _normalize_people_overlay(

@@ -21,12 +21,14 @@ from api.processed_item.entities.location.locations_merge import (
 from api.processed_item.entities.organization.organizations_merge import (
     _anchor_for_organization_dict,
     build_merged_organizations_lane,
+    json_output_consolidated_organizations,
     normalize_organizations_overlay,
     select_organizations_node_id,
 )
 from api.processed_item.entities.person.people_merge import (
     _anchor_for_person_dict,
     build_merged_people_lane,
+    json_output_consolidated_people,
     normalize_people_overlay,
     select_people_node_id,
 )
@@ -196,6 +198,58 @@ def _payload_accepts_article_patch(payload: dict[str, Any]) -> bool:
     return False
 
 
+def _apply_merged_people_to_list(
+    people_list: list[Any],
+    *,
+    node_id: str,
+    anchor_to_person: dict[str, dict[str, Any]],
+    removed_anchors: set[str],
+    user_people: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    new_people: list[dict[str, Any]] = []
+    idx = 0
+    for person in people_list:
+        if not isinstance(person, dict):
+            continue
+        anchor = _anchor_for_person_dict(person, node_id, idx)
+        idx += 1
+        if anchor in removed_anchors:
+            continue
+        if anchor in anchor_to_person:
+            new_people.append(copy.deepcopy(anchor_to_person[anchor]))
+        else:
+            new_people.append(copy.deepcopy(person))
+    for person in user_people:
+        new_people.append(copy.deepcopy(person))
+    return new_people
+
+
+def _apply_merged_organizations_to_list(
+    organizations_list: list[Any],
+    *,
+    node_id: str,
+    anchor_to_organization: dict[str, dict[str, Any]],
+    removed_anchors: set[str],
+    user_organizations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    new_organizations: list[dict[str, Any]] = []
+    idx = 0
+    for organization in organizations_list:
+        if not isinstance(organization, dict):
+            continue
+        anchor = _anchor_for_organization_dict(organization, node_id, idx)
+        idx += 1
+        if anchor in removed_anchors:
+            continue
+        if anchor in anchor_to_organization:
+            new_organizations.append(copy.deepcopy(anchor_to_organization[anchor]))
+        else:
+            new_organizations.append(copy.deepcopy(organization))
+    for organization in user_organizations:
+        new_organizations.append(copy.deepcopy(organization))
+    return new_organizations
+
+
 def _json_output_consolidated_places(output: dict[str, Any]) -> dict[str, Any] | None:
     """``json_output.consolidated.places`` bucket when present (JSON Output node)."""
     payload = output.get("json_output")
@@ -307,28 +361,38 @@ def build_reviewed_output(
             anchor_to_person[anchor] = person
 
     node_id = select_people_node_id(reviewed)
+    merged_people_list: list[dict[str, Any]] | None = None
     if node_id:
         payload = reviewed.get(node_id)
         if isinstance(payload, dict):
             people_list = payload.get("people")
             if isinstance(people_list, list):
-                new_people: list[dict[str, Any]] = []
-                idx = 0
-                for person in people_list:
-                    if not isinstance(person, dict):
-                        continue
-                    anchor = _anchor_for_person_dict(person, node_id, idx)
-                    idx += 1
-                    if anchor in removed_people_anchors:
-                        continue
-                    if anchor in anchor_to_person:
-                        new_people.append(copy.deepcopy(anchor_to_person[anchor]))
-                    else:
-                        new_people.append(copy.deepcopy(person))
-                for person in user_people:
-                    new_people.append(copy.deepcopy(person))
-                payload["people"] = new_people
-                _sync_consolidated_people_in_output(reviewed, new_people)
+                merged_people_list = _apply_merged_people_to_list(
+                    people_list,
+                    node_id=node_id,
+                    anchor_to_person=anchor_to_person,
+                    removed_anchors=removed_people_anchors,
+                    user_people=user_people,
+                )
+                payload["people"] = merged_people_list
+
+    json_people = json_output_consolidated_people(reviewed)
+    if json_people is not None and merged_people_list is None:
+        merged_people_list = _apply_merged_people_to_list(
+            json_people,
+            node_id="json_output",
+            anchor_to_person=anchor_to_person,
+            removed_anchors=removed_people_anchors,
+            user_people=user_people,
+        )
+        json_payload = reviewed.get("json_output")
+        if isinstance(json_payload, dict):
+            consolidated = json_payload.get("consolidated")
+            if isinstance(consolidated, dict):
+                consolidated["people"] = merged_people_list
+
+    if merged_people_list is not None:
+        _sync_consolidated_people_in_output(reviewed, merged_people_list)
 
     merged_organizations_rows, _stale_organizations = build_merged_organizations_lane(
         output=output, overlay=overlay
@@ -351,28 +415,38 @@ def build_reviewed_output(
             anchor_to_organization[anchor] = organization
 
     org_node_id = select_organizations_node_id(reviewed)
+    merged_organizations_list: list[dict[str, Any]] | None = None
     if org_node_id:
         payload = reviewed.get(org_node_id)
         if isinstance(payload, dict):
             organizations_list = payload.get("organizations")
             if isinstance(organizations_list, list):
-                new_organizations: list[dict[str, Any]] = []
-                idx = 0
-                for organization in organizations_list:
-                    if not isinstance(organization, dict):
-                        continue
-                    anchor = _anchor_for_organization_dict(organization, org_node_id, idx)
-                    idx += 1
-                    if anchor in removed_organization_anchors:
-                        continue
-                    if anchor in anchor_to_organization:
-                        new_organizations.append(copy.deepcopy(anchor_to_organization[anchor]))
-                    else:
-                        new_organizations.append(copy.deepcopy(organization))
-                for organization in user_organizations:
-                    new_organizations.append(copy.deepcopy(organization))
-                payload["organizations"] = new_organizations
-                _sync_consolidated_organizations_in_output(reviewed, new_organizations)
+                merged_organizations_list = _apply_merged_organizations_to_list(
+                    organizations_list,
+                    node_id=org_node_id,
+                    anchor_to_organization=anchor_to_organization,
+                    removed_anchors=removed_organization_anchors,
+                    user_organizations=user_organizations,
+                )
+                payload["organizations"] = merged_organizations_list
+
+    json_organizations = json_output_consolidated_organizations(reviewed)
+    if json_organizations is not None and merged_organizations_list is None:
+        merged_organizations_list = _apply_merged_organizations_to_list(
+            json_organizations,
+            node_id="json_output",
+            anchor_to_organization=anchor_to_organization,
+            removed_anchors=removed_organization_anchors,
+            user_organizations=user_organizations,
+        )
+        json_payload = reviewed.get("json_output")
+        if isinstance(json_payload, dict):
+            consolidated = json_payload.get("consolidated")
+            if isinstance(consolidated, dict):
+                consolidated["organizations"] = merged_organizations_list
+
+    if merged_organizations_list is not None:
+        _sync_consolidated_organizations_in_output(reviewed, merged_organizations_list)
 
     if overlay and isinstance(overlay, dict):
         _apply_article_overlay_to_output(reviewed, overlay)

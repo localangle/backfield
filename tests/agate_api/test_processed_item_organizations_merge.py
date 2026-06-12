@@ -51,3 +51,24 @@ def test_merge_removed_anchor() -> None:
     merged, _stale = build_merged_organizations_lane(output=output, overlay=overlay)
     assert len(merged) == 1
     assert merged[0]["anchor"] == "o2"
+
+
+def test_merge_json_output_consolidated_baseline() -> None:
+    output = {
+        "organization_extract": {
+            "organizations": [_organization("Extract only", id="x1")],
+            "success": True,
+        },
+        "json_output": {
+            "consolidated": {
+                "headline": "Story",
+                "organizations": [_organization("City Hall", id="o1")],
+            },
+        },
+    }
+    merged, stale = build_merged_organizations_lane(output=output, overlay=None)
+    assert stale == []
+    assert len(merged) == 1
+    assert merged[0]["anchor"] == "o1"
+    assert merged[0]["node_id"] == "json_output"
+    assert merged[0]["organization"]["name"] == "City Hall"
