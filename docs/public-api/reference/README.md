@@ -57,6 +57,7 @@ Query parameters use ISO dates: `YYYY-MM-DD`.
 
 | Doc | Status |
 |-----|--------|
+| **[endpoints.md](endpoints.md)** | **Running list** of shipped routes (location, args, behavior) |
 | [capability-matrix.md](capability-matrix.md) | Query modes by resource |
 | `articles.md` | Phase 2 |
 | `custom-records.md` | Phase 3 |

@@ -268,6 +268,7 @@ Maintain two artifacts in-repo (paths may shift; keep content in sync with code)
 1. **OpenAPI** — FastAPI schema for `/public/v1` only (tagged `public-*`). Export via `GET /openapi.json` filtered or a dedicated export script.
 2. **`docs/public-api/reference/`** — agent-ready markdown tree:
    - `README.md` — taxonomy, auth, pagination, error model
+   - **`endpoints.md`** — **running list** of shipped routes (module path, parameters, responses, errors); update on every new endpoint
    - `capability-matrix.md` — which query modes exist per type and phase
    - `articles.md`, `locations.md`, `people.md`, … — route pages with parameters and example JSON
    - `runs.md` — run trigger contract
@@ -303,13 +304,14 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 
 **Goal:** Empty but real public surface with auth, project scope, and doc export.
 
-- Add `core_api/routers/public/` package mounted at **`/public/v1`**
-- Project API key dependency (reuse `backfield_auth.gate` project key path)
-- Shared helpers: pagination envelope, project + stylebook resolution, OpenAPI tags
-- `GET /public/v1/projects/{project_slug}` — minimal project metadata (name, slug)
-- Decide storage for **`public_run_enabled`** on graphs
-- Scaffold `docs/public-api/reference/README.md` and `capability-matrix.md`
-- Tests: auth, wrong project, 404 semantics
+- [x] Add `core_api/routers/public/` package mounted at **`/public/v1`**
+- [x] Project API key dependency (reuse `backfield_auth.gate` project key path)
+- [x] Shared helpers: pagination envelope, project + stylebook resolution, OpenAPI tags
+- [x] `GET /public/v1/projects/{project_slug}` — minimal project metadata (name, slug)
+- [x] Running endpoint registry: **`docs/public-api/reference/endpoints.md`**
+- [ ] Decide storage for **`public_run_enabled`** on graphs
+- [x] Scaffold `docs/public-api/reference/README.md` and `capability-matrix.md`
+- [x] Tests: auth, wrong project, 404 semantics
 
 **Validation:** `make lint`, `make test`
 

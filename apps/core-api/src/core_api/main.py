@@ -17,8 +17,9 @@ from core_api.routers import me as me_router
 from core_api.routers import org_ai_models as org_ai_models_router
 from core_api.routers import org_integration_secrets as org_integration_secrets_router
 from core_api.routers import project_ai_models as project_ai_models_router
-from core_api.routers import public as public_router
+from core_api.routers import public as legacy_public_router
 from core_api.routers import secure as secure_router
+from core_api.routers.public import router as public_v1_router
 
 
 @asynccontextmanager
@@ -53,7 +54,8 @@ app.add_middleware(
     expose_headers=["Set-Cookie"],
 )
 
-app.include_router(public_router.router, prefix="/v1")
+app.include_router(legacy_public_router.router, prefix="/v1")
+app.include_router(public_v1_router, prefix="/public/v1")
 app.include_router(secure_router.router, prefix="/v1")
 app.include_router(bootstrap_router.router, prefix="/v1")
 app.include_router(admin_org_router.router, prefix="/v1")
