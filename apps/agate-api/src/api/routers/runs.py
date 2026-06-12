@@ -44,8 +44,12 @@ from backfield_entities.ingest.article_embedding.processed_item import (
     build_processed_item_article_embedding_summary,
 )
 from backfield_entities.ingest.article_metadata.processed_item import (
+    REVIEW_ADDED_CONFIDENCE,
+    REVIEW_ADDED_RATIONALE,
+    allocate_user_meta_row_id,
     build_processed_item_article_meta_rows,
     find_article_meta_row_by_id,
+    normalize_article_meta_user_added,
 )
 from backfield_entities.ingest.custom_record.persist import (
     persist_custom_records_after_db_output,
@@ -204,6 +208,14 @@ class ProcessedItemArticleMetaRowOut(BaseModel):
 
 class ProcessedItemArticleMetaPatchIn(BaseModel):
     category: str = Field(min_length=1)
+
+
+class ProcessedItemArticleMetaCreateIn(BaseModel):
+    meta_type: str = Field(min_length=1)
+    category: str = Field(min_length=1)
+    rationale: str | None = None
+    confidence: float | None = None
+    prompt_preset: str | None = None
 
 
 class ProcessedItemDetailOut(BaseModel):
@@ -1279,6 +1291,34 @@ def patch_run_processed_item_overlay(
     )
 
 
+def _merge_article_meta_user_added(
+    overlay: dict[str, Any] | None,
+    *,
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    merged = copy.deepcopy(overlay) if isinstance(overlay, dict) else {}
+    root = merged.get("article_meta")
+    if not isinstance(root, dict):
+        root = {}
+        merged["article_meta"] = root
+    user_added = root.get("user_added")
+    if not isinstance(user_added, list):
+        user_added = []
+        root["user_added"] = user_added
+    user_added.append(copy.deepcopy(row))
+    meta_type = str(row.get("meta_type") or "").strip()
+    removed_types = root.get("removed_meta_types")
+    if isinstance(removed_types, list) and meta_type:
+        root["removed_meta_types"] = [
+            entry for entry in removed_types if str(entry).strip() != meta_type
+        ]
+    row_id = str(row.get("id"))
+    removed_ids = root.get("removed_ids")
+    if isinstance(removed_ids, list):
+        root["removed_ids"] = [entry for entry in removed_ids if str(entry).strip() != row_id]
+    return merged
+
+
 def _merge_article_meta_category_patch(
     overlay: dict[str, Any] | None,
     *,
@@ -1300,6 +1340,221 @@ def _merge_article_meta_category_patch(
         "meta_type": meta_type,
     }
     return merged
+
+
+def _merge_article_meta_removal(
+    overlay: dict[str, Any] | None,
+    *,
+    meta_row_id: int,
+    meta_type: str,
+) -> dict[str, Any]:
+    merged = copy.deepcopy(overlay) if isinstance(overlay, dict) else {}
+    root = merged.get("article_meta")
+    if not isinstance(root, dict):
+        root = {}
+        merged["article_meta"] = root
+    removed = root.get("removed_ids")
+    if not isinstance(removed, list):
+        removed = []
+        root["removed_ids"] = removed
+    key = str(meta_row_id)
+    if key not in removed:
+        removed.append(key)
+    removed_types = root.get("removed_meta_types")
+    if not isinstance(removed_types, list):
+        removed_types = []
+        root["removed_meta_types"] = removed_types
+    meta_type_key = meta_type.strip()
+    if meta_type_key and meta_type_key not in removed_types:
+        removed_types.append(meta_type_key)
+    by_id = root.get("by_id")
+    if isinstance(by_id, dict):
+        by_id.pop(key, None)
+    return merged
+
+
+@router.post(
+    "/{run_id}/items/{item_id}/article-meta",
+    response_model=ProcessedItemDetailOut,
+)
+def create_run_processed_item_article_meta(
+    run_id: str,
+    item_id: int,
+    body: ProcessedItemArticleMetaCreateIn,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    """Add one article metadata tag during review and merge into overlay."""
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+
+    item = session.get(AgateProcessedItem, item_id)
+    if item is None or item.run_id != run_id:
+        raise HTTPException(404, "Processed item not found")
+
+    expected_version = _parse_if_match_overlay_version(if_match)
+    meta_type = body.meta_type.strip()
+    category = body.category.strip()
+    if not meta_type or not category:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="meta_type and category must be non-empty",
+        )
+
+    output_obj: dict[str, Any] | None = None
+    if item.result_json:
+        try:
+            parsed = json.loads(item.result_json)
+            if isinstance(parsed, dict):
+                output_obj = parsed
+        except json.JSONDecodeError:
+            output_obj = None
+
+    input_obj: dict[str, Any] = {}
+    if item.input_json:
+        try:
+            parsed_input = json.loads(item.input_json)
+            if isinstance(parsed_input, dict):
+                input_obj = parsed_input
+        except json.JSONDecodeError:
+            input_obj = {}
+
+    article_ctx_dict = build_processed_item_article_context(
+        session,
+        project_id=pid,
+        input_obj=input_obj,
+        result_obj=output_obj,
+    )
+    article_id = article_ctx_dict.get("article_id")
+
+    overlay_obj: dict[str, Any] | None = None
+    if item.overlay_json:
+        try:
+            parsed_o = json.loads(item.overlay_json)
+            if isinstance(parsed_o, dict):
+                overlay_obj = parsed_o
+        except json.JSONDecodeError:
+            overlay_obj = None
+
+    existing_rows = build_processed_item_article_meta_rows(
+        session,
+        article_id=article_id,
+        overlay=overlay_obj,
+        output=output_obj,
+    )
+    if any(str(row.get("meta_type") or "").strip() == meta_type for row in existing_rows):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "article_meta_type_exists",
+                "message": f"A tag for “{meta_type}” already exists for this story.",
+            },
+        )
+
+    rationale = (
+        body.rationale.strip()
+        if isinstance(body.rationale, str) and body.rationale.strip()
+        else REVIEW_ADDED_RATIONALE
+    )
+    confidence = body.confidence if body.confidence is not None else REVIEW_ADDED_CONFIDENCE
+    prompt_preset = (
+        body.prompt_preset.strip()
+        if isinstance(body.prompt_preset, str) and body.prompt_preset.strip()
+        else meta_type
+    )
+
+    user_added = normalize_article_meta_user_added(overlay_obj)
+    new_row_id = allocate_user_meta_row_id(
+        existing_rows=existing_rows,
+        user_added=user_added,
+    )
+
+    if article_id is not None:
+        now = datetime.now(UTC)
+        substrate_row = SubstrateArticleMeta(
+            article_id=int(article_id),
+            meta_type=meta_type,
+            category=category,
+            rationale=rationale,
+            confidence=confidence,
+            prompt_preset=prompt_preset,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(substrate_row)
+        session.flush()
+        new_row_id = int(substrate_row.id)  # type: ignore[arg-type]
+
+    overlay_payload = _merge_article_meta_user_added(
+        overlay_obj,
+        row={
+            "id": new_row_id,
+            "meta_type": meta_type,
+            "category": category,
+            "rationale": rationale,
+            "confidence": confidence,
+            "prompt_preset": prompt_preset,
+        },
+    )
+
+    try:
+        validate_processed_item_overlay_geometry(overlay_payload)
+    except OverlayGeometryValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "overlay_geometry_invalid",
+                "message": str(exc),
+            },
+        ) from exc
+
+    reviewed_json = _reviewed_output_json_for_storage(item.result_json, overlay_payload)
+
+    stmt = (
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.id == item_id,
+            AgateProcessedItem.run_id == run_id,
+            AgateProcessedItem.overlay_version == expected_version,
+        )
+        .values(
+            overlay_json=json.dumps(overlay_payload, ensure_ascii=False),
+            reviewed_output_json=reviewed_json,
+            overlay_version=AgateProcessedItem.overlay_version + 1,
+            updated_at=datetime.now(UTC),
+        )
+    )
+    result = session.execute(stmt)
+    if result.rowcount != 1:
+        session.rollback()
+        session.refresh(item)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "overlay_version_conflict",
+                "current_version": int(item.overlay_version),
+            },
+        )
+    session.commit()
+    session.refresh(item)
+
+    by_item, null_b, currency = _rollup_ai_costs_for_run(session, run_id)
+    rid = item.id
+    iid = int(rid) if rid is not None else 0
+    est, inc = by_item.get(iid, (Decimal("0"), False))
+    return _detail_from_agate_processed_row(
+        item,
+        session=session,
+        project_id=pid,
+        estimated_ai_cost=est,
+        estimated_ai_cost_incomplete=inc,
+        estimated_ai_cost_currency=currency,
+    )
 
 
 @router.patch(
@@ -1397,6 +1652,146 @@ def patch_run_processed_item_article_meta(
         meta_row_id=meta_row_id,
         meta_type=meta_type,
         category=category,
+    )
+
+    try:
+        validate_processed_item_overlay_geometry(overlay_payload)
+    except OverlayGeometryValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "overlay_geometry_invalid",
+                "message": str(exc),
+            },
+        ) from exc
+
+    reviewed_json = _reviewed_output_json_for_storage(item.result_json, overlay_payload)
+
+    stmt = (
+        update(AgateProcessedItem)
+        .where(
+            AgateProcessedItem.id == item_id,
+            AgateProcessedItem.run_id == run_id,
+            AgateProcessedItem.overlay_version == expected_version,
+        )
+        .values(
+            overlay_json=json.dumps(overlay_payload, ensure_ascii=False),
+            reviewed_output_json=reviewed_json,
+            overlay_version=AgateProcessedItem.overlay_version + 1,
+            updated_at=datetime.now(UTC),
+        )
+    )
+    result = session.execute(stmt)
+    if result.rowcount != 1:
+        session.rollback()
+        session.refresh(item)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "overlay_version_conflict",
+                "current_version": int(item.overlay_version),
+            },
+        )
+    session.commit()
+    session.refresh(item)
+
+    by_item, null_b, currency = _rollup_ai_costs_for_run(session, run_id)
+    rid = item.id
+    iid = int(rid) if rid is not None else 0
+    est, inc = by_item.get(iid, (Decimal("0"), False))
+    return _detail_from_agate_processed_row(
+        item,
+        session=session,
+        project_id=pid,
+        estimated_ai_cost=est,
+        estimated_ai_cost_incomplete=inc,
+        estimated_ai_cost_currency=currency,
+    )
+
+
+@router.delete(
+    "/{run_id}/items/{item_id}/article-meta/{meta_row_id}",
+    response_model=ProcessedItemDetailOut,
+)
+def delete_run_processed_item_article_meta(
+    run_id: str,
+    item_id: int,
+    meta_row_id: int,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+):
+    """Remove one article metadata row from review and merge into overlay."""
+    r = session.get(AgateRun, run_id)
+    if not r:
+        raise HTTPException(404, "Run not found")
+    pid = _graph_project_id(session, r.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+
+    item = session.get(AgateProcessedItem, item_id)
+    if item is None or item.run_id != run_id:
+        raise HTTPException(404, "Processed item not found")
+
+    expected_version = _parse_if_match_overlay_version(if_match)
+
+    output_obj: dict[str, Any] | None = None
+    if item.result_json:
+        try:
+            parsed = json.loads(item.result_json)
+            if isinstance(parsed, dict):
+                output_obj = parsed
+        except json.JSONDecodeError:
+            output_obj = None
+
+    input_obj: dict[str, Any] = {}
+    if item.input_json:
+        try:
+            parsed_input = json.loads(item.input_json)
+            if isinstance(parsed_input, dict):
+                input_obj = parsed_input
+        except json.JSONDecodeError:
+            input_obj = {}
+
+    article_ctx_dict = build_processed_item_article_context(
+        session,
+        project_id=pid,
+        input_obj=input_obj,
+        result_obj=output_obj,
+    )
+    article_id = article_ctx_dict.get("article_id")
+
+    overlay_obj: dict[str, Any] | None = None
+    if item.overlay_json:
+        try:
+            parsed_o = json.loads(item.overlay_json)
+            if isinstance(parsed_o, dict):
+                overlay_obj = parsed_o
+        except json.JSONDecodeError:
+            overlay_obj = None
+
+    meta_row = find_article_meta_row_by_id(
+        session,
+        article_id=article_id,
+        output=output_obj,
+        overlay=overlay_obj,
+        meta_row_id=meta_row_id,
+    )
+    if meta_row is None:
+        raise HTTPException(404, "Article metadata row not found")
+
+    if meta_row_id > 0:
+        if article_id is None:
+            raise HTTPException(404, "Article metadata not found for this item")
+        substrate_row = session.get(SubstrateArticleMeta, meta_row_id)
+        if substrate_row is None or int(substrate_row.article_id) != int(article_id):
+            raise HTTPException(404, "Article metadata row not found")
+        session.delete(substrate_row)
+
+    overlay_payload = _merge_article_meta_removal(
+        overlay_obj,
+        meta_row_id=meta_row_id,
+        meta_type=str(meta_row["meta_type"]),
     )
 
     try:

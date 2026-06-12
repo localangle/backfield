@@ -216,13 +216,17 @@ Organizations overlay edits participate in **`reviewed_output`** materialization
 
 ## Processed item article metadata overlay (v1)
 
-Article Metadata review (processed-item **Meta** tab) uses overlay transport for **category** edits only (rationale and confidence stay model-produced). Overlay JSON may include **`article_meta.by_id`**: row id → `{ "category", "meta_type" }`.
+Article Metadata review (processed-item **Meta** tab) uses overlay transport for **category** edits, **manual tag adds**, and **removals**. Overlay JSON may include **`article_meta.by_id`**: row id → `{ "category", "meta_type" }`, **`article_meta.user_added`**: reviewer-added rows `{ "id", "meta_type", "category", "rationale", "confidence", "prompt_preset" }`, **`article_meta.removed_ids`**: row ids hidden from review, and **`article_meta.removed_meta_types`**: preset types removed from review and reviewed output.
 
 **GET additive fields:**
 
-- **`article_meta`**: array of `{ "id", "meta_type", "category", "rationale", "confidence", "prompt_preset", "source", … }`. Baseline is built from **`substrate_article_meta`** when the item has a persisted article; otherwise from **`article_metadata`** blocks in run output (including **`json_output.consolidated`**). Synthetic negative **`id`** values identify model-only rows.
+- **`article_meta`**: array of `{ "id", "meta_type", "category", "rationale", "confidence", "prompt_preset", "source", … }`. Baseline is built from **`substrate_article_meta`** when the item has a persisted article; otherwise from **`article_metadata`** blocks in run output (including **`json_output.consolidated`**). Synthetic negative **`id`** values identify model-only rows; reviewer-added overlay-only rows use ids below **`-900000`**. Rows listed in **`removed_ids`** are omitted. **`user_added`** rows are appended when not already present from substrate or model output.
+
+**POST:** **`POST /runs/{run_id}/items/{item_id}/article-meta`** with body `{ "meta_type", "category", "rationale?", "confidence?", "prompt_preset?" }` and **`If-Match`** = **`overlay_version`**. Creates a new tag (defaults: rationale **`Added during review.`**, confidence **`1.0`**). When the item has a persisted article, the row is inserted into **`substrate_article_meta`**; otherwise it is stored in **`article_meta.user_added`** with a synthetic negative id. Re-adding a removed type clears that type from **`removed_meta_types`**. Returns **409** when a tag for the same **`meta_type`** already exists.
 
 **PATCH:** **`PATCH /runs/{run_id}/items/{item_id}/article-meta/{meta_row_id}`** with body `{ "category" }` and **`If-Match`** = **`overlay_version`**. Persisted rows (**`id` > 0**) update substrate and overlay; JSON Output–only rows (**`id` < 0**) update overlay and **`reviewed_output`** only.
+
+**DELETE:** **`DELETE /runs/{run_id}/items/{item_id}/article-meta/{meta_row_id}`** with **`If-Match`** = **`overlay_version`**. Persisted rows are deleted from substrate; all flows record the id in **`article_meta.removed_ids`** and materialize **`reviewed_output`** without that tag.
 
 ## Processed item custom records overlay (v1)
 

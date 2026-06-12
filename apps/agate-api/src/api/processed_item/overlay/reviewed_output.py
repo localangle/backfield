@@ -33,9 +33,12 @@ from api.processed_item.entities.person.people_merge import (
     select_people_node_id,
 )
 from backfield_entities.ingest.article_metadata.processed_item import (
-    apply_merged_article_meta_to_output,
+    apply_merged_article_meta_rows_to_output,
     article_meta_overlay_has_content,
-    article_meta_review_rows_from_overlay,
+    build_processed_item_article_meta_rows,
+    remove_article_meta_from_output,
+    removed_article_meta_row_ids_from_overlay,
+    removed_article_meta_types_from_overlay,
 )
 
 ARTICLE_OVERLAY_KEYS: tuple[str, ...] = (
@@ -452,9 +455,22 @@ def build_reviewed_output(
         _apply_article_overlay_to_output(reviewed, overlay)
 
     if article_meta_overlay_has_content(overlay):
-        merged_article_meta = article_meta_review_rows_from_overlay(overlay)
-        if merged_article_meta:
-            apply_merged_article_meta_to_output(reviewed, merged_article_meta)
+        merged_article_meta_rows = build_processed_item_article_meta_rows(
+            None,
+            article_id=None,
+            overlay=overlay,
+            output=output,
+        )
+        if merged_article_meta_rows:
+            apply_merged_article_meta_rows_to_output(reviewed, merged_article_meta_rows)
+        removed_row_ids = removed_article_meta_row_ids_from_overlay(overlay)
+        removed_meta_types = removed_article_meta_types_from_overlay(overlay)
+        if removed_row_ids or removed_meta_types:
+            remove_article_meta_from_output(
+                reviewed,
+                removed_row_ids=removed_row_ids,
+                removed_meta_types=removed_meta_types,
+            )
 
     apply_custom_records_overlay_to_output(reviewed, overlay)
 

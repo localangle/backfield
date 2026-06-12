@@ -768,6 +768,28 @@ export async function patchProcessedItemOverlay(
   return normalizeProcessedItemDetail(raw)
 }
 
+export async function createProcessedItemArticleMeta(
+  runId: string | number,
+  itemId: number,
+  body: {
+    meta_type: string
+    category: string
+    rationale?: string
+    confidence?: number
+    prompt_preset?: string
+  },
+  ifMatchVersion: number,
+): Promise<ProcessedItem> {
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}/article-meta`, {
+    method: 'POST',
+    headers: {
+      'If-Match': `"${ifMatchVersion}"`,
+    },
+    body: JSON.stringify(body),
+  })) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
+}
+
 export async function patchProcessedItemArticleMetaCategory(
   runId: string | number,
   itemId: number,
@@ -781,6 +803,21 @@ export async function patchProcessedItemArticleMetaCategory(
       'If-Match': `"${ifMatchVersion}"`,
     },
     body: JSON.stringify({ category }),
+  })) as RawProcessedItemDetail
+  return normalizeProcessedItemDetail(raw)
+}
+
+export async function deleteProcessedItemArticleMeta(
+  runId: string | number,
+  itemId: number,
+  metaRowId: number,
+  ifMatchVersion: number,
+): Promise<ProcessedItem> {
+  const raw = (await fetchAPI(`/runs/${runId}/items/${itemId}/article-meta/${metaRowId}`, {
+    method: 'DELETE',
+    headers: {
+      'If-Match': `"${ifMatchVersion}"`,
+    },
   })) as RawProcessedItemDetail
   return normalizeProcessedItemDetail(raw)
 }
