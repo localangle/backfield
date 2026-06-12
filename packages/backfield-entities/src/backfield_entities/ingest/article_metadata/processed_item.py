@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
 from backfield_db import SubstrateArticleMeta
@@ -67,6 +68,118 @@ def load_substrate_article_meta_rows(
     return [_row_to_dict(row, source="model") for row in rows]
 
 
+def _confidence_or_none(raw: Any) -> float | None:
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value < 0.0 or value > 1.0:
+        return None
+    return value
+
+
+def _rows_from_metadata_block(
+    block: dict[str, Any],
+    *,
+    synthetic_id_base: int,
+) -> list[dict[str, Any]]:
+    meta_type = str(block.get("meta_type") or "").strip()
+    if not meta_type:
+        return []
+
+    prompt_preset_raw = block.get("prompt_preset")
+    prompt_preset = (
+        prompt_preset_raw.strip()
+        if isinstance(prompt_preset_raw, str) and prompt_preset_raw.strip()
+        else None
+    )
+
+    for list_key in ("subjects", "needs"):
+        raw_items = block.get(list_key)
+        if not isinstance(raw_items, list):
+            continue
+        rows: list[dict[str, Any]] = []
+        for idx, entry in enumerate(raw_items):
+            if not isinstance(entry, dict):
+                continue
+            category = str(entry.get("category") or block.get("category") or "").strip()
+            rationale = str(entry.get("rationale") or block.get("rationale") or "").strip()
+            confidence = _confidence_or_none(entry.get("confidence", block.get("confidence")))
+            if not category or not rationale or confidence is None:
+                continue
+            rows.append(
+                {
+                    "id": synthetic_id_base - idx,
+                    "meta_type": meta_type,
+                    "category": category,
+                    "rationale": rationale,
+                    "confidence": confidence,
+                    "prompt_preset": prompt_preset,
+                    "updated_at": None,
+                    "source": "model",
+                }
+            )
+        if rows:
+            return rows
+
+    category = str(block.get("category") or "").strip()
+    rationale = str(block.get("rationale") or "").strip()
+    confidence = _confidence_or_none(block.get("confidence"))
+    if not category or not rationale or confidence is None:
+        return []
+    return [
+        {
+            "id": synthetic_id_base,
+            "meta_type": meta_type,
+            "category": category,
+            "rationale": rationale,
+            "confidence": confidence,
+            "prompt_preset": prompt_preset,
+            "updated_at": None,
+            "source": "model",
+        }
+    ]
+
+
+def collect_article_metadata_blocks_from_output(
+    output: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Collect ``article_metadata`` blocks from a processed-item run payload."""
+    if not output or not isinstance(output, dict):
+        return []
+
+    blocks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add_block(raw: Any) -> None:
+        if not isinstance(raw, dict):
+            return
+        if not str(raw.get("meta_type") or "").strip():
+            return
+        key = json.dumps(raw, sort_keys=True, default=str)
+        if key in seen:
+            return
+        seen.add(key)
+        blocks.append(raw)
+
+    stylebook = output.get("stylebook_output")
+    if isinstance(stylebook, dict):
+        all_raw = stylebook.get("article_metadata_all")
+        if isinstance(all_raw, list):
+            for entry in all_raw:
+                add_block(entry)
+        add_block(stylebook.get("article_metadata"))
+
+    for payload in output.values():
+        if not isinstance(payload, dict):
+            continue
+        add_block(payload.get("article_metadata"))
+
+    return blocks
+
+
 def merge_article_meta_with_overlay(
     rows: list[dict[str, Any]],
     overlay_patches_by_id: dict[str, dict[str, Any]],
@@ -90,12 +203,21 @@ def build_processed_item_article_meta_rows(
     *,
     article_id: int | None,
     overlay: dict[str, Any] | None,
+    output: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    if session is None or article_id is None:
-        return []
-    substrate_rows = load_substrate_article_meta_rows(session, article_id=article_id)
     patches = normalize_article_meta_overlay(overlay)
-    return merge_article_meta_with_overlay(substrate_rows, patches)
+    substrate_rows: list[dict[str, Any]] = []
+    if session is not None and article_id is not None:
+        substrate_rows = load_substrate_article_meta_rows(session, article_id=article_id)
+    if substrate_rows:
+        return merge_article_meta_with_overlay(substrate_rows, patches)
+
+    model_rows: list[dict[str, Any]] = []
+    for index, block in enumerate(collect_article_metadata_blocks_from_output(output)):
+        model_rows.extend(_rows_from_metadata_block(block, synthetic_id_base=-(index + 1) * 1000))
+    if not model_rows:
+        return []
+    return merge_article_meta_with_overlay(model_rows, patches)
 
 
 def apply_merged_article_meta_to_output(

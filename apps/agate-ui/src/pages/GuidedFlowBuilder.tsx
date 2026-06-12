@@ -1666,15 +1666,6 @@ const GuidedFlowBuilder = forwardRef<GuidedFlowBuilderHandle, GuidedFlowBuilderP
                 canEdit={!readOnly}
                 className="mt-1"
               />
-              {activeStep !== 'scaffold' ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {activeStep === 'input'
-                    ? 'Build your flow step-by-step'
-                    : 'Choose where results are saved'}
-                </p>
-              ) : (
-                <p className="mt-1 text-xs text-muted-foreground">Set up your flow step by step</p>
-              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">

@@ -39,6 +39,7 @@ export function ProcessedItemMetaVerificationSection({
 }: ProcessedItemMetaVerificationSectionProps) {
   const { showError, showMessage } = useAppMessage()
   const rows = useMemo(() => item.article_meta ?? [], [item.article_meta])
+  const hasPersistedRows = rows.some((row) => row.id > 0)
   const [editMode, setEditMode] = useState(false)
   const [drafts, setDrafts] = useState<Record<number, RowDraft>>({})
   const [savingId, setSavingId] = useState<number | null>(null)
@@ -112,7 +113,7 @@ export function ProcessedItemMetaVerificationSection({
           Tags assigned by your flow. You can adjust the category label; rationale and confidence
           stay as the model produced them.
         </p>
-        {!reviewLocked ? (
+        {!reviewLocked && hasPersistedRows ? (
           <Button
             type="button"
             variant={editMode ? 'secondary' : 'outline'}
@@ -139,7 +140,7 @@ export function ProcessedItemMetaVerificationSection({
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor={`meta-category-${row.id}`}>Category</Label>
-                {editMode && !reviewLocked ? (
+                {editMode && !reviewLocked && row.id > 0 ? (
                   <Input
                     id={`meta-category-${row.id}`}
                     value={draft?.category ?? row.category}
@@ -172,7 +173,7 @@ export function ProcessedItemMetaVerificationSection({
                 <p className="text-sm text-muted-foreground">{confidenceLabel(row.confidence)}</p>
               </div>
 
-              {editMode && !reviewLocked && rowDirty ? (
+              {editMode && !reviewLocked && rowDirty && row.id > 0 ? (
                 <Button
                   type="button"
                   size="sm"

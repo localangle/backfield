@@ -73,7 +73,7 @@ def consolidated_body_from_dboutput(params: dict[str, Any], inputs: dict[str, An
     cons = OutputConsolidator()
     p = OutputParams.model_validate(params)
     body = cons.run(merged, p.model_dump())
-    if len(metadata_blocks) > 1:
+    if len(metadata_blocks) >= 1:
         body["article_metadata_all"] = metadata_blocks
     return body
 

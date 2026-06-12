@@ -339,11 +339,13 @@ def _processed_item_article_meta(
     *,
     article_id: int | None,
     overlay: dict[str, Any] | None,
+    output_obj: dict[str, Any] | None = None,
 ) -> list[ProcessedItemArticleMetaRowOut]:
     rows = build_processed_item_article_meta_rows(
         session,
         article_id=article_id,
         overlay=overlay,
+        output=output_obj,
     )
     return [ProcessedItemArticleMetaRowOut.model_validate(row) for row in rows]
 
@@ -864,6 +866,7 @@ def _detail_from_agate_processed_row(
         session,
         article_id=article_ctx_dict.get("article_id"),
         overlay=overlay_obj,
+        output_obj=output_obj,
     )
     connections = _processed_item_connections(
         item_status=row.status,
@@ -1016,6 +1019,7 @@ def _maybe_detail_whole_graph_run(
         session,
         article_id=article_ctx_dict.get("article_id"),
         overlay=None,
+        output_obj=output_obj,
     )
     connections = _processed_item_connections(
         item_status=st,

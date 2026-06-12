@@ -16,11 +16,13 @@ def build_merged_article_meta_lane(
     *,
     article_id: int | None,
     overlay: dict[str, Any] | None,
+    output: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     return build_processed_item_article_meta_rows(
         session,
         article_id=article_id,
         overlay=overlay,
+        output=output,
     )
 
 

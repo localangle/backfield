@@ -77,7 +77,10 @@ def _has_article_embedding(consolidated: dict[str, Any]) -> bool:
 
 def _has_article_metadata(consolidated: dict[str, Any]) -> bool:
     block = consolidated.get("article_metadata")
-    return isinstance(block, dict)
+    if isinstance(block, dict):
+        return True
+    all_raw = consolidated.get("article_metadata_all")
+    return isinstance(all_raw, list) and bool(all_raw)
 
 
 def _has_custom_records(consolidated: dict[str, Any]) -> bool:
