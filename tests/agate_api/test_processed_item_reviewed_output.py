@@ -249,6 +249,32 @@ def test_overlay_has_review_content_true_for_custom_records_edits() -> None:
     assert not overlay_has_review_content({"custom_records": {}})
 
 
+def test_build_reviewed_output_creates_block_for_reviewer_defined_type() -> None:
+    output = {"json_output": {"consolidated": {"headline": "Story", "text": "Body"}}}
+    overlay = {
+        "custom_records": {
+            "quotes": {
+                "definition": {
+                    "label": "Quotes",
+                    "schema": [{"name": "speaker", "label": "Speaker", "type": "string"}],
+                },
+                "user_added": [
+                    {"key": "user_record:1", "fields": {"speaker": "Mayor Lee"}}
+                ],
+            }
+        }
+    }
+    assert overlay_has_review_content(overlay)
+    reviewed = build_reviewed_output(output, overlay)
+    assert reviewed is not None
+    block = reviewed["json_output"]["consolidated"]["custom_records"]
+    assert block["quotes"]["label"] == "Quotes"
+    records = block["quotes"]["records"]
+    assert len(records) == 1
+    assert records[0]["fields"]["speaker"] == "Mayor Lee"
+    assert records[0]["source"] == "review"
+
+
 def test_build_reviewed_output_applies_custom_records_overlay() -> None:
     record_set = {
         "label": "Ingredients",

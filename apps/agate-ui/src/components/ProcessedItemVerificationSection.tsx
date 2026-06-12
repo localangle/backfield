@@ -10,7 +10,7 @@ import {
   AddPlaceWorkflowPanel,
   type AddPlaceWorkflowCreatedPayload,
 } from '@/components/AddPlaceWorkflowPanel'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ProcessedItemEditorReviewBanner } from '@/components/ProcessedItemEditorReviewBanner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -946,16 +946,7 @@ export function ProcessedItemVerificationSection({
   return (
     <Card className="isolate overflow-hidden border-primary/30">
       <CardContent className="space-y-3 pt-6">
-        {staleEntries.length > 0 ? (
-          <Alert
-            variant="default"
-            className="border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-50"
-          >
-            <AlertDescription>
-              Place data for this article has been corrected or enhanced by an editor.
-            </AlertDescription>
-          </Alert>
-        ) : null}
+        <ProcessedItemEditorReviewBanner item={item} section="places" />
 
         <div className="grid shrink-0 gap-x-3 gap-y-1 lg:grid-cols-2 lg:items-start">
           <div className="space-y-1">

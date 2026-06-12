@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { ProcessedItemEditorReviewBanner } from '@/components/ProcessedItemEditorReviewBanner'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -313,6 +314,8 @@ export function ProcessedItemInformationCard({
         )}
       </CardHeader>
       <CardContent className="space-y-6">
+        <ProcessedItemEditorReviewBanner item={item} section="story" />
+
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {ARTICLE_FIELD_KEYS.map((key) => {
             const isEditing = editingKey === key

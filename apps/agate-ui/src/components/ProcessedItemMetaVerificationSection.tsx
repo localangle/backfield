@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ProcessedItemEditorReviewBanner } from '@/components/ProcessedItemEditorReviewBanner'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -255,7 +256,8 @@ export function ProcessedItemMetaVerificationSection({
 
   if (rows.length === 0) {
     return (
-      <>
+      <div className="space-y-4">
+        <ProcessedItemEditorReviewBanner item={item} section="meta" />
         <Card>
           <CardContent className="space-y-4 py-10 text-center">
             <p className="text-sm text-muted-foreground">
@@ -325,12 +327,14 @@ export function ProcessedItemMetaVerificationSection({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </>
+      </div>
     )
   }
 
   return (
     <div className="space-y-4">
+      <ProcessedItemEditorReviewBanner item={item} section="meta" />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           Tags assigned by your flow or added in review. You can adjust category labels, add tags,

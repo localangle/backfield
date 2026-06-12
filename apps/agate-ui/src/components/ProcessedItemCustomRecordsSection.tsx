@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ProcessedItemEditorReviewBanner } from '@/components/ProcessedItemEditorReviewBanner'
 import { useAppMessage } from '@/components/AppMessageProvider'
 import {
   ProcessedItemArticleBody,
@@ -7,7 +8,16 @@ import {
 } from '@/components/ProcessedItemArticleBody'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -35,8 +45,14 @@ import {
   applyCustomRecordsOverlayToTables,
   appendUserAddedCustomRecord,
   buildRemoveCustomRecordPatch,
+  customSlugError,
+  defineCustomRecordType,
+  MAX_CUSTOM_FIELD_COUNT,
   newUserAddedRecordKey,
+  normalizeCustomSlug,
   patchUserAddedCustomRecord,
+  removeCustomRecordTypeDefinition,
+  type CustomFieldType,
 } from '@/lib/review/entities/custom/customRecordsOverlay'
 import {
   isApiConflictError,
@@ -393,6 +409,7 @@ function CustomRecordTable({
   onRemoveMention,
   onDeleteRecord,
   onAddRecord,
+  onRemoveTable,
 }: {
   table: CustomRecordTableModel
   selectedMention: SelectedMention | null
@@ -407,23 +424,45 @@ function CustomRecordTable({
   onRemoveMention: (record: CustomRecordRow, mentionIndex: number) => void
   onDeleteRecord: (record: CustomRecordRow) => void
   onAddRecord: () => void
+  onRemoveTable: () => void
 }) {
   const showConfidence = table.records.some((record) => record.confidence !== null)
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">{table.label}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold">{table.label}</h3>
+          {table.reviewerDefined ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+              Added in review
+            </span>
+          ) : null}
+        </div>
         {editing ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={onAddRecord}
-          >
-            <Plus className="mr-1 h-3 w-3" />
-            Add record
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={onAddRecord}
+            >
+              <Plus className="mr-1 h-3 w-3" />
+              Add record
+            </Button>
+            {table.reviewerDefined ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                onClick={onRemoveTable}
+              >
+                <Trash2 className="mr-1 h-3 w-3" />
+                Remove table
+              </Button>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {table.records.length === 0 ? (
@@ -529,6 +568,182 @@ function CustomRecordTable({
         </p>
       ) : null}
     </div>
+  )
+}
+
+const FIELD_TYPE_OPTIONS: { id: CustomFieldType; label: string }[] = [
+  { id: 'string', label: 'Text' },
+  { id: 'number', label: 'Number' },
+  { id: 'boolean', label: 'Yes / no' },
+  { id: 'date', label: 'Date' },
+  { id: 'string_list', label: 'List of text' },
+]
+
+type DraftFieldSpec = {
+  name: string
+  type: CustomFieldType
+}
+
+/** Dialog for defining a new record table directly in review (no flow step needed). */
+function AddRecordTypeDialog({
+  open,
+  onOpenChange,
+  existingTypes,
+  onCreate,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  existingTypes: string[]
+  onCreate: (recordType: string, label: string, columns: CustomRecordColumn[]) => void
+}) {
+  const { showError } = useAppMessage()
+  const [name, setName] = useState('')
+  const [fields, setFields] = useState<DraftFieldSpec[]>([{ name: '', type: 'string' }])
+
+  useEffect(() => {
+    if (open) {
+      setName('')
+      setFields([{ name: '', type: 'string' }])
+    }
+  }, [open])
+
+  const updateField = (index: number, updates: Partial<DraftFieldSpec>) => {
+    setFields((current) =>
+      current.map((field, i) => (i === index ? { ...field, ...updates } : field)),
+    )
+  }
+
+  const handleCreate = () => {
+    const typeError = customSlugError(name, 'record type')
+    if (typeError) {
+      showError(typeError)
+      return
+    }
+    const recordType = normalizeCustomSlug(name)
+    if (existingTypes.includes(recordType)) {
+      showError('A table with that name already exists for this story.')
+      return
+    }
+    const filled = fields.filter((field) => field.name.trim())
+    if (filled.length === 0) {
+      showError('Add at least one field for this table.')
+      return
+    }
+    const columns: CustomRecordColumn[] = []
+    const seen = new Set<string>()
+    for (const field of filled) {
+      const fieldError = customSlugError(field.name, 'field name')
+      if (fieldError) {
+        showError(fieldError)
+        return
+      }
+      const fieldName = normalizeCustomSlug(field.name)
+      if (seen.has(fieldName)) {
+        showError(`The field “${fieldName}” is listed more than once.`)
+        return
+      }
+      seen.add(fieldName)
+      columns.push({
+        name: fieldName,
+        label: fieldName.replace(/_/g, ' ').replace(/^./, (char) => char.toUpperCase()),
+        type: field.type,
+      })
+    }
+    const label = name
+      .trim()
+      .replace(/[-_]/g, ' ')
+      .replace(/^./, (char) => char.toUpperCase())
+    onCreate(recordType, label, columns)
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add record table</DialogTitle>
+          <DialogDescription>
+            Name the kind of record you want to track and list its fields. You can then add
+            records by hand, the same way a Custom Extract flow step would.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="custom-type-name">Name</Label>
+            <Input
+              id="custom-type-name"
+              value={name}
+              placeholder="e.g. Ingredients"
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Fields</Label>
+            <div className="space-y-2">
+              {fields.map((field, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    value={field.name}
+                    placeholder="e.g. quantity"
+                    className="h-8 flex-1 text-sm"
+                    onChange={(event) => updateField(index, { name: event.target.value })}
+                  />
+                  <Select
+                    value={field.type}
+                    onValueChange={(value) => updateField(index, { type: value as CustomFieldType })}
+                  >
+                    <SelectTrigger className="h-8 w-[8.5rem] text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FIELD_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <button
+                    type="button"
+                    aria-label="Remove this field"
+                    disabled={fields.length === 1}
+                    className={cn(
+                      'shrink-0',
+                      fields.length === 1
+                        ? 'cursor-not-allowed opacity-40'
+                        : 'cursor-pointer text-muted-foreground hover:text-destructive',
+                    )}
+                    onClick={() => setFields((current) => current.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            {fields.length < MAX_CUSTOM_FIELD_COUNT ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setFields((current) => [...current, { name: '', type: 'string' }])}
+              >
+                <Plus className="mr-1 h-3 w-3" />
+                Add field
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={handleCreate}>
+            Create table
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -698,6 +913,31 @@ export function ProcessedItemCustomRecordsSection({
     )
   }, [])
 
+  const [addTypeOpen, setAddTypeOpen] = useState(false)
+
+  const handleCreateRecordType = useCallback(
+    (recordType: string, label: string, columns: CustomRecordColumn[]) => {
+      setDraftOverlay((draft) => {
+        const withDefinition = defineCustomRecordType(draft, recordType, {
+          label,
+          schema: columns,
+        })
+        return appendUserAddedCustomRecord(withDefinition, recordType, {
+          key: newUserAddedRecordKey(),
+          fields: blankFieldsForColumns(columns),
+        })
+      })
+      setEditing(true)
+    },
+    [],
+  )
+
+  const handleRemoveTable = useCallback((table: CustomRecordTableModel) => {
+    setDraftOverlay((draft) => removeCustomRecordTypeDefinition(draft, table.recordType))
+    setSelectedMention(null)
+    setMentionTarget((current) => (current?.recordType === table.recordType ? null : current))
+  }, [])
+
   const handleToggleMentionTarget = useCallback((recordType: string, record: CustomRecordRow) => {
     setArticleTextSelection(null)
     setMentionTarget((current) =>
@@ -757,14 +997,44 @@ export function ProcessedItemCustomRecordsSection({
     }
   }, [runId, item.id, item.overlay_version, draftOverlay, onItemUpdated, showError, showMessage])
 
+  const existingTypes = useMemo(() => tables.map((table) => table.recordType), [tables])
+
+  const addTypeDialog = (
+    <AddRecordTypeDialog
+      open={addTypeOpen}
+      onOpenChange={setAddTypeOpen}
+      existingTypes={existingTypes}
+      onCreate={handleCreateRecordType}
+    />
+  )
+
   if (tables.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          No custom records were extracted for this story yet. Run a flow with a Custom Extract
-          step to pull records you define from each story.
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <ProcessedItemEditorReviewBanner item={item} section="custom" />
+        <Card>
+          <CardContent className="space-y-4 py-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              No custom records yet. Run a flow with a Custom Extract step, or add a record table
+              by hand to track anything you want from this story.
+            </p>
+            {!reviewLocked ? (
+              <div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddTypeOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add record table
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+        {addTypeDialog}
+      </div>
     )
   }
 
@@ -792,6 +1062,7 @@ export function ProcessedItemCustomRecordsSection({
           }
           onDeleteRecord={(record) => handleDeleteRecord(table.recordType, record)}
           onAddRecord={() => handleAddRecord(table)}
+          onRemoveTable={() => handleRemoveTable(table)}
         />
       ))}
     </div>
@@ -799,6 +1070,8 @@ export function ProcessedItemCustomRecordsSection({
 
   return (
     <div className="space-y-4">
+      <ProcessedItemEditorReviewBanner item={item} section="custom" />
+
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Review custom records</h2>
@@ -830,6 +1103,16 @@ export function ProcessedItemCustomRecordsSection({
           ) : null}
           <Button
             type="button"
+            variant="outline"
+            size="sm"
+            disabled={reviewLocked || saving}
+            onClick={() => setAddTypeOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add record table
+          </Button>
+          <Button
+            type="button"
             variant={editing ? 'secondary' : 'outline'}
             size="sm"
             disabled={reviewLocked || saving}
@@ -844,6 +1127,8 @@ export function ProcessedItemCustomRecordsSection({
           </Button>
         </div>
       </div>
+
+      {addTypeDialog}
 
       {hasArticleBody ? (
         <div className="grid min-h-0 gap-4 lg:grid-cols-2 lg:items-stretch h-[min(44rem,calc(100dvh-12rem))]">

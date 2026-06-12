@@ -34,6 +34,8 @@ export type CustomRecordTableModel = {
   columns: CustomRecordColumn[]
   records: CustomRecordRow[]
   droppedUngrounded: number
+  /** True when the table comes from a reviewer-defined type (no flow step upstream). */
+  reviewerDefined?: boolean
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

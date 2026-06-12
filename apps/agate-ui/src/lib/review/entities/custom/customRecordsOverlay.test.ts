@@ -7,8 +7,12 @@ import {
   appendUserAddedCustomRecord,
   buildRemoveCustomRecordPatch,
   customRecordsOverlayHasContent,
+  customSlugError,
+  defineCustomRecordType,
   newUserAddedRecordKey,
+  normalizeCustomSlug,
   patchUserAddedCustomRecord,
+  removeCustomRecordTypeDefinition,
 } from './customRecordsOverlay'
 
 function ingredientsTable(): CustomRecordTableModel {
@@ -170,5 +174,76 @@ describe('applyCustomRecordsOverlayToTables', () => {
     draft = buildRemoveCustomRecordPatch(draft, 'ingredients', 'abc123', 'model')
     const merged = applyCustomRecordsOverlayToTables([ingredientsTable(), stepsTable], draft)
     expect(merged[1]).toEqual(stepsTable)
+  })
+})
+
+describe('reviewer-defined record types', () => {
+  it('normalizes and validates slugs', () => {
+    expect(normalizeCustomSlug('  Pull Quotes ')).toBe('pull_quotes')
+    expect(customSlugError('pull quotes', 'record type')).toBeNull()
+    expect(customSlugError('', 'record type')).not.toBeNull()
+    expect(customSlugError('9lives', 'record type')).not.toBeNull()
+    expect(customSlugError('key', 'field name')).not.toBeNull()
+    expect(customSlugError('speaker', 'field name')).toBeNull()
+  })
+
+  it('counts a definition as overlay content', () => {
+    let draft: Record<string, unknown> = {}
+    draft = defineCustomRecordType(draft, 'quotes', {
+      label: 'Quotes',
+      schema: [{ name: 'speaker', label: 'Speaker', type: 'string' }],
+    })
+    expect(customRecordsOverlayHasContent(draft)).toBe(true)
+  })
+
+  it('synthesizes a table for a reviewer-defined type with its records', () => {
+    let draft: Record<string, unknown> = {}
+    draft = defineCustomRecordType(draft, 'quotes', {
+      label: 'Quotes',
+      schema: [
+        { name: 'speaker', label: 'Speaker', type: 'string' },
+        { name: 'quote_text', label: 'Quote text', type: 'string' },
+      ],
+    })
+    draft = appendUserAddedCustomRecord(draft, 'quotes', {
+      key: 'user_record:1',
+      fields: { speaker: 'Mayor Lee', quote_text: 'We will rebuild.' },
+    })
+
+    const merged = applyCustomRecordsOverlayToTables([ingredientsTable()], draft)
+    expect(merged).toHaveLength(2)
+    const quotes = merged[1]!
+    expect(quotes.recordType).toBe('quotes')
+    expect(quotes.label).toBe('Quotes')
+    expect(quotes.reviewerDefined).toBe(true)
+    expect(quotes.columns.map((column) => column.name)).toEqual(['speaker', 'quote_text'])
+    expect(quotes.records).toHaveLength(1)
+    expect(quotes.records[0]!.source).toBe('review')
+  })
+
+  it('does not synthesize a table when the model already has the type', () => {
+    let draft: Record<string, unknown> = {}
+    draft = defineCustomRecordType(draft, 'ingredients', {
+      label: 'Other',
+      schema: [{ name: 'different', label: 'Different', type: 'string' }],
+    })
+    const merged = applyCustomRecordsOverlayToTables([ingredientsTable()], draft)
+    expect(merged).toHaveLength(1)
+    expect(merged[0]!.label).toBe('Ingredients')
+  })
+
+  it('drops the type overlay entirely on remove', () => {
+    let draft: Record<string, unknown> = {}
+    draft = defineCustomRecordType(draft, 'quotes', {
+      label: 'Quotes',
+      schema: [{ name: 'speaker', label: 'Speaker', type: 'string' }],
+    })
+    draft = appendUserAddedCustomRecord(draft, 'quotes', {
+      key: 'user_record:1',
+      fields: { speaker: 'Mayor Lee' },
+    })
+    draft = removeCustomRecordTypeDefinition(draft, 'quotes')
+    expect(customRecordsOverlayHasContent(draft)).toBe(false)
+    expect(applyCustomRecordsOverlayToTables([], draft)).toEqual([])
   })
 })

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from api.processed_item.custom_records_merge import (
+    apply_custom_records_overlay_to_output,
     custom_records_overlay_has_content,
     merge_custom_records_block,
     normalize_custom_records_overlay,
@@ -203,3 +204,129 @@ class TestReviewedCustomRecordsBlock:
         }
         # No model block for the record type: nothing to merge into, so no set is produced.
         assert reviewed_custom_records_block({}, overlay) == {}
+
+
+def _reviewer_defined_overlay() -> dict:
+    return {
+        "custom_records": {
+            "quotes": {
+                "definition": {
+                    "label": "Quotes",
+                    "schema": [
+                        {"name": "speaker", "label": "Speaker", "type": "string"},
+                        {"name": "quote_text", "label": "Quote text", "type": "string"},
+                    ],
+                },
+                "user_added": [
+                    {
+                        "key": "user_record:1",
+                        "fields": {"speaker": "Mayor Lee", "quote_text": "We will rebuild."},
+                    }
+                ],
+            }
+        }
+    }
+
+
+class TestReviewerDefinedRecordTypes:
+    def test_definition_is_overlay_content(self) -> None:
+        overlay = {
+            "custom_records": {
+                "quotes": {
+                    "definition": {
+                        "label": "Quotes",
+                        "schema": [{"name": "speaker", "type": "string"}],
+                    }
+                }
+            }
+        }
+        assert custom_records_overlay_has_content(overlay)
+
+    def test_invalid_definitions_are_dropped(self) -> None:
+        assert not custom_records_overlay_has_content(
+            {"custom_records": {"quotes": {"definition": {"label": "Quotes", "schema": []}}}}
+        )
+        assert not custom_records_overlay_has_content(
+            {
+                "custom_records": {
+                    "quotes": {
+                        "definition": {"schema": [{"name": "key", "type": "string"}]},
+                    }
+                }
+            }
+        )
+        assert not custom_records_overlay_has_content(
+            {
+                "custom_records": {
+                    "Bad Type!": {
+                        "definition": {"schema": [{"name": "speaker", "type": "string"}]},
+                    }
+                }
+            }
+        )
+
+    def test_definition_field_defaults(self) -> None:
+        overlay = {
+            "custom_records": {
+                "quotes": {
+                    "definition": {
+                        "schema": [{"name": "speaker_name", "type": "bogus_type"}],
+                    },
+                    "user_added": [{"key": "user_record:1", "fields": {"speaker_name": "Lee"}}],
+                }
+            }
+        }
+        merged = merge_custom_records_block({}, overlay)
+        record_set = merged["quotes"]
+        assert record_set["label"] == "Quotes"
+        assert record_set["schema"] == [
+            {"name": "speaker_name", "label": "Speaker name", "type": "string"}
+        ]
+
+    def test_merge_synthesizes_record_set(self) -> None:
+        merged = merge_custom_records_block({}, _reviewer_defined_overlay())
+        record_set = merged["quotes"]
+        assert record_set["label"] == "Quotes"
+        assert [spec["name"] for spec in record_set["schema"]] == ["speaker", "quote_text"]
+        assert len(record_set["records"]) == 1
+        assert record_set["records"][0]["source"] == "review"
+        assert record_set["records"][0]["fields"]["speaker"] == "Mayor Lee"
+
+    def test_model_block_wins_over_definition(self) -> None:
+        overlay = {
+            "custom_records": {
+                "ingredients": {
+                    "definition": {
+                        "label": "Other label",
+                        "schema": [{"name": "different", "type": "string"}],
+                    },
+                    "user_added": [
+                        {"key": "user_record:1", "fields": {"name": "Sugar"}}
+                    ],
+                }
+            }
+        }
+        merged = merge_custom_records_block({"ingredients": _ingredients_set()}, overlay)
+        record_set = merged["ingredients"]
+        assert record_set["label"] == "Ingredients"
+        assert len(record_set["records"]) == 3
+
+    def test_reviewed_block_includes_reviewer_defined_type(self) -> None:
+        merged = reviewed_custom_records_block({}, _reviewer_defined_overlay())
+        assert "quotes" in merged
+        assert merged["quotes"]["records"][0]["fields"]["speaker"] == "Mayor Lee"
+
+    def test_apply_to_output_creates_block_when_missing(self) -> None:
+        output = {"json_output": {"consolidated": {"headline": "Story"}}}
+        apply_custom_records_overlay_to_output(output, _reviewer_defined_overlay())
+        block = output["json_output"]["consolidated"]["custom_records"]
+        assert block["quotes"]["records"][0]["fields"]["speaker"] == "Mayor Lee"
+
+    def test_apply_to_output_appends_to_existing_block(self) -> None:
+        output = {
+            "custom_extract": {"custom_records": {"ingredients": _ingredients_set()}},
+        }
+        apply_custom_records_overlay_to_output(output, _reviewer_defined_overlay())
+        block = output["custom_extract"]["custom_records"]
+        assert "ingredients" in block
+        assert "quotes" in block
