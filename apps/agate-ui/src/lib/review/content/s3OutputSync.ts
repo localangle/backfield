@@ -11,6 +11,20 @@ export interface S3OutputUploadInfo {
   syncError: string | null
 }
 
+/** Virtual-hosted public object URL (``https://{bucket}.s3.amazonaws.com/{key}``). */
+export function s3ObjectPublicHttpsUrl(bucket: string, key: string): string {
+  let bucketName = bucket.trim()
+  if (bucketName.toLowerCase().startsWith('s3://')) {
+    bucketName = bucketName.slice(5).split('/')[0] ?? ''
+  }
+  const normalizedKey = key.trim().replace(/^\/+/, '')
+  const encodedKey = normalizedKey
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+  return `https://${bucketName}.s3.amazonaws.com/${encodedKey}`
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

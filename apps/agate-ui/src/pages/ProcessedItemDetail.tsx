@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getRun, getGraph, getProcessedItem, getProject, rerunProcessedItem, syncProcessedItemS3Output, type Run, type Graph, type ProcessedItem, type Project } from '@/lib/api'
-import { s3OutputUploadsFromItemOutput } from '@/lib/review/content/s3OutputSync'
+import { s3OutputUploadsFromItemOutput, s3ObjectPublicHttpsUrl } from '@/lib/review/content/s3OutputSync'
 import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { getVisualizationsForItem, type VisualizationDescriptor } from '@/lib/visualizations'
 import { processedItemDisplayTitle } from '@/lib/review/content/displayTitle'
@@ -333,11 +333,13 @@ export default function ProcessedItemDetail() {
 
   const handleS3Sync = useCallback(async () => {
     if (!runId || !itemId || s3OutputUploads.length === 0) return
-    const fileList = s3OutputUploads.map((u) => `s3://${u.bucket}/${u.key}`).join(', ')
+    const fileList = s3OutputUploads
+      .map((u) => s3ObjectPublicHttpsUrl(u.bucket, u.key))
+      .join(', ')
     const ok = await showConfirm(
-      `This will overwrite the existing file in S3 (${fileList}) with the current output data, including any changes made in review. This cannot be undone.`,
+      `This will overwrite the existing file in cloud storage (${fileList}) with the current output data, including any changes made in review. This cannot be undone.`,
       {
-        title: 'Sync to S3',
+        title: 'Sync to cloud',
         confirmLabel: 'Overwrite file',
         destructive: true,
       },
@@ -346,11 +348,11 @@ export default function ProcessedItemDetail() {
     setS3Syncing(true)
     try {
       await syncProcessedItemS3Output(runId, Number(itemId))
-      showMessage('Sync started. The file in S3 will be overwritten shortly.', {
-        title: 'Sync to S3',
+      showMessage('Sync started. The file in cloud storage will be overwritten shortly.', {
+        title: 'Sync to cloud',
       })
     } catch (error) {
-      showError(error instanceof Error ? error.message : 'Failed to start the S3 sync.')
+      showError(error instanceof Error ? error.message : 'Failed to start the cloud sync.')
     } finally {
       setS3Syncing(false)
     }
@@ -845,54 +847,59 @@ export default function ProcessedItemDetail() {
         <TabsContent value="json" className="space-y-4">
           {item.output && Object.keys(item.output).length > 0 ? (
             <Card>
-              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
+              <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-2">
                   <CardTitle>Output Data</CardTitle>
                   {hasReviewedOutput ? (
                     <p className="text-sm text-muted-foreground">
                       Reviewed output includes changes made through the review interface.
                     </p>
                   ) : null}
-                  {s3OutputUploads.map((upload) => (
-                    <p key={`${upload.bucket}/${upload.key}`} className="text-sm text-muted-foreground">
-                      Saved to{' '}
-                      <span className="font-mono text-xs break-all">
-                        s3://{upload.bucket}/{upload.key}
-                      </span>
-                      {upload.syncedAt ? (
-                        <> · last synced {new Date(upload.syncedAt).toLocaleString()}</>
-                      ) : null}
-                      {upload.syncError ? (
-                        <span className="text-destructive"> · last sync failed: {upload.syncError}</span>
-                      ) : null}
-                    </p>
-                  ))}
+                  {s3OutputUploads.map((upload) => {
+                    const fileUrl = s3ObjectPublicHttpsUrl(upload.bucket, upload.key)
+                    return (
+                      <div
+                        key={`${upload.bucket}/${upload.key}`}
+                        className="space-y-1 text-sm text-muted-foreground"
+                      >
+                        <p>Saved to cloud storage</p>
+                        <a
+                          href={fileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-start gap-1.5 font-mono text-xs text-primary hover:underline break-all"
+                        >
+                          <span>{fileUrl}</span>
+                          <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                          <span className="sr-only"> (opens in a new tab)</span>
+                        </a>
+                        {upload.syncedAt ? (
+                          <p className="text-xs">
+                            Last synced {new Date(upload.syncedAt).toLocaleString()}
+                          </p>
+                        ) : null}
+                        {upload.syncError ? (
+                          <p className="text-xs text-destructive">
+                            Last sync failed: {upload.syncError}
+                          </p>
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
                 {item.status === 'succeeded' && item.output ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {!item.synthetic && s3OutputUploads.length > 0 ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleS3Sync}
-                        disabled={s3Syncing}
-                      >
-                        {s3Syncing ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                        )}
-                        Sync to S3
-                      </Button>
-                    ) : null}
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                     {hasReviewedOutput ? (
-                      <div className="flex rounded-md border p-0.5" role="group" aria-label="Output data version">
+                      <div
+                        className="flex h-9 rounded-md border p-0.5"
+                        role="group"
+                        aria-label="Output data version"
+                      >
                         <Button
                           type="button"
                           variant={jsonOutputView === 'reviewed' ? 'default' : 'ghost'}
                           size="sm"
-                          className="h-8"
+                          className="h-full px-3"
                           onClick={() => setJsonOutputView('reviewed')}
                         >
                           Reviewed
@@ -901,17 +908,35 @@ export default function ProcessedItemDetail() {
                           type="button"
                           variant={jsonOutputView === 'original' ? 'default' : 'ghost'}
                           size="sm"
-                          className="h-8"
+                          className="h-full px-3"
                           onClick={() => setJsonOutputView('original')}
                         >
                           Original
                         </Button>
                       </div>
                     ) : null}
+                    {!item.synthetic && s3OutputUploads.length > 0 ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9"
+                        onClick={handleS3Sync}
+                        disabled={s3Syncing}
+                      >
+                        {s3Syncing ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Sync to cloud
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
+                      className="h-9"
                       onClick={() => downloadJsonOutput(jsonOutputView)}
                     >
                       <Download className="mr-2 h-4 w-4" />

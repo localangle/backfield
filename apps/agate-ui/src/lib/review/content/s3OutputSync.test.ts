@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
-import { s3OutputUploadsFromItemOutput } from '@/lib/review/content/s3OutputSync'
+import { s3ObjectPublicHttpsUrl, s3OutputUploadsFromItemOutput } from '@/lib/review/content/s3OutputSync'
+
+describe('s3ObjectPublicHttpsUrl', () => {
+  it('builds virtual-hosted public URLs', () => {
+    expect(s3ObjectPublicHttpsUrl('agate-ai', 'output/2026/file.json')).toBe(
+      'https://agate-ai.s3.amazonaws.com/output/2026/file.json',
+    )
+  })
+
+  it('strips s3:// prefix from bucket names and encodes key segments', () => {
+    expect(s3ObjectPublicHttpsUrl('s3://my-bucket', '/path/with space/file.json')).toBe(
+      'https://my-bucket.s3.amazonaws.com/path/with%20space/file.json',
+    )
+  })
+})
 
 describe('s3OutputUploadsFromItemOutput', () => {
   it('returns empty for missing or non-object output', () => {
