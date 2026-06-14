@@ -210,6 +210,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | `GET` | `…/articles/search` | Keyword search + metadata filters + date range |
 | `POST` | `…/articles/semantic-search` | Natural-language search over embedded articles |
 | `GET` | `…/articles/geo-search` | Articles with location mentions near a point or in a bbox |
+| `GET` | `…/articles/geo-cells` | H3 hex cells with distinct-article counts for a bbox (map coverage) |
 | `GET` | `…/articles/{article_id}` | Article detail |
 
 **Search parameters:**
@@ -236,6 +237,14 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - **Bbox mode:** `bbox=min_lng,min_lat,max_lng,max_lat` — articles with location mentions inside the box
 - Optional `location_type`, `nature`, metadata, and date filters (same as keyword search)
 - Returns each matching article with **`matching_locations`** (the location mentions that satisfied the geo filter)
+
+**Geo cells (`GET …/articles/geo-cells`):**
+
+- **Bbox mode (required):** `bbox=min_lng,min_lat,max_lng,max_lat`
+- Returns **`resolution`** (effective H3 display resolution) and **`cells[]`** with `h3_cell` + **`article_count`** (distinct articles per cell)
+- Locations roll up to parent cells at `R` when their native `h3_resolution` is finer; coarser-native locations are excluded at fine zoom
+- Optional `resolution` override (clamped to bbox-derived maximum), plus `location_type`, `nature`, metadata, and date filters (same as geo search)
+- Capped at 5,000 cells per response
 
 ### Two valid entry points
 

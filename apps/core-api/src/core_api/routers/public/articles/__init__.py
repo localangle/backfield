@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from core_api.routers.public.articles import (
     detail,
     facets,
+    geo_cells,
     geo_search,
     images,
     locations,
@@ -22,6 +23,7 @@ router.include_router(search.router)
 router.include_router(facets.router)
 router.include_router(semantic_search.router)
 router.include_router(geo_search.router)
+router.include_router(geo_cells.router)
 router.include_router(detail.router)
 router.include_router(mentions.router)
 router.include_router(locations.router)

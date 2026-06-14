@@ -304,6 +304,69 @@ Results are ordered by article `pub_date` descending (nulls last), then `id` des
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/articles/geo-cells`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/geo_cells.py`](../../../apps/core-api/src/core_api/routers/public/articles/geo_cells.py) — `aggregate_project_articles_by_geo_cells` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_geo_cells.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_geo_cells.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return **H3 hex cells** with **distinct-article counts** for location mentions whose geometry falls inside a bounding box. Use this for zoomable hex coverage maps.
+
+- **Count unit:** one article counts once per cell even if it has multiple place mentions in that cell.
+- **Rollup:** locations with native `h3_resolution >= R` roll up to their parent cell at display resolution `R` via `h3_cell_to_parent`. Locations stored at a coarser native resolution are excluded when `R` is finer (e.g. state-level cells drop out when zoomed to neighborhood scale).
+- **Resolution `R`:** derived from bbox extent (wider viewports use coarser cells). Optional `resolution` override is clamped to the finest resolution the bbox supports; the response echoes the effective `resolution`.
+- **Cell ceiling:** responses are capped at 5,000 cells; exceeding the limit returns `400`.
+
+Only locations with populated `h3_cell` and `h3_resolution` contribute.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `bbox` | string | **required** | Bounding box `min_lng,min_lat,max_lng,max_lat` |
+| `resolution` | integer | — | Optional H3 display resolution override (0–15; clamped to bbox-derived maximum) |
+| `location_type` | string | — | Filter matching locations by substrate `location_type` |
+| `nature` | string | — | Filter matching location mentions by editorial `nature` (e.g. `primary`, `secondary`) |
+| `meta_type` | string | — | Include articles with a metadata row of this type |
+| `meta_category` | string | — | With `meta_type`, include articles with this category value |
+| `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
+| `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
+
+### Response `200`
+
+```json
+{
+  "resolution": 7,
+  "cells": [
+    {
+      "h3_cell": "872664c47ffffff",
+      "article_count": 12
+    }
+  ]
+}
+```
+
+Cells are ordered by `article_count` descending, then `h3_cell` ascending.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | Invalid bbox, inverted bbox bounds, too many cells, or invalid dates |
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` |
+| `422` | Missing required `bbox` |
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/articles/{article_id}`
 
 | | |

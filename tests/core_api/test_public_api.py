@@ -33,6 +33,7 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.geo.h3_index import derive_h3_index
 from core_api.deps import get_session
 from core_api.main import app
 from fastapi.testclient import TestClient
@@ -124,6 +125,10 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
             geometry_type="Point",
             geometry_json={"type": "Point", "coordinates": [-87.6, 41.8]},
         )
+        derived_h3 = derive_h3_index(location.geometry_json)
+        if derived_h3 is not None:
+            location.h3_cell = derived_h3.h3_cell
+            location.h3_resolution = derived_h3.h3_resolution
         s.add(location)
         s.commit()
         s.refresh(location)
@@ -435,6 +440,38 @@ def test_public_article_geo_search_by_point(public_client: TestClient) -> None:
     assert len(body["items"][0]["matching_locations"]) == 1
     assert body["items"][0]["matching_locations"][0]["label"] == "City Hall"
     assert body["items"][0]["search_mode"] == "point"
+
+
+def test_public_article_geo_cells(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells",
+        headers=headers,
+        params={"bbox": "-88,41,-87,42"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "resolution" in body
+    assert isinstance(body["cells"], list)
+    assert len(body["cells"]) >= 1
+    cell = body["cells"][0]
+    assert "h3_cell" in cell
+    assert "article_count" in cell
+    assert cell["article_count"] == 1
+
+    missing = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells",
+        headers=headers,
+    )
+    assert missing.status_code == 422
+
+    invalid = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells",
+        headers=headers,
+        params={"bbox": "-87,42,-88,41"},
+    )
+    assert invalid.status_code == 400
 
 
 def test_public_article_geo_search_nature_filter(public_client: TestClient) -> None:
