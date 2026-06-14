@@ -66,6 +66,17 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Semantic search | 🚧 | Phase 5 |
 | Geography | 🚧 | Via mention/article filters |
 
+## Mentions (project-wide)
+
+| Mode | Status | Notes |
+|------|--------|-------|
+| Keyword search | ✅ | `GET …/mentions/search` — unified across entity types |
+| Facets | ✅ | `GET …/mentions/facets` — entity types, natures, type values |
+| Detail | ✅ | `GET …/mentions/{entity_type}/{mention_id}` — all occurrences |
+| Article/metadata filters | ✅ | On search: author, source, section, meta include/exclude, date range |
+| Semantic search | 🚧 | Phase 5 (per-type `…/{type}/semantic-search`) |
+| Geo search | 🚧 | Phase 6 |
+
 ## Works
 
 | Mode | Status | Notes |

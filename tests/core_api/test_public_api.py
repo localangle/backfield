@@ -988,3 +988,71 @@ def test_public_location_not_found(public_client: TestClient) -> None:
         headers=headers,
     )
     assert r.status_code == 404
+def test_public_mentions_search_facets_and_detail(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    searched = public_client.get(
+        "/public/v1/projects/general/mentions/search",
+        headers=headers,
+    )
+    assert searched.status_code == 200
+    body = searched.json()
+    assert body["pagination"]["total"] == 3
+    entity_types = {item["entity_type"] for item in body["items"]}
+    assert entity_types == {"location", "person", "organization"}
+    assert all(
+        item["article"]["headline"] == "City council votes on budget"
+        for item in body["items"]
+    )
+
+    by_person = public_client.get(
+        "/public/v1/projects/general/mentions/search",
+        headers=headers,
+        params={"entity_type": "person", "nature": "subject"},
+    )
+    assert by_person.status_code == 200
+    pbody = by_person.json()
+    assert pbody["pagination"]["total"] == 1
+    assert pbody["items"][0]["label"] == "Jane Doe"
+    person_mention_id = pbody["items"][0]["mention_id"]
+
+    by_author = public_client.get(
+        "/public/v1/projects/general/mentions/search",
+        headers=headers,
+        params={"author": "Jane Doe"},
+    )
+    assert by_author.status_code == 200
+    assert by_author.json()["pagination"]["total"] == 3
+
+    facets = public_client.get("/public/v1/projects/general/mentions/facets", headers=headers)
+    assert facets.status_code == 200
+    fbody = facets.json()
+    assert set(fbody["entity_types"]) == {"location", "person", "organization"}
+    assert "primary" in fbody["natures"]
+    assert "place" in fbody["location_types"]
+
+    detail = public_client.get(
+        f"/public/v1/projects/general/mentions/person/{person_mention_id}",
+        headers=headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["label"] == "Jane Doe"
+    assert detail.json()["occurrences"]
+    assert detail.json()["canonical"]["label"] == "Jane Doe"
+
+
+def test_public_mention_not_found(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/mentions/person/999999",
+        headers=headers,
+    )
+    assert r.status_code == 404
+
+    bad_type = public_client.get(
+        "/public/v1/projects/general/mentions/invalid/1",
+        headers=headers,
+    )
+    assert bad_type.status_code == 404

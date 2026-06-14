@@ -64,6 +64,7 @@ Core API public routers live under `apps/core-api/src/core_api/routers/public/`:
 | `people/` | List, search, types, detail, mentions, and connections |
 | `organizations/` | List, search, types, detail, mentions, and connections |
 | `locations/` | List, search, geo search, types, detail, mentions, and connections |
+| `mentions/` | Project-wide search, facets, and detail across entity types |
 
 | Doc | Status |
 |-----|--------|
@@ -74,6 +75,7 @@ Core API public routers live under `apps/core-api/src/core_api/routers/public/`:
 | People | Shipped — see `endpoints.md` |
 | Organizations | Shipped — see `endpoints.md` |
 | Locations | Shipped — see `endpoints.md` |
+| Mentions (project-wide) | Shipped — see `endpoints.md` |
 | `custom-records.md` | Phase 3 |
 | `locations.md` | Shipped in `endpoints.md` (Phase 4) |
 | `people.md` | Shipped in `endpoints.md` (Phase 4) |

@@ -1087,3 +1087,109 @@ Paginated mention evidence for one canonical location in the project. Supports `
 ## GET `/public/v1/projects/{project_slug}/locations/{location_id}/connections`
 
 Stylebook connections where the location is either endpoint, with resolved labels.
+---
+
+## GET `/public/v1/projects/{project_slug}/mentions/search`
+
+| Field | Value |
+|-------|-------|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/mentions/search.py`](../../../apps/core-api/src/core_api/routers/public/mentions/search.py) — `search_project_mentions` |
+
+Unified, project-scoped mention search across location, person, and organization mentions. Each row includes entity type, mention and substrate ids, label, nature, type-specific fields, optional canonical summary, first-occurrence evidence, and nested article context.
+
+### Query parameters
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `entity_type` | string | — | Filter to `location`, `person`, or `organization` |
+| `q` | string | — | Keyword match on entity name |
+| `nature` | string | — | Filter by mention nature (exact match) |
+| `has_canonical` | boolean | — | When true, only mentions linked to a canonical; when false, only unlinked |
+| `author` | string | — | Filter by article byline (case-insensitive exact match) |
+| `external_source` | string | — | Filter by publication/outlet name |
+| `source` | string | — | Deprecated alias for `external_source` |
+| `section` | string | — | Include mentions in articles with this subject metadata category |
+| `meta_type` | string | — | Include mentions in articles with this metadata type |
+| `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
+| `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `location_type` | string | — | Filter location mentions by location type |
+| `person_type` | string | — | Filter person mentions by person type |
+| `organization_type` | string | — | Filter organization mentions by organization type |
+| `public_figure` | boolean | — | Filter person mentions by public figure flag |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+Results are ordered by article `pub_date` descending (nulls last), then mention id descending.
+
+### Response `200`
+
+```json
+{
+  "items": [
+    {
+      "entity_type": "person",
+      "mention_id": 2,
+      "substrate_entity_id": 1,
+      "label": "Jane Doe",
+      "nature": "subject",
+      "person_type": "elected_official",
+      "title": "Mayor",
+      "affiliation": "City Hall",
+      "public_figure": true,
+      "canonical": { "id": "550e8400-e29b-41d4-a716-446655440000", "slug": "jane-doe", "label": "Jane Doe" },
+      "evidence": { "mention_text": "Jane Doe", "quote_text": null, "start_char": null, "end_char": null },
+      "article": { "id": 1, "headline": "City council votes on budget", "url": "https://example.com/budget", "pub_date": "2024-03-01" }
+    }
+  ],
+  "pagination": { "limit": 25, "offset": 0, "total": 3 }
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/mentions/facets`
+
+| Field | Value |
+|-------|-------|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/mentions/facets.py`](../../../apps/core-api/src/core_api/routers/public/mentions/facets.py) — `get_project_mention_facets` |
+
+Distinct filter values for mention search UIs.
+
+### Response `200`
+
+```json
+{
+  "entity_types": ["location", "person", "organization"],
+  "natures": ["actor", "primary", "subject"],
+  "location_types": ["place"],
+  "person_types": ["elected_official"],
+  "organization_types": ["government"]
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/mentions/{entity_type}/{mention_id}`
+
+| Field | Value |
+|-------|-------|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/mentions/detail.py`](../../../apps/core-api/src/core_api/routers/public/mentions/detail.py) — `get_project_mention` |
+
+Single mention with all non-suppressed occurrence evidence and article context. Invalid `entity_type` or missing mention returns **404**.
+
+### Path parameters
+
+| Param | Description |
+|-------|-------------|
+| `entity_type` | `location`, `person`, or `organization` |
+| `mention_id` | Substrate mention id (integer) |
+
+### Response `200`
+
+Same fields as search items, but `evidence` is replaced by `occurrences[]` (all non-suppressed spans ordered by `occurrence_order`).

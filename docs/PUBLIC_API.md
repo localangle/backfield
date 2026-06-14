@@ -261,8 +261,23 @@ See [`docs/public-api/reference/geo-cells-map-clients.md`](public-api/reference/
 
 - **Story-first:** article detail → sub-routes (`/articles/{id}/mentions`, …)
 - **Entity-first:** canonical detail → `/people/{id}/mentions` (etc.)
+- **Mention-first:** project-wide search → `/mentions/search`, `/mentions/facets`, `/mentions/{entity_type}/{mention_id}`
 
 Sub-routes and entity-centric routes share query helpers in `backfield-entities`; only URL shape and default filters differ.
+
+### Project-wide mentions (cross-article)
+
+All paths are under `…/projects/{project_slug}/mentions/…`. Returns **404** when a mention is missing or not in the project.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `…/mentions/search` | Unified keyword + filter search across location, person, and organization mentions |
+| `GET` | `…/mentions/facets` | Distinct entity types, natures, and type values for filter dropdowns |
+| `GET` | `…/mentions/{entity_type}/{mention_id}` | Single mention with full occurrence evidence and article context |
+
+**Search parameters** mirror article search where applicable (`author`, `external_source`, `section`, metadata include/exclude, `pub_date_from`/`pub_date_to`), plus mention-specific filters: `entity_type`, `q` (entity name), `nature`, `has_canonical`, `location_type`, `person_type`, `organization_type`, `public_figure`.
+
+Results are ordered by article `pub_date` descending (nulls last), then mention id descending. Search rows include first-occurrence evidence; detail returns all non-suppressed occurrences.
 
 ---
 
@@ -463,6 +478,8 @@ Order by maturity:
 4. **Works** — stub or skip until entity type ships
 
 Extract shared “canonical query” module in `backfield-entities` to avoid copy-paste across types.
+
+- [x] Project-wide mention search, facets, and detail — `GET …/mentions/search`, `GET …/mentions/facets`, `GET …/mentions/{entity_type}/{mention_id}`
 
 **Validation:** `make lint`, `make test`
 
