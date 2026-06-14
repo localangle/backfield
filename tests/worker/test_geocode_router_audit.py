@@ -37,6 +37,8 @@ def test_merge_preserves_audit_when_incoming_none() -> None:
         "geometry_value": None,
         "geometry_type_str": None,
         "geometry_json": None,
+        "h3_cell": None,
+        "h3_resolution": None,
     }
     _apply_substrate_location_merge(loc, **common, geocode_router_audit_json=None)
     assert loc.geocode_router_audit_json == {"keep": True}

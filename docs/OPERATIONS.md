@@ -102,7 +102,7 @@ For `make smoke` / `make smoke-runtime`, set whichever LLM credentials match the
 ## Database guidance
 
 - Use Alembic for schema changes (single chain in `packages/backfield-db`; **`make migrate` runs inside `agate-api`** — do not also auto-migrate from `core-api` on startup).
-- The local `postgres` service builds from `infra/postgres/Dockerfile` (PostGIS + **pgvector**) because location tables store geometry and semantic document tables store embedding vectors.
+- The local `postgres` service builds from `infra/postgres/Dockerfile` (PostGIS + **pgvector** + **h3-pg**) because location tables store geometry, semantic document tables store embedding vectors, and H3 spatial indexing supports map aggregation queries.
 - Agate execution tables use the `agate_` prefix; tenancy and project tables use `backfield_`.
 - Do not let multiple services race to run migrations for the same revision path.
 

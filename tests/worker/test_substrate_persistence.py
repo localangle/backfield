@@ -437,6 +437,9 @@ def test_h3_point_ids_do_not_collapse_distinct_pois() -> None:
             "h3:8c2664d837691ff:carson's, lincolnwood town center",
             "h3:8c2664d837691ff:kohl's, lincolnwood town center",
         }
+        for loc in locations:
+            assert loc.h3_cell
+            assert loc.h3_resolution == 11
 
 
 def test_shared_geocoder_address_id_does_not_collapse_distinct_pois() -> None:

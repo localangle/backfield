@@ -42,6 +42,8 @@ class PublicLocationOut(BaseModel):
     formatted_address: str | None = None
     geometry_type: str | None = None
     geometry_json: dict[str, Any] | None = None
+    h3_cell: str | None = None
+    h3_resolution: int | None = None
     mention_count: int = 0
 
 
@@ -87,6 +89,8 @@ def _location_to_public_out(
         formatted_address=canon.formatted_address,
         geometry_type=canon.geometry_type,
         geometry_json=canon.geometry_json,
+        h3_cell=canon.h3_cell,
+        h3_resolution=canon.h3_resolution,
         mention_count=mention_count,
     )
 

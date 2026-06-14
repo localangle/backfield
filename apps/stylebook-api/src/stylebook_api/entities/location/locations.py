@@ -23,6 +23,7 @@ from backfield_entities.entities.linking.substrate_actions import (
     unlink_substrate_from_canonical,
 )
 from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
+from backfield_entities.geo.h3_index import apply_h3_fields
 from backfield_entities.ingest.semantic_indexing.reindex import (
     location_patch_affects_semantic_index,
 )
@@ -94,6 +95,8 @@ class LocationResponse(BaseModel):
     formatted_address: str | None = None
     geometry_json: dict[str, Any] | None = None
     geometry_type: str | None = None
+    h3_cell: str | None = None
+    h3_resolution: int | None = None
     status: str
     created_by_user_id: int | None = None
     created_at: datetime
@@ -116,6 +119,8 @@ class LocationResponse(BaseModel):
             formatted_address=row.formatted_address,
             geometry_json=row.geometry_json,
             geometry_type=row.geometry_type,
+            h3_cell=row.h3_cell,
+            h3_resolution=row.h3_resolution,
             status=str(row.status),
             created_by_user_id=None,
             created_at=row.created_at,
@@ -617,6 +622,9 @@ def patch_location_geometry(
     loc.geometry_json = body.geometry_json
     loc.geometry_type = body.geometry_json.get("type") if body.geometry_json else None
     loc.geometry = None
+    h3_cell, h3_resolution = apply_h3_fields(geometry_json=body.geometry_json)
+    loc.h3_cell = h3_cell
+    loc.h3_resolution = h3_resolution
     session.add(loc)
     session.commit()
     session.refresh(loc)

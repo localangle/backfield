@@ -68,6 +68,8 @@ class PublicArticleLocationOut(BaseModel):
     formatted_address: str | None = None
     geometry_type: str | None = None
     geometry_json: dict | None = None
+    h3_cell: str | None = None
+    h3_resolution: int | None = None
     canonical: PublicCanonicalSummaryOut | None = None
     nature: str | None = None
     role_in_story: str | None = None
@@ -491,6 +493,8 @@ def location_mentions_out_by_ids(
             formatted_address=loc.formatted_address,
             geometry_type=loc.geometry_type,
             geometry_json=loc.geometry_json,
+            h3_cell=loc.h3_cell,
+            h3_resolution=loc.h3_resolution,
             canonical=canon,
             nature=mention.nature,
             role_in_story=mention.role_in_story,

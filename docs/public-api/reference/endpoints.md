@@ -276,7 +276,9 @@ Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). A
           "mention_id": 10,
           "substrate_location_id": 4,
           "label": "City Hall",
-          "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] }
+          "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
+          "h3_cell": "872664c1bffffff",
+          "h3_resolution": 11
         }
       ]
     }
@@ -823,7 +825,7 @@ Stylebook connections where the organization is either the `from` or `to` endpoi
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/locations.py`](../../../packages/backfield-entities/src/backfield_entities/public/locations.py) |
 | **Auth** | Project API key required |
 
-List active canonical locations. Response items include `geometry_json` and `geometry_type` when stored on the canonical.
+List active canonical locations. Response items include `geometry_json`, `geometry_type`, and native H3 metadata (`h3_cell`, `h3_resolution`) when stored on the canonical.
 
 ### Query parameters
 
@@ -885,6 +887,8 @@ Point mode results are ordered by distance from the center. Provide either point
       "formatted_address": "123 Main St",
       "geometry_type": "Point",
       "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
+      "h3_cell": "872664c1bffffff",
+      "h3_resolution": 11,
       "mention_count": 3
     }
   ],

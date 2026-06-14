@@ -11,6 +11,7 @@ from backfield_db import (
     SubstrateLocation,
     SubstrateLocationMention,
 )
+from backfield_entities.geo.h3_index import derive_h3_index
 from backfield_entities.public.article_geo_search import (
     PublicArticleGeoSearchMode,
     PublicArticleGeoSearchParams,
@@ -65,6 +66,10 @@ def _seed_geo_articles(session: Session) -> int:
             geometry_type="Point",
             geometry_json={"type": "Point", "coordinates": [lng, lat]},
         )
+        h3 = derive_h3_index(location.geometry_json)
+        if h3 is not None:
+            location.h3_cell = h3.h3_cell
+            location.h3_resolution = h3.h3_resolution
         session.add(location)
         session.commit()
         session.refresh(location)
@@ -100,6 +105,8 @@ def test_search_public_articles_by_geo_point_radius() -> None:
     assert items[0].article.headline == "Downtown bridge vote"
     assert len(items[0].matching_locations) == 1
     assert items[0].matching_locations[0].label == "City Hall"
+    assert items[0].matching_locations[0].h3_cell
+    assert items[0].matching_locations[0].h3_resolution == 11
     assert items[0].search_mode == "point"
 
 

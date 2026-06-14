@@ -318,6 +318,8 @@ class StylebookLocationCanonical(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    h3_cell: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    h3_resolution: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     country_code: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     subdivision_code: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     city_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
@@ -1087,6 +1089,8 @@ class SubstrateLocation(SQLModel, table=True):
             "project_id",
             "canonical_link_status",
         ),
+        Index("idx_substrate_location_project_h3_resolution", "project_id", "h3_resolution"),
+        Index("idx_substrate_location_project_h3_cell", "project_id", "h3_cell"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -1136,6 +1140,8 @@ class SubstrateLocation(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    h3_cell: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    h3_resolution: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     # GeocodeAgent structured router audit (from ``agate_geocode_router_audit``).
     geocode_router_audit_json: dict[str, Any] | list[Any] | None = Field(
         default=None,
@@ -1606,6 +1612,8 @@ class SubstrateLocationCache(SQLModel, table=True):
         ),
         Index("idx_substrate_location_cache_project_query_text", "project_id", "normalized_query"),
         Index("idx_substrate_location_cache_project_type", "project_id", "location_type"),
+        Index("idx_substrate_location_cache_project_h3_resolution", "project_id", "h3_resolution"),
+        Index("idx_substrate_location_cache_project_h3_cell", "project_id", "h3_cell"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -1635,6 +1643,8 @@ class SubstrateLocationCache(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    h3_cell: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    h3_resolution: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     response_payload_json: dict | None = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),

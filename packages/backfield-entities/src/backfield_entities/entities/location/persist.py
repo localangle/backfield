@@ -23,6 +23,21 @@ from backfield_entities.canonical.slug import (
     allocate_unique_canonical_slug,
     flush_new_canonical_with_slug_retry,
 )
+from backfield_entities.geo.h3_index import apply_h3_fields
+
+
+def _h3_field_kwargs(
+    *,
+    geometry_json: dict[str, Any] | None,
+    h3_cell: str | None = None,
+    h3_resolution: int | None = None,
+) -> dict[str, Any]:
+    cell, resolution = apply_h3_fields(
+        h3_cell=h3_cell,
+        h3_resolution=h3_resolution,
+        geometry_json=geometry_json,
+    )
+    return {"h3_cell": cell, "h3_resolution": resolution}
 
 
 def assert_canonical_link_invariant(location: SubstrateLocation) -> None:
@@ -214,6 +229,7 @@ def create_standalone_canonical(
             geometry_json=gj,
             geometry_type=geometry_type_str,
             geometry=None,
+            **_h3_field_kwargs(geometry_json=gj),
         )
 
     canon = flush_new_canonical_with_slug_retry(
@@ -270,6 +286,11 @@ def materialize_new_canonical_and_link(
             district_kind=dfields["district_kind"],
             district_number=dfields["district_number"],
             district_key=dfields["district_key"],
+            **_h3_field_kwargs(
+                geometry_json=dict(gj) if isinstance(gj, dict) else gj,
+                h3_cell=location.h3_cell,
+                h3_resolution=location.h3_resolution,
+            ),
         )
 
     canon = flush_new_canonical_with_slug_retry(
