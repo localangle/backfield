@@ -348,6 +348,27 @@ def test_public_article_semantic_search(
     assert body["items"][0]["score"] > 0
 
 
+def test_public_article_geo_search_by_point(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/geo-search",
+        headers=headers,
+        params={
+            "center_lng": -87.6,
+            "center_lat": 41.8,
+            "radius_miles": 5,
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pagination"]["total"] == 1
+    assert body["items"][0]["article"]["headline"] == "City council votes on budget"
+    assert len(body["items"][0]["matching_locations"]) == 1
+    assert body["items"][0]["matching_locations"][0]["label"] == "City Hall"
+    assert body["items"][0]["search_mode"] == "point"
+
+
 def test_public_article_search_keyword(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

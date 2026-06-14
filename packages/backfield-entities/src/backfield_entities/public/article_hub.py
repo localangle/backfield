@@ -380,6 +380,56 @@ def list_article_mentions(
     return _hydrate_mentions(session, typed_rows), total
 
 
+def location_mentions_out_by_ids(
+    session: Session, mention_ids: list[int]
+) -> dict[int, PublicArticleLocationOut]:
+    """Hydrate location mention rows keyed by mention id."""
+    if not mention_ids:
+        return {}
+    rows = session.exec(
+        select(SubstrateLocationMention, SubstrateLocation)
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(col(SubstrateLocationMention.id).in_(mention_ids))
+    ).all()
+    canonical_ids = [
+        str(loc.stylebook_location_canonical_id)
+        for _, loc in rows
+        if loc.stylebook_location_canonical_id
+    ]
+    canonicals: dict[str, StylebookLocationCanonical] = {}
+    if canonical_ids:
+        canon_rows = session.exec(
+            select(StylebookLocationCanonical).where(
+                col(StylebookLocationCanonical.id).in_(canonical_ids)
+            )
+        ).all()
+        canonicals = {str(row.id): row for row in canon_rows}
+    evidence = location_evidence_by_mention_id(session, mention_ids)
+    out: dict[int, PublicArticleLocationOut] = {}
+    for mention, loc in rows:
+        if mention.id is None:
+            continue
+        mid = int(mention.id)
+        canon: PublicCanonicalSummaryOut | None = None
+        canon_id = loc.stylebook_location_canonical_id
+        if canon_id and str(canon_id) in canonicals:
+            canon = _canonical_summary(canonicals[str(canon_id)])
+        out[mid] = PublicArticleLocationOut(
+            mention_id=mid,
+            substrate_location_id=int(loc.id),  # type: ignore[arg-type]
+            label=str(loc.name),
+            location_type=loc.location_type,
+            formatted_address=loc.formatted_address,
+            geometry_type=loc.geometry_type,
+            geometry_json=loc.geometry_json,
+            canonical=canon,
+            nature=mention.nature,
+            role_in_story=mention.role_in_story,
+            evidence=evidence.get(mid),
+        )
+    return out
+
+
 def list_article_locations(
     session: Session,
     *,
@@ -410,43 +460,8 @@ def list_article_locations(
         .offset(offset)
     ).all()
     mention_ids = [int(m.id) for m, _ in rows if m.id is not None]  # type: ignore[arg-type]
-    evidence = location_evidence_by_mention_id(session, mention_ids)
-    canonical_ids = [
-        str(loc.stylebook_location_canonical_id)
-        for _, loc in rows
-        if loc.stylebook_location_canonical_id
-    ]
-    canonicals: dict[str, StylebookLocationCanonical] = {}
-    if canonical_ids:
-        canon_rows = session.exec(
-            select(StylebookLocationCanonical).where(
-                col(StylebookLocationCanonical.id).in_(canonical_ids)
-            )
-        ).all()
-        canonicals = {str(row.id): row for row in canon_rows}
-
-    items: list[PublicArticleLocationOut] = []
-    for mention, loc in rows:
-        mid = int(mention.id)  # type: ignore[arg-type]
-        canon: PublicCanonicalSummaryOut | None = None
-        canon_id = loc.stylebook_location_canonical_id
-        if canon_id and str(canon_id) in canonicals:
-            canon = _canonical_summary(canonicals[str(canon_id)])
-        items.append(
-            PublicArticleLocationOut(
-                mention_id=mid,
-                substrate_location_id=int(loc.id),  # type: ignore[arg-type]
-                label=str(loc.name),
-                location_type=loc.location_type,
-                formatted_address=loc.formatted_address,
-                geometry_type=loc.geometry_type,
-                geometry_json=loc.geometry_json,
-                canonical=canon,
-                nature=mention.nature,
-                role_in_story=mention.role_in_story,
-                evidence=evidence.get(mid),
-            )
-        )
+    by_id = location_mentions_out_by_ids(session, mention_ids)
+    items = [by_id[mid] for mid in mention_ids if mid in by_id]
     return items, total
 
 

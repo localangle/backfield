@@ -209,6 +209,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 |--------|------|---------|
 | `GET` | `…/articles/search` | Keyword search + metadata filters + date range |
 | `POST` | `…/articles/semantic-search` | Natural-language search over embedded articles |
+| `GET` | `…/articles/geo-search` | Articles with location mentions near a point or in a bbox |
 | `GET` | `…/articles/{article_id}` | Article detail |
 
 **Search parameters:**
@@ -227,6 +228,13 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - Supports the same metadata and date filters as keyword search
 - Returns **`score`** per article (cosine similarity) plus embedding model metadata
 - **503** when no embedding model is configured
+
+**Geo search (`GET …/articles/geo-search`):**
+
+- **Point mode:** `center_lng`, `center_lat`, `radius_miles` — articles with at least one location mention whose geometry falls within the radius
+- **Bbox mode:** `bbox=min_lng,min_lat,max_lng,max_lat` — articles with location mentions inside the box
+- Optional `location_type`, metadata, and date filters (same as keyword search)
+- Returns each matching article with **`matching_locations`** (the location mentions that satisfied the geo filter)
 
 ### Two valid entry points
 

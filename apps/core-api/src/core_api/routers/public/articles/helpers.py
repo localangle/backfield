@@ -54,3 +54,25 @@ def parse_entity_type(value: str | None) -> PublicEntityMentionType | None:
             detail="Invalid entity_type. Use location, person, or organization.",
         )
     return normalized  # type: ignore[return-value]
+
+
+def parse_bbox(value: str | None) -> tuple[float, float, float, float]:
+    if value is None or not value.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="bbox is required in format min_lng,min_lat,max_lng,max_lat.",
+        )
+    parts = value.split(",")
+    if len(parts) != 4:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="bbox must be in format min_lng,min_lat,max_lng,max_lat.",
+        )
+    try:
+        min_lng, min_lat, max_lng, max_lat = (float(part.strip()) for part in parts)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="bbox values must be valid numbers.",
+        ) from exc
+    return min_lng, min_lat, max_lng, max_lat

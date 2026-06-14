@@ -214,6 +214,87 @@ Results are ordered by **`score`** descending, then `pub_date` descending, then 
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/articles/geo-search`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/geo_search.py`](../../../apps/core-api/src/core_api/routers/public/articles/geo_search.py) — `search_project_articles_by_geo` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_geo_search.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_geo_search.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Find articles that have at least one **location mention** whose substrate geometry falls within the search area. Returns each article plus the **`matching_locations`** that satisfied the filter (map-oriented location mention shape).
+
+Use **either**:
+
+- **Point + radius:** `center_lng`, `center_lat`, `radius_miles`
+- **Bounding box:** `bbox=min_lng,min_lat,max_lng,max_lat`
+
+Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). Articles without geocoded locations are omitted.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `center_lng` | number | — | Center longitude (point mode) |
+| `center_lat` | number | — | Center latitude (point mode) |
+| `radius_miles` | number | — | Radius in miles (required with center coordinates) |
+| `bbox` | string | — | Bounding box `min_lng,min_lat,max_lng,max_lat` (bbox mode) |
+| `location_type` | string | — | Filter matching locations by substrate `location_type` |
+| `meta_type` | string | — | Filter articles by metadata tag type |
+| `meta_category` | string | — | With `meta_type`, filter by category |
+| `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
+| `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+| `include_preview` | boolean | `false` | Include truncated text preview per article |
+
+### Response `200`
+
+```json
+{
+  "items": [
+    {
+      "search_mode": "point",
+      "article": {
+        "id": 1,
+        "headline": "City council votes on budget",
+        "preview": null,
+        "metadata": []
+      },
+      "matching_locations": [
+        {
+          "mention_id": 10,
+          "substrate_location_id": 4,
+          "label": "City Hall",
+          "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] }
+        }
+      ]
+    }
+  ],
+  "pagination": {
+    "limit": 25,
+    "offset": 0,
+    "total": 1
+  }
+}
+```
+
+Results are ordered by article `pub_date` descending (nulls last), then `id` descending.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | Invalid geo parameters, mixed point+bbox modes, or invalid dates |
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` |
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/articles/{article_id}`
 
 | | |
