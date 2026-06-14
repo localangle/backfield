@@ -60,7 +60,7 @@ Core API public routers live under `apps/core-api/src/core_api/routers/public/`:
 | Folder | Routes |
 |--------|--------|
 | `projects/` | Project metadata |
-| `articles/` | Search, semantic search, geo search, geo cells, detail, and hub sub-routes (one module per endpoint) |
+| `articles/` | Search, semantic search, geo search, geo cells, geo cell drill-down, detail, and hub sub-routes (one module per endpoint) |
 | `people/` | List, search, types, detail, mentions, and connections |
 | `organizations/` | List, search, types, detail, mentions, and connections |
 | `locations/` | List, search, geo search, types, detail, mentions, and connections |

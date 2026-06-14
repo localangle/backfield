@@ -88,6 +88,17 @@ These were considered and rejected because they conflict with the size-gate mode
 3. **Status bar:** when `coarsened`, show that the effective resolution is lower than requested. When `requested_resolution` differs from `resolution` only because of coarsen, explain density — not bbox clamping.
 4. **Expect sparse fine zoom:** block-level cells appear only where extracted locations are point-scale (native res 9–11). City-name mentions stay coarse and correctly disappear when zoomed in.
 
+## Drill-down
+
+When a user clicks a hex:
+
+1. Call `GET …/articles/geo-cells/{h3_cell}` with the cell ID from the coverage response.
+2. Forward the **same filters** (`nature`, `location_type`, metadata, dates) that were active on the coverage request.
+3. Use `pagination.total` to cross-check against the cell's `article_count` from `geo-cells`.
+4. Render the article list from `items[]`; show `matching_locations` as the places that contributed to this cell.
+
+Do not convert the hex to a bbox and call `geo-search` — that uses different matching (PostGIS geometry, no size gate) and counts will not align.
+
 ## Debugging checklist
 
 | Symptom | Likely cause |

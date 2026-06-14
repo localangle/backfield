@@ -477,6 +477,38 @@ def test_public_article_geo_cells(public_client: TestClient) -> None:
     assert invalid.status_code == 400
 
 
+def test_public_article_geo_cell_detail(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    coverage = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells",
+        headers=headers,
+        params={"bbox": "-88,41,-87,42"},
+    )
+    assert coverage.status_code == 200
+    cell_id = coverage.json()["cells"][0]["h3_cell"]
+
+    r = public_client.get(
+        f"/public/v1/projects/general/articles/geo-cells/{cell_id}",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["h3_cell"] == cell_id
+    assert "resolution" in body
+    assert body["pagination"]["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["article"]["headline"] == "City council votes on budget"
+    assert len(body["items"][0]["matching_locations"]) == 1
+    assert body["items"][0]["matching_locations"][0]["label"] == "City Hall"
+
+    invalid = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells/not-a-valid-cell",
+        headers=headers,
+    )
+    assert invalid.status_code == 400
+
+
 def test_public_article_geo_search_nature_filter(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

@@ -211,6 +211,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | `POST` | `…/articles/semantic-search` | Natural-language search over embedded articles |
 | `GET` | `…/articles/geo-search` | Articles with location mentions near a point or in a bbox |
 | `GET` | `…/articles/geo-cells` | H3 hex cells with distinct-article counts for a bbox (map coverage) |
+| `GET` | `…/articles/geo-cells/{h3_cell}` | Articles and in-cell location mentions for one coverage hex (drill-down) |
 | `GET` | `…/articles/{article_id}` | Article detail |
 
 **Search parameters:**
@@ -245,6 +246,13 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - **Size gate:** locations with native `h3_resolution < R` are excluded at fine zoom — coarse city/state mentions do not pollute block-level counts; no type-based configuration required
 - Optional `resolution` (honored as starting resolution; auto-coarsened if cell ceiling exceeded), plus `location_type`, `nature`, metadata, and date filters (same as geo search)
 - Capped at 5,000 cells per response via auto-coarsen
+
+**Geo cell drill-down (`GET …/articles/geo-cells/{h3_cell}`):**
+
+- Pass the `h3_cell` from a coverage response; `resolution` is derived from the cell ID
+- Returns `h3_cell`, `resolution`, paginated `items[]` (article + `matching_locations`), and `pagination.total`
+- `pagination.total` should match the cell's `article_count` when the same filters are forwarded
+- Valid but empty cells return `200` with `total: 0`
 
 See [`docs/public-api/reference/geo-cells-map-clients.md`](public-api/reference/geo-cells-map-clients.md) for map-client integration guidance.
 

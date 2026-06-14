@@ -246,11 +246,12 @@ def _sqlite_matching_pairs(
     return pairs
 
 
-def _group_and_page_articles(
+def group_and_page_articles_by_mention_pairs(
     session: Session,
     *,
     pairs: list[tuple[int, int]],
-    params: PublicArticleGeoSearchParams,
+    limit: int,
+    offset: int,
 ) -> tuple[list[tuple[int, list[int]]], int]:
     mentions_by_article: dict[int, list[int]] = {}
     for mention_id, article_id in pairs:
@@ -270,7 +271,7 @@ def _group_and_page_articles(
     ).all()
     ordered_article_ids = [int(a.id) for a in articles if a.id is not None]
     total = len(ordered_article_ids)
-    page_article_ids = ordered_article_ids[params.offset : params.offset + params.limit]
+    page_article_ids = ordered_article_ids[offset : offset + limit]
     page = [
         (article_id, mentions_by_article.get(article_id, [])) for article_id in page_article_ids
     ]
@@ -289,7 +290,12 @@ def search_public_articles_by_geo(
     else:
         pairs = _sqlite_matching_pairs(session, project_id=project_id, params=params)
 
-    page, total = _group_and_page_articles(session, pairs=pairs, params=params)
+    page, total = group_and_page_articles_by_mention_pairs(
+        session,
+        pairs=pairs,
+        limit=params.limit,
+        offset=params.offset,
+    )
     if not page:
         return [], total
 

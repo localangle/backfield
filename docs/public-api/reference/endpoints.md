@@ -377,6 +377,96 @@ Cells are ordered by `article_count` descending, then `h3_cell` ascending.
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/articles/geo-cells/{h3_cell}`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/geo_cell_detail.py`](../../../apps/core-api/src/core_api/routers/public/articles/geo_cell_detail.py) — `list_project_articles_in_geo_cell` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_geo_cell_detail.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_geo_cell_detail.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return the **articles** and **in-cell location mentions** behind one `geo-cells` hex. Use this for map drill-down when a user clicks a coverage cell.
+
+Matching uses the same H3 rollup predicate as `geo-cells`, so `pagination.total` should equal the cell's `article_count` when the same filters are applied:
+
+- `R = h3.get_resolution(h3_cell)` (derived from the path cell; no `resolution` param)
+- Include a location mention when `h3_resolution >= R` and it rolls up to the requested cell
+- Coarse-native locations are excluded at fine cells (size gate)
+
+### Path parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `h3_cell` | string | yes | H3 cell ID from a `geo-cells` response |
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `location_type` | string | — | Filter matching locations by substrate `location_type` |
+| `nature` | string | — | Filter matching location mentions by editorial `nature` |
+| `meta_type` | string | — | Include articles with a metadata row of this type |
+| `meta_category` | string | — | With `meta_type`, include articles with this category value |
+| `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
+| `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+| `include_preview` | boolean | `false` | Include truncated text preview per article |
+
+Forward the same filters active on the coverage request so counts stay consistent.
+
+### Response `200`
+
+```json
+{
+  "h3_cell": "872664c47ffffff",
+  "resolution": 7,
+  "items": [
+    {
+      "article": {
+        "id": 1,
+        "headline": "City council votes on budget",
+        "preview": null,
+        "metadata": []
+      },
+      "matching_locations": [
+        {
+          "mention_id": 10,
+          "substrate_location_id": 4,
+          "label": "City Hall",
+          "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
+          "h3_cell": "892664c1a97ffff",
+          "h3_resolution": 11
+        }
+      ]
+    }
+  ],
+  "pagination": {
+    "limit": 25,
+    "offset": 0,
+    "total": 12
+  }
+}
+```
+
+Results are ordered by article `pub_date` descending (nulls last), then `id` descending. A valid cell with no matching mentions returns `200` with empty `items` and `total: 0`.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | Invalid `h3_cell` or invalid dates |
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` |
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/articles/{article_id}`
 
 | | |
