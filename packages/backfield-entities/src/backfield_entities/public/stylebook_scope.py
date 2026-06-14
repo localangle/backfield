@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from backfield_db import (
     BackfieldProject,
+    StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
 )
@@ -79,3 +80,35 @@ def list_public_organization_type_values(session: Session, *, stylebook_id: int)
     ).all()
     stored = {str(r).strip() for r in rows if r is not None and str(r).strip()}
     return sorted(set(ORGANIZATION_TYPE_VALUES) | stored)
+
+
+def get_public_location_canonical(
+    session: Session,
+    *,
+    stylebook_id: int,
+    location_id: str,
+) -> StylebookLocationCanonical | None:
+    """Load an active canonical location in the project's Stylebook."""
+    canon = session.get(StylebookLocationCanonical, location_id.strip())
+    if canon is None or int(canon.stylebook_id) != stylebook_id:
+        return None
+    if str(canon.status) != "active":
+        return None
+    return canon
+
+
+def list_public_location_type_values(session: Session, *, stylebook_id: int) -> list[str]:
+    from sqlalchemy import func
+
+    from backfield_entities.entities.location.types import PLACE_EXTRACT_LOCATION_TYPES
+
+    rows = session.exec(
+        select(StylebookLocationCanonical.location_type).where(
+            StylebookLocationCanonical.stylebook_id == stylebook_id,
+            StylebookLocationCanonical.status == "active",
+            StylebookLocationCanonical.location_type.isnot(None),
+            func.length(func.trim(StylebookLocationCanonical.location_type)) > 0,
+        )
+    ).all()
+    stored = {str(r).strip() for r in rows if r is not None and str(r).strip()}
+    return sorted(set(PLACE_EXTRACT_LOCATION_TYPES) | stored)

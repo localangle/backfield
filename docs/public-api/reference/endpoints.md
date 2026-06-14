@@ -811,3 +811,107 @@ Stylebook connections where the organization is either the `from` or `to` endpoi
   ]
 }
 ```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/locations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/locations/list_search.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/locations.py`](../../../packages/backfield-entities/src/backfield_entities/public/locations.py) |
+| **Auth** | Project API key required |
+
+List active canonical locations. Response items include `geometry_json` and `geometry_type` when stored on the canonical.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `q` | string | — | Case-insensitive match on label or formatted address |
+| `location_type` | string | — | Exact location type filter |
+| `nature` | string | — | Locations with at least one linked mention of this nature in the project |
+| `min_mentions` | integer | `0` | Minimum project mention count |
+| `sort` | string | `label` | `label` or `recent` |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations/search`
+
+Same parameters and response as `GET …/locations`.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations/geo-search`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/locations/geo_search.py`](../../../apps/core-api/src/core_api/routers/public/locations/geo_search.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/location_geo_search.py`](../../../packages/backfield-entities/src/backfield_entities/public/location_geo_search.py) |
+| **Auth** | Project API key required |
+
+Find canonical locations whose **Stylebook geometry** intersects a search area. Requires canonical rows with stored geometry.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `center_lng`, `center_lat`, `radius_miles` | number | — | Point + radius mode (miles) |
+| `bbox` | string | — | Bounding box `min_lng,min_lat,max_lng,max_lat` (alternative to point mode) |
+| `q` | string | — | Optional label or address filter |
+| `location_type` | string | — | Exact location type filter |
+| `nature` | string | — | Mention nature filter |
+| `min_mentions` | integer | `0` | Minimum project mention count |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+Point mode results are ordered by distance from the center. Provide either point+radius **or** bbox, not both.
+
+### Response `200`
+
+```json
+{
+  "search_mode": "point",
+  "items": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "slug": "city-hall",
+      "label": "City Hall",
+      "location_type": "place",
+      "formatted_address": "123 Main St",
+      "geometry_type": "Point",
+      "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
+      "mention_count": 3
+    }
+  ],
+  "pagination": { "limit": 25, "offset": 0, "total": 1 }
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations/types`
+
+Distinct location type values for filter dropdowns.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations/{location_id}`
+
+Single location object (same fields as list items).
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations/{location_id}/mentions`
+
+Paginated mention evidence for one canonical location in the project. Supports `sort` (`created_at` or `article`) and `sort_direction`.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations/{location_id}/connections`
+
+Stylebook connections where the location is either endpoint, with resolved labels.

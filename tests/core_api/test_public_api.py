@@ -14,6 +14,7 @@ from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
     StylebookConnection,
+    StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
     SubstrateArticle,
@@ -126,6 +127,21 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         s.add(location)
         s.commit()
         s.refresh(location)
+        location_canon = StylebookLocationCanonical(
+            stylebook_id=sb_id,
+            label="City Hall",
+            slug="city-hall",
+            location_type="place",
+            formatted_address="123 Main St",
+            geometry_type="Point",
+            geometry_json={"type": "Point", "coordinates": [-87.6, 41.8]},
+        )
+        s.add(location_canon)
+        s.commit()
+        s.refresh(location_canon)
+        location.stylebook_location_canonical_id = str(location_canon.id)
+        s.add(location)
+        s.commit()
         location_mention = SubstrateLocationMention(
             article_id=article_id,
             location_id=int(location.id),  # type: ignore[arg-type]
@@ -186,7 +202,7 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
                 from_entity_type="person",
                 from_entity_id=str(person_canon.id),
                 to_entity_type="location",
-                to_entity_id="00000000-0000-4000-8000-000000000001",
+                to_entity_id=str(location_canon.id),
                 nature="works_at",
             )
         )
@@ -786,6 +802,83 @@ def test_public_organization_not_found(public_client: TestClient) -> None:
     headers = {"Authorization": f"Bearer {raw_key}"}
     r = public_client.get(
         "/public/v1/projects/general/organizations/00000000-0000-4000-8000-000000009999",
+        headers=headers,
+    )
+    assert r.status_code == 404
+
+
+def test_public_locations_list_search_and_geo(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    listed = public_client.get("/public/v1/projects/general/locations", headers=headers)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["pagination"]["total"] == 1
+    location = body["items"][0]
+    assert location["label"] == "City Hall"
+    assert location["mention_count"] == 1
+    assert location["geometry_json"]["type"] == "Point"
+    location_id = location["id"]
+
+    searched = public_client.get(
+        "/public/v1/projects/general/locations/search",
+        headers=headers,
+        params={"q": "Main St", "location_type": "place"},
+    )
+    assert searched.status_code == 200
+    assert searched.json()["pagination"]["total"] == 1
+
+    geo = public_client.get(
+        "/public/v1/projects/general/locations/geo-search",
+        headers=headers,
+        params={
+            "center_lng": -87.6,
+            "center_lat": 41.8,
+            "radius_miles": 5,
+        },
+    )
+    assert geo.status_code == 200
+    gbody = geo.json()
+    assert gbody["search_mode"] == "point"
+    assert gbody["pagination"]["total"] == 1
+    assert gbody["items"][0]["label"] == "City Hall"
+
+    types = public_client.get("/public/v1/projects/general/locations/types", headers=headers)
+    assert types.status_code == 200
+    assert "place" in types.json()["types"]
+
+    detail = public_client.get(
+        f"/public/v1/projects/general/locations/{location_id}",
+        headers=headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["formatted_address"] == "123 Main St"
+
+    mentions = public_client.get(
+        f"/public/v1/projects/general/locations/{location_id}/mentions",
+        headers=headers,
+    )
+    assert mentions.status_code == 200
+    mbody = mentions.json()
+    assert mbody["label"] == "City Hall"
+    assert mbody["pagination"]["total"] == 1
+    assert mbody["items"][0]["nature"] == "primary"
+
+    connections = public_client.get(
+        f"/public/v1/projects/general/locations/{location_id}/connections",
+        headers=headers,
+    )
+    assert connections.status_code == 200
+    assert len(connections.json()["connections"]) == 1
+    assert connections.json()["connections"][0]["nature"] == "works_at"
+
+
+def test_public_location_not_found(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/locations/00000000-0000-4000-8000-000000009999",
         headers=headers,
     )
     assert r.status_code == 404

@@ -499,7 +499,7 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 | Articles (hub) | — | — | ✅ | — | — | ✅ |
 | Article images | — | ✅ | — | — | — | — |
 | Custom records | Planned | Planned | — | — | — | — |
-| Locations | Planned | Planned | Planned | Planned | Planned | Planned |
+| Locations | ✅ | ✅ | ✅ | ✅ | Planned | ✅ |
 | People | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
 | Organizations | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
 | Works | N/A | N/A | N/A | N/A | N/A | N/A |

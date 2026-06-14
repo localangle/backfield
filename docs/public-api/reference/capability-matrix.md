@@ -32,12 +32,13 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 
 | Mode | Status | Notes |
 |------|--------|-------|
-| Keyword search | 🚧 | |
-| Detail | 🚧 | UUID canonical id |
-| Mentions | 🚧 | |
-| Connections | 🚧 | |
+| Keyword search | ✅ | `GET …/locations` and `GET …/locations/search` |
+| Geo search | ✅ | `GET …/locations/geo-search` (canonical geometry; point+radius or bbox) |
+| Type facets | ✅ | `GET …/locations/types` |
+| Detail | ✅ | UUID canonical id; includes geometry |
+| Mentions | ✅ | `GET …/locations/{id}/mentions` |
+| Connections | ✅ | `GET …/locations/{id}/connections` |
 | Semantic search | 🚧 | Phase 5 |
-| Geography | 🚧 | Richest geo surface |
 
 ## People
 
