@@ -220,3 +220,77 @@ def test_search_public_articles_excludes_metadata() -> None:
         )
         assert total == 0
         assert items == []
+
+
+def test_search_public_articles_filters_author_section_and_mentions() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-public-search-filters")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        proj = BackfieldProject(
+            name="News",
+            slug="news",
+            organization_id=int(org.id),  # type: ignore[arg-type]
+        )
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+
+        article = SubstrateArticle(
+            project_id=project_id,
+            headline="Budget vote",
+            text="Body",
+            author="Jane Doe",
+            external_source="Daily Herald",
+            url="https://www.dailyherald.com/budget",
+            pub_date=date(2024, 1, 10),
+        )
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+
+        session.add(
+            SubstrateArticleMeta(
+                article_id=int(article.id),  # type: ignore[arg-type]
+                meta_type="subject",
+                category="local_government_politics",
+                rationale="test",
+                confidence=0.9,
+            )
+        )
+        session.commit()
+
+        items, total = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(author="Jane Doe"),
+        )
+        assert total == 1
+        assert items[0].source_name == "Daily Herald"
+        assert items[0].section == "local_government_politics"
+
+        items, total = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(section="local_government_politics"),
+        )
+        assert total == 1
+        assert items[0].headline == "Budget vote"
+
+        items, total = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(external_source="Daily Herald"),
+        )
+        assert total == 1
+
+        items, total = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(has_mentions="location"),
+        )
+        assert total == 0

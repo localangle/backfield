@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from core_api.routers.public.articles import (
     detail,
+    facets,
     geo_search,
     images,
     locations,
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/projects/{project_slug}/articles", tags=["public-art
 
 # Register static paths before parameterized routes.
 router.include_router(search.router)
+router.include_router(facets.router)
 router.include_router(semantic_search.router)
 router.include_router(geo_search.router)
 router.include_router(detail.router)

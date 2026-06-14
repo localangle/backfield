@@ -56,6 +56,20 @@ def parse_entity_type(value: str | None) -> PublicEntityMentionType | None:
     return normalized  # type: ignore[return-value]
 
 
+def parse_has_mentions(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    normalized = value.strip().lower()
+    if normalized == "place":
+        normalized = "location"
+    if normalized not in ("location", "person", "organization"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid has_mentions. Use location, person, or organization.",
+        )
+    return normalized
+
+
 def parse_bbox(value: str | None) -> tuple[float, float, float, float]:
     if value is None or not value.strip():
         raise HTTPException(

@@ -140,6 +140,75 @@ def article_hub_counts(session: Session, *, article_id: int) -> PublicArticleCou
     )
 
 
+def article_hub_counts_batch(
+    session: Session, article_ids: list[int]
+) -> dict[int, PublicArticleCountsOut]:
+    """Load hub counts for many articles without per-row round trips."""
+    if not article_ids:
+        return {}
+
+    location_rows = session.exec(
+        select(SubstrateLocationMention.article_id, func.count())
+        .where(
+            col(SubstrateLocationMention.article_id).in_(article_ids),
+            SubstrateLocationMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstrateLocationMention.article_id)
+    ).all()
+    person_rows = session.exec(
+        select(SubstratePersonMention.article_id, func.count())
+        .where(
+            col(SubstratePersonMention.article_id).in_(article_ids),
+            SubstratePersonMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstratePersonMention.article_id)
+    ).all()
+    organization_rows = session.exec(
+        select(SubstrateOrganizationMention.article_id, func.count())
+        .where(
+            col(SubstrateOrganizationMention.article_id).in_(article_ids),
+            SubstrateOrganizationMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstrateOrganizationMention.article_id)
+    ).all()
+    image_rows = session.exec(
+        select(SubstrateImage.article_id, func.count())
+        .where(col(SubstrateImage.article_id).in_(article_ids))
+        .group_by(SubstrateImage.article_id)
+    ).all()
+    record_rows = session.exec(
+        select(
+            SubstrateCustomRecord.article_id,
+            SubstrateCustomRecord.record_type,
+            func.count(),
+        )
+        .where(col(SubstrateCustomRecord.article_id).in_(article_ids))
+        .group_by(SubstrateCustomRecord.article_id, SubstrateCustomRecord.record_type)
+    ).all()
+
+    locations_by_article = {int(aid): int(count) for aid, count in location_rows}
+    people_by_article = {int(aid): int(count) for aid, count in person_rows}
+    organizations_by_article = {int(aid): int(count) for aid, count in organization_rows}
+    images_by_article = {int(aid): int(count) for aid, count in image_rows}
+    records_by_article: dict[int, dict[str, int]] = {}
+    for article_id, record_type, count in record_rows:
+        aid = int(article_id)
+        records_by_article.setdefault(aid, {})[str(record_type)] = int(count)
+
+    out: dict[int, PublicArticleCountsOut] = {}
+    for article_id in article_ids:
+        out[article_id] = PublicArticleCountsOut(
+            entity_counts=PublicArticleEntityCountsOut(
+                locations=locations_by_article.get(article_id, 0),
+                people=people_by_article.get(article_id, 0),
+                organizations=organizations_by_article.get(article_id, 0),
+            ),
+            custom_record_counts=records_by_article.get(article_id, {}),
+            image_count=images_by_article.get(article_id, 0),
+        )
+    return out
+
+
 def _mention_union_stmt(
     article_id: int,
     entity_type: PublicEntityMentionType | None,

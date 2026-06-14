@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
+from urllib.parse import urlparse
 
-from backfield_db import SubstrateArticle, SubstrateArticleMeta
+from backfield_db import (
+    SubstrateArticle,
+    SubstrateArticleMeta,
+    SubstrateLocationMention,
+    SubstrateOrganizationMention,
+    SubstratePersonMention,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy import func, literal, or_
 from sqlmodel import Session, col, select
 
-from backfield_entities.public.article_hub import PublicArticleCountsOut, article_hub_counts
+from backfield_entities.public.article_hub import (
+    PublicArticleCountsOut,
+    article_hub_counts,
+    article_hub_counts_batch,
+)
 
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
 
@@ -28,6 +39,8 @@ class PublicArticleOut(BaseModel):
     author: str | None = None
     pub_date: date | None = None
     external_source: str | None = None
+    source_name: str | None = None
+    section: str | None = None
     external_id: str | None = None
     entry_id: str | None = None
     preview: str | None = None
@@ -42,11 +55,16 @@ class PublicArticleSearchParams:
     meta_category: str | None = None
     exclude_meta_type: str | None = None
     exclude_meta_category: str | None = None
+    section: str | None = None
+    author: str | None = None
+    external_source: str | None = None
+    has_mentions: str | None = None
     pub_date_from: date | None = None
     pub_date_to: date | None = None
     limit: int = 25
     offset: int = 0
     include_preview: bool = False
+    include_counts: bool = False
 
 
 def article_preview(text: str, *, max_len: int = PUBLIC_ARTICLE_PREVIEW_MAX_LEN) -> str:
@@ -85,6 +103,39 @@ def _meta_rows_for_articles(
     return out
 
 
+def article_source_name(*, external_source: str | None, url: str | None) -> str | None:
+    if external_source and external_source.strip():
+        return external_source.strip()
+    if url and url.strip():
+        parsed = urlparse(url.strip())
+        hostname = parsed.hostname or ""
+        if hostname:
+            return hostname.removeprefix("www.")
+    return None
+
+
+def article_section(metadata: list[PublicArticleMetaOut]) -> str | None:
+    for row in metadata:
+        if row.meta_type == "subject" and row.category.strip():
+            return row.category.strip()
+    return None
+
+
+def resolve_public_article_search_params(
+    params: PublicArticleSearchParams,
+) -> PublicArticleSearchParams:
+    """Apply search sugar such as ``section`` → subject metadata filter."""
+    section_value = (params.section or "").strip()
+    if not section_value:
+        return params
+    return replace(
+        params,
+        section=None,
+        meta_type="subject",
+        meta_category=section_value,
+    )
+
+
 def _article_to_public_out(
     article: SubstrateArticle,
     *,
@@ -94,6 +145,11 @@ def _article_to_public_out(
     counts: PublicArticleCountsOut | None = None,
 ) -> PublicArticleOut:
     preview = article_preview(article.text) if include_preview else None
+    source_name = article_source_name(
+        external_source=article.external_source,
+        url=article.url,
+    )
+    section = article_section(metadata)
     return PublicArticleOut(
         id=int(article.id),  # type: ignore[arg-type]
         headline=article.headline,
@@ -101,6 +157,8 @@ def _article_to_public_out(
         author=article.author,
         pub_date=article.pub_date,
         external_source=article.external_source if include_provenance else None,
+        source_name=source_name,
+        section=section,
         external_id=article.external_id if include_provenance else None,
         entry_id=article.entry_id if include_provenance else None,
         preview=preview,
@@ -167,6 +225,9 @@ def _apply_public_article_list_filters(
     meta_category: str | None,
     exclude_meta_type: str | None = None,
     exclude_meta_category: str | None = None,
+    author: str | None = None,
+    external_source: str | None = None,
+    has_mentions: str | None = None,
     pub_date_from: date | None,
     pub_date_to: date | None,
 ):
@@ -174,6 +235,35 @@ def _apply_public_article_list_filters(
         stmt = stmt.where(col(SubstrateArticle.pub_date) >= pub_date_from)
     if pub_date_to is not None:
         stmt = stmt.where(col(SubstrateArticle.pub_date) <= pub_date_to)
+
+    author_value = (author or "").strip()
+    if author_value:
+        stmt = stmt.where(func.lower(SubstrateArticle.author) == author_value.lower())
+
+    external_source_value = (external_source or "").strip()
+    if external_source_value:
+        stmt = stmt.where(
+            func.lower(SubstrateArticle.external_source) == external_source_value.lower()
+        )
+
+    has_mentions_value = (has_mentions or "").strip().lower()
+    if has_mentions_value == "place":
+        has_mentions_value = "location"
+    if has_mentions_value == "location":
+        mention_stmt = select(SubstrateLocationMention.article_id).where(
+            SubstrateLocationMention.deleted == False  # noqa: E712
+        )
+        stmt = stmt.where(col(SubstrateArticle.id).in_(mention_stmt))
+    elif has_mentions_value == "person":
+        mention_stmt = select(SubstratePersonMention.article_id).where(
+            SubstratePersonMention.deleted == False  # noqa: E712
+        )
+        stmt = stmt.where(col(SubstrateArticle.id).in_(mention_stmt))
+    elif has_mentions_value == "organization":
+        mention_stmt = select(SubstrateOrganizationMention.article_id).where(
+            SubstrateOrganizationMention.deleted == False  # noqa: E712
+        )
+        stmt = stmt.where(col(SubstrateArticle.id).in_(mention_stmt))
 
     meta_type_value = (meta_type or "").strip()
     if meta_type_value:
@@ -206,6 +296,7 @@ def search_public_articles(
     project_id: int,
     params: PublicArticleSearchParams,
 ) -> tuple[list[PublicArticleOut], int]:
+    params = resolve_public_article_search_params(params)
     stmt = _active_articles_for_project(session, project_id)
 
     rank_expr = None
@@ -219,6 +310,9 @@ def search_public_articles(
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
         exclude_meta_category=params.exclude_meta_category,
+        author=params.author,
+        external_source=params.external_source,
+        has_mentions=params.has_mentions,
         pub_date_from=params.pub_date_from,
         pub_date_to=params.pub_date_to,
     )
@@ -240,6 +334,9 @@ def search_public_articles(
     articles = list(session.exec(stmt).all())
     article_ids = [int(a.id) for a in articles if a.id is not None]
     meta_by_id = _meta_rows_for_articles(session, article_ids)
+    counts_by_id = (
+        article_hub_counts_batch(session, article_ids) if params.include_counts else {}
+    )
 
     items = [
         _article_to_public_out(
@@ -247,6 +344,7 @@ def search_public_articles(
             metadata=meta_by_id.get(int(article.id), []),  # type: ignore[arg-type]
             include_preview=params.include_preview,
             include_provenance=False,
+            counts=counts_by_id.get(int(article.id)) if params.include_counts else None,  # type: ignore[arg-type]
         )
         for article in articles
     ]

@@ -454,6 +454,37 @@ def test_public_article_search_exclude_metadata_filter(public_client: TestClient
     assert body["items"][0]["headline"] == "Other headline"
 
 
+def test_public_article_search_facets_and_counts(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    facets = public_client.get(
+        "/public/v1/projects/general/articles/facets",
+        headers=headers,
+    )
+    assert facets.status_code == 200
+    body = facets.json()
+    assert "Jane Doe" in body["authors"]
+    assert body["subject_categories"] == ["local_government_politics"]
+
+    search = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={
+            "author": "Jane Doe",
+            "section": "local_government_politics",
+            "has_mentions": "location",
+            "include": "counts",
+        },
+    )
+    assert search.status_code == 200
+    item = search.json()["items"][0]
+    assert item["headline"] == "City council votes on budget"
+    assert item["source_name"] == "example.com"
+    assert item["section"] == "local_government_politics"
+    assert item["counts"]["entity_counts"]["locations"] == 1
+
+
 def test_public_article_search_invalid_date(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}
