@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from backfield_ai.constants import (
     AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+    AI_DEFAULT_ROLE_SEMANTIC_HYDE,
     AI_MODEL_KIND_EMBEDDING,
     AI_MODEL_KIND_GENERATIVE,
     PROJECT_AI_DEFAULT_ROLES,
@@ -341,6 +342,11 @@ def put_project_default_role(
         raise HTTPException(
             status_code=400,
             detail="The semantic search default must be an embedding model.",
+        )
+    if rkey == AI_DEFAULT_ROLE_SEMANTIC_HYDE and str(cfg.model_kind) != AI_MODEL_KIND_GENERATIVE:
+        raise HTTPException(
+            status_code=400,
+            detail="The semantic HyDE default must be a generative model.",
         )
 
     existing = session.exec(

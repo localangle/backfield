@@ -12,7 +12,12 @@ from backfield_db import (
 )
 from sqlmodel import Session, select
 
-from backfield_ai.constants import AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING, AI_MODEL_KIND_EMBEDDING
+from backfield_ai.constants import (
+    AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
+    AI_DEFAULT_ROLE_SEMANTIC_HYDE,
+    AI_MODEL_KIND_EMBEDDING,
+    AI_MODEL_KIND_GENERATIVE,
+)
 from backfield_ai.embeddings import EmbeddingConfigurationError
 from backfield_ai.litellm_model import effective_litellm_model_row
 
@@ -244,3 +249,117 @@ def semantic_embedding_configured(session: Session, project_id: int) -> bool:
         return True
     except EmbeddingConfigurationError:
         return False
+
+
+def _enabled_generative_config_ids(session: Session, project_id: int) -> list[str]:
+    """Generative catalog rows that are active org-wide and enabled for this project."""
+    proj = session.get(BackfieldProject, project_id)
+    if proj is None:
+        return []
+    org_id = int(proj.organization_id)
+    configs = list(
+        session.exec(
+            select(BackfieldAiModelConfig).where(
+                BackfieldAiModelConfig.organization_id == org_id,
+                BackfieldAiModelConfig.status == "active",
+                BackfieldAiModelConfig.model_kind == AI_MODEL_KIND_GENERATIVE,
+            )
+        ).all()
+    )
+    if not configs:
+        return []
+    overrides = {
+        str(o.model_config_id): o
+        for o in session.exec(
+            select(BackfieldAiProjectModelOverride).where(
+                BackfieldAiProjectModelOverride.project_id == project_id,
+            )
+        ).all()
+    }
+    enabled: list[str] = []
+    for row in configs:
+        cid = str(row.id)
+        ovr = overrides.get(cid)
+        if ovr is not None and not ovr.enabled:
+            continue
+        enabled.append(cid)
+    return enabled
+
+
+def _try_load_semantic_generative_config(
+    session: Session,
+    *,
+    organization_id: int,
+    project_id: int,
+    config_id: str,
+) -> str | None:
+    try:
+        cfg = _load_enabled_org_config(
+            session,
+            organization_id=organization_id,
+            project_id=project_id,
+            config_id=config_id,
+        )
+    except ValueError:
+        return None
+    if str(cfg.model_kind) != AI_MODEL_KIND_GENERATIVE:
+        return None
+    return config_id
+
+
+def resolve_semantic_hyde_model_config_id(
+    session: Session,
+    project_id: int,
+) -> str:
+    """Resolve the generative model for HyDE query expansion."""
+    proj = session.get(BackfieldProject, project_id)
+    if proj is None:
+        raise EmbeddingConfigurationError("Project not found.")
+    org_id = int(proj.organization_id)
+
+    project_role = session.exec(
+        select(BackfieldAiDefaultModelRole).where(
+            BackfieldAiDefaultModelRole.project_id == project_id,
+            BackfieldAiDefaultModelRole.organization_id.is_(None),
+            BackfieldAiDefaultModelRole.role == AI_DEFAULT_ROLE_SEMANTIC_HYDE,
+        )
+    ).first()
+    if project_role is not None:
+        loaded = _try_load_semantic_generative_config(
+            session,
+            organization_id=org_id,
+            project_id=project_id,
+            config_id=str(project_role.model_config_id),
+        )
+        if loaded is not None:
+            return loaded
+
+    org_role = session.exec(
+        select(BackfieldAiDefaultModelRole).where(
+            BackfieldAiDefaultModelRole.organization_id == org_id,
+            BackfieldAiDefaultModelRole.project_id.is_(None),
+            BackfieldAiDefaultModelRole.role == AI_DEFAULT_ROLE_SEMANTIC_HYDE,
+        )
+    ).first()
+    if org_role is not None:
+        loaded = _try_load_semantic_generative_config(
+            session,
+            organization_id=org_id,
+            project_id=project_id,
+            config_id=str(org_role.model_config_id),
+        )
+        if loaded is not None:
+            return loaded
+
+    enabled = _enabled_generative_config_ids(session, project_id)
+    if len(enabled) == 1:
+        return enabled[0]
+    if not enabled:
+        raise EmbeddingConfigurationError(
+            "No generative model configured. Enable a generative model for this project "
+            "and set a default for semantic HyDE, or enable exactly one generative model.",
+        )
+    raise EmbeddingConfigurationError(
+        "Multiple generative models are enabled for this project. Set a default for "
+        "semantic HyDE on the project Models tab.",
+    )

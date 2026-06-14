@@ -157,7 +157,7 @@ Results are ordered by `pub_date` descending (nulls last), then `id` descending.
 
 ### Functionality
 
-Natural-language article search over **`substrate_article_embedding`** rows. Embeds the request `query` with the project/org default **`semantic.embedding`** model, then ranks matching embedded articles by cosine similarity. Articles without an embedding row are omitted (not an error). Keyword search remains on **`GET …/articles/search`**.
+Natural-language article search over **`substrate_article_embedding`** rows. Embeds the request `query` with the project/org default **`semantic.embedding`** model, then ranks matching embedded articles by cosine similarity. When **`use_hyde`** is `true`, a generative model (`semantic.hyde` default, or the sole enabled generative model) writes a hypothetical news passage from the query; that passage is embedded and used for ranking instead of the raw query. Articles without an embedding row are omitted (not an error). Keyword search remains on **`GET …/articles/search`**.
 
 ### Path parameters
 
@@ -179,6 +179,7 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
 | `include_preview` | boolean | `false` | Include truncated text preview (max 280 characters) |
+| `use_hyde` | boolean | `false` | Generate a hypothetical news passage from the query, embed it, and search against that (HyDE) |
 
 ### Response `200`
 
@@ -187,6 +188,10 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
   "query": "city budget debate",
   "embedding_model": "openai/text-embedding-3-small",
   "embedding_model_config_id": "…",
+  "hyde_used": false,
+  "hypothetical_document": null,
+  "hyde_model": null,
+  "hyde_model_config_id": null,
   "items": [
     {
       "id": 1,
@@ -214,7 +219,7 @@ Results are ordered by **`score`** descending, then `pub_date` descending, then 
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
-| `503` | No embedding model configured for semantic search |
+| `503` | No embedding model configured for semantic search, or HyDE requested but no generative model is configured |
 
 ---
 

@@ -48,12 +48,23 @@ class PublicArticleSemanticSearchIn(BaseModel):
         default=False,
         description="Include a short text preview (max 280 characters) per article",
     )
+    use_hyde: bool = Field(
+        default=False,
+        description=(
+            "Generate a hypothetical news passage from the query, embed that text, "
+            "and search article embeddings against it (HyDE)"
+        ),
+    )
 
 
 class PublicArticleSemanticSearchOut(BaseModel):
     query: str
     embedding_model: str | None = None
     embedding_model_config_id: str | None = None
+    hyde_used: bool = False
+    hypothetical_document: str | None = None
+    hyde_model: str | None = None
+    hyde_model_config_id: str | None = None
     items: list[PublicArticleSemanticSearchItemOut]
     pagination: PaginationOut
 
@@ -82,6 +93,7 @@ def search_project_articles_semantic(
             session,
             project_id=int(project.id),  # type: ignore[arg-type]
             query=query,
+            use_hyde=body.use_hyde,
         )
     except EmbeddingConfigurationError as exc:
         raise _embedding_http_error(exc) from exc
@@ -109,6 +121,10 @@ def search_project_articles_semantic(
         query=query,
         embedding_model=embedding.embedding_model,
         embedding_model_config_id=embedding.model_config_id,
+        hyde_used=embedding.hyde_used,
+        hypothetical_document=embedding.hypothetical_document,
+        hyde_model=embedding.hyde_model,
+        hyde_model_config_id=embedding.hyde_model_config_id,
         items=items,
         pagination=PaginationOut(limit=body.limit, offset=body.offset, total=total),
     )

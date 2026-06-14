@@ -421,6 +421,40 @@ def test_public_article_semantic_search(
     assert body["items"][0]["score"] > 0
 
 
+@patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")
+def test_public_article_semantic_search_with_hyde(
+    mock_embed: MagicMock,
+    public_client: TestClient,
+) -> None:
+    mock_embed.return_value = SemanticQueryEmbedding(
+        vector=[1.0, 0.0],
+        model_config_id="emb-test",
+        embedding_model="openai/text-embedding-3-small",
+        embedding_dimensions=2,
+        hyde_used=True,
+        hypothetical_document="Council members debated the downtown budget late into the night.",
+        hyde_model_config_id="gen-test",
+        hyde_model="openai/gpt-4o-mini",
+    )
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.post(
+        "/public/v1/projects/general/articles/semantic-search",
+        headers=headers,
+        json={"query": "city budget debate", "use_hyde": True},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["hyde_used"] is True
+    assert body["hypothetical_document"] == (
+        "Council members debated the downtown budget late into the night."
+    )
+    assert body["hyde_model_config_id"] == "gen-test"
+    assert body["hyde_model"] == "openai/gpt-4o-mini"
+    mock_embed.assert_called_once()
+    assert mock_embed.call_args.kwargs["use_hyde"] is True
+
+
 def test_public_article_geo_search_by_point(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

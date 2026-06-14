@@ -226,11 +226,12 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 **Semantic search (`POST …/articles/semantic-search`):**
 
 - `query` — natural-language search text (required JSON body field)
-- Embeds the query with the project/org default **`semantic.embedding`** model
+- `use_hyde` (default `false`) — when `true`, generate a hypothetical news passage from the query with the project/org **`semantic.hyde`** generative model (or the sole enabled generative model), embed that passage, and rank articles against it
+- Embeds the query (or HyDE passage) with the project/org default **`semantic.embedding`** model
 - Ranks only articles with a matching **`substrate_article_embedding`** row (same model config, or legacy rows matched by provider model id)
 - Supports the same metadata and date filters as keyword search
-- Returns **`score`** per article (cosine similarity) plus embedding model metadata
-- **503** when no embedding model is configured
+- Returns **`score`** per article (cosine similarity) plus embedding model metadata; when HyDE is used, echoes **`hyde_used`**, **`hypothetical_document`**, and HyDE model metadata
+- **503** when no embedding model is configured, or when `use_hyde` is `true` but no generative model is available
 
 **Geo search (`GET …/articles/geo-search`):**
 
