@@ -9,6 +9,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Mode | Status | Notes |
 |------|--------|-------|
 | Keyword search | ✅ | `GET …/articles/search` |
+| Semantic search | ✅ | `POST …/articles/semantic-search` (requires `substrate_article_embedding`) |
 | Detail | ✅ | No full body; optional preview |
 | Detail counts embed | ✅ | `include=counts` on detail |
 | Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type` filter |

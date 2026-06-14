@@ -144,6 +144,76 @@ Results are ordered by `pub_date` descending (nulls last), then `id` descending.
 
 ---
 
+## POST `/public/v1/projects/{project_slug}/articles/semantic-search`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/semantic_search.py`](../../../apps/core-api/src/core_api/routers/public/articles/semantic_search.py) — `search_project_articles_semantic` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_semantic_search.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_semantic_search.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Natural-language article search over **`substrate_article_embedding`** rows. Embeds the request `query` with the project/org default **`semantic.embedding`** model, then ranks matching embedded articles by cosine similarity. Articles without an embedding row are omitted (not an error). Keyword search remains on **`GET …/articles/search`**.
+
+### Path parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `project_slug` | string | yes | Project slug |
+
+### JSON body
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `query` | string | required | Natural-language search text |
+| `meta_type` | string | — | Filter to articles with a metadata row of this type |
+| `meta_category` | string | — | With `meta_type`, filter to this category value |
+| `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
+| `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+| `include_preview` | boolean | `false` | Include truncated text preview (max 280 characters) |
+
+### Response `200`
+
+```json
+{
+  "query": "city budget debate",
+  "embedding_model": "openai/text-embedding-3-small",
+  "embedding_model_config_id": "…",
+  "items": [
+    {
+      "id": 1,
+      "headline": "City council votes on budget",
+      "score": 0.82,
+      "preview": null,
+      "metadata": []
+    }
+  ],
+  "pagination": {
+    "limit": 25,
+    "offset": 0,
+    "total": 1
+  }
+}
+```
+
+Results are ordered by **`score`** descending, then `pub_date` descending, then `id` descending.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | Invalid `pub_date_from` or `pub_date_to` format |
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` |
+| `503` | No embedding model configured for semantic search |
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/articles/{article_id}`
 
 | | |

@@ -158,6 +158,31 @@ def _apply_public_article_keyword_filter(
     )
 
 
+def _apply_public_article_list_filters(
+    stmt,
+    *,
+    meta_type: str | None,
+    meta_category: str | None,
+    pub_date_from: date | None,
+    pub_date_to: date | None,
+):
+    if pub_date_from is not None:
+        stmt = stmt.where(col(SubstrateArticle.pub_date) >= pub_date_from)
+    if pub_date_to is not None:
+        stmt = stmt.where(col(SubstrateArticle.pub_date) <= pub_date_to)
+
+    meta_type_value = (meta_type or "").strip()
+    if meta_type_value:
+        meta_stmt = select(SubstrateArticleMeta.article_id).where(
+            SubstrateArticleMeta.meta_type == meta_type_value
+        )
+        meta_category_value = (meta_category or "").strip()
+        if meta_category_value:
+            meta_stmt = meta_stmt.where(SubstrateArticleMeta.category == meta_category_value)
+        stmt = stmt.where(col(SubstrateArticle.id).in_(meta_stmt))
+    return stmt
+
+
 def search_public_articles(
     session: Session,
     *,
@@ -171,20 +196,13 @@ def search_public_articles(
     if q:
         stmt, rank_expr = _apply_public_article_keyword_filter(stmt, q, session)
 
-    if params.pub_date_from is not None:
-        stmt = stmt.where(col(SubstrateArticle.pub_date) >= params.pub_date_from)
-    if params.pub_date_to is not None:
-        stmt = stmt.where(col(SubstrateArticle.pub_date) <= params.pub_date_to)
-
-    meta_type = (params.meta_type or "").strip()
-    if meta_type:
-        meta_stmt = select(SubstrateArticleMeta.article_id).where(
-            SubstrateArticleMeta.meta_type == meta_type
-        )
-        meta_category = (params.meta_category or "").strip()
-        if meta_category:
-            meta_stmt = meta_stmt.where(SubstrateArticleMeta.category == meta_category)
-        stmt = stmt.where(col(SubstrateArticle.id).in_(meta_stmt))
+    stmt = _apply_public_article_list_filters(
+        stmt,
+        meta_type=params.meta_type,
+        meta_category=params.meta_category,
+        pub_date_from=params.pub_date_from,
+        pub_date_to=params.pub_date_to,
+    )
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = int(session.exec(count_stmt).one())

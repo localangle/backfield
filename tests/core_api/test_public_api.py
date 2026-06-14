@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 from datetime import date
+from unittest.mock import MagicMock, patch
 
 import pytest
+from backfield_ai.query_embedding import SemanticQueryEmbedding
 from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
     BackfieldWorkspace,
     SubstrateArticle,
+    SubstrateArticleEmbedding,
     SubstrateArticleMeta,
     SubstrateCustomRecord,
     SubstrateImage,
@@ -97,6 +101,16 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         )
         project_id = int(general.id)  # type: ignore[arg-type]
         article_id = int(article.id)  # type: ignore[arg-type]
+        s.add(
+            SubstrateArticleEmbedding(
+                article_id=article_id,
+                embedded_text="City council budget story",
+                embedding_model="text-embedding-3-small",
+                embedding_dimensions=2,
+                embedding_ai_model_config_id="emb-test",
+                embedding=json.dumps([1.0, 0.0]),
+            )
+        )
         location = SubstrateLocation(
             project_id=project_id,
             name="City Hall",
@@ -306,6 +320,32 @@ def test_public_article_search_body_keyword(public_client: TestClient) -> None:
     assert r.status_code == 200
     assert r.json()["pagination"]["total"] == 1
     assert r.json()["items"][0]["headline"] == "City council votes on budget"
+
+
+@patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")
+def test_public_article_semantic_search(
+    mock_embed: MagicMock,
+    public_client: TestClient,
+) -> None:
+    mock_embed.return_value = SemanticQueryEmbedding(
+        vector=[1.0, 0.0],
+        model_config_id="emb-test",
+        embedding_model="openai/text-embedding-3-small",
+        embedding_dimensions=2,
+    )
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.post(
+        "/public/v1/projects/general/articles/semantic-search",
+        headers=headers,
+        json={"query": "city budget debate"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["embedding_model_config_id"] == "emb-test"
+    assert body["pagination"]["total"] == 1
+    assert body["items"][0]["headline"] == "City council votes on budget"
+    assert body["items"][0]["score"] > 0
 
 
 def test_public_article_search_keyword(public_client: TestClient) -> None:

@@ -208,6 +208,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `…/articles/search` | Keyword search + metadata filters + date range |
+| `POST` | `…/articles/semantic-search` | Natural-language search over embedded articles |
 | `GET` | `…/articles/{article_id}` | Article detail |
 
 **Search parameters:**
@@ -217,6 +218,15 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - `pub_date_from`, `pub_date_to` — ISO dates (`YYYY-MM-DD`)
 - Standard pagination
 - `include_preview` (default `false` on search)
+
+**Semantic search (`POST …/articles/semantic-search`):**
+
+- `query` — natural-language search text (required JSON body field)
+- Embeds the query with the project/org default **`semantic.embedding`** model
+- Ranks only articles with a matching **`substrate_article_embedding`** row (same model config, or legacy rows matched by provider model id)
+- Supports the same metadata and date filters as keyword search
+- Returns **`score`** per article (cosine similarity) plus embedding model metadata
+- **503** when no embedding model is configured
 
 ### Two valid entry points
 
