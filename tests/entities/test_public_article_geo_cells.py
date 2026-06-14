@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import patch
 
 from backfield_db import (
     BackfieldOrganization,
@@ -16,14 +17,13 @@ from backfield_entities.geo.h3_index import derive_h3_index
 from backfield_entities.public.article_geo_cells import (
     PublicArticleGeoCellsParams,
     aggregate_article_geo_cells,
-    effective_resolution,
+    initial_resolution,
     resolution_for_bbox,
 )
 from sqlmodel import Session, SQLModel, create_engine
 
 CHICAGO_POINT = {"type": "Point", "coordinates": [-87.6298, 41.8781]}
 NEARBY_POINT = {"type": "Point", "coordinates": [-87.63, 41.8785]}
-FAR_POINT = {"type": "Point", "coordinates": [-122.4, 37.8]}
 
 
 def _apply_h3(location: SubstrateLocation) -> None:
@@ -59,6 +59,8 @@ def _add_location_mention(
     geometry_json: dict,
     location_type: str = "place",
     nature: str = "primary",
+    h3_cell: str | None = None,
+    h3_resolution: int | None = None,
 ) -> SubstrateLocation:
     loc = SubstrateLocation(
         project_id=project_id,
@@ -68,7 +70,11 @@ def _add_location_mention(
         geometry_type="Point",
         geometry_json=geometry_json,
     )
-    _apply_h3(loc)
+    if h3_cell is not None and h3_resolution is not None:
+        loc.h3_cell = h3_cell
+        loc.h3_resolution = h3_resolution
+    else:
+        _apply_h3(loc)
     session.add(loc)
     session.commit()
     session.refresh(loc)
@@ -130,6 +136,10 @@ def test_two_places_in_one_cell_count_once_per_article() -> None:
         )
 
     assert result.resolution == 4
+    assert result.derived_resolution == 4
+    assert result.requested_resolution is None
+    assert result.coarsened is False
+    assert result.bbox_extent_km > 0
     assert len(result.cells) == 1
     assert result.cells[0].article_count == 1
 
@@ -207,7 +217,9 @@ def test_distinct_article_rollup_across_sibling_cells() -> None:
         )
         result = aggregate_article_geo_cells(session, project_id=project_id, params=params)
 
-    assert result.resolution == 9
+    assert result.resolution == 10
+    assert result.requested_resolution == 10
+    assert result.coarsened is False
     assert len(result.cells) == 1
     assert result.cells[0].article_count == 1
 
@@ -228,27 +240,16 @@ def test_coarse_native_location_excluded_at_finer_resolution() -> None:
         session.refresh(article)
         article_id = int(article.id)  # type: ignore[arg-type]
 
-        loc = SubstrateLocation(
+        _add_location_mention(
+            session,
             project_id=project_id,
-            name="Illinois",
-            normalized_name="illinois",
-            location_type="state",
-            geometry_type="Point",
+            article_id=article_id,
+            label="Illinois",
             geometry_json=CHICAGO_POINT,
+            location_type="state",
             h3_cell="842664dffffffff",
             h3_resolution=4,
         )
-        session.add(loc)
-        session.commit()
-        session.refresh(loc)
-        session.add(
-            SubstrateLocationMention(
-                article_id=article_id,
-                location_id=int(loc.id),  # type: ignore[arg-type]
-                nature="primary",
-            )
-        )
-        session.commit()
 
         result = aggregate_article_geo_cells(
             session,
@@ -262,15 +263,120 @@ def test_coarse_native_location_excluded_at_finer_resolution() -> None:
             ),
         )
 
-    assert result.resolution == 9
+    assert result.resolution == 11
     assert result.cells == []
 
 
-def test_resolution_override_clamped_to_bbox_derived_maximum() -> None:
+def test_coarse_city_does_not_pollute_fine_point_counts() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id = _seed_project(session)
+        article = SubstrateArticle(
+            project_id=project_id,
+            headline="City and block",
+            text="Body",
+            pub_date=date(2024, 3, 1),
+        )
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+        article_id = int(article.id)  # type: ignore[arg-type]
+
+        _add_location_mention(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+            label="Chicago",
+            geometry_json=CHICAGO_POINT,
+            location_type="city",
+            h3_cell="842664dffffffff",
+            h3_resolution=5,
+        )
+        _add_location_mention(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+            label="City Hall",
+            geometry_json=CHICAGO_POINT,
+        )
+
+        fine = aggregate_article_geo_cells(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoCellsParams(
+                min_lng=-87.63,
+                min_lat=41.877,
+                max_lng=-87.628,
+                max_lat=41.879,
+                resolution=11,
+            ),
+        )
+        coarse = aggregate_article_geo_cells(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoCellsParams(
+                min_lng=-88.0,
+                min_lat=41.0,
+                max_lng=-87.0,
+                max_lat=42.0,
+                resolution=5,
+            ),
+        )
+
+    assert fine.cells[0].article_count == 1
+    assert coarse.cells[0].article_count == 1
+
+
+def test_resolution_override_honored_without_bbox_clamp() -> None:
     derived = resolution_for_bbox(-88.0, 41.0, -87.0, 42.0)
     assert derived == 4
-    assert effective_resolution(derived_resolution=derived, resolution_override=11) == 4
-    assert effective_resolution(derived_resolution=derived, resolution_override=3) == 3
+    assert initial_resolution(derived_resolution=derived, resolution_override=11) == 11
+    assert initial_resolution(derived_resolution=derived, resolution_override=3) == 3
+
+
+def test_auto_coarsen_when_cell_ceiling_exceeded() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id = _seed_project(session)
+        for headline in ("Story one", "Story two"):
+            article = SubstrateArticle(
+                project_id=project_id,
+                headline=headline,
+                text="Body",
+                pub_date=date(2024, 3, 1),
+            )
+            session.add(article)
+            session.commit()
+            session.refresh(article)
+            _add_location_mention(
+                session,
+                project_id=project_id,
+                article_id=int(article.id),  # type: ignore[arg-type]
+                label=headline,
+                geometry_json=CHICAGO_POINT if headline == "Story one" else NEARBY_POINT,
+            )
+
+        with patch(
+            "backfield_entities.public.article_geo_cells.MAX_CELLS_PER_RESPONSE",
+            1,
+        ):
+            result = aggregate_article_geo_cells(
+                session,
+                project_id=project_id,
+                params=PublicArticleGeoCellsParams(
+                    min_lng=-87.63,
+                    min_lat=41.877,
+                    max_lng=-87.629,
+                    max_lat=41.8785,
+                    resolution=11,
+                ),
+            )
+
+    assert result.coarsened is True
+    assert result.resolution < 11
+    assert len(result.cells) <= 1
 
 
 def test_nature_filter_narrows_cells() -> None:

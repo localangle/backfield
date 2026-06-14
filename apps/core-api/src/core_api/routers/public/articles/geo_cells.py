@@ -28,7 +28,9 @@ def aggregate_project_articles_by_geo_cells(
         None,
         ge=0,
         le=15,
-        description="Optional H3 display resolution override (clamped to bbox-derived maximum)",
+        description=(
+            "Optional H3 display resolution. When omitted, derived from bbox viewport size."
+        ),
     ),
     location_type: str | None = Query(None, description="Filter matching locations by type"),
     nature: str | None = Query(

@@ -453,6 +453,9 @@ def test_public_article_geo_cells(public_client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert "resolution" in body
+    assert "derived_resolution" in body
+    assert "bbox_extent_km" in body
+    assert body["coarsened"] is False
     assert isinstance(body["cells"], list)
     assert len(body["cells"]) >= 1
     cell = body["cells"][0]

@@ -15,8 +15,9 @@ from backfield_entities.geo.h3_index import EARTH_RADIUS_KM, POINT_H3_RESOLUTION
 from backfield_entities.public.articles import _apply_public_article_list_filters
 
 MAX_CELLS_PER_RESPONSE = 5000
+MIN_H3_RESOLUTION = 0
 
-# Bbox max span (km) -> finest display resolution appropriate for the viewport.
+# Viewport characteristic size (km) -> default display resolution when no override.
 _BBOX_EXTENT_RESOLUTION_THRESHOLDS_KM: tuple[tuple[float, int], ...] = (
     (50.0, 4),
     (10.0, 5),
@@ -29,7 +30,7 @@ _BBOX_EXTENT_RESOLUTION_THRESHOLDS_KM: tuple[tuple[float, int], ...] = (
 
 
 class PublicArticleGeoCellsTooManyError(Exception):
-    """Raised when aggregation would return more cells than the response ceiling."""
+    """Raised when aggregation cannot satisfy the cell ceiling even at minimum resolution."""
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,10 @@ class PublicArticleGeoCellOut(BaseModel):
 
 class PublicArticleGeoCellsResult(BaseModel):
     resolution: int
+    derived_resolution: int
+    requested_resolution: int | None = None
+    bbox_extent_km: float
+    coarsened: bool = False
     cells: list[PublicArticleGeoCellOut] = Field(default_factory=list)
 
 
@@ -71,15 +76,18 @@ def _haversine_km(lng1: float, lat1: float, lng2: float, lat2: float) -> float:
     return 2 * EARTH_RADIUS_KM * math.asin(min(1.0, math.sqrt(a)))
 
 
-def bbox_max_extent_km(
+def bbox_viewport_extent_km(
     min_lng: float,
     min_lat: float,
     max_lng: float,
     max_lat: float,
 ) -> float:
+    """Characteristic viewport size in km (geometric mean of width and height)."""
     width_km = _haversine_km(min_lng, min_lat, max_lng, min_lat)
     height_km = _haversine_km(min_lng, min_lat, min_lng, max_lat)
-    return max(width_km, height_km)
+    if width_km <= 0 or height_km <= 0:
+        return 0.0
+    return math.sqrt(width_km * height_km)
 
 
 def resolution_for_bbox(
@@ -88,23 +96,21 @@ def resolution_for_bbox(
     max_lng: float,
     max_lat: float,
 ) -> int:
-    """Derive the finest display resolution appropriate for a viewport bbox."""
-    extent_km = bbox_max_extent_km(min_lng, min_lat, max_lng, max_lat)
+    """Derive the default display resolution from viewport size."""
+    extent_km = bbox_viewport_extent_km(min_lng, min_lat, max_lng, max_lat)
     for min_extent_km, resolution in _BBOX_EXTENT_RESOLUTION_THRESHOLDS_KM:
         if extent_km > min_extent_km:
             return resolution
     return POINT_H3_RESOLUTION
 
 
-def effective_resolution(
+def initial_resolution(
     *,
     derived_resolution: int,
     resolution_override: int | None,
 ) -> int:
-    """Apply optional override; clamp finer-than-bbox requests to the derived ceiling."""
+    """Pick the starting display resolution before auto-coarsen."""
     if resolution_override is None:
-        return derived_resolution
-    if resolution_override > derived_resolution:
         return derived_resolution
     return resolution_override
 
@@ -175,9 +181,38 @@ def _aggregate_cell_counts(
             continue
         if h3_resolution < resolution:
             continue
-        parent = _parent_cell(h3_cell, resolution)
+        if h3_resolution == resolution:
+            parent = h3_cell
+        else:
+            parent = _parent_cell(h3_cell, resolution)
         articles_by_cell.setdefault(parent, set()).add(article_id)
     return {cell: len(article_ids) for cell, article_ids in articles_by_cell.items()}
+
+
+def _aggregate_with_auto_coarsen(
+    rows: list[tuple[int, str, int]],
+    *,
+    allowed_article_ids: set[int],
+    starting_resolution: int,
+) -> tuple[dict[str, int], int, bool]:
+    resolution = starting_resolution
+    coarsened = False
+    while resolution >= MIN_H3_RESOLUTION:
+        counts = _aggregate_cell_counts(
+            rows,
+            allowed_article_ids=allowed_article_ids,
+            resolution=resolution,
+        )
+        if len(counts) <= MAX_CELLS_PER_RESPONSE:
+            return counts, resolution, coarsened
+        if resolution == MIN_H3_RESOLUTION:
+            break
+        resolution -= 1
+        coarsened = True
+    raise PublicArticleGeoCellsTooManyError(
+        f"Aggregation still exceeds {MAX_CELLS_PER_RESPONSE} cells at resolution "
+        f"{MIN_H3_RESOLUTION}."
+    )
 
 
 def _postgres_candidate_rows(
@@ -281,20 +316,27 @@ def _sqlite_candidate_rows(
     return rows
 
 
-def _cells_to_result(
+def _build_result(
     counts: dict[str, int],
     *,
     resolution: int,
+    derived_resolution: int,
+    requested_resolution: int | None,
+    bbox_extent_km: float,
+    coarsened: bool,
 ) -> PublicArticleGeoCellsResult:
-    if len(counts) > MAX_CELLS_PER_RESPONSE:
-        raise PublicArticleGeoCellsTooManyError(
-            f"Aggregation returned {len(counts)} cells; maximum is {MAX_CELLS_PER_RESPONSE}."
-        )
     cells = [
         PublicArticleGeoCellOut(h3_cell=cell, article_count=count)
         for cell, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     ]
-    return PublicArticleGeoCellsResult(resolution=resolution, cells=cells)
+    return PublicArticleGeoCellsResult(
+        resolution=resolution,
+        derived_resolution=derived_resolution,
+        requested_resolution=requested_resolution,
+        bbox_extent_km=round(bbox_extent_km, 3),
+        coarsened=coarsened,
+        cells=cells,
+    )
 
 
 def aggregate_article_geo_cells(
@@ -303,9 +345,20 @@ def aggregate_article_geo_cells(
     project_id: int,
     params: PublicArticleGeoCellsParams,
 ) -> PublicArticleGeoCellsResult:
-    derived = resolution_for_bbox(params.min_lng, params.min_lat, params.max_lng, params.max_lat)
-    resolution = effective_resolution(
-        derived_resolution=derived,
+    bbox_extent_km = bbox_viewport_extent_km(
+        params.min_lng,
+        params.min_lat,
+        params.max_lng,
+        params.max_lat,
+    )
+    derived_resolution = resolution_for_bbox(
+        params.min_lng,
+        params.min_lat,
+        params.max_lng,
+        params.max_lat,
+    )
+    starting_resolution = initial_resolution(
+        derived_resolution=derived_resolution,
         resolution_override=params.resolution,
     )
 
@@ -322,9 +375,16 @@ def aggregate_article_geo_cells(
         candidate_article_ids=candidate_article_ids,
         params=params,
     )
-    counts = _aggregate_cell_counts(
+    counts, resolution, coarsened = _aggregate_with_auto_coarsen(
         candidate_rows,
         allowed_article_ids=allowed_article_ids,
-        resolution=resolution,
+        starting_resolution=starting_resolution,
     )
-    return _cells_to_result(counts, resolution=resolution)
+    return _build_result(
+        counts,
+        resolution=resolution,
+        derived_resolution=derived_resolution,
+        requested_resolution=params.resolution,
+        bbox_extent_km=bbox_extent_km,
+        coarsened=coarsened,
+    )

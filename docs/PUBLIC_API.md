@@ -241,10 +241,12 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 **Geo cells (`GET …/articles/geo-cells`):**
 
 - **Bbox mode (required):** `bbox=min_lng,min_lat,max_lng,max_lat`
-- Returns **`resolution`** (effective H3 display resolution) and **`cells[]`** with `h3_cell` + **`article_count`** (distinct articles per cell)
-- Locations roll up to parent cells at `R` when their native `h3_resolution` is finer; coarser-native locations are excluded at fine zoom
-- Optional `resolution` override (clamped to bbox-derived maximum), plus `location_type`, `nature`, metadata, and date filters (same as geo search)
-- Capped at 5,000 cells per response
+- Returns **`resolution`** (effective after auto-coarsen), **`derived_resolution`**, optional **`requested_resolution`**, **`bbox_extent_km`**, **`coarsened`**, and **`cells[]`** with `h3_cell` + **`article_count`** (distinct articles per cell)
+- **Size gate:** locations with native `h3_resolution < R` are excluded at fine zoom — coarse city/state mentions do not pollute block-level counts; no type-based configuration required
+- Optional `resolution` (honored as starting resolution; auto-coarsened if cell ceiling exceeded), plus `location_type`, `nature`, metadata, and date filters (same as geo search)
+- Capped at 5,000 cells per response via auto-coarsen
+
+See [`docs/public-api/reference/geo-cells-map-clients.md`](public-api/reference/geo-cells-map-clients.md) for map-client integration guidance.
 
 ### Two valid entry points
 

@@ -60,7 +60,7 @@ Core API public routers live under `apps/core-api/src/core_api/routers/public/`:
 | Folder | Routes |
 |--------|--------|
 | `projects/` | Project metadata |
-| `articles/` | Search, semantic search, geo search, detail, and hub sub-routes (one module per endpoint) |
+| `articles/` | Search, semantic search, geo search, geo cells, detail, and hub sub-routes (one module per endpoint) |
 | `people/` | List, search, types, detail, mentions, and connections |
 | `organizations/` | List, search, types, detail, mentions, and connections |
 | `locations/` | List, search, geo search, types, detail, mentions, and connections |
@@ -68,6 +68,7 @@ Core API public routers live under `apps/core-api/src/core_api/routers/public/`:
 | Doc | Status |
 |-----|--------|
 | **[endpoints.md](endpoints.md)** | **Running list** of shipped routes (location, args, behavior) |
+| **[geo-cells-map-clients.md](geo-cells-map-clients.md)** | Map-client integration guide for hex coverage (`/articles/geo-cells`) |
 | [capability-matrix.md](capability-matrix.md) | Query modes by resource |
 | Articles | Shipped — see `endpoints.md` |
 | People | Shipped — see `endpoints.md` |

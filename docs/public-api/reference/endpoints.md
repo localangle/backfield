@@ -318,9 +318,9 @@ Results are ordered by article `pub_date` descending (nulls last), then `id` des
 Return **H3 hex cells** with **distinct-article counts** for location mentions whose geometry falls inside a bounding box. Use this for zoomable hex coverage maps.
 
 - **Count unit:** one article counts once per cell even if it has multiple place mentions in that cell.
-- **Rollup:** locations with native `h3_resolution >= R` roll up to their parent cell at display resolution `R` via `h3_cell_to_parent`. Locations stored at a coarser native resolution are excluded when `R` is finer (e.g. state-level cells drop out when zoomed to neighborhood scale).
-- **Resolution `R`:** derived from bbox extent (wider viewports use coarser cells). Optional `resolution` override is clamped to the finest resolution the bbox supports; the response echoes the effective `resolution`.
-- **Cell ceiling:** responses are capped at 5,000 cells; exceeding the limit returns `400`.
+- **Resolution `R`:** when `resolution` is omitted, derived from bbox viewport size (geometric mean of width and height). When provided, honored as the starting resolution. If aggregation exceeds the cell ceiling, the API auto-coarsens (lowers `R`) until under the cap and sets `coarsened: true`.
+- **Size gate:** locations with native `h3_resolution < R` are excluded — coarse city/state mentions do not pollute fine-zoom counts. No `location_type` configuration is required.
+- **Cell ceiling:** responses are capped at 5,000 cells via auto-coarsen, not a `400` error.
 
 Only locations with populated `h3_cell` and `h3_resolution` contribute.
 
@@ -329,7 +329,7 @@ Only locations with populated `h3_cell` and `h3_resolution` contribute.
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `bbox` | string | **required** | Bounding box `min_lng,min_lat,max_lng,max_lat` |
-| `resolution` | integer | — | Optional H3 display resolution override (0–15; clamped to bbox-derived maximum) |
+| `resolution` | integer | — | Optional H3 display resolution (0–15). When omitted, derived from bbox viewport size. Auto-coarsened if the cell ceiling is exceeded. |
 | `location_type` | string | — | Filter matching locations by substrate `location_type` |
 | `nature` | string | — | Filter matching location mentions by editorial `nature` (e.g. `primary`, `secondary`) |
 | `meta_type` | string | — | Include articles with a metadata row of this type |
@@ -344,6 +344,10 @@ Only locations with populated `h3_cell` and `h3_resolution` contribute.
 ```json
 {
   "resolution": 7,
+  "derived_resolution": 5,
+  "requested_resolution": 8,
+  "bbox_extent_km": 12.4,
+  "coarsened": true,
   "cells": [
     {
       "h3_cell": "872664c47ffffff",
@@ -353,13 +357,19 @@ Only locations with populated `h3_cell` and `h3_resolution` contribute.
 }
 ```
 
+- `resolution` — effective display resolution after auto-coarsen
+- `derived_resolution` — default resolution the bbox would use when `resolution` is omitted
+- `requested_resolution` — echoed when the client passed `resolution` (null otherwise)
+- `bbox_extent_km` — characteristic viewport size (km)
+- `coarsened` — `true` when the cell ceiling forced a lower resolution than requested/derived
+
 Cells are ordered by `article_count` descending, then `h3_cell` ascending.
 
 ### Errors
 
 | Status | When |
 |--------|------|
-| `400` | Invalid bbox, inverted bbox bounds, too many cells, or invalid dates |
+| `400` | Invalid bbox, inverted bbox bounds, or invalid dates |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
