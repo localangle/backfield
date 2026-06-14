@@ -36,6 +36,12 @@ def search_project_articles_by_geo(
         description="Bounding box as min_lng,min_lat,max_lng,max_lat",
     ),
     location_type: str | None = Query(None, description="Filter matching locations by type"),
+    nature: str | None = Query(
+        None,
+        description=(
+            "Filter matching location mentions by editorial nature (e.g. primary, secondary)"
+        ),
+    ),
     meta_type: str | None = Query(None),
     meta_category: str | None = Query(None),
     pub_date_from: str | None = Query(None),
@@ -70,6 +76,7 @@ def search_project_articles_by_geo(
             max_lng=max_lng,
             max_lat=max_lat,
             location_type=location_type,
+            nature=nature,
             meta_type=meta_type,
             meta_category=meta_category,
             pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
@@ -90,6 +97,7 @@ def search_project_articles_by_geo(
             center_lat=center_lat,
             radius_miles=radius_miles,
             location_type=location_type,
+            nature=nature,
             meta_type=meta_type,
             meta_category=meta_category,
             pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),

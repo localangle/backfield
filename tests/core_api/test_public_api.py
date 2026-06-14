@@ -369,6 +369,37 @@ def test_public_article_geo_search_by_point(public_client: TestClient) -> None:
     assert body["items"][0]["search_mode"] == "point"
 
 
+def test_public_article_geo_search_nature_filter(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/geo-search",
+        headers=headers,
+        params={
+            "center_lng": -87.6,
+            "center_lat": 41.8,
+            "radius_miles": 5,
+            "nature": "primary",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pagination"]["total"] == 1
+
+    r = public_client.get(
+        "/public/v1/projects/general/articles/geo-search",
+        headers=headers,
+        params={
+            "center_lng": -87.6,
+            "center_lat": 41.8,
+            "radius_miles": 5,
+            "nature": "secondary",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["pagination"]["total"] == 0
+
+
 def test_public_article_search_keyword(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

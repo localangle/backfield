@@ -52,9 +52,9 @@ def _seed_geo_articles(session: Session) -> int:
     session.refresh(near)
     session.refresh(far)
 
-    for article, lng, lat, label in (
-        (near, -87.6, 41.8, "City Hall"),
-        (far, -122.4, 37.8, "Bay Office"),
+    for article, lng, lat, label, nature in (
+        (near, -87.6, 41.8, "City Hall", "primary"),
+        (far, -122.4, 37.8, "Bay Office", "secondary"),
     ):
         location = SubstrateLocation(
             project_id=project_id,
@@ -72,6 +72,7 @@ def _seed_geo_articles(session: Session) -> int:
             SubstrateLocationMention(
                 article_id=int(article.id),  # type: ignore[arg-type]
                 location_id=int(location.id),  # type: ignore[arg-type]
+                nature=nature,
             )
         )
     session.commit()
@@ -122,3 +123,41 @@ def test_search_public_articles_by_geo_bbox() -> None:
     assert total == 1
     assert items[0].article.headline == "Downtown bridge vote"
     assert items[0].search_mode == "bbox"
+
+
+def test_search_public_articles_by_geo_nature_filter() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id = _seed_geo_articles(session)
+        items, total = search_public_articles_by_geo(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoSearchParams(
+                mode=PublicArticleGeoSearchMode.point,
+                center_lng=-87.6,
+                center_lat=41.8,
+                radius_miles=5.0,
+                nature="primary",
+            ),
+        )
+
+    assert total == 1
+    assert items[0].article.headline == "Downtown bridge vote"
+    assert items[0].matching_locations[0].nature == "primary"
+
+    with Session(engine) as session:
+        items, total = search_public_articles_by_geo(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoSearchParams(
+                mode=PublicArticleGeoSearchMode.point,
+                center_lng=-87.6,
+                center_lat=41.8,
+                radius_miles=5.0,
+                nature="secondary",
+            ),
+        )
+
+    assert total == 0
+    assert items == []

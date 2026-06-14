@@ -44,6 +44,7 @@ class PublicArticleGeoSearchParams:
     max_lng: float | None = None
     max_lat: float | None = None
     location_type: str | None = None
+    nature: str | None = None
     meta_type: str | None = None
     meta_category: str | None = None
     pub_date_from: date | None = None
@@ -115,6 +116,10 @@ def _postgres_matching_pairs(
     if (params.location_type or "").strip():
         bind["location_type"] = params.location_type.strip()
         location_type_filter = "AND sl.location_type = :location_type"
+    nature_filter = ""
+    if (params.nature or "").strip():
+        bind["nature"] = params.nature.strip()
+        nature_filter = "AND lm.nature = :nature"
 
     if params.mode is PublicArticleGeoSearchMode.point:
         assert params.center_lng is not None
@@ -168,6 +173,7 @@ def _postgres_matching_pairs(
           AND ST_DWithin(sl.geometry::geography, sa.geom, 0)
         """
         + location_type_filter
+        + nature_filter
     )
     rows = session.exec(stmt.bindparams(**bind)).all()
     if not rows:
@@ -220,6 +226,9 @@ def _sqlite_matching_pairs(
     location_type = (params.location_type or "").strip()
     if location_type:
         stmt = stmt.where(SubstrateLocation.location_type == location_type)
+    nature = (params.nature or "").strip()
+    if nature:
+        stmt = stmt.where(SubstrateLocationMention.nature == nature)
 
     pairs: list[tuple[int, int]] = []
     for mention, loc, _article in session.exec(stmt).all():

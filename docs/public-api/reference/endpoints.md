@@ -243,6 +243,7 @@ Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). A
 | `radius_miles` | number | — | Radius in miles (required with center coordinates) |
 | `bbox` | string | — | Bounding box `min_lng,min_lat,max_lng,max_lat` (bbox mode) |
 | `location_type` | string | — | Filter matching locations by substrate `location_type` |
+| `nature` | string | — | Filter matching location mentions by editorial `nature` (e.g. `primary`, `secondary`) |
 | `meta_type` | string | — | Filter articles by metadata tag type |
 | `meta_category` | string | — | With `meta_type`, filter by category |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |

@@ -233,7 +233,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 
 - **Point mode:** `center_lng`, `center_lat`, `radius_miles` — articles with at least one location mention whose geometry falls within the radius
 - **Bbox mode:** `bbox=min_lng,min_lat,max_lng,max_lat` — articles with location mentions inside the box
-- Optional `location_type`, metadata, and date filters (same as keyword search)
+- Optional `location_type`, `nature`, metadata, and date filters (same as keyword search)
 - Returns each matching article with **`matching_locations`** (the location mentions that satisfied the geo filter)
 
 ### Two valid entry points
