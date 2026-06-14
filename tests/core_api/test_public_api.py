@@ -13,6 +13,8 @@ from backfield_db import (
     BackfieldOrganization,
     BackfieldProject,
     BackfieldWorkspace,
+    StylebookConnection,
+    StylebookPersonCanonical,
     SubstrateArticle,
     SubstrateArticleEmbedding,
     SubstrateArticleMeta,
@@ -148,9 +150,25 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         s.add(person)
         s.commit()
         s.refresh(person)
+        person_canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Jane Doe",
+            slug="jane-doe",
+            title="Mayor",
+            affiliation="City Hall",
+            person_type="elected_official",
+            public_figure=True,
+        )
+        s.add(person_canon)
+        s.commit()
+        s.refresh(person_canon)
+        person.stylebook_person_canonical_id = str(person_canon.id)
+        s.add(person)
+        s.commit()
         person_mention = SubstratePersonMention(
             article_id=article_id,
             person_id=int(person.id),  # type: ignore[arg-type]
+            nature="subject",
         )
         s.add(person_mention)
         s.commit()
@@ -159,6 +177,16 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
             SubstratePersonMentionOccurrence(
                 person_mention_id=int(person_mention.id),  # type: ignore[arg-type]
                 mention_text="Jane Doe",
+            )
+        )
+        s.add(
+            StylebookConnection(
+                project_id=project_id,
+                from_entity_type="person",
+                from_entity_id=str(person_canon.id),
+                to_entity_type="location",
+                to_entity_id="00000000-0000-4000-8000-000000000001",
+                nature="works_at",
             )
         )
         organization = SubstrateOrganization(
@@ -608,3 +636,65 @@ def test_public_article_images(public_client: TestClient) -> None:
     item = r.json()["items"][0]
     assert item["image_id"] == "img-1"
     assert item["caption"] == "Council chamber"
+
+
+def test_public_people_list_and_search(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    listed = public_client.get("/public/v1/projects/general/people", headers=headers)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["pagination"]["total"] == 1
+    person = body["items"][0]
+    assert person["label"] == "Jane Doe"
+    assert person["mention_count"] == 1
+    person_id = person["id"]
+
+    searched = public_client.get(
+        "/public/v1/projects/general/people/search",
+        headers=headers,
+        params={"q": "Mayor", "affiliation": "City Hall"},
+    )
+    assert searched.status_code == 200
+    assert searched.json()["pagination"]["total"] == 1
+
+    types = public_client.get("/public/v1/projects/general/people/types", headers=headers)
+    assert types.status_code == 200
+    assert "elected_official" in types.json()["types"]
+
+    detail = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}",
+        headers=headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["title"] == "Mayor"
+
+    mentions = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/mentions",
+        headers=headers,
+    )
+    assert mentions.status_code == 200
+    mbody = mentions.json()
+    assert mbody["label"] == "Jane Doe"
+    assert mbody["pagination"]["total"] == 1
+    assert mbody["items"][0]["article"]["headline"] == "City council votes on budget"
+    assert mbody["items"][0]["nature"] == "subject"
+
+    connections = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/connections",
+        headers=headers,
+    )
+    assert connections.status_code == 200
+    assert len(connections.json()["connections"]) == 1
+    assert connections.json()["connections"][0]["nature"] == "works_at"
+
+
+def test_public_person_not_found(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/people/00000000-0000-4000-8000-000000009999",
+        headers=headers,
+    )
+    assert r.status_code == 404

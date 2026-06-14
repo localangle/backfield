@@ -429,3 +429,198 @@ Each item includes `id`, `image_id`, `url`, and optional `caption`.
 ---
 
 <!-- Add new endpoints below in the same section format. -->
+
+---
+
+## GET `/public/v1/projects/{project_slug}/people`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/people/list_search.py`](../../../apps/core-api/src/core_api/routers/public/people/list_search.py) — `list_project_people` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/people.py`](../../../packages/backfield-entities/src/backfield_entities/public/people.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+List active canonical people in the project's Stylebook. Supports the same filters and pagination as search (alias of list behavior).
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `q` | string | — | Case-insensitive match on label, title, or affiliation |
+| `person_type` | string | — | Exact person type filter |
+| `public_figure` | boolean | — | Filter by public-figure flag |
+| `title` | string | — | Case-insensitive substring match on title |
+| `affiliation` | string | — | Case-insensitive substring match on affiliation |
+| `nature` | string | — | People with at least one linked mention of this nature in the project |
+| `min_mentions` | integer | `0` | Minimum project mention count |
+| `sort` | string | `sort_key` | `sort_key`, `recent`, or `label` (alias for `sort_key`) |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+### Response `200`
+
+```json
+{
+  "items": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "slug": "jane-doe",
+      "label": "Jane Doe",
+      "title": "Mayor",
+      "affiliation": "City Hall",
+      "public_figure": true,
+      "person_type": "elected_official",
+      "mention_count": 3
+    }
+  ],
+  "pagination": { "limit": 25, "offset": 0, "total": 1 }
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/people/search`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/people/list_search.py`](../../../apps/core-api/src/core_api/routers/public/people/list_search.py) — `search_project_people` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/people.py`](../../../packages/backfield-entities/src/backfield_entities/public/people.py) |
+| **Auth** | Project API key required |
+
+Same parameters, response shape, and filters as `GET …/people`.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/people/types`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/people/types.py`](../../../apps/core-api/src/core_api/routers/public/people/types.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Distinct person type values for filter dropdowns (union of catalog defaults and types stored on active canonicals).
+
+### Response `200`
+
+```json
+{ "types": ["elected_official", "other"] }
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/people/{person_id}`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/people/detail.py`](../../../apps/core-api/src/core_api/routers/public/people/detail.py) |
+| **Auth** | Project API key required |
+
+### Path parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `person_id` | UUID string | yes | Stylebook person canonical id |
+
+### Response `200`
+
+Single person object (same fields as list items).
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `404` | Unknown person, inactive canonical, or wrong Stylebook |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/people/{person_id}/mentions`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/people/mentions.py`](../../../apps/core-api/src/core_api/routers/public/people/mentions.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Paginated mention evidence for one canonical person, scoped to the project. Includes article headline, mention nature, and optional quote spans.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `sort` | string | `created_at` | `created_at` or `article` (headline) |
+| `sort_direction` | string | `desc` | `asc` or `desc` |
+| `limit` | integer | `50` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+### Response `200`
+
+```json
+{
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "label": "Jane Doe",
+  "items": [
+    {
+      "mention_id": 12,
+      "article": {
+        "id": 1,
+        "headline": "City council votes on budget",
+        "url": "https://example.com/budget",
+        "pub_date": "2024-03-01"
+      },
+      "label": "Jane Doe",
+      "person_type": "elected_official",
+      "title": "Mayor",
+      "affiliation": "City Hall",
+      "nature": "subject",
+      "role_in_story": null,
+      "evidence": { "mention_text": "Jane Doe", "quote_text": null }
+    }
+  ],
+  "pagination": { "limit": 50, "offset": 0, "total": 1 }
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/people/{person_id}/connections`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/people/connections.py`](../../../apps/core-api/src/core_api/routers/public/people/connections.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/connections.py`](../../../packages/backfield-entities/src/backfield_entities/public/connections.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Stylebook connections where the person is either the `from` or `to` endpoint. Labels are resolved from canonical rows when available.
+
+### Response `200`
+
+```json
+{
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "connections": [
+    {
+      "id": 1,
+      "from_entity_type": "person",
+      "from_entity_id": "550e8400-e29b-41d4-a716-446655440000",
+      "from_label": "Jane Doe",
+      "to_entity_type": "location",
+      "to_entity_id": "660e8400-e29b-41d4-a716-446655440001",
+      "to_label": "City Hall",
+      "nature": "works_at"
+    }
+  ]
+}
+```

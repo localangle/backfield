@@ -260,7 +260,9 @@ Public responses expose the **resolved editorial view**: Stylebook canonical fie
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| `GET` | `…/{type}` | List all (people only in v1; alias of search with no query) |
 | `GET` | `…/{type}/search` | Keyword / filter search |
+| `GET` | `…/{type}/types` | Distinct type values for filters (people in v1) |
 | `GET` | `…/{type}/{id}` | Canonical detail |
 | `GET` | `…/{type}/{id}/mentions` | Paginated mention evidence |
 | `GET` | `…/{type}/{id}/connections` | Stylebook connections |
@@ -498,7 +500,7 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 | Article images | — | ✅ | — | — | — | — |
 | Custom records | Planned | Planned | — | — | — | — |
 | Locations | Planned | Planned | Planned | Planned | Planned | Planned |
-| People | Planned | Planned | Planned | Planned | Planned | Partial |
+| People | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
 | Organizations | Planned | Planned | Planned | Planned | Planned | Partial |
 | Works | N/A | N/A | N/A | N/A | N/A | N/A |
 | Runs (trigger) | — | Planned | — | — | — | — |

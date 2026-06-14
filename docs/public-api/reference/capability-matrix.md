@@ -43,10 +43,11 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 
 | Mode | Status | Notes |
 |------|--------|-------|
-| Keyword search | 🚧 | |
-| Detail | 🚧 | |
-| Mentions | 🚧 | |
-| Connections | 🚧 | |
+| Keyword search | ✅ | `GET …/people` and `GET …/people/search` |
+| Type facets | ✅ | `GET …/people/types` |
+| Detail | ✅ | UUID canonical id |
+| Mentions | ✅ | `GET …/people/{id}/mentions` |
+| Connections | ✅ | `GET …/people/{id}/connections` |
 | Semantic search | 🚧 | Phase 5 |
 | Geography | 🚧 | Via mention/article filters |
 

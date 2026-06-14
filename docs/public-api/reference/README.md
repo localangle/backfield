@@ -61,15 +61,17 @@ Core API public routers live under `apps/core-api/src/core_api/routers/public/`:
 |--------|--------|
 | `projects/` | Project metadata |
 | `articles/` | Search, semantic search, geo search, detail, and hub sub-routes (one module per endpoint) |
+| `people/` | List, search, types, detail, mentions, and connections |
 
 | Doc | Status |
 |-----|--------|
 | **[endpoints.md](endpoints.md)** | **Running list** of shipped routes (location, args, behavior) |
 | [capability-matrix.md](capability-matrix.md) | Query modes by resource |
 | Articles | Shipped — see `endpoints.md` |
+| People | Shipped — see `endpoints.md` |
 | `custom-records.md` | Phase 3 |
 | `locations.md` | Phase 4 |
-| `people.md` | Phase 4 |
+| `people.md` | Shipped in `endpoints.md` (Phase 4) |
 | `organizations.md` | Phase 4 |
 | `geo.md` | Phase 6 |
 | `runs.md` | Phase 7 |
