@@ -40,6 +40,8 @@ class PublicArticleSearchParams:
     q: str | None = None
     meta_type: str | None = None
     meta_category: str | None = None
+    exclude_meta_type: str | None = None
+    exclude_meta_category: str | None = None
     pub_date_from: date | None = None
     pub_date_to: date | None = None
     limit: int = 25
@@ -163,6 +165,8 @@ def _apply_public_article_list_filters(
     *,
     meta_type: str | None,
     meta_category: str | None,
+    exclude_meta_type: str | None = None,
+    exclude_meta_category: str | None = None,
     pub_date_from: date | None,
     pub_date_to: date | None,
 ):
@@ -180,6 +184,19 @@ def _apply_public_article_list_filters(
         if meta_category_value:
             meta_stmt = meta_stmt.where(SubstrateArticleMeta.category == meta_category_value)
         stmt = stmt.where(col(SubstrateArticle.id).in_(meta_stmt))
+
+    exclude_meta_type_value = (exclude_meta_type or "").strip()
+    if exclude_meta_type_value:
+        exclude_stmt = select(SubstrateArticleMeta.article_id).where(
+            SubstrateArticleMeta.meta_type == exclude_meta_type_value
+        )
+        exclude_meta_category_value = (exclude_meta_category or "").strip()
+        if exclude_meta_category_value:
+            exclude_stmt = exclude_stmt.where(
+                SubstrateArticleMeta.category == exclude_meta_category_value
+            )
+        stmt = stmt.where(~col(SubstrateArticle.id).in_(exclude_stmt))
+
     return stmt
 
 
@@ -200,6 +217,8 @@ def search_public_articles(
         stmt,
         meta_type=params.meta_type,
         meta_category=params.meta_category,
+        exclude_meta_type=params.exclude_meta_type,
+        exclude_meta_category=params.exclude_meta_category,
         pub_date_from=params.pub_date_from,
         pub_date_to=params.pub_date_to,
     )

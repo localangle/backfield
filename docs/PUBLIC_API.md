@@ -215,7 +215,8 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 **Search parameters:**
 
 - `q` — keyword (headline, body text, URL); PostgreSQL full-text search with relevance ranking
-- `meta_type`, `meta_category` — filter on `substrate_article_meta`
+- `meta_type`, `meta_category` — include articles matching `substrate_article_meta`
+- `exclude_meta_type`, `exclude_meta_category` — exclude articles with matching metadata rows
 - `pub_date_from`, `pub_date_to` — ISO dates (`YYYY-MM-DD`)
 - Standard pagination
 - `include_preview` (default `false` on search)

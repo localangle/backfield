@@ -143,3 +143,80 @@ def test_search_public_articles_filters_metadata_and_dates() -> None:
         assert detail is not None
         assert detail.preview == "Body one"
         assert detail.metadata[0].meta_type == "subject"
+
+
+def test_search_public_articles_excludes_metadata() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-public-articles-exclude")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        proj = BackfieldProject(
+            name="News",
+            slug="news",
+            organization_id=int(org.id),  # type: ignore[arg-type]
+        )
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+
+        included = SubstrateArticle(
+            project_id=project_id,
+            headline="Local politics",
+            text="Body one",
+            pub_date=date(2024, 1, 10),
+        )
+        excluded = SubstrateArticle(
+            project_id=project_id,
+            headline="Sports roundup",
+            text="Body two",
+            pub_date=date(2024, 1, 11),
+        )
+        session.add(included)
+        session.add(excluded)
+        session.commit()
+        session.refresh(included)
+        session.refresh(excluded)
+
+        session.add(
+            SubstrateArticleMeta(
+                article_id=int(included.id),  # type: ignore[arg-type]
+                meta_type="subject",
+                category="local_government_politics",
+                rationale="test",
+                confidence=0.9,
+            )
+        )
+        session.add(
+            SubstrateArticleMeta(
+                article_id=int(excluded.id),  # type: ignore[arg-type]
+                meta_type="subject",
+                category="sports",
+                rationale="test",
+                confidence=0.9,
+            )
+        )
+        session.commit()
+
+        items, total = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(
+                meta_type="subject",
+                exclude_meta_type="subject",
+                exclude_meta_category="sports",
+            ),
+        )
+        assert total == 1
+        assert items[0].headline == "Local politics"
+
+        items, total = search_public_articles(
+            session,
+            project_id=project_id,
+            params=PublicArticleSearchParams(exclude_meta_type="subject"),
+        )
+        assert total == 0
+        assert items == []

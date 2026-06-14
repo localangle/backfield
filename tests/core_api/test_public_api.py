@@ -428,6 +428,32 @@ def test_public_article_search_metadata_filter(public_client: TestClient) -> Non
     assert r.json()["pagination"]["total"] == 1
 
 
+def test_public_article_search_exclude_metadata_filter(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={
+            "meta_type": "subject",
+            "exclude_meta_type": "subject",
+            "exclude_meta_category": "sports",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["pagination"]["total"] == 1
+
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"exclude_meta_type": "subject"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pagination"]["total"] == 1
+    assert body["items"][0]["headline"] == "Other headline"
+
+
 def test_public_article_search_invalid_date(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

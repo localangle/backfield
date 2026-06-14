@@ -24,8 +24,22 @@ router = APIRouter()
 
 class PublicArticleSemanticSearchIn(BaseModel):
     query: str = Field(min_length=1, description="Natural-language search text")
-    meta_type: str | None = None
-    meta_category: str | None = None
+    meta_type: str | None = Field(
+        default=None,
+        description="Include articles with a metadata row of this type",
+    )
+    meta_category: str | None = Field(
+        default=None,
+        description="With meta_type, include articles with this metadata category",
+    )
+    exclude_meta_type: str | None = Field(
+        default=None,
+        description="Exclude articles with a metadata row of this type",
+    )
+    exclude_meta_category: str | None = Field(
+        default=None,
+        description="With exclude_meta_type, exclude articles with this metadata category",
+    )
     pub_date_from: str | None = None
     pub_date_to: str | None = None
     limit: int = Field(default=25, ge=1, le=100)
@@ -75,6 +89,8 @@ def search_project_articles_semantic(
     params = PublicArticleSemanticSearchParams(
         meta_type=body.meta_type,
         meta_category=body.meta_category,
+        exclude_meta_type=body.exclude_meta_type,
+        exclude_meta_category=body.exclude_meta_category,
         pub_date_from=parse_optional_date(body.pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(body.pub_date_to, param_name="pub_date_to"),
         limit=body.limit,

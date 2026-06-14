@@ -16,7 +16,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type` filter |
 | Locations (hub) | ✅ | `GET …/articles/{id}/locations` — map-oriented |
 | Images (hub) | ✅ | `GET …/articles/{id}/images` |
-| Metadata filters | ✅ | On search: `meta_type`, `meta_category`, date range |
+| Metadata filters | ✅ | On search: include/exclude `meta_type` + category, date range |
 | Geo filters (search) | ✅ | `GET …/articles/geo-search` |
 | Bundle (convenience) | ❌ | Not v1; optional later |
 

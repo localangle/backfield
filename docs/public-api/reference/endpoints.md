@@ -91,8 +91,10 @@ Search non-deleted articles in a project by keyword (headline, body text, or URL
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `q` | string | — | Keyword match on `headline` or `url` (case-insensitive) |
-| `meta_type` | string | — | Filter to articles with a metadata row of this type |
-| `meta_category` | string | — | With `meta_type`, filter to this category value |
+| `meta_type` | string | — | Include articles with a metadata row of this type |
+| `meta_category` | string | — | With `meta_type`, include articles with this category value |
+| `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
@@ -168,8 +170,10 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `query` | string | required | Natural-language search text |
-| `meta_type` | string | — | Filter to articles with a metadata row of this type |
-| `meta_category` | string | — | With `meta_type`, filter to this category value |
+| `meta_type` | string | — | Include articles with a metadata row of this type |
+| `meta_category` | string | — | With `meta_type`, include articles with this category value |
+| `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
@@ -244,8 +248,10 @@ Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). A
 | `bbox` | string | — | Bounding box `min_lng,min_lat,max_lng,max_lat` (bbox mode) |
 | `location_type` | string | — | Filter matching locations by substrate `location_type` |
 | `nature` | string | — | Filter matching location mentions by editorial `nature` (e.g. `primary`, `secondary`) |
-| `meta_type` | string | — | Filter articles by metadata tag type |
-| `meta_category` | string | — | With `meta_type`, filter by category |
+| `meta_type` | string | — | Include articles with a metadata row of this type |
+| `meta_category` | string | — | With `meta_type`, include articles with this category value |
+| `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
