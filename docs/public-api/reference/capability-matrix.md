@@ -55,11 +55,12 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 
 | Mode | Status | Notes |
 |------|--------|-------|
-| Keyword search | 🚧 | |
-| Detail | 🚧 | |
-| Mentions | 🚧 | |
-| Connections | 🚧 | |
-| Semantic search | 🚧 | When embeddings exist |
+| Keyword search | ✅ | `GET …/organizations` and `GET …/organizations/search` |
+| Type facets | ✅ | `GET …/organizations/types` |
+| Detail | ✅ | UUID canonical id |
+| Mentions | ✅ | `GET …/organizations/{id}/mentions` |
+| Connections | ✅ | `GET …/organizations/{id}/connections` |
+| Semantic search | 🚧 | Phase 5 |
 | Geography | 🚧 | Via mention/article filters |
 
 ## Works

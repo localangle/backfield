@@ -501,7 +501,7 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 | Custom records | Planned | Planned | — | — | — | — |
 | Locations | Planned | Planned | Planned | Planned | Planned | Planned |
 | People | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
-| Organizations | Planned | Planned | Planned | Planned | Planned | Partial |
+| Organizations | ✅ | ✅ | ✅ | ✅ | Planned | Partial |
 | Works | N/A | N/A | N/A | N/A | N/A | N/A |
 | Runs (trigger) | — | Planned | — | — | — | — |
 

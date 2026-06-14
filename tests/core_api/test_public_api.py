@@ -14,6 +14,7 @@ from backfield_db import (
     BackfieldProject,
     BackfieldWorkspace,
     StylebookConnection,
+    StylebookOrganizationCanonical,
     StylebookPersonCanonical,
     SubstrateArticle,
     SubstrateArticleEmbedding,
@@ -197,9 +198,32 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         s.add(organization)
         s.commit()
         s.refresh(organization)
+        org_canon = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="City Council",
+            slug="city-council",
+            organization_type="government",
+        )
+        s.add(org_canon)
+        s.commit()
+        s.refresh(org_canon)
+        organization.stylebook_organization_canonical_id = str(org_canon.id)
+        s.add(organization)
+        s.commit()
+        s.add(
+            StylebookConnection(
+                project_id=project_id,
+                from_entity_type="organization",
+                from_entity_id=str(org_canon.id),
+                to_entity_type="person",
+                to_entity_id=str(person_canon.id),
+                nature="employs",
+            )
+        )
         organization_mention = SubstrateOrganizationMention(
             article_id=article_id,
             organization_id=int(organization.id),  # type: ignore[arg-type]
+            nature="actor",
         )
         s.add(organization_mention)
         s.commit()
@@ -686,8 +710,10 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
         headers=headers,
     )
     assert connections.status_code == 200
-    assert len(connections.json()["connections"]) == 1
-    assert connections.json()["connections"][0]["nature"] == "works_at"
+    conns = connections.json()["connections"]
+    assert len(conns) == 2
+    assert any(c["nature"] == "works_at" for c in conns)
+    assert any(c["nature"] == "employs" for c in conns)
 
 
 def test_public_person_not_found(public_client: TestClient) -> None:
@@ -695,6 +721,71 @@ def test_public_person_not_found(public_client: TestClient) -> None:
     headers = {"Authorization": f"Bearer {raw_key}"}
     r = public_client.get(
         "/public/v1/projects/general/people/00000000-0000-4000-8000-000000009999",
+        headers=headers,
+    )
+    assert r.status_code == 404
+
+
+def test_public_organizations_list_and_search(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    listed = public_client.get("/public/v1/projects/general/organizations", headers=headers)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["pagination"]["total"] == 1
+    organization = body["items"][0]
+    assert organization["label"] == "City Council"
+    assert organization["mention_count"] == 1
+    organization_id = organization["id"]
+
+    searched = public_client.get(
+        "/public/v1/projects/general/organizations/search",
+        headers=headers,
+        params={"q": "Council", "organization_type": "government"},
+    )
+    assert searched.status_code == 200
+    assert searched.json()["pagination"]["total"] == 1
+
+    types = public_client.get(
+        "/public/v1/projects/general/organizations/types",
+        headers=headers,
+    )
+    assert types.status_code == 200
+    assert "government" in types.json()["types"]
+
+    detail = public_client.get(
+        f"/public/v1/projects/general/organizations/{organization_id}",
+        headers=headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["organization_type"] == "government"
+
+    mentions = public_client.get(
+        f"/public/v1/projects/general/organizations/{organization_id}/mentions",
+        headers=headers,
+    )
+    assert mentions.status_code == 200
+    mbody = mentions.json()
+    assert mbody["label"] == "City Council"
+    assert mbody["pagination"]["total"] == 1
+    assert mbody["items"][0]["article"]["headline"] == "City council votes on budget"
+    assert mbody["items"][0]["nature"] == "actor"
+
+    connections = public_client.get(
+        f"/public/v1/projects/general/organizations/{organization_id}/connections",
+        headers=headers,
+    )
+    assert connections.status_code == 200
+    assert len(connections.json()["connections"]) == 1
+    assert connections.json()["connections"][0]["nature"] == "employs"
+
+
+def test_public_organization_not_found(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/organizations/00000000-0000-4000-8000-000000009999",
         headers=headers,
     )
     assert r.status_code == 404

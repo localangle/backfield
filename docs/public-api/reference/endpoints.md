@@ -624,3 +624,190 @@ Stylebook connections where the person is either the `from` or `to` endpoint. La
   ]
 }
 ```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/organizations`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/organizations/list_search.py) — `list_project_organizations` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/organizations.py`](../../../packages/backfield-entities/src/backfield_entities/public/organizations.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+List active canonical organizations in the project's Stylebook. Supports the same filters and pagination as search.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `q` | string | — | Case-insensitive match on label |
+| `organization_type` | string | — | Exact organization type filter |
+| `nature` | string | — | Organizations with at least one linked mention of this nature in the project |
+| `min_mentions` | integer | `0` | Minimum project mention count |
+| `sort` | string | `label` | `label` or `recent` |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+### Response `200`
+
+```json
+{
+  "items": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "slug": "city-council",
+      "label": "City Council",
+      "organization_type": "government",
+      "mention_count": 3
+    }
+  ],
+  "pagination": { "limit": 25, "offset": 0, "total": 1 }
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/organizations/search`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/organizations/list_search.py) — `search_project_organizations` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/organizations.py`](../../../packages/backfield-entities/src/backfield_entities/public/organizations.py) |
+| **Auth** | Project API key required |
+
+Same parameters, response shape, and filters as `GET …/organizations`.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/organizations/types`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/types.py`](../../../apps/core-api/src/core_api/routers/public/organizations/types.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Distinct organization type values for filter dropdowns (union of catalog defaults and types stored on active canonicals).
+
+### Response `200`
+
+```json
+{ "types": ["company", "government"] }
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/organizations/{organization_id}`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/detail.py`](../../../apps/core-api/src/core_api/routers/public/organizations/detail.py) |
+| **Auth** | Project API key required |
+
+### Path parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `organization_id` | UUID string | yes | Stylebook organization canonical id |
+
+### Response `200`
+
+Single organization object (same fields as list items).
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `404` | Unknown organization, inactive canonical, or wrong Stylebook |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/organizations/{organization_id}/mentions`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/mentions.py`](../../../apps/core-api/src/core_api/routers/public/organizations/mentions.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Paginated mention evidence for one canonical organization, scoped to the project.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `sort` | string | `created_at` | `created_at` or `article` (headline) |
+| `sort_direction` | string | `desc` | `asc` or `desc` |
+| `limit` | integer | `50` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+### Response `200`
+
+```json
+{
+  "organization_id": "550e8400-e29b-41d4-a716-446655440000",
+  "label": "City Council",
+  "items": [
+    {
+      "mention_id": 12,
+      "article": {
+        "id": 1,
+        "headline": "City council votes on budget",
+        "url": "https://example.com/budget",
+        "pub_date": "2024-03-01"
+      },
+      "label": "City Council",
+      "organization_type": "government",
+      "nature": "actor",
+      "role_in_story": null,
+      "evidence": { "mention_text": "City Council", "quote_text": null }
+    }
+  ],
+  "pagination": { "limit": 50, "offset": 0, "total": 1 }
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/organizations/{organization_id}/connections`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/connections.py`](../../../apps/core-api/src/core_api/routers/public/organizations/connections.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/connections.py`](../../../packages/backfield-entities/src/backfield_entities/public/connections.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Stylebook connections where the organization is either the `from` or `to` endpoint.
+
+### Response `200`
+
+```json
+{
+  "organization_id": "550e8400-e29b-41d4-a716-446655440000",
+  "connections": [
+    {
+      "id": 1,
+      "from_entity_type": "organization",
+      "from_entity_id": "550e8400-e29b-41d4-a716-446655440000",
+      "from_label": "City Council",
+      "to_entity_type": "person",
+      "to_entity_id": "660e8400-e29b-41d4-a716-446655440001",
+      "to_label": "Jane Doe",
+      "nature": "employs"
+    }
+  ]
+}
+```
