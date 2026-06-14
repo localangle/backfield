@@ -1,4 +1,10 @@
-"""Consumer-facing public API (`/public/v1`)."""
+"""Consumer-facing public API (`/public/v1`).
+
+Layout:
+- ``deps.py``, ``schemas.py`` — shared dependencies and response envelopes
+- ``projects/`` — project metadata
+- ``articles/`` — article search, detail, and hub sub-routes (one module per route)
+"""
 
 from __future__ import annotations
 

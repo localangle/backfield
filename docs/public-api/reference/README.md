@@ -55,6 +55,13 @@ Query parameters use ISO dates: `YYYY-MM-DD`.
 
 ## Route index
 
+Core API public routers live under `apps/core-api/src/core_api/routers/public/`:
+
+| Folder | Routes |
+|--------|--------|
+| `projects/` | Project metadata |
+| `articles/` | Search, detail, and hub sub-routes (one module per endpoint) |
+
 | Doc | Status |
 |-----|--------|
 | **[endpoints.md](endpoints.md)** | **Running list** of shipped routes (location, args, behavior) |

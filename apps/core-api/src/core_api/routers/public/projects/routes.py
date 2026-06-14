@@ -1,4 +1,4 @@
-"""Public project metadata routes."""
+"""GET /public/v1/projects/{project_slug}."""
 
 from __future__ import annotations
 

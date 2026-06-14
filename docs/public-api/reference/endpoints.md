@@ -24,7 +24,7 @@ Design reference: [`../../PUBLIC_API.md`](../../PUBLIC_API.md)
 | | |
 |---|---|
 | **Status** | Shipped (Phase 1) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/projects.py`](../../../apps/core-api/src/core_api/routers/public/projects.py) — `get_public_project_metadata` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/projects/routes.py`](../../../apps/core-api/src/core_api/routers/public/projects/routes.py) — `get_public_project_metadata` |
 | **Auth** | Project API key required |
 
 ### Functionality
@@ -72,7 +72,7 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
 | | |
 |---|---|
 | **Status** | Shipped (Phase 2) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/articles.py`](../../../apps/core-api/src/core_api/routers/public/articles.py) — `search_project_articles` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/search.py`](../../../apps/core-api/src/core_api/routers/public/articles/search.py) — `search_project_articles` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/articles.py`](../../../packages/backfield-entities/src/backfield_entities/public/articles.py) |
 | **Auth** | Project API key required |
 
@@ -149,7 +149,7 @@ Results are ordered by `pub_date` descending (nulls last), then `id` descending.
 | | |
 |---|---|
 | **Status** | Shipped (Phase 2) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/articles.py`](../../../apps/core-api/src/core_api/routers/public/articles.py) — `get_project_article` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/detail.py`](../../../apps/core-api/src/core_api/routers/public/articles/detail.py) — `get_project_article` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/articles.py`](../../../packages/backfield-entities/src/backfield_entities/public/articles.py) |
 | **Auth** | Project API key required |
 
@@ -200,7 +200,7 @@ Same article object shape as search `items[]`, with `external_source`, `external
 | | |
 |---|---|
 | **Status** | Shipped (Phase 2b) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/articles.py`](../../../apps/core-api/src/core_api/routers/public/articles.py) — `list_project_article_mentions` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/mentions.py`](../../../apps/core-api/src/core_api/routers/public/articles/mentions.py) — `list_project_article_mentions` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
 | **Auth** | Project API key required |
 
@@ -227,7 +227,7 @@ Paginated list of mention objects with `entity_type`, `mention_id`, `substrate_e
 | | |
 |---|---|
 | **Status** | Shipped (Phase 2b) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/articles.py`](../../../apps/core-api/src/core_api/routers/public/articles.py) — `list_project_article_locations` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/locations.py`](../../../apps/core-api/src/core_api/routers/public/articles/locations.py) — `list_project_article_locations` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
 | **Auth** | Project API key required |
 
@@ -249,7 +249,7 @@ Map-oriented list of location mentions in one article, including geometry and fo
 | | |
 |---|---|
 | **Status** | Shipped (Phase 2b) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/articles.py`](../../../apps/core-api/src/core_api/routers/public/articles.py) — `list_project_article_images` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/images.py`](../../../apps/core-api/src/core_api/routers/public/articles/images.py) — `list_project_article_images` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
 | **Auth** | Project API key required |
 
