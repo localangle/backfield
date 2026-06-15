@@ -385,12 +385,18 @@ def _unwrap_multi_value_items(data: Any) -> list[Any]:
 
 
 def _coerce_single_value_response(data: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(data)
-    if "category" not in normalized:
-        subject = _get_field(normalized, "subject")
-        if isinstance(subject, str) and subject.strip():
-            normalized["category"] = subject.strip()
-    return normalized
+    normalized = _normalize_subject_item(data)
+    category = normalized.get("category")
+    rationale = normalized.get("rationale")
+    confidence = normalized.get("confidence")
+    out: dict[str, Any] = {}
+    if category is not None:
+        out["category"] = category
+    if rationale is not None:
+        out["rationale"] = rationale
+    if confidence is not None:
+        out["confidence"] = confidence
+    return out
 
 
 def parse_article_metadata_response(

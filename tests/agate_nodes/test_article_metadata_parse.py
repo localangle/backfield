@@ -60,6 +60,20 @@ def test_parse_single_value_accepts_subject_key() -> None:
     assert parsed.category == "development_project"
 
 
+def test_parse_single_value_accepts_subject_aliases() -> None:
+    parsed = parse_article_metadata_response(
+        {
+            "subject": "traffic_crash",
+            "subject_rationale": "The story centers on a fatal collision.",
+            "subject_confidence": 0.88,
+        },
+        allowed_categories=["traffic_crash", "other"],
+    )
+    assert parsed.category == "traffic_crash"
+    assert parsed.rationale == "The story centers on a fatal collision."
+    assert parsed.confidence == 0.88
+
+
 def test_parse_subject_array_response() -> None:
     parsed = parse_subject_metadata_response(
         [

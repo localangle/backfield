@@ -172,7 +172,7 @@ def test_compose_topic_prompt_requests_json_array() -> None:
     assert "Council voted on zoning." in prompt
 
 
-def test_compose_subject_prompt_is_self_contained() -> None:
+def test_compose_subject_prompt_reinforces_output_shape() -> None:
     from agate_nodes.article_metadata.composer import load_package_file
 
     template = load_package_file("prompts/presets/subject.md")
@@ -184,8 +184,10 @@ def test_compose_subject_prompt_is_self_contained() -> None:
         output_format_json=output_format,
         preset_id="subject",
     )
-    assert "Return only valid JSON object with a" not in prompt
-    assert "City council approves apartment project." in prompt
+    assert "Return only valid JSON with exactly these keys: subject, rationale, confidence." in prompt
+    assert prompt.index("City council approves apartment project.") < prompt.index(
+        "Return only valid JSON with exactly these keys: subject, rationale, confidence."
+    )
     assert "development_project" in categories
 
 

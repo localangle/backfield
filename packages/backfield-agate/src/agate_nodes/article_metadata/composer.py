@@ -124,7 +124,16 @@ def compose_article_metadata_prompt(
     body = substitute_prompt_placeholders(prompt_template, flattened)
     categories = extract_categories_from_prompt(body)
     if preset_id == "subject":
-        return body, categories
+        prompt = (
+            f"{body.rstrip()}\n\n"
+            "Return only valid JSON with exactly these keys: subject, rationale, confidence.\n"
+            "- subject must be one of the labels listed under ## Subject Labels.\n"
+            "- rationale is one short sentence explaining why this is the primary subject.\n"
+            "- confidence is a number from 0.0 to 1.0.\n\n"
+            "Example shape:\n"
+            f"{output_format_json.strip()}\n"
+        )
+        return prompt, categories
 
     if preset_id in {"topic", "information_needs"}:
         list_key = multi_value_list_key(preset_id)
