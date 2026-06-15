@@ -154,6 +154,7 @@ Do **not** use open-ended `?include=locations,people,custom_records,images` on d
 
 - `id`, `headline`, `url`, `author`, `pub_date`, `external_source`, `external_id`, `entry_id`
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
+- **`processing`**: Agate runs that touched the article (`run_id`, optional `processed_item_id`), aggregated from article provenance, metadata/custom-record `source_run_id`, and matching `agate_processed_item` rows
 - Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
 
 **Query:** `include_preview` (default `true`).
@@ -172,7 +173,7 @@ Do **not** use open-ended `?include=locations,people,custom_records,images` on d
 
 - Full **`text`** / body
 - Mention rows, geometry, custom record payloads, image payloads (use sub-routes)
-- Internal provenance (`source_run_id`, overlay state, …) unless a support contract requires them
+- Internal overlay state and other Agate execution internals unless a support contract requires them
 
 ### Article sub-routes (primary pattern for rich context)
 

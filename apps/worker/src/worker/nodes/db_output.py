@@ -53,6 +53,7 @@ def _persist_db_output_in_session(
         consolidated=body,
         db_output_params=params,
         replace_machine_geography=replace_geography,
+        processed_item_id=processed_item_id,
     )
     article_id = persist_result.article_id
     retired_mentions = persist_result.retired_mentions

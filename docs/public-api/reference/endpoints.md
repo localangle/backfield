@@ -501,10 +501,14 @@ Return one article by id. Does **not** include full body text. Includes metadata
 
 ### Response `200`
 
-Same article object shape as search `items[]`, with `external_source`, `external_id`, and `entry_id` populated when present. When `include=counts`, adds a `counts` object:
+Same article object shape as search `items[]`, with `external_source`, `external_id`, and `entry_id` populated when present. Includes **`processing`**: distinct Agate **`run_id`** values (and **`processed_item_id`** when known) gathered from the article row, metadata/custom-record provenance, and matching `agate_processed_item` rows. When `include=counts`, adds a `counts` object:
 
 ```json
 {
+  "processing": [
+    { "run_id": "550e8400-e29b-41d4-a716-446655440000", "processed_item_id": 42 },
+    { "run_id": "660e8400-e29b-41d4-a716-446655440001", "processed_item_id": null }
+  ],
   "counts": {
     "entity_counts": { "locations": 1, "people": 1, "organizations": 0 },
     "custom_record_counts": { "contracts": 2 },

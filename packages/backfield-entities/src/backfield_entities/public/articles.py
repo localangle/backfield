@@ -22,6 +22,10 @@ from backfield_entities.public.article_hub import (
     article_hub_counts,
     article_hub_counts_batch,
 )
+from backfield_entities.public.article_processing import (
+    PublicArticleProcessingEntryOut,
+    list_public_article_processing,
+)
 
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
 
@@ -46,6 +50,7 @@ class PublicArticleOut(BaseModel):
     preview: str | None = None
     metadata: list[PublicArticleMetaOut] = Field(default_factory=list)
     counts: PublicArticleCountsOut | None = None
+    processing: list[PublicArticleProcessingEntryOut] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -143,6 +148,7 @@ def _article_to_public_out(
     include_preview: bool,
     include_provenance: bool,
     counts: PublicArticleCountsOut | None = None,
+    processing: list[PublicArticleProcessingEntryOut] | None = None,
 ) -> PublicArticleOut:
     preview = article_preview(article.text) if include_preview else None
     source_name = article_source_name(
@@ -164,6 +170,7 @@ def _article_to_public_out(
         preview=preview,
         metadata=metadata,
         counts=counts,
+        processing=processing or [],
     )
 
 
@@ -372,10 +379,17 @@ def get_public_article(
     counts = None
     if include_counts:
         counts = article_hub_counts(session, article_id=int(article.id))
+    processing = list_public_article_processing(
+        session,
+        project_id=project_id,
+        article_id=int(article.id),
+        article=article,
+    )
     return _article_to_public_out(
         article,
         metadata=meta_by_id.get(int(article.id), []),
         include_preview=include_preview,
         include_provenance=True,
         counts=counts,
+        processing=processing,
     )

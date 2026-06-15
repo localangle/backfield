@@ -690,6 +690,7 @@ def test_public_article_detail(public_client: TestClient) -> None:
     assert "text" not in body
     assert body["preview"]
     assert body["metadata"][0]["category"] == "local_government_politics"
+    assert body["processing"] == []
 
 
 def test_public_article_detail_not_found(public_client: TestClient) -> None:

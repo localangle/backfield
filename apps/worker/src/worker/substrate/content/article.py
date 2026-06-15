@@ -85,6 +85,7 @@ def _apply_article_merge(
     pub_date: date | None,
     text_str: str,
     run_id: str,
+    processed_item_id: int | None = None,
 ) -> None:
     now = _utcnow()
     article.headline = headline_str
@@ -93,6 +94,8 @@ def _apply_article_merge(
     article.text = text_str
     article.url = url_str or article.url
     article.source_run_id = run_id
+    if processed_item_id is not None:
+        article.source_item_id = processed_item_id
     article.updated_at = now
     article.edited = True
 
@@ -103,6 +106,7 @@ def _upsert_article(
     project_id: int,
     consolidated: dict[str, Any],
     run_id: str,
+    processed_item_id: int | None = None,
 ) -> SubstrateArticle:
     url = consolidated.get("url")
     url_str = str(url).strip() if isinstance(url, str) else None
@@ -166,6 +170,7 @@ def _upsert_article(
             pub_date=pub_date,
             text=text_str,
             source_run_id=run_id,
+            source_item_id=processed_item_id,
             edited=True,
         )
         try:
@@ -203,6 +208,7 @@ def _upsert_article(
                 pub_date=pub_date,
                 text_str=text_str,
                 run_id=run_id,
+                processed_item_id=processed_item_id,
             )
             session.add(article)
             session.flush()
@@ -217,6 +223,7 @@ def _upsert_article(
         pub_date=pub_date,
         text_str=text_str,
         run_id=run_id,
+        processed_item_id=processed_item_id,
     )
     session.add(article)
     session.flush()
