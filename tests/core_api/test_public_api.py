@@ -98,7 +98,7 @@ def public_client(tmp_path) -> Generator[TestClient, None, None]:
         s.add(
             SubstrateArticleMeta(
                 article_id=int(article.id),  # type: ignore[arg-type]
-                meta_type="subject",
+                meta_type="topic",
                 category="local_government_politics",
                 rationale="Classified during ingest.",
                 confidence=0.92,
@@ -629,7 +629,7 @@ def test_public_article_search_metadata_filter(public_client: TestClient) -> Non
         "/public/v1/projects/general/articles/search",
         headers=headers,
         params={
-            "meta_type": "subject",
+            "meta_type": "topic",
             "meta_category": "local_government_politics",
         },
     )
@@ -644,8 +644,8 @@ def test_public_article_search_exclude_metadata_filter(public_client: TestClient
         "/public/v1/projects/general/articles/search",
         headers=headers,
         params={
-            "meta_type": "subject",
-            "exclude_meta_type": "subject",
+            "meta_type": "topic",
+            "exclude_meta_type": "topic",
             "exclude_meta_category": "sports",
         },
     )
@@ -655,7 +655,7 @@ def test_public_article_search_exclude_metadata_filter(public_client: TestClient
     r = public_client.get(
         "/public/v1/projects/general/articles/search",
         headers=headers,
-        params={"exclude_meta_type": "subject"},
+        params={"exclude_meta_type": "topic"},
     )
     assert r.status_code == 200
     body = r.json()
@@ -674,7 +674,8 @@ def test_public_article_search_facets_and_counts(public_client: TestClient) -> N
     assert facets.status_code == 200
     body = facets.json()
     assert "Jane Doe" in body["authors"]
-    assert body["subject_categories"] == ["local_government_politics"]
+    assert body["topic_categories"] == ["local_government_politics"]
+    assert body["subject_categories"] == []
 
     search = public_client.get(
         "/public/v1/projects/general/articles/search",
@@ -867,6 +868,7 @@ def test_public_article_people(public_client: TestClient) -> None:
     assert person["label"] == "Jane Doe"
     assert person["nature"] == "subject"
     assert person["canonical"]["slug"] == "jane-doe"
+    assert person["canonical"]["stylebook_slug"] == "default"
 
     filtered = public_client.get(
         "/public/v1/projects/general/articles/1/people",
@@ -928,6 +930,7 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
     person = body["items"][0]
     assert person["label"] == "Jane Doe"
     assert person["mention_count"] == 1
+    assert person["stylebook_slug"] == "default"
     person_id = person["id"]
 
     searched = public_client.get(
@@ -948,6 +951,7 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
     )
     assert detail.status_code == 200
     assert detail.json()["title"] == "Mayor"
+    assert detail.json()["stylebook_slug"] == "default"
 
     mentions = public_client.get(
         f"/public/v1/projects/general/people/{person_id}/mentions",

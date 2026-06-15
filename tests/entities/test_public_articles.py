@@ -112,7 +112,7 @@ def test_search_public_articles_filters_metadata_and_dates() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=int(a1.id),  # type: ignore[arg-type]
-                meta_type="subject",
+                meta_type="topic",
                 category="local_government_politics",
                 rationale="test",
                 confidence=0.9,
@@ -124,7 +124,7 @@ def test_search_public_articles_filters_metadata_and_dates() -> None:
             session,
             project_id=project_id,
             params=PublicArticleSearchParams(
-                meta_type="subject",
+                meta_type="topic",
                 meta_category="local_government_politics",
                 pub_date_from=date(2024, 1, 1),
                 pub_date_to=date(2024, 1, 31),
@@ -142,7 +142,7 @@ def test_search_public_articles_filters_metadata_and_dates() -> None:
         )
         assert detail is not None
         assert detail.preview == "Body one"
-        assert detail.metadata[0].meta_type == "subject"
+        assert detail.metadata[0].meta_type == "topic"
 
 
 def test_search_public_articles_excludes_metadata() -> None:
@@ -184,7 +184,7 @@ def test_search_public_articles_excludes_metadata() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=int(included.id),  # type: ignore[arg-type]
-                meta_type="subject",
+                meta_type="topic",
                 category="local_government_politics",
                 rationale="test",
                 confidence=0.9,
@@ -193,7 +193,7 @@ def test_search_public_articles_excludes_metadata() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=int(excluded.id),  # type: ignore[arg-type]
-                meta_type="subject",
+                meta_type="topic",
                 category="sports",
                 rationale="test",
                 confidence=0.9,
@@ -205,8 +205,8 @@ def test_search_public_articles_excludes_metadata() -> None:
             session,
             project_id=project_id,
             params=PublicArticleSearchParams(
-                meta_type="subject",
-                exclude_meta_type="subject",
+                meta_type="topic",
+                exclude_meta_type="topic",
                 exclude_meta_category="sports",
             ),
         )
@@ -216,7 +216,7 @@ def test_search_public_articles_excludes_metadata() -> None:
         items, total = search_public_articles(
             session,
             project_id=project_id,
-            params=PublicArticleSearchParams(exclude_meta_type="subject"),
+            params=PublicArticleSearchParams(exclude_meta_type="topic"),
         )
         assert total == 0
         assert items == []
@@ -256,7 +256,7 @@ def test_search_public_articles_filters_author_section_and_mentions() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=int(article.id),  # type: ignore[arg-type]
-                meta_type="subject",
+                meta_type="topic",
                 category="local_government_politics",
                 rationale="test",
                 confidence=0.9,

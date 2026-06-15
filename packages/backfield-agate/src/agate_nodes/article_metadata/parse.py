@@ -384,6 +384,15 @@ def _unwrap_multi_value_items(data: Any) -> list[Any]:
     return [data]
 
 
+def _coerce_single_value_response(data: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(data)
+    if "category" not in normalized:
+        subject = _get_field(normalized, "subject")
+        if isinstance(subject, str) and subject.strip():
+            normalized["category"] = subject.strip()
+    return normalized
+
+
 def parse_article_metadata_response(
     data: Any,
     *,
@@ -391,6 +400,7 @@ def parse_article_metadata_response(
 ) -> ArticleMetadataLLMResponse:
     if not isinstance(data, dict):
         raise ValueError("LLM response must be a JSON object")
+    data = _coerce_single_value_response(data)
     try:
         parsed = ArticleMetadataLLMResponse.model_validate(data)
     except Exception as exc:

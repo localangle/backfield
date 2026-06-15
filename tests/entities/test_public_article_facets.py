@@ -47,7 +47,7 @@ def test_get_public_article_facets_returns_distinct_values() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=int(article.id),  # type: ignore[arg-type]
-                meta_type="subject",
+                meta_type="topic",
                 category="local_government_politics",
                 rationale="test",
                 confidence=0.9,
@@ -68,5 +68,6 @@ def test_get_public_article_facets_returns_distinct_values() -> None:
 
     assert facets.authors == ["Jane Doe"]
     assert facets.external_sources == ["Daily Herald"]
-    assert facets.subject_categories == ["local_government_politics"]
+    assert facets.topic_categories == ["local_government_politics"]
     assert facets.format_categories == ["news_story"]
+    assert facets.subject_categories == []

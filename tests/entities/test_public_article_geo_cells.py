@@ -448,7 +448,7 @@ def test_metadata_filter_narrows_cells() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=article_id,
-                meta_type="subject",
+                meta_type="topic",
                 category="local_government_politics",
                 rationale="test",
                 confidence=0.9,
@@ -471,7 +471,7 @@ def test_metadata_filter_narrows_cells() -> None:
                 min_lat=41.0,
                 max_lng=-87.0,
                 max_lat=42.0,
-                meta_type="subject",
+                meta_type="topic",
                 meta_category="local_government_politics",
             ),
         )
@@ -483,7 +483,7 @@ def test_metadata_filter_narrows_cells() -> None:
                 min_lat=41.0,
                 max_lng=-87.0,
                 max_lat=42.0,
-                meta_type="subject",
+                meta_type="topic",
                 meta_category="sports",
             ),
         )

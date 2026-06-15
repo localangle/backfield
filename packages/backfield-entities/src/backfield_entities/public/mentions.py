@@ -27,6 +27,7 @@ from sqlmodel import Session, col, select
 from backfield_entities.public.article_hub import (
     PublicCanonicalSummaryOut,
     PublicEntityMentionType,
+    _canonical_stylebook_slugs,
     _canonical_summary,
 )
 from backfield_entities.public.articles import _apply_public_article_list_filters
@@ -121,14 +122,14 @@ class PublicMentionSearchParams:
 def resolve_public_mention_search_params(
     params: PublicMentionSearchParams,
 ) -> PublicMentionSearchParams:
-    """Apply search sugar such as ``section`` → subject metadata filter."""
+    """Apply search sugar such as ``section`` → topic metadata filter."""
     section_value = (params.section or "").strip()
     if not section_value:
         return params
     return replace(
         params,
         section=None,
-        meta_type="subject",
+        meta_type="topic",
         meta_category=section_value,
     )
 
@@ -355,6 +356,7 @@ def _hydrate_location_search_items(
             )
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = location_evidence_by_mention_id(session, mention_ids)
     out: dict[int, PublicMentionSearchItemOut] = {}
     for mention, loc, article in rows:
@@ -364,7 +366,7 @@ def _hydrate_location_search_items(
         canon: PublicCanonicalSummaryOut | None = None
         canon_id = loc.stylebook_location_canonical_id
         if canon_id and str(canon_id) in canonicals:
-            canon = _canonical_summary(canonicals[str(canon_id)])
+            canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out[mid] = PublicMentionSearchItemOut(
             entity_type="location",
             mention_id=mid,
@@ -403,6 +405,7 @@ def _hydrate_person_search_items(
             select(StylebookPersonCanonical).where(col(StylebookPersonCanonical.id).in_(canonical_ids))
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = person_evidence_by_mention_id(session, mention_ids)
     out: dict[int, PublicMentionSearchItemOut] = {}
     for mention, person, article in rows:
@@ -412,7 +415,7 @@ def _hydrate_person_search_items(
         canon: PublicCanonicalSummaryOut | None = None
         canon_id = person.stylebook_person_canonical_id
         if canon_id and str(canon_id) in canonicals:
-            canon = _canonical_summary(canonicals[str(canon_id)])
+            canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out[mid] = PublicMentionSearchItemOut(
             entity_type="person",
             mention_id=mid,
@@ -459,6 +462,7 @@ def _hydrate_organization_search_items(
             )
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = organization_evidence_by_mention_id(session, mention_ids)
     out: dict[int, PublicMentionSearchItemOut] = {}
     for mention, org, article in rows:
@@ -470,7 +474,7 @@ def _hydrate_organization_search_items(
         canon_id = org.stylebook_organization_canonical_id
         if canon_id and str(canon_id) in canonicals:
             canon_row = canonicals[str(canon_id)]
-            canon = _canonical_summary(canon_row)
+            canon = _canonical_summary(canon_row, stylebook_slugs=stylebook_slugs)
             organization_type = organization_type or canon_row.organization_type
         out[mid] = PublicMentionSearchItemOut(
             entity_type="organization",

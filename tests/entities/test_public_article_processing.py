@@ -65,7 +65,7 @@ def test_list_public_article_processing_collects_runs_and_items() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=article_id,
-                meta_type="subject",
+                meta_type="topic",
                 category="news",
                 rationale="r",
                 confidence=0.9,

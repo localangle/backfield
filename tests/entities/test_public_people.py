@@ -142,6 +142,7 @@ def test_get_public_person_and_mentions() -> None:
         )
         assert person is not None
         assert person.title == "Mayor"
+        assert person.stylebook_slug == "default"
 
         result = list_public_person_mentions(
             session,

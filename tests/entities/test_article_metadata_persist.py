@@ -47,8 +47,9 @@ def _seed_article(session: Session) -> int:
 def _sample_block(**overrides: object) -> dict:
     base = {
         "meta_type": "subject",
-        "category": "local_government_politics",
-        "rationale": "The story covers a city council vote.",
+        "subject": "development_project",
+        "category": "development_project",
+        "rationale": "The story centers on a housing development approval.",
         "confidence": 0.82,
         "prompt_preset": "subject",
     }
@@ -75,7 +76,7 @@ def test_persist_creates_row() -> None:
                 SubstrateArticleMeta.meta_type == "subject",
             )
         ).one()
-        assert row.category == "local_government_politics"
+        assert row.category == "development_project"
         assert row.source_run_id == "run-meta-1"
 
 
@@ -108,7 +109,7 @@ def test_add_only_skips_existing() -> None:
                 SubstrateArticleMeta.meta_type == "subject",
             )
         ).one()
-        assert row.category == "local_government_politics"
+        assert row.category == "development_project"
 
 
 def test_smart_merge_skips_unchanged() -> None:
@@ -188,10 +189,10 @@ def test_missing_block_is_not_present_and_does_not_delete_existing() -> None:
         row = session.exec(
             select(SubstrateArticleMeta).where(SubstrateArticleMeta.article_id == article_id)
         ).one()
-        assert row.category == "local_government_politics"
+        assert row.category == "development_project"
 
 
-def test_persist_subject_creates_multiple_rows() -> None:
+def test_persist_topic_creates_multiple_rows() -> None:
     engine = _engine()
     with Session(engine) as session:
         article_id = _seed_article(session)
@@ -200,12 +201,12 @@ def test_persist_subject_creates_multiple_rows() -> None:
             article_id=article_id,
             consolidated={
                 "article_metadata": {
-                    "meta_type": "subject",
-                    "prompt_preset": "subject",
+                    "meta_type": "topic",
+                    "prompt_preset": "topic",
                     "category": "local_government_politics",
                     "rationale": "Council vote is central.",
                     "confidence": 0.92,
-                    "subjects": [
+                    "topics": [
                         {
                             "category": "local_government_politics",
                             "rationale": "Council vote is central.",
@@ -226,7 +227,7 @@ def test_persist_subject_creates_multiple_rows() -> None:
         rows = session.exec(
             select(SubstrateArticleMeta).where(
                 SubstrateArticleMeta.article_id == article_id,
-                SubstrateArticleMeta.meta_type == "subject",
+                SubstrateArticleMeta.meta_type == "topic",
             )
         ).all()
         assert {row.category for row in rows} == {
@@ -235,7 +236,7 @@ def test_persist_subject_creates_multiple_rows() -> None:
         }
 
 
-def test_persist_subject_replace_drops_removed_categories() -> None:
+def test_persist_topic_replace_drops_removed_categories() -> None:
     engine = _engine()
     with Session(engine) as session:
         article_id = _seed_article(session)
@@ -244,12 +245,12 @@ def test_persist_subject_replace_drops_removed_categories() -> None:
             article_id=article_id,
             consolidated={
                 "article_metadata": {
-                    "meta_type": "subject",
-                    "prompt_preset": "subject",
+                    "meta_type": "topic",
+                    "prompt_preset": "topic",
                     "category": "pro_sports",
                     "rationale": "Sports focus.",
                     "confidence": 0.95,
-                    "subjects": [
+                    "topics": [
                         {
                             "category": "pro_sports",
                             "rationale": "Sports focus.",
@@ -265,12 +266,12 @@ def test_persist_subject_replace_drops_removed_categories() -> None:
             article_id=article_id,
             consolidated={
                 "article_metadata": {
-                    "meta_type": "subject",
-                    "prompt_preset": "subject",
+                    "meta_type": "topic",
+                    "prompt_preset": "topic",
                     "category": "business_economy",
                     "rationale": "Business focus.",
                     "confidence": 0.91,
-                    "subjects": [
+                    "topics": [
                         {
                             "category": "business_economy",
                             "rationale": "Business focus.",
@@ -284,7 +285,7 @@ def test_persist_subject_replace_drops_removed_categories() -> None:
         rows = session.exec(
             select(SubstrateArticleMeta).where(
                 SubstrateArticleMeta.article_id == article_id,
-                SubstrateArticleMeta.meta_type == "subject",
+                SubstrateArticleMeta.meta_type == "topic",
             )
         ).all()
         assert len(rows) == 1
@@ -348,7 +349,7 @@ def test_persist_multiple_article_metadata_blocks() -> None:
                 },
                 "article_metadata_all": [
                     {
-                        "meta_type": "subject",
+                        "meta_type": "topic",
                         "category": "public_safety_crime",
                         "rationale": "Crime story.",
                         "confidence": 0.82,
@@ -369,4 +370,4 @@ def test_persist_multiple_article_metadata_blocks() -> None:
         rows = session.exec(
             select(SubstrateArticleMeta).where(SubstrateArticleMeta.article_id == article_id)
         ).all()
-        assert {row.meta_type for row in rows} == {"subject", "format"}
+        assert {row.meta_type for row in rows} == {"topic", "format"}

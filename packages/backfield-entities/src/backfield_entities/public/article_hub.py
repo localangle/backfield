@@ -27,6 +27,7 @@ from backfield_entities.public.mention_evidence import (
     organization_evidence_by_mention_id,
     person_evidence_by_mention_id,
 )
+from backfield_entities.public.stylebook_scope import stylebook_slugs_by_id
 
 PublicEntityMentionType = Literal["location", "person", "organization"]
 
@@ -35,6 +36,7 @@ class PublicCanonicalSummaryOut(BaseModel):
     id: str
     slug: str | None = None
     label: str
+    stylebook_slug: str | None = None
 
 
 class PublicArticleEntityCountsOut(BaseModel):
@@ -118,13 +120,34 @@ class PublicArticleCustomRecordOut(BaseModel):
     confidence: float | None = None
 
 
+StylebookCanonicalRow = (
+    StylebookLocationCanonical | StylebookPersonCanonical | StylebookOrganizationCanonical
+)
+
+
+def _canonical_stylebook_slugs(
+    session: Session,
+    canonicals: dict[str, StylebookCanonicalRow],
+) -> dict[int, str]:
+    stylebook_ids = {
+        int(row.stylebook_id) for row in canonicals.values() if row.stylebook_id is not None
+    }
+    return stylebook_slugs_by_id(session, stylebook_ids)
+
+
 def _canonical_summary(
-    row: StylebookLocationCanonical | StylebookPersonCanonical | StylebookOrganizationCanonical,
+    row: StylebookCanonicalRow,
+    *,
+    stylebook_slugs: dict[int, str],
 ) -> PublicCanonicalSummaryOut:
+    stylebook_slug = (
+        stylebook_slugs.get(int(row.stylebook_id)) if row.stylebook_id is not None else None
+    )
     return PublicCanonicalSummaryOut(
         id=str(row.id),
         slug=str(row.slug),
         label=str(row.label),
+        stylebook_slug=stylebook_slug,
     )
 
 
@@ -320,6 +343,7 @@ def _hydrate_location_mentions(
             )
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = location_evidence_by_mention_id(session, mention_ids)
     out: list[PublicArticleMentionOut] = []
     for mid in mention_ids:
@@ -330,7 +354,7 @@ def _hydrate_location_mentions(
         canon: PublicCanonicalSummaryOut | None = None
         canon_id = loc.stylebook_location_canonical_id
         if canon_id and str(canon_id) in canonicals:
-            canon = _canonical_summary(canonicals[str(canon_id)])
+            canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out.append(
             PublicArticleMentionOut(
                 entity_type="location",
@@ -368,6 +392,7 @@ def _hydrate_person_mentions(
             select(StylebookPersonCanonical).where(col(StylebookPersonCanonical.id).in_(canonical_ids))
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = person_evidence_by_mention_id(session, mention_ids)
     out: list[PublicArticleMentionOut] = []
     for mid in mention_ids:
@@ -378,7 +403,7 @@ def _hydrate_person_mentions(
         canon: PublicCanonicalSummaryOut | None = None
         canon_id = person.stylebook_person_canonical_id
         if canon_id and str(canon_id) in canonicals:
-            canon = _canonical_summary(canonicals[str(canon_id)])
+            canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out.append(
             PublicArticleMentionOut(
                 entity_type="person",
@@ -421,6 +446,7 @@ def _hydrate_organization_mentions(
             )
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = organization_evidence_by_mention_id(session, mention_ids)
     out: list[PublicArticleMentionOut] = []
     for mid in mention_ids:
@@ -431,7 +457,7 @@ def _hydrate_organization_mentions(
         canon: PublicCanonicalSummaryOut | None = None
         canon_id = org.stylebook_organization_canonical_id
         if canon_id and str(canon_id) in canonicals:
-            canon = _canonical_summary(canonicals[str(canon_id)])
+            canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out.append(
             PublicArticleMentionOut(
                 entity_type="organization",
@@ -516,6 +542,7 @@ def location_mentions_out_by_ids(
             )
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = location_evidence_by_mention_id(session, mention_ids)
     out: dict[int, PublicArticleLocationOut] = {}
     for mention, loc in rows:
@@ -525,7 +552,7 @@ def location_mentions_out_by_ids(
         canon: PublicCanonicalSummaryOut | None = None
         canon_id = loc.stylebook_location_canonical_id
         if canon_id and str(canon_id) in canonicals:
-            canon = _canonical_summary(canonicals[str(canon_id)])
+            canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out[mid] = PublicArticleLocationOut(
             mention_id=mid,
             substrate_location_id=int(loc.id),  # type: ignore[arg-type]
@@ -601,6 +628,7 @@ def person_mentions_out_by_ids(
             select(StylebookPersonCanonical).where(col(StylebookPersonCanonical.id).in_(canonical_ids))
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = person_evidence_by_mention_id(session, mention_ids)
     out: dict[int, PublicArticlePersonOut] = {}
     for mention, person in rows:
@@ -610,7 +638,7 @@ def person_mentions_out_by_ids(
         canon: PublicCanonicalSummaryOut | None = None
         canon_id = person.stylebook_person_canonical_id
         if canon_id and str(canon_id) in canonicals:
-            canon = _canonical_summary(canonicals[str(canon_id)])
+            canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out[mid] = PublicArticlePersonOut(
             mention_id=mid,
             substrate_person_id=int(person.id),  # type: ignore[arg-type]
@@ -686,6 +714,7 @@ def organization_mentions_out_by_ids(
             )
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
+    stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
     evidence = organization_evidence_by_mention_id(session, mention_ids)
     out: dict[int, PublicArticleOrganizationOut] = {}
     for mention, org in rows:
@@ -697,7 +726,7 @@ def organization_mentions_out_by_ids(
         organization_type = org.organization_type
         if canon_id and str(canon_id) in canonicals:
             canon_row = canonicals[str(canon_id)]
-            canon = _canonical_summary(canon_row)
+            canon = _canonical_summary(canon_row, stylebook_slugs=stylebook_slugs)
             organization_type = organization_type or canon_row.organization_type
         out[mid] = PublicArticleOrganizationOut(
             mention_id=mid,

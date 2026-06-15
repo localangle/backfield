@@ -27,6 +27,8 @@ def test_normalize_custom_meta_type_rejects_empty() -> None:
 def test_normalize_custom_meta_type_rejects_reserved_preset_name() -> None:
     with pytest.raises(ValueError, match="reserved"):
         normalize_custom_meta_type("subject")
+    with pytest.raises(ValueError, match="reserved"):
+        normalize_custom_meta_type("topic")
 
 
 def test_resolve_meta_type_uses_bundled_preset_id() -> None:

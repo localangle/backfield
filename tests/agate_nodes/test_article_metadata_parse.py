@@ -48,6 +48,18 @@ def test_rejects_confidence_out_of_range() -> None:
         )
 
 
+def test_parse_single_value_accepts_subject_key() -> None:
+    parsed = parse_article_metadata_response(
+        {
+            "subject": "development_project",
+            "rationale": "Housing project is the focus.",
+            "confidence": 0.91,
+        },
+        allowed_categories=["development_project", "other"],
+    )
+    assert parsed.category == "development_project"
+
+
 def test_parse_subject_array_response() -> None:
     parsed = parse_subject_metadata_response(
         [

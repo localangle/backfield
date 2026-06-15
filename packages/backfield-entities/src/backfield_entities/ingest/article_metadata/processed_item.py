@@ -203,7 +203,7 @@ def _rows_from_metadata_block(
         else None
     )
 
-    for list_key in ("subjects", "needs"):
+    for list_key in ("topics", "subjects", "needs"):
         raw_items = block.get(list_key)
         if not isinstance(raw_items, list):
             continue
@@ -589,7 +589,7 @@ def _remove_list_entries_from_metadata_block(
     removed_row_ids: set[int],
     synthetic_id_base: int,
 ) -> None:
-    for list_key in ("subjects", "needs"):
+    for list_key in ("topics", "subjects", "needs"):
         items = block.get(list_key)
         if not isinstance(items, list):
             continue

@@ -1,6 +1,7 @@
-"""Idempotent local dev seed: General project secrets from env + Starter flow graph.
+"""Idempotent local dev seed: General project secrets from env.
 
 Invoked from entrypoint when BACKFIELD_LOCAL_BOOTSTRAP=1 (not FastAPI lifespan).
+Does not create Agate graphs; flows are created in the UI or by smoke harnesses.
 """
 
 from __future__ import annotations
@@ -9,13 +10,7 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from agate_runtime import (
-    STARTER_FLOW_GRAPH_DISPLAY_NAME,
-    GraphSpec,
-    starter_geocode_flow_graph_spec,
-)
 from backfield_db import (
-    AgateGraph,
     BackfieldOrganization,
     BackfieldProject,
     BackfieldProjectSecret,
@@ -136,59 +131,6 @@ def _sync_secrets(session: Session, project_id: int) -> int:
     return n
 
 
-def _ensure_named_graph(
-    session: Session,
-    *,
-    project_id: int,
-    display_name: str,
-    spec_factory,
-) -> bool:
-    canonical = spec_factory()
-    canonical_json = canonical.model_dump_json()
-
-    existing = session.exec(
-        select(AgateGraph).where(
-            AgateGraph.project_id == project_id,
-            AgateGraph.name == display_name,
-        )
-    ).first()
-    if existing:
-        try:
-            current = GraphSpec.model_validate_json(existing.spec_json)
-            current_json = current.model_dump_json()
-        except Exception:
-            current_json = ""
-
-        if current_json == canonical_json:
-            return False
-
-        logger.info(
-            "local_bootstrap: updating graph %r to canonical spec revision",
-            display_name,
-        )
-        existing.spec_json = canonical_json
-        session.add(existing)
-        return True
-
-    session.add(
-        AgateGraph(
-            name=display_name,
-            spec_json=canonical_json,
-            project_id=project_id,
-        )
-    )
-    return True
-
-
-def _ensure_starter_graph(session: Session, project_id: int) -> bool:
-    return _ensure_named_graph(
-        session,
-        project_id=project_id,
-        display_name=STARTER_FLOW_GRAPH_DISPLAY_NAME,
-        spec_factory=starter_geocode_flow_graph_spec,
-    )
-
-
 def run_local_bootstrap() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     engine = get_engine()
@@ -205,19 +147,11 @@ def run_local_bootstrap() -> int:
             return 0
         pid = int(project.id)
         secret_count = _sync_secrets(session, pid)
-        added_geocode_graph = _ensure_starter_graph(session, pid)
         session.commit()
         if secret_count:
             logger.info("local_bootstrap: upserted %d project secret(s) for General", secret_count)
-        if added_geocode_graph:
-            logger.info(
-                "local_bootstrap: starter graph %r created/updated for General",
-                STARTER_FLOW_GRAPH_DISPLAY_NAME,
-            )
-        if not secret_count and not added_geocode_graph:
-            logger.info(
-                "local_bootstrap: no env secrets to sync and starter graph already exists"
-            )
+        else:
+            logger.info("local_bootstrap: no env secrets to sync for General")
     return 0
 
 

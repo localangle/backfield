@@ -148,7 +148,7 @@ def test_run_emits_scope_for_geographic_scope_preset() -> None:
     }
 
 
-def test_run_emits_subjects_for_subject_preset() -> None:
+def test_run_emits_topics_for_topic_preset() -> None:
     llm_payload = [
         {
             "category": "local_government_politics",
@@ -167,21 +167,21 @@ def test_run_emits_subjects_for_subject_preset() -> None:
         return_value=json.dumps(llm_payload),
     ):
         out = run_article_metadata_runtime(
-            {"prompt_preset": "subject"},
+            {"prompt_preset": "topic"},
             {"text": "Council vote on zoning sparks affordable housing debate."},
             AgateEnvContext(run_id="run-test"),
         )
 
     meta = out["article_metadata"]
-    assert meta["meta_type"] == "subject"
+    assert meta["meta_type"] == "topic"
     assert meta["category"] == "local_government_politics"
-    assert len(meta["subjects"]) == 2
-    assert meta["subjects"][0]["category"] == "local_government_politics"
+    assert len(meta["topics"]) == 2
+    assert meta["topics"][0]["category"] == "local_government_politics"
 
 
-def test_run_emits_subjects_for_subject_preset_wrapped_object() -> None:
+def test_run_emits_topics_for_topic_preset_wrapped_object() -> None:
     llm_payload = {
-        "subjects": [
+        "topics": [
             {
                 "category": "local_government_politics",
                 "rationale": "Council vote is central.",
@@ -195,14 +195,41 @@ def test_run_emits_subjects_for_subject_preset_wrapped_object() -> None:
         return_value=json.dumps(llm_payload),
     ):
         out = run_article_metadata_runtime(
-            {"prompt_preset": "subject"},
+            {"prompt_preset": "topic"},
             {"text": "Council vote on zoning sparks affordable housing debate."},
             AgateEnvContext(run_id="run-test"),
         )
 
     meta = out["article_metadata"]
     assert meta["category"] == "local_government_politics"
-    assert len(meta["subjects"]) == 1
+    assert len(meta["topics"]) == 1
+
+
+def test_run_emits_subject_for_subject_preset() -> None:
+    llm_payload = {
+        "subject": "development_project",
+        "rationale": "The story centers on a housing development approval.",
+        "confidence": 0.88,
+    }
+
+    with patch(
+        "agate_nodes.article_metadata.node_port.call_llm",
+        return_value=json.dumps(llm_payload),
+    ):
+        out = run_article_metadata_runtime(
+            {"prompt_preset": "subject"},
+            {"text": "City council approves a 200-unit apartment project."},
+            AgateEnvContext(run_id="run-test"),
+        )
+
+    assert out["article_metadata"] == {
+        "meta_type": "subject",
+        "subject": "development_project",
+        "category": "development_project",
+        "rationale": "The story centers on a housing development approval.",
+        "confidence": 0.88,
+        "prompt_preset": "subject",
+    }
 
 
 def test_run_emits_format_category_for_format_preset() -> None:

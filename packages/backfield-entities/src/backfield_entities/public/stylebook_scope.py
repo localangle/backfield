@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from backfield_db import (
     BackfieldProject,
+    Stylebook,
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
 )
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from backfield_entities.catalog.resolve import resolve_effective_stylebook_id_for_project
 
@@ -16,6 +17,20 @@ from backfield_entities.catalog.resolve import resolve_effective_stylebook_id_fo
 def resolve_public_stylebook_id(session: Session, project: BackfieldProject) -> int:
     """Effective Stylebook catalog id for a public API project."""
     return resolve_effective_stylebook_id_for_project(session, project)
+
+
+def stylebook_slugs_by_id(session: Session, stylebook_ids: set[int]) -> dict[int, str]:
+    if not stylebook_ids:
+        return {}
+    rows = session.exec(
+        select(Stylebook).where(col(Stylebook.id).in_(stylebook_ids))
+    ).all()
+    return {int(row.id): str(row.slug) for row in rows if row.id is not None}
+
+
+def resolve_public_stylebook_slug(session: Session, project: BackfieldProject) -> str | None:
+    stylebook_id = resolve_public_stylebook_id(session, project)
+    return stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
 
 
 def get_public_person_canonical(

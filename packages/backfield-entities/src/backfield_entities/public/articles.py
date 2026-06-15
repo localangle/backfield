@@ -122,7 +122,7 @@ def article_source_name(*, external_source: str | None, url: str | None) -> str 
 
 def article_section(metadata: list[PublicArticleMetaOut]) -> str | None:
     for row in metadata:
-        if row.meta_type == "subject" and row.category.strip():
+        if row.meta_type == "topic" and row.category.strip():
             return row.category.strip()
     return None
 
@@ -130,14 +130,14 @@ def article_section(metadata: list[PublicArticleMetaOut]) -> str | None:
 def resolve_public_article_search_params(
     params: PublicArticleSearchParams,
 ) -> PublicArticleSearchParams:
-    """Apply search sugar such as ``section`` → subject metadata filter."""
+    """Apply search sugar such as ``section`` → topic metadata filter."""
     section_value = (params.section or "").strip()
     if not section_value:
         return params
     return replace(
         params,
         section=None,
-        meta_type="subject",
+        meta_type="topic",
         meta_category=section_value,
     )
 

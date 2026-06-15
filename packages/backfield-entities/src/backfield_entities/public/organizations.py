@@ -27,7 +27,10 @@ from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     organization_evidence_by_mention_id,
 )
-from backfield_entities.public.stylebook_scope import get_public_organization_canonical
+from backfield_entities.public.stylebook_scope import (
+    get_public_organization_canonical,
+    stylebook_slugs_by_id,
+)
 
 
 def _escape_ilike_metacharacters(value: str) -> str:
@@ -47,6 +50,7 @@ class PublicOrganizationOut(BaseModel):
     id: str
     slug: str
     label: str
+    stylebook_slug: str | None = None
     organization_type: str | None = None
     mention_count: int = 0
 
@@ -83,11 +87,13 @@ def _organization_to_public_out(
     canon: StylebookOrganizationCanonical,
     *,
     mention_count: int = 0,
+    stylebook_slug: str | None = None,
 ) -> PublicOrganizationOut:
     return PublicOrganizationOut(
         id=str(canon.id),
         slug=str(canon.slug),
         label=str(canon.label),
+        stylebook_slug=stylebook_slug,
         organization_type=canon.organization_type,
         mention_count=mention_count,
     )
@@ -249,10 +255,12 @@ def search_public_organizations(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _organization_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            stylebook_slug=stylebook_slug,
         )
         for row in rows
     ]
@@ -278,9 +286,11 @@ def get_public_organization(
         project_id=project_id,
         canonical_ids=[str(canon.id)],
     )
+    stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     return _organization_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
+        stylebook_slug=stylebook_slug,
     )
 
 

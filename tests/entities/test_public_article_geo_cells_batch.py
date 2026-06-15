@@ -251,7 +251,7 @@ def test_metadata_filter_narrows_batch() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=article_id,
-                meta_type="subject",
+                meta_type="topic",
                 category="local_government_politics",
                 rationale="test",
                 confidence=0.9,
@@ -275,7 +275,7 @@ def test_metadata_filter_narrows_batch() -> None:
             params=PublicArticleGeoCellsBatchParams(
                 cells=(cell_id,),
                 resolution=resolution,
-                meta_type="subject",
+                meta_type="topic",
                 meta_category="local_government_politics",
             ),
         )
@@ -285,7 +285,7 @@ def test_metadata_filter_narrows_batch() -> None:
             params=PublicArticleGeoCellsBatchParams(
                 cells=(cell_id,),
                 resolution=resolution,
-                meta_type="subject",
+                meta_type="topic",
                 meta_category="sports",
             ),
         )

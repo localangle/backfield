@@ -413,7 +413,7 @@ def test_metadata_filter_narrows_drilldown() -> None:
         session.add(
             SubstrateArticleMeta(
                 article_id=article_id,
-                meta_type="subject",
+                meta_type="topic",
                 category="local_government_politics",
                 rationale="test",
                 confidence=0.9,
@@ -434,7 +434,7 @@ def test_metadata_filter_narrows_drilldown() -> None:
             project_id=project_id,
             params=PublicArticleGeoCellDetailParams(
                 h3_cell=str(loc.h3_cell),
-                meta_type="subject",
+                meta_type="topic",
                 meta_category="local_government_politics",
             ),
         )
@@ -443,7 +443,7 @@ def test_metadata_filter_narrows_drilldown() -> None:
             project_id=project_id,
             params=PublicArticleGeoCellDetailParams(
                 h3_cell=str(loc.h3_cell),
-                meta_type="subject",
+                meta_type="topic",
                 meta_category="sports",
             ),
         )

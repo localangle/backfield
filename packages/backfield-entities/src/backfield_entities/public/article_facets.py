@@ -11,6 +11,7 @@ class PublicArticleFacetsOut(BaseModel):
     authors: list[str]
     external_sources: list[str]
     format_categories: list[str]
+    topic_categories: list[str]
     subject_categories: list[str]
 
 
@@ -72,6 +73,11 @@ def get_public_article_facets(session: Session, *, project_id: int) -> PublicArt
             session,
             project_id=project_id,
             meta_type="format",
+        ),
+        topic_categories=_distinct_meta_categories(
+            session,
+            project_id=project_id,
+            meta_type="topic",
         ),
         subject_categories=_distinct_meta_categories(
             session,

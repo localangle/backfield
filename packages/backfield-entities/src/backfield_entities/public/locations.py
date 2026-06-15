@@ -27,7 +27,10 @@ from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     location_evidence_by_mention_id,
 )
-from backfield_entities.public.stylebook_scope import get_public_location_canonical
+from backfield_entities.public.stylebook_scope import (
+    get_public_location_canonical,
+    stylebook_slugs_by_id,
+)
 
 
 def _escape_ilike_metacharacters(value: str) -> str:
@@ -43,6 +46,7 @@ class PublicLocationOut(BaseModel):
     id: str
     slug: str
     label: str
+    stylebook_slug: str | None = None
     location_type: str | None = None
     formatted_address: str | None = None
     geometry_type: str | None = None
@@ -85,11 +89,13 @@ def _location_to_public_out(
     canon: StylebookLocationCanonical,
     *,
     mention_count: int = 0,
+    stylebook_slug: str | None = None,
 ) -> PublicLocationOut:
     return PublicLocationOut(
         id=str(canon.id),
         slug=str(canon.slug),
         label=str(canon.label),
+        stylebook_slug=stylebook_slug,
         location_type=canon.location_type,
         formatted_address=canon.formatted_address,
         geometry_type=canon.geometry_type,
@@ -254,10 +260,12 @@ def search_public_locations(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _location_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            stylebook_slug=stylebook_slug,
         )
         for row in rows
     ]
@@ -283,9 +291,11 @@ def get_public_location(
         project_id=project_id,
         canonical_ids=[str(canon.id)],
     )
+    stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     return _location_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
+        stylebook_slug=stylebook_slug,
     )
 
 

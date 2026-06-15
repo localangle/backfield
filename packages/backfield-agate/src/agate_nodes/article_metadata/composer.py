@@ -12,6 +12,8 @@ from agate_runtime.upstream_input import flatten_upstream_inputs
 from agate_nodes.article_metadata.presets import MAX_MULTI_VALUE_COUNT, multi_value_list_key
 
 _CATEGORIES_HEADER = "## categories"
+_SUBJECT_LABELS_HEADER = "## subject labels"
+_SUBJECT_LABEL_PATTERN = re.compile(r"^###\s+`([^`]+)`")
 
 
 def flatten_input(input_dict: dict[str, Any]) -> dict[str, Any]:
@@ -28,8 +30,36 @@ def resolve_text(flattened: dict[str, Any]) -> str:
     )
 
 
+def _extract_subject_labels_from_prompt(prompt: str) -> list[str]:
+    """Parse ``### `label` `` headings under a ``## Subject Labels`` section."""
+    lines = prompt.splitlines()
+    in_section = False
+    labels: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.lower().startswith(_SUBJECT_LABELS_HEADER):
+            in_section = True
+            continue
+        if in_section and stripped.startswith("## ") and not stripped.lower().startswith(
+            _SUBJECT_LABELS_HEADER
+        ):
+            break
+        if not in_section:
+            continue
+        match = _SUBJECT_LABEL_PATTERN.match(stripped)
+        if match:
+            label = match.group(1).strip()
+            if label and label not in labels:
+                labels.append(label)
+    return labels
+
+
 def extract_categories_from_prompt(prompt: str) -> list[str]:
-    """Parse bullet labels under a ``## Categories`` markdown section."""
+    """Parse allowed labels from ``## Categories`` bullets or ``## Subject Labels``."""
+    subject_labels = _extract_subject_labels_from_prompt(prompt)
+    if subject_labels:
+        return subject_labels
+
     lines = prompt.splitlines()
     in_section = False
     categories: list[str] = []
@@ -50,7 +80,8 @@ def extract_categories_from_prompt(prompt: str) -> list[str]:
                 break
     if not categories:
         raise ValueError(
-            "Prompt must include a ## Categories section with at least one bullet label."
+            "Prompt must include a ## Categories section with at least one bullet label, "
+            "or a ## Subject Labels section with ### `label` headings."
         )
     return categories
 
@@ -92,7 +123,10 @@ def compose_article_metadata_prompt(
 ) -> tuple[str, list[str]]:
     body = substitute_prompt_placeholders(prompt_template, flattened)
     categories = extract_categories_from_prompt(body)
-    if preset_id in {"subject", "information_needs"}:
+    if preset_id == "subject":
+        return body, categories
+
+    if preset_id in {"topic", "information_needs"}:
         list_key = multi_value_list_key(preset_id)
         try:
             items_example = json.loads(output_format_json.strip())

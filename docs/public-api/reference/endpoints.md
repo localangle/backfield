@@ -1377,7 +1377,12 @@ Results are ordered by article `pub_date` descending (nulls last), then mention 
       "title": "Mayor",
       "affiliation": "City Hall",
       "public_figure": true,
-      "canonical": { "id": "550e8400-e29b-41d4-a716-446655440000", "slug": "jane-doe", "label": "Jane Doe" },
+      "canonical": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "slug": "jane-doe",
+        "label": "Jane Doe",
+        "stylebook_slug": "default"
+      },
       "evidence": { "mention_text": "Jane Doe", "quote_text": null, "start_char": null, "end_char": null },
       "article": { "id": 1, "headline": "City council votes on budget", "url": "https://example.com/budget", "pub_date": "2024-03-01" }
     }

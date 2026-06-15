@@ -27,7 +27,10 @@ from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     person_evidence_by_mention_id,
 )
-from backfield_entities.public.stylebook_scope import get_public_person_canonical
+from backfield_entities.public.stylebook_scope import (
+    get_public_person_canonical,
+    stylebook_slugs_by_id,
+)
 
 
 def _escape_ilike_metacharacters(value: str) -> str:
@@ -51,6 +54,7 @@ class PublicPersonOut(BaseModel):
     id: str
     slug: str
     label: str
+    stylebook_slug: str | None = None
     title: str | None = None
     affiliation: str | None = None
     public_figure: bool = False
@@ -95,11 +99,13 @@ def _person_to_public_out(
     canon: StylebookPersonCanonical,
     *,
     mention_count: int = 0,
+    stylebook_slug: str | None = None,
 ) -> PublicPersonOut:
     return PublicPersonOut(
         id=str(canon.id),
         slug=str(canon.slug),
         label=str(canon.label),
+        stylebook_slug=stylebook_slug,
         title=canon.title,
         affiliation=canon.affiliation,
         public_figure=bool(canon.public_figure),
@@ -272,10 +278,12 @@ def search_public_people(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _person_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            stylebook_slug=stylebook_slug,
         )
         for row in rows
     ]
@@ -297,9 +305,11 @@ def get_public_person(
         project_id=project_id,
         canonical_ids=[str(canon.id)],
     )
+    stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     return _person_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
+        stylebook_slug=stylebook_slug,
     )
 
 

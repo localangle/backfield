@@ -59,7 +59,7 @@ def _seed_mentions(session: Session) -> tuple[int, int, int, int, int]:
     session.add(
         SubstrateArticleMeta(
             article_id=article_id,
-            meta_type="subject",
+                meta_type="topic",
             category="local_government_politics",
             rationale="test",
             confidence=0.9,

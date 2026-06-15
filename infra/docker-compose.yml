@@ -114,7 +114,7 @@ services:
       STYLEBOOK_API_URL: http://stylebook-api:8003
       # Dev-only Fernet key for encrypting backfield_project_secret; override in production.
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
-      # After migrations: sync .env API keys into General + create Starter flow graph.
+      # After migrations: sync .env LLM keys into General project secrets (no graphs).
       BACKFIELD_LOCAL_BOOTSTRAP: ${BACKFIELD_LOCAL_BOOTSTRAP:-1}
       # LLM / geocoder keys: set in repo-root .env (see .env.example); loaded via env_file above.
     healthcheck:
