@@ -541,6 +541,7 @@ Paginated mention evidence for one article across location, person, and organiza
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `entity_type` | string | — | Filter: `location`, `person`, or `organization` |
+| `nature` | string | — | Filter to mentions with this editorial `nature` (exact match) |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
 
@@ -598,6 +599,73 @@ Each item includes `id`, `image_id`, `url`, and optional `caption`.
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/articles/{article_id}/people`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/people.py`](../../../apps/core-api/src/core_api/routers/public/articles/people.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
+| **Auth** | Project API key required |
+
+Person-focused list of mentions in one article, including title, affiliation, person type, optional canonical summary, nature, and evidence spans.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `nature` | string | — | Filter to mentions with this editorial `nature` (exact match) |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/{article_id}/organizations`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/organizations.py`](../../../apps/core-api/src/core_api/routers/public/articles/organizations.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
+| **Auth** | Project API key required |
+
+Organization-focused list of mentions in one article, including organization type, optional canonical summary, nature, and evidence spans.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `nature` | string | — | Filter to mentions with this editorial `nature` (exact match) |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/{article_id}/custom-records`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/custom_records.py`](../../../apps/core-api/src/core_api/routers/public/articles/custom_records.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_hub.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_hub.py) |
+| **Auth** | Project API key required |
+
+Paginated custom extracted records for one article. Ordered by `record_type`, then `record_index`.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `record_type` | string | — | Filter to one record type (exact match) |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+
+### Response `200`
+
+Each item includes `id`, `record_type`, `record_index`, `fields`, `mentions`, `field_schema`, and optional `confidence`.
+
+---
+
 <!-- Add new endpoints below in the same section format. -->
 
 ---
@@ -607,7 +675,7 @@ Each item includes `id`, `image_id`, `url`, and optional `caption`.
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/people/list_search.py`](../../../apps/core-api/src/core_api/routers/public/people/list_search.py) — `list_project_people` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/list_search.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/list_search.py) — `list_project_people` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/people.py`](../../../packages/backfield-entities/src/backfield_entities/public/people.py) |
 | **Auth** | Project API key required |
 
@@ -657,7 +725,7 @@ List active canonical people in the project's Stylebook. Supports the same filte
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/people/list_search.py`](../../../apps/core-api/src/core_api/routers/public/people/list_search.py) — `search_project_people` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/list_search.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/list_search.py) — `search_project_people` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/people.py`](../../../packages/backfield-entities/src/backfield_entities/public/people.py) |
 | **Auth** | Project API key required |
 
@@ -670,7 +738,7 @@ Same parameters, response shape, and filters as `GET …/people`.
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/people/types.py`](../../../apps/core-api/src/core_api/routers/public/people/types.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/types.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/types.py) |
 | **Auth** | Project API key required |
 
 ### Functionality
@@ -690,7 +758,7 @@ Distinct person type values for filter dropdowns (union of catalog defaults and 
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/people/detail.py`](../../../apps/core-api/src/core_api/routers/public/people/detail.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/detail.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/detail.py) |
 | **Auth** | Project API key required |
 
 ### Path parameters
@@ -716,7 +784,7 @@ Single person object (same fields as list items).
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/people/mentions.py`](../../../apps/core-api/src/core_api/routers/public/people/mentions.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/mentions.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/mentions.py) |
 | **Auth** | Project API key required |
 
 ### Functionality
@@ -762,12 +830,56 @@ Paginated mention evidence for one canonical person, scoped to the project. Incl
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/people/{person_id}/articles`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/articles.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/articles.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/people.py`](../../../packages/backfield-entities/src/backfield_entities/public/people.py) |
+| **Auth** | Project API key required |
+
+Paginated distinct articles mentioning a canonical person in the project. Ordered by article `pub_date` descending (nulls last), then article id descending.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `nature` | string | — | Filter to articles with a mention of this editorial `nature` |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+| `include_preview` | boolean | `false` | Include a short text preview (max 280 characters) per article |
+
+### Response `200`
+
+```json
+{
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "label": "Jane Doe",
+  "items": [
+    {
+      "id": 1,
+      "headline": "City council votes on budget",
+      "url": "https://example.com/budget",
+      "author": "Jane Doe",
+      "pub_date": "2024-03-01",
+      "source_name": "example.com",
+      "section": "local_government_politics",
+      "metadata": []
+    }
+  ],
+  "pagination": { "limit": 25, "offset": 0, "total": 1 }
+}
+```
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/people/{person_id}/connections`
 
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/people/connections.py`](../../../apps/core-api/src/core_api/routers/public/people/connections.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/connections.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/connections.py) |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/connections.py`](../../../packages/backfield-entities/src/backfield_entities/public/connections.py) |
 | **Auth** | Project API key required |
 
@@ -802,7 +914,7 @@ Stylebook connections where the person is either the `from` or `to` endpoint. La
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/organizations/list_search.py) — `list_project_organizations` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/organizations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/entities/organizations/list_search.py) — `list_project_organizations` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/organizations.py`](../../../packages/backfield-entities/src/backfield_entities/public/organizations.py) |
 | **Auth** | Project API key required |
 
@@ -846,7 +958,7 @@ List active canonical organizations in the project's Stylebook. Supports the sam
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/organizations/list_search.py) — `search_project_organizations` |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/organizations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/entities/organizations/list_search.py) — `search_project_organizations` |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/organizations.py`](../../../packages/backfield-entities/src/backfield_entities/public/organizations.py) |
 | **Auth** | Project API key required |
 
@@ -859,7 +971,7 @@ Same parameters, response shape, and filters as `GET …/organizations`.
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/types.py`](../../../apps/core-api/src/core_api/routers/public/organizations/types.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/organizations/types.py`](../../../apps/core-api/src/core_api/routers/public/entities/organizations/types.py) |
 | **Auth** | Project API key required |
 
 ### Functionality
@@ -879,7 +991,7 @@ Distinct organization type values for filter dropdowns (union of catalog default
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/detail.py`](../../../apps/core-api/src/core_api/routers/public/organizations/detail.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/organizations/detail.py`](../../../apps/core-api/src/core_api/routers/public/entities/organizations/detail.py) |
 | **Auth** | Project API key required |
 
 ### Path parameters
@@ -905,7 +1017,7 @@ Single organization object (same fields as list items).
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/mentions.py`](../../../apps/core-api/src/core_api/routers/public/organizations/mentions.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/organizations/mentions.py`](../../../apps/core-api/src/core_api/routers/public/entities/organizations/mentions.py) |
 | **Auth** | Project API key required |
 
 ### Functionality
@@ -949,12 +1061,25 @@ Paginated mention evidence for one canonical organization, scoped to the project
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/organizations/{organization_id}/articles`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/organizations/articles.py`](../../../apps/core-api/src/core_api/routers/public/entities/organizations/articles.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/organizations.py`](../../../packages/backfield-entities/src/backfield_entities/public/organizations.py) |
+| **Auth** | Project API key required |
+
+Paginated distinct articles mentioning a canonical organization in the project. Same query parameters and response shape as people articles (with `organization_id` and organization label).
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/organizations/{organization_id}/connections`
 
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/organizations/connections.py`](../../../apps/core-api/src/core_api/routers/public/organizations/connections.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/organizations/connections.py`](../../../apps/core-api/src/core_api/routers/public/entities/organizations/connections.py) |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/connections.py`](../../../packages/backfield-entities/src/backfield_entities/public/connections.py) |
 | **Auth** | Project API key required |
 
@@ -989,7 +1114,7 @@ Stylebook connections where the organization is either the `from` or `to` endpoi
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/locations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/locations/list_search.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/locations/list_search.py`](../../../apps/core-api/src/core_api/routers/public/entities/locations/list_search.py) |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/locations.py`](../../../packages/backfield-entities/src/backfield_entities/public/locations.py) |
 | **Auth** | Project API key required |
 
@@ -1020,7 +1145,7 @@ Same parameters and response as `GET …/locations`.
 | | |
 |---|---|
 | **Status** | Shipped (Phase 4) |
-| **Module** | [`apps/core-api/src/core_api/routers/public/locations/geo_search.py`](../../../apps/core-api/src/core_api/routers/public/locations/geo_search.py) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/locations/geo_search.py`](../../../apps/core-api/src/core_api/routers/public/entities/locations/geo_search.py) |
 | **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/location_geo_search.py`](../../../packages/backfield-entities/src/backfield_entities/public/location_geo_search.py) |
 | **Auth** | Project API key required |
 
@@ -1084,9 +1209,23 @@ Paginated mention evidence for one canonical location in the project. Supports `
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/locations/{location_id}/articles`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/locations/articles.py`](../../../apps/core-api/src/core_api/routers/public/entities/locations/articles.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/locations.py`](../../../packages/backfield-entities/src/backfield_entities/public/locations.py) |
+| **Auth** | Project API key required |
+
+Paginated distinct articles mentioning a canonical location in the project. Same query parameters and response shape as people articles (with `location_id` and location label).
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/locations/{location_id}/connections`
 
 Stylebook connections where the location is either endpoint, with resolved labels.
+
 ---
 
 ## GET `/public/v1/projects/{project_slug}/mentions/search`

@@ -19,6 +19,7 @@ from backfield_entities.public.connections import list_public_entity_connections
 from backfield_entities.public.people import (
     PublicPersonSearchParams,
     get_public_person,
+    list_public_person_articles,
     list_public_person_mentions,
     search_public_people,
 )
@@ -153,6 +154,37 @@ def test_get_public_person_and_mentions() -> None:
         assert total == 1
         assert items[0].article.headline == "Budget vote"
         assert items[0].nature == "subject"
+
+
+def test_list_public_person_articles() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, mayor_id = _seed_people(session)
+
+        result = list_public_person_articles(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+        )
+        assert result is not None
+        items, total = result
+        assert total == 1
+        assert items[0].headline == "Budget vote"
+        assert items[0].author is None
+
+        filtered_result = list_public_person_articles(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            nature="subject",
+        )
+        assert filtered_result is not None
+        filtered, filtered_total = filtered_result
+        assert filtered_total == 1
+        assert len(filtered) == 1
 
 
 def test_list_public_entity_connections_for_person() -> None:

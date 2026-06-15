@@ -24,6 +24,7 @@ from backfield_entities.public.location_geo_search import (
 from backfield_entities.public.locations import (
     PublicLocationSearchParams,
     get_public_location,
+    list_public_location_articles,
     list_public_location_mentions,
     search_public_locations,
 )
@@ -201,6 +202,24 @@ def test_get_public_location_and_mentions() -> None:
         assert total == 1
         assert items[0].article.headline == "Budget vote"
         assert items[0].nature == "primary"
+
+
+def test_list_public_location_articles() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, city_hall_id = _seed_locations(session)
+
+        result = list_public_location_articles(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            location_id=city_hall_id,
+        )
+        assert result is not None
+        items, total = result
+        assert total == 1
+        assert items[0].headline == "Budget vote"
 
 
 def test_list_public_entity_connections_for_location() -> None:

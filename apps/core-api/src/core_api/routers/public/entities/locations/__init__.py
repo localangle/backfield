@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from core_api.routers.public.locations import (
+from core_api.routers.public.entities.locations import (
+    articles,
     connections,
     detail,
     geo_search,
@@ -19,6 +20,7 @@ router.include_router(types.router)
 router.include_router(geo_search.router)
 router.include_router(list_search.router)
 router.include_router(mentions.router)
+router.include_router(articles.router)
 router.include_router(connections.router)
 router.include_router(detail.router)
 

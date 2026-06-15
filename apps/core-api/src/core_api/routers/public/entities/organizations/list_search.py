@@ -12,7 +12,7 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.organizations.helpers import (
+from core_api.routers.public.entities.organizations.helpers import (
     build_organization_search_params,
     resolve_public_organizations_scope,
 )

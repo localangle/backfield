@@ -18,6 +18,11 @@ from sqlalchemy import case, exists, literal
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, func, select
 
+from backfield_entities.public.articles import PublicArticleOut
+from backfield_entities.public.entity_articles import (
+    collect_mention_article_pairs,
+    paginate_public_articles_from_mention_pairs,
+)
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     organization_evidence_by_mention_id,
@@ -366,4 +371,43 @@ def list_public_organization_mentions(
                 evidence=evidence_by_id.get(mid),
             )
         )
+    return items, total
+
+
+def list_public_organization_articles(
+    session: Session,
+    *,
+    stylebook_id: int,
+    project_id: int,
+    organization_id: str,
+    limit: int = 25,
+    offset: int = 0,
+    nature: str | None = None,
+    include_preview: bool = False,
+) -> tuple[list[PublicArticleOut], int] | None:
+    canon = get_public_organization_canonical(
+        session,
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+    )
+    if canon is None:
+        return None
+
+    pairs = collect_mention_article_pairs(
+        session,
+        mention_model=SubstrateOrganizationMention,
+        entity_model=SubstrateOrganization,
+        mention_entity_fk=SubstrateOrganizationMention.organization_id,
+        entity_canonical_col=SubstrateOrganization.stylebook_organization_canonical_id,
+        canonical_id=str(canon.id),
+        project_id=project_id,
+        nature=nature,
+    )
+    items, total = paginate_public_articles_from_mention_pairs(
+        session,
+        pairs=pairs,
+        limit=limit,
+        offset=offset,
+        include_preview=include_preview,
+    )
     return items, total

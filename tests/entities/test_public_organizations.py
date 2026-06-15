@@ -19,6 +19,7 @@ from backfield_entities.public.connections import list_public_entity_connections
 from backfield_entities.public.organizations import (
     PublicOrganizationSearchParams,
     get_public_organization,
+    list_public_organization_articles,
     list_public_organization_mentions,
     search_public_organizations,
 )
@@ -149,6 +150,24 @@ def test_get_public_organization_and_mentions() -> None:
         assert total == 1
         assert items[0].article.headline == "Budget vote"
         assert items[0].nature == "actor"
+
+
+def test_list_public_organization_articles() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, council_id = _seed_organizations(session)
+
+        result = list_public_organization_articles(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            organization_id=council_id,
+        )
+        assert result is not None
+        items, total = result
+        assert total == 1
+        assert items[0].headline == "Budget vote"
 
 
 def test_list_public_entity_connections_for_organization() -> None:

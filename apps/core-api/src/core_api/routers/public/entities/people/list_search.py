@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.people.helpers import (
+from core_api.routers.public.entities.people.helpers import (
     build_person_search_params,
     resolve_public_people_scope,
 )

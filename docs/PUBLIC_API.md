@@ -300,6 +300,7 @@ Public responses expose the **resolved editorial view**: Stylebook canonical fie
 | `GET` | `…/{type}/types` | Distinct type values for filters (people in v1) |
 | `GET` | `…/{type}/{id}` | Canonical detail |
 | `GET` | `…/{type}/{id}/mentions` | Paginated mention evidence |
+| `GET` | `…/{type}/{id}/articles` | Paginated articles mentioning the canonical |
 | `GET` | `…/{type}/{id}/connections` | Stylebook connections |
 | `POST` | `…/{type}/semantic-search` | Natural-language mention search |
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from core_api.routers.public.articles import (
+    custom_records,
     detail,
     facets,
     geo_cell_detail,
@@ -13,6 +14,8 @@ from core_api.routers.public.articles import (
     images,
     locations,
     mentions,
+    organizations,
+    people,
     search,
     semantic_search,
 )
@@ -29,6 +32,9 @@ router.include_router(geo_cell_detail.router)
 router.include_router(detail.router)
 router.include_router(mentions.router)
 router.include_router(locations.router)
+router.include_router(people.router)
+router.include_router(organizations.router)
+router.include_router(custom_records.router)
 router.include_router(images.router)
 
 __all__ = ["router"]

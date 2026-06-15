@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from backfield_db import (
     StylebookLocationCanonical,
@@ -81,6 +81,41 @@ class PublicArticleImageOut(BaseModel):
     image_id: str
     url: str
     caption: str | None = None
+
+
+class PublicArticlePersonOut(BaseModel):
+    mention_id: int
+    substrate_person_id: int
+    label: str
+    title: str | None = None
+    affiliation: str | None = None
+    public_figure: bool = False
+    person_type: str | None = None
+    canonical: PublicCanonicalSummaryOut | None = None
+    nature: str | None = None
+    role_in_story: str | None = None
+    evidence: PublicMentionEvidenceOut | None = None
+
+
+class PublicArticleOrganizationOut(BaseModel):
+    mention_id: int
+    substrate_organization_id: int
+    label: str
+    organization_type: str | None = None
+    canonical: PublicCanonicalSummaryOut | None = None
+    nature: str | None = None
+    role_in_story: str | None = None
+    evidence: PublicMentionEvidenceOut | None = None
+
+
+class PublicArticleCustomRecordOut(BaseModel):
+    id: int
+    record_type: str
+    record_index: int
+    fields: dict[str, Any]
+    mentions: list[dict[str, Any]]
+    field_schema: list[dict[str, Any]]
+    confidence: float | None = None
 
 
 def _canonical_summary(
@@ -214,41 +249,46 @@ def article_hub_counts_batch(
 def _mention_union_stmt(
     article_id: int,
     entity_type: PublicEntityMentionType | None,
+    nature: str | None = None,
 ):
+    nature_value = (nature or "").strip()
     parts = []
     if entity_type in (None, "location"):
-        parts.append(
-            select(
-                literal("location").label("entity_type"),
-                SubstrateLocationMention.id.label("mention_id"),
-                SubstrateLocationMention.created_at.label("created_at"),
-            ).where(
-                SubstrateLocationMention.article_id == article_id,
-                SubstrateLocationMention.deleted == False,  # noqa: E712
-            )
+        stmt = select(
+            literal("location").label("entity_type"),
+            SubstrateLocationMention.id.label("mention_id"),
+            SubstrateLocationMention.created_at.label("created_at"),
+        ).where(
+            SubstrateLocationMention.article_id == article_id,
+            SubstrateLocationMention.deleted == False,  # noqa: E712
         )
+        if nature_value:
+            stmt = stmt.where(SubstrateLocationMention.nature == nature_value)
+        parts.append(stmt)
     if entity_type in (None, "person"):
-        parts.append(
-            select(
-                literal("person").label("entity_type"),
-                SubstratePersonMention.id.label("mention_id"),
-                SubstratePersonMention.created_at.label("created_at"),
-            ).where(
-                SubstratePersonMention.article_id == article_id,
-                SubstratePersonMention.deleted == False,  # noqa: E712
-            )
+        stmt = select(
+            literal("person").label("entity_type"),
+            SubstratePersonMention.id.label("mention_id"),
+            SubstratePersonMention.created_at.label("created_at"),
+        ).where(
+            SubstratePersonMention.article_id == article_id,
+            SubstratePersonMention.deleted == False,  # noqa: E712
         )
+        if nature_value:
+            stmt = stmt.where(SubstratePersonMention.nature == nature_value)
+        parts.append(stmt)
     if entity_type in (None, "organization"):
-        parts.append(
-            select(
-                literal("organization").label("entity_type"),
-                SubstrateOrganizationMention.id.label("mention_id"),
-                SubstrateOrganizationMention.created_at.label("created_at"),
-            ).where(
-                SubstrateOrganizationMention.article_id == article_id,
-                SubstrateOrganizationMention.deleted == False,  # noqa: E712
-            )
+        stmt = select(
+            literal("organization").label("entity_type"),
+            SubstrateOrganizationMention.id.label("mention_id"),
+            SubstrateOrganizationMention.created_at.label("created_at"),
+        ).where(
+            SubstrateOrganizationMention.article_id == article_id,
+            SubstrateOrganizationMention.deleted == False,  # noqa: E712
         )
+        if nature_value:
+            stmt = stmt.where(SubstrateOrganizationMention.nature == nature_value)
+        parts.append(stmt)
     if not parts:
         return None
     if len(parts) == 1:
@@ -433,10 +473,11 @@ def list_article_mentions(
     *,
     article_id: int,
     entity_type: PublicEntityMentionType | None,
+    nature: str | None = None,
     limit: int,
     offset: int,
 ) -> tuple[list[PublicArticleMentionOut], int]:
-    union_stmt = _mention_union_stmt(article_id, entity_type)
+    union_stmt = _mention_union_stmt(article_id, entity_type, nature=nature)
     if union_stmt is None:
         return [], 0
     subq = union_stmt.subquery()
@@ -535,6 +576,212 @@ def list_article_locations(
     mention_ids = [int(m.id) for m, _ in rows if m.id is not None]  # type: ignore[arg-type]
     by_id = location_mentions_out_by_ids(session, mention_ids)
     items = [by_id[mid] for mid in mention_ids if mid in by_id]
+    return items, total
+
+
+def person_mentions_out_by_ids(
+    session: Session, mention_ids: list[int]
+) -> dict[int, PublicArticlePersonOut]:
+    """Hydrate person mention rows keyed by mention id."""
+    if not mention_ids:
+        return {}
+    rows = session.exec(
+        select(SubstratePersonMention, SubstratePerson)
+        .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+        .where(col(SubstratePersonMention.id).in_(mention_ids))
+    ).all()
+    canonical_ids = [
+        str(person.stylebook_person_canonical_id)
+        for _, person in rows
+        if person.stylebook_person_canonical_id
+    ]
+    canonicals: dict[str, StylebookPersonCanonical] = {}
+    if canonical_ids:
+        canon_rows = session.exec(
+            select(StylebookPersonCanonical).where(col(StylebookPersonCanonical.id).in_(canonical_ids))
+        ).all()
+        canonicals = {str(row.id): row for row in canon_rows}
+    evidence = person_evidence_by_mention_id(session, mention_ids)
+    out: dict[int, PublicArticlePersonOut] = {}
+    for mention, person in rows:
+        if mention.id is None:
+            continue
+        mid = int(mention.id)
+        canon: PublicCanonicalSummaryOut | None = None
+        canon_id = person.stylebook_person_canonical_id
+        if canon_id and str(canon_id) in canonicals:
+            canon = _canonical_summary(canonicals[str(canon_id)])
+        out[mid] = PublicArticlePersonOut(
+            mention_id=mid,
+            substrate_person_id=int(person.id),  # type: ignore[arg-type]
+            label=str(person.name),
+            title=person.title,
+            affiliation=person.affiliation,
+            public_figure=bool(person.public_figure),
+            person_type=person.person_type,
+            canonical=canon,
+            nature=mention.nature,
+            role_in_story=mention.role_in_story,
+            evidence=evidence.get(mid),
+        )
+    return out
+
+
+def list_article_people(
+    session: Session,
+    *,
+    article_id: int,
+    nature: str | None = None,
+    limit: int,
+    offset: int,
+) -> tuple[list[PublicArticlePersonOut], int]:
+    filters = [
+        SubstratePersonMention.article_id == article_id,
+        SubstratePersonMention.deleted == False,  # noqa: E712
+    ]
+    nature_value = (nature or "").strip()
+    if nature_value:
+        filters.append(SubstratePersonMention.nature == nature_value)
+    count_stmt = select(func.count()).select_from(
+        select(SubstratePersonMention.id).where(*filters).subquery()
+    )
+    total = int(session.exec(count_stmt).one())
+    rows = session.exec(
+        select(SubstratePersonMention.id)
+        .where(*filters)
+        .order_by(col(SubstratePersonMention.created_at).desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    mention_ids = [int(row) for row in rows]
+    by_id = person_mentions_out_by_ids(session, mention_ids)
+    items = [by_id[mid] for mid in mention_ids if mid in by_id]
+    return items, total
+
+
+def organization_mentions_out_by_ids(
+    session: Session, mention_ids: list[int]
+) -> dict[int, PublicArticleOrganizationOut]:
+    """Hydrate organization mention rows keyed by mention id."""
+    if not mention_ids:
+        return {}
+    rows = session.exec(
+        select(SubstrateOrganizationMention, SubstrateOrganization)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
+        )
+        .where(col(SubstrateOrganizationMention.id).in_(mention_ids))
+    ).all()
+    canonical_ids = [
+        str(org.stylebook_organization_canonical_id)
+        for _, org in rows
+        if org.stylebook_organization_canonical_id
+    ]
+    canonicals: dict[str, StylebookOrganizationCanonical] = {}
+    if canonical_ids:
+        canon_rows = session.exec(
+            select(StylebookOrganizationCanonical).where(
+                col(StylebookOrganizationCanonical.id).in_(canonical_ids)
+            )
+        ).all()
+        canonicals = {str(row.id): row for row in canon_rows}
+    evidence = organization_evidence_by_mention_id(session, mention_ids)
+    out: dict[int, PublicArticleOrganizationOut] = {}
+    for mention, org in rows:
+        if mention.id is None:
+            continue
+        mid = int(mention.id)
+        canon: PublicCanonicalSummaryOut | None = None
+        canon_id = org.stylebook_organization_canonical_id
+        organization_type = org.organization_type
+        if canon_id and str(canon_id) in canonicals:
+            canon_row = canonicals[str(canon_id)]
+            canon = _canonical_summary(canon_row)
+            organization_type = organization_type or canon_row.organization_type
+        out[mid] = PublicArticleOrganizationOut(
+            mention_id=mid,
+            substrate_organization_id=int(org.id),  # type: ignore[arg-type]
+            label=str(org.name),
+            organization_type=organization_type,
+            canonical=canon,
+            nature=mention.nature,
+            role_in_story=mention.role_in_story,
+            evidence=evidence.get(mid),
+        )
+    return out
+
+
+def list_article_organizations(
+    session: Session,
+    *,
+    article_id: int,
+    nature: str | None = None,
+    limit: int,
+    offset: int,
+) -> tuple[list[PublicArticleOrganizationOut], int]:
+    filters = [
+        SubstrateOrganizationMention.article_id == article_id,
+        SubstrateOrganizationMention.deleted == False,  # noqa: E712
+    ]
+    nature_value = (nature or "").strip()
+    if nature_value:
+        filters.append(SubstrateOrganizationMention.nature == nature_value)
+    count_stmt = select(func.count()).select_from(
+        select(SubstrateOrganizationMention.id).where(*filters).subquery()
+    )
+    total = int(session.exec(count_stmt).one())
+    rows = session.exec(
+        select(SubstrateOrganizationMention.id)
+        .where(*filters)
+        .order_by(col(SubstrateOrganizationMention.created_at).desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    mention_ids = [int(row) for row in rows]
+    by_id = organization_mentions_out_by_ids(session, mention_ids)
+    items = [by_id[mid] for mid in mention_ids if mid in by_id]
+    return items, total
+
+
+def list_article_custom_records(
+    session: Session,
+    *,
+    article_id: int,
+    record_type: str | None = None,
+    limit: int,
+    offset: int,
+) -> tuple[list[PublicArticleCustomRecordOut], int]:
+    filters = [SubstrateCustomRecord.article_id == article_id]
+    record_type_value = (record_type or "").strip()
+    if record_type_value:
+        filters.append(SubstrateCustomRecord.record_type == record_type_value)
+    count_stmt = select(func.count()).select_from(
+        select(SubstrateCustomRecord.id).where(*filters).subquery()
+    )
+    total = int(session.exec(count_stmt).one())
+    rows = session.exec(
+        select(SubstrateCustomRecord)
+        .where(*filters)
+        .order_by(
+            col(SubstrateCustomRecord.record_type).asc(),
+            col(SubstrateCustomRecord.record_index).asc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    items = [
+        PublicArticleCustomRecordOut(
+            id=int(row.id),  # type: ignore[arg-type]
+            record_type=str(row.record_type),
+            record_index=int(row.record_index),
+            fields=dict(row.fields_json or {}),
+            mentions=list(row.mentions_json or []),
+            field_schema=list(row.field_schema_json or []),
+            confidence=row.confidence,
+        )
+        for row in rows
+    ]
     return items, total
 
 

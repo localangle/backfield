@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.locations.helpers import (
+from core_api.routers.public.entities.locations.helpers import (
     parse_location_id,
     resolve_public_locations_scope,
 )

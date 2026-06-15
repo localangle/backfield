@@ -10,7 +10,7 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.people.helpers import resolve_public_people_scope
+from core_api.routers.public.entities.people.helpers import resolve_public_people_scope
 
 router = APIRouter()
 

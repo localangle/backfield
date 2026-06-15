@@ -758,6 +758,39 @@ def test_public_article_mentions_entity_type_filter(public_client: TestClient) -
     assert r.json()["items"][0]["evidence"]["mention_text"] == "City Hall"
 
 
+def test_public_article_mentions_nature_filter(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    article_id = 1
+
+    all_mentions = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}/mentions",
+        headers=headers,
+    )
+    assert all_mentions.status_code == 200
+    assert all_mentions.json()["pagination"]["total"] == 3
+
+    subject_only = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}/mentions",
+        headers=headers,
+        params={"nature": "subject"},
+    )
+    assert subject_only.status_code == 200
+    body = subject_only.json()
+    assert body["pagination"]["total"] == 1
+    assert body["items"][0]["entity_type"] == "person"
+    assert body["items"][0]["nature"] == "subject"
+
+    primary_location = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}/mentions",
+        headers=headers,
+        params={"entity_type": "location", "nature": "primary"},
+    )
+    assert primary_location.status_code == 200
+    assert primary_location.json()["pagination"]["total"] == 1
+    assert primary_location.json()["items"][0]["nature"] == "primary"
+
+
 def test_public_article_locations(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}
@@ -782,6 +815,70 @@ def test_public_article_images(public_client: TestClient) -> None:
     item = r.json()["items"][0]
     assert item["image_id"] == "img-1"
     assert item["caption"] == "Council chamber"
+
+
+def test_public_article_people(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/1/people",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pagination"]["total"] == 1
+    person = body["items"][0]
+    assert person["label"] == "Jane Doe"
+    assert person["nature"] == "subject"
+    assert person["canonical"]["slug"] == "jane-doe"
+
+    filtered = public_client.get(
+        "/public/v1/projects/general/articles/1/people",
+        headers=headers,
+        params={"nature": "official"},
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["pagination"]["total"] == 0
+
+
+def test_public_article_organizations(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/1/organizations",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pagination"]["total"] == 1
+    org = body["items"][0]
+    assert org["label"] == "City Council"
+    assert org["nature"] == "actor"
+    assert org["organization_type"] == "government"
+
+
+def test_public_article_custom_records(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/1/custom-records",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pagination"]["total"] == 1
+    record = body["items"][0]
+    assert record["record_type"] == "contracts"
+    assert record["fields"]["vendor"] == "Acme"
+    assert record["field_schema"][0]["name"] == "vendor"
+
+    filtered = public_client.get(
+        "/public/v1/projects/general/articles/1/custom-records",
+        headers=headers,
+        params={"record_type": "contracts"},
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["pagination"]["total"] == 1
 
 
 def test_public_people_list_and_search(public_client: TestClient) -> None:
@@ -826,6 +923,16 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
     assert mbody["pagination"]["total"] == 1
     assert mbody["items"][0]["article"]["headline"] == "City council votes on budget"
     assert mbody["items"][0]["nature"] == "subject"
+
+    articles = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/articles",
+        headers=headers,
+    )
+    assert articles.status_code == 200
+    abody = articles.json()
+    assert abody["label"] == "Jane Doe"
+    assert abody["pagination"]["total"] == 1
+    assert abody["items"][0]["headline"] == "City council votes on budget"
 
     connections = public_client.get(
         f"/public/v1/projects/general/people/{person_id}/connections",
@@ -893,6 +1000,14 @@ def test_public_organizations_list_and_search(public_client: TestClient) -> None
     assert mbody["pagination"]["total"] == 1
     assert mbody["items"][0]["article"]["headline"] == "City council votes on budget"
     assert mbody["items"][0]["nature"] == "actor"
+
+    articles = public_client.get(
+        f"/public/v1/projects/general/organizations/{organization_id}/articles",
+        headers=headers,
+    )
+    assert articles.status_code == 200
+    assert articles.json()["pagination"]["total"] == 1
+    assert articles.json()["items"][0]["headline"] == "City council votes on budget"
 
     connections = public_client.get(
         f"/public/v1/projects/general/organizations/{organization_id}/connections",
@@ -971,6 +1086,14 @@ def test_public_locations_list_search_and_geo(public_client: TestClient) -> None
     assert mbody["pagination"]["total"] == 1
     assert mbody["items"][0]["nature"] == "primary"
 
+    articles = public_client.get(
+        f"/public/v1/projects/general/locations/{location_id}/articles",
+        headers=headers,
+    )
+    assert articles.status_code == 200
+    assert articles.json()["pagination"]["total"] == 1
+    assert articles.json()["items"][0]["headline"] == "City council votes on budget"
+
     connections = public_client.get(
         f"/public/v1/projects/general/locations/{location_id}/connections",
         headers=headers,
@@ -988,6 +1111,8 @@ def test_public_location_not_found(public_client: TestClient) -> None:
         headers=headers,
     )
     assert r.status_code == 404
+
+
 def test_public_mentions_search_facets_and_detail(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

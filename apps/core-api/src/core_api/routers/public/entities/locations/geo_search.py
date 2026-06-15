@@ -18,7 +18,7 @@ from sqlmodel import Session
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import parse_bbox
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.locations.helpers import resolve_public_locations_scope
+from core_api.routers.public.entities.locations.helpers import resolve_public_locations_scope
 from core_api.routers.public.schemas import PaginationOut
 
 router = APIRouter()
