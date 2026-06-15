@@ -472,6 +472,92 @@ Results are ordered by article `pub_date` descending (nulls last), then `id` des
 
 ---
 
+## POST `/public/v1/projects/{project_slug}/articles/geo-cells/query`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/geo_cells_batch.py`](../../../apps/core-api/src/core_api/routers/public/articles/geo_cells_batch.py) — `query_project_articles_in_geo_cells` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_geo_cells_batch.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_geo_cells_batch.py) |
+| **Auth** | Project API key required |
+| **Spec** | [`docs/batch-geo-cells-query-spec.md`](../../../docs/batch-geo-cells-query-spec.md) |
+
+### Functionality
+
+Return **articles** and **in-cell location mentions** for **many H3 cells** in one request. Use this for perspective refresh and other multi-cell retrievers instead of fanning out per-cell GET calls.
+
+- **Dedup:** an article matching multiple requested cells appears once with all `matched_cells` and combined `matching_locations`.
+- **Pagination:** global over the merged article set (`pub_date` desc, nulls last, then `id` desc).
+- **Semantics:** same H3 rollup + size gate as single-cell drill-down when `resolution` matches the cell IDs.
+- **Cap:** at most 200 cells per request.
+
+### Request body
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `cells` | string[] | **required** | H3 cell IDs (1–200); each must match `resolution` |
+| `resolution` | integer | **required** | Shared display resolution (0–15) |
+| `location_type` | string | — | Filter matching locations by substrate `location_type` |
+| `nature` | string | — | Filter matching location mentions by editorial `nature` |
+| `meta_type` | string | — | Include articles with a metadata row of this type |
+| `meta_category` | string | — | With `meta_type`, include articles with this category value |
+| `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `external_source` | string | — | Include articles from this external source (case-insensitive) |
+| `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
+| `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
+| `include_preview` | boolean | `false` | Include truncated text preview per article |
+
+### Response `200`
+
+```json
+{
+  "resolution": 7,
+  "items": [
+    {
+      "article": {
+        "id": 1,
+        "headline": "City council votes on budget",
+        "preview": null,
+        "metadata": []
+      },
+      "matching_locations": [
+        {
+          "mention_id": 10,
+          "substrate_location_id": 4,
+          "label": "City Hall",
+          "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
+          "h3_cell": "892664c1a97ffff",
+          "h3_resolution": 11
+        }
+      ],
+      "matched_cells": ["872664c47ffffff"]
+    }
+  ],
+  "per_cell_totals": [
+    { "h3_cell": "872664c47ffffff", "article_count": 12 }
+  ],
+  "pagination": {
+    "limit": 25,
+    "offset": 0,
+    "total": 12
+  }
+}
+```
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | Invalid or empty `cells`, resolution mismatch, >200 cells, or invalid dates |
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` |
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/articles/{article_id}`
 
 | | |

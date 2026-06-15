@@ -13,6 +13,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Geo search | ✅ | `GET …/articles/geo-search` (point+radius or bbox; location mentions) |
 | Geo cells (hex coverage) | ✅ | `GET …/articles/geo-cells` (bbox; distinct-article counts per H3 cell) |
 | Geo cell drill-down | ✅ | `GET …/articles/geo-cells/{h3_cell}` (articles + in-cell location mentions) |
+| Batch geo cell drill-down | ✅ | `POST …/articles/geo-cells/query` (many cells; deduplicated articles + `matched_cells`) |
 | Detail | ✅ | No full body; optional preview |
 | Detail counts embed | ✅ | `include=counts` on detail |
 | Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type` filter |

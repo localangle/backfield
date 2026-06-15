@@ -278,6 +278,46 @@ def group_and_page_articles_by_mention_pairs(
     return page, total
 
 
+def group_and_page_articles_by_mention_cell_triples(
+    session: Session,
+    *,
+    triples: list[tuple[int, int, str]],
+    limit: int,
+    offset: int,
+) -> tuple[list[tuple[int, list[int], list[str]]], int]:
+    """Group mention matches by article, merge matched H3 cells, and page globally."""
+    mentions_by_article: dict[int, list[int]] = {}
+    cells_by_article: dict[int, set[str]] = {}
+    for mention_id, article_id, display_cell in triples:
+        mentions_by_article.setdefault(article_id, []).append(mention_id)
+        cells_by_article.setdefault(article_id, set()).add(display_cell)
+
+    if not mentions_by_article:
+        return [], 0
+
+    article_ids = list(mentions_by_article.keys())
+    articles = session.exec(
+        select(SubstrateArticle)
+        .where(col(SubstrateArticle.id).in_(article_ids))
+        .order_by(
+            col(SubstrateArticle.pub_date).desc().nulls_last(),
+            col(SubstrateArticle.id).desc(),
+        )
+    ).all()
+    ordered_article_ids = [int(a.id) for a in articles if a.id is not None]
+    total = len(ordered_article_ids)
+    page_article_ids = ordered_article_ids[offset : offset + limit]
+    page = [
+        (
+            article_id,
+            mentions_by_article.get(article_id, []),
+            sorted(cells_by_article.get(article_id, set())),
+        )
+        for article_id in page_article_ids
+    ]
+    return page, total
+
+
 def search_public_articles_by_geo(
     session: Session,
     *,

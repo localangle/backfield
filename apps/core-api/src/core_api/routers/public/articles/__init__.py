@@ -10,6 +10,7 @@ from core_api.routers.public.articles import (
     facets,
     geo_cell_detail,
     geo_cells,
+    geo_cells_batch,
     geo_search,
     images,
     locations,
@@ -28,6 +29,7 @@ router.include_router(facets.router)
 router.include_router(semantic_search.router)
 router.include_router(geo_search.router)
 router.include_router(geo_cells.router)
+router.include_router(geo_cells_batch.router)
 router.include_router(geo_cell_detail.router)
 router.include_router(detail.router)
 router.include_router(mentions.router)

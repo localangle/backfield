@@ -543,6 +543,41 @@ def test_public_article_geo_cell_detail(public_client: TestClient) -> None:
     assert invalid.status_code == 400
 
 
+def test_public_article_geo_cells_batch(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    coverage = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells",
+        headers=headers,
+        params={"bbox": "-88,41,-87,42"},
+    )
+    assert coverage.status_code == 200
+    cell_id = coverage.json()["cells"][0]["h3_cell"]
+    resolution = coverage.json()["resolution"]
+
+    r = public_client.post(
+        "/public/v1/projects/general/articles/geo-cells/query",
+        headers=headers,
+        json={
+            "cells": [cell_id],
+            "resolution": resolution,
+            "include_preview": False,
+            "limit": 100,
+            "offset": 0,
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["resolution"] == resolution
+    assert body["pagination"]["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["matched_cells"] == [cell_id]
+    assert body["items"][0]["article"]["headline"] == "City council votes on budget"
+    assert len(body["per_cell_totals"]) == 1
+    assert body["per_cell_totals"][0]["h3_cell"] == cell_id
+    assert body["per_cell_totals"][0]["article_count"] == 1
+
+
 def test_public_article_geo_search_nature_filter(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

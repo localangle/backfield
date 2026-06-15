@@ -24,6 +24,19 @@ from backfield_entities.public.articles import (
 
 
 @dataclass(frozen=True)
+class PublicArticleGeoMentionFilters:
+    location_type: str | None = None
+    nature: str | None = None
+    meta_type: str | None = None
+    meta_category: str | None = None
+    exclude_meta_type: str | None = None
+    exclude_meta_category: str | None = None
+    external_source: str | None = None
+    pub_date_from: date | None = None
+    pub_date_to: date | None = None
+
+
+@dataclass(frozen=True)
 class PublicArticleGeoCellDetailParams:
     h3_cell: str
     location_type: str | None = None
@@ -57,6 +70,36 @@ def cell_resolution(h3_cell: str) -> int:
     return int(get_resolution(h3_cell))
 
 
+def display_cell_for_location(
+    *,
+    native_h3_cell: str,
+    native_h3_resolution: int,
+    display_resolution: int,
+) -> str | None:
+    if native_h3_resolution < display_resolution:
+        return None
+    if native_h3_resolution == display_resolution:
+        return native_h3_cell
+    from h3 import cell_to_parent
+
+    return str(cell_to_parent(native_h3_cell, display_resolution))
+
+
+def mention_filters_from_detail_params(
+    params: PublicArticleGeoCellDetailParams,
+) -> PublicArticleGeoMentionFilters:
+    return PublicArticleGeoMentionFilters(
+        location_type=params.location_type,
+        nature=params.nature,
+        meta_type=params.meta_type,
+        meta_category=params.meta_category,
+        exclude_meta_type=params.exclude_meta_type,
+        exclude_meta_category=params.exclude_meta_category,
+        pub_date_from=params.pub_date_from,
+        pub_date_to=params.pub_date_to,
+    )
+
+
 def _rolls_up_to_cell(
     *,
     native_h3_cell: str,
@@ -64,21 +107,20 @@ def _rolls_up_to_cell(
     display_cell: str,
     display_resolution: int,
 ) -> bool:
-    if native_h3_resolution < display_resolution:
-        return False
-    if native_h3_resolution == display_resolution:
-        return native_h3_cell == display_cell
-    from h3 import cell_to_parent
+    rolled_up = display_cell_for_location(
+        native_h3_cell=native_h3_cell,
+        native_h3_resolution=native_h3_resolution,
+        display_resolution=display_resolution,
+    )
+    return rolled_up == display_cell
 
-    return str(cell_to_parent(native_h3_cell, display_resolution)) == display_cell
 
-
-def _filter_allowed_article_ids(
+def filter_allowed_article_ids(
     session: Session,
     *,
     project_id: int,
     article_ids: set[int],
-    params: PublicArticleGeoCellDetailParams,
+    filters: PublicArticleGeoMentionFilters,
 ) -> set[int]:
     if not article_ids:
         return set()
@@ -89,12 +131,13 @@ def _filter_allowed_article_ids(
     )
     stmt = _apply_public_article_list_filters(
         stmt,
-        meta_type=params.meta_type,
-        meta_category=params.meta_category,
-        exclude_meta_type=params.exclude_meta_type,
-        exclude_meta_category=params.exclude_meta_category,
-        pub_date_from=params.pub_date_from,
-        pub_date_to=params.pub_date_to,
+        meta_type=filters.meta_type,
+        meta_category=filters.meta_category,
+        exclude_meta_type=filters.exclude_meta_type,
+        exclude_meta_category=filters.exclude_meta_category,
+        external_source=filters.external_source,
+        pub_date_from=filters.pub_date_from,
+        pub_date_to=filters.pub_date_to,
     )
     return {int(aid) for aid in session.exec(stmt).all()}
 
@@ -148,11 +191,11 @@ def _postgres_matching_pairs(
         return []
 
     article_ids = {int(row.article_id) for row in rows}
-    allowed_article_ids = _filter_allowed_article_ids(
+    allowed_article_ids = filter_allowed_article_ids(
         session,
         project_id=project_id,
         article_ids=article_ids,
-        params=params,
+        filters=mention_filters_from_detail_params(params),
     )
     return [
         (int(row.mention_id), int(row.article_id))
@@ -203,11 +246,11 @@ def _sqlite_matching_pairs(
         candidate_pairs.append((int(mention.id), article_id))
         candidate_article_ids.add(article_id)
 
-    allowed_article_ids = _filter_allowed_article_ids(
+    allowed_article_ids = filter_allowed_article_ids(
         session,
         project_id=project_id,
         article_ids=candidate_article_ids,
-        params=params,
+        filters=mention_filters_from_detail_params(params),
     )
     return [
         (mention_id, article_id)

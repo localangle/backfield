@@ -213,6 +213,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | `GET` | `…/articles/geo-search` | Articles with location mentions near a point or in a bbox |
 | `GET` | `…/articles/geo-cells` | H3 hex cells with distinct-article counts for a bbox (map coverage) |
 | `GET` | `…/articles/geo-cells/{h3_cell}` | Articles and in-cell location mentions for one coverage hex (drill-down) |
+| `POST` | `…/articles/geo-cells/query` | Batch drill-down for many hexes (deduplicated articles + `matched_cells`) |
 | `GET` | `…/articles/{article_id}` | Article detail |
 
 **Search parameters:**
@@ -255,6 +256,13 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - Returns `h3_cell`, `resolution`, paginated `items[]` (article + `matching_locations`), and `pagination.total`
 - `pagination.total` should match the cell's `article_count` when the same filters are forwarded
 - Valid but empty cells return `200` with `total: 0`
+
+**Batch geo cell drill-down (`POST …/articles/geo-cells/query`):**
+
+- JSON body with `cells[]` and shared `resolution`, plus the same mention/metadata/date filters as single-cell drill-down and optional `external_source`
+- Returns deduplicated `items[]` with `article`, `matching_locations`, and `matched_cells`; global pagination over the merged set
+- Includes `per_cell_totals[]` for cross-checking coverage counts
+- Cap: 200 cells per request. See [`docs/batch-geo-cells-query-spec.md`](batch-geo-cells-query-spec.md)
 
 See [`docs/public-api/reference/geo-cells-map-clients.md`](public-api/reference/geo-cells-map-clients.md) for map-client integration guidance.
 
