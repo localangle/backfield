@@ -1,15 +1,23 @@
 """Overpass API utilities for intersection geocoding."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC
+from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 import overpy
 from shapely.geometry import LineString, Point
+
 from agate_utils.llm import call_llm
 
 logger = logging.getLogger(__name__)
@@ -19,6 +27,14 @@ api = overpy.Overpass()
 
 # Public Overpass endpoints reject anonymous urllib defaults with 406; identify the client.
 _DEFAULT_OVERPASS_USER_AGENT = "Backfield/1.0 (intersection geocode; Overpass API)"
+_DEFAULT_OVERPASS_MIRRORS: tuple[str, ...] = (
+    "https://lz4.overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+)
+_RETRYABLE_HTTP_STATUSES: frozenset[int] = frozenset({429, 502, 503, 504})
+_DEFAULT_RETRY_DELAY_S = 4.0
+_MAX_RETRY_DELAY_S = 60.0
+_overpass_semaphore: threading.Semaphore | None = None
 
 
 def _overpass_user_agent() -> str:
@@ -26,9 +42,105 @@ def _overpass_user_agent() -> str:
     return ua or _DEFAULT_OVERPASS_USER_AGENT
 
 
+def _overpass_endpoint_urls() -> list[str]:
+    """Primary Overpass interpreter URL plus optional mirrors (deduped, ordered)."""
+    primary = os.environ.get("OVERPASS_API_URL", "").strip() or api.url
+    mirrors_raw = os.environ.get("OVERPASS_MIRROR_URLS", "").strip()
+    if mirrors_raw:
+        mirrors = [part.strip() for part in mirrors_raw.split(",") if part.strip()]
+    else:
+        mirrors = list(_DEFAULT_OVERPASS_MIRRORS)
+    urls: list[str] = []
+    for candidate in (primary, *mirrors):
+        if candidate and candidate not in urls:
+            urls.append(candidate)
+    return urls
+
+
+def _overpass_max_concurrent() -> int:
+    raw = os.environ.get("OVERPASS_MAX_CONCURRENT", "1").strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 1
+
+
+def _overpass_query_stagger_s() -> float:
+    raw = os.environ.get("OVERPASS_QUERY_STAGGER_S", "1.0").strip()
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 1.0
+
+
+def _overpass_semaphore() -> threading.Semaphore:
+    global _overpass_semaphore
+    if _overpass_semaphore is None:
+        _overpass_semaphore = threading.Semaphore(_overpass_max_concurrent())
+    return _overpass_semaphore
+
+
+@contextmanager
+def _overpass_request_slot() -> Iterator[None]:
+    sem = _overpass_semaphore()
+    sem.acquire()
+    try:
+        yield
+    finally:
+        sem.release()
+
+
+def _looks_like_overpass_json(body: bytes) -> bool:
+    stripped = body.lstrip()
+    return stripped.startswith(b"{") or stripped.startswith(b"[")
+
+
+def _is_retryable_http_status(status_code: int) -> bool:
+    return status_code in _RETRYABLE_HTTP_STATUSES
+
+
+def _retry_delay_seconds(
+    *,
+    response: httpx.Response | None,
+    attempt: int,
+    base_delay_s: float,
+    rate_limited: bool,
+) -> float:
+    """Compute backoff; honor Retry-After when the server sends it."""
+    if response is not None:
+        retry_after = response.headers.get("Retry-After", "").strip()
+        if retry_after:
+            if retry_after.isdigit():
+                return min(float(retry_after), _MAX_RETRY_DELAY_S)
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=UTC)
+                delta = (retry_at.timestamp() - time.time())
+                if delta > 0:
+                    return min(delta, _MAX_RETRY_DELAY_S)
+            except (TypeError, ValueError, OverflowError):
+                pass
+    multiplier = 2 ** max(0, attempt - 1)
+    floor = 8.0 if rate_limited else base_delay_s
+    return min(floor * multiplier, _MAX_RETRY_DELAY_S)
+
+
+def _response_error_summary(response: httpx.Response) -> str:
+    body_preview = response.text[:300] if response.text else "(empty body)"
+    return f"HTTP {response.status_code}: {body_preview!r}"
+
+
+def _parse_overpass_response(content: bytes) -> overpy.Result:
+    if not _looks_like_overpass_json(content):
+        preview = content[:200].decode("utf-8", errors="replace")
+        raise ValueError(f"Overpass response is not JSON (starts with {preview[:80]!r})")
+    return api.parse_json(content)
+
+
 ########## INTERSECTION PARSING ##########
 
-def parse_intersection_description(text: str, openai_api_key: str) -> Optional[Dict[str, Any]]:
+def parse_intersection_description(text: str, openai_api_key: str) -> dict[str, Any] | None:
     """
     Parse a natural language intersection description into structured fields.
     
@@ -51,7 +163,7 @@ def parse_intersection_description(text: str, openai_api_key: str) -> Optional[D
     try:
         # Correct path from overpass.py location to prompts
         prompt_path = Path(__file__).parent / "prompts" / "parse_intersection_description.md"
-        with open(prompt_path, 'r') as f:
+        with open(prompt_path) as f:
             prompt_template = f.read()
     except FileNotFoundError:
         logger.error("Parse intersection description prompt not found")
@@ -81,7 +193,7 @@ def generate_single_road_query_with_llm(
     lon: float, 
     api_key: str,
     radius: int = 50000, 
-    alternates: Optional[List[str]] = None
+    alternates: list[str] | None = None
 ) -> str:
     """
     Generate an OverpassQL query for a single road using LLM.
@@ -101,7 +213,7 @@ def generate_single_road_query_with_llm(
         alternates_str = alternates or []
         
         prompt_path = Path(__file__).parent / "prompts" / "generate_overpass_query.md"
-        with open(prompt_path, 'r') as f:
+        with open(prompt_path) as f:
             prompt_template = f.read()
         
         prompt = prompt_template.format(
@@ -149,81 +261,181 @@ def clean_overpass_query(raw_response: str) -> str:
 
 ########## QUERY EXECUTION ##########
 
-def run_query_with_overpy(query: str, max_retries: int = 4) -> Optional[overpy.Result]:
+def run_query_with_overpy(query: str, max_retries: int = 4) -> overpy.Result | None:
     """
-    Execute an OverpassQL query with retry logic.
+    Execute an OverpassQL query with retry logic, mirror fallback, and throttling.
 
     Uses httpx with a descriptive User-Agent (override with OVERPASS_USER_AGENT); overpy's
     default urllib client sends no User-Agent and is often rejected with HTTP 406.
 
+    Env:
+        OVERPASS_API_URL: primary interpreter (default: overpy public endpoint)
+        OVERPASS_MIRROR_URLS: comma-separated fallback interpreters
+        OVERPASS_MAX_CONCURRENT: max in-flight requests per worker process (default 1)
+        OVERPASS_USER_AGENT: HTTP User-Agent header
+
     Args:
         query: OverpassQL query to execute
-        max_retries: Maximum number of retry attempts
+        max_retries: Maximum retry attempts per endpoint
 
     Returns:
         Optional[overpy.Result]: Query result or None if failed
     """
-    retry_delay = 2  # Start with 2 seconds for gateway timeouts
+    urls = _overpass_endpoint_urls()
     qbytes = query.encode("utf-8") if isinstance(query, str) else query
     timeout = httpx.Timeout(180.0)
     headers = {
         "User-Agent": _overpass_user_agent(),
         "Accept": "application/json",
     }
-    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        for attempt in range(max_retries):
-            try:
-                logger.info("Executing Overpass query (attempt %s)", attempt + 1)
-                response = client.post(api.url, content=qbytes, headers=headers)
-                if response.status_code == 200:
-                    return api.parse_json(response.content)
-                if response.status_code == 400:
-                    logger.error(
-                        "Overpass bad request (HTTP 400): %s",
-                        response.text[:800] if response.text else "(empty body)",
-                    )
-                    logger.error("This is a query problem, retrying won't help. Bailing out.")
-                    return None
-                err_summary = f"HTTP {response.status_code}: {response.text[:300]!r}"
-                if response.status_code in (429, 503, 504):
+
+    with _overpass_request_slot():
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            for url_index, url in enumerate(urls):
+                base_delay_s = _DEFAULT_RETRY_DELAY_S
+                for attempt in range(max_retries):
+                    attempt_no = attempt + 1
+                    try:
+                        logger.info(
+                            "Executing Overpass query (endpoint %s/%s, attempt %s/%s)",
+                            url_index + 1,
+                            len(urls),
+                            attempt_no,
+                            max_retries,
+                        )
+                        response = client.post(url, content=qbytes, headers=headers)
+
+                        if response.status_code == 200:
+                            try:
+                                return _parse_overpass_response(response.content)
+                            except (ValueError, json.JSONDecodeError) as parse_exc:
+                                logger.warning(
+                                    "Overpass non-JSON body on attempt %s at %s: %s",
+                                    attempt_no,
+                                    url,
+                                    parse_exc,
+                                )
+                                if attempt >= max_retries - 1:
+                                    break
+                                delay = _retry_delay_seconds(
+                                    response=response,
+                                    attempt=attempt_no,
+                                    base_delay_s=base_delay_s,
+                                    rate_limited=True,
+                                )
+                                logger.info("Retrying in %.1f seconds...", delay)
+                                time.sleep(delay)
+                                continue
+
+                        if response.status_code == 400:
+                            logger.error(
+                                "Overpass bad request (HTTP 400) at %s: %s",
+                                url,
+                                response.text[:800] if response.text else "(empty body)",
+                            )
+                            logger.error(
+                                "This is a query problem, retrying won't help. Bailing out."
+                            )
+                            return None
+
+                        err_summary = _response_error_summary(response)
+                        rate_limited = response.status_code == 429
+                        if _is_retryable_http_status(response.status_code):
+                            logger.warning(
+                                "Overpass server error on attempt %s at %s: %s",
+                                attempt_no,
+                                url,
+                                err_summary,
+                            )
+                        else:
+                            logger.warning(
+                                "Overpass error on attempt %s at %s: %s",
+                                attempt_no,
+                                url,
+                                err_summary,
+                            )
+
+                        if attempt >= max_retries - 1:
+                            break
+
+                        delay = _retry_delay_seconds(
+                            response=response,
+                            attempt=attempt_no,
+                            base_delay_s=base_delay_s,
+                            rate_limited=rate_limited,
+                        )
+                        logger.info("Retrying in %.1f seconds...", delay)
+                        time.sleep(delay)
+                        continue
+
+                    except httpx.TimeoutException as exc:
+                        logger.warning(
+                            "Overpass timeout on attempt %s at %s: %s",
+                            attempt_no,
+                            url,
+                            exc,
+                        )
+                        if attempt >= max_retries - 1:
+                            break
+                        delay = _retry_delay_seconds(
+                            response=None,
+                            attempt=attempt_no,
+                            base_delay_s=base_delay_s,
+                            rate_limited=False,
+                        )
+                        logger.info("Retrying in %.1f seconds...", delay)
+                        time.sleep(delay)
+                    except Exception as exc:
+                        error_str = str(exc).lower()
+                        if "bad request" in error_str or "syntax" in error_str:
+                            logger.error("Overpass bad request - query syntax error: %s", exc)
+                            logger.error(
+                                "This is a query problem, retrying won't help. Bailing out."
+                            )
+                            return None
+                        if (
+                            "gateway timeout" in error_str
+                            or "server load" in error_str
+                            or "timeout" in error_str
+                        ):
+                            logger.warning(
+                                "Overpass server error on attempt %s at %s: %s",
+                                attempt_no,
+                                url,
+                                exc,
+                            )
+                        else:
+                            logger.warning(
+                                "Overpass error on attempt %s at %s: %s",
+                                attempt_no,
+                                url,
+                                exc,
+                            )
+                        if attempt >= max_retries - 1:
+                            break
+                        delay = _retry_delay_seconds(
+                            response=None,
+                            attempt=attempt_no,
+                            base_delay_s=base_delay_s,
+                            rate_limited=False,
+                        )
+                        logger.info("Retrying in %.1f seconds...", delay)
+                        time.sleep(delay)
+
+                if url_index < len(urls) - 1:
                     logger.warning(
-                        "Overpass server error on attempt %s: %s", attempt + 1, err_summary
+                        "Overpass endpoint exhausted (%s); trying mirror %s",
+                        url,
+                        urls[url_index + 1],
                     )
-                else:
-                    logger.warning("Overpass error on attempt %s: %s", attempt + 1, err_summary)
-                if attempt < max_retries - 1:
-                    retry_delay = min(retry_delay * 2, 15)
-                    logger.info("Retrying in %s seconds...", retry_delay)
-                    time.sleep(retry_delay)
-                else:
-                    logger.error("Max retries exceeded for Overpass query")
-                    return None
-            except Exception as e:
-                error_str = str(e).lower()
-                if "bad request" in error_str or "syntax" in error_str:
-                    logger.error("Overpass bad request - query syntax error: %s", e)
-                    logger.error("This is a query problem, retrying won't help. Bailing out.")
-                    return None
-                if (
-                    "gateway timeout" in error_str
-                    or "server load" in error_str
-                    or "timeout" in error_str
-                ):
-                    logger.warning("Overpass server error on attempt %s: %s", attempt + 1, e)
-                else:
-                    logger.warning("Overpass error on attempt %s: %s", attempt + 1, e)
-                if attempt < max_retries - 1:
-                    retry_delay = min(retry_delay * 2, 15)
-                    logger.info("Retrying in %s seconds...", retry_delay)
-                    time.sleep(retry_delay)
-                else:
-                    logger.error("Max retries exceeded for Overpass query")
-                    return None
+
+            logger.error("Max retries exceeded for Overpass query across all endpoints")
+            return None
 
 
 ########## GEOMETRIC OPERATIONS ##########
 
-def linestrings_from_ways(result: overpy.Result) -> List[LineString]:
+def linestrings_from_ways(result: overpy.Result) -> list[LineString]:
     """
     Convert Overpass ways to Shapely LineString objects.
     
@@ -241,7 +453,7 @@ def linestrings_from_ways(result: overpy.Result) -> List[LineString]:
     return ways
 
 
-def find_geometric_intersections(result1: overpy.Result, result2: overpy.Result) -> List[Point]:
+def find_geometric_intersections(result1: overpy.Result, result2: overpy.Result) -> list[Point]:
     """
     Find geometric intersections between two sets of road ways.
     
@@ -271,7 +483,9 @@ def find_geometric_intersections(result1: overpy.Result, result2: overpy.Result)
 
 ########## LLM FUNCTIONS ##########
 
-async def estimate_overpass_parameters(address_text: str, openai_api_key: str) -> Optional[Tuple[float, float, int]]:
+async def estimate_overpass_parameters(
+    address_text: str, openai_api_key: str
+) -> tuple[float, float, int] | None:
     """
     Estimate plausible latitude, longitude, and search radius for an address.
     This is useful for setting up Overpass queries when we don't have precise coordinates.
@@ -281,12 +495,12 @@ async def estimate_overpass_parameters(address_text: str, openai_api_key: str) -
         openai_api_key: OpenAI API key for LLM calls
         
     Returns:
-        Optional[Tuple[float, float, int]]: (latitude, longitude, radius_meters) if successful, None otherwise
+        (latitude, longitude, radius_meters) if successful, None otherwise
     """
     try:
         # Load the prompt template
         prompt_path = Path(__file__).parent / "prompts" / "estimate_overpass_parameters.md"
-        with open(prompt_path, 'r') as f:
+        with open(prompt_path) as f:
             prompt_template = f.read()
         
         prompt = prompt_template.format(address_text=address_text)
@@ -307,10 +521,22 @@ async def estimate_overpass_parameters(address_text: str, openai_api_key: str) -
             
             # Basic validation - ensure coordinates are reasonable
             if -90 <= lat <= 90 and -180 <= lon <= 180 and 1000 <= radius <= 500000:
-                logger.info(f"Estimated search parameters for {address_text}: lat={lat}, lon={lon}, radius={radius}m")
+                logger.info(
+                    "Estimated search parameters for %s: lat=%s, lon=%s, radius=%sm",
+                    address_text,
+                    lat,
+                    lon,
+                    radius,
+                )
                 return (lat, lon, radius)
             else:
-                logger.warning(f"LLM returned invalid parameters for {address_text}: lat={lat}, lon={lon}, radius={radius}")
+                logger.warning(
+                    "LLM returned invalid parameters for %s: lat=%s, lon=%s, radius=%s",
+                    address_text,
+                    lat,
+                    lon,
+                    radius,
+                )
                 return None
         else:
             logger.warning(f"LLM response missing required fields for {address_text}")
@@ -322,10 +548,10 @@ async def estimate_overpass_parameters(address_text: str, openai_api_key: str) -
 
 def choose_most_plausible_intersection(
     input_string: str,
-    candidates: List[Point],
+    candidates: list[Point],
     openai_api_key: str,
     max_candidates: int = 10
-) -> Optional[Point]:
+) -> Point | None:
     """
     Use LLM to select the most plausible intersection from candidates.
     
@@ -353,7 +579,7 @@ def choose_most_plausible_intersection(
 
     try:
         prompt_path = Path(__file__).parent / "prompts" / "choose_intersection.md"
-        with open(prompt_path, 'r') as f:
+        with open(prompt_path) as f:
             prompt_template = f.read()
         
         prompt = prompt_template.format(
@@ -387,10 +613,10 @@ async def find_intersection_coordinates(
     lat: float,
     lon: float,
     openai_api_key: str,
-    radius: Optional[int] = None,
-    alt_map: Optional[Dict[str, List[str]]] = None,
-    orig_text: Optional[str] = None
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+    radius: int | None = None,
+    alt_map: dict[str, list[str]] | None = None,
+    orig_text: str | None = None
+) -> tuple[list[dict[str, Any]], list[str]]:
     """
     Find intersection coordinates for two roads.
     
@@ -424,8 +650,12 @@ async def find_intersection_coordinates(
         logger.warning(f"No radius provided and no original text, using default: {radius}m")
     
     # Generate queries for both roads
-    query1 = generate_single_road_query_with_llm(road_1, lat, lon, openai_api_key, radius, alternates=alt_map.get(road_1, []))
-    query2 = generate_single_road_query_with_llm(road_2, lat, lon, openai_api_key, radius, alternates=alt_map.get(road_2, []))
+    query1 = generate_single_road_query_with_llm(
+        road_1, lat, lon, openai_api_key, radius, alternates=alt_map.get(road_1, [])
+    )
+    query2 = generate_single_road_query_with_llm(
+        road_2, lat, lon, openai_api_key, radius, alternates=alt_map.get(road_2, [])
+    )
 
     logger.info(f"Generated query for road 1 ({road_1}):")
     logger.info(query1)
@@ -435,9 +665,12 @@ async def find_intersection_coordinates(
     # Collect queries for meta output
     queries = [query1, query2]
 
-    # Execute queries
+    # Execute queries (stagger the second request to reduce 429s on public mirrors)
     logger.info("Executing Overpass queries...")
     result1 = run_query_with_overpy(query1)
+    stagger_s = _overpass_query_stagger_s()
+    if stagger_s > 0:
+        time.sleep(stagger_s)
     result2 = run_query_with_overpy(query2)
     
     if not result1 or not result2:
@@ -481,8 +714,8 @@ async def find_intersection_coordinates(
 async def find_intersection_coordinates_from_text(
     intersection_text: str, 
     openai_api_key: str,
-    radius: Optional[int] = None
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+    radius: int | None = None
+) -> tuple[list[dict[str, Any]], list[str]]:
     """
     Find intersection coordinates from natural language description.
     
@@ -509,7 +742,13 @@ async def find_intersection_coordinates_from_text(
     lon = parsed["longitude"]
     alt_map = parsed.get("alternates", {})
 
-    logger.info(f"Parsed intersection: {road_1} and {road_2} near {parsed['city']}, {parsed['state']}")
+    logger.info(
+        "Parsed intersection: %s and %s near %s, %s",
+        road_1,
+        road_2,
+        parsed["city"],
+        parsed["state"],
+    )
     logger.info(f"Location: lat={lat}, lon={lon}")
     logger.info(f"Alternate names: {alt_map}")
 
