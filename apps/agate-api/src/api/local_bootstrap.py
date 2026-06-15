@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 GENERAL_SLUG = "general"
 DEFAULT_ORG_SLUG = "default"
-DEFAULT_ORG_DISPLAY_NAME = "Backfield"
 DEFAULT_WORKSPACE_SLUG = "default"
 DEFAULT_WORKSPACE_DISPLAY_NAME = "Default Workspace"
 
@@ -50,9 +49,6 @@ def _ensure_default_workspace_and_general(session: Session) -> None:
     ).first()
     if org is None or org.id is None:
         return
-    if org.name != DEFAULT_ORG_DISPLAY_NAME:
-        org.name = DEFAULT_ORG_DISPLAY_NAME
-        session.add(org)
     oid = int(org.id)
     default_sb = ensure_default_stylebook_for_organization(session, oid)
     sb_id = int(default_sb.id)  # type: ignore[arg-type]
@@ -74,9 +70,6 @@ def _ensure_default_workspace_and_general(session: Session) -> None:
     else:
         if int(ws.stylebook_id) != sb_id:
             ws.stylebook_id = sb_id
-            session.add(ws)
-        if ws.name != DEFAULT_WORKSPACE_DISPLAY_NAME:
-            ws.name = DEFAULT_WORKSPACE_DISPLAY_NAME
             session.add(ws)
 
     project = session.exec(
