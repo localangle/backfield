@@ -5,7 +5,7 @@ import asyncio
 import time
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import AliasChoices, BaseModel, Field, ConfigDict, model_validator
 
 from agate_runtime.context import AgateEnvContext
 
@@ -72,6 +72,7 @@ class GeocodeAgentParams(BaseModel):
     )
     stylebookId: Optional[int] = Field(
         default=None,
+        validation_alias=AliasChoices("stylebookId", "stylebook_id"),
         description="Stylebook id for DB-backed cache (worker: BACKFIELD_PROJECT_ID + useCache)",
     )
     evaluationModel: str = Field(
@@ -535,4 +536,11 @@ class GeocodeAgent:
         params: GeocodeAgentParams,
         ctx: AgateEnvContext,
     ) -> GeocodeAgentOutput:
+        from .runner import attach_geocode_cache_bundle
+
+        attach_geocode_cache_bundle(
+            ctx,
+            use_cache=params.useCache,
+            stylebook_id=params.stylebookId,
+        )
         return await run_geocode_agent_pipeline(inp, params, ctx)

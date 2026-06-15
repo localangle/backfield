@@ -151,7 +151,15 @@ def _create_model(location_type: str, location_text: str, components: dict, stat
         return model
 
     if location_type in {"intersection_road", "intersection_highway"}:
-        model = Intersection(name=location_text, country=country_code)
+        city_name = str(components.get("city") or "").strip()
+        state_info = components.get("state", {})
+        state_abbr = state_info.get("abbr") if isinstance(state_info, dict) else None
+        model = Intersection(
+            name=location_text,
+            city=city_name or None,
+            state_abbr=state_abbr,
+            country=country_code,
+        )
         model._original_text = state.get("original_text", "")
         model._geocode_hints = _geocode_hints_for_context(state)
         return model
@@ -545,7 +553,7 @@ async def orchestrate_external_geocode(state: AgentState) -> AgentState:
 
         geo_lm = state.get("geographic_reasoning_llm_model")
         geo_cfg = state.get("geographic_reasoning_ai_model_config_id")
-        if isinstance(model, (Place, Address, Region, NaturalPlace, StreetRoad)):
+        if isinstance(model, (Place, Address, Region, NaturalPlace, StreetRoad, Intersection)):
             if geo_lm:
                 setattr(model, "_geographic_reasoning_llm_model", geo_lm)
             if geo_cfg:
