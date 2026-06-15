@@ -48,7 +48,8 @@ function pickProjectSlugForStylebookLinks(
 
 export default function AppSidebar() {
   const location = useLocation()
-  const { organizationId, isOrgAdmin } = useAuth()
+  const { organizationId, isOrgAdmin, organizationName } = useAuth()
+  const organizationLabel = organizationName?.trim() || 'Backfield'
   const [workspaceRows, setWorkspaceRows] = useState<WorkspaceWithProjects[]>([])
   const [apiProjects, setApiProjects] = useState<Project[]>([])
   const [stylebooks, setStylebooks] = useState<StylebookCatalogRow[]>([])
@@ -239,15 +240,15 @@ export default function AppSidebar() {
         headerLeading={
           <NavLink
             to={headerTo}
-            title="Backfield"
-            aria-label="Backfield"
+            title={organizationLabel}
+            aria-label={organizationLabel}
             className={cn(
               'flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1',
               'hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
           >
             <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-              Backfield
+              {organizationLabel}
             </span>
           </NavLink>
         }
