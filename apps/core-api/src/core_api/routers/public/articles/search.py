@@ -27,7 +27,13 @@ router = APIRouter()
 def search_project_articles(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
-    q: str | None = Query(None, description="Keyword match on headline, body text, or URL"),
+    q: str | None = Query(
+        None,
+        description=(
+            "Keyword match on headline, body text, or URL. On PostgreSQL supports "
+            'quoted phrases ("…"), OR, and - exclusions (web search syntax).'
+        ),
+    ),
     meta_type: str | None = Query(None, description="Include articles with this metadata type"),
     meta_category: str | None = Query(
         None,

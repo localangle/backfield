@@ -26,6 +26,7 @@ from backfield_entities.public.article_processing import (
     PublicArticleProcessingEntryOut,
     list_public_article_processing,
 )
+from backfield_entities.public.keyword_query import article_keyword_tsquery
 
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
 
@@ -202,13 +203,14 @@ def _apply_public_article_keyword_filter(
 ):
     """Keyword match on headline, body text, and URL.
 
-    PostgreSQL uses full-text search (``plainto_tsquery``) with optional rank for ordering.
-    Other dialects fall back to case-insensitive substring match.
+    PostgreSQL uses full-text search (``websearch_to_tsquery``) with optional rank
+    for ordering. Supports quoted phrases, ``OR``, and ``-`` exclusions in ``q``.
+    Other dialects fall back to case-insensitive substring match on the full string.
     """
     bind = session.get_bind()
     if bind.dialect.name == "postgresql":
         vector = _article_fulltext_vector()
-        ts_query = func.plainto_tsquery("english", q)
+        ts_query = article_keyword_tsquery(q)
         rank = func.ts_rank_cd(vector, ts_query)
         return stmt.where(vector.op("@@")(ts_query)), rank
 

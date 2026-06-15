@@ -78,7 +78,7 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
 
 ### Functionality
 
-Search non-deleted articles in a project by keyword (headline, body text, or URL), metadata tags, and publication date. Returns a paginated list without full body text. On PostgreSQL, `q` uses full-text search over headline + body + URL (not semantic embeddings).
+Search non-deleted articles in a project by keyword (headline, body text, or URL), metadata tags, and publication date. Returns a paginated list without full body text. On PostgreSQL, `q` uses full-text search (`websearch_to_tsquery`) over headline + body + URL with web-style phrase, `OR`, and `-` exclusion syntax (not semantic embeddings). Non-PostgreSQL test dialects fall back to case-insensitive substring match on the full `q` string.
 
 ### Path parameters
 
@@ -90,7 +90,7 @@ Search non-deleted articles in a project by keyword (headline, body text, or URL
 
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
-| `q` | string | — | Keyword match on `headline` or `url` (case-insensitive) |
+| `q` | string | — | Keyword match on headline, body text, or URL. PostgreSQL: `"phrase"`, `term1 OR term2`, `-exclude`, implicit AND between terms |
 | `meta_type` | string | — | Include articles with a metadata row of this type |
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
