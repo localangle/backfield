@@ -97,7 +97,22 @@ def test_list_public_article_processing_collects_runs_and_items() -> None:
                 run_id="run-meta",
                 status="succeeded",
                 result_json=json.dumps(
-                    {"stylebook_output": {"success": True, "article_id": article_id}}
+                    {
+                        "stylebook_output": {
+                            "success": True,
+                            "article_id": article_id,
+                            "reconciliation": {
+                                "domains": [
+                                    {"domain": "places", "policy": "merge"},
+                                    {"domain": "people", "policy": "merge"},
+                                ]
+                            },
+                            "article_metadata_persist": {
+                                "status": "succeeded",
+                                "persisted": True,
+                            },
+                        }
+                    }
                 ),
             )
         )
@@ -113,3 +128,7 @@ def test_list_public_article_processing_collects_runs_and_items() -> None:
             ("run-meta", 42),
             ("run-custom", None),
         }
+        by_run = {row.run_id: row for row in rows}
+        assert by_run["run-meta"].domains == ["places", "people", "metadata"]
+        assert by_run["run-custom"].domains == ["custom_records"]
+        assert by_run["run-latest"].domains == []

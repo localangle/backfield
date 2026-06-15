@@ -154,7 +154,7 @@ Do **not** use open-ended `?include=locations,people,custom_records,images` on d
 
 - `id`, `headline`, `url`, `author`, `pub_date`, `external_source`, `external_id`, `entry_id`
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
-- **`processing`**: Agate runs that touched the article (`run_id`, optional `processed_item_id`), aggregated from article provenance, metadata/custom-record `source_run_id`, and matching `agate_processed_item` rows
+- **`processing`**: Agate runs that touched the article (`run_id`, optional `processed_item_id`, `domains`), aggregated from article provenance, metadata/custom-record `source_run_id`, matching `agate_processed_item` rows, and DBOutput `stylebook_output` persist summaries when available
 - Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
 
 **Query:** `include_preview` (default `true`).
