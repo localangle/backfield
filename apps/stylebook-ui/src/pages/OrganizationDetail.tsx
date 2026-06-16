@@ -18,6 +18,7 @@ import {
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
+import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -54,10 +55,8 @@ export default function OrganizationDetail() {
 
   const [organization, setOrganization] = useState<CanonicalOrganization | null>(null)
   const [substrates, setSubstrates] = useState<LinkedOrganizationSubstrateItem[]>([])
-  const [mentions, setMentions] = useState<LinkedOrganizationMention[]>([])
   const [loading, setLoading] = useState(true)
   const [substratesLoading, setSubstratesLoading] = useState(false)
-  const [mentionsLoading, setMentionsLoading] = useState(false)
   const [editing, setEditing] = useState(false)
   const [label, setLabel] = useState("")
   const [organizationType, setOrganizationType] = useState("")
@@ -126,28 +125,42 @@ export default function OrganizationDetail() {
     [evidenceProjectSlug],
   )
 
-  const loadMentions = useCallback(
-    async (canonicalId: string, sbSlug: string, quiet = false) => {
-      if (!quiet) setMentionsLoading(true)
-      try {
-        const m = await getCanonicalOrganizationMentions(
-          canonicalId,
-          sbSlug,
-          500,
-          0,
-          undefined,
-          "desc",
-          evidenceProjectSlug || undefined,
-        )
-        setMentions(m.mentions)
-      } catch {
-        setMentions([])
-      } finally {
-        if (!quiet) setMentionsLoading(false)
-      }
-    },
-    [evidenceProjectSlug],
+  const fetchOrganizationMentionsPage = useCallback(
+    (
+      canonicalId: string,
+      sbSlug: string,
+      limit: number,
+      offset: number,
+      projectFilter?: string,
+    ) =>
+      getCanonicalOrganizationMentions(
+        canonicalId,
+        sbSlug,
+        limit,
+        offset,
+        undefined,
+        "desc",
+        projectFilter,
+      ),
+    [],
   )
+
+  const {
+    mentions,
+    mentionTotal,
+    mentionsPage,
+    setMentionsPage,
+    mentionsLoading,
+    refreshMentions,
+    clearMentions,
+    mentionsPerPage,
+  } = usePaginatedCanonicalMentions<LinkedOrganizationMention>({
+    canonicalId: id,
+    stylebookSlug,
+    projectFilterSlug: evidenceProjectSlug,
+    enabled: Boolean(id && stylebookSlug && !deleting && organization?.id === id),
+    fetchPage: fetchOrganizationMentionsPage,
+  })
 
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
@@ -155,13 +168,13 @@ export default function OrganizationDetail() {
       const found = await loadOrganization(id, stylebookSlug, true)
       if (!found) {
         setSubstrates([])
-        setMentions([])
+        clearMentions()
         return
       }
       await loadSubstrates(id, stylebookSlug, quiet)
-      await loadMentions(id, stylebookSlug, quiet)
+      await refreshMentions(quiet)
     },
-    [id, stylebookSlug, deleting, loadOrganization, loadSubstrates, loadMentions],
+    [id, stylebookSlug, deleting, loadOrganization, loadSubstrates, refreshMentions, clearMentions],
   )
 
   useEffect(() => {
@@ -173,11 +186,6 @@ export default function OrganizationDetail() {
     if (!id || !stylebookSlug || deleting || organization?.id !== id) return
     void loadSubstrates(id, stylebookSlug)
   }, [id, stylebookSlug, deleting, organization, loadSubstrates])
-
-  useEffect(() => {
-    if (!id || !stylebookSlug || deleting || organization?.id !== id) return
-    void loadMentions(id, stylebookSlug)
-  }, [id, stylebookSlug, deleting, organization, loadMentions])
 
   const tableLoading = substratesLoading || mentionsLoading
 
@@ -253,6 +261,7 @@ export default function OrganizationDetail() {
     canonicalKey: `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`,
     enabled: Boolean(id && !deleting),
     mentions,
+    mentionTotal,
     mentionsLoading,
     substrates,
     substratesLoading,
@@ -366,6 +375,12 @@ export default function OrganizationDetail() {
         unlinkingId,
         onUnlink: (s) => void handleUnlinkSubstrate(s),
         onMove: setMoveSubstrate,
+        pagination: {
+          page: mentionsPage,
+          perPage: mentionsPerPage,
+          total: mentionTotal,
+          onPageChange: setMentionsPage,
+        },
       }}
       meta={
         organization && stylebookSlug ? (

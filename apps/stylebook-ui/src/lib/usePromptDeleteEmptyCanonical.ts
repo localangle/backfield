@@ -6,6 +6,8 @@ export type UsePromptDeleteEmptyCanonicalOptions = {
   canonicalKey: string
   enabled?: boolean
   mentions: unknown[]
+  /** When paginated, pass the API total instead of relying on `mentions.length`. */
+  mentionTotal?: number
   mentionsLoading: boolean
   substrates: unknown[]
   substratesLoading: boolean
@@ -18,6 +20,7 @@ export function usePromptDeleteEmptyCanonical({
   canonicalKey,
   enabled = true,
   mentions,
+  mentionTotal,
   mentionsLoading,
   substrates,
   substratesLoading,
@@ -40,7 +43,7 @@ export function usePromptDeleteEmptyCanonical({
     if (!enabled || !canonicalKey) return
     if (mentionsLoading || substratesLoading) return
 
-    const mentionCount = mentions.length
+    const mentionCount = mentionTotal ?? mentions.length
     const substrateCount = substrates.length
 
     const prevMentions = prevMentionCountRef.current
@@ -83,6 +86,7 @@ export function usePromptDeleteEmptyCanonical({
     canonicalKey,
     enabled,
     mentions,
+    mentionTotal,
     mentionsLoading,
     substrates,
     substratesLoading,

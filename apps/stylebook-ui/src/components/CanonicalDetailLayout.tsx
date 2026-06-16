@@ -78,6 +78,7 @@ function renderSection<
           unlinkingId={props.mentions.unlinkingId}
           onUnlink={props.mentions.onUnlink}
           onMove={props.mentions.onMove}
+          pagination={props.mentions.pagination}
         />
       )
     case "meta":
