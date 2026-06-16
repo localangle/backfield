@@ -68,7 +68,6 @@ def review_same_site_org_location_pair(
             model=model,
             force_json=True,
             temperature=0.0,
-            max_tokens=500,
             model_config_id=model_config_id,
         )
         data = json.loads(raw)

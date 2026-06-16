@@ -22,7 +22,6 @@ from sqlmodel import Session, select
 
 from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_MAX_RETRIES,
-    ADJUDICATION_LLM_SKIP_MAX_TOKENS_BUMP,
     ADJUDICATION_LLM_TIMEOUT_S,
 )
 
@@ -150,10 +149,8 @@ def run_person_adjudication_llm(prepared: PersonAdjudicationPrepared) -> dict[st
             model=prepared.model,
             force_json=True,
             temperature=0.0,
-            max_tokens=800,
             max_retries=ADJUDICATION_LLM_MAX_RETRIES,
             timeout=ADJUDICATION_LLM_TIMEOUT_S,
-            allow_max_tokens_bump=not ADJUDICATION_LLM_SKIP_MAX_TOKENS_BUMP,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             model_config_id=prepared.model_config_id,
         )
