@@ -26,6 +26,19 @@ AsyncNodeRunner = Callable[
 ]
 AfterEachNodeHook = Callable[[str, str, float], None]
 
+# Default per-async-node wall budget (seconds). Sync nodes rely on Celery + DB timeouts.
+_DEFAULT_ASYNC_NODE_TIMEOUT_S = 600.0
+
+
+def _async_node_timeout_s() -> float | None:
+    raw = os.environ.get("AGATE_NODE_TIMEOUT_S", str(int(_DEFAULT_ASYNC_NODE_TIMEOUT_S))).strip()
+    if raw.lower() in ("", "0", "none", "off", "false"):
+        return None
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return _DEFAULT_ASYNC_NODE_TIMEOUT_S
+
 # Stable JSON keys for run results: snake_case from node type, with palette aliases where needed.
 _NODE_TYPE_OUTPUT_SLUGS: dict[str, str] = {
     "Output": "json_output",
@@ -374,15 +387,29 @@ async def _run_node_async(
     if before_each_node is not None:
         before_each_node(node.id, node.type)
     t0 = time.perf_counter()
+    node_timeout_s = _async_node_timeout_s()
     try:
-        async_runner = async_runners.get(node.type)
-        if async_runner is not None:
-            result = await async_runner(node.params, inputs, ctx)
+        async def _execute() -> dict[str, Any]:
+            async_runner = async_runners.get(node.type)
+            if async_runner is not None:
+                result = await async_runner(node.params, inputs, ctx)
+            else:
+                sync_runner = runners.get(node.type)
+                if sync_runner is None:
+                    raise GraphExecutionError(f"Unknown node type: {node.type}")
+                result = await asyncio.to_thread(sync_runner, node.params, inputs)
+            if not isinstance(result, dict):
+                raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
+            return result
+
+        if node_timeout_s is not None:
+            result = await asyncio.wait_for(_execute(), timeout=node_timeout_s)
         else:
-            sync_runner = runners.get(node.type)
-            if sync_runner is None:
-                raise GraphExecutionError(f"Unknown node type: {node.type}")
-            result = await asyncio.to_thread(sync_runner, node.params, inputs)
+            result = await _execute()
+    except TimeoutError as exc:
+        raise GraphExecutionError(
+            f"Node {node.id} ({node.type}) exceeded {node_timeout_s:.0f}s wall-clock limit"
+        ) from exc
     except GraphExecutionError:
         raise
     except Exception as exc:
@@ -390,8 +417,6 @@ async def _run_node_async(
     finally:
         if after_each_node is not None:
             after_each_node(node.id, node.type, time.perf_counter() - t0)
-    if not isinstance(result, dict):
-        raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
     return node.id, result
 
 

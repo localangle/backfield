@@ -51,6 +51,10 @@ services:
       # (not localhost:5433, which is only valid from the host machine).
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-2}
+      BACKFIELD_PG_STATEMENT_TIMEOUT_MS: ${BACKFIELD_PG_STATEMENT_TIMEOUT_MS:-30000}
+      BACKFIELD_PG_LOCK_TIMEOUT_MS: ${BACKFIELD_PG_LOCK_TIMEOUT_MS:-5000}
       # Same Fernet key as agate-api/worker/core-api (semantic search + catalog credential decrypt).
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # STYLEBOOK_BUNDLE_* comes from env_file (../.env); do not set empty ${...} here or it
@@ -75,6 +79,10 @@ services:
       UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:8004
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-2}
+      BACKFIELD_PG_STATEMENT_TIMEOUT_MS: ${BACKFIELD_PG_STATEMENT_TIMEOUT_MS:-30000}
+      BACKFIELD_PG_LOCK_TIMEOUT_MS: ${BACKFIELD_PG_LOCK_TIMEOUT_MS:-5000}
       # Same Fernet key as agate-api/worker for org integration secrets + project secrets (must match across services).
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
     healthcheck:
@@ -111,6 +119,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-2}
+      BACKFIELD_PG_STATEMENT_TIMEOUT_MS: ${BACKFIELD_PG_STATEMENT_TIMEOUT_MS:-30000}
+      BACKFIELD_PG_LOCK_TIMEOUT_MS: ${BACKFIELD_PG_LOCK_TIMEOUT_MS:-5000}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       # Dev-only Fernet key for encrypting backfield_project_secret; override in production.
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
@@ -168,8 +180,8 @@ services:
       BACKFIELD_PARALLEL_GRAPH_LEVELS: ${BACKFIELD_PARALLEL_GRAPH_LEVELS:-1}
       OVERPASS_MAX_CONCURRENT: ${OVERPASS_MAX_CONCURRENT:-4}
       OVERPASS_QUERY_STAGGER_S: ${OVERPASS_QUERY_STAGGER_S:-0.5}
-      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}
-      TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-4200}
+      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-900}
+      TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-1080}
     depends_on:
       postgres:
         condition: service_healthy

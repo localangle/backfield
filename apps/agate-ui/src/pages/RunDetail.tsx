@@ -23,6 +23,7 @@ import { listMyWorkspaces, type WorkspaceWithProjects } from '@/lib/core-api'
 import { formatDate, formatRunTitleDate } from '@/lib/utils'
 import { getNodeStepDisplayName } from '@/lib/nodeUtils'
 import { formatCurrencySummary } from '@/lib/formatRunEstimatedCost'
+import { formatDurationMs } from '@/lib/formatDuration'
 import {
   RUN_AGAIN_WARNING_TITLE,
   reconciliationPolicyFromGraph,
@@ -622,6 +623,7 @@ export default function RunDetail() {
                   <TableHead className="w-[80px]">ID</TableHead>
                   <TableHead className="w-[250px]">Source</TableHead>
                   <TableHead className="w-[120px]">Status</TableHead>
+                  <TableHead className="w-[110px] text-right">Processing</TableHead>
                   <TableHead className="w-[130px] text-right">Est. cost</TableHead>
                   <TableHead className="w-[180px]">Created</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
@@ -711,6 +713,13 @@ export default function RunDetail() {
                           </span>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-right tabular-nums">
+                      {item.status === 'running'
+                        ? 'Running…'
+                        : item.duration_ms != null
+                          ? formatDurationMs(item.duration_ms)
+                          : '—'}
                     </TableCell>
                     <TableCell className="text-sm text-right tabular-nums">
                       <span className="inline-flex items-center justify-end gap-1">

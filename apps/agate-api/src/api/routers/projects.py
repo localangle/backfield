@@ -17,6 +17,7 @@ from backfield_auth.gate import (
 )
 from backfield_db import (
     AgateGraph,
+    AgateNodeTiming,
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
@@ -29,6 +30,7 @@ from backfield_db import (
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -196,6 +198,11 @@ def create_project(
     return _project_to_out(session, p)
 
 
+class SlowestNodeTypeOut(BaseModel):
+    node_type: str
+    avg_ms: float
+
+
 class ProjectStatsOut(BaseModel):
     total_runs: int
     articles_processed: int
@@ -206,6 +213,7 @@ class ProjectStatsOut(BaseModel):
     min_duration_ms_per_run: float | None = None
     max_duration_ms_per_run: float | None = None
     median_duration_ms_per_item: float | None = None
+    slowest_node_types: list[SlowestNodeTypeOut] = Field(default_factory=list)
     median_estimated_ai_cost_per_run: Decimal | None = None
     min_estimated_ai_cost_per_run: Decimal | None = None
     max_estimated_ai_cost_per_run: Decimal | None = None
@@ -317,11 +325,43 @@ def _median_terminal_processed_item_duration_ms(
     for row in rows:
         if row.status not in _ITEM_TERMINAL_STATUSES:
             continue
-        ms = (row.updated_at - row.created_at).total_seconds() * 1000
+        ms = (row.updated_at - (row.started_at or row.created_at)).total_seconds() * 1000
         if ms < 0:
             ms = 0.0
         durs.append(ms)
     return _median_ms(durs)
+
+
+def _slowest_node_types_for_project(
+    session: Session,
+    graph_ids: list[str],
+    *,
+    limit: int = 5,
+) -> list[SlowestNodeTypeOut]:
+    if not graph_ids:
+        return []
+    run_ids = list(
+        session.exec(select(AgateRun.id).where(AgateRun.graph_id.in_(graph_ids))).all()
+    )
+    if not run_ids:
+        return []
+    rows = session.exec(
+        select(
+            AgateNodeTiming.node_type,
+            func.avg(AgateNodeTiming.elapsed_s),
+        )
+        .where(AgateNodeTiming.run_id.in_(run_ids))
+        .group_by(AgateNodeTiming.node_type)
+        .order_by(func.avg(AgateNodeTiming.elapsed_s).desc())
+        .limit(limit)
+    ).all()
+    return [
+        SlowestNodeTypeOut(
+            node_type=str(node_type),
+            avg_ms=round(float(avg_s) * 1000.0, 1),
+        )
+        for node_type, avg_s in rows
+    ]
 
 
 def _per_run_ai_cost_totals(
@@ -425,6 +465,7 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
     median_ai = _median_decimal(per_run_costs)
     min_ai = _min_decimal(per_run_costs)
     max_ai = _max_decimal(per_run_costs)
+    slowest_nodes = _slowest_node_types_for_project(session, graph_ids)
 
     return ProjectStatsOut(
         total_runs=total_runs,
@@ -436,6 +477,7 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         min_duration_ms_per_run=min_run_duration,
         max_duration_ms_per_run=max_run_duration,
         median_duration_ms_per_item=median_item_duration,
+        slowest_node_types=slowest_nodes,
         median_estimated_ai_cost_per_run=median_ai,
         min_estimated_ai_cost_per_run=min_ai,
         max_estimated_ai_cost_per_run=max_ai,

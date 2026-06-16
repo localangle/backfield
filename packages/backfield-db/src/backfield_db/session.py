@@ -22,12 +22,38 @@ def get_database_url() -> str:
     )
 
 
+def _pg_timeout_options_from_env() -> str | None:
+    """Optional Postgres session timeouts (API services only; worker leaves unset)."""
+    parts: list[str] = []
+    raw_stmt = os.environ.get("BACKFIELD_PG_STATEMENT_TIMEOUT_MS")
+    if raw_stmt is not None and raw_stmt.strip() != "":
+        try:
+            ms = max(0, int(raw_stmt.strip()))
+            parts.append(f"-c statement_timeout={ms}")
+        except ValueError:
+            pass
+    raw_lock = os.environ.get("BACKFIELD_PG_LOCK_TIMEOUT_MS")
+    if raw_lock is not None and raw_lock.strip() != "":
+        try:
+            ms = max(0, int(raw_lock.strip()))
+            parts.append(f"-c lock_timeout={ms}")
+        except ValueError:
+            pass
+    if not parts:
+        return None
+    return " ".join(parts)
+
+
 def _engine_connect_args(url: str) -> dict[str, Any]:
     connect_args: dict[str, Any] = {}
     try:
         parsed = make_url(url)
         if parsed.get_backend_name() == "sqlite":
             connect_args["check_same_thread"] = False
+        elif parsed.get_backend_name() == "postgresql":
+            pg_options = _pg_timeout_options_from_env()
+            if pg_options:
+                connect_args["options"] = pg_options
     except Exception:
         pass
     return connect_args

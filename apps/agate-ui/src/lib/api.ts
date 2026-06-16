@@ -57,6 +57,11 @@ export interface Project {
   workspace_stylebook_slug?: string | null
 }
 
+export interface SlowestNodeTypeStat {
+  node_type: string
+  avg_ms: number
+}
+
 export interface ProjectStats {
   total_runs: number
   articles_processed: number
@@ -70,6 +75,7 @@ export interface ProjectStats {
   min_duration_ms_per_run?: number | null
   max_duration_ms_per_run?: number | null
   median_duration_ms_per_item: number | null
+  slowest_node_types?: SlowestNodeTypeStat[]
   /** Median tracked LLM spend per succeeded run. */
   median_estimated_ai_cost_per_run?: string | number | null
   min_estimated_ai_cost_per_run?: string | number | null
@@ -119,6 +125,8 @@ export interface ProcessedItemSummary {
   error: string | null
   created_at: string
   updated_at: string
+  started_at?: string | null
+  duration_ms?: number | null
   output_s3_bucket?: string | null
   output_s3_key?: string | null
   input_article_id?: number | null
@@ -154,6 +162,8 @@ export interface ProcessedItem {
   error: string | null
   created_at: string
   updated_at: string
+  started_at?: string | null
+  duration_ms?: number | null
   estimated_ai_cost?: number
   estimated_ai_cost_incomplete?: boolean
   estimated_ai_cost_currency?: string
@@ -182,6 +192,13 @@ export interface ProcessedItem {
   article_meta?: ProcessedItemArticleMetaRow[]
   /** Compact automatic connections status from Backfield Output. */
   connections?: ProcessedItemConnections
+  node_timings?: ProcessedItemNodeTiming[]
+}
+
+export interface ProcessedItemNodeTiming {
+  node_id: string
+  node_type: string
+  elapsed_ms: number
 }
 
 export interface Run {
@@ -275,6 +292,8 @@ interface RawProcessedItem {
   error_message: string | null
   created_at: string
   updated_at: string
+  started_at?: string | null
+  duration_ms?: number | null
   estimated_ai_cost?: string | number | null
   estimated_ai_cost_incomplete?: boolean
   estimated_ai_cost_currency?: string | null
@@ -356,6 +375,11 @@ function _mapDbProcessedItem(row: RawProcessedItem): ProcessedItemSummary {
     error: row.error_message ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    started_at: row.started_at ?? null,
+    duration_ms:
+      typeof row.duration_ms === 'number' && !Number.isNaN(row.duration_ms)
+        ? row.duration_ms
+        : null,
     output_s3_bucket: null,
     output_s3_key: null,
     input_article_id: null,
@@ -625,6 +649,8 @@ interface RawProcessedItemDetail {
   error: string | null
   created_at: string
   updated_at: string
+  started_at?: string | null
+  duration_ms?: number | null
   estimated_ai_cost?: string | number | null
   estimated_ai_cost_incomplete?: boolean
   estimated_ai_cost_currency?: string | null
@@ -642,6 +668,7 @@ interface RawProcessedItemDetail {
   article_embedding?: unknown
   article_meta?: unknown
   connections?: unknown
+  node_timings?: Array<{ node_id: string; node_type: string; elapsed_ms: number }>
 }
 
 function _normalizeArticleContext(raw: unknown): ArticleContext {
@@ -713,6 +740,11 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
     error: raw.error,
     created_at: raw.created_at,
     updated_at: raw.updated_at,
+    started_at: raw.started_at ?? null,
+    duration_ms:
+      typeof raw.duration_ms === 'number' && !Number.isNaN(raw.duration_ms)
+        ? raw.duration_ms
+        : null,
     estimated_ai_cost: _parseCostAmount(raw.estimated_ai_cost),
     estimated_ai_cost_incomplete: Boolean(raw.estimated_ai_cost_incomplete),
     estimated_ai_cost_currency: cur,
@@ -741,6 +773,13 @@ function normalizeProcessedItemDetail(raw: RawProcessedItemDetail): ProcessedIte
     article_embedding: normalizeProcessedItemArticleEmbedding(raw.article_embedding),
     article_meta: normalizeProcessedItemArticleMetaRows(raw.article_meta),
     connections: normalizeProcessedItemConnections(raw.connections),
+    node_timings: Array.isArray(raw.node_timings)
+      ? raw.node_timings.map((row) => ({
+          node_id: String(row.node_id),
+          node_type: String(row.node_type),
+          elapsed_ms: Number(row.elapsed_ms),
+        }))
+      : [],
   }
 }
 

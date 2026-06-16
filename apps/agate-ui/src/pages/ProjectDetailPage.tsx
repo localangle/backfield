@@ -490,19 +490,12 @@ export default function ProjectDetailPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 Wall time per completed run
               </p>
-              {stats.min_duration_ms_per_run != null &&
-              stats.max_duration_ms_per_run != null ? (
+              {stats.slowest_node_types && stats.slowest_node_types.length > 0 ? (
                 <StatMinMaxRange
-                  rows={[
-                    {
-                      label: 'Min',
-                      value: formatDurationMs(stats.min_duration_ms_per_run),
-                    },
-                    {
-                      label: 'Max',
-                      value: formatDurationMs(stats.max_duration_ms_per_run),
-                    },
-                  ]}
+                  rows={stats.slowest_node_types.map((row) => ({
+                    label: row.node_type,
+                    value: formatDurationMs(row.avg_ms),
+                  }))}
                 />
               ) : null}
             </CardContent>

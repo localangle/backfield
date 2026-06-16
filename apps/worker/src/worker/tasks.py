@@ -36,6 +36,7 @@ from backfield_ai.tracking_context import (
 )
 from backfield_db import (
     AgateGraph,
+    AgateNodeTiming,
     AgateProcessedItem,
     AgateRun,
     BackfieldProject,
@@ -45,6 +46,7 @@ from backfield_db.session import get_engine
 from backfield_entities.catalog.full_bundle import export_stylebook_bundle, import_stylebook_bundle
 from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
 from celery import Celery, chord, group
+from sqlalchemy import delete
 from sqlmodel import Session, select
 
 from worker.flags.replace_geography import clear_replace_article_geography_flags
@@ -86,6 +88,7 @@ def _log_node_wall_clock_summary(
     run_id: str,
     processed_item_id: int | None,
     timings: dict[str, float],
+    session: Session | None = None,
 ) -> None:
     if not timings:
         return
@@ -99,6 +102,24 @@ def _log_node_wall_clock_summary(
         total_s,
         summary,
     )
+    if session is None or processed_item_id is None:
+        return
+    session.exec(
+        delete(AgateNodeTiming).where(
+            AgateNodeTiming.processed_item_id == int(processed_item_id)
+        )
+    )
+    for key, elapsed_s in timings.items():
+        node_type, _, node_id = key.partition(":")
+        session.add(
+            AgateNodeTiming(
+                run_id=run_id,
+                processed_item_id=int(processed_item_id),
+                node_id=node_id or key,
+                node_type=node_type or "unknown",
+                elapsed_s=float(elapsed_s),
+            )
+        )
 
 
 celery_app = Celery(
@@ -369,7 +390,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
 
             skipped_invalid = 0
             skipped_cap = 0
-            pending_ids: list[int] = []
+            pending: list[tuple[int, int]] = []
 
             if not keys:
                 run = session.get(AgateRun, run_id)
@@ -422,7 +443,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
                         skipped_invalid += 1
                         continue
 
-                    if len(pending_ids) >= max_files:
+                    if len(pending) >= max_files:
                         row = AgateProcessedItem(
                             run_id=run_id,
                             source_file=key,
@@ -443,13 +464,14 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     session.add(row)
                     session.flush()
                     if row.id is not None:
-                        pending_ids.append(row.id)
+                        text_len = len(str(doc.get("text") or ""))
+                        pending.append((int(row.id), text_len))
 
             batch_meta = {
                 "total_json_objects": len(keys),
                 "skipped_invalid": skipped_invalid,
                 "skipped_cap": skipped_cap,
-                "valid_executed": len(pending_ids),
+                "valid_executed": len(pending),
             }
             run = session.get(AgateRun, run_id)
             if not run:
@@ -463,7 +485,7 @@ def execute_s3_batch_setup(run_id: str) -> None:
             session.add(run)
             session.commit()
 
-            if not pending_ids:
+            if not pending:
                 run = session.get(AgateRun, run_id)
                 if run:
                     run.status = "failed"
@@ -483,10 +505,12 @@ def execute_s3_batch_setup(run_id: str) -> None:
             logger.info(
                 "execute_s3_batch_setup: queueing chord of %d execute_processed_item task(s) "
                 "for run %s",
-                len(pending_ids),
+                len(pending),
                 run_id,
             )
-            header = group(execute_processed_item.s(item_id) for item_id in pending_ids)
+            pending_sorted = sorted(pending, key=lambda row: row[1], reverse=True)
+            ordered_ids = [item_id for item_id, _ in pending_sorted]
+            header = group(execute_processed_item.s(item_id) for item_id in ordered_ids)
             _queue = os.environ.get("CELERY_QUEUE", "agate")
             # Use the two-argument ``chord(header, body)`` primitive + ``apply_async()`` so the
             # group is published to the broker in production. The ``header(body)`` callable form
@@ -516,6 +540,7 @@ def execute_processed_item(item_id: int) -> None:
         if not item or item.status != "pending":
             return
         item.status = "running"
+        item.started_at = datetime.now(UTC)
         item.updated_at = datetime.now(UTC)
         session.add(item)
         session.commit()
@@ -640,6 +665,7 @@ def execute_processed_item(item_id: int) -> None:
                         run_id=str(run.id),
                         processed_item_id=iid,
                         timings=node_timings,
+                        session=session,
                     )
             finally:
                 reset_llm_tracking_context(track_tok)

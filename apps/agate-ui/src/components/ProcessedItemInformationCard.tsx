@@ -16,6 +16,7 @@ import {
 } from '@/lib/review/content/articleFields'
 import { isBatchFileSource, processedItemSourceLabel } from '@/lib/review/content/sourceDisplay'
 import { formatDate } from '@/lib/utils'
+import { formatDurationMs } from '@/lib/formatDuration'
 import {
   connectionsStatusLabel,
   formatConnectionsDetail,
@@ -370,6 +371,12 @@ export function ProcessedItemInformationCard({
                 <p className="text-sm mt-0.5">{formatDate(item.updated_at)}</p>
               </div>
             ) : null}
+            {item.duration_ms != null ? (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Processing time</label>
+                <p className="text-sm tabular-nums mt-0.5">{formatDurationMs(item.duration_ms)}</p>
+              </div>
+            ) : null}
             <div>
               <label className="text-sm font-medium text-muted-foreground">Estimated AI cost</label>
               <p className="text-sm tabular-nums mt-0.5">{formatEstimatedAiCost(item)}</p>
@@ -470,6 +477,28 @@ export function ProcessedItemInformationCard({
             ) : null}
           </div>
         </div>
+
+        {item.node_timings && item.node_timings.length > 0 ? (
+          <div className="border-t border-border pt-4">
+            <p className="text-sm font-medium text-muted-foreground mb-2">Step timing</p>
+            <div className="space-y-2">
+              {item.node_timings.map((row) => (
+                <div
+                  key={`${row.node_type}:${row.node_id}`}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className="min-w-0 text-muted-foreground truncate">
+                    {row.node_type}
+                    <span className="font-mono text-xs ml-1">({row.node_id})</span>
+                  </span>
+                  <span className="shrink-0 font-medium tabular-nums">
+                    {formatDurationMs(row.elapsed_ms)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )

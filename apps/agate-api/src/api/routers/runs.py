@@ -33,6 +33,7 @@ from api.processed_item.custom_records_merge import (
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
     AgateGraph,
+    AgateNodeTiming,
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
@@ -61,8 +62,8 @@ from backfield_entities.ingest.semantic_indexing.processed_item import (
 from celery import Celery
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import asc, desc, update
-from sqlmodel import Session, select
+from sqlalchemy import delete, desc, update
+from sqlmodel import Session, asc, col, select
 
 DEFAULT_AI_COST_CURRENCY = "USD"
 
@@ -113,9 +114,17 @@ class ProcessedItemOut(BaseModel):
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
+    started_at: datetime | None = None
+    duration_ms: float | None = None
     estimated_ai_cost: Decimal = Decimal("0")
     estimated_ai_cost_incomplete: bool = False
     estimated_ai_cost_currency: str = DEFAULT_AI_COST_CURRENCY
+
+
+class ProcessedItemNodeTimingOut(BaseModel):
+    node_id: str
+    node_type: str
+    elapsed_ms: float
 
 
 class ArticleContextOut(BaseModel):
@@ -236,6 +245,9 @@ class ProcessedItemDetailOut(BaseModel):
     error: str | None = None
     created_at: datetime
     updated_at: datetime
+    started_at: datetime | None = None
+    duration_ms: float | None = None
+    node_timings: list[ProcessedItemNodeTimingOut] = Field(default_factory=list)
     estimated_ai_cost: Decimal = Decimal("0")
     estimated_ai_cost_incomplete: bool = False
     estimated_ai_cost_currency: str = DEFAULT_AI_COST_CURRENCY
@@ -504,6 +516,35 @@ def _preview_text(value: Any, *, max_words: int = 6) -> str | None:
     return f"{' '.join(words[:max_words])}…"
 
 
+def _processed_item_processing_duration_ms(row: AgateProcessedItem) -> float | None:
+    if row.status in ("pending", "running"):
+        return None
+    start = row.started_at or row.created_at
+    ms = (row.updated_at - start).total_seconds() * 1000
+    return max(0.0, ms)
+
+
+def _node_timings_for_processed_item(
+    session: Session,
+    processed_item_id: int,
+) -> list[ProcessedItemNodeTimingOut]:
+    rows = list(
+        session.exec(
+            select(AgateNodeTiming)
+            .where(AgateNodeTiming.processed_item_id == processed_item_id)
+            .order_by(col(AgateNodeTiming.elapsed_s).desc())
+        ).all()
+    )
+    return [
+        ProcessedItemNodeTimingOut(
+            node_id=str(row.node_id),
+            node_type=str(row.node_type),
+            elapsed_ms=round(float(row.elapsed_s) * 1000.0, 1),
+        )
+        for row in rows
+    ]
+
+
 def _processed_item_input_preview(input_json: str | None) -> str | None:
     if not input_json:
         return None
@@ -550,6 +591,8 @@ def _processed_items_for_run(
                 error_message=row.error_message,
                 created_at=row.created_at,
                 updated_at=row.updated_at,
+                started_at=row.started_at,
+                duration_ms=_processed_item_processing_duration_ms(row),
                 estimated_ai_cost=est,
                 estimated_ai_cost_incomplete=inc,
                 estimated_ai_cost_currency=currency,
@@ -702,6 +745,8 @@ def create_run(
                 error_message=item.error_message,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
+                started_at=item.started_at,
+                duration_ms=_processed_item_processing_duration_ms(item),
             )
         ]
         total_items, pending_items, running_items, succeeded_items, failed_items = (
@@ -912,6 +957,9 @@ def _detail_from_agate_processed_row(
         error=row.error_message,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        started_at=row.started_at,
+        duration_ms=_processed_item_processing_duration_ms(row),
+        node_timings=_node_timings_for_processed_item(session, int(rid)),
         estimated_ai_cost=estimated_ai_cost,
         estimated_ai_cost_incomplete=estimated_ai_cost_incomplete,
         estimated_ai_cost_currency=estimated_ai_cost_currency,
@@ -1908,12 +1956,16 @@ def rerun_run_processed_item(
         session.add(r)
 
     item.status = "pending"
+    item.started_at = None
     item.result_json = None
     item.error_message = None
     item.overlay_json = None
     item.reviewed_output_json = None
     item.overlay_version = 0
     item.updated_at = datetime.now(UTC)
+    session.exec(
+        delete(AgateNodeTiming).where(AgateNodeTiming.processed_item_id == int(item_id))
+    )
     session.add(item)
     session.commit()
     session.refresh(item)

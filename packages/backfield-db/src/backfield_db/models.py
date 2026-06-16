@@ -15,6 +15,8 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
@@ -1723,10 +1725,44 @@ class AgateProcessedItem(SQLModel, table=True):
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default=text("false")),
     )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
     updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class AgateNodeTiming(SQLModel, table=True):
+    """Per-node wall-clock timing for a processed item graph execution."""
+
+    __tablename__ = "agate_node_timing"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    run_id: str = Field(
+        sa_column=Column(
+            Text,
+            ForeignKey("agate_run.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    processed_item_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("agate_processed_item.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    node_id: str = Field(sa_column=Column(Text, nullable=False))
+    node_type: str = Field(sa_column=Column(Text, nullable=False))
+    elapsed_s: float = Field(sa_column=Column(Float, nullable=False))
+    created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 
