@@ -184,7 +184,10 @@ def test_compose_subject_prompt_reinforces_output_shape() -> None:
         output_format_json=output_format,
         preset_id="subject",
     )
-    assert "Return only valid JSON with exactly these keys: subject, rationale, confidence." in prompt
+    assert (
+        "Return only valid JSON with exactly these keys: subject, rationale, confidence."
+        in prompt
+    )
     assert prompt.index("City council approves apartment project.") < prompt.index(
         "Return only valid JSON with exactly these keys: subject, rationale, confidence."
     )

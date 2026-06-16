@@ -68,6 +68,7 @@ def call_llm_tracked_sync(
     timeout: float,
     max_tokens: int | None = None,
     model_config_id: str | None = None,
+    allow_max_tokens_bump: bool = True,
 ) -> str:
     if not prompt:
         raise ValueError("Prompt cannot be empty")
@@ -153,6 +154,7 @@ def call_llm_tracked_sync(
                 temperature=temp_arg,
                 timeout=float(timeout),
                 force_json_response=bool(force_json),
+                allow_max_tokens_bump=allow_max_tokens_bump,
             )
             snap = {"provider": result.provider, "provider_model_id": result.provider_model_id}
             persist_llm_attempt(
@@ -221,11 +223,8 @@ def call_llm_tracked_sync(
                 error_message=err_msg,
                 cost_estimate_source=r.cost_estimate_source,
             )
-            if attempt_idx < max_retries - 1:
-                wait_time = 2**attempt_idx
-                time.sleep(wait_time)
-            else:
-                raise Exception(f"LLM call failed after {max_retries} attempts: {exc}") from exc
+            # Deterministic reject (empty JSON, refusal): identical input fails again; do not retry.
+            raise Exception(f"LLM call failed: {exc}") from exc
         except Exception as exc:
             last_err = exc
             err_type = type(exc).__name__

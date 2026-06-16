@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -58,6 +59,47 @@ def _graph_has_db_output(spec: GraphSpec) -> bool:
 
 # Must match ``apps/agate-api`` cancel handler so workers stop after ``POST /runs/{id}/cancel``.
 _RUN_CANCELLED_MESSAGE = "Run cancelled by user"
+
+_TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))
+_TASK_HARD_TIME_LIMIT = int(os.getenv("TASK_HARD_TIME_LIMIT", "4200"))
+
+
+def _node_wall_clock_hooks() -> tuple[
+    Callable[[str, str], None],
+    Callable[[str, str, float], None],
+    dict[str, float],
+]:
+    """Return before/after hooks and a mutable timing map for execute_graph."""
+    timings: dict[str, float] = {}
+
+    def before(node_id: str, node_type: str) -> None:
+        set_llm_tracking_current_node(node_id, node_type)
+
+    def after(node_id: str, node_type: str, elapsed_s: float) -> None:
+        timings[f"{node_type}:{node_id}"] = elapsed_s
+
+    return before, after, timings
+
+
+def _log_node_wall_clock_summary(
+    *,
+    run_id: str,
+    processed_item_id: int | None,
+    timings: dict[str, float],
+) -> None:
+    if not timings:
+        return
+    total_s = sum(timings.values())
+    top = sorted(timings.items(), key=lambda item: item[1], reverse=True)[:8]
+    summary = ", ".join(f"{key}={secs:.1f}s" for key, secs in top)
+    logger.info(
+        "Node wall-clock run_id=%s processed_item_id=%s total_s=%.1f top=%s",
+        run_id,
+        processed_item_id,
+        total_s,
+        summary,
+    )
+
 
 celery_app = Celery(
     "agate_worker",
@@ -241,12 +283,17 @@ def execute_agate_run(run_id: str) -> None:
                     replace_article_geography=replace_geography,
                     project_system_prompt=project_system_prompt,
                 ):
+                    before_node, after_node, node_timings = _node_wall_clock_hooks()
                     outputs = execute_graph(
                         spec,
                         node_runners=node_runners,
-                        before_each_node=lambda nid, ntype: set_llm_tracking_current_node(
-                            nid, ntype
-                        ),
+                        before_each_node=before_node,
+                        after_each_node=after_node,
+                    )
+                    _log_node_wall_clock_summary(
+                        run_id=str(run.id),
+                        processed_item_id=None,
+                        timings=node_timings,
                     )
             finally:
                 reset_llm_tracking_context(track_tok)
@@ -457,7 +504,11 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     session3.commit()
 
 
-@celery_app.task(name="worker.tasks.execute_processed_item")
+@celery_app.task(
+    name="worker.tasks.execute_processed_item",
+    soft_time_limit=_TASK_SOFT_TIME_LIMIT,
+    time_limit=_TASK_HARD_TIME_LIMIT,
+)
 def execute_processed_item(item_id: int) -> None:
     engine = get_engine()
     with Session(engine) as session:
@@ -578,12 +629,17 @@ def execute_processed_item(item_id: int) -> None:
                     processed_item_id=iid,
                     project_system_prompt=project_system_prompt,
                 ):
+                    before_node, after_node, node_timings = _node_wall_clock_hooks()
                     outputs = execute_graph(
                         spec,
                         node_runners=node_runners,
-                        before_each_node=lambda nid, ntype: set_llm_tracking_current_node(
-                            nid, ntype
-                        ),
+                        before_each_node=before_node,
+                        after_each_node=after_node,
+                    )
+                    _log_node_wall_clock_summary(
+                        run_id=str(run.id),
+                        processed_item_id=iid,
+                        timings=node_timings,
                     )
             finally:
                 reset_llm_tracking_context(track_tok)

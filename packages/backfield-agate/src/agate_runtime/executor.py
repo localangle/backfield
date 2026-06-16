@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import time
 from collections import defaultdict, deque
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -23,6 +24,7 @@ AsyncNodeRunner = Callable[
     [dict[str, Any], dict[str, Any], AgateEnvContext],
     Any,
 ]
+AfterEachNodeHook = Callable[[str, str, float], None]
 
 # Stable JSON keys for run results: snake_case from node type, with palette aliases where needed.
 _NODE_TYPE_OUTPUT_SLUGS: dict[str, str] = {
@@ -339,16 +341,21 @@ def _run_sync_node(
     inputs: dict[str, Any],
     runners: Mapping[str, NodeRunner],
     before_each_node: Callable[[str, str], None] | None,
+    after_each_node: AfterEachNodeHook | None,
 ) -> dict[str, Any]:
     runner = runners.get(node.type)
     if not runner:
         raise GraphExecutionError(f"Unknown node type: {node.type}")
     if before_each_node is not None:
         before_each_node(node.id, node.type)
+    t0 = time.perf_counter()
     try:
         result = runner(node.params, inputs)
     except Exception as exc:
         raise GraphExecutionError(f"Node {node.id} ({node.type}) failed: {exc}") from exc
+    finally:
+        if after_each_node is not None:
+            after_each_node(node.id, node.type, time.perf_counter() - t0)
     if not isinstance(result, dict):
         raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
     return result
@@ -360,13 +367,15 @@ async def _run_node_async(
     runners: Mapping[str, NodeRunner],
     *,
     before_each_node: Callable[[str, str], None] | None,
+    after_each_node: AfterEachNodeHook | None,
     ctx: AgateEnvContext,
     async_runners: Mapping[str, AsyncNodeRunner],
 ) -> tuple[str, dict[str, Any]]:
     if before_each_node is not None:
         before_each_node(node.id, node.type)
-    async_runner = async_runners.get(node.type)
+    t0 = time.perf_counter()
     try:
+        async_runner = async_runners.get(node.type)
         if async_runner is not None:
             result = await async_runner(node.params, inputs, ctx)
         else:
@@ -378,6 +387,9 @@ async def _run_node_async(
         raise
     except Exception as exc:
         raise GraphExecutionError(f"Node {node.id} ({node.type}) failed: {exc}") from exc
+    finally:
+        if after_each_node is not None:
+            after_each_node(node.id, node.type, time.perf_counter() - t0)
     if not isinstance(result, dict):
         raise GraphExecutionError(f"Node {node.id} returned non-dict: {type(result)}")
     return node.id, result
@@ -389,6 +401,7 @@ async def _execute_level_async(
     runners: Mapping[str, NodeRunner],
     *,
     before_each_node: Callable[[str, str], None] | None,
+    after_each_node: AfterEachNodeHook | None,
     ctx: AgateEnvContext,
     async_runners: Mapping[str, AsyncNodeRunner],
 ) -> dict[str, dict[str, Any]]:
@@ -399,6 +412,7 @@ async def _execute_level_async(
                 level_inputs[node.id],
                 runners,
                 before_each_node=before_each_node,
+                after_each_node=after_each_node,
                 ctx=ctx,
                 async_runners=async_runners,
             )
@@ -413,6 +427,7 @@ def _execute_graph_sequential(
     runners: Mapping[str, NodeRunner],
     *,
     before_each_node: Callable[[str, str], None] | None,
+    after_each_node: AfterEachNodeHook | None = None,
 ) -> dict[str, Any]:
     by_id = {node.id: node for node in spec.nodes}
     order = _topo_order(spec)
@@ -440,7 +455,9 @@ def _execute_graph_sequential(
             inputs = _inputs_for_node(
                 node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
             )
-            node_outputs[node.id] = _run_sync_node(node, inputs, runners, before_each_node)
+            node_outputs[node.id] = _run_sync_node(
+                node, inputs, runners, before_each_node, after_each_node
+            )
             completed_ids.add(node.id)
 
     return _remap_outputs_for_json(by_id, order, node_outputs)
@@ -451,6 +468,7 @@ def _execute_graph_parallel_levels(
     runners: Mapping[str, NodeRunner],
     *,
     before_each_node: Callable[[str, str], None] | None,
+    after_each_node: AfterEachNodeHook | None = None,
     async_runners: Mapping[str, AsyncNodeRunner],
 ) -> dict[str, Any]:
     by_id = {node.id: node for node in spec.nodes}
@@ -465,7 +483,9 @@ def _execute_graph_parallel_levels(
             inputs = _inputs_for_node(
                 node, edges=spec.edges, node_outputs=node_outputs, by_id=by_id
             )
-            node_outputs[node.id] = _run_sync_node(node, inputs, runners, before_each_node)
+            node_outputs[node.id] = _run_sync_node(
+                node, inputs, runners, before_each_node, after_each_node
+            )
             continue
 
         level_inputs = {
@@ -480,6 +500,7 @@ def _execute_graph_parallel_levels(
                 level_inputs,
                 runners,
                 before_each_node=before_each_node,
+                after_each_node=after_each_node,
                 ctx=ctx,
                 async_runners=async_runners,
             )
@@ -494,6 +515,7 @@ async def _execute_graph_ready_parallel_async(
     runners: Mapping[str, NodeRunner],
     *,
     before_each_node: Callable[[str, str], None] | None,
+    after_each_node: AfterEachNodeHook | None = None,
     async_runners: Mapping[str, AsyncNodeRunner],
 ) -> dict[str, Any]:
     by_id = {node.id: node for node in spec.nodes}
@@ -530,6 +552,7 @@ async def _execute_graph_ready_parallel_async(
                     inputs,
                     runners,
                     before_each_node=before_each_node,
+                    after_each_node=after_each_node,
                     ctx=ctx,
                     async_runners=async_runners,
                 )
@@ -558,6 +581,7 @@ def _execute_graph_ready_parallel(
     runners: Mapping[str, NodeRunner],
     *,
     before_each_node: Callable[[str, str], None] | None,
+    after_each_node: AfterEachNodeHook | None = None,
     async_runners: Mapping[str, AsyncNodeRunner],
 ) -> dict[str, Any]:
     return asyncio.run(
@@ -565,6 +589,7 @@ def _execute_graph_ready_parallel(
             spec,
             runners,
             before_each_node=before_each_node,
+            after_each_node=after_each_node,
             async_runners=async_runners,
         )
     )
@@ -575,6 +600,7 @@ def execute_graph(
     node_runners: Mapping[str, NodeRunner] | None = None,
     *,
     before_each_node: Callable[[str, str], None] | None = None,
+    after_each_node: AfterEachNodeHook | None = None,
 ) -> dict[str, Any]:
     """
     Run all nodes in dependency order.
@@ -589,6 +615,8 @@ def execute_graph(
 
     ``before_each_node``, when provided, is invoked as ``(node_id, node_type)`` immediately
     before each node's runner (used by the worker for LLM attempt attribution).
+    ``after_each_node``, when provided, is invoked as ``(node_id, node_type, elapsed_s)``
+    after each node's runner completes (wall-clock including non-LLM work).
 
     Returns a JSON-serializable dict whose top-level keys are stable snake_case strings
     per node (for example ``text_input``, ``json_output``, ``stylebook_output``), not
@@ -602,8 +630,9 @@ def execute_graph(
             spec,
             runners,
             before_each_node=before_each_node,
+            after_each_node=after_each_node,
             async_runners=ASYNC_NODE_RUNNERS,
         )
     return _execute_graph_sequential(
-        spec, runners, before_each_node=before_each_node
+        spec, runners, before_each_node=before_each_node, after_each_node=after_each_node
     )

@@ -22,6 +22,7 @@ from sqlmodel import Session, col, select
 
 from worker.substrate.canonical.parallel_llm import (
     canonical_adjudication_max_concurrent,
+    commit_session_before_session_free_llm,
     run_callables_parallel,
 )
 from worker.substrate.entities.person.adjudication import (
@@ -265,6 +266,7 @@ class PersonPersistHandler:
                 )
 
         if pending_adjudication:
+            commit_session_before_session_free_llm(session)
             max_workers = canonical_adjudication_max_concurrent()
             llm_tasks = [
                 lambda p=item.prepared: run_person_adjudication_llm(p)
@@ -272,6 +274,14 @@ class PersonPersistHandler:
             ]
             llm_results = run_callables_parallel(llm_tasks, max_workers=max_workers)
             for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
+                person_id = int(item.person.id)  # type: ignore[arg-type]
+                person = session.get(SubstratePerson, person_id)
+                if person is None:
+                    logger.warning(
+                        "substrate_person id=%s missing after adjudication LLM; skipping apply",
+                        person_id,
+                    )
+                    continue
                 plan = resolve_person_adjudication_plan(
                     item.plan,
                     prepared=item.prepared,
@@ -280,7 +290,7 @@ class PersonPersistHandler:
                 _apply_person_plan_and_mention(
                     session,
                     ctx,
-                    person=item.person,
+                    person=person,
                     bucket=item.bucket,
                     entry=item.entry,
                     plan=plan,
