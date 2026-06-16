@@ -78,7 +78,6 @@ def review_same_site_org_location_pair(
             hint.org.canonical_id,
             hint.location.canonical_id,
             exc,
-            exc_info=True,
         )
         return None
 

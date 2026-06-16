@@ -50,4 +50,4 @@ def run_callables_parallel(
         for future in as_completed(future_to_index):
             index = future_to_index[future]
             ordered[index] = future.result()
-    return [item for item in ordered if item is not None]
+    return ordered

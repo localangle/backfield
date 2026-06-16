@@ -264,7 +264,6 @@ def classify_connection_family(
             from_entity_type,
             to_entity_type,
             exc,
-            exc_info=True,
         )
         _record_skip(counts, "llm_error")
         return FamilyInferenceResult(

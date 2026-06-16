@@ -29,7 +29,6 @@ from worker.semantic_indexing.embed import embed_pending_semantic_documents_for_
 from worker.substrate import persist_from_consolidated
 from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_MAX_RETRIES,
-    ADJUDICATION_LLM_SKIP_MAX_TOKENS_BUMP,
     ADJUDICATION_LLM_TIMEOUT_S,
 )
 
@@ -140,7 +139,6 @@ def _persist_db_output_in_session(
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             max_retries=ADJUDICATION_LLM_MAX_RETRIES,
             timeout=ADJUDICATION_LLM_TIMEOUT_S,
-            allow_max_tokens_bump=not ADJUDICATION_LLM_SKIP_MAX_TOKENS_BUMP,
             **kwargs,
         ),
     )

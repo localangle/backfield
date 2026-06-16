@@ -65,6 +65,15 @@ def test_run_callables_parallel_preserves_order() -> None:
     assert out == [0, 2, 4, 6, 8]
 
 
+def test_run_callables_parallel_preserves_none_results() -> None:
+    """Adjudication LLM helpers return None on failure; do not drop them from the batch."""
+    out = run_callables_parallel(
+        [lambda i=i: None if i % 2 else i for i in range(4)],
+        max_workers=4,
+    )
+    assert out == [0, None, 2, None]
+
+
 def test_run_callables_parallel_runs_concurrently() -> None:
     active = 0
     peak = 0
