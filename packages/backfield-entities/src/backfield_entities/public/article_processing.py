@@ -6,13 +6,15 @@ import json
 from typing import Any
 
 from backfield_db import (
+    AgateGraph,
     AgateProcessedItem,
+    AgateRun,
     SubstrateArticle,
     SubstrateArticleMeta,
     SubstrateCustomRecord,
 )
 from pydantic import BaseModel, Field
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 
 class PublicArticleProcessingEntryOut(BaseModel):
@@ -214,25 +216,27 @@ def list_public_article_processing(
     entries: dict[tuple[str, int | None], PublicArticleProcessingEntryOut] = {}
     processed_items_by_id: dict[int, AgateProcessedItem] = {}
 
-    if run_ids:
-        processed_items = session.exec(
-            select(AgateProcessedItem).where(col(AgateProcessedItem.run_id).in_(run_ids))
-        ).all()
-        for item in processed_items:
-            if item.id is None or not item.run_id:
-                continue
-            processed_items_by_id[int(item.id)] = item
-            if not _processed_item_references_article(item, article_id=article_id):
-                continue
-            run_key = str(item.run_id)
-            item_id = int(item.id)
-            entries[(run_key, item_id)] = _make_processing_entry(
-                run_id=run_key,
-                processed_item_id=item_id,
-                processed_item=item,
-                meta_run_ids=meta_run_ids,
-                custom_run_ids=custom_run_ids,
-            )
+    project_items = session.exec(
+        select(AgateProcessedItem)
+        .join(AgateRun, AgateProcessedItem.run_id == AgateRun.id)
+        .join(AgateGraph, AgateRun.graph_id == AgateGraph.id)
+        .where(AgateGraph.project_id == project_id)
+    ).all()
+    for item in project_items:
+        if item.id is None or not item.run_id:
+            continue
+        if not _processed_item_references_article(item, article_id=article_id):
+            continue
+        run_key = str(item.run_id)
+        item_id = int(item.id)
+        processed_items_by_id[item_id] = item
+        entries[(run_key, item_id)] = _make_processing_entry(
+            run_id=run_key,
+            processed_item_id=item_id,
+            processed_item=item,
+            meta_run_ids=meta_run_ids,
+            custom_run_ids=custom_run_ids,
+        )
 
     if article.source_run_id:
         run_key = str(article.source_run_id)

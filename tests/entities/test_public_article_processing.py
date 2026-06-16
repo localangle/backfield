@@ -132,3 +132,115 @@ def test_list_public_article_processing_collects_runs_and_items() -> None:
         assert by_run["run-meta"].domains == ["places", "people", "metadata"]
         assert by_run["run-custom"].domains == ["custom_records"]
         assert by_run["run-latest"].domains == []
+
+
+def _stylebook_result_json(*, article_id: int, domains: list[str] | None = None) -> str:
+    domain_rows = [{"domain": d, "policy": "merge"} for d in (domains or ["article"])]
+    return json.dumps(
+        {
+            "stylebook_output": {
+                "success": True,
+                "article_id": article_id,
+                "reconciliation": {"domains": domain_rows},
+            }
+        }
+    )
+
+
+def test_list_public_article_processing_includes_prior_runs_after_reprocess() -> None:
+    """Re-run overwrites article provenance but older processed items still appear."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, article_id = _seed_project(session)
+        article = session.get(SubstrateArticle, article_id)
+        assert article is not None
+        article.source_run_id = "run-b"
+        article.source_item_id = 200
+        session.add(article)
+
+        graph = AgateGraph(
+            id="graph-1",
+            name="Flow",
+            spec_json="{}",
+            project_id=project_id,
+        )
+        session.add(graph)
+        session.add(AgateRun(id="run-a", graph_id="graph-1", status="succeeded"))
+        session.add(AgateRun(id="run-b", graph_id="graph-1", status="succeeded"))
+        session.add(
+            AgateProcessedItem(
+                id=100,
+                run_id="run-a",
+                status="succeeded",
+                result_json=_stylebook_result_json(article_id=article_id, domains=["places"]),
+            )
+        )
+        session.add(
+            AgateProcessedItem(
+                id=200,
+                run_id="run-b",
+                status="succeeded",
+                result_json=_stylebook_result_json(article_id=article_id, domains=["metadata"]),
+            )
+        )
+        session.commit()
+
+        rows = list_public_article_processing(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+        )
+        assert {(row.run_id, row.processed_item_id) for row in rows} == {
+            ("run-b", 200),
+            ("run-a", 100),
+        }
+        by_run = {row.run_id: row for row in rows}
+        assert by_run["run-a"].domains == ["places"]
+        assert by_run["run-b"].domains == ["metadata"]
+
+
+def test_list_public_article_processing_dedupes_pointer_and_scan_paths() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, article_id = _seed_project(session)
+        graph = AgateGraph(
+            id="graph-1",
+            name="Flow",
+            spec_json="{}",
+            project_id=project_id,
+        )
+        session.add(graph)
+        session.add(AgateRun(id="run-meta", graph_id="graph-1", status="succeeded"))
+        session.add(
+            AgateProcessedItem(
+                id=42,
+                run_id="run-meta",
+                status="succeeded",
+                result_json=_stylebook_result_json(article_id=article_id, domains=["people"]),
+            )
+        )
+        session.add(
+            SubstrateArticleMeta(
+                article_id=article_id,
+                meta_type="topic",
+                category="news",
+                rationale="r",
+                confidence=0.9,
+                source_run_id="run-meta",
+            )
+        )
+        session.commit()
+
+        rows = list_public_article_processing(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+        )
+        meta_rows = [
+            row
+            for row in rows
+            if row.run_id == "run-meta" and row.processed_item_id == 42
+        ]
+        assert len(meta_rows) == 1
