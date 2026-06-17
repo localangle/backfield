@@ -22,7 +22,7 @@ from backfield_entities.catalog.graph_stylebook_refs import (
     validate_stylebook_refs_for_organization,
 )
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import delete, desc, update
 from sqlmodel import Session, select
 
@@ -82,6 +82,13 @@ def _graph_out(graph: AgateGraph) -> GraphOut:
     )
 
 
+def _graph_out_or_none(graph: AgateGraph) -> GraphOut | None:
+    try:
+        return _graph_out(graph)
+    except ValidationError:
+        return None
+
+
 @router.post("", response_model=GraphOut)
 def create_graph(
     body: GraphCreate,
@@ -115,7 +122,12 @@ def list_graphs(
     if visible is not None:
         allowed = set(visible)
         rows = [r for r in rows if r.project_id in allowed]
-    return [_graph_out(r) for r in rows]
+    out: list[GraphOut] = []
+    for row in rows:
+        graph = _graph_out_or_none(row)
+        if graph is not None:
+            out.append(graph)
+    return out
 
 
 @router.get("/{graph_id}", response_model=GraphOut)

@@ -62,7 +62,7 @@ from backfield_entities.ingest.semantic_indexing.processed_item import (
 from celery import Celery
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, desc, func, update
+from sqlalchemy import case, delete, desc, func, or_, update
 from sqlmodel import Session, asc, col, select
 
 DEFAULT_AI_COST_CURRENCY = "USD"
@@ -396,6 +396,22 @@ def _processed_item_connections(
     return ProcessedItemConnectionsOut.model_validate(summary)
 
 
+def _ai_cost_incomplete_expr():
+    return or_(
+        BackfieldAiCallRecord.cost_estimate_incomplete.is_(True),
+        BackfieldAiCallRecord.estimated_cost.is_(None),
+    )
+
+
+def _ai_cost_incomplete_aggregate():
+    return func.max(
+        case(
+            (_ai_cost_incomplete_expr(), 1),
+            else_=0,
+        )
+    )
+
+
 def _rollup_ai_costs_for_run(
     session: Session, run_id: str
 ) -> tuple[dict[int, tuple[Decimal, bool]], tuple[Decimal, bool], str]:
@@ -404,29 +420,30 @@ def _rollup_ai_costs_for_run(
     Returns ``(per_item_id -> (total, incomplete_flag), (null_item_total, incomplete), currency)``.
     Rows with ``processed_item_id IS NULL`` belong to the second tuple (whole-graph execution).
     """
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id == run_id)
-        ).all()
-    )
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.processed_item_id,
+            func.sum(func.coalesce(BackfieldAiCallRecord.estimated_cost, 0)),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        )
+        .where(BackfieldAiCallRecord.run_id == run_id)
+        .group_by(BackfieldAiCallRecord.processed_item_id)
+    ).all()
     by_item: dict[int, tuple[Decimal, bool]] = {}
     null_total = Decimal("0")
     null_inc = False
     currency = DEFAULT_AI_COST_CURRENCY
-    for row in rows:
-        if row.currency:
-            currency = str(row.currency)
-        raw_cost = row.estimated_cost
-        inc_piece = bool(row.cost_estimate_incomplete) or raw_cost is None
-        add_amt = raw_cost if raw_cost is not None else Decimal("0")
-        key_pi = row.processed_item_id
-        if key_pi is None:
-            null_total += add_amt
-            null_inc = null_inc or inc_piece
+    for processed_item_id, total, incomplete_flag, row_currency in rows:
+        if row_currency:
+            currency = str(row_currency)
+        est = Decimal(str(total)) if total is not None else Decimal("0")
+        inc = bool(incomplete_flag)
+        if processed_item_id is None:
+            null_total = est
+            null_inc = inc
         else:
-            iid = int(key_pi)
-            prev_sum, prev_inc = by_item.get(iid, (Decimal("0"), False))
-            by_item[iid] = (prev_sum + add_amt, prev_inc or inc_piece)
+            by_item[int(processed_item_id)] = (est, inc)
 
     return by_item, (null_total, null_inc), currency
 
@@ -463,24 +480,28 @@ def _total_ai_cost_from_call_rows(rows: list[BackfieldAiCallRecord]) -> tuple[De
 def _rollup_ai_cost_totals_for_run_ids(
     session: Session, run_ids: list[str]
 ) -> dict[str, tuple[Decimal, bool, str]]:
-    """Per-run sum of all ``BackfieldAiCallRecord`` rows (one DB round-trip)."""
+    """Per-run sum of all ``BackfieldAiCallRecord`` rows (one aggregated DB round-trip)."""
     if not run_ids:
         return {}
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id.in_(run_ids))
-        ).all()
-    )
-    by_run: dict[str, list[BackfieldAiCallRecord]] = {}
-    for row in rows:
-        rid = row.run_id
-        if rid is None:
-            continue
-        by_run.setdefault(rid, []).append(row)
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.run_id,
+            func.sum(func.coalesce(BackfieldAiCallRecord.estimated_cost, 0)),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        )
+        .where(BackfieldAiCallRecord.run_id.in_(run_ids))
+        .group_by(BackfieldAiCallRecord.run_id)
+    ).all()
     out: dict[str, tuple[Decimal, bool, str]] = {}
-    for rid in run_ids:
-        chunk = by_run.get(rid, [])
-        out[rid] = _total_ai_cost_from_call_rows(chunk)
+    for run_id, total, incomplete_flag, row_currency in rows:
+        if run_id is None:
+            continue
+        currency = str(row_currency) if row_currency else DEFAULT_AI_COST_CURRENCY
+        est = Decimal(str(total)) if total is not None else Decimal("0")
+        out[str(run_id)] = (est, bool(incomplete_flag), currency)
+    for run_id in run_ids:
+        out.setdefault(run_id, (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY))
     return out
 
 
@@ -517,10 +538,25 @@ def _preview_text(value: Any, *, max_words: int = 6) -> str | None:
 
 
 def _processed_item_processing_duration_ms(row: AgateProcessedItem) -> float | None:
-    if row.status in ("pending", "running"):
+    return _processed_item_processing_duration_ms_fields(
+        status=row.status,
+        started_at=row.started_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _processed_item_processing_duration_ms_fields(
+    *,
+    status: str,
+    started_at: datetime | None,
+    created_at: datetime,
+    updated_at: datetime,
+) -> float | None:
+    if status in ("pending", "running"):
         return None
-    start = row.started_at or row.created_at
-    ms = (row.updated_at - start).total_seconds() * 1000
+    start = started_at or created_at
+    ms = (updated_at - start).total_seconds() * 1000
     return max(0.0, ms)
 
 
@@ -568,31 +604,54 @@ def _processed_items_for_run(
     cost_by_item: dict[int, tuple[Decimal, bool]],
     currency: str,
 ) -> list[ProcessedItemOut]:
-    rows = list(
-        session.exec(
-            select(AgateProcessedItem)
-            .where(AgateProcessedItem.run_id == run_id)
-            .order_by(asc(AgateProcessedItem.id))
-        ).all()
-    )
+    rows = session.exec(
+        select(
+            AgateProcessedItem.id,
+            AgateProcessedItem.run_id,
+            AgateProcessedItem.source_file,
+            AgateProcessedItem.input_json,
+            AgateProcessedItem.status,
+            AgateProcessedItem.error_message,
+            AgateProcessedItem.created_at,
+            AgateProcessedItem.updated_at,
+            AgateProcessedItem.started_at,
+        )
+        .where(AgateProcessedItem.run_id == run_id)
+        .order_by(asc(AgateProcessedItem.id))
+    ).all()
     out: list[ProcessedItemOut] = []
-    for row in rows:
-        if row.id is None:
+    for (
+        row_id,
+        row_run_id,
+        source_file,
+        input_json,
+        item_status,
+        error_message,
+        created_at,
+        updated_at,
+        started_at,
+    ) in rows:
+        if row_id is None:
             continue
-        iid = int(row.id)
+        iid = int(row_id)
         est, inc = cost_by_item.get(iid, (Decimal("0"), False))
         out.append(
             ProcessedItemOut(
                 id=iid,
-                run_id=row.run_id,
-                source_file=row.source_file,
-                input_preview=_processed_item_input_preview(row.input_json),
-                status=row.status,
-                error_message=row.error_message,
-                created_at=row.created_at,
-                updated_at=row.updated_at,
-                started_at=row.started_at,
-                duration_ms=_processed_item_processing_duration_ms(row),
+                run_id=str(row_run_id),
+                source_file=source_file,
+                input_preview=_processed_item_input_preview(input_json),
+                status=item_status,
+                error_message=error_message,
+                created_at=created_at,
+                updated_at=updated_at,
+                started_at=started_at,
+                duration_ms=_processed_item_processing_duration_ms_fields(
+                    status=item_status,
+                    started_at=started_at,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                ),
                 estimated_ai_cost=est,
                 estimated_ai_cost_incomplete=inc,
                 estimated_ai_cost_currency=currency,
@@ -783,6 +842,7 @@ def create_run(
 @router.get("", response_model=list[RunOut])
 def list_runs(
     graph_id: str | None = None,
+    project_id: int | None = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
@@ -791,9 +851,15 @@ def list_runs(
         if not g:
             raise HTTPException(404, "Graph not found")
         require_project_access(session, auth, int(g.project_id))
+    if project_id is not None:
+        require_project_access(session, auth, project_id)
     q = select(AgateRun).order_by(desc(AgateRun.created_at))
     if graph_id:
         q = q.where(AgateRun.graph_id == graph_id)
+    if project_id is not None:
+        q = q.join(AgateGraph, AgateRun.graph_id == AgateGraph.id).where(
+            AgateGraph.project_id == project_id
+        )
     rows = session.exec(q).all()
     visible = visible_project_ids(session, auth)
     if visible is not None:

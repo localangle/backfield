@@ -593,8 +593,9 @@ export async function createRun(graphId: string | number, data: RunCreate = {}):
   return normalizeRun(raw)
 }
 
-export async function listRuns(_limit = 50, _offset = 0): Promise<Run[]> {
-  const raw = (await fetchAPI('/runs')) as RawRun[]
+export async function listRuns(projectId?: number): Promise<Run[]> {
+  const query = projectId != null ? `?project_id=${encodeURIComponent(String(projectId))}` : ''
+  const raw = (await fetchAPI(`/runs${query}`)) as RawRun[]
   return raw.map(normalizeRun)
 }
 

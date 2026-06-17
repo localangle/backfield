@@ -17,7 +17,7 @@ from backfield_db import (
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.public.article_processing import list_public_article_processing
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 
 def _seed_project(session: Session) -> tuple[int, int]:
@@ -244,3 +244,91 @@ def test_list_public_article_processing_dedupes_pointer_and_scan_paths() -> None
             if row.run_id == "run-meta" and row.processed_item_id == 42
         ]
         assert len(meta_rows) == 1
+
+
+_MINIMAL_GRAPH_SPEC_JSON = json.dumps(
+    {
+        "name": "null-byte-regression",
+        "nodes": [{"id": "out", "type": "Output", "params": {}}],
+        "edges": [],
+    }
+)
+
+
+def test_list_public_article_processing_handles_null_unicode_in_result_json() -> None:
+    """Postgres jsonb text extraction rejects \\u0000; sanitized SQL must still match."""
+    import os
+    import uuid
+
+    import pytest
+    from backfield_db import BackfieldProject
+
+    database_url = os.environ.get(
+        "BACKFIELD_DATABASE_URL_DIRECT",
+        "postgresql+psycopg://postgres:postgres@localhost:5433/backfield",
+    )
+    if not database_url.startswith("postgresql"):
+        pytest.skip("postgres-only regression for sanitized article provenance SQL")
+
+    engine = create_engine(database_url)
+    with Session(engine) as session:
+        bind = session.get_bind()
+        if bind is None or bind.dialect.name != "postgresql":
+            pytest.skip("postgres-only regression for sanitized article provenance SQL")
+
+        project = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "general")
+        ).first()
+        article = session.exec(
+            select(SubstrateArticle).where(
+                SubstrateArticle.project_id == int(project.id),  # type: ignore[arg-type]
+                SubstrateArticle.deleted == False,  # noqa: E712
+            )
+        ).first()
+        if project is None or project.id is None or article is None or article.id is None:
+            pytest.skip("general project seed data required for postgres regression test")
+
+        project_id = int(project.id)
+        article_id = int(article.id)
+        run_id = f"run-null-byte-{uuid.uuid4().hex[:8]}"
+        graph_id = f"graph-null-byte-{uuid.uuid4().hex[:8]}"
+        item_id = int(uuid.uuid4().int % 2_000_000_000)
+
+        session.add(
+            AgateGraph(
+                id=graph_id,
+                name="Null-byte regression",
+                spec_json=_MINIMAL_GRAPH_SPEC_JSON,
+                project_id=project_id,
+            )
+        )
+        session.commit()
+        session.add(AgateRun(id=run_id, graph_id=graph_id, status="succeeded"))
+        session.commit()
+        session.add(
+            AgateProcessedItem(
+                id=item_id,
+                run_id=run_id,
+                status="succeeded",
+                result_json=(
+                    '{"stylebook_output":{"article_id":'
+                    f"{article_id}"
+                    '},"place_extract":{"mentions":[{"original_text":"Plus :\\u0000end"}]}}'
+                ),
+            )
+        )
+        session.commit()
+
+        try:
+            rows = list_public_article_processing(
+                session,
+                project_id=project_id,
+                article_id=article_id,
+            )
+            assert (run_id, item_id) in {(row.run_id, row.processed_item_id) for row in rows}
+        finally:
+            session.rollback()
+            session.delete(session.get(AgateProcessedItem, item_id))
+            session.delete(session.get(AgateRun, run_id))
+            session.delete(session.get(AgateGraph, graph_id))
+            session.commit()

@@ -49,8 +49,7 @@ export default function RunsList() {
       const interval = setInterval(async () => {
         try {
           // Fetch current page
-          const offset = (currentPage - 1) * RUNS_PER_PAGE
-          const newRuns = await listRuns(RUNS_PER_PAGE, offset)
+          const newRuns = await listRuns()
           // Only update state if data has actually changed
           if (JSON.stringify(newRuns) !== JSON.stringify(allRuns)) {
             setAllRuns(newRuns)
@@ -79,8 +78,7 @@ export default function RunsList() {
 
   async function loadRuns() {
     try {
-      const offset = (currentPage - 1) * RUNS_PER_PAGE
-      const data = await listRuns(RUNS_PER_PAGE, offset)
+      const data = await listRuns()
       setAllRuns(data)
       setHasMore(data.length === RUNS_PER_PAGE)
     } catch (error) {
@@ -116,8 +114,7 @@ export default function RunsList() {
     setCurrentPage(newPage)
     setRefreshing(true)
     try {
-      const offset = (newPage - 1) * RUNS_PER_PAGE
-      const data = await listRuns(RUNS_PER_PAGE, offset)
+      const data = await listRuns()
       setAllRuns(data)
       setHasMore(data.length === RUNS_PER_PAGE)
     } catch (error) {

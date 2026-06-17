@@ -15,7 +15,8 @@ from backfield_db import (
     SubstrateCustomRecord,
 )
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import func, text
+from sqlalchemy.exc import DataError
 from sqlmodel import Session, select
 
 
@@ -32,15 +33,45 @@ class _ProcessedItemRef:
     result_json: str | None
 
 
+# Postgres jsonb cannot represent \\u0000 in text extractions; strip the escape before
+# casting so rows with null bytes in nested output still match safely.
+_SANITIZED_RESULT_JSON = "replace(agate_processed_item.result_json, E'\\\\u0000', '')"
+_ARTICLE_ID_JSONB_MATCH = "IN (to_jsonb((:aid)::int), to_jsonb((:aid)::text))"
+
+
+def _result_json_article_id_match(path: str) -> str:
+    return (
+        f"({_SANITIZED_RESULT_JSON}::jsonb #> '{path}') {_ARTICLE_ID_JSONB_MATCH}"
+    )
+
+
+def _input_json_article_id_match(field: str) -> str:
+    return (
+        f"(agate_processed_item.input_json::jsonb -> '{field}') {_ARTICLE_ID_JSONB_MATCH}"
+    )
+
+
 _ARTICLE_REF_SQL = text(
     """
     (
-        (agate_processed_item.result_json::jsonb #>> '{stylebook_output,article_id}') = :aid
-        OR (agate_processed_item.result_json::jsonb #>> '{geocode_agent,article_id}') = :aid
-        OR (agate_processed_item.result_json::jsonb #>> '{place_extract,article_id}') = :aid
-        OR (agate_processed_item.input_json::jsonb ->> 'input_article_id') = :aid
-        OR (agate_processed_item.input_json::jsonb ->> 'article_id') = :aid
-        OR (agate_processed_item.input_json::jsonb ->> 'substrate_article_id') = :aid
+        """
+    + _result_json_article_id_match("{stylebook_output,article_id}")
+    + """
+        OR """
+    + _result_json_article_id_match("{geocode_agent,article_id}")
+    + """
+        OR """
+    + _result_json_article_id_match("{place_extract,article_id}")
+    + """
+        OR """
+    + _input_json_article_id_match("input_article_id")
+    + """
+        OR """
+    + _input_json_article_id_match("article_id")
+    + """
+        OR """
+    + _input_json_article_id_match("substrate_article_id")
+    + """
     )
     """
 )
@@ -184,18 +215,43 @@ def _references_article_from_json(
     return False
 
 
-def _project_processed_item_json_stmt(project_id: int):
+def _project_processed_item_json_stmt(project_id: int, *, postgres: bool = False):
+    result_json_col = (
+        func.replace(AgateProcessedItem.result_json, "\\u0000", "").label("result_json")
+        if postgres
+        else AgateProcessedItem.result_json
+    )
     return (
         select(
             AgateProcessedItem.id,
             AgateProcessedItem.run_id,
-            AgateProcessedItem.result_json,
+            result_json_col,
             AgateProcessedItem.input_json,
         )
         .join(AgateRun, AgateProcessedItem.run_id == AgateRun.id)
         .join(AgateGraph, AgateRun.graph_id == AgateGraph.id)
         .where(AgateGraph.project_id == project_id)
     )
+
+
+def _processed_items_from_json_rows(
+    rows: list[tuple[Any, ...]],
+    *,
+    article_id: int,
+    filter_in_python: bool,
+) -> list[_ProcessedItemRef]:
+    out: list[_ProcessedItemRef] = []
+    for row_id, run_id, result_json, input_json in rows:
+        if row_id is None or not run_id:
+            continue
+        if filter_in_python and not _references_article_from_json(
+            result_json, input_json, article_id=article_id
+        ):
+            continue
+        out.append(
+            _ProcessedItemRef(id=int(row_id), run_id=str(run_id), result_json=result_json)
+        )
+    return out
 
 
 def _fetch_processed_items_referencing_article(
@@ -206,27 +262,32 @@ def _fetch_processed_items_referencing_article(
 ) -> list[_ProcessedItemRef]:
     """Find processed items for this article without loading the whole project batch."""
     aid = str(article_id)
-    stmt = _project_processed_item_json_stmt(project_id)
     bind = session.get_bind()
     if bind is not None and bind.dialect.name == "postgresql":
-        rows = session.exec(stmt.where(_ARTICLE_REF_SQL.bindparams(aid=aid))).all()
-        return [
-            _ProcessedItemRef(id=int(row_id), run_id=str(run_id), result_json=result_json)
-            for row_id, run_id, result_json, _input_json in rows
-            if row_id is not None and run_id
-        ]
-
-    rows = session.exec(stmt).all()
-    out: list[_ProcessedItemRef] = []
-    for row_id, run_id, result_json, input_json in rows:
-        if row_id is None or not run_id:
-            continue
-        if not _references_article_from_json(result_json, input_json, article_id=article_id):
-            continue
-        out.append(
-            _ProcessedItemRef(id=int(row_id), run_id=str(run_id), result_json=result_json)
+        stmt = _project_processed_item_json_stmt(project_id, postgres=True)
+        try:
+            rows = session.exec(stmt.where(_ARTICLE_REF_SQL.bindparams(aid=aid))).all()
+        except DataError:
+            session.rollback()
+            rows = session.exec(_project_processed_item_json_stmt(project_id, postgres=True)).all()
+            return _processed_items_from_json_rows(
+                rows,
+                article_id=article_id,
+                filter_in_python=True,
+            )
+        return _processed_items_from_json_rows(
+            rows,
+            article_id=article_id,
+            filter_in_python=False,
         )
-    return out
+
+    stmt = _project_processed_item_json_stmt(project_id)
+    rows = session.exec(stmt).all()
+    return _processed_items_from_json_rows(
+        rows,
+        article_id=article_id,
+        filter_in_python=True,
+    )
 
 
 def list_public_article_processing(

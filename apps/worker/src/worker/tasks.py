@@ -64,6 +64,62 @@ _RUN_CANCELLED_MESSAGE = "Run cancelled by user"
 
 _TASK_SOFT_TIME_LIMIT = int(os.getenv("TASK_SOFT_TIME_LIMIT", "3600"))
 _TASK_HARD_TIME_LIMIT = int(os.getenv("TASK_HARD_TIME_LIMIT", "4200"))
+_STALE_RUNNING_GRACE_S = int(os.getenv("TASK_STALE_RUNNING_GRACE_S", "300"))
+_STALE_RUNNING_AFTER_S = _TASK_HARD_TIME_LIMIT + _STALE_RUNNING_GRACE_S
+_STALE_RUNNING_MESSAGE = "Processing interrupted (worker lost or exceeded time limit)"
+
+
+def _running_item_touch_ts(item: AgateProcessedItem) -> datetime:
+    return item.started_at or item.updated_at or item.created_at
+
+
+def _is_stale_running_item(item: AgateProcessedItem, *, now: datetime | None = None) -> bool:
+    if item.status != "running":
+        return False
+    now = now or datetime.now(UTC)
+    touch = _running_item_touch_ts(item)
+    if touch.tzinfo is None:
+        touch = touch.replace(tzinfo=UTC)
+    return (now - touch).total_seconds() > _STALE_RUNNING_AFTER_S
+
+
+def _reap_stale_running_items(session: Session, items: list[AgateProcessedItem]) -> None:
+    """Mark zombie ``running`` rows terminal so batch runs can finalize after worker loss."""
+    now = datetime.now(UTC)
+    for row in items:
+        if not _is_stale_running_item(row, now=now):
+            continue
+        row.status = "failed"
+        row.error_message = _STALE_RUNNING_MESSAGE
+        row.updated_at = now
+        session.add(row)
+
+
+def _item_blocks_run_finalization(item: AgateProcessedItem) -> bool:
+    if item.status == "pending":
+        return True
+    return item.status == "running" and not _is_stale_running_item(item)
+
+
+def _try_claim_processed_item(session: Session, item: AgateProcessedItem) -> bool:
+    if item.status == "pending":
+        item.status = "running"
+        item.started_at = datetime.now(UTC)
+        item.updated_at = datetime.now(UTC)
+        session.add(item)
+        return True
+    if item.status == "running" and _is_stale_running_item(item):
+        logger.warning(
+            "Reclaiming stale running processed_item id=%s run_id=%s",
+            item.id,
+            item.run_id,
+        )
+        item.started_at = datetime.now(UTC)
+        item.updated_at = datetime.now(UTC)
+        item.error_message = None
+        session.add(item)
+        return True
+    return False
 
 
 def _node_wall_clock_hooks() -> tuple[
@@ -127,6 +183,8 @@ celery_app = Celery(
     broker=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
     backend=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
 )
+celery_app.conf.task_acks_late = True
+celery_app.conf.task_reject_on_worker_lost = True
 
 
 @contextmanager
@@ -225,7 +283,12 @@ def _finalize_s3_parent_run(session: Session, run_id: str) -> None:
     items = list(
         session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
     )
-    if any(row.status in ("pending", "running") for row in items):
+    _reap_stale_running_items(session, items)
+    session.commit()
+    items = list(
+        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id == run_id)).all()
+    )
+    if any(_item_blocks_run_finalization(row) for row in items):
         return
     failed = [row for row in items if row.status == "failed"]
     base: dict[str, Any] = {}
@@ -552,17 +615,15 @@ def execute_s3_batch_setup(run_id: str) -> None:
     name="worker.tasks.execute_processed_item",
     soft_time_limit=_TASK_SOFT_TIME_LIMIT,
     time_limit=_TASK_HARD_TIME_LIMIT,
+    acks_late=True,
+    reject_on_worker_lost=True,
 )
 def execute_processed_item(item_id: int) -> None:
     engine = get_engine()
     with Session(engine) as session:
         item = session.get(AgateProcessedItem, item_id)
-        if not item or item.status != "pending":
+        if not item or not _try_claim_processed_item(session, item):
             return
-        item.status = "running"
-        item.started_at = datetime.now(UTC)
-        item.updated_at = datetime.now(UTC)
-        session.add(item)
         session.commit()
 
     project_id: int
