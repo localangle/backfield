@@ -421,7 +421,7 @@ export default function ImportPeople() {
                 </AlertDescription>
               </Alert>
               <div className="overflow-x-auto rounded-md border max-h-[520px]">
-                <Table>
+                <Table className="table-fixed w-full min-w-[56rem]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12">#</TableHead>
@@ -440,11 +440,11 @@ export default function ImportPeople() {
                         <TableCell className="font-mono text-xs text-muted-foreground">
                           {preview.index + 1}
                         </TableCell>
-                        <TableCell>{preview.label}</TableCell>
-                        <TableCell>{preview.title || "—"}</TableCell>
-                        <TableCell>{preview.affiliation || "—"}</TableCell>
-                        <TableCell>{preview.person_type || "—"}</TableCell>
-                        <TableCell>{preview.sort_key || "—"}</TableCell>
+                        <TableCell className="min-w-0 truncate">{preview.label}</TableCell>
+                        <TableCell className="min-w-0 truncate">{preview.title || "—"}</TableCell>
+                        <TableCell className="min-w-0 truncate">{preview.affiliation || "—"}</TableCell>
+                        <TableCell className="min-w-0 truncate">{preview.person_type || "—"}</TableCell>
+                        <TableCell className="min-w-0 truncate">{preview.sort_key || "—"}</TableCell>
                         <TableCell>{preview.public_figure ? "Yes" : "No"}</TableCell>
                         <TableCell>
                           <Button

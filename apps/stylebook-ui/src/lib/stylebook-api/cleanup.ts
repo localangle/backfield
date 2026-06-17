@@ -26,6 +26,8 @@ export interface CleanupClusterCanonical {
   location_type?: string | null
   person_type?: string | null
   organization_type?: string | null
+  title?: string | null
+  affiliation?: string | null
 }
 
 export interface DuplicateCluster {

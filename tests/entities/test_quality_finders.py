@@ -260,6 +260,34 @@ def test_exact_duplicate_person_clustering_sqlite() -> None:
         assert len(clusters[0]) == 2
 
 
+def test_fuzzy_duplicate_person_clustering_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        from backfield_db import StylebookPersonCanonical
+
+        session.add(
+            StylebookPersonCanonical(
+                stylebook_id=stylebook_id,
+                slug="jane-doe",
+                label="Jane Doe",
+            )
+        )
+        session.add(
+            StylebookPersonCanonical(
+                stylebook_id=stylebook_id,
+                slug="jane-m-doe",
+                label="Jane M. Doe",
+            )
+        )
+        session.commit()
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert len(clusters[0]) == 2
+
+
 def test_exact_duplicate_organization_clustering_sqlite() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)

@@ -130,6 +130,7 @@ def _postgres_near_duplicate_pair_edges(
               AND length(trim(b.label)) >= :min_len
               AND length(trim(split_part(a.label, ',', 1))) >= :min_head_len
               AND lower(trim(a.label)) <> lower(trim(b.label))
+              AND lower(trim(a.label)) % lower(trim(b.label))
               AND similarity(lower(trim(a.label)), lower(trim(b.label))) >= :full_th
             """
         ),

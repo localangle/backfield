@@ -45,10 +45,19 @@ function formatCanonicalMeta(
   canonical: CleanupClusterCanonical,
   linkedRecordLabel: string,
 ): string {
-  const typeLabel = formatTypeLabel(entityType, canonical)
+  const parts: string[] = [formatTypeLabel(entityType, canonical)]
+  if (entityType === "person") {
+    const title = (canonical.title ?? "").trim()
+    const affiliation = (canonical.affiliation ?? "").trim()
+    if (title) parts.push(title)
+    if (affiliation) parts.push(affiliation)
+  }
+  parts.push(canonical.status)
   const linked = canonical.linked_substrate_count ?? 0
   const mentions = canonical.mention_count ?? 0
-  return `${typeLabel} · ${canonical.status} · ${linked} ${linkedRecordLabel} · ${mentions} mentions`
+  parts.push(`${linked} ${linkedRecordLabel}`)
+  parts.push(`${mentions} mentions`)
+  return parts.join(" · ")
 }
 
 function isEmptyCanonical(canonical: CleanupClusterCanonical): boolean {

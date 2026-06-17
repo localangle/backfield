@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { EntityConfig } from '@/lib/entityTypes'
-import { stringSimilarity } from '@/lib/utils'
+import { cn, stringSimilarity } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -235,11 +235,16 @@ export default function EntitySelector<T extends { id: string | number }>({
               {loading && suggestedEntities.length === 0 && sortedAndFilteredEntities.length === 0 ? (
                 <div className="text-center py-6 text-muted-foreground">Loading {config.displayName.plural.toLowerCase()}…</div>
               ) : suggestedEntities.length > 0 ? (
-                <Table>
+                <Table className="table-fixed w-full">
                     <TableHeader>
                       <TableRow>
-                        {displayFields.map(field => (
-                          <TableHead key={field.key}>{field.label}</TableHead>
+                        {displayFields.map((field, index) => (
+                          <TableHead
+                            key={field.key}
+                            className={index === 0 ? "min-w-0 w-[34%]" : "min-w-0"}
+                          >
+                            {field.label}
+                          </TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
@@ -252,12 +257,16 @@ export default function EntitySelector<T extends { id: string | number }>({
                             className="cursor-pointer hover:bg-primary/10 bg-primary/5"
                             onClick={() => handleSelect(entity)}
                           >
-                            {displayFields.map(field => (
-                              <TableCell key={field.key} className="py-2">
+                            {displayFields.map((field, index) => (
+                              <TableCell key={field.key} className="py-2 min-w-0">
                                 {field.key === displayFields[0].key ? (
-                                  <span className="font-medium">{fields[field.key] || '-'}</span>
+                                  <span className="font-medium block truncate">
+                                    {fields[field.key] || "-"}
+                                  </span>
                                 ) : (
-                                  <span className="text-muted-foreground">{fields[field.key] || '-'}</span>
+                                  <span className="text-muted-foreground block truncate">
+                                    {fields[field.key] || "-"}
+                                  </span>
                                 )}
                               </TableCell>
                             ))}
@@ -280,17 +289,24 @@ export default function EntitySelector<T extends { id: string | number }>({
                   {searchQuery ? `No ${config.displayName.plural.toLowerCase()} found matching your search` : `No ${config.displayName.plural.toLowerCase()} available`}
                 </div>
               ) : (
-                <Table>
+                <Table className="table-fixed w-full">
                   <TableHeader>
                     <TableRow>
-                      {displayFields.map(field => (
-                        <TableHead 
+                      {displayFields.map((field, index) => (
+                        <TableHead
                           key={field.key}
-                          className={sortableFields.includes(field.key) ? "cursor-pointer hover:bg-muted/50 select-none" : ""}
-                          onClick={() => sortableFields.includes(field.key) && handleSort(field.key)}
+                          className={cn(
+                            sortableFields.includes(field.key)
+                              ? "cursor-pointer hover:bg-muted/50 select-none"
+                              : "",
+                            index === 0 ? "min-w-0 w-[34%]" : "min-w-0",
+                          )}
+                          onClick={() =>
+                            sortableFields.includes(field.key) && handleSort(field.key)
+                          }
                         >
-                          <div className="flex items-center">
-                            {field.label}
+                          <div className="flex items-center min-w-0">
+                            <span className="truncate">{field.label}</span>
                             {sortableFields.includes(field.key) && <SortIcon field={field.key} />}
                           </div>
                         </TableHead>
@@ -306,12 +322,16 @@ export default function EntitySelector<T extends { id: string | number }>({
                           className="cursor-pointer hover:bg-muted/50"
                           onClick={() => handleSelect(entity)}
                         >
-                          {displayFields.map(field => (
-                            <TableCell key={field.key} className="py-2">
+                          {displayFields.map((field) => (
+                            <TableCell key={field.key} className="py-2 min-w-0">
                               {field.key === displayFields[0].key ? (
-                                <span className="font-medium">{fields[field.key] || '-'}</span>
+                                <span className="font-medium block truncate">
+                                  {fields[field.key] || "-"}
+                                </span>
                               ) : (
-                                <span className="text-muted-foreground">{fields[field.key] || '-'}</span>
+                                <span className="text-muted-foreground block truncate">
+                                  {fields[field.key] || "-"}
+                                </span>
                               )}
                             </TableCell>
                           ))}

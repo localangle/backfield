@@ -354,14 +354,22 @@ function GeographyIssuesList({
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden">
-      <table className="w-full text-sm">
+    <div className="rounded-lg border overflow-x-auto">
+      <table className="w-full table-fixed text-sm min-w-[40rem]">
+        <colgroup>
+          <col style={{ width: "32%" }} />
+          <col style={{ width: "24%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "9%" }} />
+        </colgroup>
         <thead className="bg-muted/50 text-left">
           <tr>
-            <th className="px-4 py-3 font-medium">Name</th>
-            <th className="px-4 py-3 font-medium">Issue</th>
-            <th className="px-4 py-3 font-medium">Type</th>
-            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium min-w-0">Name</th>
+            <th className="px-4 py-3 font-medium min-w-0">Issue</th>
+            <th className="px-4 py-3 font-medium min-w-0">Type</th>
+            <th className="px-4 py-3 font-medium min-w-0">Status</th>
             <th className="px-4 py-3 font-medium text-right">Linked</th>
             <th className="px-4 py-3 font-medium text-right">Mentions</th>
           </tr>
@@ -369,27 +377,34 @@ function GeographyIssuesList({
         <tbody>
           {canonicals.map((canonical) => (
             <tr key={canonical.id} className="border-t hover:bg-muted/30">
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 min-w-0">
                 <Link
                   to={locationDetailHref(canonical.id)}
-                  className="font-medium text-primary hover:underline"
+                  className="font-medium text-primary hover:underline block truncate"
+                  title={canonical.label}
                 >
                   {canonical.label}
                 </Link>
               </td>
-              <td className="px-4 py-3 text-muted-foreground">
-                {geographyIssueLabel(canonical.geography_issue)}
-                {canonical.geography_issue === "distant_linked_places" &&
-                (canonical.distant_linked_count ?? 0) > 0
-                  ? ` (${canonical.distant_linked_count})`
-                  : null}
+              <td className="px-4 py-3 text-muted-foreground min-w-0">
+                <span className="block truncate" title={geographyIssueLabel(canonical.geography_issue)}>
+                  {geographyIssueLabel(canonical.geography_issue)}
+                  {canonical.geography_issue === "distant_linked_places" &&
+                  (canonical.distant_linked_count ?? 0) > 0
+                    ? ` (${canonical.distant_linked_count})`
+                    : null}
+                </span>
               </td>
-              <td className="px-4 py-3 text-muted-foreground">
-                {canonical.location_type
-                  ? placeExtractTypeLabel(canonical.location_type)
-                  : "—"}
+              <td className="px-4 py-3 text-muted-foreground min-w-0">
+                <span className="block truncate">
+                  {canonical.location_type
+                    ? placeExtractTypeLabel(canonical.location_type)
+                    : "—"}
+                </span>
               </td>
-              <td className="px-4 py-3 text-muted-foreground">{canonical.status}</td>
+              <td className="px-4 py-3 text-muted-foreground min-w-0">
+                <span className="block truncate">{canonical.status}</span>
+              </td>
               <td className="px-4 py-3 text-right tabular-nums">
                 {canonical.linked_substrate_count ?? 0}
               </td>

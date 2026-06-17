@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import difflib
 from collections import defaultdict
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, select
@@ -13,12 +13,29 @@ from backfield_entities.quality.finders._clustering import cluster_ids_from_pair
 
 DEFAULT_FULL_SIMILARITY_THRESHOLD: float = 0.72
 _MIN_LABEL_LEN: int = 4
+_MIN_BLOCK_LEN: int = 3
+_MIN_FIRST_TOKEN_LEN: int = 2
+
+NearDuplicateBlock = Literal["comma_head", "first_token", "none"]
 
 CanonicalModel = TypeVar("CanonicalModel", bound=SQLModel)
 
 
 def normalize_label(label: str) -> str:
     return label.strip().lower()
+
+
+def block_key_for_label(label: str, *, near_block: NearDuplicateBlock) -> str:
+    norm = normalize_label(label)
+    if near_block == "comma_head":
+        comma = norm.find(",")
+        if comma >= 0:
+            return norm[:comma].strip()
+        return norm
+    if near_block == "first_token":
+        parts = norm.split()
+        return parts[0] if parts else norm
+    return norm
 
 
 def dedupe_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -129,13 +146,37 @@ def exact_label_pair_edges(
     return pairs
 
 
+def _block_key_sql(label_expr: str, *, near_block: NearDuplicateBlock) -> str:
+    if near_block == "first_token":
+        return f"lower(trim(split_part({label_expr}, ' ', 1)))"
+    if near_block == "comma_head":
+        return f"lower(trim(split_part({label_expr}, ',', 1)))"
+    return f"lower(trim({label_expr}))"
+
+
+def _min_block_len(near_block: NearDuplicateBlock) -> int:
+    if near_block == "first_token":
+        return _MIN_FIRST_TOKEN_LEN
+    if near_block == "comma_head":
+        return _MIN_BLOCK_LEN
+    return 1
+
+
 def _postgres_near_duplicate_pair_edges(
     session: Session,
     *,
     table: str,
     stylebook_id: int,
     full_threshold: float,
+    near_block: NearDuplicateBlock,
 ) -> list[tuple[str, str]]:
+    a_block = _block_key_sql("a.label", near_block=near_block)
+    b_block = _block_key_sql("b.label", near_block=near_block)
+    block_join = ""
+    block_len_filter = ""
+    if near_block != "none":
+        block_join = f"AND {a_block} = {b_block}"
+        block_len_filter = f"AND length({a_block}) >= :min_block_len"
     rows = session.execute(
         text(
             f"""
@@ -144,16 +185,20 @@ def _postgres_near_duplicate_pair_edges(
             INNER JOIN {table} AS b
                 ON a.stylebook_id = b.stylebook_id
                AND a.id < b.id
+               {block_join}
             WHERE a.stylebook_id = :sid
               AND length(trim(a.label)) >= :min_len
               AND length(trim(b.label)) >= :min_len
+              {block_len_filter}
               AND lower(trim(a.label)) <> lower(trim(b.label))
+              AND lower(trim(a.label)) % lower(trim(b.label))
               AND similarity(lower(trim(a.label)), lower(trim(b.label))) >= :full_th
             """
         ),
         {
             "sid": stylebook_id,
             "min_len": _MIN_LABEL_LEN,
+            "min_block_len": _min_block_len(near_block),
             "full_th": full_threshold,
         },
     ).all()
@@ -171,32 +216,40 @@ def _sqlite_near_duplicate_pair_edges(
     model: type[CanonicalModel],
     stylebook_id: int,
     full_threshold: float,
+    near_block: NearDuplicateBlock,
 ) -> list[tuple[str, str]]:
     rows = session.exec(
         select(model.id, model.label).where(model.stylebook_id == stylebook_id)  # type: ignore[attr-defined]
     ).all()
-    normalized_rows: list[tuple[str, str]] = []
+    by_block: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for row_id, label in rows:
         if row_id is None or not label:
             continue
         label_text = str(label).strip()
         if len(label_text) < _MIN_LABEL_LEN:
             continue
-        normalized_rows.append((str(row_id), normalize_label(label_text)))
+        norm = normalize_label(label_text)
+        block = block_key_for_label(label_text, near_block=near_block)
+        if near_block != "none" and len(block) < _min_block_len(near_block):
+            continue
+        by_block[block].append((str(row_id), norm))
 
     pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
-    for i, (a_id, a_norm) in enumerate(normalized_rows):
-        for b_id, b_norm in normalized_rows[i + 1 :]:
-            if a_norm == b_norm:
-                continue
-            left, right = (a_id, b_id) if a_id < b_id else (b_id, a_id)
-            if (left, right) in seen:
-                continue
-            if difflib.SequenceMatcher(None, a_norm, b_norm).ratio() < full_threshold:
-                continue
-            seen.add((left, right))
-            pairs.append((left, right))
+    for block_rows in by_block.values():
+        if len(block_rows) < 2:
+            continue
+        for i, (a_id, a_norm) in enumerate(block_rows):
+            for b_id, b_norm in block_rows[i + 1 :]:
+                if a_norm == b_norm:
+                    continue
+                left, right = (a_id, b_id) if a_id < b_id else (b_id, a_id)
+                if (left, right) in seen:
+                    continue
+                if difflib.SequenceMatcher(None, a_norm, b_norm).ratio() < full_threshold:
+                    continue
+                seen.add((left, right))
+                pairs.append((left, right))
     return pairs
 
 
@@ -206,6 +259,7 @@ def duplicate_label_pair_edges(
     model: type[CanonicalModel],
     stylebook_id: int,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
+    near_block: NearDuplicateBlock = "comma_head",
 ) -> list[tuple[str, str]]:
     table = str(model.__tablename__)
     exact = exact_label_pair_edges(session, model=model, stylebook_id=stylebook_id)
@@ -216,6 +270,7 @@ def duplicate_label_pair_edges(
             table=table,
             stylebook_id=stylebook_id,
             full_threshold=full_threshold,
+            near_block=near_block,
         )
     else:
         near = _sqlite_near_duplicate_pair_edges(
@@ -223,6 +278,7 @@ def duplicate_label_pair_edges(
             model=model,
             stylebook_id=stylebook_id,
             full_threshold=full_threshold,
+            near_block=near_block,
         )
     return dedupe_pairs([*exact, *near])
 
@@ -233,12 +289,14 @@ def duplicate_label_cluster_ids(
     model: type[CanonicalModel],
     stylebook_id: int,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
+    near_block: NearDuplicateBlock = "comma_head",
 ) -> list[list[str]]:
     pairs = duplicate_label_pair_edges(
         session,
         model=model,
         stylebook_id=stylebook_id,
         full_threshold=full_threshold,
+        near_block=near_block,
     )
     return cluster_ids_from_pairs(pairs)
 
@@ -249,6 +307,7 @@ def count_duplicate_label_clusters(
     model: type[CanonicalModel],
     stylebook_id: int,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
+    near_block: NearDuplicateBlock = "comma_head",
 ) -> int:
     return len(
         duplicate_label_cluster_ids(
@@ -256,6 +315,7 @@ def count_duplicate_label_clusters(
             model=model,
             stylebook_id=stylebook_id,
             full_threshold=full_threshold,
+            near_block=near_block,
         )
     )
 
@@ -268,12 +328,14 @@ def paginate_duplicate_label_clusters(
     limit: int,
     offset: int,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
+    near_block: NearDuplicateBlock = "comma_head",
 ) -> tuple[list[list[str]], int]:
     clusters = duplicate_label_cluster_ids(
         session,
         model=model,
         stylebook_id=stylebook_id,
         full_threshold=full_threshold,
+        near_block=near_block,
     )
     total = len(clusters)
     page = clusters[offset : offset + limit]

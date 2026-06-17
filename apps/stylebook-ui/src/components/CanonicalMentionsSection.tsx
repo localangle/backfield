@@ -109,7 +109,7 @@ export default function CanonicalMentionsSection<
         ) : (
           <>
             <div className="w-full overflow-x-auto">
-              <Table className="w-full min-w-[56rem]">
+              <Table className="w-full table-fixed min-w-[56rem]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[26%] min-w-[9rem]">

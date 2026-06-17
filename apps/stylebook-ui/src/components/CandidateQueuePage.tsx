@@ -52,6 +52,10 @@ import {
   CandidateReviewReasons,
   candidateReviewLines,
 } from "@/components/CandidateReviewReasons"
+import {
+  candidateQueueDataCellClass,
+  resolveCandidateQueueColgroup,
+} from "@/lib/candidateQueueTableLayout"
 import { ChevronRight, Clock, Link2, Loader2, PlusCircle, StickyNote } from "lucide-react"
 
 type CandidateQueuePageProps<TCandidate extends QueueCandidateBase> = {
@@ -119,6 +123,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
 
   const LinkModal = config.linkModal
   const columnCount = config.columns.length + 2
+  const tableColgroup = resolveCandidateQueueColgroup(columnCount, config.tableLayout)
   const canonicalBasePath = `${catalogBasePath}/${config.entitySlug}/canonical`
 
   return (
@@ -251,7 +256,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          <div className="overflow-hidden rounded-md border">
+          <div className="rounded-md border">
             <div
               className="flex gap-8 border-b border-border bg-muted/20 px-4"
               role="tablist"
@@ -276,19 +281,17 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                 </button>
               ))}
             </div>
-            <Table className={config.tableLayout?.colgroup ? "table-fixed" : undefined}>
-              {config.tableLayout?.colgroup ? (
-                <colgroup>
-                  {config.tableLayout.colgroup.map((col, i) => (
-                    <col key={i} style={{ width: col.width }} />
-                  ))}
-                </colgroup>
-              ) : null}
+            <Table className="table-fixed w-full">
+              <colgroup>
+                {tableColgroup.map((col, i) => (
+                  <col key={i} style={{ width: col.width }} />
+                ))}
+              </colgroup>
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-0">{config.copy.primaryColumnHeader}</TableHead>
                   {config.columns.map((col) => (
-                    <TableHead key={col.id} className={col.className}>
+                    <TableHead key={col.id} className={cn("min-w-0", col.className)}>
                       {col.header}
                     </TableHead>
                   ))}
@@ -338,9 +341,9 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                     return (
                       <Fragment key={c.id}>
                         <TableRow id={`candidate-row-${c.id}`}>
-                          <TableCell className="font-medium min-w-0">
+                          <TableCell className={cn("font-medium", candidateQueueDataCellClass)}>
                             <div className="flex flex-col items-start gap-1 min-w-0">
-                              <div className="flex items-center gap-2 min-w-0">
+                              <div className="flex items-center gap-2 min-w-0 w-full">
                                 <Button
                                   type="button"
                                   size="icon"
@@ -365,7 +368,10 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                     />
                                   )}
                                 </Button>
-                                <span className="min-w-0 break-words">
+                                <span
+                                  className="min-w-0 flex-1 truncate"
+                                  title={(c.suggested_name ?? "").trim() || undefined}
+                                >
                                   {c.suggested_name || "—"}
                                 </span>
                                 {c.note ? (
@@ -389,11 +395,14 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                             </div>
                           </TableCell>
                           {config.columns.map((col) => (
-                            <TableCell key={col.id} className={col.className}>
+                            <TableCell
+                              key={col.id}
+                              className={cn(candidateQueueDataCellClass, col.className)}
+                            >
                               {col.render(c)}
                             </TableCell>
                           ))}
-                          <TableCell className="text-right whitespace-nowrap align-top overflow-visible">
+                          <TableCell className="text-right whitespace-nowrap align-top">
                             <div className="inline-flex flex-nowrap items-center justify-end gap-1.5 px-0.5">
                               <Button
                                 type="button"
