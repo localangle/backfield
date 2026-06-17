@@ -84,12 +84,16 @@ def call_llm_tracked_sync(
     catalog_api_key: str | None = None
     catalog_api_base: str | None = None
     if track_ctx and mc_norm:
-        lm_model, catalog_api_key, catalog_api_base = resolve_llm_auth_for_model_config(
-            track_ctx.session,
-            project_id=track_ctx.project_id,
-            model_config_id=mc_norm,
-            fallback_litellm_model=lm_model,
-        )
+        from backfield_db.session import get_engine
+        from sqlmodel import Session
+
+        with Session(get_engine()) as session:
+            lm_model, catalog_api_key, catalog_api_base = resolve_llm_auth_for_model_config(
+                session,
+                project_id=track_ctx.project_id,
+                model_config_id=mc_norm,
+                fallback_litellm_model=lm_model,
+            )
 
     from agate_utils.llm import merge_system_messages, resolve_project_system_prompt
 
