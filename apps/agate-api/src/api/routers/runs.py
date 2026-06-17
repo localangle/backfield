@@ -2031,6 +2031,7 @@ def rerun_run_processed_item(
     item.status = "pending"
     item.started_at = None
     item.result_json = None
+    item.substrate_article_id = None
     item.error_message = None
     item.overlay_json = None
     item.reviewed_output_json = None

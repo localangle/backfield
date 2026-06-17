@@ -45,6 +45,9 @@ from backfield_db import (
 from backfield_db.session import get_engine
 from backfield_entities.catalog.full_bundle import export_stylebook_bundle, import_stylebook_bundle
 from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
+from backfield_entities.processed_item_article_link import (
+    resolve_substrate_article_id_for_processed_item,
+)
 from celery import Celery, chord, group
 from sqlalchemy import delete
 from sqlmodel import Session, select
@@ -746,6 +749,7 @@ def execute_processed_item(item_id: int) -> None:
                 item.status = "failed"
                 item.error_message = str(e)
                 item.result_json = None
+                item.substrate_article_id = None
                 item.updated_at = datetime.now(UTC)
                 session.add(item)
                 session.commit()
@@ -797,11 +801,15 @@ def execute_processed_item(item_id: int) -> None:
         if item_error is None:
             item.status = "succeeded"
             item.result_json = json.dumps(outputs)
+            item.substrate_article_id = resolve_substrate_article_id_for_processed_item(
+                outputs=outputs
+            )
             item.error_message = None
         else:
             item.status = "failed"
             item.error_message = item_error
             item.result_json = None
+            item.substrate_article_id = None
         if replace_geography and not has_db_output and run_id_str:
             clear_replace_article_geography_flags(
                 session,
@@ -935,6 +943,9 @@ def sync_processed_item_s3_output(item_id: int) -> None:
             error=error,
         )
         item.result_json = json.dumps(output)
+        item.substrate_article_id = resolve_substrate_article_id_for_processed_item(
+            outputs=output
+        )
         if reviewed is not None:
             item.reviewed_output_json = json.dumps(reviewed)
         item.updated_at = datetime.now(UTC)

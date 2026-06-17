@@ -1729,6 +1729,12 @@ class AgateProcessedItem(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
+    #: Denormalized link for public article provenance and hub queries (set on persist).
+    substrate_article_id: int | None = Field(
+        default=None,
+        foreign_key="substrate_article.id",
+        index=True,
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )

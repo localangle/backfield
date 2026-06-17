@@ -17,7 +17,12 @@ from backfield_db import (
 from pydantic import BaseModel, Field
 from sqlalchemy import func, text
 from sqlalchemy.exc import DataError
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
+
+from backfield_entities.processed_item_article_link import (
+    substrate_article_id_from_graph_outputs,
+    substrate_article_id_from_input_obj,
+)
 
 
 class PublicArticleProcessingEntryOut(BaseModel):
@@ -78,32 +83,11 @@ _ARTICLE_REF_SQL = text(
 
 
 def _parse_input_article_id(input_obj: dict[str, Any]) -> int | None:
-    for key in ("input_article_id", "article_id", "substrate_article_id"):
-        raw = input_obj.get(key)
-        if raw is None:
-            continue
-        try:
-            return int(raw)
-        except (TypeError, ValueError):
-            continue
-    return None
+    return substrate_article_id_from_input_obj(input_obj)
 
 
 def _parse_persisted_article_id_from_output(result_obj: dict[str, Any] | None) -> int | None:
-    if not isinstance(result_obj, dict):
-        return None
-    for key in ("stylebook_output", "geocode_agent", "place_extract"):
-        block = result_obj.get(key)
-        if not isinstance(block, dict):
-            continue
-        raw = block.get("article_id")
-        if raw is None:
-            continue
-        try:
-            return int(raw)
-        except (TypeError, ValueError):
-            continue
-    return None
+    return substrate_article_id_from_graph_outputs(result_obj)
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
@@ -234,6 +218,13 @@ def _project_processed_item_json_stmt(project_id: int, *, postgres: bool = False
     )
 
 
+def _processed_item_ref_from_row(row: tuple[Any, ...]) -> _ProcessedItemRef | None:
+    row_id, run_id, result_json, _input_json = row
+    if row_id is None or not run_id:
+        return None
+    return _ProcessedItemRef(id=int(row_id), run_id=str(run_id), result_json=result_json)
+
+
 def _processed_items_from_json_rows(
     rows: list[tuple[Any, ...]],
     *,
@@ -241,7 +232,8 @@ def _processed_items_from_json_rows(
     filter_in_python: bool,
 ) -> list[_ProcessedItemRef]:
     out: list[_ProcessedItemRef] = []
-    for row_id, run_id, result_json, input_json in rows:
+    for row in rows:
+        row_id, run_id, result_json, input_json = row
         if row_id is None or not run_id:
             continue
         if filter_in_python and not _references_article_from_json(
@@ -254,22 +246,78 @@ def _processed_items_from_json_rows(
     return out
 
 
-def _fetch_processed_items_referencing_article(
+def _merge_processed_item_refs(
+    *groups: list[_ProcessedItemRef],
+) -> list[_ProcessedItemRef]:
+    merged: dict[int, _ProcessedItemRef] = {}
+    for group in groups:
+        for ref in group:
+            merged[ref.id] = ref
+    return list(merged.values())
+
+
+def _fetch_processed_items_by_substrate_article_id(
     session: Session,
     *,
     project_id: int,
     article_id: int,
 ) -> list[_ProcessedItemRef]:
-    """Find processed items for this article without loading the whole project batch."""
+    rows = session.exec(
+        _project_processed_item_json_stmt(project_id).where(
+            AgateProcessedItem.substrate_article_id == article_id
+        )
+    ).all()
+    refs: list[_ProcessedItemRef] = []
+    for row in rows:
+        ref = _processed_item_ref_from_row(row)
+        if ref is not None:
+            refs.append(ref)
+    return refs
+
+
+def _fetch_processed_item_by_source_pointer(
+    session: Session,
+    *,
+    project_id: int,
+    article: SubstrateArticle,
+) -> list[_ProcessedItemRef]:
+    if article.source_item_id is None:
+        return []
+    stmt = _project_processed_item_json_stmt(project_id).where(
+        AgateProcessedItem.id == int(article.source_item_id)
+    )
+    if article.source_run_id:
+        stmt = stmt.where(AgateProcessedItem.run_id == str(article.source_run_id))
+    row = session.exec(stmt).first()
+    if row is None:
+        return []
+    ref = _processed_item_ref_from_row(row)
+    return [ref] if ref is not None else []
+
+
+def _fetch_unlinked_processed_items_via_json(
+    session: Session,
+    *,
+    project_id: int,
+    article_id: int,
+    exclude_ids: set[int],
+) -> list[_ProcessedItemRef]:
+    """Fallback for legacy rows without ``substrate_article_id``."""
     aid = str(article_id)
     bind = session.get_bind()
+    base = _project_processed_item_json_stmt(
+        project_id,
+        postgres=bind is not None and bind.dialect.name == "postgresql",
+    ).where(AgateProcessedItem.substrate_article_id.is_(None))
+    if exclude_ids:
+        base = base.where(~col(AgateProcessedItem.id).in_(exclude_ids))
+
     if bind is not None and bind.dialect.name == "postgresql":
-        stmt = _project_processed_item_json_stmt(project_id, postgres=True)
         try:
-            rows = session.exec(stmt.where(_ARTICLE_REF_SQL.bindparams(aid=aid))).all()
+            rows = session.exec(base.where(_ARTICLE_REF_SQL.bindparams(aid=aid))).all()
         except DataError:
             session.rollback()
-            rows = session.exec(_project_processed_item_json_stmt(project_id, postgres=True)).all()
+            rows = session.exec(base).all()
             return _processed_items_from_json_rows(
                 rows,
                 article_id=article_id,
@@ -281,13 +329,45 @@ def _fetch_processed_items_referencing_article(
             filter_in_python=False,
         )
 
-    stmt = _project_processed_item_json_stmt(project_id)
-    rows = session.exec(stmt).all()
+    rows = session.exec(base).all()
     return _processed_items_from_json_rows(
         rows,
         article_id=article_id,
         filter_in_python=True,
     )
+
+
+def _fetch_processed_items_referencing_article(
+    session: Session,
+    *,
+    project_id: int,
+    article_id: int,
+    article: SubstrateArticle | None = None,
+) -> list[_ProcessedItemRef]:
+    """Find processed items for this article using indexed paths before JSON fallback."""
+    by_column = _fetch_processed_items_by_substrate_article_id(
+        session,
+        project_id=project_id,
+        article_id=article_id,
+    )
+    by_pointer: list[_ProcessedItemRef] = []
+    if article is not None:
+        by_pointer = _fetch_processed_item_by_source_pointer(
+            session,
+            project_id=project_id,
+            article=article,
+        )
+    merged = _merge_processed_item_refs(by_column, by_pointer)
+    if by_column:
+        return merged
+    exclude_ids = {ref.id for ref in merged}
+    legacy = _fetch_unlinked_processed_items_via_json(
+        session,
+        project_id=project_id,
+        article_id=article_id,
+        exclude_ids=exclude_ids,
+    )
+    return _merge_processed_item_refs(merged, legacy)
 
 
 def list_public_article_processing(
@@ -350,6 +430,7 @@ def list_public_article_processing(
         session,
         project_id=project_id,
         article_id=article_id,
+        article=article,
     ):
         run_key = str(item.run_id)
         item_id = int(item.id)

@@ -147,6 +147,69 @@ def _stylebook_result_json(*, article_id: int, domains: list[str] | None = None)
     )
 
 
+def test_list_public_article_processing_uses_substrate_article_id_column() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, article_id = _seed_project(session)
+        graph = AgateGraph(
+            id="graph-1",
+            name="Flow",
+            spec_json="{}",
+            project_id=project_id,
+        )
+        session.add(graph)
+        session.add(AgateRun(id="run-indexed", graph_id="graph-1", status="succeeded"))
+        session.add(
+            AgateProcessedItem(
+                id=55,
+                run_id="run-indexed",
+                status="succeeded",
+                substrate_article_id=article_id,
+                result_json=None,
+            )
+        )
+        session.commit()
+
+        rows = list_public_article_processing(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+        )
+        assert ("run-indexed", 55) in {(row.run_id, row.processed_item_id) for row in rows}
+
+
+def test_list_public_article_processing_uses_source_pointer_without_column() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, article_id = _seed_project(session)
+        graph = AgateGraph(
+            id="graph-1",
+            name="Flow",
+            spec_json="{}",
+            project_id=project_id,
+        )
+        session.add(graph)
+        session.add(AgateRun(id="run-latest", graph_id="graph-1", status="succeeded"))
+        session.add(
+            AgateProcessedItem(
+                id=99,
+                run_id="run-latest",
+                status="succeeded",
+                result_json=None,
+            )
+        )
+        session.commit()
+
+        rows = list_public_article_processing(
+            session,
+            project_id=project_id,
+            article_id=article_id,
+        )
+        assert ("run-latest", 99) in {(row.run_id, row.processed_item_id) for row in rows}
+
+
 def test_list_public_article_processing_includes_prior_runs_after_reprocess() -> None:
     """Re-run overwrites article provenance but older processed items still appear."""
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
@@ -173,6 +236,7 @@ def test_list_public_article_processing_includes_prior_runs_after_reprocess() ->
                 id=100,
                 run_id="run-a",
                 status="succeeded",
+                substrate_article_id=article_id,
                 result_json=_stylebook_result_json(article_id=article_id, domains=["places"]),
             )
         )
@@ -181,6 +245,7 @@ def test_list_public_article_processing_includes_prior_runs_after_reprocess() ->
                 id=200,
                 run_id="run-b",
                 status="succeeded",
+                substrate_article_id=article_id,
                 result_json=_stylebook_result_json(article_id=article_id, domains=["metadata"]),
             )
         )
@@ -279,16 +344,20 @@ def test_list_public_article_processing_handles_null_unicode_in_result_json() ->
         project = session.exec(
             select(BackfieldProject).where(BackfieldProject.slug == "general")
         ).first()
-        article = session.exec(
-            select(SubstrateArticle).where(
-                SubstrateArticle.project_id == int(project.id),  # type: ignore[arg-type]
-                SubstrateArticle.deleted == False,  # noqa: E712
-            )
-        ).first()
-        if project is None or project.id is None or article is None or article.id is None:
+        if project is None or project.id is None:
             pytest.skip("general project seed data required for postgres regression test")
 
         project_id = int(project.id)
+        article = SubstrateArticle(
+            project_id=project_id,
+            headline="Null-byte regression article",
+            text="Body",
+        )
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+        if article.id is None:
+            pytest.skip("failed to create regression article")
         article_id = int(article.id)
         run_id = f"run-null-byte-{uuid.uuid4().hex[:8]}"
         graph_id = f"graph-null-byte-{uuid.uuid4().hex[:8]}"
@@ -331,4 +400,5 @@ def test_list_public_article_processing_handles_null_unicode_in_result_json() ->
             session.delete(session.get(AgateProcessedItem, item_id))
             session.delete(session.get(AgateRun, run_id))
             session.delete(session.get(AgateGraph, graph_id))
+            session.delete(session.get(SubstrateArticle, article_id))
             session.commit()
