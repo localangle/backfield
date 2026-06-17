@@ -7,7 +7,9 @@ from typing import Any, Literal
 from backfield_db import StylebookLocationCanonical
 from backfield_entities.quality.checks import LOCATION_CLEANUP_CHECKS
 from backfield_entities.quality.finders.duplicate_locations import (
-    DEFAULT_DUPLICATE_SIMILARITY_THRESHOLD,
+    DEFAULT_FULL_SIMILARITY_THRESHOLD,
+    DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+    cluster_display_label,
     count_duplicate_location_clusters,
     paginate_duplicate_location_clusters,
 )
@@ -49,6 +51,7 @@ class CleanupChecksResponse(BaseModel):
 
 class DuplicateLocationClusterOut(BaseModel):
     cluster_id: str
+    label: str
     canonicals: list[CanonicalLocationResponse]
 
 
@@ -75,13 +78,15 @@ def _count_for_check(
     *,
     stylebook_id: int,
     check_id: str,
-    similarity_threshold: float,
+    full_threshold: float,
+    head_threshold: float,
 ) -> int:
     if check_id == "duplicate-locations":
         return count_duplicate_location_clusters(
             session,
             stylebook_id=stylebook_id,
-            threshold=similarity_threshold,
+            full_threshold=full_threshold,
+            head_threshold=head_threshold,
         )
     if check_id == "missing-geometry-locations":
         return count_missing_geometry_locations(session, stylebook_id=stylebook_id)
@@ -120,10 +125,19 @@ def _canonical_responses_with_counts(
 def list_cleanup_checks(
     stylebook_slug: str,
     similarity_threshold: float = Query(
-        DEFAULT_DUPLICATE_SIMILARITY_THRESHOLD,
-        ge=0.3,
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
         le=0.95,
-        description="Minimum trigram similarity for duplicate-location clusters.",
+        description="Minimum full-label trigram similarity for near-duplicate clusters.",
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+        description=(
+            "Minimum similarity on the primary name (text before the first comma) "
+            "to avoid suffix-only matches."
+        ),
     ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
@@ -139,7 +153,8 @@ def list_cleanup_checks(
             session,
             stylebook_id=stylebook_id,
             check_id=check.id,
-            similarity_threshold=similarity_threshold,
+            full_threshold=similarity_threshold,
+            head_threshold=head_similarity_threshold,
         )
         total_open += count
         checks_out.append(
@@ -166,8 +181,13 @@ def list_duplicate_location_clusters(
         description="Optional project slug to scope linked/mention counts.",
     ),
     similarity_threshold: float = Query(
-        DEFAULT_DUPLICATE_SIMILARITY_THRESHOLD,
-        ge=0.3,
+        DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        ge=0.5,
+        le=0.95,
+    ),
+    head_similarity_threshold: float = Query(
+        DEFAULT_HEAD_SIMILARITY_THRESHOLD,
+        ge=0.5,
         le=0.95,
     ),
     limit: int = Query(25, ge=1, le=100),
@@ -188,7 +208,8 @@ def list_duplicate_location_clusters(
     cluster_id_lists, total = paginate_duplicate_location_clusters(
         session,
         stylebook_id=stylebook_id,
-        threshold=similarity_threshold,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
         limit=limit,
         offset=offset,
     )
@@ -206,10 +227,12 @@ def list_duplicate_location_clusters(
             rows_by_id=rows_by_id,
             canonical_ids=member_ids,
         )
+        cluster_label = cluster_display_label([canonical.label for canonical in canonicals])
         cluster_key = member_ids[0] if member_ids else str(index)
         clusters_out.append(
             DuplicateLocationClusterOut(
                 cluster_id=f"{cluster_key}:{len(member_ids)}",
+                label=cluster_label,
                 canonicals=canonicals,
             )
         )

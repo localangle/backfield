@@ -173,7 +173,7 @@ Revision **`050_agate_item_timing`** adds nullable **`started_at`** on **`agate_
 
 Revision **`051_pi_substrate_article_id`** adds nullable **`substrate_article_id`** (FK to **`substrate_article.id`**, **`ON DELETE SET NULL`**) on **`agate_processed_item`**, partial index **`ix_agate_processed_item_substrate_article_id`**, and backfills from persisted output JSON and **`substrate_article.source_item_id`**. Set on worker persist; used for fast public article **`processing[]`** provenance lookups.
 
-Revision **`052_sb_loc_label_trgm`** (Postgres only) adds GIN trigram index **`ix_stylebook_location_canonical_label_trgm`** on **`lower(label)`** for Stylebook cleanup duplicate-location detection (requires **`pg_trgm`** from **`014`**). Non-Postgres upgrades skip the index.
+Revision **`052_sb_loc_label_trgm`** (Postgres only) adds GIN trigram index **`ix_stylebook_location_canonical_label_trgm`** on **`lower(label)`** (requires **`pg_trgm`** from **`014`**). Used by Cleanup **possible duplicate locations** near-match self-joins (`%` + **`similarity()`**), with a higher full-label threshold and a pre-comma head guard to avoid suffix-only false positives. Non-Postgres upgrades skip the index.
 
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 

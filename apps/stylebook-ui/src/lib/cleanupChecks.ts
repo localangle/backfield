@@ -17,7 +17,7 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
     id: "duplicate-locations",
     title: "Possible duplicate locations",
     description:
-      "Groups of location names that look very similar. Open each record to compare and relink evidence.",
+      "Same or very similar location names. Open each record to compare and relink evidence.",
     kind: "cluster",
   },
   {

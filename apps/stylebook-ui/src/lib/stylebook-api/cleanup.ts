@@ -19,6 +19,7 @@ export interface CleanupChecksResponse {
 
 export interface DuplicateLocationCluster {
   cluster_id: string
+  label: string
   canonicals: CanonicalLocation[]
 }
 

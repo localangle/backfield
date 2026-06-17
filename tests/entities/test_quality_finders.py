@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from backfield_db import BackfieldOrganization, Stylebook, StylebookLocationCanonical
 from backfield_entities.quality.finders.duplicate_locations import (
-    count_duplicate_location_clusters,
     duplicate_location_cluster_ids,
+    duplicate_location_pair_edges,
 )
 from backfield_entities.quality.finders.missing_geometry_locations import (
     count_missing_geometry_locations,
@@ -32,38 +32,88 @@ def _make_stylebook(session: Session) -> int:
     return int(sb.id)
 
 
-def test_duplicate_location_clustering_sqlite() -> None:
+def _add_canonical(
+    session: Session,
+    *,
+    stylebook_id: int,
+    slug: str,
+    label: str,
+) -> None:
+    session.add(
+        StylebookLocationCanonical(
+            stylebook_id=stylebook_id,
+            slug=slug,
+            label=label,
+        )
+    )
+
+
+def test_exact_duplicate_location_clustering_sqlite() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         stylebook_id = _make_stylebook(session)
-        session.add(
-            StylebookLocationCanonical(
-                stylebook_id=stylebook_id,
-                slug="billy-goat-chicago",
-                label="Billy Goat Tavern, Chicago, IL",
-            )
+        shared_label = "Ward 36, Chicago, IL"
+        _add_canonical(session, stylebook_id=stylebook_id, slug="ward-36-a", label=shared_label)
+        _add_canonical(session, stylebook_id=stylebook_id, slug="ward-36-b", label=shared_label)
+        session.commit()
+
+        clusters = duplicate_location_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert len(clusters[0]) == 2
+
+
+def test_fuzzy_duplicate_location_clustering_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id = _make_stylebook(session)
+        _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="billy-goat-chicago",
+            label="Billy Goat Tavern, Chicago, IL",
         )
-        session.add(
-            StylebookLocationCanonical(
-                stylebook_id=stylebook_id,
-                slug="billy-goat-west-loop",
-                label="Billy Goat Tavern, West Loop, Chicago, IL",
-            )
-        )
-        session.add(
-            StylebookLocationCanonical(
-                stylebook_id=stylebook_id,
-                slug="unrelated-place",
-                label="City Hall, Springfield, IL",
-            )
+        _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="billy-goat-west-loop",
+            label="Billy Goat Tavern, West Loop, Chicago, IL",
         )
         session.commit()
 
         clusters = duplicate_location_cluster_ids(session, stylebook_id=stylebook_id)
         assert len(clusters) == 1
         assert len(clusters[0]) == 2
-        assert count_duplicate_location_clusters(session, stylebook_id=stylebook_id) == 1
+
+
+def test_suffix_only_labels_not_clustered_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id = _make_stylebook(session)
+        _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="ward-36",
+            label="Ward 36, Chicago, IL",
+        )
+        _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="near-west-side",
+            label="Near West Side, Chicago, IL",
+        )
+        _add_canonical(
+            session,
+            stylebook_id=stylebook_id,
+            slug="washington-park",
+            label="Washington Park, South Side, Chicago, IL",
+        )
+        session.commit()
+
+        pairs = duplicate_location_pair_edges(session, stylebook_id=stylebook_id)
+        assert pairs == []
 
 
 def test_missing_geometry_locations_sqlite() -> None:

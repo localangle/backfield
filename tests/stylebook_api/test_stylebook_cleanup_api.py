@@ -73,14 +73,35 @@ def cleanup_client(
             StylebookLocationCanonical(
                 stylebook_id=sb_id,
                 slug="dupe-a",
-                label="Billy Goat Tavern, Chicago, IL",
+                label="Ward 36, Chicago, IL",
             )
         )
         s.add(
             StylebookLocationCanonical(
                 stylebook_id=sb_id,
                 slug="dupe-b",
+                label="Ward 36, Chicago, IL",
+            )
+        )
+        s.add(
+            StylebookLocationCanonical(
+                stylebook_id=sb_id,
+                slug="fuzzy-a",
+                label="Billy Goat Tavern, Chicago, IL",
+            )
+        )
+        s.add(
+            StylebookLocationCanonical(
+                stylebook_id=sb_id,
+                slug="fuzzy-b",
                 label="Billy Goat Tavern, West Loop, Chicago, IL",
+            )
+        )
+        s.add(
+            StylebookLocationCanonical(
+                stylebook_id=sb_id,
+                slug="unique-chicago",
+                label="Near West Side, Chicago, IL",
             )
         )
         s.add(
@@ -129,8 +150,8 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     ids = {check["id"] for check in body["checks"]}
     assert ids == {"duplicate-locations", "missing-geometry-locations"}
     by_id = {check["id"]: check["count"] for check in body["checks"]}
-    assert by_id["duplicate-locations"] >= 1
-    assert by_id["missing-geometry-locations"] == 3
+    assert by_id["duplicate-locations"] == 2
+    assert by_id["missing-geometry-locations"] == 6
     assert body["total_open"] == by_id["duplicate-locations"] + by_id["missing-geometry-locations"]
 
 
@@ -139,13 +160,10 @@ def test_duplicate_location_clusters(cleanup_client: tuple[TestClient, Engine]) 
     r = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations?limit=10")
     assert r.status_code == 200
     body = r.json()
-    assert body["total"] >= 1
-    assert len(body["clusters"]) >= 1
-    cluster = body["clusters"][0]
-    assert len(cluster["canonicals"]) >= 2
-    labels = {item["label"] for item in cluster["canonicals"]}
-    assert "Billy Goat Tavern, Chicago, IL" in labels
-    assert "Billy Goat Tavern, West Loop, Chicago, IL" in labels
+    assert body["total"] == 2
+    labels = {cluster["label"] for cluster in body["clusters"]}
+    assert "Ward 36, Chicago, IL" in labels
+    assert "Billy Goat Tavern" in labels
 
 
 def test_missing_geometry_locations(cleanup_client: tuple[TestClient, Engine]) -> None:
@@ -153,6 +171,6 @@ def test_missing_geometry_locations(cleanup_client: tuple[TestClient, Engine]) -
     r = client.get("/v1/stylebooks/default/cleanup/checks/missing-geometry-locations")
     assert r.status_code == 200
     body = r.json()
-    assert body["total"] == 3
+    assert body["total"] == 6
     labels = {item["label"] for item in body["canonicals"]}
     assert "No map pin here" in labels

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 
 type DuplicateClusterListProps = {
-  clusters: Array<{ cluster_id: string; canonicals: CanonicalLocation[] }>
+  clusters: Array<{ cluster_id: string; label: string; canonicals: CanonicalLocation[] }>
   locationDetailHref: (canonicalId: string) => string
 }
 
@@ -21,7 +21,7 @@ export function DuplicateClusterList({ clusters, locationDetailHref }: Duplicate
   if (clusters.length === 0) {
     return (
       <p className="text-muted-foreground py-8 text-center">
-        No possible duplicate groups found at the current similarity threshold.
+        No duplicate location names found in this stylebook.
       </p>
     )
   }
@@ -32,7 +32,10 @@ export function DuplicateClusterList({ clusters, locationDetailHref }: Duplicate
         <Card key={cluster.cluster_id}>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">
-              {cluster.canonicals.length} similar locations
+              {cluster.label}
+              {cluster.label !== "Similar locations"
+                ? ` — ${cluster.canonicals.length} records`
+                : ` (${cluster.canonicals.length})`}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">

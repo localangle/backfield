@@ -23,8 +23,8 @@ LOCATION_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
         id="duplicate-locations",
         title="Possible duplicate locations",
         description=(
-            "Groups of location canonicals with very similar names that may "
-            "represent the same place. Review and edit or relink evidence manually."
+            "Groups of location canonicals with the same name or a very similar primary "
+            "name. Review each record and relink evidence or edit names manually."
         ),
         entity_type="location",
         kind="cluster",
