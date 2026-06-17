@@ -75,6 +75,9 @@ export {
   getDuplicateLocationClusters,
   getMissingGeometryLocations,
   listCleanupChecks,
+  mergeCleanupLocationCanonical,
+  deleteEmptyCleanupLocationCanonical,
+  type MergeCleanupLocationCanonicalResponse,
 } from "@/lib/stylebook-api/cleanup"
 
 export {

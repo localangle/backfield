@@ -1,11 +1,17 @@
+import { useState } from "react"
+import { GripVertical, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import type { CanonicalLocation } from "@/lib/api"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 
 type DuplicateClusterListProps = {
   clusters: Array<{ cluster_id: string; label: string; canonicals: CanonicalLocation[] }>
   locationDetailHref: (canonicalId: string) => string
+  canEdit?: boolean
+  onMerge?: (sourceId: string, targetId: string) => void | Promise<void>
+  onDeleteEmpty?: (canonicalId: string) => void | Promise<void>
 }
 
 function formatCanonicalMeta(canonical: CanonicalLocation): string {
@@ -17,7 +23,20 @@ function formatCanonicalMeta(canonical: CanonicalLocation): string {
   return `${typeLabel} · ${canonical.status} · ${linked} linked · ${mentions} mentions`
 }
 
-export function DuplicateClusterList({ clusters, locationDetailHref }: DuplicateClusterListProps) {
+function isEmptyCanonical(canonical: CanonicalLocation): boolean {
+  return (canonical.linked_substrate_count ?? 0) === 0 && (canonical.mention_count ?? 0) === 0
+}
+
+export function DuplicateClusterList({
+  clusters,
+  locationDetailHref,
+  canEdit = false,
+  onMerge,
+  onDeleteEmpty,
+}: DuplicateClusterListProps) {
+  const [dragSourceId, setDragSourceId] = useState<string | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+
   if (clusters.length === 0) {
     return (
       <p className="text-muted-foreground py-8 text-center">
@@ -28,6 +47,13 @@ export function DuplicateClusterList({ clusters, locationDetailHref }: Duplicate
 
   return (
     <div className="space-y-4">
+      {canEdit ? (
+        <p className="text-sm text-muted-foreground">
+          Drag the duplicate you want to remove onto the record you want to keep. Linked places
+          move to the keeper and the duplicate is deleted. Empty records can be deleted with the
+          trash icon.
+        </p>
+      ) : null}
       {clusters.map((cluster) => (
         <Card key={cluster.cluster_id}>
           <CardHeader className="pb-3">
@@ -37,24 +63,80 @@ export function DuplicateClusterList({ clusters, locationDetailHref }: Duplicate
                 ? ` — ${cluster.canonicals.length} records`
                 : ` (${cluster.canonicals.length})`}
             </CardTitle>
+            {canEdit && cluster.canonicals.length > 1 ? (
+              <CardDescription>Drop a record here to merge into another in this group.</CardDescription>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-2">
-            {cluster.canonicals.map((canonical) => (
-              <div
-                key={canonical.id}
-                className="flex flex-col gap-1 border rounded-md px-3 py-2 hover:bg-muted/40"
-              >
-                <Link
-                  to={locationDetailHref(canonical.id)}
-                  className="font-medium text-primary hover:underline"
+            {cluster.canonicals.map((canonical) => {
+              const isDropTarget =
+                canEdit &&
+                dragSourceId !== null &&
+                dropTargetId === canonical.id &&
+                dragSourceId !== canonical.id
+              return (
+                <div
+                  key={canonical.id}
+                  draggable={canEdit && Boolean(onMerge)}
+                  onDragStart={() => setDragSourceId(canonical.id)}
+                  onDragEnd={() => {
+                    setDragSourceId(null)
+                    setDropTargetId(null)
+                  }}
+                  onDragOver={(event) => {
+                    if (!canEdit || !onMerge || dragSourceId === canonical.id) return
+                    event.preventDefault()
+                    setDropTargetId(canonical.id)
+                  }}
+                  onDragLeave={() => {
+                    if (dropTargetId === canonical.id) setDropTargetId(null)
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    if (!canEdit || !onMerge || !dragSourceId || dragSourceId === canonical.id) {
+                      return
+                    }
+                    void onMerge(dragSourceId, canonical.id)
+                    setDragSourceId(null)
+                    setDropTargetId(null)
+                  }}
+                  className={`flex items-start gap-2 border rounded-md px-3 py-2 transition-colors ${
+                    isDropTarget ? "border-primary bg-primary/5 ring-2 ring-primary/30" : "hover:bg-muted/40"
+                  } ${canEdit && onMerge ? "cursor-grab active:cursor-grabbing" : ""}`}
                 >
-                  {canonical.label}
-                </Link>
-                <span className="text-sm text-muted-foreground">
-                  {formatCanonicalMeta(canonical)}
-                </span>
-              </div>
-            ))}
+                  {canEdit && onMerge ? (
+                    <GripVertical
+                      className="h-4 w-4 mt-1 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                  ) : null}
+                  <div className="flex-1 min-w-0">
+                    <Link
+                      to={locationDetailHref(canonical.id)}
+                      className="font-medium text-primary hover:underline"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {canonical.label}
+                    </Link>
+                    <span className="block text-sm text-muted-foreground">
+                      {formatCanonicalMeta(canonical)}
+                    </span>
+                  </div>
+                  {canEdit && onDeleteEmpty && isEmptyCanonical(canonical) ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      aria-label={`Delete ${canonical.label}`}
+                      onClick={() => void onDeleteEmpty(canonical.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  ) : null}
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
       ))}

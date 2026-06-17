@@ -103,3 +103,34 @@ export async function getCleanupCheckResults(
   }
   throw new Error(`Unknown cleanup check: ${params.checkId}`)
 }
+
+export interface MergeCleanupLocationCanonicalResponse {
+  source_id: string
+  target_id: string
+  relinked_substrate_count: number
+  source_deleted: boolean
+}
+
+export async function mergeCleanupLocationCanonical(
+  stylebookSlug: string,
+  sourceCanonicalId: string,
+  targetCanonicalId: string,
+): Promise<MergeCleanupLocationCanonicalResponse> {
+  return stylebookJsonFetch<MergeCleanupLocationCanonicalResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/canonical-locations/${encodeURIComponent(sourceCanonicalId)}/merge-into`,
+    {
+      method: "POST",
+      body: JSON.stringify({ target_canonical_id: targetCanonicalId }),
+    },
+  )
+}
+
+export async function deleteEmptyCleanupLocationCanonical(
+  stylebookSlug: string,
+  canonicalId: string,
+): Promise<{ id: string; message: string }> {
+  return stylebookJsonFetch(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/canonical-locations/${encodeURIComponent(canonicalId)}`,
+    { method: "DELETE" },
+  )
+}

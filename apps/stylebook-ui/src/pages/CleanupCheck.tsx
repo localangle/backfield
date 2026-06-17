@@ -10,12 +10,15 @@ import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { cleanupCheckConfigById } from "@/lib/cleanupChecks"
 import {
+  deleteEmptyCleanupLocationCanonical,
   getCleanupCheckResults,
+  mergeCleanupLocationCanonical,
   type CanonicalLocation,
   type DuplicateLocationCluster,
   type PaginatedDuplicateClustersResponse,
   type PaginatedCanonicalLocationResponse,
 } from "@/lib/api"
+import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 
 const PER_PAGE = 25
@@ -23,7 +26,8 @@ const PER_PAGE = 25
 export default function CleanupCheck() {
   const { checkId = "" } = useParams<{ checkId: string }>()
   const config = cleanupCheckConfigById(checkId)
-  const { showError } = useAppMessage()
+  const { showConfirm, showError, showMessage } = useAppMessage()
+  const canEdit = useCanEditStylebook()
   const {
     stylebookSlug,
     catalogBasePath,
@@ -48,40 +52,95 @@ export default function CleanupCheck() {
     setPage(1)
   }, [checkId, projectFilterSlug])
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      if (!stylebookSlug || !config) return
-      setLoading(true)
-      try {
-        const response = await getCleanupCheckResults({
-          stylebookSlug,
-          checkId,
-          project: projectFilterSlug || undefined,
-          page,
-          perPage: PER_PAGE,
-        })
-        if (cancelled) return
-        if (config.kind === "cluster") {
-          setClusterResults(response as PaginatedDuplicateClustersResponse)
-          setListResults(null)
-        } else {
-          setListResults(response as PaginatedCanonicalLocationResponse)
-          setClusterResults(null)
-        }
-      } catch (error) {
-        if (!cancelled) {
-          showError(error instanceof Error ? error.message : "Failed to load cleanup results")
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
+  const loadResults = useCallback(async () => {
+    if (!stylebookSlug || !config) return
+    setLoading(true)
+    try {
+      const response = await getCleanupCheckResults({
+        stylebookSlug,
+        checkId,
+        project: projectFilterSlug || undefined,
+        page,
+        perPage: PER_PAGE,
+      })
+      if (config.kind === "cluster") {
+        setClusterResults(response as PaginatedDuplicateClustersResponse)
+        setListResults(null)
+      } else {
+        setListResults(response as PaginatedCanonicalLocationResponse)
+        setClusterResults(null)
       }
-    }
-    void load()
-    return () => {
-      cancelled = true
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "Failed to load cleanup results")
+    } finally {
+      setLoading(false)
     }
   }, [stylebookSlug, checkId, config, projectFilterSlug, page, showError])
+
+  useEffect(() => {
+    void loadResults()
+  }, [loadResults])
+
+  const findCanonicalLabel = useCallback(
+    (canonicalId: string): string | undefined => {
+      for (const cluster of clusterResults?.clusters ?? []) {
+        const match = cluster.canonicals.find((canonical) => canonical.id === canonicalId)
+        if (match) return match.label
+      }
+      return undefined
+    },
+    [clusterResults],
+  )
+
+  const handleMerge = useCallback(
+    async (sourceId: string, targetId: string) => {
+      if (!stylebookSlug) return
+      const sourceLabel = findCanonicalLabel(sourceId) ?? "this record"
+      const targetLabel = findCanonicalLabel(targetId) ?? "the other record"
+      const confirmed = await showConfirm(
+        `Move all linked places from "${sourceLabel}" into "${targetLabel}" and delete the duplicate record?`,
+        {
+          title: "Merge locations?",
+          confirmLabel: "Merge",
+        },
+      )
+      if (!confirmed) return
+      try {
+        const result = await mergeCleanupLocationCanonical(stylebookSlug, sourceId, targetId)
+        const moved = result.relinked_substrate_count
+        showMessage(
+          moved > 0
+            ? `Merged ${moved} linked place${moved === 1 ? "" : "s"} into "${targetLabel}".`
+            : `Removed duplicate record "${sourceLabel}".`,
+        )
+        await loadResults()
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Failed to merge locations")
+      }
+    },
+    [stylebookSlug, findCanonicalLabel, showConfirm, showMessage, showError, loadResults],
+  )
+
+  const handleDeleteEmpty = useCallback(
+    async (canonicalId: string) => {
+      if (!stylebookSlug) return
+      const label = findCanonicalLabel(canonicalId) ?? "this record"
+      const confirmed = await showConfirm(`Delete empty location "${label}"?`, {
+        title: "Delete location?",
+        confirmLabel: "Delete",
+        destructive: true,
+      })
+      if (!confirmed) return
+      try {
+        await deleteEmptyCleanupLocationCanonical(stylebookSlug, canonicalId)
+        showMessage(`Deleted "${label}".`)
+        await loadResults()
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Failed to delete location")
+      }
+    },
+    [stylebookSlug, findCanonicalLabel, showConfirm, showMessage, showError, loadResults],
+  )
 
   const pagination = useMemo(() => {
     if (clusterResults) {
@@ -145,6 +204,9 @@ export default function CleanupCheck() {
         <DuplicateClusterList
           clusters={(clusterResults?.clusters ?? []) as DuplicateLocationCluster[]}
           locationDetailHref={locationDetailHref}
+          canEdit={canEdit}
+          onMerge={canEdit ? handleMerge : undefined}
+          onDeleteEmpty={canEdit ? handleDeleteEmpty : undefined}
         />
       ) : (
         <MissingGeometryList

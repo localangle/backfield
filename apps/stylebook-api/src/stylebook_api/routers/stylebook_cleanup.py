@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from backfield_db import StylebookLocationCanonical
+from backfield_entities.entities.location.merge import (
+    canonical_has_linked_evidence,
+    merge_location_canonical_into,
+)
 from backfield_entities.quality.checks import LOCATION_CLEANUP_CHECKS
 from backfield_entities.quality.finders.duplicate_locations import (
     DEFAULT_FULL_SIMILARITY_THRESHOLD,
@@ -18,7 +22,7 @@ from backfield_entities.quality.finders.missing_geometry_locations import (
     list_missing_geometry_locations,
 )
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from stylebook_api.deps import get_auth, get_session
@@ -27,6 +31,8 @@ from stylebook_api.helpers.canonical_evidence_counts import (
     mention_counts_by_location_canonical,
 )
 from stylebook_api.routers.stylebook_canonicals import CanonicalLocationResponse
+from stylebook_api.semantic_reindex import enqueue_semantic_reindex_for_entity
+from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import (
     optional_project_filter_to_ids,
     require_stylebook_by_slug_in_auth_org,
@@ -71,6 +77,22 @@ class PaginatedCleanupLocationsResponse(BaseModel):
     per_page: int
     has_next: bool
     has_prev: bool
+
+
+class MergeCleanupCanonicalBody(BaseModel):
+    target_canonical_id: str = Field(min_length=1)
+
+
+class MergeCleanupCanonicalResponse(BaseModel):
+    source_id: str
+    target_id: str
+    relinked_substrate_count: int
+    source_deleted: bool
+
+
+class DeleteCleanupCanonicalResponse(BaseModel):
+    id: str
+    message: str
 
 
 def _count_for_check(
@@ -299,3 +321,104 @@ def list_missing_geometry_location_check(
         has_next=offset + len(canonicals) < total,
         has_prev=offset > 0,
     )
+
+
+@router.post(
+    "/{stylebook_slug}/cleanup/canonical-locations/{source_canonical_id}/merge-into",
+    response_model=MergeCleanupCanonicalResponse,
+)
+def merge_cleanup_canonical_location(
+    stylebook_slug: str,
+    source_canonical_id: str,
+    body: MergeCleanupCanonicalBody,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> MergeCleanupCanonicalResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    try:
+        result = merge_location_canonical_into(
+            session,
+            stylebook_id=int(sb.id),
+            organization_id=int(sb.organization_id),
+            source_canonical_id=source_canonical_id,
+            target_canonical_id=body.target_canonical_id,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if "not in this stylebook" in msg:
+            raise HTTPException(status_code=404, detail=msg) from exc
+        raise HTTPException(status_code=400, detail=msg) from exc
+
+    for project_id, location_id in result.relinked_substrates:
+        enqueue_semantic_reindex_for_entity(
+            session,
+            project_id=project_id,
+            entity_type="location",
+            entity_id=location_id,
+        )
+
+    session.commit()
+    return MergeCleanupCanonicalResponse(
+        source_id=result.source_id,
+        target_id=result.target_id,
+        relinked_substrate_count=result.relinked_substrate_count,
+        source_deleted=result.source_deleted,
+    )
+
+
+@router.delete(
+    "/{stylebook_slug}/cleanup/canonical-locations/{canonical_id}",
+    response_model=DeleteCleanupCanonicalResponse,
+)
+def delete_empty_cleanup_canonical_location(
+    stylebook_slug: str,
+    canonical_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> DeleteCleanupCanonicalResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    canon = session.get(StylebookLocationCanonical, canonical_id)
+    if canon is None or int(canon.stylebook_id) != int(sb.id):
+        raise HTTPException(status_code=404, detail="Canonical location not found")
+
+    org_id = int(sb.organization_id)
+    if canonical_has_linked_evidence(
+        session,
+        organization_id=org_id,
+        canonical_id=str(canon.id),
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Cannot delete a location that still has linked places. "
+                "Merge it into another record first."
+            ),
+        )
+
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=None,
+        organization_id=org_id,
+    )
+    mention_count = mention_counts_by_location_canonical(
+        session,
+        project_ids=project_ids,
+        canonical_ids=[str(canon.id)],
+    ).get(str(canon.id), 0)
+    if mention_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete a location that still has mentions.",
+        )
+
+    deleted_id = str(canon.id)
+    session.delete(canon)
+    session.commit()
+    return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
