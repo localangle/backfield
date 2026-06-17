@@ -47,10 +47,11 @@ from backfield_entities.quality.finders.duplicate_people import (
     paginate_duplicate_person_clusters,
     person_cluster_display_label,
 )
-from backfield_entities.quality.finders.missing_geometry_locations import (
-    count_missing_geometry_locations,
-    list_missing_geometry_locations,
+from backfield_entities.quality.finders.location_geography_issues import (
+    count_location_geography_issues,
+    list_location_geography_issues,
 )
+from backfield_entities.quality.types import CleanupLocationGeographyIssueRow
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session
@@ -109,6 +110,11 @@ class DuplicateOrganizationClusterOut(BaseModel):
     canonicals: list[CanonicalOrganizationResponse]
 
 
+class CleanupLocationIssueOut(CanonicalLocationResponse):
+    geography_issue: Literal["missing_geometry", "distant_linked_places"]
+    distant_linked_count: int = 0
+
+
 class PaginatedDuplicateClustersResponse(BaseModel):
     clusters: list[
         DuplicateLocationClusterOut
@@ -123,7 +129,7 @@ class PaginatedDuplicateClustersResponse(BaseModel):
 
 
 class PaginatedCleanupLocationsResponse(BaseModel):
-    canonicals: list[CanonicalLocationResponse]
+    canonicals: list[CleanupLocationIssueOut]
     total: int
     page: int
     per_page: int
@@ -151,6 +157,7 @@ def _count_for_check(
     session: Session,
     *,
     stylebook_id: int,
+    organization_id: int,
     check_id: str,
     full_threshold: float,
     head_threshold: float,
@@ -175,7 +182,11 @@ def _count_for_check(
             full_threshold=full_threshold,
         )
     if check_id == "missing-geometry-locations":
-        return count_missing_geometry_locations(session, stylebook_id=stylebook_id)
+        return count_location_geography_issues(
+            session,
+            stylebook_id=stylebook_id,
+            organization_id=organization_id,
+        )
     return 0
 
 
@@ -202,6 +213,40 @@ def _canonical_responses_with_counts(
                 row,
                 linked_substrate_count=lc.get(cid, 0),
                 mention_count=mc.get(cid, 0),
+            )
+        )
+    return out
+
+
+def _canonical_issue_responses_with_counts(
+    session: Session,
+    *,
+    project_ids: list[int],
+    rows_by_id: dict[str, StylebookLocationCanonical],
+    items: list[CleanupLocationGeographyIssueRow],
+) -> list[CleanupLocationIssueOut]:
+    canonical_ids = [item.id for item in items]
+    mc = mention_counts_by_location_canonical(
+        session, project_ids=project_ids, canonical_ids=canonical_ids
+    )
+    lc = linked_substrate_counts_by_location_canonical(
+        session, project_ids=project_ids, canonical_ids=canonical_ids
+    )
+    out: list[CleanupLocationIssueOut] = []
+    for item in items:
+        row = rows_by_id.get(item.id)
+        if row is None:
+            continue
+        base = CanonicalLocationResponse.from_row(
+            row,
+            linked_substrate_count=lc.get(item.id, 0),
+            mention_count=mc.get(item.id, 0),
+        )
+        out.append(
+            CleanupLocationIssueOut(
+                **base.model_dump(),
+                geography_issue=item.issue,
+                distant_linked_count=int(item.distant_linked_count),
             )
         )
     return out
@@ -292,12 +337,14 @@ def list_cleanup_checks(
     if sb.id is None:
         raise HTTPException(status_code=404, detail="Stylebook not found")
     stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
     checks_out: list[CleanupCheckOut] = []
     total_open = 0
     for check in STYLEBOOK_CLEANUP_CHECKS:
         count = _count_for_check(
             session,
             stylebook_id=stylebook_id,
+            organization_id=organization_id,
             check_id=check.id,
             full_threshold=similarity_threshold,
             head_threshold=head_similarity_threshold,
@@ -564,23 +611,26 @@ def list_missing_geometry_location_check(
         organization_id=int(sb.organization_id),
     )
     stylebook_id = int(sb.id)
-    items, total = list_missing_geometry_locations(
+    organization_id = int(sb.organization_id)
+    items, total = list_location_geography_issues(
         session,
         stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        project_ids=project_ids,
         limit=limit,
         offset=offset,
     )
     cids = [item.id for item in items]
     rows_by_id = {
-        cid: session.get(StylebookLocationCanonical, cid)
+        cid: row
         for cid in cids
-        if session.get(StylebookLocationCanonical, cid) is not None
+        if (row := session.get(StylebookLocationCanonical, cid)) is not None
     }
-    canonicals = _canonical_responses_with_counts(
+    canonicals = _canonical_issue_responses_with_counts(
         session,
         project_ids=project_ids,
         rows_by_id=rows_by_id,
-        canonical_ids=cids,
+        items=items,
     )
     page = offset // limit + 1 if limit else 1
     return PaginatedCleanupLocationsResponse(

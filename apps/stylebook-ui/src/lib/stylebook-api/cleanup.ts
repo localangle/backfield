@@ -1,5 +1,5 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
-import type { PaginatedCanonicalLocationResponse } from "@/lib/stylebook-api/locations"
+import type { PaginatedCleanupLocationIssuesResponse } from "@/lib/stylebook-api/cleanup"
 
 export type CleanupCheckKind = "cluster" | "list"
 
@@ -39,6 +39,34 @@ export type DuplicateLocationCluster = DuplicateCluster
 
 export interface PaginatedDuplicateClustersResponse {
   clusters: DuplicateCluster[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
+}
+
+export type LocationGeographyIssueKind = "missing_geometry" | "distant_linked_places"
+
+export interface CleanupLocationIssue {
+  id: string
+  slug: string
+  label: string
+  location_type?: string | null
+  formatted_address?: string | null
+  geometry_json?: Record<string, unknown> | null
+  geometry_type?: string | null
+  status: string
+  linked_substrate_count: number
+  mention_count: number
+  created_at: string
+  updated_at: string
+  geography_issue: LocationGeographyIssueKind
+  distant_linked_count: number
+}
+
+export interface PaginatedCleanupLocationIssuesResponse {
+  canonicals: CleanupLocationIssue[]
   total: number
   page: number
   per_page: number
@@ -114,21 +142,21 @@ export async function getDuplicateOrganizationClusters(
 
 export async function getMissingGeometryLocations(
   params: GetCleanupCheckResultsParams,
-): Promise<PaginatedCanonicalLocationResponse> {
+): Promise<PaginatedCleanupLocationIssuesResponse> {
   const q = new URLSearchParams()
   if (params.project) q.set("project", params.project)
   const page = params.page ?? 1
   const perPage = params.perPage ?? 25
   q.set("limit", String(perPage))
   q.set("offset", String((page - 1) * perPage))
-  return stylebookJsonFetch<PaginatedCanonicalLocationResponse>(
+  return stylebookJsonFetch<PaginatedCleanupLocationIssuesResponse>(
     `${cleanupCheckResultsPath(params.stylebookSlug, "missing-geometry-locations")}?${q.toString()}`,
   )
 }
 
 export async function getCleanupCheckResults(
   params: GetCleanupCheckResultsParams,
-): Promise<PaginatedDuplicateClustersResponse | PaginatedCanonicalLocationResponse> {
+): Promise<PaginatedDuplicateClustersResponse | PaginatedCleanupLocationIssuesResponse> {
   switch (params.checkId) {
     case "duplicate-locations":
       return getDuplicateLocationClusters(params)

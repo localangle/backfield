@@ -31,10 +31,10 @@ LOCATION_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
     ),
     CleanupCheckDef(
         id="missing-geometry-locations",
-        title="Locations missing geography",
+        title="Missing or potentially incorrect geographies",
         description=(
-            "Location canonicals with no stored geometry. Open each record to "
-            "add a map pin or shape."
+            "Location records with no stored geography, or linked places whose map "
+            "location is far from the catalog record. Open each record to review."
         ),
         entity_type="location",
         kind="list",

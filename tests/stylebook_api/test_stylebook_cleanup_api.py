@@ -220,6 +220,8 @@ def test_missing_geometry_locations(cleanup_client: tuple[TestClient, Engine]) -
     assert body["total"] == 6
     labels = {item["label"] for item in body["canonicals"]}
     assert "No map pin here" in labels
+    missing = next(item for item in body["canonicals"] if item["label"] == "No map pin here")
+    assert missing["geography_issue"] == "missing_geometry"
 
 
 def test_delete_empty_cleanup_canonical(cleanup_client: tuple[TestClient, Engine]) -> None:
@@ -443,3 +445,52 @@ def test_merge_cleanup_organization_relinks_and_deletes_source(
             )
         ).one()
         assert organization.stylebook_organization_canonical_id == target_id
+
+
+def test_distant_linked_geography_issue(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        org = session.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+        ).one()
+        session.add(
+            BackfieldProject(
+                organization_id=int(org.id),
+                name="Geo Demo",
+                slug="geo-demo",
+            )
+        )
+        session.commit()
+        proj = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "geo-demo")
+        ).one()
+        canon = session.exec(
+            select(StylebookLocationCanonical).where(
+                StylebookLocationCanonical.slug == "has-geom"
+            )
+        ).one()
+        session.add(
+            SubstrateLocation(
+                project_id=int(proj.id),
+                name="Far linked place",
+                normalized_name="far-linked",
+                location_type="place",
+                identity_fingerprint="fp-distant-geo",
+                stylebook_location_canonical_id=str(canon.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+                geometry_json={"type": "Point", "coordinates": [-97.45, 31.05]},
+            )
+        )
+        session.commit()
+
+    response = client.get("/v1/stylebooks/default/cleanup/checks/missing-geometry-locations")
+    assert response.status_code == 200
+    body = response.json()
+    distant = [
+        item
+        for item in body["canonicals"]
+        if item.get("geography_issue") == "distant_linked_places"
+    ]
+    assert len(distant) >= 1
+    mapped = next(item for item in distant if item["label"] == "Mapped place")
+    assert mapped["distant_linked_count"] >= 1

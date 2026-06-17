@@ -28,9 +28,9 @@ import {
   mergeCleanupLocationCanonical,
   mergeCleanupOrganizationCanonical,
   mergeCleanupPersonCanonical,
-  type CanonicalLocation,
+  type CleanupLocationIssue,
   type PaginatedDuplicateClustersResponse,
-  type PaginatedCanonicalLocationResponse,
+  type PaginatedCleanupLocationIssuesResponse,
 } from "@/lib/api"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
@@ -96,7 +96,7 @@ export default function CleanupCheck() {
   const [clusterResults, setClusterResults] =
     useState<PaginatedDuplicateClustersResponse | null>(null)
   const [listResults, setListResults] =
-    useState<PaginatedCanonicalLocationResponse | null>(null)
+    useState<PaginatedCleanupLocationIssuesResponse | null>(null)
   const clusterStableIdByMemberRef = useRef<Map<string, string>>(new Map())
   const nextClusterStableIdRef = useRef(0)
 
@@ -137,7 +137,7 @@ export default function CleanupCheck() {
         })
         setListResults(null)
       } else {
-        setListResults(response as PaginatedCanonicalLocationResponse)
+        setListResults(response as PaginatedCleanupLocationIssuesResponse)
         setClusterResults(null)
       }
     } catch (error) {
@@ -309,7 +309,7 @@ export default function CleanupCheck() {
           onDeleteEmpty={canEdit ? handleDeleteEmpty : undefined}
         />
       ) : (
-        <MissingGeometryList
+        <GeographyIssuesList
           canonicals={listResults?.canonicals ?? []}
           locationDetailHref={detailHref}
         />
@@ -331,17 +331,24 @@ export default function CleanupCheck() {
   )
 }
 
-function MissingGeometryList({
+function geographyIssueLabel(issue: CleanupLocationIssue["geography_issue"]): string {
+  if (issue === "distant_linked_places") {
+    return "Linked place far from catalog geography"
+  }
+  return "No map geography"
+}
+
+function GeographyIssuesList({
   canonicals,
   locationDetailHref,
 }: {
-  canonicals: CanonicalLocation[]
+  canonicals: CleanupLocationIssue[]
   locationDetailHref: (canonicalId: string) => string
 }) {
   if (canonicals.length === 0) {
     return (
       <p className="text-muted-foreground py-8 text-center">
-        No locations missing geography in this stylebook.
+        No locations with missing or potentially incorrect geographies in this stylebook.
       </p>
     )
   }
@@ -352,6 +359,7 @@ function MissingGeometryList({
         <thead className="bg-muted/50 text-left">
           <tr>
             <th className="px-4 py-3 font-medium">Name</th>
+            <th className="px-4 py-3 font-medium">Issue</th>
             <th className="px-4 py-3 font-medium">Type</th>
             <th className="px-4 py-3 font-medium">Status</th>
             <th className="px-4 py-3 font-medium text-right">Linked</th>
@@ -368,6 +376,13 @@ function MissingGeometryList({
                 >
                   {canonical.label}
                 </Link>
+              </td>
+              <td className="px-4 py-3 text-muted-foreground">
+                {geographyIssueLabel(canonical.geography_issue)}
+                {canonical.geography_issue === "distant_linked_places" &&
+                (canonical.distant_linked_count ?? 0) > 0
+                  ? ` (${canonical.distant_linked_count})`
+                  : null}
               </td>
               <td className="px-4 py-3 text-muted-foreground">
                 {canonical.location_type

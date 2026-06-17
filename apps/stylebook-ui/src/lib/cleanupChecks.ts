@@ -25,9 +25,9 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   },
   {
     id: "missing-geometry-locations",
-    title: "Locations missing geography",
+    title: "Missing or potentially incorrect geographies",
     description:
-      "Location records with no map pin or shape. Open each record to add geography.",
+      "Records with no map geography, or linked places far from the catalog location. Open each record to review.",
     kind: "list",
     entityType: "location",
   },
