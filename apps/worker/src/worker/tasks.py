@@ -49,6 +49,7 @@ from backfield_entities.processed_item_article_link import (
     resolve_substrate_article_id_for_processed_item,
 )
 from celery import Celery, chord, group
+from celery.exceptions import Reject
 from sqlalchemy import delete
 from sqlmodel import Session, select
 
@@ -104,18 +105,27 @@ def _item_blocks_run_finalization(item: AgateProcessedItem) -> bool:
     return item.status == "running" and not _is_stale_running_item(item)
 
 
-def _try_claim_processed_item(session: Session, item: AgateProcessedItem) -> bool:
+def _try_claim_processed_item(
+    session: Session,
+    item: AgateProcessedItem,
+    *,
+    allow_running_reclaim: bool = False,
+) -> bool:
     if item.status == "pending":
         item.status = "running"
         item.started_at = datetime.now(UTC)
         item.updated_at = datetime.now(UTC)
         session.add(item)
         return True
-    if item.status == "running" and _is_stale_running_item(item):
+    if item.status == "running" and (
+        _is_stale_running_item(item) or allow_running_reclaim
+    ):
         logger.warning(
-            "Reclaiming stale running processed_item id=%s run_id=%s",
+            "Reclaiming running processed_item id=%s run_id=%s redelivered=%s stale=%s",
             item.id,
             item.run_id,
+            allow_running_reclaim,
+            _is_stale_running_item(item),
         )
         item.started_at = datetime.now(UTC)
         item.updated_at = datetime.now(UTC)
@@ -123,6 +133,15 @@ def _try_claim_processed_item(session: Session, item: AgateProcessedItem) -> boo
         session.add(item)
         return True
     return False
+
+
+def _task_is_redelivered() -> bool:
+    try:
+        from celery import current_task
+
+        return bool(current_task.request.delivery_info.get("redelivered"))
+    except Exception:
+        return False
 
 
 def _node_wall_clock_hooks() -> tuple[
@@ -625,7 +644,17 @@ def execute_processed_item(item_id: int) -> None:
     engine = get_engine()
     with Session(engine) as session:
         item = session.get(AgateProcessedItem, item_id)
-        if not item or not _try_claim_processed_item(session, item):
+        if not item:
+            return
+        if not _try_claim_processed_item(
+            session,
+            item,
+            allow_running_reclaim=_task_is_redelivered(),
+        ):
+            if item.status == "running":
+                # Worker loss can leave a zombie ``running`` row while the broker redelivers.
+                # Requeue so the next attempt can reclaim once ``redelivered`` is set.
+                raise Reject(requeue=True)
             return
         session.commit()
 

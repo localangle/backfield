@@ -46,3 +46,42 @@ def test_item_blocks_finalization_only_for_active_running() -> None:
     )
     assert worker_tasks._item_blocks_run_finalization(active)
     assert not worker_tasks._item_blocks_run_finalization(stale)
+
+
+def test_try_claim_reclaims_running_when_redelivery_allowed() -> None:
+    now = datetime(2026, 6, 17, 12, 0, 0, tzinfo=UTC)
+    item = AgateProcessedItem(
+        id=7,
+        run_id="run-1",
+        status="running",
+        started_at=now - timedelta(seconds=60),
+    )
+
+    class _Session:
+        def add(self, _row: AgateProcessedItem) -> None:
+            return None
+
+    assert worker_tasks._try_claim_processed_item(
+        _Session(),
+        item,
+        allow_running_reclaim=True,
+    )
+    assert item.error_message is None
+    assert item.started_at is not None
+
+
+def test_try_claim_keeps_active_running_without_redelivery() -> None:
+    started = datetime.now(UTC) - timedelta(seconds=60)
+    item = AgateProcessedItem(
+        id=8,
+        run_id="run-1",
+        status="running",
+        started_at=started,
+    )
+
+    class _Session:
+        def add(self, _row: AgateProcessedItem) -> None:
+            return None
+
+    assert not worker_tasks._try_claim_processed_item(_Session(), item)
+    assert item.started_at == started
