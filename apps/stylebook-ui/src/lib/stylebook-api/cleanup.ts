@@ -1,5 +1,5 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
-import type { CanonicalLocation, PaginatedCanonicalLocationResponse } from "@/lib/stylebook-api/locations"
+import type { PaginatedCanonicalLocationResponse } from "@/lib/stylebook-api/locations"
 
 export type CleanupCheckKind = "cluster" | "list"
 
@@ -17,14 +17,28 @@ export interface CleanupChecksResponse {
   total_open: number
 }
 
-export interface DuplicateLocationCluster {
-  cluster_id: string
+export interface CleanupClusterCanonical {
+  id: string
   label: string
-  canonicals: CanonicalLocation[]
+  status: string
+  linked_substrate_count?: number
+  mention_count?: number
+  location_type?: string | null
+  person_type?: string | null
+  organization_type?: string | null
 }
 
+export interface DuplicateCluster {
+  cluster_id: string
+  label: string
+  canonicals: CleanupClusterCanonical[]
+}
+
+/** @deprecated Use DuplicateCluster */
+export type DuplicateLocationCluster = DuplicateCluster
+
 export interface PaginatedDuplicateClustersResponse {
-  clusters: DuplicateLocationCluster[]
+  clusters: DuplicateCluster[]
   total: number
   page: number
   per_page: number
@@ -53,6 +67,16 @@ function cleanupCheckResultsPath(stylebookSlug: string, checkId: string): string
   return `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/checks/${encodeURIComponent(checkId)}`
 }
 
+function paginatedClusterQuery(params: GetCleanupCheckResultsParams): string {
+  const q = new URLSearchParams()
+  if (params.project) q.set("project", params.project)
+  const page = params.page ?? 1
+  const perPage = params.perPage ?? 25
+  q.set("limit", String(perPage))
+  q.set("offset", String((page - 1) * perPage))
+  return q.toString()
+}
+
 export async function listCleanupChecks(
   params: ListCleanupChecksParams,
 ): Promise<CleanupChecksResponse> {
@@ -67,14 +91,24 @@ export async function listCleanupChecks(
 export async function getDuplicateLocationClusters(
   params: GetCleanupCheckResultsParams,
 ): Promise<PaginatedDuplicateClustersResponse> {
-  const q = new URLSearchParams()
-  if (params.project) q.set("project", params.project)
-  const page = params.page ?? 1
-  const perPage = params.perPage ?? 25
-  q.set("limit", String(perPage))
-  q.set("offset", String((page - 1) * perPage))
   return stylebookJsonFetch<PaginatedDuplicateClustersResponse>(
-    `${cleanupCheckResultsPath(params.stylebookSlug, "duplicate-locations")}?${q.toString()}`,
+    `${cleanupCheckResultsPath(params.stylebookSlug, "duplicate-locations")}?${paginatedClusterQuery(params)}`,
+  )
+}
+
+export async function getDuplicatePersonClusters(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedDuplicateClustersResponse> {
+  return stylebookJsonFetch<PaginatedDuplicateClustersResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "duplicate-people")}?${paginatedClusterQuery(params)}`,
+  )
+}
+
+export async function getDuplicateOrganizationClusters(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedDuplicateClustersResponse> {
+  return stylebookJsonFetch<PaginatedDuplicateClustersResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "duplicate-organizations")}?${paginatedClusterQuery(params)}`,
   )
 }
 
@@ -95,29 +129,54 @@ export async function getMissingGeometryLocations(
 export async function getCleanupCheckResults(
   params: GetCleanupCheckResultsParams,
 ): Promise<PaginatedDuplicateClustersResponse | PaginatedCanonicalLocationResponse> {
-  if (params.checkId === "duplicate-locations") {
-    return getDuplicateLocationClusters(params)
+  switch (params.checkId) {
+    case "duplicate-locations":
+      return getDuplicateLocationClusters(params)
+    case "duplicate-people":
+      return getDuplicatePersonClusters(params)
+    case "duplicate-organizations":
+      return getDuplicateOrganizationClusters(params)
+    case "missing-geometry-locations":
+      return getMissingGeometryLocations(params)
+    default:
+      throw new Error(`Unknown cleanup check: ${params.checkId}`)
   }
-  if (params.checkId === "missing-geometry-locations") {
-    return getMissingGeometryLocations(params)
-  }
-  throw new Error(`Unknown cleanup check: ${params.checkId}`)
 }
 
-export interface MergeCleanupLocationCanonicalResponse {
+export interface MergeCleanupCanonicalResponse {
   source_id: string
   target_id: string
   relinked_substrate_count: number
   source_deleted: boolean
 }
 
-export async function mergeCleanupLocationCanonical(
+/** @deprecated Use MergeCleanupCanonicalResponse */
+export type MergeCleanupLocationCanonicalResponse = MergeCleanupCanonicalResponse
+
+function mergeCleanupCanonicalPath(
   stylebookSlug: string,
+  entitySegment: string,
+  sourceCanonicalId: string,
+): string {
+  return `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/${entitySegment}/${encodeURIComponent(sourceCanonicalId)}/merge-into`
+}
+
+function deleteEmptyCleanupCanonicalPath(
+  stylebookSlug: string,
+  entitySegment: string,
+  canonicalId: string,
+): string {
+  return `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/${entitySegment}/${encodeURIComponent(canonicalId)}`
+}
+
+async function mergeCleanupCanonical(
+  stylebookSlug: string,
+  entitySegment: string,
   sourceCanonicalId: string,
   targetCanonicalId: string,
-): Promise<MergeCleanupLocationCanonicalResponse> {
-  return stylebookJsonFetch<MergeCleanupLocationCanonicalResponse>(
-    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/canonical-locations/${encodeURIComponent(sourceCanonicalId)}/merge-into`,
+): Promise<MergeCleanupCanonicalResponse> {
+  return stylebookJsonFetch<MergeCleanupCanonicalResponse>(
+    mergeCleanupCanonicalPath(stylebookSlug, entitySegment, sourceCanonicalId),
     {
       method: "POST",
       body: JSON.stringify({ target_canonical_id: targetCanonicalId }),
@@ -125,12 +184,73 @@ export async function mergeCleanupLocationCanonical(
   )
 }
 
+async function deleteEmptyCleanupCanonical(
+  stylebookSlug: string,
+  entitySegment: string,
+  canonicalId: string,
+): Promise<{ id: string; message: string }> {
+  return stylebookJsonFetch(
+    deleteEmptyCleanupCanonicalPath(stylebookSlug, entitySegment, canonicalId),
+    { method: "DELETE" },
+  )
+}
+
+export async function mergeCleanupLocationCanonical(
+  stylebookSlug: string,
+  sourceCanonicalId: string,
+  targetCanonicalId: string,
+): Promise<MergeCleanupCanonicalResponse> {
+  return mergeCleanupCanonical(
+    stylebookSlug,
+    "canonical-locations",
+    sourceCanonicalId,
+    targetCanonicalId,
+  )
+}
+
+export async function mergeCleanupPersonCanonical(
+  stylebookSlug: string,
+  sourceCanonicalId: string,
+  targetCanonicalId: string,
+): Promise<MergeCleanupCanonicalResponse> {
+  return mergeCleanupCanonical(
+    stylebookSlug,
+    "canonical-people",
+    sourceCanonicalId,
+    targetCanonicalId,
+  )
+}
+
+export async function mergeCleanupOrganizationCanonical(
+  stylebookSlug: string,
+  sourceCanonicalId: string,
+  targetCanonicalId: string,
+): Promise<MergeCleanupCanonicalResponse> {
+  return mergeCleanupCanonical(
+    stylebookSlug,
+    "canonical-organizations",
+    sourceCanonicalId,
+    targetCanonicalId,
+  )
+}
+
 export async function deleteEmptyCleanupLocationCanonical(
   stylebookSlug: string,
   canonicalId: string,
 ): Promise<{ id: string; message: string }> {
-  return stylebookJsonFetch(
-    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/canonical-locations/${encodeURIComponent(canonicalId)}`,
-    { method: "DELETE" },
-  )
+  return deleteEmptyCleanupCanonical(stylebookSlug, "canonical-locations", canonicalId)
+}
+
+export async function deleteEmptyCleanupPersonCanonical(
+  stylebookSlug: string,
+  canonicalId: string,
+): Promise<{ id: string; message: string }> {
+  return deleteEmptyCleanupCanonical(stylebookSlug, "canonical-people", canonicalId)
+}
+
+export async function deleteEmptyCleanupOrganizationCanonical(
+  stylebookSlug: string,
+  canonicalId: string,
+): Promise<{ id: string; message: string }> {
+  return deleteEmptyCleanupCanonical(stylebookSlug, "canonical-organizations", canonicalId)
 }

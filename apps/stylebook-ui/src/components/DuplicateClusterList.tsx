@@ -1,35 +1,76 @@
 import { useState } from "react"
 import { GripVertical, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
-import type { CanonicalLocation } from "@/lib/api"
+import type { CleanupClusterCanonical } from "@/lib/api"
+import type { CleanupEntityType } from "@/lib/cleanupChecks"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 
 type DuplicateClusterListProps = {
-  clusters: Array<{ cluster_id: string; label: string; canonicals: CanonicalLocation[] }>
-  locationDetailHref: (canonicalId: string) => string
+  clusters: Array<{ cluster_id: string; label: string; canonicals: CleanupClusterCanonical[] }>
+  entityType: CleanupEntityType
+  detailHref: (canonicalId: string) => string
+  linkedRecordLabel: string
   canEdit?: boolean
   onMerge?: (sourceId: string, targetId: string) => void | Promise<void>
   onDeleteEmpty?: (canonicalId: string) => void | Promise<void>
 }
 
-function formatCanonicalMeta(canonical: CanonicalLocation): string {
-  const typeLabel = canonical.location_type
-    ? placeExtractTypeLabel(canonical.location_type)
-    : "Location"
-  const linked = canonical.linked_substrate_count ?? 0
-  const mentions = canonical.mention_count ?? 0
-  return `${typeLabel} · ${canonical.status} · ${linked} linked · ${mentions} mentions`
+function formatTypeLabel(
+  entityType: CleanupEntityType,
+  canonical: CleanupClusterCanonical,
+): string {
+  const typeValue =
+    entityType === "person"
+      ? canonical.person_type
+      : entityType === "organization"
+        ? canonical.organization_type
+        : canonical.location_type
+  if (!typeValue) {
+    switch (entityType) {
+      case "person":
+        return "Person"
+      case "organization":
+        return "Organization"
+      default:
+        return "Location"
+    }
+  }
+  return placeExtractTypeLabel(typeValue)
 }
 
-function isEmptyCanonical(canonical: CanonicalLocation): boolean {
+function formatCanonicalMeta(
+  entityType: CleanupEntityType,
+  canonical: CleanupClusterCanonical,
+  linkedRecordLabel: string,
+): string {
+  const typeLabel = formatTypeLabel(entityType, canonical)
+  const linked = canonical.linked_substrate_count ?? 0
+  const mentions = canonical.mention_count ?? 0
+  return `${typeLabel} · ${canonical.status} · ${linked} ${linkedRecordLabel} · ${mentions} mentions`
+}
+
+function isEmptyCanonical(canonical: CleanupClusterCanonical): boolean {
   return (canonical.linked_substrate_count ?? 0) === 0 && (canonical.mention_count ?? 0) === 0
+}
+
+function emptyClusterMessage(entityType: CleanupEntityType): string {
+  switch (entityType) {
+    case "person":
+      return "No duplicate person names found in this stylebook."
+    case "organization":
+      return "No duplicate organization names found in this stylebook."
+    default:
+      return "No duplicate location names found in this stylebook."
+  }
 }
 
 export function DuplicateClusterList({
   clusters,
-  locationDetailHref,
+  entityType,
+  detailHref,
+  linkedRecordLabel,
   canEdit = false,
   onMerge,
   onDeleteEmpty,
@@ -39,9 +80,7 @@ export function DuplicateClusterList({
 
   if (clusters.length === 0) {
     return (
-      <p className="text-muted-foreground py-8 text-center">
-        No duplicate location names found in this stylebook.
-      </p>
+      <p className="text-muted-foreground py-8 text-center">{emptyClusterMessage(entityType)}</p>
     )
   }
 
@@ -49,7 +88,7 @@ export function DuplicateClusterList({
     <div className="space-y-4">
       {canEdit ? (
         <p className="text-sm text-muted-foreground">
-          Drag the duplicate you want to remove onto the record you want to keep. Linked places
+          Drag the duplicate you want to remove onto the record you want to keep. Linked records
           move to the keeper and the duplicate is deleted. Empty records can be deleted with the
           trash icon.
         </p>
@@ -59,7 +98,9 @@ export function DuplicateClusterList({
           <CardHeader className="pb-3">
             <CardTitle className="text-base">
               {cluster.label}
-              {cluster.label !== "Similar locations"
+              {cluster.label !== "Similar locations" &&
+              cluster.label !== "Similar people" &&
+              cluster.label !== "Similar organizations"
                 ? ` — ${cluster.canonicals.length} records`
                 : ` (${cluster.canonicals.length})`}
             </CardTitle>
@@ -112,14 +153,14 @@ export function DuplicateClusterList({
                   ) : null}
                   <div className="flex-1 min-w-0">
                     <Link
-                      to={locationDetailHref(canonical.id)}
+                      to={detailHref(canonical.id)}
                       className="font-medium text-primary hover:underline"
                       onClick={(event) => event.stopPropagation()}
                     >
                       {canonical.label}
                     </Link>
                     <span className="block text-sm text-muted-foreground">
-                      {formatCanonicalMeta(canonical)}
+                      {formatCanonicalMeta(entityType, canonical, linkedRecordLabel)}
                     </span>
                   </div>
                   {canEdit && onDeleteEmpty && isEmptyCanonical(canonical) ? (

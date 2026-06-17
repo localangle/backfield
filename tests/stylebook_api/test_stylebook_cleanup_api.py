@@ -12,7 +12,11 @@ from backfield_db import (
     BackfieldUser,
     Stylebook,
     StylebookLocationCanonical,
+    StylebookOrganizationCanonical,
+    StylebookPersonCanonical,
     SubstrateLocation,
+    SubstrateOrganization,
+    SubstratePerson,
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from fastapi.testclient import TestClient
@@ -126,6 +130,34 @@ def cleanup_client(
                 geometry_json={"type": "Point", "coordinates": [-87.6, 41.8]},
             )
         )
+        s.add(
+            StylebookPersonCanonical(
+                stylebook_id=sb_id,
+                slug="person-dupe-a",
+                label="Jane Doe",
+            )
+        )
+        s.add(
+            StylebookPersonCanonical(
+                stylebook_id=sb_id,
+                slug="person-dupe-b",
+                label="Jane Doe",
+            )
+        )
+        s.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                slug="org-dupe-a",
+                label="City Hall",
+            )
+        )
+        s.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=sb_id,
+                slug="org-dupe-b",
+                label="City Hall",
+            )
+        )
         s.commit()
         user_id = int(user.id)
 
@@ -155,11 +187,18 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     body = r.json()
     assert "checks" in body
     ids = {check["id"] for check in body["checks"]}
-    assert ids == {"duplicate-locations", "missing-geometry-locations"}
+    assert ids == {
+        "duplicate-locations",
+        "missing-geometry-locations",
+        "duplicate-people",
+        "duplicate-organizations",
+    }
     by_id = {check["id"]: check["count"] for check in body["checks"]}
     assert by_id["duplicate-locations"] == 2
+    assert by_id["duplicate-people"] == 1
+    assert by_id["duplicate-organizations"] == 1
     assert by_id["missing-geometry-locations"] == 6
-    assert body["total_open"] == by_id["duplicate-locations"] + by_id["missing-geometry-locations"]
+    assert body["total_open"] == sum(by_id.values())
 
 
 def test_duplicate_location_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
@@ -260,3 +299,147 @@ def test_merge_cleanup_canonical_relinks_and_deletes_source(
             )
         ).one()
         assert loc.stylebook_location_canonical_id == target_id
+
+
+def test_duplicate_person_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, _engine = cleanup_client
+    response = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-people?limit=10")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["clusters"][0]["label"] == "Jane Doe"
+    assert len(body["clusters"][0]["canonicals"]) == 2
+
+
+def test_duplicate_organization_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, _engine = cleanup_client
+    response = client.get(
+        "/v1/stylebooks/default/cleanup/checks/duplicate-organizations?limit=10"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["clusters"][0]["label"] == "City Hall"
+    assert len(body["clusters"][0]["canonicals"]) == 2
+
+
+def test_merge_cleanup_person_relinks_and_deletes_source(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        org = session.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+        ).one()
+        session.add(
+            BackfieldProject(
+                organization_id=int(org.id),
+                name="Demo",
+                slug="demo-proj",
+            )
+        )
+        session.commit()
+        proj = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")
+        ).one()
+        source = session.exec(
+            select(StylebookPersonCanonical).where(
+                StylebookPersonCanonical.slug == "person-dupe-a"
+            )
+        ).one()
+        target = session.exec(
+            select(StylebookPersonCanonical).where(
+                StylebookPersonCanonical.slug == "person-dupe-b"
+            )
+        ).one()
+        session.add(
+            SubstratePerson(
+                project_id=int(proj.id),
+                name="Jane Doe",
+                normalized_name="jane-doe",
+                identity_fingerprint="fp-cleanup-person-merge",
+                stylebook_person_canonical_id=str(source.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        )
+        session.commit()
+        source_id = str(source.id)
+        target_id = str(target.id)
+
+    response = client.post(
+        f"/v1/stylebooks/default/cleanup/canonical-people/{source_id}/merge-into",
+        json={"target_canonical_id": target_id},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["relinked_substrate_count"] == 1
+
+    with Session(engine) as session:
+        assert session.get(StylebookPersonCanonical, source_id) is None
+        person = session.exec(
+            select(SubstratePerson).where(
+                SubstratePerson.identity_fingerprint == "fp-cleanup-person-merge"
+            )
+        ).one()
+        assert person.stylebook_person_canonical_id == target_id
+
+
+def test_merge_cleanup_organization_relinks_and_deletes_source(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        org = session.exec(
+            select(BackfieldOrganization).where(BackfieldOrganization.slug == "default")
+        ).one()
+        session.add(
+            BackfieldProject(
+                organization_id=int(org.id),
+                name="Demo",
+                slug="demo-proj-org",
+            )
+        )
+        session.commit()
+        proj = session.exec(
+            select(BackfieldProject).where(BackfieldProject.slug == "demo-proj-org")
+        ).one()
+        source = session.exec(
+            select(StylebookOrganizationCanonical).where(
+                StylebookOrganizationCanonical.slug == "org-dupe-a"
+            )
+        ).one()
+        target = session.exec(
+            select(StylebookOrganizationCanonical).where(
+                StylebookOrganizationCanonical.slug == "org-dupe-b"
+            )
+        ).one()
+        session.add(
+            SubstrateOrganization(
+                project_id=int(proj.id),
+                name="City Hall",
+                normalized_name="city-hall",
+                identity_fingerprint="fp-cleanup-org-merge",
+                stylebook_organization_canonical_id=str(source.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        )
+        session.commit()
+        source_id = str(source.id)
+        target_id = str(target.id)
+
+    response = client.post(
+        f"/v1/stylebooks/default/cleanup/canonical-organizations/{source_id}/merge-into",
+        json={"target_canonical_id": target_id},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["relinked_substrate_count"] == 1
+
+    with Session(engine) as session:
+        assert session.get(StylebookOrganizationCanonical, source_id) is None
+        organization = session.exec(
+            select(SubstrateOrganization).where(
+                SubstrateOrganization.identity_fingerprint == "fp-cleanup-org-merge"
+            )
+        ).one()
+        assert organization.stylebook_organization_canonical_id == target_id

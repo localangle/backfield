@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
-from backfield_db import BackfieldOrganization, Stylebook, StylebookLocationCanonical
+from backfield_db import (
+    BackfieldOrganization,
+    Stylebook,
+    StylebookLocationCanonical,
+    StylebookOrganizationCanonical,
+    StylebookPersonCanonical,
+)
 from backfield_entities.quality.finders.duplicate_locations import (
     duplicate_location_cluster_ids,
     duplicate_location_pair_edges,
 )
+from backfield_entities.quality.finders.duplicate_organizations import (
+    duplicate_organization_cluster_ids,
+)
+from backfield_entities.quality.finders.duplicate_people import duplicate_person_cluster_ids
 from backfield_entities.quality.finders.missing_geometry_locations import (
     count_missing_geometry_locations,
     list_missing_geometry_locations,
@@ -148,3 +158,55 @@ def test_missing_geometry_locations_sqlite() -> None:
         assert total == 1
         assert len(rows) == 1
         assert rows[0].label == "Place without map"
+
+
+def test_exact_duplicate_person_clustering_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id = _make_stylebook(session)
+        session.add(
+            StylebookPersonCanonical(
+                stylebook_id=stylebook_id,
+                slug="jane-a",
+                label="Jane Doe",
+            )
+        )
+        session.add(
+            StylebookPersonCanonical(
+                stylebook_id=stylebook_id,
+                slug="jane-b",
+                label="Jane Doe",
+            )
+        )
+        session.commit()
+
+        clusters = duplicate_person_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert len(clusters[0]) == 2
+
+
+def test_exact_duplicate_organization_clustering_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id = _make_stylebook(session)
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="city-hall-a",
+                label="City Hall",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="city-hall-b",
+                label="City Hall",
+            )
+        )
+        session.commit()
+
+        clusters = duplicate_organization_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert len(clusters[0]) == 2

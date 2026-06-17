@@ -73,11 +73,20 @@ export {
   type PaginatedDuplicateClustersResponse,
   getCleanupCheckResults,
   getDuplicateLocationClusters,
+  getDuplicatePersonClusters,
+  getDuplicateOrganizationClusters,
   getMissingGeometryLocations,
   listCleanupChecks,
   mergeCleanupLocationCanonical,
+  mergeCleanupPersonCanonical,
+  mergeCleanupOrganizationCanonical,
   deleteEmptyCleanupLocationCanonical,
+  deleteEmptyCleanupPersonCanonical,
+  deleteEmptyCleanupOrganizationCanonical,
+  type MergeCleanupCanonicalResponse,
   type MergeCleanupLocationCanonicalResponse,
+  type CleanupClusterCanonical,
+  type DuplicateCluster,
 } from "@/lib/stylebook-api/cleanup"
 
 export {

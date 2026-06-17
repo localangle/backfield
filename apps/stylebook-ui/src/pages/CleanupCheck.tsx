@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { DuplicateClusterList } from "@/components/DuplicateClusterList"
@@ -8,13 +8,27 @@ import { useAppMessage } from "@/components/AppMessageProvider"
 import { Loader2 } from "lucide-react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
-import { cleanupCheckConfigById } from "@/lib/cleanupChecks"
+import {
+  cleanupCheckConfigById,
+  cleanupEntityDetailPath,
+  cleanupLinkedRecordLabel,
+  cleanupLinkedRecordSingular,
+  type CleanupEntityType,
+} from "@/lib/cleanupChecks"
+import {
+  applyDeleteEmptyToClusterResults,
+  applyMergeToClusterResults,
+  assignStableClusterIds,
+} from "@/lib/cleanupClusterState"
 import {
   deleteEmptyCleanupLocationCanonical,
+  deleteEmptyCleanupOrganizationCanonical,
+  deleteEmptyCleanupPersonCanonical,
   getCleanupCheckResults,
   mergeCleanupLocationCanonical,
+  mergeCleanupOrganizationCanonical,
+  mergeCleanupPersonCanonical,
   type CanonicalLocation,
-  type DuplicateLocationCluster,
   type PaginatedDuplicateClustersResponse,
   type PaginatedCanonicalLocationResponse,
 } from "@/lib/api"
@@ -22,6 +36,48 @@ import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 
 const PER_PAGE = 25
+
+async function mergeCleanupCanonical(
+  entityType: CleanupEntityType,
+  stylebookSlug: string,
+  sourceId: string,
+  targetId: string,
+) {
+  switch (entityType) {
+    case "person":
+      return mergeCleanupPersonCanonical(stylebookSlug, sourceId, targetId)
+    case "organization":
+      return mergeCleanupOrganizationCanonical(stylebookSlug, sourceId, targetId)
+    default:
+      return mergeCleanupLocationCanonical(stylebookSlug, sourceId, targetId)
+  }
+}
+
+async function deleteEmptyCleanupCanonical(
+  entityType: CleanupEntityType,
+  stylebookSlug: string,
+  canonicalId: string,
+) {
+  switch (entityType) {
+    case "person":
+      return deleteEmptyCleanupPersonCanonical(stylebookSlug, canonicalId)
+    case "organization":
+      return deleteEmptyCleanupOrganizationCanonical(stylebookSlug, canonicalId)
+    default:
+      return deleteEmptyCleanupLocationCanonical(stylebookSlug, canonicalId)
+  }
+}
+
+function entitySingular(entityType: CleanupEntityType): string {
+  switch (entityType) {
+    case "person":
+      return "person"
+    case "organization":
+      return "organization"
+    default:
+      return "location"
+  }
+}
 
 export default function CleanupCheck() {
   const { checkId = "" } = useParams<{ checkId: string }>()
@@ -41,11 +97,17 @@ export default function CleanupCheck() {
     useState<PaginatedDuplicateClustersResponse | null>(null)
   const [listResults, setListResults] =
     useState<PaginatedCanonicalLocationResponse | null>(null)
+  const clusterStableIdByMemberRef = useRef<Map<string, string>>(new Map())
+  const nextClusterStableIdRef = useRef(0)
 
-  const locationDetailHref = useCallback(
+  const entityType = config?.entityType ?? "location"
+  const linkedRecordLabel = cleanupLinkedRecordLabel(entityType)
+  const linkedRecordSingular = cleanupLinkedRecordSingular(entityType)
+
+  const detailHref = useCallback(
     (canonicalId: string) =>
-      `${catalogBasePath}/locations/canonical/${encodeURIComponent(canonicalId)}${catalogScopeSuffix}`,
-    [catalogBasePath, catalogScopeSuffix],
+      cleanupEntityDetailPath(catalogBasePath, entityType, canonicalId, catalogScopeSuffix),
+    [catalogBasePath, catalogScopeSuffix, entityType],
   )
 
   useEffect(() => {
@@ -64,7 +126,15 @@ export default function CleanupCheck() {
         perPage: PER_PAGE,
       })
       if (config.kind === "cluster") {
-        setClusterResults(response as PaginatedDuplicateClustersResponse)
+        const paginated = response as PaginatedDuplicateClustersResponse
+        setClusterResults({
+          ...paginated,
+          clusters: assignStableClusterIds(
+            paginated.clusters,
+            clusterStableIdByMemberRef.current,
+            nextClusterStableIdRef,
+          ),
+        })
         setListResults(null)
       } else {
         setListResults(response as PaginatedCanonicalLocationResponse)
@@ -98,48 +168,76 @@ export default function CleanupCheck() {
       const sourceLabel = findCanonicalLabel(sourceId) ?? "this record"
       const targetLabel = findCanonicalLabel(targetId) ?? "the other record"
       const confirmed = await showConfirm(
-        `Move all linked places from "${sourceLabel}" into "${targetLabel}" and delete the duplicate record?`,
+        `Move all ${linkedRecordLabel} from "${sourceLabel}" into "${targetLabel}" and delete the duplicate record?`,
         {
-          title: "Merge locations?",
+          title: `Merge ${entitySingular(entityType)}s?`,
           confirmLabel: "Merge",
         },
       )
       if (!confirmed) return
       try {
-        const result = await mergeCleanupLocationCanonical(stylebookSlug, sourceId, targetId)
+        const result = await mergeCleanupCanonical(
+          entityType,
+          stylebookSlug,
+          sourceId,
+          targetId,
+        )
         const moved = result.relinked_substrate_count
         showMessage(
           moved > 0
-            ? `Merged ${moved} linked place${moved === 1 ? "" : "s"} into "${targetLabel}".`
+            ? `Merged ${moved} ${moved === 1 ? linkedRecordSingular : linkedRecordLabel} into "${targetLabel}".`
             : `Removed duplicate record "${sourceLabel}".`,
         )
-        await loadResults()
+        setClusterResults((prev) =>
+          prev
+            ? applyMergeToClusterResults(prev, sourceId, targetId, result.relinked_substrate_count)
+            : prev,
+        )
       } catch (error) {
-        showError(error instanceof Error ? error.message : "Failed to merge locations")
+        showError(
+          error instanceof Error
+            ? error.message
+            : `Failed to merge ${entitySingular(entityType)}s`,
+        )
       }
     },
-    [stylebookSlug, findCanonicalLabel, showConfirm, showMessage, showError, loadResults],
+    [
+      stylebookSlug,
+      entityType,
+      linkedRecordLabel,
+      linkedRecordSingular,
+      findCanonicalLabel,
+      showConfirm,
+      showMessage,
+      showError,
+    ],
   )
 
   const handleDeleteEmpty = useCallback(
     async (canonicalId: string) => {
       if (!stylebookSlug) return
       const label = findCanonicalLabel(canonicalId) ?? "this record"
-      const confirmed = await showConfirm(`Delete empty location "${label}"?`, {
-        title: "Delete location?",
+      const confirmed = await showConfirm(`Delete empty ${entitySingular(entityType)} "${label}"?`, {
+        title: `Delete ${entitySingular(entityType)}?`,
         confirmLabel: "Delete",
         destructive: true,
       })
       if (!confirmed) return
       try {
-        await deleteEmptyCleanupLocationCanonical(stylebookSlug, canonicalId)
+        await deleteEmptyCleanupCanonical(entityType, stylebookSlug, canonicalId)
         showMessage(`Deleted "${label}".`)
-        await loadResults()
+        setClusterResults((prev) =>
+          prev ? applyDeleteEmptyToClusterResults(prev, canonicalId) : prev,
+        )
       } catch (error) {
-        showError(error instanceof Error ? error.message : "Failed to delete location")
+        showError(
+          error instanceof Error
+            ? error.message
+            : `Failed to delete ${entitySingular(entityType)}`,
+        )
       }
     },
-    [stylebookSlug, findCanonicalLabel, showConfirm, showMessage, showError, loadResults],
+    [stylebookSlug, entityType, findCanonicalLabel, showConfirm, showMessage, showError],
   )
 
   const pagination = useMemo(() => {
@@ -202,8 +300,10 @@ export default function CleanupCheck() {
         </div>
       ) : config.kind === "cluster" ? (
         <DuplicateClusterList
-          clusters={(clusterResults?.clusters ?? []) as DuplicateLocationCluster[]}
-          locationDetailHref={locationDetailHref}
+          clusters={clusterResults?.clusters ?? []}
+          entityType={entityType}
+          detailHref={detailHref}
+          linkedRecordLabel={linkedRecordLabel}
           canEdit={canEdit}
           onMerge={canEdit ? handleMerge : undefined}
           onDeleteEmpty={canEdit ? handleDeleteEmpty : undefined}
@@ -211,7 +311,7 @@ export default function CleanupCheck() {
       ) : (
         <MissingGeometryList
           canonicals={listResults?.canonicals ?? []}
-          locationDetailHref={locationDetailHref}
+          locationDetailHref={detailHref}
         />
       )}
 

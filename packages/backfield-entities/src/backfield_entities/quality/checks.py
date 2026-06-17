@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 CleanupCheckKind = Literal["cluster", "list"]
-CleanupEntityType = Literal["location"]
+CleanupEntityType = Literal["location", "person", "organization"]
 
 
 @dataclass(frozen=True)
@@ -41,9 +41,41 @@ LOCATION_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
     ),
 )
 
+PERSON_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
+    CleanupCheckDef(
+        id="duplicate-people",
+        title="Possible duplicate people",
+        description=(
+            "Groups of person canonicals with the same name or a very similar name. "
+            "Review each record and relink evidence or edit names manually."
+        ),
+        entity_type="person",
+        kind="cluster",
+    ),
+)
+
+ORGANIZATION_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
+    CleanupCheckDef(
+        id="duplicate-organizations",
+        title="Possible duplicate organizations",
+        description=(
+            "Groups of organization canonicals with the same name or a very similar name. "
+            "Review each record and relink evidence or edit names manually."
+        ),
+        entity_type="organization",
+        kind="cluster",
+    ),
+)
+
+STYLEBOOK_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
+    *LOCATION_CLEANUP_CHECKS,
+    *PERSON_CLEANUP_CHECKS,
+    *ORGANIZATION_CLEANUP_CHECKS,
+)
+
 
 def cleanup_check_by_id(check_id: str) -> CleanupCheckDef | None:
-    for check in LOCATION_CLEANUP_CHECKS:
+    for check in STYLEBOOK_CLEANUP_CHECKS:
         if check.id == check_id:
             return check
     return None
