@@ -63,6 +63,19 @@ export {
   getAgentTypes,
   getStats,
 } from "@/lib/stylebook-api/stats-stub"
+export {
+  type CleanupCheck,
+  type CleanupCheckKind,
+  type CleanupChecksResponse,
+  type DuplicateLocationCluster,
+  type GetCleanupCheckResultsParams,
+  type ListCleanupChecksParams,
+  type PaginatedDuplicateClustersResponse,
+  getCleanupCheckResults,
+  getDuplicateLocationClusters,
+  getMissingGeometryLocations,
+  listCleanupChecks,
+} from "@/lib/stylebook-api/cleanup"
 
 export {
   type AnalyzeCsvResponse,

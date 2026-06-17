@@ -21,6 +21,12 @@ from sqlmodel import Session, col, func, select
 
 from stylebook_api.deps import get_auth, get_session
 from stylebook_api.entities.location.locations import _escape_ilike_metacharacters
+from stylebook_api.helpers.canonical_evidence_counts import (
+    linked_substrate_counts_by_location_canonical as _linked_substrate_counts,
+)
+from stylebook_api.helpers.canonical_evidence_counts import (
+    mention_counts_by_location_canonical as _mention_counts_by_canonical,
+)
 from stylebook_api.mention_serialization import article_fields_for_linked_mention
 from stylebook_api.stylebook_permissions import require_stylebook_edit_access
 from stylebook_api.stylebook_scope import (
@@ -29,55 +35,6 @@ from stylebook_api.stylebook_scope import (
 )
 
 router = APIRouter(prefix="/v1/stylebooks", tags=["stylebook-canonicals"])
-
-
-def _mention_counts_by_canonical(
-    session: Session, *, project_ids: list[int], canonical_ids: list[str]
-) -> dict[str, int]:
-    if not canonical_ids or not project_ids:
-        return {}
-    rows = session.exec(
-        select(
-            SubstrateLocation.stylebook_location_canonical_id,
-            func.count(col(SubstrateLocationMention.id)),
-        )
-        .select_from(SubstrateLocationMention)
-        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
-        .where(
-            col(SubstrateLocation.project_id).in_(project_ids),
-            col(SubstrateLocation.stylebook_location_canonical_id).in_(canonical_ids),
-            SubstrateLocationMention.deleted == False,  # noqa: E712
-        )
-        .group_by(SubstrateLocation.stylebook_location_canonical_id)
-    ).all()
-    out: dict[str, int] = {}
-    for cid, cnt in rows:
-        if cid is not None:
-            out[str(cid)] = int(cnt)
-    return out
-
-
-def _linked_substrate_counts(
-    session: Session, *, project_ids: list[int], canonical_ids: list[str]
-) -> dict[str, int]:
-    if not canonical_ids or not project_ids:
-        return {}
-    rows = session.exec(
-        select(
-            SubstrateLocation.stylebook_location_canonical_id,
-            func.count(col(SubstrateLocation.id)),
-        )
-        .where(
-            col(SubstrateLocation.project_id).in_(project_ids),
-            col(SubstrateLocation.stylebook_location_canonical_id).in_(canonical_ids),
-        )
-        .group_by(SubstrateLocation.stylebook_location_canonical_id)
-    ).all()
-    out: dict[str, int] = {}
-    for cid, cnt in rows:
-        if cid is not None:
-            out[str(cid)] = int(cnt)
-    return out
 
 
 class CanonicalLocationResponse(BaseModel):

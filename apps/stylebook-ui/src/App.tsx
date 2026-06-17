@@ -31,6 +31,8 @@ import Organizations from "@/pages/Organizations"
 import OrganizationCandidates from "@/pages/OrganizationCandidates"
 import OrganizationDetail from "@/pages/OrganizationDetail"
 import CreateOrganization from "@/pages/CreateOrganization"
+import Cleanup from "@/pages/Cleanup"
+import CleanupCheck from "@/pages/CleanupCheck"
 import StubPage from "@/pages/StubPage"
 
 function ProtectedLayout() {
@@ -218,6 +220,8 @@ export default function App() {
 
             <Route path="/stylebook/:stylebookSlug" element={<Outlet />}>
               <Route index element={<Index />} />
+              <Route path="cleanup" element={<Cleanup />} />
+              <Route path="cleanup/:checkId" element={<CleanupCheck />} />
               <Route path="locations/candidates" element={<LocationCandidates />} />
               <Route path="locations/canonical" element={<Locations />} />
               <Route path="locations/canonical/:id" element={<LocationDetail />} />

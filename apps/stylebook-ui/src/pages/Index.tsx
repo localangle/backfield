@@ -5,6 +5,7 @@ import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { ENTITY_HOME_CARDS, entityDisplayName } from "@/lib/entityRegistry"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import {
   Card,
@@ -146,6 +147,8 @@ export default function Index() {
           Manage canonical entities and review candidates
         </p>
       </div>
+
+      <StylebookHomeTabs />
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {entityTypes.map((entityType) => {
