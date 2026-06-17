@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import difflib
-import re
 from collections import defaultdict
-from itertools import combinations
 
 from backfield_db import StylebookLocationCanonical
 from sqlalchemy import text
@@ -14,11 +12,9 @@ from sqlmodel import Session, col, select
 from backfield_entities.quality.finders._clustering import cluster_ids_from_pairs
 from backfield_entities.quality.types import CleanupLocationCanonicalRow
 
-# Full-label similarity must be high; the pre-comma "head" guard blocks suffix-only matches
-# (e.g. unrelated places that only share ", Chicago, IL").
+# Near-duplicates must share the same primary name (pre-comma head) and pass full-label similarity.
 DEFAULT_FULL_SIMILARITY_THRESHOLD: float = 0.72
 DEFAULT_HEAD_SIMILARITY_THRESHOLD: float = 0.75
-_PG_INDEX_PROBE_THRESHOLD: float = 0.45
 _MIN_LABEL_LEN: int = 4
 _MIN_HEAD_LEN: int = 3
 
@@ -35,12 +31,6 @@ def _label_head(label: str) -> str:
     return text_value
 
 
-def _first_block_token(label: str) -> str:
-    cleaned = re.sub(r"[^\w\s]", " ", label.lower())
-    parts = [p for p in cleaned.split() if len(p) >= 3]
-    return parts[0] if parts else label.strip().lower()[:3]
-
-
 def _dedupe_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
     seen: set[tuple[str, str]] = set()
     out: list[tuple[str, str]] = []
@@ -51,6 +41,13 @@ def _dedupe_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
         seen.add(key)
         out.append(key)
     return out
+
+
+def _star_edges(members: list[str]) -> list[tuple[str, str]]:
+    if len(members) < 2:
+        return []
+    root = members[0]
+    return [(root, member) for member in members[1:]]
 
 
 def _exact_label_pair_edges(
@@ -65,7 +62,7 @@ def _exact_label_pair_edges(
         clusters = _sqlite_exact_duplicate_clusters(session, stylebook_id=stylebook_id)
     pairs: list[tuple[str, str]] = []
     for members in clusters:
-        pairs.extend(combinations(members, 2))
+        pairs.extend(_star_edges(members))
     return pairs
 
 
@@ -111,18 +108,13 @@ def _sqlite_exact_duplicate_clusters(session: Session, *, stylebook_id: int) -> 
     return clusters
 
 
-def _postgres_fuzzy_pair_edges(
+def _postgres_near_duplicate_pair_edges(
     session: Session,
     *,
     stylebook_id: int,
     full_threshold: float,
-    head_threshold: float,
 ) -> list[tuple[str, str]]:
-    index_probe = min(full_threshold, _PG_INDEX_PROBE_THRESHOLD)
-    session.execute(
-        text("SELECT set_config('pg_trgm.similarity_threshold', :th, true)"),
-        {"th": str(index_probe)},
-    )
+    """Join on equal pre-comma head (indexed), not full-label trigram self-join."""
     rows = session.execute(
         text(
             """
@@ -131,18 +123,14 @@ def _postgres_fuzzy_pair_edges(
             INNER JOIN stylebook_location_canonical AS b
                 ON a.stylebook_id = b.stylebook_id
                AND a.id < b.id
-               AND lower(trim(a.label)) % lower(trim(b.label))
+               AND lower(trim(split_part(a.label, ',', 1)))
+                   = lower(trim(split_part(b.label, ',', 1)))
             WHERE a.stylebook_id = :sid
               AND length(trim(a.label)) >= :min_len
               AND length(trim(b.label)) >= :min_len
+              AND length(trim(split_part(a.label, ',', 1))) >= :min_head_len
               AND lower(trim(a.label)) <> lower(trim(b.label))
               AND similarity(lower(trim(a.label)), lower(trim(b.label))) >= :full_th
-              AND length(trim(split_part(a.label, ',', 1))) >= :min_head_len
-              AND length(trim(split_part(b.label, ',', 1))) >= :min_head_len
-              AND similarity(
-                    lower(trim(split_part(a.label, ',', 1))),
-                    lower(trim(split_part(b.label, ',', 1)))
-                  ) >= :head_th
             """
         ),
         {
@@ -150,7 +138,6 @@ def _postgres_fuzzy_pair_edges(
             "min_len": _MIN_LABEL_LEN,
             "min_head_len": _MIN_HEAD_LEN,
             "full_th": full_threshold,
-            "head_th": head_threshold,
         },
     ).all()
     out: list[tuple[str, str]] = []
@@ -161,7 +148,7 @@ def _postgres_fuzzy_pair_edges(
     return out
 
 
-def _sqlite_fuzzy_pair_edges(
+def _sqlite_near_duplicate_pair_edges(
     session: Session,
     *,
     stylebook_id: int,
@@ -173,7 +160,7 @@ def _sqlite_fuzzy_pair_edges(
             StylebookLocationCanonical.stylebook_id == stylebook_id
         )
     ).all()
-    by_head_block: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+    by_head: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for row_id, label in rows:
         if row_id is None or not label:
             continue
@@ -184,16 +171,15 @@ def _sqlite_fuzzy_pair_edges(
         head = _label_head(label_text)
         if len(head) < _MIN_HEAD_LEN:
             continue
-        block = _first_block_token(head)
-        by_head_block[block].append((str(row_id), norm, head))
+        by_head[head].append((str(row_id), norm))
 
     pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
-    for block_rows in by_head_block.values():
-        if len(block_rows) < 2:
+    for head, head_rows in by_head.items():
+        if len(head_rows) < 2:
             continue
-        for i, (a_id, a_norm, a_head) in enumerate(block_rows):
-            for b_id, b_norm, b_head in block_rows[i + 1 :]:
+        for i, (a_id, a_norm) in enumerate(head_rows):
+            for b_id, b_norm in head_rows[i + 1 :]:
                 if a_norm == b_norm:
                     continue
                 left, right = (a_id, b_id) if a_id < b_id else (b_id, a_id)
@@ -202,7 +188,7 @@ def _sqlite_fuzzy_pair_edges(
                 full_ratio = difflib.SequenceMatcher(None, a_norm, b_norm).ratio()
                 if full_ratio < full_threshold:
                     continue
-                head_ratio = difflib.SequenceMatcher(None, a_head, b_head).ratio()
+                head_ratio = difflib.SequenceMatcher(None, head, _label_head(b_norm)).ratio()
                 if head_ratio < head_threshold:
                     continue
                 seen.add((left, right))
@@ -220,20 +206,19 @@ def duplicate_location_pair_edges(
     exact = _exact_label_pair_edges(session, stylebook_id=stylebook_id)
     bind = session.get_bind()
     if bind is not None and bind.dialect.name == "postgresql":
-        fuzzy = _postgres_fuzzy_pair_edges(
+        near = _postgres_near_duplicate_pair_edges(
             session,
             stylebook_id=stylebook_id,
             full_threshold=full_threshold,
-            head_threshold=head_threshold,
         )
     else:
-        fuzzy = _sqlite_fuzzy_pair_edges(
+        near = _sqlite_near_duplicate_pair_edges(
             session,
             stylebook_id=stylebook_id,
             full_threshold=full_threshold,
             head_threshold=head_threshold,
         )
-    return _dedupe_pairs([*exact, *fuzzy])
+    return _dedupe_pairs([*exact, *near])
 
 
 def duplicate_location_cluster_ids(
