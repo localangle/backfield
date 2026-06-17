@@ -19,15 +19,14 @@ from sqlmodel.pool import StaticPool
 
 
 @pytest.fixture
-def memory_session() -> Session:
+def memory_engine():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     BackfieldAiCallRecord.metadata.create_all(engine)
-    with Session(engine) as session:
-        yield session
+    return engine
 
 
 def _persist_one(i: int) -> None:
@@ -51,9 +50,13 @@ def _persist_one(i: int) -> None:
     )
 
 
-def test_persist_llm_attempt_concurrent_writes(memory_session: Session) -> None:
+def test_persist_llm_attempt_concurrent_writes(
+    memory_engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backfield_ai.tracking_context.get_engine", lambda: memory_engine)
     tok = attach_llm_tracking_context(
-        LlmAttemptTrackingContext(session=memory_session, project_id=1, run_id="run-par"),
+        LlmAttemptTrackingContext(project_id=1, run_id="run-par"),
     )
     try:
         with ThreadPoolExecutor(max_workers=8) as pool:
@@ -65,5 +68,6 @@ def test_persist_llm_attempt_concurrent_writes(memory_session: Session) -> None:
     finally:
         reset_llm_tracking_context(tok)
 
-    rows = list(memory_session.exec(select(BackfieldAiCallRecord)).all())
+    with Session(memory_engine) as session:
+        rows = list(session.exec(select(BackfieldAiCallRecord)).all())
     assert len(rows) == 20

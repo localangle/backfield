@@ -16,6 +16,18 @@ Backfield uses a **fresh schema**. Agate-owned tables use the **`agate_` prefix*
 
 Do **not** run multiple services that each invoke `alembic upgrade` on startup for the same revision path; pick **one** migration runner (the `agate-api` entrypoint on deploy, or `make migrate` locally).
 
+## Connection pooling (PgBouncer)
+
+Local Compose runs **PgBouncer** in **transaction** pooling mode between application services and Postgres. Runtime traffic uses **`BACKFIELD_DATABASE_URL`** pointing at **`pgbouncer:5432`** inside the network (host **`localhost:6432`**); Alembic and `ensure_database_exists` use **`BACKFIELD_DATABASE_URL_DIRECT`** (`postgres:5432`) when set.
+
+Implications for application code (`packages/backfield-db/src/backfield_db/session.py`):
+
+- **psycopg3** server-side prepared statements are disabled (`prepare_threshold=None`) because transaction pooling reassigns backends per transaction.
+- API **`statement_timeout`** / **`lock_timeout`** env vars apply via **`SET LOCAL`** on each transaction (PgBouncer-safe). The worker leaves those env vars unset so long ingest transactions are not capped at the API default.
+- Use **`get_engine()`** everywhere; do not create ad-hoc engines per request.
+
+Worker tasks release DB sessions during long graph execution and LLM calls so connections are not held **`idle in transaction`** for minutes (see **Worker session release** in [OPERATIONS.md](OPERATIONS.md)).
+
 ## Current tables
 
 ### Identity and projects (`backfield_*`)

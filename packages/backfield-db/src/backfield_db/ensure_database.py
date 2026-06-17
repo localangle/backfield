@@ -16,7 +16,11 @@ def ensure_database_exists() -> None:
     startup will fail with "database does not exist".
     """
 
-    raw_url = os.environ.get("BACKFIELD_DATABASE_URL") or os.environ.get("DATABASE_URL")
+    raw_url = (
+        os.environ.get("BACKFIELD_DATABASE_URL_DIRECT")
+        or os.environ.get("BACKFIELD_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+    )
     if not raw_url:
         # Mirror session.py fallback, but don't silently create anything for unknown targets.
         raw_url = "postgresql+psycopg://postgres:postgres@localhost:5433/backfield"

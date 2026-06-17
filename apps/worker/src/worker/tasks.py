@@ -278,66 +278,86 @@ def execute_agate_run(run_id: str) -> None:
         session.add(run)
         session.commit()
 
+    project_id: int
+    graph_id: str
+    overlay: dict[str, str]
+    spec: GraphSpec
+    replace_geography: bool
+    project_system_prompt: str | None
+
+    with Session(engine) as session:
         run = session.get(AgateRun, run_id)
         if not run or run.status != "running":
             return
+        graph = session.get(AgateGraph, run.graph_id)
+        if not graph:
+            return
+        spec = GraphSpec.model_validate_json(graph.spec_json)
+        overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
+        replace_geography = bool(run.replace_article_geography_on_persist)
+        project_system_prompt = _load_project_system_prompt(session, graph.project_id)
+        project_id = int(graph.project_id)
+        graph_id = str(graph.id)
+        session.commit()
 
-        try:
-            spec = GraphSpec.model_validate_json(graph.spec_json)
-            overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
-            node_runners = dict(NODE_RUNNERS)
-            node_runners["DBOutput"] = run_db_output
-            track_tok = attach_llm_tracking_context(
-                LlmAttemptTrackingContext(
-                    session=session,
-                    project_id=graph.project_id,
-                    run_id=run.id,
-                )
+    node_runners = dict(NODE_RUNNERS)
+    node_runners["DBOutput"] = run_db_output
+    outputs: dict[str, Any] | None = None
+    node_timings: dict[str, float] = {}
+    run_error: str | None = None
+
+    track_tok = attach_llm_tracking_context(
+        LlmAttemptTrackingContext(
+            project_id=project_id,
+            run_id=run_id,
+        )
+    )
+    try:
+        with _env_overlay(overlay), _run_execution_env(
+            project_id=project_id,
+            graph_id=graph_id,
+            run_id=run_id,
+            replace_article_geography=replace_geography,
+            project_system_prompt=project_system_prompt,
+        ):
+            before_node, after_node, node_timings = _node_wall_clock_hooks()
+            outputs = execute_graph(
+                spec,
+                node_runners=node_runners,
+                before_each_node=before_node,
+                after_each_node=after_node,
             )
-            replace_geography = bool(run.replace_article_geography_on_persist)
-            project_system_prompt = _load_project_system_prompt(session, graph.project_id)
-            try:
-                with _env_overlay(overlay), _run_execution_env(
-                    project_id=graph.project_id,
-                    graph_id=graph.id,
-                    run_id=run.id,
-                    replace_article_geography=replace_geography,
-                    project_system_prompt=project_system_prompt,
-                ):
-                    before_node, after_node, node_timings = _node_wall_clock_hooks()
-                    outputs = execute_graph(
-                        spec,
-                        node_runners=node_runners,
-                        before_each_node=before_node,
-                        after_each_node=after_node,
-                    )
-                    _log_node_wall_clock_summary(
-                        run_id=str(run.id),
-                        processed_item_id=None,
-                        timings=node_timings,
-                    )
-            finally:
-                reset_llm_tracking_context(track_tok)
-            run = session.get(AgateRun, run_id)
-            if not run or run.status != "running":
-                return
-            if replace_geography and not _graph_has_db_output(spec) and run.id is not None:
-                clear_replace_article_geography_flags(session, run_id=str(run.id))
-            run.status = "succeeded"
-            run.result_json = json.dumps(outputs)
-            run.error_message = None
+            _log_node_wall_clock_summary(
+                run_id=run_id,
+                processed_item_id=None,
+                timings=node_timings,
+            )
+    except Exception as e:
+        run_error = str(e)
+    finally:
+        reset_llm_tracking_context(track_tok)
+
+    with Session(engine) as session:
+        run = session.get(AgateRun, run_id)
+        if not run or run.status != "running":
+            return
+        try:
+            if run_error is not None:
+                if run.error_message == _RUN_CANCELLED_MESSAGE:
+                    return
+                run.status = "failed"
+                run.error_message = run_error
+                run.result_json = None
+            else:
+                if replace_geography and not _graph_has_db_output(spec) and run.id is not None:
+                    clear_replace_article_geography_flags(session, run_id=str(run.id))
+                run.status = "succeeded"
+                run.result_json = json.dumps(outputs)
+                run.error_message = None
         except Exception as e:
-            run = session.get(AgateRun, run_id)
-            if run is None:
-                return
-            if run.error_message == _RUN_CANCELLED_MESSAGE:
-                return
             run.status = "failed"
             run.error_message = str(e)
             run.result_json = None
-        run = session.get(AgateRun, run_id)
-        if run is None:
-            return
         run.updated_at = datetime.now(UTC)
         session.add(run)
         session.commit()
@@ -545,141 +565,186 @@ def execute_processed_item(item_id: int) -> None:
         session.add(item)
         session.commit()
 
+    project_id: int
+    graph_id: str
+    run_id_str: str
+    overlay: dict[str, str]
+    spec: GraphSpec
+    node_runners: dict[str, Any]
+    replace_geography: bool
+    project_system_prompt: str | None
+    iid: int | None
+    has_db_output: bool
+
+    try:
+        with Session(engine) as session:
+            item = session.get(AgateProcessedItem, item_id)
+            if not item:
+                return
+            if item.status != "running":
+                return
+            run = session.get(AgateRun, item.run_id)
+            if not run:
+                item.status = "failed"
+                item.error_message = "Parent run not found"
+                item.updated_at = datetime.now(UTC)
+                session.add(item)
+                session.commit()
+                return
+            graph = session.get(AgateGraph, run.graph_id)
+            if not graph:
+                item.status = "failed"
+                item.error_message = "Graph not found"
+                item.updated_at = datetime.now(UTC)
+                session.add(item)
+                session.commit()
+                return
+            spec = GraphSpec.model_validate_json(
+                resolve_run_graph_spec_json(
+                    run_result_json=run.result_json,
+                    graph_spec_json=graph.spec_json,
+                )
+            )
+
+            batch_meta: dict[str, Any] = {}
+            if run.result_json:
+                try:
+                    wrap = json.loads(run.result_json)
+                    batch_meta = wrap.get("s3_batch") or {}
+                except json.JSONDecodeError:
+                    batch_meta = {}
+
+            input_json = item.input_json or "{}"
+            source_file = item.source_file
+            doc = json.loads(input_json)
+            if not isinstance(doc, dict):
+                raise ValueError("Processed item input_json must be a JSON object.")
+
+            overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
+            node_runners = dict(NODE_RUNNERS)
+            node_runners["DBOutput"] = run_db_output
+            ingress_types = {node.type for node in spec.nodes}
+            if "S3Input" in ingress_types:
+
+                def s3_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+                    del params, inputs
+                    base = json_input_output_from_dict(doc)
+                    total = int(batch_meta.get("total_json_objects", 1))
+                    sk = int(batch_meta.get("skipped_invalid", 0)) + int(
+                        batch_meta.get("skipped_cap", 0)
+                    )
+                    out = dict(base)
+                    out["total_files"] = total
+                    out["processed_files"] = 1
+                    out["skipped_files"] = sk
+                    out["source_file"] = source_file
+                    out["runs_created"] = []
+                    return out
+
+                node_runners["S3Input"] = s3_input_shim
+            if "TextInput" in ingress_types:
+
+                def text_input_shim(
+                    params: dict[str, Any], inputs: dict[str, Any]
+                ) -> dict[str, Any]:
+                    del params, inputs
+                    text = doc.get("text") or ""
+                    if not str(text).strip():
+                        raise ValueError(
+                            "TextInput requires non-empty text. "
+                            "Please add text to the TextInput node before running the flow."
+                        )
+                    return {"text": str(text)}
+
+                node_runners["TextInput"] = text_input_shim
+            if "JSONInput" in ingress_types:
+
+                def json_input_shim(
+                    params: dict[str, Any], inputs: dict[str, Any]
+                ) -> dict[str, Any]:
+                    del params, inputs
+                    return json_input_output_from_dict(doc)
+
+                node_runners["JSONInput"] = json_input_shim
+
+            replace_geography = bool(
+                item.replace_article_geography_on_persist
+                or run.replace_article_geography_on_persist
+            )
+            project_system_prompt = _load_project_system_prompt(session, graph.project_id)
+            project_id = int(graph.project_id)
+            graph_id = str(graph.id)
+            run_id_str = str(run.id)
+            iid = int(item.id) if item.id is not None else None
+            has_db_output = _graph_has_db_output(spec)
+            session.commit()
+    except Exception as e:
+        with Session(engine) as session:
+            item = session.get(AgateProcessedItem, item_id)
+            if item:
+                item.status = "failed"
+                item.error_message = str(e)
+                item.result_json = None
+                item.updated_at = datetime.now(UTC)
+                session.add(item)
+                session.commit()
+                _finalize_s3_parent_run(session, item.run_id)
+        return
+
+    outputs: dict[str, Any] | None = None
+    node_timings: dict[str, float] = {}
+    item_error: str | None = None
+
+    track_tok = attach_llm_tracking_context(
+        LlmAttemptTrackingContext(
+            project_id=project_id,
+            run_id=run_id_str,
+            processed_item_id=item_id,
+        )
+    )
+    try:
+        with _env_overlay(overlay), _run_execution_env(
+            project_id=project_id,
+            graph_id=graph_id,
+            run_id=run_id_str,
+            replace_article_geography=replace_geography,
+            processed_item_id=iid,
+            project_system_prompt=project_system_prompt,
+        ):
+            before_node, after_node, node_timings = _node_wall_clock_hooks()
+            outputs = execute_graph(
+                spec,
+                node_runners=node_runners,
+                before_each_node=before_node,
+                after_each_node=after_node,
+            )
+    except Exception as e:
+        item_error = str(e)
+    finally:
+        reset_llm_tracking_context(track_tok)
+
     with Session(engine) as session:
         item = session.get(AgateProcessedItem, item_id)
         if not item:
             return
-        if item.status != "running":
-            return
-        run = session.get(AgateRun, item.run_id)
-        if not run:
-            item.status = "failed"
-            item.error_message = "Parent run not found"
-            item.updated_at = datetime.now(UTC)
-            session.add(item)
-            session.commit()
-            return
-        graph = session.get(AgateGraph, run.graph_id)
-        if not graph:
-            item.status = "failed"
-            item.error_message = "Graph not found"
-            item.updated_at = datetime.now(UTC)
-            session.add(item)
-            session.commit()
-            return
-        spec = GraphSpec.model_validate_json(
-            resolve_run_graph_spec_json(
-                run_result_json=run.result_json,
-                graph_spec_json=graph.spec_json,
-            )
+        _log_node_wall_clock_summary(
+            run_id=run_id_str,
+            processed_item_id=iid,
+            timings=node_timings,
+            session=session,
         )
-
-        batch_meta: dict[str, Any] = {}
-        if run.result_json:
-            try:
-                wrap = json.loads(run.result_json)
-                batch_meta = wrap.get("s3_batch") or {}
-            except json.JSONDecodeError:
-                batch_meta = {}
-
-        input_json = item.input_json or "{}"
-        source_file = item.source_file
-        doc = json.loads(input_json)
-        if not isinstance(doc, dict):
-            raise ValueError("Processed item input_json must be a JSON object.")
-
-        overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
-        node_runners = dict(NODE_RUNNERS)
-        node_runners["DBOutput"] = run_db_output
-        ingress_types = {node.type for node in spec.nodes}
-        if "S3Input" in ingress_types:
-
-            def s3_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-                del params, inputs
-                base = json_input_output_from_dict(doc)
-                total = int(batch_meta.get("total_json_objects", 1))
-                sk = int(batch_meta.get("skipped_invalid", 0)) + int(
-                    batch_meta.get("skipped_cap", 0)
-                )
-                out = dict(base)
-                out["total_files"] = total
-                out["processed_files"] = 1
-                out["skipped_files"] = sk
-                out["source_file"] = source_file
-                out["runs_created"] = []
-                return out
-
-            node_runners["S3Input"] = s3_input_shim
-        if "TextInput" in ingress_types:
-
-            def text_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-                del params, inputs
-                text = doc.get("text") or ""
-                if not str(text).strip():
-                    raise ValueError(
-                        "TextInput requires non-empty text. "
-                        "Please add text to the TextInput node before running the flow."
-                    )
-                return {"text": str(text)}
-
-            node_runners["TextInput"] = text_input_shim
-        if "JSONInput" in ingress_types:
-
-            def json_input_shim(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-                del params, inputs
-                return json_input_output_from_dict(doc)
-
-            node_runners["JSONInput"] = json_input_shim
-
-        replace_geography = bool(
-            item.replace_article_geography_on_persist or run.replace_article_geography_on_persist
-        )
-        project_system_prompt = _load_project_system_prompt(session, graph.project_id)
-        iid = int(item.id) if item.id is not None else None
-        try:
-            track_tok = attach_llm_tracking_context(
-                LlmAttemptTrackingContext(
-                    session=session,
-                    project_id=graph.project_id,
-                    run_id=run.id,
-                    processed_item_id=item.id,
-                )
-            )
-            try:
-                with _env_overlay(overlay), _run_execution_env(
-                    project_id=graph.project_id,
-                    graph_id=graph.id,
-                    run_id=run.id,
-                    replace_article_geography=replace_geography,
-                    processed_item_id=iid,
-                    project_system_prompt=project_system_prompt,
-                ):
-                    before_node, after_node, node_timings = _node_wall_clock_hooks()
-                    outputs = execute_graph(
-                        spec,
-                        node_runners=node_runners,
-                        before_each_node=before_node,
-                        after_each_node=after_node,
-                    )
-                    _log_node_wall_clock_summary(
-                        run_id=str(run.id),
-                        processed_item_id=iid,
-                        timings=node_timings,
-                        session=session,
-                    )
-            finally:
-                reset_llm_tracking_context(track_tok)
+        if item_error is None:
             item.status = "succeeded"
             item.result_json = json.dumps(outputs)
             item.error_message = None
-        except Exception as e:
+        else:
             item.status = "failed"
-            item.error_message = str(e)
+            item.error_message = item_error
             item.result_json = None
-        if replace_geography and not _graph_has_db_output(spec) and run.id is not None:
+        if replace_geography and not has_db_output and run_id_str:
             clear_replace_article_geography_flags(
                 session,
-                run_id=str(run.id),
+                run_id=run_id_str,
                 processed_item_id=iid,
             )
         item.updated_at = datetime.now(UTC)

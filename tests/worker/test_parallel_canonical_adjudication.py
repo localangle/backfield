@@ -97,9 +97,13 @@ def test_run_callables_parallel_runs_concurrently() -> None:
     assert elapsed < 0.45
 
 
-def test_run_callables_parallel_propagates_tracking_context(memory_session: Session) -> None:
+def test_run_callables_parallel_propagates_tracking_context(
+    memory_engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("backfield_ai.tracking_context.get_engine", lambda: memory_engine)
     tok = attach_llm_tracking_context(
-        LlmAttemptTrackingContext(session=memory_session, project_id=1, run_id="run-par-llm"),
+        LlmAttemptTrackingContext(project_id=1, run_id="run-par-llm"),
     )
     try:
 
@@ -130,12 +134,13 @@ def test_run_callables_parallel_propagates_tracking_context(memory_session: Sess
 
     from backfield_db import BackfieldAiCallRecord
 
-    rows = list(memory_session.exec(select(BackfieldAiCallRecord)).all())
+    with Session(memory_engine) as session:
+        rows = list(session.exec(select(BackfieldAiCallRecord)).all())
     assert len(rows) == 6
 
 
 @pytest.fixture
-def memory_session() -> Session:
+def memory_engine():
     from backfield_db import BackfieldAiCallRecord
     from sqlmodel.pool import StaticPool
 
@@ -145,7 +150,12 @@ def memory_session() -> Session:
         poolclass=StaticPool,
     )
     BackfieldAiCallRecord.metadata.create_all(engine)
-    with Session(engine) as session:
+    return engine
+
+
+@pytest.fixture
+def memory_session(memory_engine) -> Session:
+    with Session(memory_engine) as session:
         yield session
 
 
