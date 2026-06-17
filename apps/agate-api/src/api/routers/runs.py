@@ -62,7 +62,7 @@ from backfield_entities.ingest.semantic_indexing.processed_item import (
 from celery import Celery
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, desc, update
+from sqlalchemy import delete, desc, func, update
 from sqlmodel import Session, asc, col, select
 
 DEFAULT_AI_COST_CURRENCY = "USD"
@@ -652,21 +652,28 @@ def _processed_item_counts_for_run_ids(
 ) -> dict[str, tuple[int, int, int, int, int]]:
     if not run_ids:
         return {}
-    rows = list(
-        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id.in_(run_ids))).all()
-    )
+    rows = session.exec(
+        select(
+            AgateProcessedItem.run_id,
+            AgateProcessedItem.status,
+            func.count(),
+        )
+        .where(AgateProcessedItem.run_id.in_(run_ids))
+        .group_by(AgateProcessedItem.run_id, AgateProcessedItem.status)
+    ).all()
     counts: dict[str, list[int]] = {}
-    for row in rows:
-        bucket = counts.setdefault(row.run_id, [0, 0, 0, 0, 0])
-        bucket[0] += 1
-        if row.status == "pending":
-            bucket[1] += 1
-        elif row.status == "running":
-            bucket[2] += 1
-        elif row.status == "succeeded":
-            bucket[3] += 1
-        elif row.status in ("failed", "timed_out"):
-            bucket[4] += 1
+    for run_id, item_status, n in rows:
+        bucket = counts.setdefault(run_id, [0, 0, 0, 0, 0])
+        count = int(n)
+        bucket[0] += count
+        if item_status == "pending":
+            bucket[1] += count
+        elif item_status == "running":
+            bucket[2] += count
+        elif item_status == "succeeded":
+            bucket[3] += count
+        elif item_status in ("failed", "timed_out"):
+            bucket[4] += count
     return {run_id: tuple(bucket) for run_id, bucket in counts.items()}
 
 

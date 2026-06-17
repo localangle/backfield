@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import (
@@ -14,6 +15,7 @@ from backfield_db import (
     SubstrateCustomRecord,
 )
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 
@@ -21,6 +23,27 @@ class PublicArticleProcessingEntryOut(BaseModel):
     run_id: str
     processed_item_id: int | None = None
     domains: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _ProcessedItemRef:
+    id: int
+    run_id: str
+    result_json: str | None
+
+
+_ARTICLE_REF_SQL = text(
+    """
+    (
+        (agate_processed_item.result_json::jsonb #>> '{stylebook_output,article_id}') = :aid
+        OR (agate_processed_item.result_json::jsonb #>> '{geocode_agent,article_id}') = :aid
+        OR (agate_processed_item.result_json::jsonb #>> '{place_extract,article_id}') = :aid
+        OR (agate_processed_item.input_json::jsonb ->> 'input_article_id') = :aid
+        OR (agate_processed_item.input_json::jsonb ->> 'article_id') = :aid
+        OR (agate_processed_item.input_json::jsonb ->> 'substrate_article_id') = :aid
+    )
+    """
+)
 
 
 def _parse_input_article_id(input_obj: dict[str, Any]) -> int | None:
@@ -92,13 +115,13 @@ def _domains_from_stylebook_output(stylebook_output: dict[str, Any]) -> list[str
 def _domains_for_processing_entry(
     *,
     run_id: str,
-    processed_item: AgateProcessedItem | None,
+    result_json: str | None,
     meta_run_ids: set[str],
     custom_run_ids: set[str],
 ) -> list[str]:
-    if processed_item and processed_item.result_json:
+    if result_json:
         try:
-            result_obj = json.loads(processed_item.result_json)
+            result_obj = json.loads(result_json)
         except json.JSONDecodeError:
             result_obj = None
         if isinstance(result_obj, dict):
@@ -119,13 +142,13 @@ def _make_processing_entry(
     *,
     run_id: str,
     processed_item_id: int | None,
-    processed_item: AgateProcessedItem | None,
+    result_json: str | None,
     meta_run_ids: set[str],
     custom_run_ids: set[str],
 ) -> PublicArticleProcessingEntryOut:
     domains = _domains_for_processing_entry(
         run_id=run_id,
-        processed_item=processed_item,
+        result_json=result_json,
         meta_run_ids=meta_run_ids,
         custom_run_ids=custom_run_ids,
     )
@@ -136,28 +159,74 @@ def _make_processing_entry(
     )
 
 
-def _processed_item_references_article(
-    item: AgateProcessedItem,
+def _references_article_from_json(
+    result_json: str | None,
+    input_json: str | None,
     *,
     article_id: int,
 ) -> bool:
-    if item.result_json:
+    if result_json:
         try:
-            result_obj = json.loads(item.result_json)
+            result_obj = json.loads(result_json)
         except json.JSONDecodeError:
             result_obj = None
         if isinstance(result_obj, dict):
             persisted_id = _parse_persisted_article_id_from_output(result_obj)
             if persisted_id == article_id:
                 return True
-    if item.input_json:
+    if input_json:
         try:
-            input_obj = json.loads(item.input_json)
+            input_obj = json.loads(input_json)
         except json.JSONDecodeError:
             input_obj = None
         if isinstance(input_obj, dict) and _parse_input_article_id(input_obj) == article_id:
             return True
     return False
+
+
+def _project_processed_item_json_stmt(project_id: int):
+    return (
+        select(
+            AgateProcessedItem.id,
+            AgateProcessedItem.run_id,
+            AgateProcessedItem.result_json,
+            AgateProcessedItem.input_json,
+        )
+        .join(AgateRun, AgateProcessedItem.run_id == AgateRun.id)
+        .join(AgateGraph, AgateRun.graph_id == AgateGraph.id)
+        .where(AgateGraph.project_id == project_id)
+    )
+
+
+def _fetch_processed_items_referencing_article(
+    session: Session,
+    *,
+    project_id: int,
+    article_id: int,
+) -> list[_ProcessedItemRef]:
+    """Find processed items for this article without loading the whole project batch."""
+    aid = str(article_id)
+    stmt = _project_processed_item_json_stmt(project_id)
+    bind = session.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        rows = session.exec(stmt.where(_ARTICLE_REF_SQL.bindparams(aid=aid))).all()
+        return [
+            _ProcessedItemRef(id=int(row_id), run_id=str(run_id), result_json=result_json)
+            for row_id, run_id, result_json, _input_json in rows
+            if row_id is not None and run_id
+        ]
+
+    rows = session.exec(stmt).all()
+    out: list[_ProcessedItemRef] = []
+    for row_id, run_id, result_json, input_json in rows:
+        if row_id is None or not run_id:
+            continue
+        if not _references_article_from_json(result_json, input_json, article_id=article_id):
+            continue
+        out.append(
+            _ProcessedItemRef(id=int(row_id), run_id=str(run_id), result_json=result_json)
+        )
+    return out
 
 
 def list_public_article_processing(
@@ -214,26 +283,20 @@ def list_public_article_processing(
             run_ids.add(run_key)
 
     entries: dict[tuple[str, int | None], PublicArticleProcessingEntryOut] = {}
-    processed_items_by_id: dict[int, AgateProcessedItem] = {}
+    processed_items_by_id: dict[int, _ProcessedItemRef] = {}
 
-    project_items = session.exec(
-        select(AgateProcessedItem)
-        .join(AgateRun, AgateProcessedItem.run_id == AgateRun.id)
-        .join(AgateGraph, AgateRun.graph_id == AgateGraph.id)
-        .where(AgateGraph.project_id == project_id)
-    ).all()
-    for item in project_items:
-        if item.id is None or not item.run_id:
-            continue
-        if not _processed_item_references_article(item, article_id=article_id):
-            continue
+    for item in _fetch_processed_items_referencing_article(
+        session,
+        project_id=project_id,
+        article_id=article_id,
+    ):
         run_key = str(item.run_id)
         item_id = int(item.id)
         processed_items_by_id[item_id] = item
         entries[(run_key, item_id)] = _make_processing_entry(
             run_id=run_key,
             processed_item_id=item_id,
-            processed_item=item,
+            result_json=item.result_json,
             meta_run_ids=meta_run_ids,
             custom_run_ids=custom_run_ids,
         )
@@ -245,7 +308,7 @@ def list_public_article_processing(
         entries[(run_key, item_id)] = _make_processing_entry(
             run_id=run_key,
             processed_item_id=item_id,
-            processed_item=processed_item,
+            result_json=processed_item.result_json if processed_item else None,
             meta_run_ids=meta_run_ids,
             custom_run_ids=custom_run_ids,
         )
@@ -255,7 +318,7 @@ def list_public_article_processing(
             entries[(run_id, None)] = _make_processing_entry(
                 run_id=run_id,
                 processed_item_id=None,
-                processed_item=None,
+                result_json=None,
                 meta_run_ids=meta_run_ids,
                 custom_run_ids=custom_run_ids,
             )

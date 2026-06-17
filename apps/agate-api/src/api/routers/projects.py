@@ -31,7 +31,7 @@ from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -314,18 +314,19 @@ def _median_terminal_processed_item_duration_ms(
     """
     if not succeeded_run_ids:
         return None
-    rows = list(
-        session.exec(
-            select(AgateProcessedItem).where(
-                AgateProcessedItem.run_id.in_(succeeded_run_ids),
-            )
-        ).all()
-    )
+    rows = session.exec(
+        select(
+            AgateProcessedItem.started_at,
+            AgateProcessedItem.created_at,
+            AgateProcessedItem.updated_at,
+        ).where(
+            AgateProcessedItem.run_id.in_(succeeded_run_ids),
+            col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
+        )
+    ).all()
     durs: list[float] = []
-    for row in rows:
-        if row.status not in _ITEM_TERMINAL_STATUSES:
-            continue
-        ms = (row.updated_at - (row.started_at or row.created_at)).total_seconds() * 1000
+    for started_at, created_at, updated_at in rows:
+        ms = (updated_at - (started_at or created_at)).total_seconds() * 1000
         if ms < 0:
             ms = 0.0
         durs.append(ms)
