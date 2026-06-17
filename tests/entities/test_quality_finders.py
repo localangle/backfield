@@ -314,3 +314,59 @@ def test_exact_duplicate_organization_clustering_sqlite() -> None:
         clusters = duplicate_organization_cluster_ids(session, stylebook_id=stylebook_id)
         assert len(clusters) == 1
         assert len(clusters[0]) == 2
+
+
+def test_fuzzy_duplicate_organization_clustering_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        from backfield_db import StylebookOrganizationCanonical
+
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="city-finance-a",
+                label="City of Chicago Finance Department",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="city-finance-b",
+                label="City of Chicago Department of Finance",
+            )
+        )
+        session.commit()
+
+        clusters = duplicate_organization_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert len(clusters[0]) == 2
+
+
+def test_exact_duplicate_organization_apostrophe_normalization_sqlite() -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, _org_id = _make_stylebook(session)
+        from backfield_db import StylebookOrganizationCanonical
+
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="wendys-a",
+                label="Wendy\u2019s",
+            )
+        )
+        session.add(
+            StylebookOrganizationCanonical(
+                stylebook_id=stylebook_id,
+                slug="wendys-b",
+                label="Wendy's",
+            )
+        )
+        session.commit()
+
+        clusters = duplicate_organization_cluster_ids(session, stylebook_id=stylebook_id)
+        assert len(clusters) == 1
+        assert len(clusters[0]) == 2

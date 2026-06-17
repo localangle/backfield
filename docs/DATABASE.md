@@ -179,6 +179,8 @@ Revision **`053_sb_loc_canon_head_label`** (Postgres only) adds composite index 
 
 Revision **`054_sb_person_org_dup_idx`** (Postgres only) adds GIN trigram indexes on **`lower(label)`** for **`stylebook_person_canonical`** and **`stylebook_organization_canonical`**, plus blocking indexes **`ix_stylebook_person_canonical_stylebook_first_token`** (first name token) and **`ix_stylebook_organization_canonical_stylebook_head_label`** (text before the first comma) for Cleanup near-duplicate detection. Non-Postgres upgrades skip these indexes.
 
+Revision **`055_sb_org_first_token_idx`** (Postgres only) adds **`ix_stylebook_organization_canonical_stylebook_first_token`** on **`(stylebook_id, lower(trim(split_part(label, ' ', 1))))`** so organization duplicate cleanup can block near-match pairs by shared first token (most organization names have no comma). Non-Postgres upgrades skip the index.
+
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 
 Revision **`026_org_integration_secret`** adds **`backfield_organization_integration_secret`** for encrypted organization-level integration credentials (AI provider keys first).

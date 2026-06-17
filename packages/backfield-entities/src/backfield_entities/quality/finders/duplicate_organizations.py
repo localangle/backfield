@@ -15,6 +15,8 @@ from backfield_entities.quality.finders._duplicate_labels import (
 )
 
 _SIMILAR_FALLBACK = "Similar organizations"
+# Most organization names have no comma; block on the first token (e.g. "City …").
+_ORG_NEAR_BLOCK = "first_token"
 
 
 def duplicate_organization_pair_edges(
@@ -28,6 +30,7 @@ def duplicate_organization_pair_edges(
         model=StylebookOrganizationCanonical,
         stylebook_id=stylebook_id,
         full_threshold=full_threshold,
+        near_block=_ORG_NEAR_BLOCK,
     )
 
 
@@ -42,6 +45,7 @@ def duplicate_organization_cluster_ids(
         model=StylebookOrganizationCanonical,
         stylebook_id=stylebook_id,
         full_threshold=full_threshold,
+        near_block=_ORG_NEAR_BLOCK,
     )
 
 
@@ -56,6 +60,7 @@ def count_duplicate_organization_clusters(
         model=StylebookOrganizationCanonical,
         stylebook_id=stylebook_id,
         full_threshold=full_threshold,
+        near_block=_ORG_NEAR_BLOCK,
     )
 
 
@@ -74,6 +79,7 @@ def paginate_duplicate_organization_clusters(
         limit=limit,
         offset=offset,
         full_threshold=full_threshold,
+        near_block=_ORG_NEAR_BLOCK,
     )
 
 

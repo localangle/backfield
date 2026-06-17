@@ -15,6 +15,7 @@ DEFAULT_FULL_SIMILARITY_THRESHOLD: float = 0.72
 _MIN_LABEL_LEN: int = 4
 _MIN_BLOCK_LEN: int = 3
 _MIN_FIRST_TOKEN_LEN: int = 2
+_LABEL_APOSTROPHE_CHARS = "\u2018\u2019\u02bc\u0060"
 
 NearDuplicateBlock = Literal["comma_head", "first_token", "none"]
 
@@ -22,7 +23,18 @@ CanonicalModel = TypeVar("CanonicalModel", bound=SQLModel)
 
 
 def normalize_label(label: str) -> str:
-    return label.strip().lower()
+    text = label.strip().lower()
+    for ch in _LABEL_APOSTROPHE_CHARS:
+        text = text.replace(ch, "'")
+    return text
+
+
+def _normalized_label_sql(expr: str) -> str:
+    return (
+        f"lower(trim(translate({expr}, "
+        f"E'\\u2018\\u2019\\u02bc\\u0060', "
+        f"E'''''')))"
+    )
 
 
 def block_key_for_label(label: str, *, near_block: NearDuplicateBlock) -> str:
@@ -83,9 +95,9 @@ def _postgres_exact_duplicate_clusters(
             FROM {table}
             WHERE stylebook_id = :sid
               AND length(trim(label)) > 0
-            GROUP BY lower(trim(label))
+            GROUP BY {_normalized_label_sql("label")}
             HAVING count(*) > 1
-            ORDER BY count(*) DESC, lower(trim(label))
+            ORDER BY count(*) DESC, {_normalized_label_sql("label")}
             """
         ),
         {"sid": stylebook_id},
