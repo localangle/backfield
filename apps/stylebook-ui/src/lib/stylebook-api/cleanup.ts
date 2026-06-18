@@ -317,3 +317,130 @@ export async function dismissCleanupIssue(
     },
   )
 }
+
+export interface CleanupAiModel {
+  id: string
+  name: string
+  provider_model_id: string
+}
+
+export interface CleanupAiModelsResponse {
+  models: CleanupAiModel[]
+}
+
+export interface CleanupAiReview {
+  id: string
+  stylebook_id: number
+  check_id: string
+  status: string
+  provider_model_id: string
+  ai_model_config_id?: string | null
+  cluster_count: number
+  processed_cluster_count: number
+  proposal_count: number
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type CleanupAiProposalAction = "merge" | "keep_separate"
+
+export interface CleanupAiProposal {
+  id: string
+  review_id: string
+  check_id: string
+  cluster_id: string
+  action: CleanupAiProposalAction
+  target_canonical_id?: string | null
+  member_ids: string[]
+  confidence: number
+  rationale?: string | null
+  status: string
+}
+
+export interface CleanupAiProposalsResponse {
+  proposals: CleanupAiProposal[]
+}
+
+export interface CleanupAiProposalActionResponse {
+  id: string
+  status: string
+  message: string
+}
+
+function cleanupAiReviewPath(stylebookSlug: string, reviewId?: string): string {
+  const base = `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/ai-review`
+  return reviewId ? `${base}/${encodeURIComponent(reviewId)}` : base
+}
+
+export async function listCleanupAiModels(stylebookSlug: string): Promise<CleanupAiModelsResponse> {
+  return stylebookJsonFetch<CleanupAiModelsResponse>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/cleanup/ai-models`,
+  )
+}
+
+export async function startCleanupAiReview(params: {
+  stylebookSlug: string
+  checkId: string
+  providerModelId: string
+  aiModelConfigId?: string | null
+}): Promise<CleanupAiReview> {
+  return stylebookJsonFetch<CleanupAiReview>(cleanupAiReviewPath(params.stylebookSlug), {
+    method: "POST",
+    body: JSON.stringify({
+      check_id: params.checkId,
+      provider_model_id: params.providerModelId,
+      ai_model_config_id: params.aiModelConfigId ?? null,
+    }),
+  })
+}
+
+export async function getCleanupAiReview(
+  stylebookSlug: string,
+  reviewId: string,
+): Promise<CleanupAiReview> {
+  return stylebookJsonFetch<CleanupAiReview>(cleanupAiReviewPath(stylebookSlug, reviewId))
+}
+
+export async function getLatestCleanupAiReview(
+  stylebookSlug: string,
+  checkId: string,
+): Promise<CleanupAiReview | null> {
+  const q = new URLSearchParams({ check_id: checkId })
+  return stylebookJsonFetch<CleanupAiReview | null>(
+    `${cleanupAiReviewPath(stylebookSlug)}/latest?${q.toString()}`,
+  )
+}
+
+export async function listCleanupAiProposals(params: {
+  stylebookSlug: string
+  reviewId: string
+  status?: string
+}): Promise<CleanupAiProposalsResponse> {
+  const q = new URLSearchParams()
+  if (params.status) q.set("status", params.status)
+  const suffix = q.toString() ? `?${q.toString()}` : ""
+  return stylebookJsonFetch<CleanupAiProposalsResponse>(
+    `${cleanupAiReviewPath(params.stylebookSlug, params.reviewId)}/proposals${suffix}`,
+  )
+}
+
+export async function acceptCleanupAiProposal(params: {
+  stylebookSlug: string
+  proposalId: string
+}): Promise<CleanupAiProposalActionResponse> {
+  return stylebookJsonFetch<CleanupAiProposalActionResponse>(
+    `/v1/stylebooks/${encodeURIComponent(params.stylebookSlug)}/cleanup/ai-review/proposals/${encodeURIComponent(params.proposalId)}/accept`,
+    { method: "POST" },
+  )
+}
+
+export async function rejectCleanupAiProposal(params: {
+  stylebookSlug: string
+  proposalId: string
+}): Promise<CleanupAiProposalActionResponse> {
+  return stylebookJsonFetch<CleanupAiProposalActionResponse>(
+    `/v1/stylebooks/${encodeURIComponent(params.stylebookSlug)}/cleanup/ai-review/proposals/${encodeURIComponent(params.proposalId)}/reject`,
+    { method: "POST" },
+  )
+}

@@ -7,10 +7,13 @@ from typing import Any
 
 import pytest
 from backfield_db import (
+    BackfieldAiModelConfig,
     BackfieldOrganization,
     BackfieldProject,
     BackfieldUser,
     Stylebook,
+    StylebookCleanupAiProposal,
+    StylebookCleanupAiReview,
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
@@ -45,6 +48,10 @@ def cleanup_client(
     monkeypatch.setenv("SERVICE_API_TOKEN", "backfield-dev")
     monkeypatch.setattr(
         "stylebook_api.semantic_reindex.celery_app.send_task",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "stylebook_api.routers.stylebook_cleanup_ai_review.celery_app.send_task",
         lambda *_args, **_kwargs: None,
     )
     import importlib
@@ -560,3 +567,102 @@ def test_dismiss_missing_geometry_location(cleanup_client: tuple[TestClient, Eng
     assert after.json()["total"] == before_total - 1
     labels = {item["label"] for item in after.json()["canonicals"]}
     assert "No map pin here" not in labels
+
+
+def test_cleanup_ai_review_start_and_proposal_accept(
+    cleanup_client: tuple[TestClient, Engine],
+) -> None:
+    client, engine = cleanup_client
+    person_b_id = ""
+    with Session(engine) as session:
+        org = session.exec(select(BackfieldOrganization)).one()
+        sb = session.exec(select(Stylebook)).one()
+        session.add(
+            BackfieldAiModelConfig(
+                organization_id=int(org.id),
+                name="Test GPT",
+                provider="openai",
+                provider_model_id="gpt-5-nano",
+                model_kind="chat",
+                status="active",
+                capabilities_json=["text", "json"],
+                litellm_model="gpt-5-nano",
+            )
+        )
+        people = session.exec(
+            select(StylebookPersonCanonical).where(
+                StylebookPersonCanonical.slug.in_(["person-dupe-a", "person-dupe-b"])
+            )
+        ).all()
+        session.commit()
+        person_a = next(row for row in people if row.slug == "person-dupe-a")
+        person_b = next(row for row in people if row.slug == "person-dupe-b")
+        person_a_id = str(person_a.id)
+        person_b_id = str(person_b.id)
+        review = StylebookCleanupAiReview(
+            id="review-1",
+            stylebook_id=int(sb.id),
+            check_id="duplicate-people",
+            status="succeeded",
+            provider_model_id="gpt-5-nano",
+            cluster_count=1,
+            processed_cluster_count=1,
+            proposal_count=1,
+        )
+        session.add(review)
+        session.add(
+            StylebookCleanupAiProposal(
+                id="proposal-merge-1",
+                review_id="review-1",
+                stylebook_id=int(sb.id),
+                check_id="duplicate-people",
+                cluster_id=f"{person_a_id}:2",
+                action="merge",
+                target_canonical_id=person_a_id,
+                member_ids_json=[person_a_id, person_b_id],
+                confidence=0.95,
+                rationale="Same person",
+                status="pending",
+            )
+        )
+        session.commit()
+
+    models = client.get("/v1/stylebooks/default/cleanup/ai-models")
+    assert models.status_code == 200
+    assert len(models.json()["models"]) == 1
+
+    start = client.post(
+        "/v1/stylebooks/default/cleanup/ai-review",
+        json={
+            "check_id": "duplicate-people",
+            "provider_model_id": "gpt-5-nano",
+            "ai_model_config_id": models.json()["models"][0]["id"],
+        },
+    )
+    assert start.status_code == 200
+    assert start.json()["status"] == "queued"
+
+    latest = client.get(
+        "/v1/stylebooks/default/cleanup/ai-review/latest?check_id=duplicate-people"
+    )
+    assert latest.status_code == 200
+    assert latest.json() is not None
+
+    proposals = client.get("/v1/stylebooks/default/cleanup/ai-review/review-1/proposals")
+    assert proposals.status_code == 200
+    assert len(proposals.json()["proposals"]) == 1
+
+    accept = client.post(
+        "/v1/stylebooks/default/cleanup/ai-review/proposals/proposal-merge-1/accept"
+    )
+    assert accept.status_code == 200
+    assert accept.json()["status"] == "applied"
+
+    with Session(engine) as session:
+        remaining = session.get(StylebookPersonCanonical, person_b_id)
+        assert remaining is None
+
+    reject = client.post(
+        "/v1/stylebooks/default/cleanup/ai-review/proposals/proposal-merge-1/reject"
+    )
+    assert reject.status_code == 409

@@ -90,6 +90,20 @@ export {
   type MergeCleanupLocationCanonicalResponse,
   type CleanupClusterCanonical,
   type DuplicateCluster,
+  type CleanupAiModel,
+  type CleanupAiModelsResponse,
+  type CleanupAiReview,
+  type CleanupAiProposal,
+  type CleanupAiProposalAction,
+  type CleanupAiProposalsResponse,
+  type CleanupAiProposalActionResponse,
+  listCleanupAiModels,
+  startCleanupAiReview,
+  getCleanupAiReview,
+  getLatestCleanupAiReview,
+  listCleanupAiProposals,
+  acceptCleanupAiProposal,
+  rejectCleanupAiProposal,
 } from "@/lib/stylebook-api/cleanup"
 
 export {

@@ -64,6 +64,31 @@ def filter_dismissed_pairs(
     return out
 
 
+def dismiss_pair(
+    session: Session,
+    *,
+    stylebook_id: int,
+    check_id: str,
+    left_id: str,
+    right_id: str,
+    created_by_user_id: int | None = None,
+) -> bool:
+    """Record dismissal for one canonical pair. Returns True when a new row was inserted."""
+    key = pair_key_for_ids(left_id, right_id)
+    existing = load_dismissed_keys(session, stylebook_id=stylebook_id, check_id=check_id)
+    if key in existing:
+        return False
+    session.add(
+        StylebookCleanupDismissal(
+            stylebook_id=stylebook_id,
+            check_id=check_id,
+            pair_key=key,
+            created_by_user_id=created_by_user_id,
+        )
+    )
+    return True
+
+
 def dismiss_cluster_members(
     session: Session,
     *,

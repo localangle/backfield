@@ -1,8 +1,9 @@
 import { useState } from "react"
-import { GripVertical, Trash2 } from "lucide-react"
+import { GripVertical, Sparkles, Trash2 } from "lucide-react"
 import { Link } from "react-router-dom"
-import type { CleanupClusterCanonical } from "@/lib/api"
+import type { CleanupAiProposal, CleanupClusterCanonical } from "@/lib/api"
 import type { CleanupEntityType } from "@/lib/cleanupChecks"
+import { proposalsForCluster } from "@/lib/cleanupAiReview"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
@@ -13,9 +14,12 @@ type DuplicateClusterListProps = {
   detailHref: (canonicalId: string) => string
   linkedRecordLabel: string
   canEdit?: boolean
+  aiProposals?: CleanupAiProposal[]
   onMerge?: (sourceId: string, targetId: string) => void | Promise<void>
   onDeleteEmpty?: (canonicalId: string) => void | Promise<void>
   onDismissCluster?: (clusterId: string, memberIds: string[]) => void | Promise<void>
+  onAcceptAiProposal?: (proposal: CleanupAiProposal) => void | Promise<void>
+  onRejectAiProposal?: (proposal: CleanupAiProposal) => void | Promise<void>
 }
 
 function formatTypeLabel(
@@ -76,15 +80,38 @@ function emptyClusterMessage(entityType: CleanupEntityType): string {
   }
 }
 
+function formatProposalSummary(
+  proposal: CleanupAiProposal,
+  canonicals: CleanupClusterCanonical[],
+): string {
+  const labelById = new Map(canonicals.map((canonical) => [canonical.id, canonical.label]))
+  if (proposal.action === "merge" && proposal.target_canonical_id) {
+    const keeper = labelById.get(proposal.target_canonical_id) ?? "keeper record"
+    const sources = proposal.member_ids
+      .filter((memberId) => memberId !== proposal.target_canonical_id)
+      .map((memberId) => labelById.get(memberId) ?? memberId)
+    if (sources.length === 0) {
+      return `Merge into "${keeper}"`
+    }
+    return `Merge ${sources.map((label) => `"${label}"`).join(", ")} into "${keeper}"`
+  }
+  const left = labelById.get(proposal.member_ids[0] ?? "") ?? proposal.member_ids[0]
+  const right = labelById.get(proposal.member_ids[1] ?? "") ?? proposal.member_ids[1]
+  return `Keep "${left}" and "${right}" separate`
+}
+
 export function DuplicateClusterList({
   clusters,
   entityType,
   detailHref,
   linkedRecordLabel,
   canEdit = false,
+  aiProposals = [],
   onMerge,
   onDeleteEmpty,
   onDismissCluster,
+  onAcceptAiProposal,
+  onRejectAiProposal,
 }: DuplicateClusterListProps) {
   const [dragSourceId, setDragSourceId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
@@ -104,7 +131,9 @@ export function DuplicateClusterList({
           trash icon.
         </p>
       ) : null}
-      {clusters.map((cluster) => (
+      {clusters.map((cluster) => {
+        const clusterProposals = proposalsForCluster(aiProposals, cluster)
+        return (
         <Card key={cluster.cluster_id}>
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-3">
@@ -140,6 +169,48 @@ export function DuplicateClusterList({
                 </Button>
               ) : null}
             </div>
+            {clusterProposals.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {clusterProposals.map((proposal) => (
+                  <div
+                    key={proposal.id}
+                    className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-start gap-2">
+                      <Sparkles className="h-4 w-4 mt-0.5 shrink-0 text-primary" aria-hidden />
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <p className="font-medium">
+                          AI suggestion · {Math.round(proposal.confidence * 100)}% confidence
+                        </p>
+                        <p>{formatProposalSummary(proposal, cluster.canonicals)}</p>
+                        {proposal.rationale ? (
+                          <p className="text-muted-foreground">{proposal.rationale}</p>
+                        ) : null}
+                        {canEdit && onAcceptAiProposal && onRejectAiProposal ? (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => void onAcceptAiProposal(proposal)}
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void onRejectAiProposal(proposal)}
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-2">
             {cluster.canonicals.map((canonical) => {
@@ -213,7 +284,8 @@ export function DuplicateClusterList({
             })}
           </CardContent>
         </Card>
-      ))}
+        )
+      })}
     </div>
   )
 }

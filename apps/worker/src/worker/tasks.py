@@ -40,7 +40,9 @@ from backfield_db import (
     AgateProcessedItem,
     AgateRun,
     BackfieldProject,
+    Stylebook,
     StylebookBundleJob,
+    StylebookCleanupAiReview,
 )
 from backfield_db.session import get_engine
 from backfield_entities.catalog.full_bundle import export_stylebook_bundle, import_stylebook_bundle
@@ -48,6 +50,20 @@ from backfield_entities.ingest.semantic_indexing.reindex_contract import Semanti
 from backfield_entities.processed_item_article_link import (
     resolve_substrate_article_id_for_processed_item,
 )
+from backfield_entities.quality.finders._duplicate_labels import DEFAULT_FULL_SIMILARITY_THRESHOLD
+from backfield_entities.quality.finders.duplicate_locations import (
+    DEFAULT_FULL_SIMILARITY_THRESHOLD as LOCATION_FULL_THRESHOLD,
+)
+from backfield_entities.quality.finders.duplicate_locations import (
+    DEFAULT_HEAD_SIMILARITY_THRESHOLD as LOCATION_HEAD_THRESHOLD,
+)
+from backfield_entities.quality.finders.duplicate_locations import (
+    duplicate_location_cluster_ids,
+)
+from backfield_entities.quality.finders.duplicate_organizations import (
+    duplicate_organization_cluster_ids,
+)
+from backfield_entities.quality.finders.duplicate_people import duplicate_person_cluster_ids
 from celery import Celery, chord, group
 from celery.exceptions import Reject
 from sqlalchemy import delete
@@ -56,6 +72,16 @@ from sqlmodel import Session, select
 from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
 from worker.semantic_indexing.reindex import run_semantic_reindex_for_scope
+from worker.substrate.canonical.parallel_llm import (
+    canonical_adjudication_max_concurrent,
+    commit_session_before_session_free_llm,
+    run_callables_parallel,
+)
+from worker.substrate.cleanup.ai_review import (
+    load_cluster_members,
+    proposal_draft_to_row,
+    propose_for_cluster,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1208,3 +1234,150 @@ def reindex_semantic_documents(
     )
     with Session(engine) as session:
         return run_semantic_reindex_for_scope(session, scope)
+
+
+def _fail_cleanup_ai_review(engine: Any, review_id: str, message: str) -> None:
+    with Session(engine) as session:
+        review = session.get(StylebookCleanupAiReview, review_id)
+        if review is None:
+            return
+        review.status = "failed"
+        review.error_message = message[:10000]
+        review.updated_at = datetime.now(UTC)
+        session.add(review)
+        session.commit()
+
+
+def _duplicate_cluster_ids_for_check(
+    session: Session,
+    *,
+    check_id: str,
+    stylebook_id: int,
+) -> list[list[str]]:
+    if check_id == "duplicate-people":
+        return duplicate_person_cluster_ids(
+            session,
+            stylebook_id=stylebook_id,
+            full_threshold=DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        )
+    if check_id == "duplicate-organizations":
+        return duplicate_organization_cluster_ids(
+            session,
+            stylebook_id=stylebook_id,
+            full_threshold=DEFAULT_FULL_SIMILARITY_THRESHOLD,
+        )
+    if check_id == "duplicate-locations":
+        return duplicate_location_cluster_ids(
+            session,
+            stylebook_id=stylebook_id,
+            full_threshold=LOCATION_FULL_THRESHOLD,
+            head_threshold=LOCATION_HEAD_THRESHOLD,
+        )
+    raise ValueError(f"Unsupported cleanup AI review check_id: {check_id}")
+
+
+@celery_app.task(name="worker.tasks.execute_cleanup_ai_review")
+def execute_cleanup_ai_review(review_id: str) -> None:
+    """Run LLM partition proposals for all duplicate clusters in a cleanup check."""
+    engine = get_engine()
+    with Session(engine) as session:
+        review = session.get(StylebookCleanupAiReview, review_id)
+        if review is None:
+            return
+        if review.status != "queued":
+            return
+        stylebook = session.get(Stylebook, int(review.stylebook_id))
+        if stylebook is None:
+            _fail_cleanup_ai_review(engine, review_id, "Stylebook not found")
+            return
+        check_id = str(review.check_id)
+        stylebook_id = int(review.stylebook_id)
+        organization_id = int(stylebook.organization_id)
+        model = (review.provider_model_id or "").strip() or "gpt-5-nano"
+        model_config_id = review.ai_model_config_id
+        try:
+            cluster_id_lists = _duplicate_cluster_ids_for_check(
+                session,
+                check_id=check_id,
+                stylebook_id=stylebook_id,
+            )
+        except ValueError as exc:
+            _fail_cleanup_ai_review(engine, review_id, str(exc))
+            return
+        review.status = "running"
+        review.cluster_count = len(cluster_id_lists)
+        review.processed_cluster_count = 0
+        review.proposal_count = 0
+        review.updated_at = datetime.now(UTC)
+        session.add(review)
+        session.commit()
+
+    cluster_payloads: list[tuple[list[str], list]] = []
+    with Session(engine) as session:
+        review = session.get(StylebookCleanupAiReview, review_id)
+        if review is None:
+            return
+        stylebook = session.get(Stylebook, int(review.stylebook_id))
+        if stylebook is None:
+            _fail_cleanup_ai_review(engine, review_id, "Stylebook not found")
+            return
+        check_id = str(review.check_id)
+        stylebook_id = int(review.stylebook_id)
+        organization_id = int(stylebook.organization_id)
+        model = (review.provider_model_id or "").strip() or "gpt-5-nano"
+        model_config_id = review.ai_model_config_id
+        for member_ids in cluster_id_lists:
+            members = load_cluster_members(
+                session,
+                check_id=check_id,
+                stylebook_id=stylebook_id,
+                organization_id=organization_id,
+                member_ids=member_ids,
+            )
+            if len(members) >= 2:
+                cluster_payloads.append((member_ids, members))
+        commit_session_before_session_free_llm(session)
+
+    def _run_one(members: list) -> list:
+        return propose_for_cluster(
+            check_id=check_id,
+            members=members,
+            model=model,
+            model_config_id=model_config_id,
+        )
+
+    proposal_batches = run_callables_parallel(
+        [lambda members=members: _run_one(members) for _member_ids, members in cluster_payloads],
+        max_workers=canonical_adjudication_max_concurrent(),
+    )
+
+    try:
+        with Session(engine) as session:
+            review = session.get(StylebookCleanupAiReview, review_id)
+            if review is None:
+                return
+            stylebook_id = int(review.stylebook_id)
+            check_id = str(review.check_id)
+            total_proposals = 0
+            for index, drafts in enumerate(proposal_batches):
+                for draft in drafts:
+                    session.add(
+                        proposal_draft_to_row(
+                            review_id=review_id,
+                            stylebook_id=stylebook_id,
+                            check_id=check_id,
+                            draft=draft,
+                        )
+                    )
+                    total_proposals += 1
+                review.processed_cluster_count = index + 1
+                review.proposal_count = total_proposals
+                review.updated_at = datetime.now(UTC)
+                session.add(review)
+            review.status = "succeeded"
+            review.updated_at = datetime.now(UTC)
+            session.add(review)
+            session.commit()
+    except Exception as exc:
+        logger.exception("execute_cleanup_ai_review failed")
+        _fail_cleanup_ai_review(engine, review_id, str(exc))

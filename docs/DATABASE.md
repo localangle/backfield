@@ -183,6 +183,8 @@ Revision **`055_sb_org_first_token_idx`** (Postgres only) adds **`ix_stylebook_o
 
 Revision **`056_stylebook_cleanup_dismissal`** adds **`stylebook_cleanup_dismissal`** — stylebook-scoped cleanup dismissals keyed by **`(stylebook_id, check_id, pair_key)`**. Duplicate checks store sorted canonical pair keys (`uuid_a|uuid_b`); list checks store a single canonical id. Used by Stylebook Cleanup “Keep separate” / “Mark reviewed” actions.
 
+Revision **`057_stylebook_cleanup_ai_review`** adds **`stylebook_cleanup_ai_review`** (background AI review runs: model selection, status/progress counts) and **`stylebook_cleanup_ai_proposal`** (persisted merge / keep-separate suggestions with confidence, rationale, and resolution status). Proposals are created by the worker task **`execute_cleanup_ai_review`**; accept applies existing merge/dismiss helpers.
+
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 
 Revision **`026_org_integration_secret`** adds **`backfield_organization_integration_secret`** for encrypted organization-level integration credentials (AI provider keys first).

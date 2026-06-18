@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
+import { CleanupAiReviewDialog } from "@/components/CleanupAiReviewDialog"
 import { DuplicateClusterList } from "@/components/DuplicateClusterList"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import Pagination from "@/components/Pagination"
 import { Button } from "@/components/ui/button"
 import { useAppMessage } from "@/components/AppMessageProvider"
-import { Loader2 } from "lucide-react"
+import { Loader2, Sparkles } from "lucide-react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
+import { CLEANUP_AI_HIGH_CONFIDENCE_THRESHOLD } from "@/lib/cleanupAiReview"
+import { useCleanupAiReviewPolling } from "@/hooks/useCleanupAiReviewPolling"
 import {
   cleanupCheckConfigById,
   cleanupEntityDetailPath,
@@ -32,6 +35,9 @@ import {
   mergeCleanupLocationCanonical,
   mergeCleanupOrganizationCanonical,
   mergeCleanupPersonCanonical,
+  acceptCleanupAiProposal,
+  rejectCleanupAiProposal,
+  type CleanupAiProposal,
   type CleanupLocationIssue,
   type PaginatedDuplicateClustersResponse,
   type PaginatedCleanupLocationIssuesResponse,
@@ -103,6 +109,19 @@ export default function CleanupCheck() {
     useState<PaginatedCleanupLocationIssuesResponse | null>(null)
   const clusterStableIdByMemberRef = useRef<Map<string, string>>(new Map())
   const nextClusterStableIdRef = useRef(0)
+  const [aiDialogOpen, setAiDialogOpen] = useState(false)
+  const isClusterCheck = config?.kind === "cluster"
+
+  const {
+    review: aiReview,
+    proposals: aiProposals,
+    startTracking: startAiReviewTracking,
+    removeProposal: removeAiProposal,
+  } = useCleanupAiReviewPolling({
+    stylebookSlug,
+    checkId: config?.id ?? "",
+    enabled: Boolean(stylebookSlug && isClusterCheck),
+  })
 
   const entityType = config?.entityType ?? "location"
   const linkedRecordLabel = cleanupLinkedRecordLabel(entityType)
@@ -307,6 +326,131 @@ export default function CleanupCheck() {
     [stylebookSlug, config, listResults, showConfirm, showMessage, showError],
   )
 
+  const applyAcceptedMergeProposal = useCallback(
+    (proposal: CleanupAiProposal) => {
+      if (proposal.action !== "merge" || !proposal.target_canonical_id) return
+      setClusterResults((prev) => {
+        if (!prev) return prev
+        let next = prev
+        for (const memberId of proposal.member_ids) {
+          if (memberId === proposal.target_canonical_id) continue
+          next = applyMergeToClusterResults(next, memberId, proposal.target_canonical_id, 0)
+        }
+        return next
+      })
+    },
+    [],
+  )
+
+  const handleAcceptAiProposal = useCallback(
+    async (proposal: CleanupAiProposal) => {
+      if (!stylebookSlug) return
+      const summary =
+        proposal.action === "merge"
+          ? "Apply this merge suggestion?"
+          : "Mark this pair as not duplicates?"
+      const confirmed = await showConfirm(summary, {
+        title: "Accept AI suggestion?",
+        confirmLabel: "Accept",
+      })
+      if (!confirmed) return
+      try {
+        const result = await acceptCleanupAiProposal({
+          stylebookSlug,
+          proposalId: proposal.id,
+        })
+        if (result.status === "stale") {
+          showError(result.message)
+        } else {
+          showMessage(result.message)
+          if (proposal.action === "merge") {
+            applyAcceptedMergeProposal(proposal)
+          }
+        }
+        removeAiProposal(proposal.id)
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Failed to accept AI suggestion")
+      }
+    },
+    [
+      stylebookSlug,
+      showConfirm,
+      showMessage,
+      showError,
+      applyAcceptedMergeProposal,
+      removeAiProposal,
+    ],
+  )
+
+  const handleRejectAiProposal = useCallback(
+    async (proposal: CleanupAiProposal) => {
+      if (!stylebookSlug) return
+      try {
+        await rejectCleanupAiProposal({ stylebookSlug, proposalId: proposal.id })
+        removeAiProposal(proposal.id)
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "Failed to reject AI suggestion")
+      }
+    },
+    [stylebookSlug, showError, removeAiProposal],
+  )
+
+  const highConfidenceProposals = useMemo(
+    () =>
+      aiProposals.filter(
+        (proposal) => proposal.confidence >= CLEANUP_AI_HIGH_CONFIDENCE_THRESHOLD,
+      ),
+    [aiProposals],
+  )
+
+  const handleAcceptAllHighConfidence = useCallback(async () => {
+    if (!stylebookSlug || highConfidenceProposals.length === 0) return
+    const confirmed = await showConfirm(
+      `Accept ${highConfidenceProposals.length} high-confidence AI suggestion${highConfidenceProposals.length === 1 ? "" : "s"}?`,
+      {
+        title: "Accept all high-confidence suggestions?",
+        confirmLabel: "Accept all",
+      },
+    )
+    if (!confirmed) return
+    let accepted = 0
+    for (const proposal of highConfidenceProposals) {
+      try {
+        const result = await acceptCleanupAiProposal({
+          stylebookSlug,
+          proposalId: proposal.id,
+        })
+        if (result.status === "applied") {
+          accepted += 1
+          if (proposal.action === "merge") {
+            applyAcceptedMergeProposal(proposal)
+          }
+        }
+        removeAiProposal(proposal.id)
+      } catch {
+        // Continue with remaining proposals.
+      }
+    }
+    if (accepted > 0) {
+      showMessage(`Accepted ${accepted} AI suggestion${accepted === 1 ? "" : "s"}.`)
+    }
+  }, [
+    stylebookSlug,
+    highConfidenceProposals,
+    showConfirm,
+    showMessage,
+    applyAcceptedMergeProposal,
+    removeAiProposal,
+  ])
+
+  const handleReviewStarted = useCallback(
+    (reviewId: string) => {
+      void startAiReviewTracking(reviewId)
+      showMessage("AI review started. Suggestions will appear when it finishes.")
+    },
+    [startAiReviewTracking, showMessage],
+  )
+
   const pagination = useMemo(() => {
     if (clusterResults) {
       return {
@@ -360,6 +504,41 @@ export default function CleanupCheck() {
 
       <StylebookHomeTabs />
 
+      {canEdit && isClusterCheck ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => setAiDialogOpen(true)}>
+            <Sparkles className="h-4 w-4 mr-2" />
+            Review with AI
+          </Button>
+          {aiReview && (aiReview.status === "queued" || aiReview.status === "running") ? (
+            <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Reviewing clusters ({aiReview.processed_cluster_count}/{aiReview.cluster_count})…
+            </span>
+          ) : null}
+          {aiReview?.status === "failed" ? (
+            <span className="text-sm text-destructive">
+              AI review failed{aiReview.error_message ? `: ${aiReview.error_message}` : "."}
+            </span>
+          ) : null}
+          {highConfidenceProposals.length > 0 ? (
+            <Button type="button" size="sm" onClick={() => void handleAcceptAllHighConfidence()}>
+              Accept all high-confidence ({highConfidenceProposals.length})
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {canEdit && isClusterCheck ? (
+        <CleanupAiReviewDialog
+          open={aiDialogOpen}
+          onOpenChange={setAiDialogOpen}
+          stylebookSlug={stylebookSlug}
+          checkId={config.id}
+          onReviewStarted={handleReviewStarted}
+        />
+      ) : null}
+
       {loading ? (
         <div className="flex items-center gap-2 text-muted-foreground py-8">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -372,9 +551,12 @@ export default function CleanupCheck() {
           detailHref={detailHref}
           linkedRecordLabel={linkedRecordLabel}
           canEdit={canEdit}
+          aiProposals={aiProposals}
           onMerge={canEdit ? handleMerge : undefined}
           onDeleteEmpty={canEdit ? handleDeleteEmpty : undefined}
           onDismissCluster={canEdit ? handleDismissCluster : undefined}
+          onAcceptAiProposal={canEdit ? handleAcceptAiProposal : undefined}
+          onRejectAiProposal={canEdit ? handleRejectAiProposal : undefined}
         />
       ) : (
         <GeographyIssuesList

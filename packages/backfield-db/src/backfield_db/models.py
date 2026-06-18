@@ -310,6 +310,98 @@ class StylebookCleanupDismissal(SQLModel, table=True):
     )
 
 
+class StylebookCleanupAiReview(SQLModel, table=True):
+    """Background AI review run for duplicate-cluster cleanup checks."""
+
+    __tablename__ = "stylebook_cleanup_ai_review"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_cleanup_ai_review_stylebook_check",
+            "stylebook_id",
+            "check_id",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    check_id: str = Field(sa_column=Column(Text, nullable=False))
+    status: str = Field(
+        default="queued",
+        sa_column=Column(Text, nullable=False, server_default="queued"),
+    )
+    provider_model_id: str = Field(sa_column=Column(Text, nullable=False))
+    ai_model_config_id: str | None = Field(
+        default=None,
+        foreign_key="backfield_ai_model_config.id",
+        index=True,
+    )
+    cluster_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    processed_cluster_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False),
+    )
+    proposal_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookCleanupAiProposal(SQLModel, table=True):
+    """AI-suggested merge or keep-separate action for a duplicate cluster."""
+
+    __tablename__ = "stylebook_cleanup_ai_proposal"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_cleanup_ai_proposal_stylebook_check_status",
+            "stylebook_id",
+            "check_id",
+            "status",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    review_id: str = Field(foreign_key="stylebook_cleanup_ai_review.id", index=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    check_id: str = Field(sa_column=Column(Text, nullable=False))
+    cluster_id: str = Field(sa_column=Column(Text, nullable=False))
+    action: str = Field(sa_column=Column(Text, nullable=False))
+    target_canonical_id: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    member_ids_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    confidence: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
+    rationale: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    status: str = Field(
+        default="pending",
+        sa_column=Column(Text, nullable=False, server_default="pending"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    resolved_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    resolved_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+
+
 class StylebookLocationCanonical(SQLModel, table=True):
     """Canonical location row within a Stylebook."""
 
