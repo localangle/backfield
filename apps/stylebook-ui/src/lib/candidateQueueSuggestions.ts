@@ -23,3 +23,9 @@ export function suggestedActionShortLabel(
   if (sug === "defer") return labels.defer
   return null
 }
+
+export function candidatesWithSuggestedAction<T extends QueueCandidateBase>(
+  candidates: T[],
+): T[] {
+  return candidates.filter((candidate) => suggestedRowAction(candidate) !== null)
+}

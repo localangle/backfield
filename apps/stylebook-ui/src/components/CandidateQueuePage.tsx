@@ -1,9 +1,10 @@
-import { Fragment } from "react"
+import { Fragment, useMemo } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 import {
+  candidatesWithSuggestedAction,
   suggestedActionShortLabel,
   suggestedRowAction,
 } from "@/lib/candidateQueueSuggestions"
@@ -95,6 +96,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     acceptingId,
     deferringId,
     linkingSuggestedId,
+    acceptingAiRecommendations,
     linkModalId,
     linkModalInitialCanonicalId,
     linkModalSearchQuery,
@@ -111,6 +113,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     toggleExpanded,
     handleDefer,
     linkCandidateToSuggestedCanonical,
+    acceptAiRecommendations,
     openCreateModal,
     closeCreateModal,
     submitCreateFromModal,
@@ -125,6 +128,15 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
   const columnCount = config.columns.length + 2
   const tableColgroup = resolveCandidateQueueColgroup(columnCount, config.tableLayout)
   const canonicalBasePath = `${catalogBasePath}/${config.entitySlug}/canonical`
+  const suggestedCandidates = useMemo(
+    () => candidatesWithSuggestedAction(candidates),
+    [candidates],
+  )
+  const rowActionsBusy =
+    acceptingAiRecommendations ||
+    acceptingId !== null ||
+    deferringId !== null ||
+    linkingSuggestedId !== null
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -255,6 +267,26 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
           ) : null}
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+          {status === "open" && suggestedCandidates.length > 0 ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                disabled={loading || rowActionsBusy}
+                onClick={() => void acceptAiRecommendations()}
+              >
+                {acceptingAiRecommendations ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Accepting recommendations…
+                  </>
+                ) : (
+                  `Accept AI recommendations (${suggestedCandidates.length})`
+                )}
+              </Button>
+            </div>
+          ) : null}
 
           <div className="rounded-md border">
             <div
