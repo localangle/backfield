@@ -284,3 +284,36 @@ export async function deleteEmptyCleanupOrganizationCanonical(
 ): Promise<{ id: string; message: string }> {
   return deleteEmptyCleanupCanonical(stylebookSlug, "canonical-organizations", canonicalId)
 }
+
+export interface CreateCleanupDismissalParams {
+  stylebookSlug: string
+  checkId: string
+  memberIds?: string[]
+  canonicalId?: string
+}
+
+export interface CleanupDismissalResponse {
+  check_id: string
+  dismissed_pair_count: number
+  dismissed_canonical_id?: string | null
+  message: string
+}
+
+export async function dismissCleanupIssue(
+  params: CreateCleanupDismissalParams,
+): Promise<CleanupDismissalResponse> {
+  const body: Record<string, unknown> = { check_id: params.checkId }
+  if (params.memberIds?.length) {
+    body.member_ids = params.memberIds
+  }
+  if (params.canonicalId) {
+    body.canonical_id = params.canonicalId
+  }
+  return stylebookJsonFetch<CleanupDismissalResponse>(
+    `/v1/stylebooks/${encodeURIComponent(params.stylebookSlug)}/cleanup/dismissals`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  )
+}

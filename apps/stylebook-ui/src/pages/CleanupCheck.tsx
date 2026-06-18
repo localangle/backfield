@@ -4,6 +4,7 @@ import { Breadcrumbs } from "@/components/Breadcrumbs"
 import { DuplicateClusterList } from "@/components/DuplicateClusterList"
 import { StylebookHomeTabs } from "@/components/StylebookHomeTabs"
 import Pagination from "@/components/Pagination"
+import { Button } from "@/components/ui/button"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import { Loader2 } from "lucide-react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
@@ -17,6 +18,8 @@ import {
 } from "@/lib/cleanupChecks"
 import {
   applyDeleteEmptyToClusterResults,
+  applyDismissCanonicalToListResults,
+  applyDismissClusterToResults,
   applyMergeToClusterResults,
   assignStableClusterIds,
 } from "@/lib/cleanupClusterState"
@@ -24,6 +27,7 @@ import {
   deleteEmptyCleanupLocationCanonical,
   deleteEmptyCleanupOrganizationCanonical,
   deleteEmptyCleanupPersonCanonical,
+  dismissCleanupIssue,
   getCleanupCheckResults,
   mergeCleanupLocationCanonical,
   mergeCleanupOrganizationCanonical,
@@ -240,6 +244,69 @@ export default function CleanupCheck() {
     [stylebookSlug, entityType, findCanonicalLabel, showConfirm, showMessage, showError],
   )
 
+  const handleDismissCluster = useCallback(
+    async (clusterId: string, memberIds: string[]) => {
+      if (!stylebookSlug || !config) return
+      const confirmed = await showConfirm(
+        "These records will stay separate and this group will be removed from cleanup. New matches may appear later if additional similar records are added.",
+        {
+          title: "Keep separate?",
+          confirmLabel: "Keep separate",
+        },
+      )
+      if (!confirmed) return
+      try {
+        await dismissCleanupIssue({
+          stylebookSlug,
+          checkId: config.id,
+          memberIds,
+        })
+        showMessage("Marked as not a duplicate.")
+        setClusterResults((prev) =>
+          prev ? applyDismissClusterToResults(prev, clusterId) : prev,
+        )
+      } catch (error) {
+        showError(
+          error instanceof Error ? error.message : "Failed to dismiss duplicate group",
+        )
+      }
+    },
+    [stylebookSlug, config, showConfirm, showMessage, showError],
+  )
+
+  const handleDismissGeographyIssue = useCallback(
+    async (canonicalId: string) => {
+      if (!stylebookSlug || !config) return
+      const label =
+        listResults?.canonicals.find((canonical) => canonical.id === canonicalId)?.label ??
+        "this location"
+      const confirmed = await showConfirm(
+        `Remove "${label}" from this cleanup list? It may reappear if the underlying issue remains.`,
+        {
+          title: "Mark as reviewed?",
+          confirmLabel: "Mark reviewed",
+        },
+      )
+      if (!confirmed) return
+      try {
+        await dismissCleanupIssue({
+          stylebookSlug,
+          checkId: config.id,
+          canonicalId,
+        })
+        showMessage("Marked as reviewed.")
+        setListResults((prev) =>
+          prev ? applyDismissCanonicalToListResults(prev, canonicalId) : prev,
+        )
+      } catch (error) {
+        showError(
+          error instanceof Error ? error.message : "Failed to dismiss geography issue",
+        )
+      }
+    },
+    [stylebookSlug, config, listResults, showConfirm, showMessage, showError],
+  )
+
   const pagination = useMemo(() => {
     if (clusterResults) {
       return {
@@ -307,11 +374,14 @@ export default function CleanupCheck() {
           canEdit={canEdit}
           onMerge={canEdit ? handleMerge : undefined}
           onDeleteEmpty={canEdit ? handleDeleteEmpty : undefined}
+          onDismissCluster={canEdit ? handleDismissCluster : undefined}
         />
       ) : (
         <GeographyIssuesList
           canonicals={listResults?.canonicals ?? []}
           locationDetailHref={detailHref}
+          canEdit={canEdit}
+          onDismiss={canEdit ? handleDismissGeographyIssue : undefined}
         />
       )}
 
@@ -341,9 +411,13 @@ function geographyIssueLabel(issue: CleanupLocationIssue["geography_issue"]): st
 function GeographyIssuesList({
   canonicals,
   locationDetailHref,
+  canEdit = false,
+  onDismiss,
 }: {
   canonicals: CleanupLocationIssue[]
   locationDetailHref: (canonicalId: string) => string
+  canEdit?: boolean
+  onDismiss?: (canonicalId: string) => void | Promise<void>
 }) {
   if (canonicals.length === 0) {
     return (
@@ -357,12 +431,13 @@ function GeographyIssuesList({
     <div className="rounded-lg border overflow-x-auto">
       <table className="w-full table-fixed text-sm min-w-[40rem]">
         <colgroup>
-          <col style={{ width: "32%" }} />
-          <col style={{ width: "24%" }} />
-          <col style={{ width: "14%" }} />
+          <col style={{ width: "28%" }} />
+          <col style={{ width: "22%" }} />
           <col style={{ width: "12%" }} />
-          <col style={{ width: "9%" }} />
-          <col style={{ width: "9%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "8%" }} />
+          {canEdit && onDismiss ? <col style={{ width: "12%" }} /> : null}
         </colgroup>
         <thead className="bg-muted/50 text-left">
           <tr>
@@ -372,6 +447,9 @@ function GeographyIssuesList({
             <th className="px-4 py-3 font-medium min-w-0">Status</th>
             <th className="px-4 py-3 font-medium text-right">Linked</th>
             <th className="px-4 py-3 font-medium text-right">Mentions</th>
+            {canEdit && onDismiss ? (
+              <th className="px-4 py-3 font-medium text-right">Action</th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -411,6 +489,18 @@ function GeographyIssuesList({
               <td className="px-4 py-3 text-right tabular-nums">
                 {canonical.mention_count ?? 0}
               </td>
+              {canEdit && onDismiss ? (
+                <td className="px-4 py-3 text-right">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void onDismiss(canonical.id)}
+                  >
+                    Mark reviewed
+                  </Button>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

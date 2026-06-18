@@ -9,6 +9,7 @@ from typing import Literal, TypeVar
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, select
 
+from backfield_entities.quality.dismissals import filter_dismissed_pairs, load_dismissed_keys
 from backfield_entities.quality.finders._clustering import cluster_ids_from_pairs
 
 DEFAULT_FULL_SIMILARITY_THRESHOLD: float = 0.72
@@ -300,6 +301,7 @@ def duplicate_label_cluster_ids(
     *,
     model: type[CanonicalModel],
     stylebook_id: int,
+    check_id: str,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
     near_block: NearDuplicateBlock = "comma_head",
 ) -> list[list[str]]:
@@ -310,6 +312,8 @@ def duplicate_label_cluster_ids(
         full_threshold=full_threshold,
         near_block=near_block,
     )
+    dismissed = load_dismissed_keys(session, stylebook_id=stylebook_id, check_id=check_id)
+    pairs = filter_dismissed_pairs(pairs, dismissed)
     return cluster_ids_from_pairs(pairs)
 
 
@@ -318,6 +322,7 @@ def count_duplicate_label_clusters(
     *,
     model: type[CanonicalModel],
     stylebook_id: int,
+    check_id: str,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
     near_block: NearDuplicateBlock = "comma_head",
 ) -> int:
@@ -326,6 +331,7 @@ def count_duplicate_label_clusters(
             session,
             model=model,
             stylebook_id=stylebook_id,
+            check_id=check_id,
             full_threshold=full_threshold,
             near_block=near_block,
         )
@@ -337,6 +343,7 @@ def paginate_duplicate_label_clusters(
     *,
     model: type[CanonicalModel],
     stylebook_id: int,
+    check_id: str,
     limit: int,
     offset: int,
     full_threshold: float = DEFAULT_FULL_SIMILARITY_THRESHOLD,
@@ -346,6 +353,7 @@ def paginate_duplicate_label_clusters(
         session,
         model=model,
         stylebook_id=stylebook_id,
+        check_id=check_id,
         full_threshold=full_threshold,
         near_block=near_block,
     )

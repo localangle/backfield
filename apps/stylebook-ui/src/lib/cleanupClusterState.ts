@@ -1,6 +1,7 @@
 import type {
   CleanupClusterCanonical,
   DuplicateCluster,
+  PaginatedCleanupLocationIssuesResponse,
   PaginatedDuplicateClustersResponse,
 } from "@/lib/stylebook-api/cleanup"
 
@@ -98,5 +99,31 @@ export function applyMergeToClusterResults(
     ...results,
     clusters,
     total: clusterRemoved ? Math.max(0, results.total - 1) : results.total,
+  }
+}
+
+export function applyDismissClusterToResults(
+  results: PaginatedDuplicateClustersResponse,
+  clusterId: string,
+): PaginatedDuplicateClustersResponse {
+  const clusters = results.clusters.filter((cluster) => cluster.cluster_id !== clusterId)
+  const removed = clusters.length < results.clusters.length
+  return {
+    ...results,
+    clusters,
+    total: removed ? Math.max(0, results.total - 1) : results.total,
+  }
+}
+
+export function applyDismissCanonicalToListResults(
+  results: PaginatedCleanupLocationIssuesResponse,
+  canonicalId: string,
+): PaginatedCleanupLocationIssuesResponse {
+  const canonicals = results.canonicals.filter((canonical) => canonical.id !== canonicalId)
+  const removed = canonicals.length < results.canonicals.length
+  return {
+    ...results,
+    canonicals,
+    total: removed ? Math.max(0, results.total - 1) : results.total,
   }
 }

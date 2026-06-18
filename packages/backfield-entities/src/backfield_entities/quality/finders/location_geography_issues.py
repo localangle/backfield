@@ -17,7 +17,10 @@ from backfield_entities.canonical.jurisdiction import (
     point_in_geojson_bbox,
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
+from backfield_entities.quality.dismissals import load_dismissed_keys
 from backfield_entities.quality.types import CleanupLocationGeographyIssueRow
+
+_GEOGRAPHY_CHECK_ID = "missing-geometry-locations"
 
 LocationGeographyIssueKind = Literal["missing_geometry", "distant_linked_places"]
 
@@ -118,12 +121,20 @@ def _row_from_missing_canonical(
     )
 
 
-def _count_missing_geometry(session: Session, *, stylebook_id: int) -> int:
+def _count_missing_geometry(
+    session: Session,
+    *,
+    stylebook_id: int,
+    exclude_ids: set[str] | None = None,
+) -> int:
+    filters = [_missing_geometry_where(session, stylebook_id)]
+    if exclude_ids:
+        filters.append(col(StylebookLocationCanonical.id).notin_(exclude_ids))
     return int(
         session.scalar(
             select(func.count())
             .select_from(StylebookLocationCanonical)
-            .where(_missing_geometry_where(session, stylebook_id))
+            .where(*filters)
         )
         or 0
     )
@@ -135,10 +146,14 @@ def _list_missing_geometry_page(
     stylebook_id: int,
     limit: int,
     offset: int,
+    exclude_ids: set[str] | None = None,
 ) -> list[CleanupLocationGeographyIssueRow]:
+    filters = [_missing_geometry_where(session, stylebook_id)]
+    if exclude_ids:
+        filters.append(col(StylebookLocationCanonical.id).notin_(exclude_ids))
     rows = session.exec(
         select(StylebookLocationCanonical)
-        .where(_missing_geometry_where(session, stylebook_id))
+        .where(*filters)
         .order_by(func.lower(StylebookLocationCanonical.label).asc())
         .offset(offset)
         .limit(limit)
@@ -288,10 +303,14 @@ def _count_distant_linked_postgres(
     *,
     stylebook_id: int,
     project_ids: list[int],
+    exclude_ids: set[str] | None = None,
 ) -> int:
     if not project_ids:
         return 0
     project_filter, bind = _postgres_project_filter(project_ids)
+    exclude_filter = ""
+    if exclude_ids:
+        exclude_filter = "AND c.id::text <> ALL(:exclude_ids)"
     stmt = text(
         f"""
         SELECT COUNT(DISTINCT c.id)
@@ -308,20 +327,18 @@ def _count_distant_linked_postgres(
                 ST_Centroid(s.geometry),
                 ST_Centroid(c.geometry)
               ) > :min_distance_m
+          {exclude_filter}
         """
     )
-    return int(
-        session.scalar(
-            stmt,
-            {
-                "stylebook_id": stylebook_id,
-                "linked_status": CANONICAL_LINK_LINKED,
-                "min_distance_m": DEFAULT_MIN_DISTANCE_M,
-                **bind,
-            },
-        )
-        or 0
-    )
+    params: dict[str, object] = {
+        "stylebook_id": stylebook_id,
+        "linked_status": CANONICAL_LINK_LINKED,
+        "min_distance_m": DEFAULT_MIN_DISTANCE_M,
+        **bind,
+    }
+    if exclude_ids:
+        params["exclude_ids"] = list(exclude_ids)
+    return int(session.scalar(stmt, params) or 0)
 
 
 def _list_location_geography_issues_postgres(
@@ -331,18 +348,30 @@ def _list_location_geography_issues_postgres(
     project_ids: list[int],
     limit: int,
     offset: int,
+    exclude_ids: set[str] | None = None,
 ) -> tuple[list[CleanupLocationGeographyIssueRow], int]:
-    missing_total = _count_missing_geometry(session, stylebook_id=stylebook_id)
+    missing_total = _count_missing_geometry(
+        session,
+        stylebook_id=stylebook_id,
+        exclude_ids=exclude_ids,
+    )
     distant_total = _count_distant_linked_postgres(
         session,
         stylebook_id=stylebook_id,
         project_ids=project_ids,
+        exclude_ids=exclude_ids,
     )
     total = missing_total + distant_total
     if total == 0 or offset >= total:
         return [], total
 
     project_filter, bind = _postgres_project_filter(project_ids)
+    exclude_filter = ""
+    if exclude_ids:
+        exclude_filter = "AND id::text <> ALL(:exclude_ids)"
+    distant_exclude_filter = ""
+    if exclude_ids:
+        distant_exclude_filter = "AND c.id::text <> ALL(:exclude_ids)"
     distant_cte = f"""
         distant AS (
             SELECT
@@ -366,6 +395,7 @@ def _list_location_geography_issues_postgres(
                     ST_Centroid(s.geometry),
                     ST_Centroid(c.geometry)
                   ) > :min_distance_m
+              {distant_exclude_filter}
             GROUP BY c.id, c.slug, c.label, c.location_type, c.status
         )
     """
@@ -390,6 +420,7 @@ def _list_location_geography_issues_postgres(
                  OR geometry_json::text = 'null'
               )
               AND geometry IS NULL
+              {exclude_filter}
         ),
         {distant_cte_sql}
         SELECT id, slug, label, location_type, status, issue, distant_linked_count
@@ -403,17 +434,17 @@ def _list_location_geography_issues_postgres(
         LIMIT :limit OFFSET :offset
         """
     )
-    rows = session.execute(
-        stmt,
-        {
-            "stylebook_id": stylebook_id,
-            "linked_status": CANONICAL_LINK_LINKED,
-            "min_distance_m": DEFAULT_MIN_DISTANCE_M,
-            "limit": limit,
-            "offset": offset,
-            **bind,
-        },
-    ).all()
+    params: dict[str, object] = {
+        "stylebook_id": stylebook_id,
+        "linked_status": CANONICAL_LINK_LINKED,
+        "min_distance_m": DEFAULT_MIN_DISTANCE_M,
+        "limit": limit,
+        "offset": offset,
+        **bind,
+    }
+    if exclude_ids:
+        params["exclude_ids"] = list(exclude_ids)
+    rows = session.execute(stmt, params).all()
     items = [
         CleanupLocationGeographyIssueRow(
             id=str(row.id),
@@ -441,16 +472,24 @@ def _list_location_geography_issues_sqlite(
     project_ids: list[int] | None,
     limit: int,
     offset: int,
+    exclude_ids: set[str] | None = None,
 ) -> tuple[list[CleanupLocationGeographyIssueRow], int]:
     org_project_ids = project_ids if project_ids is not None else _organization_project_ids(
         session, organization_id=organization_id
     )
-    missing_total = _count_missing_geometry(session, stylebook_id=stylebook_id)
+    missing_total = _count_missing_geometry(
+        session,
+        stylebook_id=stylebook_id,
+        exclude_ids=exclude_ids,
+    )
     distant_counts = _distant_linked_counts_sqlite(
         session,
         stylebook_id=stylebook_id,
         project_ids=org_project_ids,
     )
+    if exclude_ids:
+        for canonical_id in exclude_ids:
+            distant_counts.pop(canonical_id, None)
     distant_rows = _distant_linked_rows_for_ids(session, distant_counts)
     total = missing_total + len(distant_rows)
     if total == 0 or offset >= total:
@@ -465,6 +504,7 @@ def _list_location_geography_issues_sqlite(
                 stylebook_id=stylebook_id,
                 limit=missing_limit,
                 offset=offset,
+                exclude_ids=exclude_ids,
             )
         )
         remaining = limit - len(page)
@@ -485,6 +525,12 @@ def list_location_geography_issues(
     limit: int,
     offset: int,
 ) -> tuple[list[CleanupLocationGeographyIssueRow], int]:
+    dismissed = load_dismissed_keys(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=_GEOGRAPHY_CHECK_ID,
+    )
+    exclude_ids = dismissed or None
     bind = session.get_bind()
     org_project_ids = project_ids if project_ids is not None else _organization_project_ids(
         session, organization_id=organization_id
@@ -496,6 +542,7 @@ def list_location_geography_issues(
             project_ids=org_project_ids,
             limit=limit,
             offset=offset,
+            exclude_ids=exclude_ids,
         )
     return _list_location_geography_issues_sqlite(
         session,
@@ -504,6 +551,7 @@ def list_location_geography_issues(
         project_ids=project_ids,
         limit=limit,
         offset=offset,
+        exclude_ids=exclude_ids,
     )
 
 
@@ -514,7 +562,17 @@ def count_location_geography_issues(
     organization_id: int,
     project_ids: list[int] | None = None,
 ) -> int:
-    missing_count = _count_missing_geometry(session, stylebook_id=stylebook_id)
+    dismissed = load_dismissed_keys(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=_GEOGRAPHY_CHECK_ID,
+    )
+    exclude_ids = dismissed or None
+    missing_count = _count_missing_geometry(
+        session,
+        stylebook_id=stylebook_id,
+        exclude_ids=exclude_ids,
+    )
     org_project_ids = project_ids if project_ids is not None else _organization_project_ids(
         session, organization_id=organization_id
     )
@@ -524,13 +582,16 @@ def count_location_geography_issues(
             session,
             stylebook_id=stylebook_id,
             project_ids=org_project_ids,
+            exclude_ids=exclude_ids,
         )
     else:
-        distant_count = len(
-            _distant_linked_counts_sqlite(
-                session,
-                stylebook_id=stylebook_id,
-                project_ids=org_project_ids,
-            )
+        distant_counts = _distant_linked_counts_sqlite(
+            session,
+            stylebook_id=stylebook_id,
+            project_ids=org_project_ids,
         )
+        if exclude_ids:
+            for canonical_id in exclude_ids:
+                distant_counts.pop(canonical_id, None)
+        distant_count = len(distant_counts)
     return missing_count + distant_count

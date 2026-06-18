@@ -75,6 +75,24 @@ def test_list_canonical_people_empty(
     assert body["total"] == 0
 
 
+def test_list_canonical_people_orders_by_sort_key_then_label(
+    editor_client: TestClient,
+) -> None:
+    for label in ("Bob Smith", "Alice Smith", "Carol Adams"):
+        r = editor_client.post(
+            "/v1/stylebooks/default/canonical-people",
+            json={"label": label},
+        )
+        assert r.status_code == 200
+
+    r = editor_client.get(
+        "/v1/stylebooks/default/canonical-people?limit=50",
+    )
+    assert r.status_code == 200
+    labels = [row["label"] for row in r.json()["canonicals"]]
+    assert labels == ["Carol Adams", "Alice Smith", "Bob Smith"]
+
+
 def test_list_canonical_people_token_search_ronald_finds_ron_wyden(
     editor_client: TestClient, stylebook_test_engine: Engine
 ) -> None:

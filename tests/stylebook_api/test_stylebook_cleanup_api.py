@@ -494,3 +494,69 @@ def test_distant_linked_geography_issue(cleanup_client: tuple[TestClient, Engine
     assert len(distant) >= 1
     mapped = next(item for item in distant if item["label"] == "Mapped place")
     assert mapped["distant_linked_count"] >= 1
+
+
+def test_dismiss_duplicate_location_cluster(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        locs = session.exec(
+            select(StylebookLocationCanonical).where(
+                StylebookLocationCanonical.slug.in_(["dupe-a", "dupe-b"])
+            )
+        ).all()
+        member_ids = sorted(str(row.id) for row in locs if row.id is not None)
+
+    before = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations?limit=10")
+    assert before.status_code == 200
+    assert before.json()["total"] >= 1
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "duplicate-locations",
+            "member_ids": member_ids,
+        },
+    )
+    assert dismiss.status_code == 200
+    assert dismiss.json()["dismissed_pair_count"] == 1
+
+    after = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations?limit=10")
+    assert after.status_code == 200
+    labels = {cluster["label"] for cluster in after.json()["clusters"]}
+    assert "Ward 36, Chicago, IL" not in labels
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["duplicate-locations"] == after.json()["total"]
+
+
+def test_dismiss_missing_geometry_location(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        missing = session.exec(
+            select(StylebookLocationCanonical).where(
+                StylebookLocationCanonical.slug == "missing-geom"
+            )
+        ).one()
+        canonical_id = str(missing.id)
+
+    before = client.get("/v1/stylebooks/default/cleanup/checks/missing-geometry-locations")
+    assert before.status_code == 200
+    before_total = before.json()["total"]
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "missing-geometry-locations",
+            "canonical_id": canonical_id,
+        },
+    )
+    assert dismiss.status_code == 200
+    assert dismiss.json()["dismissed_canonical_id"] == canonical_id
+
+    after = client.get("/v1/stylebooks/default/cleanup/checks/missing-geometry-locations")
+    assert after.status_code == 200
+    assert after.json()["total"] == before_total - 1
+    labels = {item["label"] for item in after.json()["canonicals"]}
+    assert "No map pin here" not in labels

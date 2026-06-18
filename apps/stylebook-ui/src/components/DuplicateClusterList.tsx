@@ -15,6 +15,7 @@ type DuplicateClusterListProps = {
   canEdit?: boolean
   onMerge?: (sourceId: string, targetId: string) => void | Promise<void>
   onDeleteEmpty?: (canonicalId: string) => void | Promise<void>
+  onDismissCluster?: (clusterId: string, memberIds: string[]) => void | Promise<void>
 }
 
 function formatTypeLabel(
@@ -83,6 +84,7 @@ export function DuplicateClusterList({
   canEdit = false,
   onMerge,
   onDeleteEmpty,
+  onDismissCluster,
 }: DuplicateClusterListProps) {
   const [dragSourceId, setDragSourceId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
@@ -105,17 +107,39 @@ export function DuplicateClusterList({
       {clusters.map((cluster) => (
         <Card key={cluster.cluster_id}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">
-              {cluster.label}
-              {cluster.label !== "Similar locations" &&
-              cluster.label !== "Similar people" &&
-              cluster.label !== "Similar organizations"
-                ? ` — ${cluster.canonicals.length} records`
-                : ` (${cluster.canonicals.length})`}
-            </CardTitle>
-            {canEdit && cluster.canonicals.length > 1 ? (
-              <CardDescription>Drop a record here to merge into another in this group.</CardDescription>
-            ) : null}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">
+                  {cluster.label}
+                  {cluster.label !== "Similar locations" &&
+                  cluster.label !== "Similar people" &&
+                  cluster.label !== "Similar organizations"
+                    ? ` — ${cluster.canonicals.length} records`
+                    : ` (${cluster.canonicals.length})`}
+                </CardTitle>
+                {canEdit && cluster.canonicals.length > 1 ? (
+                  <CardDescription>
+                    Drop a record here to merge into another in this group.
+                  </CardDescription>
+                ) : null}
+              </div>
+              {canEdit && onDismissCluster ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() =>
+                    void onDismissCluster(
+                      cluster.cluster_id,
+                      cluster.canonicals.map((canonical) => canonical.id),
+                    )
+                  }
+                >
+                  Keep separate
+                </Button>
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent className="space-y-2">
             {cluster.canonicals.map((canonical) => {

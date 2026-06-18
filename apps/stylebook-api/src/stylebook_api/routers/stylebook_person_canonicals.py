@@ -50,6 +50,15 @@ def _canonical_list_sort_key():
     )
 
 
+def _person_list_sort_tiebreakers() -> tuple[Any, ...]:
+    """Last-name order, then full label (first name) for shared sort keys."""
+    return (
+        _canonical_list_sort_key().asc(),
+        func.lower(col(StylebookPersonCanonical.label)).asc(),
+        col(StylebookPersonCanonical.id).asc(),
+    )
+
+
 class CanonicalPersonResponse(BaseModel):
     """One ``stylebook_person_canonical`` row (not a substrate person)."""
 
@@ -246,8 +255,7 @@ def _activity_order_columns(*, project_ids: list[int]) -> tuple[Any, ...]:
         (coalesced > canon_updated, coalesced),
         else_=canon_updated,
     )
-    sort_key_col = _canonical_list_sort_key()
-    return (activity.desc(), sort_key_col.asc(), col(StylebookPersonCanonical.id).asc())
+    return (activity.desc(), *_person_list_sort_tiebreakers())
 
 
 class LinkedPersonSubstrateItem(BaseModel):
@@ -394,7 +402,6 @@ def list_canonical_people(
 
     label_lower = func.lower(col(StylebookPersonCanonical.label))
     label_col = col(StylebookPersonCanonical.label)
-    sort_key_col = _canonical_list_sort_key()
     q_text = (q or "").strip()
     if sort == "recent":
         order_by = _activity_order_columns(project_ids=project_ids)
@@ -410,11 +417,10 @@ def list_canonical_people(
         order_by = (
             rank.asc(),
             func.length(label_col).asc(),
-            sort_key_col.asc(),
-            col(StylebookPersonCanonical.id).asc(),
+            *_person_list_sort_tiebreakers(),
         )
     else:
-        order_by = (sort_key_col.asc(), col(StylebookPersonCanonical.id).asc())
+        order_by = _person_list_sort_tiebreakers()
 
     rows = list(
         session.exec(

@@ -9,12 +9,14 @@ from backfield_db import StylebookLocationCanonical
 from sqlalchemy import text
 from sqlmodel import Session, col, select
 
+from backfield_entities.quality.dismissals import filter_dismissed_pairs, load_dismissed_keys
 from backfield_entities.quality.finders._clustering import cluster_ids_from_pairs
 from backfield_entities.quality.types import CleanupLocationCanonicalRow
 
 # Near-duplicates must share the same primary name (pre-comma head) and pass full-label similarity.
 DEFAULT_FULL_SIMILARITY_THRESHOLD: float = 0.72
 DEFAULT_HEAD_SIMILARITY_THRESHOLD: float = 0.75
+_CHECK_ID = "duplicate-locations"
 _MIN_LABEL_LEN: int = 4
 _MIN_HEAD_LEN: int = 3
 
@@ -235,6 +237,8 @@ def duplicate_location_cluster_ids(
         full_threshold=full_threshold,
         head_threshold=head_threshold,
     )
+    dismissed = load_dismissed_keys(session, stylebook_id=stylebook_id, check_id=_CHECK_ID)
+    pairs = filter_dismissed_pairs(pairs, dismissed)
     return cluster_ids_from_pairs(pairs)
 
 

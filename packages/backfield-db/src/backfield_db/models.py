@@ -279,6 +279,37 @@ class StylebookBundleJob(SQLModel, table=True):
     )
 
 
+class StylebookCleanupDismissal(SQLModel, table=True):
+    """Editor dismissal of a cleanup issue (duplicate pair or list item)."""
+
+    __tablename__ = "stylebook_cleanup_dismissal"
+    __table_args__ = (
+        UniqueConstraint(
+            "stylebook_id",
+            "check_id",
+            "pair_key",
+            name="uq_stylebook_cleanup_dismissal_key",
+        ),
+        Index("ix_stylebook_cleanup_dismissal_stylebook_check", "stylebook_id", "check_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    check_id: str = Field(sa_column=Column(Text, nullable=False))
+    pair_key: str = Field(
+        sa_column=Column(Text, nullable=False),
+        description="Sorted canonical pair 'a|b' or single canonical id for list checks.",
+    )
+    created_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class StylebookLocationCanonical(SQLModel, table=True):
     """Canonical location row within a Stylebook."""
 

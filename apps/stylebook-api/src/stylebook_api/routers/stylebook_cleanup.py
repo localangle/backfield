@@ -27,7 +27,11 @@ from backfield_entities.entities.person.merge import (
 from backfield_entities.entities.person.merge import (
     merge_person_canonical_into,
 )
-from backfield_entities.quality.checks import STYLEBOOK_CLEANUP_CHECKS
+from backfield_entities.quality.checks import STYLEBOOK_CLEANUP_CHECKS, cleanup_check_by_id
+from backfield_entities.quality.dismissals import (
+    dismiss_canonical_issue,
+    dismiss_cluster_members,
+)
 from backfield_entities.quality.finders.duplicate_locations import (
     DEFAULT_FULL_SIMILARITY_THRESHOLD,
     DEFAULT_HEAD_SIMILARITY_THRESHOLD,
@@ -151,6 +155,25 @@ class MergeCleanupCanonicalResponse(BaseModel):
 class DeleteCleanupCanonicalResponse(BaseModel):
     id: str
     message: str
+
+
+class CreateCleanupDismissalBody(BaseModel):
+    check_id: str = Field(min_length=1)
+    member_ids: list[str] = Field(default_factory=list)
+    canonical_id: str | None = None
+
+
+class CleanupDismissalResponse(BaseModel):
+    check_id: str
+    dismissed_pair_count: int = 0
+    dismissed_canonical_id: str | None = None
+    message: str
+
+
+def _created_by_user_id(auth: dict[str, Any]) -> int | None:
+    if auth.get("type") != "session" or auth.get("user") is None:
+        return None
+    return int(auth["user"].id)  # type: ignore[union-attr]
 
 
 def _count_for_check(
@@ -944,3 +967,64 @@ def delete_empty_cleanup_canonical_organization(
     session.delete(canon)
     session.commit()
     return DeleteCleanupCanonicalResponse(id=deleted_id, message="deleted")
+
+
+@router.post(
+    "/{stylebook_slug}/cleanup/dismissals",
+    response_model=CleanupDismissalResponse,
+)
+def create_cleanup_dismissal(
+    stylebook_slug: str,
+    body: CreateCleanupDismissalBody,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CleanupDismissalResponse:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    check = cleanup_check_by_id(body.check_id)
+    if check is None:
+        raise HTTPException(status_code=400, detail=f"Unknown cleanup check: {body.check_id}")
+
+    stylebook_id = int(sb.id)
+    user_id = _created_by_user_id(auth)
+    if check.kind == "cluster":
+        member_ids = sorted(
+            {member_id.strip() for member_id in body.member_ids if member_id.strip()}
+        )
+        if len(member_ids) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="member_ids must include at least two canonical ids for cluster checks",
+            )
+        inserted = dismiss_cluster_members(
+            session,
+            stylebook_id=stylebook_id,
+            check_id=body.check_id,
+            member_ids=member_ids,
+            created_by_user_id=user_id,
+        )
+        session.commit()
+        return CleanupDismissalResponse(
+            check_id=body.check_id,
+            dismissed_pair_count=inserted,
+            message="Cluster marked as not a duplicate",
+        )
+
+    canonical_id = (body.canonical_id or "").strip()
+    if not canonical_id:
+        raise HTTPException(status_code=400, detail="canonical_id is required for list checks")
+    dismiss_canonical_issue(
+        session,
+        stylebook_id=stylebook_id,
+        check_id=body.check_id,
+        canonical_id=canonical_id,
+        created_by_user_id=user_id,
+    )
+    session.commit()
+    return CleanupDismissalResponse(
+        check_id=body.check_id,
+        dismissed_canonical_id=canonical_id,
+        message="Issue marked as reviewed",
+    )

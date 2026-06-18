@@ -19,7 +19,7 @@ export default function Layout({ children }: LayoutProps) {
             to="/"
             productMark={<AgateProductMark />}
             productTitle="Agate"
-            platformSubtitle="Backfield Platform"
+            platformSubtitle="Extract and enrich article data"
           />
           <div className="flex items-center gap-2">
             {username ? (

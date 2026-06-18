@@ -20,7 +20,7 @@ export default function HubLayout({ children }: HubLayoutProps) {
             to="/"
             productMark={<AgateProductMark />}
             productTitle="Agate"
-            platformSubtitle="Backfield Platform"
+            platformSubtitle="Extract and enrich article data"
           />
           <div className="flex items-center gap-2">
             {username ? (

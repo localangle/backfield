@@ -44,6 +44,15 @@ def _canonical_list_sort_key():
     )
 
 
+def _person_list_sort_tiebreakers() -> tuple:
+    """Last-name order, then full label (first name) for shared sort keys."""
+    return (
+        _canonical_list_sort_key().asc(),
+        func.lower(col(StylebookPersonCanonical.label)).asc(),
+        col(StylebookPersonCanonical.id).asc(),
+    )
+
+
 class PublicPersonSort(StrEnum):
     sort_key = "sort_key"
     recent = "recent"
@@ -218,8 +227,7 @@ def _activity_order_columns(*, project_id: int) -> tuple:
         (coalesced > canon_updated, coalesced),
         else_=canon_updated,
     )
-    sort_key_col = _canonical_list_sort_key()
-    return (activity.desc(), sort_key_col.asc(), col(StylebookPersonCanonical.id).asc())
+    return (activity.desc(), *_person_list_sort_tiebreakers())
 
 
 def search_public_people(
@@ -241,7 +249,6 @@ def search_public_people(
 
     label_lower = func.lower(col(StylebookPersonCanonical.label))
     label_col = col(StylebookPersonCanonical.label)
-    sort_key_col = _canonical_list_sort_key()
     q_text = (params.q or "").strip()
     if params.sort == PublicPersonSort.recent:
         order_by = _activity_order_columns(project_id=project_id)
@@ -257,11 +264,10 @@ def search_public_people(
         order_by = (
             rank.asc(),
             func.length(label_col).asc(),
-            sort_key_col.asc(),
-            col(StylebookPersonCanonical.id).asc(),
+            *_person_list_sort_tiebreakers(),
         )
     else:
-        order_by = (sort_key_col.asc(), col(StylebookPersonCanonical.id).asc())
+        order_by = _person_list_sort_tiebreakers()
 
     rows = list(
         session.exec(

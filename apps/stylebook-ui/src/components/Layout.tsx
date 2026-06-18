@@ -344,7 +344,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
             to={indexPath}
             productMark={<StylebookProductMark />}
             productTitle="Stylebook"
-            platformSubtitle="Backfield Platform"
+            platformSubtitle="Manage entities and connections"
           />
           <div className="flex items-center gap-2 flex-wrap justify-end flex-1 min-w-0">
             {headerContent}

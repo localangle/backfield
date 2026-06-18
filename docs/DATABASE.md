@@ -181,6 +181,8 @@ Revision **`054_sb_person_org_dup_idx`** (Postgres only) adds GIN trigram indexe
 
 Revision **`055_sb_org_first_token_idx`** (Postgres only) adds **`ix_stylebook_organization_canonical_stylebook_first_token`** on **`(stylebook_id, lower(trim(split_part(label, ' ', 1))))`** so organization duplicate cleanup can block near-match pairs by shared first token (most organization names have no comma). Non-Postgres upgrades skip the index.
 
+Revision **`056_stylebook_cleanup_dismissal`** adds **`stylebook_cleanup_dismissal`** — stylebook-scoped cleanup dismissals keyed by **`(stylebook_id, check_id, pair_key)`**. Duplicate checks store sorted canonical pair keys (`uuid_a|uuid_b`); list checks store a single canonical id. Used by Stylebook Cleanup “Keep separate” / “Mark reviewed” actions.
+
 Revision **`025_backfield_ai_foundation`** adds shared **`backfield_ai_*`** tables for AI model configs, project overrides, default roles, and LLM call/cost records.
 
 Revision **`026_org_integration_secret`** adds **`backfield_organization_integration_secret`** for encrypted organization-level integration credentials (AI provider keys first).

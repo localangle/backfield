@@ -84,6 +84,8 @@ export {
   deleteEmptyCleanupLocationCanonical,
   deleteEmptyCleanupPersonCanonical,
   deleteEmptyCleanupOrganizationCanonical,
+  dismissCleanupIssue,
+  type CleanupDismissalResponse,
   type MergeCleanupCanonicalResponse,
   type MergeCleanupLocationCanonicalResponse,
   type CleanupClusterCanonical,

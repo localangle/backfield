@@ -16,6 +16,7 @@ from backfield_entities.quality.finders._duplicate_labels import (
 
 _SIMILAR_FALLBACK = "Similar people"
 _PERSON_NEAR_BLOCK = "first_token"
+_CHECK_ID = "duplicate-people"
 
 
 def duplicate_person_pair_edges(
@@ -43,6 +44,7 @@ def duplicate_person_cluster_ids(
         session,
         model=StylebookPersonCanonical,
         stylebook_id=stylebook_id,
+        check_id=_CHECK_ID,
         full_threshold=full_threshold,
         near_block=_PERSON_NEAR_BLOCK,
     )
@@ -58,6 +60,7 @@ def count_duplicate_person_clusters(
         session,
         model=StylebookPersonCanonical,
         stylebook_id=stylebook_id,
+        check_id=_CHECK_ID,
         full_threshold=full_threshold,
         near_block=_PERSON_NEAR_BLOCK,
     )
@@ -75,6 +78,7 @@ def paginate_duplicate_person_clusters(
         session,
         model=StylebookPersonCanonical,
         stylebook_id=stylebook_id,
+        check_id=_CHECK_ID,
         limit=limit,
         offset=offset,
         full_threshold=full_threshold,

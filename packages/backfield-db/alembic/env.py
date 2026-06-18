@@ -33,6 +33,7 @@ from backfield_db.models import (  # noqa: F401
     BackfieldWorkspaceMembership,
     Stylebook,
     StylebookBundleJob,
+    StylebookCleanupDismissal,
     StylebookMembership,
     StylebookConnection,
     StylebookLocationAlias,
