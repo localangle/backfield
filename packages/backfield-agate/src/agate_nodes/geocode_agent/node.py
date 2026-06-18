@@ -82,8 +82,15 @@ class GeocodeAgentParams(BaseModel):
     geographicReasoningModel: str = Field(
         default="gpt-5-nano",
         description=(
-            "OpenAI model for geographic reasoning during external geocode "
-            "(places, addresses, regions, natural features, streets)"
+            "OpenAI model for geographic research and decision-making during external geocode "
+            "(place addressability, search queries, candidate selection)"
+        ),
+    )
+    geographicEstimationModel: str = Field(
+        default="gpt-5-nano",
+        description=(
+            "OpenAI model for LLM geometry estimation when geocoders cannot resolve a location "
+            "(intersection points, region/street/natural bounding boxes)"
         ),
     )
     routerModel: str = Field(
@@ -97,6 +104,10 @@ class GeocodeAgentParams(BaseModel):
     geographicReasoningAiModelConfigId: Optional[str] = Field(
         default=None,
         description="Optional Backfield AI model config id (overrides geographicReasoningModel when set)",
+    )
+    geographicEstimationAiModelConfigId: Optional[str] = Field(
+        default=None,
+        description="Optional Backfield AI model config id (overrides geographicEstimationModel when set)",
     )
     routerAiModelConfigId: Optional[str] = Field(
         default=None,
@@ -124,6 +135,7 @@ class GeocodeAgentParams(BaseModel):
             ("evaluationModel", "gpt-5-nano"),
             ("routerModel", "gpt-5-nano"),
             ("geographicReasoningModel", "gpt-5-nano"),
+            ("geographicEstimationModel", "gpt-5-nano"),
         )
         updates: dict[str, str] = {}
         for key, default in defaults:
@@ -278,6 +290,7 @@ async def run_geocode_agent_pipeline(
     eval_lm_model = params.evaluationModel
     router_lm_model = params.routerModel
     geo_lm_model = params.geographicReasoningModel
+    geo_est_lm_model = params.geographicEstimationModel
     raw_pid = os.getenv("BACKFIELD_PROJECT_ID")
     if raw_pid:
         try:
@@ -286,10 +299,12 @@ async def run_geocode_agent_pipeline(
             from sqlmodel import Session
 
             with Session(get_engine()) as res_sess:
-                eval_lm_model, router_lm_model, geo_lm_model = resolve_geocode_litellm_models(
-                    res_sess,
-                    int(raw_pid),
-                    params,
+                eval_lm_model, router_lm_model, geo_lm_model, geo_est_lm_model = (
+                    resolve_geocode_litellm_models(
+                        res_sess,
+                        int(raw_pid),
+                        params,
+                    )
                 )
         except Exception as exc:
             logger.warning(
@@ -393,9 +408,11 @@ async def run_geocode_agent_pipeline(
                     evaluation_llm_model=eval_lm_model,
                     router_llm_model=router_lm_model,
                     geographic_reasoning_llm_model=geo_lm_model,
+                    geographic_estimation_llm_model=geo_est_lm_model,
                     evaluation_ai_model_config_id=params.evaluationAiModelConfigId,
                     router_ai_model_config_id=params.routerAiModelConfigId,
                     geographic_reasoning_ai_model_config_id=params.geographicReasoningAiModelConfigId,
+                    geographic_estimation_ai_model_config_id=params.geographicEstimationAiModelConfigId,
                 ),
                 timeout=PER_LOCATION_TIMEOUT,
             )

@@ -325,7 +325,7 @@ Merge defaults at the top: `const merged = { ...DEFAULTS, ...(node.data || {}) }
 
 **Stylebook id:** persist `stylebook_id` (snake_case). Read with `resolvedStylebookId` from `nodePanelAiModel.ts` (still accepts legacy `stylebookId` once).
 
-**GeocodeAgent:** when **Use cache** is on, require a Stylebook selection (`stylebook_id`). Cache-off omits `stylebook_id`. Three model picks: routing, geographic reasoning, evaluation (see product copy in the panel).
+**GeocodeAgent:** when **Use cache** is on, require a Stylebook selection (`stylebook_id`). Cache-off omits `stylebook_id`. Four model picks: routing, geographic reasoning, geographic estimation, evaluation (see product copy in the panel). Estimation is used only when the LLM fabricates coordinates or bounding boxes (intersections, regions, streets, natural-feature fallbacks); reasoning handles research and candidate selection.
 
 **LLM catalog source:** Core `GET /v1/projects/{id}/ai-models/effective` only—no hard-coded model presets in panels. **Project → Models** tab uses `include_disabled=true` for admin availability (`docs/API.md`).
 

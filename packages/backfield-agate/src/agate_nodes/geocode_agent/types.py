@@ -52,9 +52,11 @@ class AgentState(TypedDict, total=False):
     evaluation_llm_model: Optional[str]
     router_llm_model: Optional[str]
     geographic_reasoning_llm_model: Optional[str]
+    geographic_estimation_llm_model: Optional[str]
     evaluation_ai_model_config_id: Optional[str]
     router_ai_model_config_id: Optional[str]
     geographic_reasoning_ai_model_config_id: Optional[str]
+    geographic_estimation_ai_model_config_id: Optional[str]
     # LangGraph pipeline: explicit routing + quieter per-location logs when True.
     advanced_quiet_logs: Optional[bool]
     geocode_strategy: Optional[str]

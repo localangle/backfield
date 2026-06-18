@@ -29,9 +29,11 @@ const DEFAULTS = {
   projectSlug: '',
   evaluationModel: '',
   geographicReasoningModel: '',
+  geographicEstimationModel: '',
   routerModel: '',
   evaluationAiModelConfigId: null as string | null,
   geographicReasoningAiModelConfigId: null as string | null,
+  geographicEstimationAiModelConfigId: null as string | null,
   routerAiModelConfigId: null as string | null,
   useCacheLlmAdjudication: true,
   useCacheLlmAdjudicationOnMissRecall: false,
@@ -50,6 +52,11 @@ const ROUTER_MODEL_KEYS = {
 const GEOGRAPHIC_REASONING_MODEL_KEYS = {
   configIdKey: 'geographicReasoningAiModelConfigId',
   modelKey: 'geographicReasoningModel',
+} as const
+
+const GEOGRAPHIC_ESTIMATION_MODEL_KEYS = {
+  configIdKey: 'geographicEstimationAiModelConfigId',
+  modelKey: 'geographicEstimationModel',
 } as const
 
 function resolvedEvaluationSelectValue(
@@ -83,6 +90,17 @@ function resolvedGeographicReasoningSelectValue(
 
 function hasExplicitGeographicReasoningChoice(data: Record<string, unknown>): boolean {
   return hasExplicitAiModelChoice(data, GEOGRAPHIC_REASONING_MODEL_KEYS)
+}
+
+function resolvedGeographicEstimationSelectValue(
+  params: Record<string, unknown>,
+  catalog: ProjectAiModelOption[],
+): string {
+  return resolvedAiModelSelectValue(params, catalog, GEOGRAPHIC_ESTIMATION_MODEL_KEYS)
+}
+
+function hasExplicitGeographicEstimationChoice(data: Record<string, unknown>): boolean {
+  return hasExplicitAiModelChoice(data, GEOGRAPHIC_ESTIMATION_MODEL_KEYS)
 }
 
 interface GeocodeAgentPanelProps {
@@ -174,6 +192,7 @@ export default function GeocodeAgentPanel({
   const resolvedEval = resolvedEvaluationSelectValue(paramsRecord, catalogRows)
   const resolvedRouter = resolvedRouterSelectValue(paramsRecord, catalogRows)
   const resolvedGeo = resolvedGeographicReasoningSelectValue(paramsRecord, catalogRows)
+  const resolvedGeoEst = resolvedGeographicEstimationSelectValue(paramsRecord, catalogRows)
 
   const evalSelectionValid =
     resolvedEval !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedEval)
@@ -181,6 +200,8 @@ export default function GeocodeAgentPanel({
     resolvedRouter !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedRouter)
   const geoSelectionValid =
     resolvedGeo !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedGeo)
+  const geoEstSelectionValid =
+    resolvedGeoEst !== '' && modelSelectOptions.some((o) => o.selectValue === resolvedGeoEst)
 
   const nodeDataFlat = (node.data || {}) as Record<string, unknown>
 
@@ -198,6 +219,11 @@ export default function GeocodeAgentPanel({
     Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
     hasExplicitGeographicReasoningChoice(nodeDataFlat) &&
     !geoSelectionValid
+
+  const showInvalidGeoEstPersisted =
+    Boolean(editMode && setNodes && projectId != null && catalogRows.length > 0 && !catalogLoading) &&
+    hasExplicitGeographicEstimationChoice(nodeDataFlat) &&
+    !geoEstSelectionValid
 
   const evalRadixValue = evalSelectionValid
     ? resolvedEval
@@ -217,6 +243,12 @@ export default function GeocodeAgentPanel({
       ? INVALID_SELECTION_VALUE
       : undefined
 
+  const geoEstRadixValue = geoEstSelectionValid
+    ? resolvedGeoEst
+    : showInvalidGeoEstPersisted
+      ? INVALID_SELECTION_VALUE
+      : undefined
+
   const mergeData = (base: Record<string, unknown>) => {
     const out = {
       ...DEFAULTS,
@@ -233,7 +265,8 @@ export default function GeocodeAgentPanel({
     const needEval = !hasExplicitEvaluationChoice(data)
     const needRouter = !hasExplicitRouterChoice(data)
     const needGeo = !hasExplicitGeographicReasoningChoice(data)
-    if (!needEval && !needRouter && !needGeo) return
+    const needGeoEst = !hasExplicitGeographicEstimationChoice(data)
+    if (!needEval && !needRouter && !needGeo && !needGeoEst) return
     const first = modelSelectOptions[0]
     if (!first) return
     const patch: Record<string, unknown> = {}
@@ -248,6 +281,10 @@ export default function GeocodeAgentPanel({
     if (needGeo) {
       patch.geographicReasoningModel = first.providerModelId
       patch.geographicReasoningAiModelConfigId = first.configId ?? null
+    }
+    if (needGeoEst) {
+      patch.geographicEstimationModel = first.providerModelId
+      patch.geographicEstimationAiModelConfigId = first.configId ?? null
     }
     setNodes((nodes: any[]) =>
       nodes.map((n) =>
@@ -394,6 +431,27 @@ export default function GeocodeAgentPanel({
                 ...(n.data || {}),
                 geographicReasoningModel: providerModelId,
                 geographicReasoningAiModelConfigId: configId ?? null,
+              }),
+            }
+          : n,
+      ),
+    )
+  }
+
+  const handleGeographicEstimationModel = (selectValue: string) => {
+    if (!setNodes || selectValue === INVALID_SELECTION_VALUE) return
+    const row = modelSelectOptions.find((o) => o.selectValue === selectValue)
+    const providerModelId = row?.providerModelId ?? selectValue
+    const configId = row?.configId
+    setNodes((nodes: any[]) =>
+      nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              data: mergeData({
+                ...(n.data || {}),
+                geographicEstimationModel: providerModelId,
+                geographicEstimationAiModelConfigId: configId ?? null,
               }),
             }
           : n,
@@ -552,7 +610,40 @@ export default function GeocodeAgentPanel({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Performs research, evaluates geographic decisions and approximates boundaries in some cases. Medium-sized models work best.
+              Performs research and evaluates geographic decisions during external geocode. Medium-sized models work best.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Geographic estimation</Label>
+            {showInvalidGeoEstPersisted ? (
+              <p className="text-xs text-muted-foreground">
+                The saved geographic estimation model is no longer available. Choose another model below.
+              </p>
+            ) : null}
+            <Select
+              value={geoEstRadixValue}
+              onValueChange={handleGeographicEstimationModel}
+              disabled={isDisabled || modelSelectOptions.length === 0}
+            >
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Choose a model" />
+              </SelectTrigger>
+              <SelectContent>
+                {showInvalidGeoEstPersisted ? (
+                  <SelectItem disabled value={INVALID_SELECTION_VALUE}>
+                    Saved model unavailable
+                  </SelectItem>
+                ) : null}
+                {modelSelectOptions.map((m) => (
+                  <SelectItem key={`geo-est-${m.selectValue}`} value={m.selectValue}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Estimates coordinates and boundaries when geocoders cannot resolve a location. Larger models with spatial reasoning work best.
             </p>
           </div>
 
