@@ -48,12 +48,10 @@ def _identity_keys(person: Any, anchor: Any) -> set[str]:
         if value:
             keys.add(value)
     name = person.get("name")
-    title = _optional_text(person.get("title"))
     affiliation = _optional_text(person.get("affiliation"))
     if isinstance(name, str) and name.strip():
         fp = person_identity_fingerprint(
             normalized_name=_normalize_name(name),
-            title=title,
             affiliation=affiliation,
         )
         keys.add(f"fingerprint:{fp}")

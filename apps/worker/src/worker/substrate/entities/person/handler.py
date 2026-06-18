@@ -32,6 +32,7 @@ from worker.substrate.entities.person.adjudication import (
     run_person_adjudication_llm,
 )
 from worker.substrate.entities.person.mentions import (
+    _mention_texts_from_entry,
     _upsert_mention_and_occurrence,
     dispose_orphan_substrates_after_retired_mentions,
     retire_stale_article_mentions_for_rerun,
@@ -218,6 +219,8 @@ class PersonPersistHandler:
                         stylebook_id=ctx.stylebook_id,
                         model=adj_model,
                         model_config_id=ctx.settings.adjudication_ai_model_config_id,
+                        article_text=ctx.article_text,
+                        mention_texts=_mention_texts_from_entry(entry),
                     )
                     if prepared is not None:
                         pending_adjudication.append(

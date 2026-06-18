@@ -298,6 +298,7 @@ Public responses expose the **resolved editorial view**: Stylebook canonical fie
 
 - Canonical identity: `id`, `slug`, `label`, type-specific fields
 - **`mention_count`** (project scope, non-deleted mentions)
+- **`story_count`** (people detail only: distinct articles with at least one mention — use `GET …/people/{id}/articles` for a deduped story list; `GET …/people/{id}/mentions` returns passage-level rows and may repeat the same article)
 - Links to **Stylebook meta** and **connections** where applicable
 
 ### Routes (per type `{type}` = `locations` | `people` | `organizations` | `works`)

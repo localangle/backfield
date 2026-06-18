@@ -36,6 +36,7 @@ import {
   isRunPreparingItems,
   PREPARING_ITEMS_SOURCE_LABEL,
 } from '@/lib/runPreparingItems'
+import { s3InputSourceFromGraphSpec } from '@/lib/s3InputSource'
 import { ArrowLeft, ArrowRight, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -329,6 +330,8 @@ export default function RunDetail() {
     return null
   })()
 
+  const s3InputSource = s3InputSourceFromGraphSpec(graph?.spec)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -411,6 +414,14 @@ export default function RunDetail() {
                 {flowName}
               </Link>
             </p>
+            {s3InputSource ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                S3 source:{' '}
+                <span className="font-mono text-xs" title={s3InputSource.uri}>
+                  {s3InputSource.uri}
+                </span>
+              </p>
+            ) : null}
             <p className="mt-1 text-xs text-muted-foreground">
               Run ID {shortRunId}
             </p>

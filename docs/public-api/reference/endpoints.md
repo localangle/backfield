@@ -867,7 +867,7 @@ Distinct person type values for filter dropdowns (union of catalog defaults and 
 
 ### Response `200`
 
-Single person object (same fields as list items).
+Single person object (same fields as list items, plus **`story_count`**: distinct articles with at least one mention in this project). Use **`GET …/people/{person_id}/articles`** for a deduped story list; **`GET …/people/{person_id}/mentions`** returns passage-level mention rows and may list the same article more than once.
 
 ### Errors
 

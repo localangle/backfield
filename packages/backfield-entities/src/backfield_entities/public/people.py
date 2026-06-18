@@ -69,6 +69,7 @@ class PublicPersonOut(BaseModel):
     public_figure: bool = False
     person_type: str | None = None
     mention_count: int = 0
+    story_count: int = 0
 
 
 class PublicPersonMentionArticleOut(BaseModel):
@@ -108,6 +109,7 @@ def _person_to_public_out(
     canon: StylebookPersonCanonical,
     *,
     mention_count: int = 0,
+    story_count: int = 0,
     stylebook_slug: str | None = None,
 ) -> PublicPersonOut:
     return PublicPersonOut(
@@ -120,6 +122,7 @@ def _person_to_public_out(
         public_figure=bool(canon.public_figure),
         person_type=canon.person_type,
         mention_count=mention_count,
+        story_count=story_count,
     )
 
 
@@ -135,6 +138,31 @@ def _mention_counts_by_canonical(
         select(
             SubstratePerson.stylebook_person_canonical_id,
             func.count(col(SubstratePersonMention.id)),
+        )
+        .select_from(SubstratePersonMention)
+        .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+        .where(
+            SubstratePerson.project_id == project_id,
+            col(SubstratePerson.stylebook_person_canonical_id).in_(canonical_ids),
+            SubstratePersonMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstratePerson.stylebook_person_canonical_id)
+    ).all()
+    return {str(cid): int(cnt) for cid, cnt in rows if cid is not None}
+
+
+def _story_counts_by_canonical(
+    session: Session,
+    *,
+    project_id: int,
+    canonical_ids: list[str],
+) -> dict[str, int]:
+    if not canonical_ids:
+        return {}
+    rows = session.exec(
+        select(
+            SubstratePerson.stylebook_person_canonical_id,
+            func.count(func.distinct(SubstratePersonMention.article_id)),
         )
         .select_from(SubstratePersonMention)
         .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
@@ -311,10 +339,16 @@ def get_public_person(
         project_id=project_id,
         canonical_ids=[str(canon.id)],
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=[str(canon.id)],
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     return _person_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
+        story_count=story_counts.get(str(canon.id), 0),
         stylebook_slug=stylebook_slug,
     )
 

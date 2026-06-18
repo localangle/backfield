@@ -325,7 +325,6 @@ def create_person_from_article_evidence(
         },
         identity_fingerprint=person_identity_fingerprint(
             normalized_name=normalized_name,
-            title=title,
             affiliation=affiliation,
         ),
     )
@@ -432,7 +431,6 @@ def patch_substrate_person(
 
     person.identity_fingerprint = person_identity_fingerprint(
         normalized_name=str(person.normalized_name),
-        title=person.title,
         affiliation=person.affiliation,
     )
     session.add(person)

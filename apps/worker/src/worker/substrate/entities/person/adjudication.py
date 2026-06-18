@@ -18,12 +18,18 @@ from backfield_entities.entities.person.policy import (
     AMBIGUOUS_PERSON_CANONICAL_MATCH,
     person_may_materialize_canonical_after_recall,
 )
+from backfield_entities.entities.person.recall import alias_texts_for_canonical
 from sqlmodel import Session, select
 
 from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_MAX_RETRIES,
     ADJUDICATION_LLM_TIMEOUT_S,
 )
+
+_SPORTS_PERSON_TYPES = frozenset(
+    {"athlete", "coach", "sports_official", "sports_executive"}
+)
+_ARTICLE_SNIPPET_MAX_LEN = 480
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,14 @@ class PersonAdjudicationPrepared:
     model_config_id: str | None
     candidates: tuple[tuple[str, str, str | None, str | None], ...]
     prompt: str
+
+
+def person_adjudication_defer_instead_of_materialize(person: SubstratePerson) -> bool:
+    """Recurring public figures / athletes defer on declined link instead of minting a canonical."""
+    if bool(person.public_figure):
+        return True
+    person_type = str(person.person_type or "").strip().lower()
+    return person_type in _SPORTS_PERSON_TYPES
 
 
 def _recall_context_for_adjudication(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
@@ -75,6 +89,50 @@ def _candidate_rows(
     return out
 
 
+def _format_candidate_lines(
+    session: Session,
+    candidates: list[tuple[str, str, str | None, str | None]],
+) -> str:
+    lines: list[str] = []
+    for cid, label, title, aff in candidates:
+        aliases = alias_texts_for_canonical(session, canon_id=cid)
+        alias_part = ""
+        if aliases:
+            shown = ", ".join(repr(a) for a in aliases[:8])
+            if len(aliases) > 8:
+                shown += f", ... ({len(aliases)} total)"
+            alias_part = f" aliases=[{shown}]"
+        lines.append(
+            f"- id={cid} label={label!r} title={title!r} affiliation={aff!r}{alias_part}"
+        )
+    return "\n".join(lines)
+
+
+def _article_context_snippet(
+    *,
+    article_text: str | None,
+    mention_texts: list[str] | None,
+) -> str | None:
+    text = (article_text or "").strip()
+    if not text:
+        return None
+    needles = [t.strip() for t in (mention_texts or []) if isinstance(t, str) and t.strip()]
+    if needles:
+        for needle in needles:
+            idx = text.find(needle)
+            if idx >= 0:
+                start = max(0, idx - 120)
+                end = min(len(text), idx + len(needle) + 120)
+                snippet = text[start:end].strip()
+                if len(snippet) > _ARTICLE_SNIPPET_MAX_LEN:
+                    snippet = snippet[: _ARTICLE_SNIPPET_MAX_LEN - 3].rstrip() + "..."
+                return snippet
+    snippet = text[:_ARTICLE_SNIPPET_MAX_LEN].strip()
+    if len(text) > _ARTICLE_SNIPPET_MAX_LEN:
+        snippet = snippet.rstrip() + "..."
+    return snippet or None
+
+
 def _canonical_ids_from_recall(plan: CanonicalPersistPlan) -> list[str]:
     ctx = _recall_context_for_adjudication(plan)
     if ctx is None:
@@ -100,6 +158,8 @@ def prepare_person_adjudication(
     stylebook_id: int,
     model: str,
     model_config_id: str | None = None,
+    article_text: str | None = None,
+    mention_texts: list[str] | None = None,
 ) -> PersonAdjudicationPrepared | None:
     cids = _canonical_ids_from_recall(plan)
     if not cids:
@@ -108,26 +168,39 @@ def prepare_person_adjudication(
     if not candidates:
         return None
 
-    lines = "\n".join(
-        f"- id={cid} label={label!r} title={title!r} affiliation={aff!r}"
-        for cid, label, title, aff in candidates
+    lines = _format_candidate_lines(session, candidates)
+    snippet = _article_context_snippet(
+        article_text=article_text,
+        mention_texts=mention_texts,
     )
     floor = ADJUDICATION_LINK_MIN_CONFIDENCE
+    person_type = (person.person_type or "").strip() or None
+    public_figure = bool(person.public_figure)
+    context_block = ""
+    if snippet:
+        context_block = f"\nArticle context (mention neighborhood):\n{snippet!r}\n"
+
     prompt = (
         "You decide whether exactly ONE canonical row denotes the SAME real-world person as "
         "the substrate row (editorial identity in a news catalog), not a namesake.\n\n"
         f"Substrate name: {person.name!r}\n"
         f"Normalized name: {person.normalized_name!r}\n"
         f"Title: {(person.title or '')!r}\n"
-        f"Affiliation: {(person.affiliation or '')!r}\n\n"
+        f"Affiliation: {(person.affiliation or '')!r}\n"
+        f"Person type: {person_type!r}\n"
+        f"Public figure: {public_figure}\n"
+        f"{context_block}\n"
         "Candidates (at most one id may be chosen):\n"
         f"{lines}\n\n"
         "Rules:\n"
         "- Set canonical_id only when the candidate is the SAME individual the substrate row "
-        "represents (same person despite minor spelling variants).\n"
-        "- Set canonical_id to null when affiliation, role, or context indicates a different "
-        "person with a similar name, or when you are not certain.\n"
-        "- Prefer null (human review) over a stretched link between namesakes.\n"
+        "represents (same person despite minor spelling or accent variants).\n"
+        "- For recurring public figures and athletes, team (affiliation) and position (title) "
+        "change over time — a different team or role does NOT by itself mean a different person. "
+        "Use article context (e.g. former, traded, ex-) plus name/alias overlap to decide.\n"
+        "- Set canonical_id to null only when you believe the candidate is a true namesake "
+        "(a different individual with a similar name), not merely a team/role change.\n"
+        "- Prefer null (human review) over a stretched link between genuine namesakes.\n"
         f"- Use confidence {floor} or higher only for definitive same-person identity; "
         f"otherwise use confidence below {floor} (the system will not auto-link).\n\n"
         "Return JSON only: canonical_id (UUID string matching one candidate id, or null), "
@@ -202,6 +275,11 @@ def resolve_person_adjudication_plan(
         }
         merged = tuple(list(plan.resolution_reasons) + [extra])
         if person_may_materialize_canonical_after_recall(person):
+            if person_adjudication_defer_instead_of_materialize(person):
+                return CanonicalPersistPlan(
+                    decision=CanonicalPersistDecision.DEFER,
+                    resolution_reasons=merged,
+                )
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.MATERIALIZE_NEW,
                 resolution_reasons=merged,
@@ -243,6 +321,8 @@ def adjudicate_ambiguous_person_plan_with_llm(
     stylebook_id: int,
     model: str,
     model_config_id: str | None = None,
+    article_text: str | None = None,
+    mention_texts: list[str] | None = None,
 ) -> CanonicalPersistPlan:
     """LLM pick among recalled person canonicals; declined link may materialize when allowed."""
     prepared = prepare_person_adjudication(
@@ -252,6 +332,8 @@ def adjudicate_ambiguous_person_plan_with_llm(
         stylebook_id=stylebook_id,
         model=model,
         model_config_id=model_config_id,
+        article_text=article_text,
+        mention_texts=mention_texts,
     )
     if prepared is None:
         return plan

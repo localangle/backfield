@@ -21,6 +21,7 @@ from worker.substrate.canonical.adjudication import (
 )
 from worker.substrate.entities.person.adjudication import (
     adjudicate_ambiguous_person_plan_with_llm,
+    prepare_person_adjudication,
 )
 
 
@@ -264,6 +265,131 @@ def test_adjudicate_ambiguous_person_materialize_when_llm_rejects_link(monkeypat
         adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
         assert adj.get("outcome") == "no_high_confidence_link"
         assert adj.get("canonical_id") is None
+
+
+def test_adjudicate_ambiguous_person_athlete_defers_when_llm_rejects_link(monkeypatch) -> None:
+    """Athletes defer on declined link instead of minting a duplicate canonical."""
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        braves = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Luisangel Acuña",
+            slug="luisangel-acuna",
+            affiliation="Atlanta Braves",
+            person_type="athlete",
+            status="active",
+        )
+        session.add(braves)
+        session.commit()
+        session.refresh(braves)
+        braves_id = str(braves.id)
+
+        person = SubstratePerson(
+            project_id=pid,
+            name="Luisangel Acuña",
+            normalized_name="luisangel acuña",
+            title="shortstop",
+            affiliation="New York Mets",
+            person_type="athlete",
+            public_figure=True,
+            identity_fingerprint="fp-adj-acuna",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_person_canonical_match",
+                    "recall_canonical_ids": [braves_id],
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            return (
+                '{"canonical_id": null, "confidence": 0.4, '
+                '"rationale": "Different team but likely same athlete."}'
+            )
+
+        monkeypatch.setattr(
+            "worker.substrate.entities.person.adjudication.call_llm",
+            _fake_llm,
+        )
+
+        out = adjudicate_ambiguous_person_plan_with_llm(
+            session,
+            plan=plan,
+            person=person,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+            article_text="Former Brave Luisangel Acuña drove in a run for the Mets.",
+            mention_texts=["Luisangel Acuña"],
+        )
+
+        assert out.decision == CanonicalPersistDecision.DEFER
+
+
+def test_prepare_person_adjudication_includes_athlete_context(monkeypatch) -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pid, sb_id = _bootstrap(session)
+        canon = StylebookPersonCanonical(
+            stylebook_id=sb_id,
+            label="Luisangel Acuña",
+            slug="luisangel-acuna-braves",
+            affiliation="Atlanta Braves",
+            status="active",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        canon_id = str(canon.id)
+
+        person = SubstratePerson(
+            project_id=pid,
+            name="Luisangel Acuña",
+            normalized_name="luisangel acuña",
+            affiliation="New York Mets",
+            person_type="athlete",
+            public_figure=True,
+            identity_fingerprint="fp-adj-prompt",
+        )
+        session.add(person)
+        session.commit()
+        session.refresh(person)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": "ambiguous_person_canonical_match",
+                    "recall_canonical_ids": [canon_id],
+                },
+            ),
+        )
+
+        prepared = prepare_person_adjudication(
+            session,
+            plan=plan,
+            person=person,
+            stylebook_id=sb_id,
+            model="gpt-5-nano",
+            article_text="Former Brave Luisangel Acuña drove in a run for the Mets.",
+            mention_texts=["Luisangel Acuña"],
+        )
+        assert prepared is not None
+        assert "Person type: 'athlete'" in prepared.prompt
+        assert "Public figure: True" in prepared.prompt
+        assert "team (affiliation) and position (title) change over time" in prepared.prompt
+        assert "Former Brave Luisangel Acuña" in prepared.prompt
 
 
 def test_adjudicate_ambiguous_person_stays_deferred_when_flag_review(monkeypatch) -> None:

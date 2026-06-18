@@ -24,7 +24,7 @@ from backfield_entities.public.people import (
     search_public_people,
 )
 from backfield_entities.public.stylebook_scope import list_public_person_type_values
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 
 def _seed_people(session: Session) -> tuple[int, int, str]:
@@ -143,6 +143,8 @@ def test_get_public_person_and_mentions() -> None:
         assert person is not None
         assert person.title == "Mayor"
         assert person.stylebook_slug == "default"
+        assert person.mention_count == 1
+        assert person.story_count == 1
 
         result = list_public_person_mentions(
             session,
@@ -216,6 +218,46 @@ def test_list_public_entity_connections_for_person() -> None:
         assert len(connections) == 1
         assert connections[0].nature == "works_at"
         assert connections[0].to_entity_id == location_id
+
+
+def test_get_public_person_story_count_distinct_from_mention_count() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, mayor_id = _seed_people(session)
+        article = session.exec(
+            select(SubstrateArticle).where(SubstrateArticle.headline == "Budget vote")
+        ).first()
+        assert article is not None and article.id is not None
+        duplicate_person = SubstratePerson(
+            project_id=project_id,
+            name="Jane Doe",
+            normalized_name="jane doe",
+            stylebook_person_canonical_id=mayor_id,
+            title="Mayor",
+            affiliation="City Hall",
+        )
+        session.add(duplicate_person)
+        session.commit()
+        session.refresh(duplicate_person)
+        session.add(
+            SubstratePersonMention(
+                article_id=int(article.id),
+                person_id=int(duplicate_person.id),  # type: ignore[arg-type]
+                nature="source",
+            )
+        )
+        session.commit()
+
+        detail = get_public_person(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+        )
+        assert detail is not None
+        assert detail.mention_count == 2
+        assert detail.story_count == 1
 
 
 def test_list_public_person_type_values() -> None:
