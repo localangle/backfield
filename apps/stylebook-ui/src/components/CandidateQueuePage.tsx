@@ -1,10 +1,9 @@
-import { Fragment, useMemo } from "react"
+import { Fragment } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useSelectedStylebookLabel } from "@/lib/stylebookScopeContext"
 import {
-  candidatesWithSuggestedAction,
   suggestedActionShortLabel,
   suggestedRowAction,
 } from "@/lib/candidateQueueSuggestions"
@@ -128,10 +127,6 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
   const columnCount = config.columns.length + 2
   const tableColgroup = resolveCandidateQueueColgroup(columnCount, config.tableLayout)
   const canonicalBasePath = `${catalogBasePath}/${config.entitySlug}/canonical`
-  const suggestedCandidates = useMemo(
-    () => candidatesWithSuggestedAction(candidates),
-    [candidates],
-  )
   const rowActionsBusy =
     acceptingAiRecommendations ||
     acceptingId !== null ||
@@ -268,7 +263,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          {status === "open" && suggestedCandidates.length > 0 ? (
+          {status === "open" && listTotal > 0 ? (
             <div className="flex justify-end">
               <Button
                 type="button"
@@ -282,7 +277,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                     Accepting recommendations…
                   </>
                 ) : (
-                  `Accept AI recommendations (${suggestedCandidates.length})`
+                  "Accept all AI recommendations"
                 )}
               </Button>
             </div>

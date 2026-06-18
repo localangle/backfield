@@ -158,6 +158,26 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     }
   }, [projectSlug, status, debouncedQuery, typeFilter, listPage, config.api, config.typeFilter])
 
+  const fetchAllFilteredCandidates = useCallback(async (): Promise<TCandidate[]> => {
+    if (!projectSlug) return []
+    const type_filter = config.typeFilter && typeFilter !== "all" ? typeFilter : undefined
+    const q = debouncedQuery.trim() || undefined
+    const all: TCandidate[] = []
+    let offset = 0
+    while (true) {
+      const res = await config.api.list(projectSlug, status, {
+        limit: REVIEW_QUEUE_PAGE_SIZE,
+        offset,
+        type_filter,
+        q,
+      })
+      all.push(...res.candidates)
+      if (!res.has_next) break
+      offset += REVIEW_QUEUE_PAGE_SIZE
+    }
+    return all
+  }, [projectSlug, status, debouncedQuery, typeFilter, config.api, config.typeFilter])
+
   const fetchOpenCandidatesForLabel = useCallback(
     async (label: string) => {
       if (!projectSlug) return []
@@ -463,20 +483,30 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
 
   const acceptAiRecommendations = useCallback(async () => {
     if (!projectSlug || status !== "open") return
-    const targets = candidates.filter((candidate) => suggestedRowAction(candidate) !== null)
-    if (targets.length === 0) return
 
     setAcceptingAiRecommendations(true)
     setError(null)
     try {
+      const allCandidates = await fetchAllFilteredCandidates()
+      const targets = allCandidates.filter((candidate) => suggestedRowAction(candidate) !== null)
+      if (targets.length === 0) return
+
       for (const candidate of targets) {
         await applySuggestedAction(candidate, { silent: true })
       }
       await refreshListQuiet()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to accept AI recommendations")
     } finally {
       setAcceptingAiRecommendations(false)
     }
-  }, [projectSlug, status, candidates, applySuggestedAction, refreshListQuiet])
+  }, [
+    projectSlug,
+    status,
+    fetchAllFilteredCandidates,
+    applySuggestedAction,
+    refreshListQuiet,
+  ])
 
   const toggleExpanded = useCallback(
     async (candidate: TCandidate) => {
