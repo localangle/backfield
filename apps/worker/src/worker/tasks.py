@@ -72,15 +72,9 @@ from sqlmodel import Session, select
 from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
 from worker.semantic_indexing.reindex import run_semantic_reindex_for_scope
-from worker.substrate.canonical.parallel_llm import (
-    canonical_adjudication_max_concurrent,
-    commit_session_before_session_free_llm,
-    run_callables_parallel,
-)
 from worker.substrate.cleanup.ai_review import (
     load_cluster_members,
-    proposal_draft_to_row,
-    propose_for_cluster,
+    run_cleanup_review_clusters,
 )
 
 logger = logging.getLogger(__name__)
@@ -1312,7 +1306,7 @@ def execute_cleanup_ai_review(review_id: str) -> None:
         session.add(review)
         session.commit()
 
-    cluster_payloads: list[tuple[list[str], list]] = []
+    cluster_payloads: list[list] = []
     with Session(engine) as session:
         review = session.get(StylebookCleanupAiReview, review_id)
         if review is None:
@@ -1335,49 +1329,19 @@ def execute_cleanup_ai_review(review_id: str) -> None:
                 member_ids=member_ids,
             )
             if len(members) >= 2:
-                cluster_payloads.append((member_ids, members))
-        commit_session_before_session_free_llm(session)
+                cluster_payloads.append(members)
+        session.commit()
 
-    def _run_one(members: list) -> list:
-        return propose_for_cluster(
+    try:
+        run_cleanup_review_clusters(
+            engine,
+            review_id=review_id,
             check_id=check_id,
-            members=members,
+            stylebook_id=stylebook_id,
+            members_by_cluster=cluster_payloads,
             model=model,
             model_config_id=model_config_id,
         )
-
-    proposal_batches = run_callables_parallel(
-        [lambda members=members: _run_one(members) for _member_ids, members in cluster_payloads],
-        max_workers=canonical_adjudication_max_concurrent(),
-    )
-
-    try:
-        with Session(engine) as session:
-            review = session.get(StylebookCleanupAiReview, review_id)
-            if review is None:
-                return
-            stylebook_id = int(review.stylebook_id)
-            check_id = str(review.check_id)
-            total_proposals = 0
-            for index, drafts in enumerate(proposal_batches):
-                for draft in drafts:
-                    session.add(
-                        proposal_draft_to_row(
-                            review_id=review_id,
-                            stylebook_id=stylebook_id,
-                            check_id=check_id,
-                            draft=draft,
-                        )
-                    )
-                    total_proposals += 1
-                review.processed_cluster_count = index + 1
-                review.proposal_count = total_proposals
-                review.updated_at = datetime.now(UTC)
-                session.add(review)
-            review.status = "succeeded"
-            review.updated_at = datetime.now(UTC)
-            session.add(review)
-            session.commit()
     except Exception as exc:
         logger.exception("execute_cleanup_ai_review failed")
         _fail_cleanup_ai_review(engine, review_id, str(exc))

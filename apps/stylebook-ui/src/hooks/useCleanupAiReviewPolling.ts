@@ -39,6 +39,8 @@ export function useCleanupAiReviewPolling(params: {
       setReview(next)
       if (isTerminalReviewStatus(next.status)) {
         await loadProposals(reviewId)
+      } else if (next.proposal_count > 0) {
+        await loadProposals(reviewId)
       }
       return next
     },

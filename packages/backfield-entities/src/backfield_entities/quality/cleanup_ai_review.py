@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 CleanupAiAction = Literal["merge", "keep_separate"]
 
+MAX_MENTION_SAMPLES_IN_PROMPT = 6
+
 
 @dataclass(frozen=True)
 class CleanupClusterMember:
@@ -14,6 +16,7 @@ class CleanupClusterMember:
     label: str
     linked_substrate_count: int
     mention_count: int
+    sample_mention_texts: tuple[str, ...] = ()
     person_type: str | None = None
     title: str | None = None
     affiliation: str | None = None
@@ -89,6 +92,10 @@ def _format_member_line(check_id: str, member: CleanupClusterMember) -> str:
             parts.append(f"location_type={member.location_type!r}")
         if member.formatted_address:
             parts.append(f"formatted_address={member.formatted_address!r}")
+    if member.sample_mention_texts:
+        samples = member.sample_mention_texts[:MAX_MENTION_SAMPLES_IN_PROMPT]
+        shown = ", ".join(repr(text) for text in samples)
+        parts.append(f"mention_texts=[{shown}]")
     return "- " + " ".join(parts)
 
 
@@ -117,6 +124,8 @@ def build_cluster_partition_prompt(
         "do not imply a different person.\n"
         "- Prefer separate groups when evidence suggests different individuals "
         "with similar names.\n"
+        "- Use mention_texts (how the entity appears in stories) to distinguish "
+        "namesakes from the same real-world entity.\n"
         "- Every id must appear in exactly one group.\n\n"
         f"Member ids: {member_ids}\n\n"
         f"{member_lines}\n\n"

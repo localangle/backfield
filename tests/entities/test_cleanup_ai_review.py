@@ -43,6 +43,7 @@ def test_build_cluster_partition_prompt_includes_person_fields() -> None:
                 label="Jane Doe",
                 linked_substrate_count=2,
                 mention_count=3,
+                sample_mention_texts=("Jane Doe homered", "Doe went 2-for-4"),
                 person_type="athlete",
                 affiliation="Cubs",
             ),
@@ -58,6 +59,7 @@ def test_build_cluster_partition_prompt_includes_person_fields() -> None:
     assert "duplicate-people" not in prompt
     assert "person-1" in prompt
     assert "athlete" in prompt
+    assert "Jane Doe homered" in prompt
     assert "Partition every listed id" in prompt
 
 

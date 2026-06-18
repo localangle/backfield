@@ -205,12 +205,6 @@ export default function CleanupCheck() {
           sourceId,
           targetId,
         )
-        const moved = result.relinked_substrate_count
-        showMessage(
-          moved > 0
-            ? `Merged ${moved} ${moved === 1 ? linkedRecordSingular : linkedRecordLabel} into "${targetLabel}".`
-            : `Removed duplicate record "${sourceLabel}".`,
-        )
         setClusterResults((prev) =>
           prev
             ? applyMergeToClusterResults(prev, sourceId, targetId, result.relinked_substrate_count)
@@ -231,7 +225,6 @@ export default function CleanupCheck() {
       linkedRecordSingular,
       findCanonicalLabel,
       showConfirm,
-      showMessage,
       showError,
     ],
   )
@@ -248,7 +241,6 @@ export default function CleanupCheck() {
       if (!confirmed) return
       try {
         await deleteEmptyCleanupCanonical(entityType, stylebookSlug, canonicalId)
-        showMessage(`Deleted "${label}".`)
         setClusterResults((prev) =>
           prev ? applyDeleteEmptyToClusterResults(prev, canonicalId) : prev,
         )
@@ -260,7 +252,7 @@ export default function CleanupCheck() {
         )
       }
     },
-    [stylebookSlug, entityType, findCanonicalLabel, showConfirm, showMessage, showError],
+    [stylebookSlug, entityType, findCanonicalLabel, showConfirm, showError],
   )
 
   const handleDismissCluster = useCallback(
@@ -280,7 +272,6 @@ export default function CleanupCheck() {
           checkId: config.id,
           memberIds,
         })
-        showMessage("Marked as not a duplicate.")
         setClusterResults((prev) =>
           prev ? applyDismissClusterToResults(prev, clusterId) : prev,
         )
@@ -290,7 +281,7 @@ export default function CleanupCheck() {
         )
       }
     },
-    [stylebookSlug, config, showConfirm, showMessage, showError],
+    [stylebookSlug, config, showConfirm, showError],
   )
 
   const handleDismissGeographyIssue = useCallback(
@@ -313,7 +304,6 @@ export default function CleanupCheck() {
           checkId: config.id,
           canonicalId,
         })
-        showMessage("Marked as reviewed.")
         setListResults((prev) =>
           prev ? applyDismissCanonicalToListResults(prev, canonicalId) : prev,
         )
@@ -323,7 +313,7 @@ export default function CleanupCheck() {
         )
       }
     },
-    [stylebookSlug, config, listResults, showConfirm, showMessage, showError],
+    [stylebookSlug, config, listResults, showConfirm, showError],
   )
 
   const applyAcceptedMergeProposal = useCallback(
@@ -345,15 +335,6 @@ export default function CleanupCheck() {
   const handleAcceptAiProposal = useCallback(
     async (proposal: CleanupAiProposal) => {
       if (!stylebookSlug) return
-      const summary =
-        proposal.action === "merge"
-          ? "Apply this merge suggestion?"
-          : "Mark this pair as not duplicates?"
-      const confirmed = await showConfirm(summary, {
-        title: "Accept AI suggestion?",
-        confirmLabel: "Accept",
-      })
-      if (!confirmed) return
       try {
         const result = await acceptCleanupAiProposal({
           stylebookSlug,
@@ -361,25 +342,15 @@ export default function CleanupCheck() {
         })
         if (result.status === "stale") {
           showError(result.message)
-        } else {
-          showMessage(result.message)
-          if (proposal.action === "merge") {
-            applyAcceptedMergeProposal(proposal)
-          }
+        } else if (proposal.action === "merge") {
+          applyAcceptedMergeProposal(proposal)
         }
         removeAiProposal(proposal.id)
       } catch (error) {
         showError(error instanceof Error ? error.message : "Failed to accept AI suggestion")
       }
     },
-    [
-      stylebookSlug,
-      showConfirm,
-      showMessage,
-      showError,
-      applyAcceptedMergeProposal,
-      removeAiProposal,
-    ],
+    [stylebookSlug, showError, applyAcceptedMergeProposal, removeAiProposal],
   )
 
   const handleRejectAiProposal = useCallback(
@@ -405,40 +376,26 @@ export default function CleanupCheck() {
 
   const handleAcceptAllHighConfidence = useCallback(async () => {
     if (!stylebookSlug || highConfidenceProposals.length === 0) return
-    const confirmed = await showConfirm(
-      `Accept ${highConfidenceProposals.length} high-confidence AI suggestion${highConfidenceProposals.length === 1 ? "" : "s"}?`,
-      {
-        title: "Accept all high-confidence suggestions?",
-        confirmLabel: "Accept all",
-      },
-    )
-    if (!confirmed) return
-    let accepted = 0
     for (const proposal of highConfidenceProposals) {
       try {
         const result = await acceptCleanupAiProposal({
           stylebookSlug,
           proposalId: proposal.id,
         })
-        if (result.status === "applied") {
-          accepted += 1
-          if (proposal.action === "merge") {
-            applyAcceptedMergeProposal(proposal)
-          }
+        if (result.status === "applied" && proposal.action === "merge") {
+          applyAcceptedMergeProposal(proposal)
+        } else if (result.status === "stale") {
+          showError(result.message)
         }
         removeAiProposal(proposal.id)
       } catch {
         // Continue with remaining proposals.
       }
     }
-    if (accepted > 0) {
-      showMessage(`Accepted ${accepted} AI suggestion${accepted === 1 ? "" : "s"}.`)
-    }
   }, [
     stylebookSlug,
     highConfidenceProposals,
-    showConfirm,
-    showMessage,
+    showError,
     applyAcceptedMergeProposal,
     removeAiProposal,
   ])
