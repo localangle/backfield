@@ -1331,6 +1331,8 @@ def _fail_cleanup_ai_review(engine: Any, review_id: str, message: str) -> None:
         review = session.get(StylebookCleanupAiReview, review_id)
         if review is None:
             return
+        if str(review.status) == "cancelled":
+            return
         review.status = "failed"
         review.error_message = message[:10000]
         review.updated_at = datetime.now(UTC)
@@ -1447,6 +1449,8 @@ def _fail_candidate_ai_review(engine: Any, review_id: str, message: str) -> None
     with Session(engine) as session:
         review = session.get(StylebookCandidateAiReview, review_id)
         if review is None:
+            return
+        if str(review.status) == "cancelled":
             return
         review.status = "failed"
         review.error_message = message[:10000]

@@ -10,7 +10,7 @@ import { useAppMessage } from "@/components/AppMessageProvider"
 import { Loader2, Sparkles } from "lucide-react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
-import { CLEANUP_AI_HIGH_CONFIDENCE_THRESHOLD } from "@/lib/cleanupAiReview"
+import { CLEANUP_AI_HIGH_CONFIDENCE_THRESHOLD, isActiveReviewStatus } from "@/lib/cleanupAiReview"
 import { useCleanupAiReviewPolling } from "@/hooks/useCleanupAiReviewPolling"
 import {
   cleanupCheckConfigById,
@@ -110,18 +110,34 @@ export default function CleanupCheck() {
   const clusterStableIdByMemberRef = useRef<Map<string, string>>(new Map())
   const nextClusterStableIdRef = useRef(0)
   const [aiDialogOpen, setAiDialogOpen] = useState(false)
+  const [stoppingAiReview, setStoppingAiReview] = useState(false)
   const isClusterCheck = config?.kind === "cluster"
 
   const {
     review: aiReview,
     proposals: aiProposals,
     startTracking: startAiReviewTracking,
+    stopReview: stopAiReview,
     removeProposal: removeAiProposal,
   } = useCleanupAiReviewPolling({
     stylebookSlug,
     checkId: config?.id ?? "",
     enabled: Boolean(stylebookSlug && isClusterCheck),
   })
+  const aiReviewActive = Boolean(aiReview && isActiveReviewStatus(aiReview.status))
+
+  async function handleAiReviewButtonClick() {
+    if (aiReviewActive) {
+      setStoppingAiReview(true)
+      try {
+        await stopAiReview()
+      } finally {
+        setStoppingAiReview(false)
+      }
+      return
+    }
+    setAiDialogOpen(true)
+  }
 
   const entityType = config?.entityType ?? "location"
   const linkedRecordLabel = cleanupLinkedRecordLabel(entityType)
@@ -464,15 +480,35 @@ export default function CleanupCheck() {
 
       {canEdit && isClusterCheck ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => setAiDialogOpen(true)}>
-            <Sparkles className="h-4 w-4 mr-2" />
-            Review with AI
+          <Button
+            type="button"
+            variant={aiReviewActive ? "destructive" : "outline"}
+            disabled={stoppingAiReview}
+            onClick={() => void handleAiReviewButtonClick()}
+          >
+            {stoppingAiReview ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Stopping…
+              </>
+            ) : aiReviewActive ? (
+              "Stop"
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Review with AI
+              </>
+            )}
           </Button>
-          {aiReview && (aiReview.status === "queued" || aiReview.status === "running") ? (
+          {aiReviewActive ? (
             <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Reviewing clusters ({aiReview.processed_cluster_count}/{aiReview.cluster_count})…
+              Reviewing clusters ({aiReview?.processed_cluster_count ?? 0}/
+              {aiReview?.cluster_count ?? 0})…
             </span>
+          ) : null}
+          {aiReview?.status === "cancelled" ? (
+            <span className="text-sm text-muted-foreground">Review stopped</span>
           ) : null}
           {aiReview?.status === "failed" ? (
             <span className="text-sm text-destructive">

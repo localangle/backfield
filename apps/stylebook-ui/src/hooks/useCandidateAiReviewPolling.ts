@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
+  cancelCandidateAiReview,
   getCandidateAiReview,
   getLatestCandidateAiReview,
   type CandidateAiReview,
   type CandidateAiReviewEntityType,
 } from "@/lib/api"
-import { isTerminalReviewStatus } from "@/lib/cleanupAiReview"
+import { isActiveReviewStatus, isTerminalReviewStatus } from "@/lib/cleanupAiReview"
 
 const POLL_INTERVAL_MS = 1500
 
@@ -59,6 +60,13 @@ export function useCandidateAiReviewPolling(params: {
     [refreshReview],
   )
 
+  const stopReview = useCallback(async () => {
+    if (!review || !isActiveReviewStatus(review.status)) return null
+    const next = await cancelCandidateAiReview(stylebookSlug, review.id)
+    applyReviewUpdate(next)
+    return next
+  }, [review, stylebookSlug, applyReviewUpdate])
+
   useEffect(() => {
     if (!enabled || !stylebookSlug || !projectSlug || !entityType) return
     let cancelled = false
@@ -95,5 +103,6 @@ export function useCandidateAiReviewPolling(params: {
     loading,
     startTracking,
     refreshReview,
+    stopReview,
   }
 }

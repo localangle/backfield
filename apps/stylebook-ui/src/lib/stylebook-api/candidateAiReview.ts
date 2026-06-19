@@ -77,3 +77,13 @@ export async function getCandidateAiReview(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/candidates/ai-review/${encodeURIComponent(reviewId)}`,
   )
 }
+
+export async function cancelCandidateAiReview(
+  stylebookSlug: string,
+  reviewId: string,
+): Promise<CandidateAiReview> {
+  return stylebookJsonFetch<CandidateAiReview>(
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/candidates/ai-review/${encodeURIComponent(reviewId)}/cancel`,
+    { method: "POST" },
+  )
+}

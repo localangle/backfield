@@ -102,6 +102,7 @@ export {
   startCleanupAiReview,
   getCleanupAiReview,
   getLatestCleanupAiReview,
+  cancelCleanupAiReview,
   listCleanupAiProposals,
   acceptCleanupAiProposal,
   rejectCleanupAiProposal,
@@ -114,6 +115,7 @@ export {
   startCandidateAiReview,
   getCandidateAiReview,
   getLatestCandidateAiReview,
+  cancelCandidateAiReview,
 } from "@/lib/stylebook-api/candidateAiReview"
 
 export {

@@ -13,6 +13,7 @@ from backfield_db import (
     BackfieldUser,
     BackfieldWorkspace,
     Stylebook,
+    StylebookCandidateAiReview,
     StylebookConnection,
     StylebookLocationCanonical,
     StylebookPersonAlias,
@@ -827,3 +828,21 @@ def test_candidate_ai_review_start(editor_client: TestClient, stylebook_test_eng
     )
     assert latest.status_code == 200
     assert latest.json()["id"] == body["id"]
+
+    with Session(stylebook_test_engine) as s:
+        review = s.get(StylebookCandidateAiReview, body["id"])
+        assert review is not None
+        review.status = "running"
+        s.add(review)
+        s.commit()
+
+    cancel = editor_client.post(
+        f"/v1/stylebooks/default/candidates/ai-review/{body['id']}/cancel",
+    )
+    assert cancel.status_code == 200
+    assert cancel.json()["status"] == "cancelled"
+
+    cancel_again = editor_client.post(
+        f"/v1/stylebooks/default/candidates/ai-review/{body['id']}/cancel",
+    )
+    assert cancel_again.status_code == 400

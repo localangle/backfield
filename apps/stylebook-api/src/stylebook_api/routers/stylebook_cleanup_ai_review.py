@@ -329,6 +329,40 @@ def start_cleanup_ai_review(
     return CleanupAiReviewOut.from_row(review)
 
 
+@router.post(
+    "/{stylebook_slug}/cleanup/ai-review/{review_id}/cancel",
+    response_model=CleanupAiReviewOut,
+)
+def cancel_cleanup_ai_review(
+    stylebook_slug: str,
+    review_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CleanupAiReviewOut:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    review = session.get(StylebookCleanupAiReview, review_id)
+    if review is None or int(review.stylebook_id) != int(sb.id):
+        raise HTTPException(status_code=404, detail="AI review not found")
+    if review.status not in ("queued", "running"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot stop review with status '{review.status}'. "
+                "Only queued or running reviews can be stopped."
+            ),
+        )
+    review.status = "cancelled"
+    review.error_message = None
+    review.updated_at = datetime.now(UTC)
+    session.add(review)
+    session.commit()
+    session.refresh(review)
+    return CleanupAiReviewOut.from_row(review)
+
+
 @router.get("/{stylebook_slug}/cleanup/ai-review/latest", response_model=CleanupAiReviewOut | None)
 def get_latest_cleanup_ai_review(
     stylebook_slug: str,

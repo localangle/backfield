@@ -411,6 +411,16 @@ export async function getLatestCleanupAiReview(
   )
 }
 
+export async function cancelCleanupAiReview(
+  stylebookSlug: string,
+  reviewId: string,
+): Promise<CleanupAiReview> {
+  return stylebookJsonFetch<CleanupAiReview>(
+    `${cleanupAiReviewPath(stylebookSlug, reviewId)}/cancel`,
+    { method: "POST" },
+  )
+}
+
 export async function listCleanupAiProposals(params: {
   stylebookSlug: string
   reviewId: string

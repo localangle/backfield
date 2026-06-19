@@ -22,5 +22,9 @@ export function proposalsForCluster(
 }
 
 export function isTerminalReviewStatus(status: string): boolean {
-  return status === "succeeded" || status === "failed"
+  return status === "succeeded" || status === "failed" || status === "cancelled"
+}
+
+export function isActiveReviewStatus(status: string): boolean {
+  return status === "queued" || status === "running"
 }

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
+  cancelCleanupAiReview,
   getCleanupAiReview,
   getLatestCleanupAiReview,
   listCleanupAiProposals,
   type CleanupAiProposal,
   type CleanupAiReview,
 } from "@/lib/api"
-import { isTerminalReviewStatus } from "@/lib/cleanupAiReview"
+import { isActiveReviewStatus, isTerminalReviewStatus } from "@/lib/cleanupAiReview"
 
 const POLL_INTERVAL_MS = 2000
 
@@ -60,6 +61,13 @@ export function useCleanupAiReviewPolling(params: {
     [refreshReview],
   )
 
+  const stopReview = useCallback(async () => {
+    if (!review || !isActiveReviewStatus(review.status)) return null
+    const next = await cancelCleanupAiReview(stylebookSlug, review.id)
+    setReview(next)
+    return next
+  }, [review, stylebookSlug])
+
   const removeProposal = useCallback((proposalId: string) => {
     setProposals((prev) => prev.filter((proposal) => proposal.id !== proposalId))
   }, [])
@@ -101,6 +109,7 @@ export function useCleanupAiReviewPolling(params: {
     loading,
     startTracking,
     refreshReview,
+    stopReview,
     removeProposal,
     setProposals,
   }

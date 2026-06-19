@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from backfield_auth.gate import require_project_access
@@ -204,6 +204,40 @@ def start_candidate_ai_review(
         args=[str(review.id)],
         queue=_celery_queue(),
     )
+    return CandidateAiReviewOut.from_row(review)
+
+
+@router.post(
+    "/{stylebook_slug}/candidates/ai-review/{review_id}/cancel",
+    response_model=CandidateAiReviewOut,
+)
+def cancel_candidate_ai_review(
+    stylebook_slug: str,
+    review_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> CandidateAiReviewOut:
+    require_stylebook_edit_access(session, auth=auth, stylebook_slug=stylebook_slug)
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    review = session.get(StylebookCandidateAiReview, review_id)
+    if review is None or int(review.stylebook_id) != int(sb.id):
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review.status not in ("queued", "running"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot stop review with status '{review.status}'. "
+                "Only queued or running reviews can be stopped."
+            ),
+        )
+    review.status = "cancelled"
+    review.error_message = None
+    review.updated_at = datetime.now(UTC)
+    session.add(review)
+    session.commit()
+    session.refresh(review)
     return CandidateAiReviewOut.from_row(review)
 
 

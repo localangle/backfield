@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -42,6 +42,7 @@ from backfield_entities.entities.person.policy import (
     plan_requires_llm_person_canonical_adjudication,
 )
 from sqlmodel import Session, col, select
+from worker.substrate.ai_review_cancel import ai_review_status_is_cancelled, load_review_status
 from worker.substrate.canonical.adjudication import (
     LocationAdjudicationPrepared,
     prepare_location_adjudication,
@@ -91,7 +92,7 @@ class _LocationReviewPlan:
 def _fail_candidate_ai_review(engine: Any, review_id: str, message: str) -> None:
     with Session(engine) as session:
         review = session.get(StylebookCandidateAiReview, review_id)
-        if review is None:
+        if review is None or ai_review_status_is_cancelled(str(review.status)):
             return
         review.status = "failed"
         review.error_message = message[:10000]
@@ -100,10 +101,17 @@ def _fail_candidate_ai_review(engine: Any, review_id: str, message: str) -> None
         session.commit()
 
 
+def _candidate_ai_review_is_cancelled(engine: Any, review_id: str) -> bool:
+    from backfield_db import StylebookCandidateAiReview as ReviewModel
+
+    status = load_review_status(engine, model=ReviewModel, review_id=review_id)
+    return ai_review_status_is_cancelled(status)
+
+
 def _mark_candidate_ai_review_succeeded(engine: Any, review_id: str) -> None:
     with Session(engine) as session:
         review = session.get(StylebookCandidateAiReview, review_id)
-        if review is None:
+        if review is None or ai_review_status_is_cancelled(str(review.status)):
             return
         review.status = "succeeded"
         review.updated_at = datetime.now(UTC)
@@ -232,19 +240,21 @@ def _apply_person_candidate_review(
     prepared: _PersonReviewPlan,
 ) -> bool:
     plan = prepared.plan
+    llm_data: dict[str, Any] | None = None
     if prepared.adjudication_prep is not None:
         llm_data = run_person_adjudication_llm(prepared.adjudication_prep)
-        plan = resolve_person_adjudication_plan(
-            plan,
-            prepared=prepared.adjudication_prep,
-            llm_data=llm_data,
-        )
     with Session(engine) as session:
         if not _person_pending_open(session, person_id=person_id, project_id=project_id):
             return False
         person = session.get(SubstratePerson, person_id)
         if person is None:
             return False
+        if prepared.adjudication_prep is not None:
+            plan = resolve_person_adjudication_plan(
+                plan,
+                prepared=replace(prepared.adjudication_prep, person=person),
+                llm_data=llm_data,
+            )
         has_rec = apply_candidate_ai_review_recommendation(session, person=person, plan=plan)
         session.commit()
         return has_rec
@@ -321,13 +331,9 @@ def _apply_organization_candidate_review(
     prepared: _OrganizationReviewPlan,
 ) -> bool:
     plan = prepared.plan
+    llm_data: dict[str, Any] | None = None
     if prepared.adjudication_prep is not None:
         llm_data = run_organization_adjudication_llm(prepared.adjudication_prep)
-        plan = resolve_organization_adjudication_plan(
-            plan,
-            prepared=prepared.adjudication_prep,
-            llm_data=llm_data,
-        )
     with Session(engine) as session:
         if not _organization_pending_open(
             session,
@@ -338,6 +344,12 @@ def _apply_organization_candidate_review(
         organization = session.get(SubstrateOrganization, organization_id)
         if organization is None:
             return False
+        if prepared.adjudication_prep is not None:
+            plan = resolve_organization_adjudication_plan(
+                plan,
+                prepared=replace(prepared.adjudication_prep, organization=organization),
+                llm_data=llm_data,
+            )
         has_rec = apply_organization_candidate_ai_review(
             session, organization=organization, plan=plan
         )
@@ -427,19 +439,21 @@ def _apply_location_candidate_review(
     prepared: _LocationReviewPlan,
 ) -> bool:
     plan = prepared.plan
+    llm_data: dict[str, Any] | None = None
     if prepared.adjudication_prep is not None:
         llm_data = run_location_adjudication_llm(prepared.adjudication_prep)
-        plan = resolve_location_adjudication_plan(
-            plan,
-            prepared=prepared.adjudication_prep,
-            llm_data=llm_data,
-        )
     with Session(engine) as session:
         if not _location_pending_open(session, location_id=location_id, project_id=project_id):
             return False
         location = session.get(SubstrateLocation, location_id)
         if location is None:
             return False
+        if prepared.adjudication_prep is not None:
+            plan = resolve_location_adjudication_plan(
+                plan,
+                prepared=replace(prepared.adjudication_prep, location=location),
+                llm_data=llm_data,
+            )
         has_rec = apply_location_candidate_ai_review(session, location=location, plan=plan)
         session.commit()
         return has_rec
@@ -479,9 +493,11 @@ def _persist_review_progress(
     processed_count: int,
     recommendation_count: int,
 ) -> None:
+    if _candidate_ai_review_is_cancelled(engine, review_id):
+        return
     with Session(engine) as session:
         review = session.get(StylebookCandidateAiReview, review_id)
-        if review is None:
+        if review is None or ai_review_status_is_cancelled(str(review.status)):
             return
         review.processed_count = processed_count
         review.recommendation_count = recommendation_count
@@ -501,6 +517,8 @@ def run_candidate_ai_review(
     model: str,
     model_config_id: str | None,
 ) -> None:
+    if _candidate_ai_review_is_cancelled(engine, review_id):
+        return
     if not candidate_ids:
         _mark_candidate_ai_review_succeeded(engine, review_id)
         return
@@ -545,6 +563,8 @@ def run_candidate_ai_review(
         raise ValueError(f"Unsupported candidate AI review entity_type: {entity_type}")
 
     def _run_one_safe(candidate_id: int) -> tuple[int, bool]:
+        if _candidate_ai_review_is_cancelled(engine, review_id):
+            return candidate_id, False
         try:
             return run_one(candidate_id)
         except Exception:
@@ -561,6 +581,8 @@ def run_candidate_ai_review(
 
     if max_workers <= 1 or len(candidate_ids) <= 1:
         for candidate_id in candidate_ids:
+            if _candidate_ai_review_is_cancelled(engine, review_id):
+                return
             _cid, has_rec = _run_one_safe(candidate_id)
             processed_count += 1
             if has_rec:
@@ -579,6 +601,8 @@ def run_candidate_ai_review(
                 for candidate_id in candidate_ids
             }
             for future in as_completed(future_to_id):
+                if _candidate_ai_review_is_cancelled(engine, review_id):
+                    break
                 _cid, has_rec = future.result()
                 processed_count += 1
                 if has_rec:
@@ -590,7 +614,8 @@ def run_candidate_ai_review(
                     recommendation_count=recommendation_count,
                 )
 
-    _mark_candidate_ai_review_succeeded(engine, review_id)
+    if not _candidate_ai_review_is_cancelled(engine, review_id):
+        _mark_candidate_ai_review_succeeded(engine, review_id)
 
 
 __all__ = ["list_open_candidate_ids_for_review", "run_candidate_ai_review"]

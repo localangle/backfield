@@ -51,6 +51,7 @@ import {
 import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
 import { candidateQueueNameKey } from "@/lib/candidateQueueSimilarity"
+import { isActiveReviewStatus } from "@/lib/cleanupAiReview"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import {
   CandidateReviewReasons,
@@ -134,6 +135,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
 
   const aiReviewEnabled = Boolean(config.aiReviewEntityType && stylebookSlug && projectSlug)
   const [aiReviewDialogOpen, setAiReviewDialogOpen] = useState(false)
+  const [stoppingAiReview, setStoppingAiReview] = useState(false)
   const candidateAiReview = useCandidateAiReviewPolling({
     stylebookSlug,
     projectSlug,
@@ -142,6 +144,22 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     onReviewTerminal: () => void refreshListQuiet(),
     onProgress: () => void refreshListQuiet(),
   })
+  const aiReviewActive = Boolean(
+    candidateAiReview.review && isActiveReviewStatus(candidateAiReview.review.status),
+  )
+
+  async function handleAiReviewButtonClick() {
+    if (aiReviewActive) {
+      setStoppingAiReview(true)
+      try {
+        await candidateAiReview.stopReview()
+      } finally {
+        setStoppingAiReview(false)
+      }
+      return
+    }
+    setAiReviewDialogOpen(true)
+  }
 
   const LinkModal = config.linkModal
   const columnCount = config.columns.length + 2
@@ -321,20 +339,35 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                   <Button
                     type="button"
                     size="sm"
-                    variant="outline"
-                    disabled={loading || rowActionsBusy || candidateAiReview.loading}
-                    onClick={() => setAiReviewDialogOpen(true)}
+                    variant={aiReviewActive ? "destructive" : "outline"}
+                    disabled={
+                      loading ||
+                      rowActionsBusy ||
+                      candidateAiReview.loading ||
+                      stoppingAiReview
+                    }
+                    onClick={() => void handleAiReviewButtonClick()}
                   >
-                    Review with AI
+                    {stoppingAiReview ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Stopping…
+                      </>
+                    ) : aiReviewActive ? (
+                      "Stop"
+                    ) : (
+                      "Review with AI"
+                    )}
                   </Button>
-                  {candidateAiReview.review &&
-                  (candidateAiReview.review.status === "queued" ||
-                    candidateAiReview.review.status === "running") ? (
+                  {aiReviewActive ? (
                     <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                      Reviewing ({candidateAiReview.review.processed_count}/
-                      {candidateAiReview.review.candidate_count})…
+                      Reviewing ({candidateAiReview.review?.processed_count ?? 0}/
+                      {candidateAiReview.review?.candidate_count ?? 0})…
                     </span>
+                  ) : null}
+                  {candidateAiReview.review?.status === "cancelled" ? (
+                    <span className="text-sm text-muted-foreground">Review stopped</span>
                   ) : null}
                   {candidateAiReview.review?.status === "failed" ? (
                     <span className="text-sm text-destructive">

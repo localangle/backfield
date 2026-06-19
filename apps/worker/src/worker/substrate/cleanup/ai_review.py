@@ -38,6 +38,7 @@ from backfield_entities.quality.cleanup_ai_review import (
 )
 from sqlmodel import Session, col, func, select
 
+from worker.substrate.ai_review_cancel import ai_review_status_is_cancelled, load_review_status
 from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_MAX_RETRIES,
     ADJUDICATION_LLM_TIMEOUT_S,
@@ -500,6 +501,11 @@ def proposal_draft_to_row(
     )
 
 
+def _cleanup_ai_review_is_cancelled(engine: Any, review_id: str) -> bool:
+    status = load_review_status(engine, model=StylebookCleanupAiReview, review_id=review_id)
+    return ai_review_status_is_cancelled(status)
+
+
 def _persist_cluster_proposals(
     engine: Any,
     *,
@@ -510,9 +516,11 @@ def _persist_cluster_proposals(
     processed_cluster_count: int,
     proposal_count: int,
 ) -> None:
+    if _cleanup_ai_review_is_cancelled(engine, review_id):
+        return
     with Session(engine) as session:
         review = session.get(StylebookCleanupAiReview, review_id)
-        if review is None:
+        if review is None or ai_review_status_is_cancelled(str(review.status)):
             return
         for draft in drafts:
             session.add(
@@ -533,7 +541,7 @@ def _persist_cluster_proposals(
 def _mark_cleanup_review_succeeded(engine: Any, *, review_id: str) -> None:
     with Session(engine) as session:
         review = session.get(StylebookCleanupAiReview, review_id)
-        if review is None:
+        if review is None or ai_review_status_is_cancelled(str(review.status)):
             return
         review.status = "succeeded"
         review.updated_at = datetime.now(UTC)
@@ -552,6 +560,8 @@ def run_cleanup_review_clusters(
     model_config_id: str | None,
 ) -> None:
     """Run cluster LLM calls in parallel and persist progress after each cluster finishes."""
+    if _cleanup_ai_review_is_cancelled(engine, review_id):
+        return
     if not members_by_cluster:
         _mark_cleanup_review_succeeded(engine, review_id=review_id)
         return
@@ -561,6 +571,8 @@ def run_cleanup_review_clusters(
     proposal_count = 0
 
     def _task(members: list[CleanupClusterMember]) -> list[CleanupAiProposalDraft]:
+        if _cleanup_ai_review_is_cancelled(engine, review_id):
+            return []
         return propose_for_cluster(
             check_id=check_id,
             members=members,
@@ -570,6 +582,8 @@ def run_cleanup_review_clusters(
 
     if max_workers <= 1 or len(members_by_cluster) <= 1:
         for members in members_by_cluster:
+            if _cleanup_ai_review_is_cancelled(engine, review_id):
+                return
             drafts = _task(members)
             processed_cluster_count += 1
             proposal_count += len(drafts)
@@ -590,6 +604,8 @@ def run_cleanup_review_clusters(
                 for members in members_by_cluster
             }
             for future in as_completed(future_to_members):
+                if _cleanup_ai_review_is_cancelled(engine, review_id):
+                    break
                 drafts = future.result()
                 processed_cluster_count += 1
                 proposal_count += len(drafts)
@@ -603,4 +619,5 @@ def run_cleanup_review_clusters(
                     proposal_count=proposal_count,
                 )
 
-    _mark_cleanup_review_succeeded(engine, review_id=review_id)
+    if not _cleanup_ai_review_is_cancelled(engine, review_id):
+        _mark_cleanup_review_succeeded(engine, review_id=review_id)
