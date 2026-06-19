@@ -326,16 +326,26 @@ def test_list_public_article_processing_handles_null_unicode_in_result_json() ->
     import uuid
 
     import pytest
+    from sqlalchemy.exc import OperationalError
     from backfield_db import BackfieldProject
 
     database_url = os.environ.get(
         "BACKFIELD_DATABASE_URL_DIRECT",
-        "postgresql+psycopg://postgres:postgres@localhost:5433/backfield",
+        os.environ.get(
+            "BACKFIELD_DATABASE_URL",
+            "postgresql+psycopg://postgres:postgres@localhost:5433/backfield",
+        ),
     )
     if not database_url.startswith("postgresql"):
         pytest.skip("postgres-only regression for sanitized article provenance SQL")
 
-    engine = create_engine(database_url)
+    try:
+        engine = create_engine(database_url)
+        with engine.connect() as conn:
+            conn.exec_driver_sql("SELECT 1")
+    except OperationalError:
+        pytest.skip("postgres not available for sanitized article provenance regression test")
+
     with Session(engine) as session:
         bind = session.get_bind()
         if bind is None or bind.dialect.name != "postgresql":
