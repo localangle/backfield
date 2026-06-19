@@ -61,7 +61,7 @@ import {
   candidateQueueDataCellClass,
   resolveCandidateQueueColgroup,
 } from "@/lib/candidateQueueTableLayout"
-import { ChevronRight, Clock, Link2, Loader2, PlusCircle, StickyNote, X } from "lucide-react"
+import { ChevronRight, Clock, Link2, Loader2, PlusCircle, Sparkles, StickyNote, X } from "lucide-react"
 
 type CandidateQueuePageProps<TCandidate extends QueueCandidateBase> = {
   config: CandidateQueuePageConfig<TCandidate>
@@ -181,6 +181,8 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     )
     .join(", ")
 
+  const showAiQueueActions = status === "open" && listTotal > 0
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       {queueToasts.created.isVisible && queueToasts.created.payload ? (
@@ -261,9 +263,78 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Review queue</CardTitle>
-          <CardDescription>{config.copy.reviewQueueDescription}</CardDescription>
+        <CardHeader className="space-y-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-1 min-w-0">
+              <CardTitle>Review queue</CardTitle>
+              <CardDescription>{config.copy.reviewQueueDescription}</CardDescription>
+            </div>
+            {showAiQueueActions ? (
+              <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {config.aiReviewEntityType ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={aiReviewActive ? "destructive" : "outline"}
+                      disabled={
+                        loading ||
+                        rowActionsBusy ||
+                        candidateAiReview.loading ||
+                        stoppingAiReview
+                      }
+                      onClick={() => void handleAiReviewButtonClick()}
+                    >
+                      {stoppingAiReview ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Stopping…
+                        </>
+                      ) : aiReviewActive ? (
+                        "Stop"
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4 mr-2" />
+                          Review with AI
+                        </>
+                      )}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={loading || rowActionsBusy}
+                    onClick={() => void acceptAiRecommendations()}
+                  >
+                    {acceptingAiRecommendations ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Accepting recommendations…
+                      </>
+                    ) : (
+                      "Accept all AI recommendations"
+                    )}
+                  </Button>
+                </div>
+                {config.aiReviewEntityType && aiReviewActive ? (
+                  <p className="text-sm text-muted-foreground inline-flex items-center gap-2 sm:justify-end">
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    Reviewing ({candidateAiReview.review?.processed_count ?? 0}/
+                    {candidateAiReview.review?.candidate_count ?? 0})…
+                  </p>
+                ) : null}
+                {config.aiReviewEntityType &&
+                candidateAiReview.review?.status === "cancelled" ? (
+                  <p className="text-sm text-muted-foreground sm:text-right">Review stopped</p>
+                ) : null}
+                {config.aiReviewEntityType && candidateAiReview.review?.status === "failed" ? (
+                  <p className="text-sm text-destructive sm:text-right">
+                    {candidateAiReview.review.error_message ?? "AI review failed"}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -330,68 +401,6 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                 </p>
               </AlertDescription>
             </Alert>
-          ) : null}
-
-          {status === "open" && listTotal > 0 ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {config.aiReviewEntityType ? (
-                <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={aiReviewActive ? "destructive" : "outline"}
-                    disabled={
-                      loading ||
-                      rowActionsBusy ||
-                      candidateAiReview.loading ||
-                      stoppingAiReview
-                    }
-                    onClick={() => void handleAiReviewButtonClick()}
-                  >
-                    {stoppingAiReview ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Stopping…
-                      </>
-                    ) : aiReviewActive ? (
-                      "Stop"
-                    ) : (
-                      "Review with AI"
-                    )}
-                  </Button>
-                  {aiReviewActive ? (
-                    <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                      Reviewing ({candidateAiReview.review?.processed_count ?? 0}/
-                      {candidateAiReview.review?.candidate_count ?? 0})…
-                    </span>
-                  ) : null}
-                  {candidateAiReview.review?.status === "cancelled" ? (
-                    <span className="text-sm text-muted-foreground">Review stopped</span>
-                  ) : null}
-                  {candidateAiReview.review?.status === "failed" ? (
-                    <span className="text-sm text-destructive">
-                      {candidateAiReview.review.error_message ?? "AI review failed"}
-                    </span>
-                  ) : null}
-                </>
-              ) : null}
-              <Button
-                type="button"
-                size="sm"
-                disabled={loading || rowActionsBusy}
-                onClick={() => void acceptAiRecommendations()}
-              >
-                {acceptingAiRecommendations ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Accepting recommendations…
-                  </>
-                ) : (
-                  "Accept all AI recommendations"
-                )}
-              </Button>
-            </div>
           ) : null}
 
           <div className="rounded-md border">

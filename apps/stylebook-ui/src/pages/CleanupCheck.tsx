@@ -23,8 +23,10 @@ import {
   applyDeleteEmptyToClusterResults,
   applyDismissCanonicalToListResults,
   applyDismissClusterToResults,
+  applyKeepSeparateProposalToClusterResults,
   applyMergeToClusterResults,
   assignStableClusterIds,
+  pairKeyForIds,
 } from "@/lib/cleanupClusterState"
 import {
   deleteEmptyCleanupLocationCanonical,
@@ -109,6 +111,7 @@ export default function CleanupCheck() {
     useState<PaginatedCleanupLocationIssuesResponse | null>(null)
   const clusterStableIdByMemberRef = useRef<Map<string, string>>(new Map())
   const nextClusterStableIdRef = useRef(0)
+  const dismissedCleanupPairsRef = useRef<Set<string>>(new Set())
   const [aiDialogOpen, setAiDialogOpen] = useState(false)
   const [stoppingAiReview, setStoppingAiReview] = useState(false)
   const isClusterCheck = config?.kind === "cluster"
@@ -165,6 +168,7 @@ export default function CleanupCheck() {
         perPage: PER_PAGE,
       })
       if (config.kind === "cluster") {
+        dismissedCleanupPairsRef.current.clear()
         const paginated = response as PaginatedDuplicateClustersResponse
         setClusterResults({
           ...paginated,
@@ -282,6 +286,14 @@ export default function CleanupCheck() {
         },
       )
       if (!confirmed) return
+      const sortedMemberIds = [...memberIds].sort()
+      for (let index = 0; index < sortedMemberIds.length; index += 1) {
+        for (let other = index + 1; other < sortedMemberIds.length; other += 1) {
+          dismissedCleanupPairsRef.current.add(
+            pairKeyForIds(sortedMemberIds[index], sortedMemberIds[other]),
+          )
+        }
+      }
       try {
         await dismissCleanupIssue({
           stylebookSlug,
@@ -349,6 +361,19 @@ export default function CleanupCheck() {
     [],
   )
 
+  const applyAcceptedKeepSeparateProposal = useCallback((proposal: CleanupAiProposal) => {
+    if (proposal.action !== "keep_separate") return
+    setClusterResults((prev) =>
+      prev
+        ? applyKeepSeparateProposalToClusterResults(
+            prev,
+            proposal,
+            dismissedCleanupPairsRef.current,
+          )
+        : prev,
+    )
+  }, [])
+
   const handleAcceptAiProposal = useCallback(
     async (proposal: CleanupAiProposal) => {
       if (!stylebookSlug) return
@@ -359,15 +384,25 @@ export default function CleanupCheck() {
         })
         if (result.status === "stale") {
           showError(result.message)
-        } else if (proposal.action === "merge") {
-          applyAcceptedMergeProposal(proposal)
+        } else if (result.status === "applied") {
+          if (proposal.action === "merge") {
+            applyAcceptedMergeProposal(proposal)
+          } else if (proposal.action === "keep_separate") {
+            applyAcceptedKeepSeparateProposal(proposal)
+          }
         }
         removeAiProposal(proposal.id)
       } catch (error) {
         showError(error instanceof Error ? error.message : "Failed to accept AI suggestion")
       }
     },
-    [stylebookSlug, showError, applyAcceptedMergeProposal, removeAiProposal],
+    [
+      stylebookSlug,
+      showError,
+      applyAcceptedMergeProposal,
+      applyAcceptedKeepSeparateProposal,
+      removeAiProposal,
+    ],
   )
 
   const handleRejectAiProposal = useCallback(
@@ -399,8 +434,12 @@ export default function CleanupCheck() {
           stylebookSlug,
           proposalId: proposal.id,
         })
-        if (result.status === "applied" && proposal.action === "merge") {
-          applyAcceptedMergeProposal(proposal)
+        if (result.status === "applied") {
+          if (proposal.action === "merge") {
+            applyAcceptedMergeProposal(proposal)
+          } else if (proposal.action === "keep_separate") {
+            applyAcceptedKeepSeparateProposal(proposal)
+          }
         } else if (result.status === "stale") {
           showError(result.message)
         }
@@ -414,6 +453,7 @@ export default function CleanupCheck() {
     highConfidenceProposals,
     showError,
     applyAcceptedMergeProposal,
+    applyAcceptedKeepSeparateProposal,
     removeAiProposal,
   ])
 
