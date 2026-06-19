@@ -7,7 +7,7 @@ import {
 } from "@/lib/api"
 import { isTerminalReviewStatus } from "@/lib/cleanupAiReview"
 
-const POLL_INTERVAL_MS = 2000
+const POLL_INTERVAL_MS = 1500
 
 export function useCandidateAiReviewPolling(params: {
   stylebookSlug: string
@@ -15,27 +15,40 @@ export function useCandidateAiReviewPolling(params: {
   entityType: CandidateAiReviewEntityType
   enabled: boolean
   onReviewTerminal?: () => void
+  onProgress?: (processed: number, total: number) => void
 }) {
-  const { stylebookSlug, projectSlug, entityType, enabled, onReviewTerminal } = params
+  const { stylebookSlug, projectSlug, entityType, enabled, onReviewTerminal, onProgress } = params
   const [review, setReview] = useState<CandidateAiReview | null>(null)
   const [loading, setLoading] = useState(false)
   const onTerminalRef = useRef(onReviewTerminal)
+  const onProgressRef = useRef(onProgress)
+  const lastProcessedRef = useRef(0)
   onTerminalRef.current = onReviewTerminal
+  onProgressRef.current = onProgress
+
+  const applyReviewUpdate = useCallback((next: CandidateAiReview) => {
+    setReview(next)
+    if (next.processed_count > lastProcessedRef.current) {
+      lastProcessedRef.current = next.processed_count
+      onProgressRef.current?.(next.processed_count, next.candidate_count)
+    }
+    if (isTerminalReviewStatus(next.status)) {
+      onTerminalRef.current?.()
+    }
+  }, [])
 
   const refreshReview = useCallback(
     async (reviewId: string) => {
       const next = await getCandidateAiReview(stylebookSlug, reviewId)
-      setReview(next)
-      if (isTerminalReviewStatus(next.status)) {
-        onTerminalRef.current?.()
-      }
+      applyReviewUpdate(next)
       return next
     },
-    [stylebookSlug],
+    [stylebookSlug, applyReviewUpdate],
   )
 
   const startTracking = useCallback(
     async (reviewId: string) => {
+      lastProcessedRef.current = 0
       setLoading(true)
       try {
         await refreshReview(reviewId)
@@ -54,6 +67,7 @@ export function useCandidateAiReviewPolling(params: {
       try {
         const latest = await getLatestCandidateAiReview(stylebookSlug, entityType, projectSlug)
         if (cancelled || !latest) return
+        lastProcessedRef.current = latest.processed_count
         setReview(latest)
         if (isTerminalReviewStatus(latest.status)) {
           onTerminalRef.current?.()

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -18,6 +20,8 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from backfield_entities.canonical.link import CANONICAL_LINK_PENDING
+from backfield_entities.canonical.plan_types import CanonicalPersistPlan
+from backfield_entities.catalog.candidate_ai_review import list_open_candidate_ids_for_review
 from backfield_entities.entities.location.persist import (
     apply_candidate_ai_review_recommendation as apply_location_candidate_ai_review,
 )
@@ -37,26 +41,51 @@ from backfield_entities.entities.person.policy import (
     decide_person_canonical_persist_plan,
     plan_requires_llm_person_canonical_adjudication,
 )
-from sqlalchemy import func
 from sqlmodel import Session, col, select
 from worker.substrate.canonical.adjudication import (
+    LocationAdjudicationPrepared,
     prepare_location_adjudication,
     resolve_location_adjudication_plan,
     run_location_adjudication_llm,
 )
-from worker.substrate.canonical.parallel_llm import canonical_adjudication_max_concurrent
+from worker.substrate.canonical.parallel_llm import (
+    candidate_ai_review_max_concurrent,
+    commit_session_before_session_free_llm,
+)
 from worker.substrate.entities.organization.adjudication import (
+    OrganizationAdjudicationPrepared,
     prepare_organization_adjudication,
     resolve_organization_adjudication_plan,
     run_organization_adjudication_llm,
 )
 from worker.substrate.entities.person.adjudication import (
+    PersonAdjudicationPrepared,
     prepare_person_adjudication,
     resolve_person_adjudication_plan,
     run_person_adjudication_llm,
 )
 
+logger = logging.getLogger(__name__)
+
 CandidateEntityType = Literal["person", "organization", "location"]
+
+
+@dataclass(frozen=True)
+class _PersonReviewPlan:
+    plan: CanonicalPersistPlan
+    adjudication_prep: PersonAdjudicationPrepared | None
+
+
+@dataclass(frozen=True)
+class _OrganizationReviewPlan:
+    plan: CanonicalPersistPlan
+    adjudication_prep: OrganizationAdjudicationPrepared | None
+
+
+@dataclass(frozen=True)
+class _LocationReviewPlan:
+    plan: CanonicalPersistPlan
+    adjudication_prep: LocationAdjudicationPrepared | None
 
 
 def _fail_candidate_ai_review(engine: Any, review_id: str, message: str) -> None:
@@ -80,46 +109,6 @@ def _mark_candidate_ai_review_succeeded(engine: Any, review_id: str) -> None:
         review.updated_at = datetime.now(UTC)
         session.add(review)
         session.commit()
-
-
-def _open_person_candidate_ids(session: Session, *, project_id: int) -> list[int]:
-    sort_key = func.coalesce(col(SubstratePerson.sort_key), col(SubstratePerson.normalized_name))
-    rows = session.exec(
-        select(SubstratePerson.id)
-        .where(
-            SubstratePerson.project_id == project_id,
-            col(SubstratePerson.stylebook_person_canonical_id).is_(None),
-            SubstratePerson.canonical_link_status == CANONICAL_LINK_PENDING,
-        )
-        .order_by(sort_key)
-    ).all()
-    return [int(row) for row in rows if row is not None]
-
-
-def _open_organization_candidate_ids(session: Session, *, project_id: int) -> list[int]:
-    rows = session.exec(
-        select(SubstrateOrganization.id)
-        .where(
-            SubstrateOrganization.project_id == project_id,
-            col(SubstrateOrganization.stylebook_organization_canonical_id).is_(None),
-            SubstrateOrganization.canonical_link_status == CANONICAL_LINK_PENDING,
-        )
-        .order_by(col(SubstrateOrganization.normalized_name))
-    ).all()
-    return [int(row) for row in rows if row is not None]
-
-
-def _open_location_candidate_ids(session: Session, *, project_id: int) -> list[int]:
-    rows = session.exec(
-        select(SubstrateLocation.id)
-        .where(
-            SubstrateLocation.project_id == project_id,
-            col(SubstrateLocation.stylebook_location_canonical_id).is_(None),
-            SubstrateLocation.canonical_link_status == CANONICAL_LINK_PENDING,
-        )
-        .order_by(col(SubstrateLocation.normalized_name))
-    ).all()
-    return [int(row) for row in rows if row is not None]
 
 
 def _article_context_for_person(
@@ -163,7 +152,36 @@ def _article_context_for_person(
     return article_text, mention_texts
 
 
-def _process_person_candidate_review(
+def _person_pending_open(session: Session, *, person_id: int, project_id: int) -> bool:
+    person = session.get(SubstratePerson, person_id)
+    if person is None or int(person.project_id) != project_id:
+        return False
+    if person.stylebook_person_canonical_id is not None:
+        return False
+    return str(person.canonical_link_status) == CANONICAL_LINK_PENDING
+
+
+def _organization_pending_open(
+    session: Session, *, organization_id: int, project_id: int
+) -> bool:
+    organization = session.get(SubstrateOrganization, organization_id)
+    if organization is None or int(organization.project_id) != project_id:
+        return False
+    if organization.stylebook_organization_canonical_id is not None:
+        return False
+    return str(organization.canonical_link_status) == CANONICAL_LINK_PENDING
+
+
+def _location_pending_open(session: Session, *, location_id: int, project_id: int) -> bool:
+    location = session.get(SubstrateLocation, location_id)
+    if location is None or int(location.project_id) != project_id:
+        return False
+    if location.stylebook_location_canonical_id is not None:
+        return False
+    return str(location.canonical_link_status) == CANONICAL_LINK_PENDING
+
+
+def _prepare_person_candidate_review(
     engine: Any,
     *,
     stylebook_id: int,
@@ -171,15 +189,15 @@ def _process_person_candidate_review(
     person_id: int,
     model: str,
     model_config_id: str | None,
-) -> bool:
+) -> _PersonReviewPlan | None:
     with Session(engine) as session:
         person = session.get(SubstratePerson, person_id)
         if person is None or int(person.project_id) != project_id:
-            return False
+            return None
         if person.stylebook_person_canonical_id is not None:
-            return False
+            return None
         if str(person.canonical_link_status) != CANONICAL_LINK_PENDING:
-            return False
+            return None
         article_text, mention_texts = _article_context_for_person(
             session,
             person_id=person_id,
@@ -190,8 +208,9 @@ def _process_person_candidate_review(
             stylebook_id=stylebook_id,
             person=person,
         )
+        adjudication_prep: PersonAdjudicationPrepared | None = None
         if plan_requires_llm_person_canonical_adjudication(plan, person):
-            prep = prepare_person_adjudication(
+            adjudication_prep = prepare_person_adjudication(
                 session,
                 plan=plan,
                 person=person,
@@ -201,10 +220,127 @@ def _process_person_candidate_review(
                 article_text=article_text,
                 mention_texts=mention_texts,
             )
-            if prep is not None:
-                llm_data = run_person_adjudication_llm(prep)
-                plan = resolve_person_adjudication_plan(plan, prepared=prep, llm_data=llm_data)
+        commit_session_before_session_free_llm(session)
+    return _PersonReviewPlan(plan=plan, adjudication_prep=adjudication_prep)
+
+
+def _apply_person_candidate_review(
+    engine: Any,
+    *,
+    project_id: int,
+    person_id: int,
+    prepared: _PersonReviewPlan,
+) -> bool:
+    plan = prepared.plan
+    if prepared.adjudication_prep is not None:
+        llm_data = run_person_adjudication_llm(prepared.adjudication_prep)
+        plan = resolve_person_adjudication_plan(
+            plan,
+            prepared=prepared.adjudication_prep,
+            llm_data=llm_data,
+        )
+    with Session(engine) as session:
+        if not _person_pending_open(session, person_id=person_id, project_id=project_id):
+            return False
+        person = session.get(SubstratePerson, person_id)
+        if person is None:
+            return False
         has_rec = apply_candidate_ai_review_recommendation(session, person=person, plan=plan)
+        session.commit()
+        return has_rec
+
+
+def _process_person_candidate_review(
+    engine: Any,
+    *,
+    stylebook_id: int,
+    project_id: int,
+    person_id: int,
+    model: str,
+    model_config_id: str | None,
+) -> bool:
+    prepared = _prepare_person_candidate_review(
+        engine,
+        stylebook_id=stylebook_id,
+        project_id=project_id,
+        person_id=person_id,
+        model=model,
+        model_config_id=model_config_id,
+    )
+    if prepared is None:
+        return False
+    return _apply_person_candidate_review(
+        engine,
+        project_id=project_id,
+        person_id=person_id,
+        prepared=prepared,
+    )
+
+
+def _prepare_organization_candidate_review(
+    engine: Any,
+    *,
+    stylebook_id: int,
+    project_id: int,
+    organization_id: int,
+    model: str,
+    model_config_id: str | None,
+) -> _OrganizationReviewPlan | None:
+    with Session(engine) as session:
+        organization = session.get(SubstrateOrganization, organization_id)
+        if organization is None or int(organization.project_id) != project_id:
+            return None
+        if organization.stylebook_organization_canonical_id is not None:
+            return None
+        if str(organization.canonical_link_status) != CANONICAL_LINK_PENDING:
+            return None
+        plan = decide_organization_canonical_persist_plan(
+            session,
+            stylebook_id=stylebook_id,
+            organization=organization,
+        )
+        adjudication_prep: OrganizationAdjudicationPrepared | None = None
+        if plan_requires_llm_organization_canonical_adjudication(plan, organization):
+            adjudication_prep = prepare_organization_adjudication(
+                session,
+                plan=plan,
+                organization=organization,
+                stylebook_id=stylebook_id,
+                model=model,
+                model_config_id=model_config_id,
+            )
+        commit_session_before_session_free_llm(session)
+    return _OrganizationReviewPlan(plan=plan, adjudication_prep=adjudication_prep)
+
+
+def _apply_organization_candidate_review(
+    engine: Any,
+    *,
+    project_id: int,
+    organization_id: int,
+    prepared: _OrganizationReviewPlan,
+) -> bool:
+    plan = prepared.plan
+    if prepared.adjudication_prep is not None:
+        llm_data = run_organization_adjudication_llm(prepared.adjudication_prep)
+        plan = resolve_organization_adjudication_plan(
+            plan,
+            prepared=prepared.adjudication_prep,
+            llm_data=llm_data,
+        )
+    with Session(engine) as session:
+        if not _organization_pending_open(
+            session,
+            organization_id=organization_id,
+            project_id=project_id,
+        ):
+            return False
+        organization = session.get(SubstrateOrganization, organization_id)
+        if organization is None:
+            return False
+        has_rec = apply_organization_candidate_ai_review(
+            session, organization=organization, plan=plan
+        )
         session.commit()
         return has_rec
 
@@ -218,38 +354,22 @@ def _process_organization_candidate_review(
     model: str,
     model_config_id: str | None,
 ) -> bool:
-    with Session(engine) as session:
-        organization = session.get(SubstrateOrganization, organization_id)
-        if organization is None or int(organization.project_id) != project_id:
-            return False
-        if organization.stylebook_organization_canonical_id is not None:
-            return False
-        if str(organization.canonical_link_status) != CANONICAL_LINK_PENDING:
-            return False
-        plan = decide_organization_canonical_persist_plan(
-            session,
-            stylebook_id=stylebook_id,
-            organization=organization,
-        )
-        if plan_requires_llm_organization_canonical_adjudication(plan, organization):
-            prep = prepare_organization_adjudication(
-                session,
-                plan=plan,
-                organization=organization,
-                stylebook_id=stylebook_id,
-                model=model,
-                model_config_id=model_config_id,
-            )
-            if prep is not None:
-                llm_data = run_organization_adjudication_llm(prep)
-                plan = resolve_organization_adjudication_plan(
-                    plan, prepared=prep, llm_data=llm_data
-                )
-        has_rec = apply_organization_candidate_ai_review(
-            session, organization=organization, plan=plan
-        )
-        session.commit()
-        return has_rec
+    prepared = _prepare_organization_candidate_review(
+        engine,
+        stylebook_id=stylebook_id,
+        project_id=project_id,
+        organization_id=organization_id,
+        model=model,
+        model_config_id=model_config_id,
+    )
+    if prepared is None:
+        return False
+    return _apply_organization_candidate_review(
+        engine,
+        project_id=project_id,
+        organization_id=organization_id,
+        prepared=prepared,
+    )
 
 
 def _location_entry_from_substrate(location: SubstrateLocation) -> dict[str, Any]:
@@ -258,6 +378,71 @@ def _location_entry_from_substrate(location: SubstrateLocation) -> dict[str, Any
         "location_type": location.location_type,
         "formatted_address": location.formatted_address,
     }
+
+
+def _prepare_location_candidate_review(
+    engine: Any,
+    *,
+    stylebook_id: int,
+    project_id: int,
+    location_id: int,
+    model: str,
+    model_config_id: str | None,
+) -> _LocationReviewPlan | None:
+    with Session(engine) as session:
+        location = session.get(SubstrateLocation, location_id)
+        if location is None or int(location.project_id) != project_id:
+            return None
+        if location.stylebook_location_canonical_id is not None:
+            return None
+        if str(location.canonical_link_status) != CANONICAL_LINK_PENDING:
+            return None
+        entry = _location_entry_from_substrate(location)
+        plan = decide_location_canonical_persist_plan(
+            session,
+            stylebook_id=stylebook_id,
+            places_bucket="ready",
+            location=location,
+            entry=entry,
+        )
+        adjudication_prep: LocationAdjudicationPrepared | None = None
+        if plan_requires_llm_canonical_adjudication(plan, location):
+            adjudication_prep = prepare_location_adjudication(
+                session,
+                plan=plan,
+                location=location,
+                stylebook_id=stylebook_id,
+                model=model,
+                model_config_id=model_config_id,
+            )
+        commit_session_before_session_free_llm(session)
+    return _LocationReviewPlan(plan=plan, adjudication_prep=adjudication_prep)
+
+
+def _apply_location_candidate_review(
+    engine: Any,
+    *,
+    project_id: int,
+    location_id: int,
+    prepared: _LocationReviewPlan,
+) -> bool:
+    plan = prepared.plan
+    if prepared.adjudication_prep is not None:
+        llm_data = run_location_adjudication_llm(prepared.adjudication_prep)
+        plan = resolve_location_adjudication_plan(
+            plan,
+            prepared=prepared.adjudication_prep,
+            llm_data=llm_data,
+        )
+    with Session(engine) as session:
+        if not _location_pending_open(session, location_id=location_id, project_id=project_id):
+            return False
+        location = session.get(SubstrateLocation, location_id)
+        if location is None:
+            return False
+        has_rec = apply_location_candidate_ai_review(session, location=location, plan=plan)
+        session.commit()
+        return has_rec
 
 
 def _process_location_candidate_review(
@@ -269,37 +454,40 @@ def _process_location_candidate_review(
     model: str,
     model_config_id: str | None,
 ) -> bool:
+    prepared = _prepare_location_candidate_review(
+        engine,
+        stylebook_id=stylebook_id,
+        project_id=project_id,
+        location_id=location_id,
+        model=model,
+        model_config_id=model_config_id,
+    )
+    if prepared is None:
+        return False
+    return _apply_location_candidate_review(
+        engine,
+        project_id=project_id,
+        location_id=location_id,
+        prepared=prepared,
+    )
+
+
+def _persist_review_progress(
+    engine: Any,
+    *,
+    review_id: str,
+    processed_count: int,
+    recommendation_count: int,
+) -> None:
     with Session(engine) as session:
-        location = session.get(SubstrateLocation, location_id)
-        if location is None or int(location.project_id) != project_id:
-            return False
-        if location.stylebook_location_canonical_id is not None:
-            return False
-        if str(location.canonical_link_status) != CANONICAL_LINK_PENDING:
-            return False
-        entry = _location_entry_from_substrate(location)
-        plan = decide_location_canonical_persist_plan(
-            session,
-            stylebook_id=stylebook_id,
-            places_bucket="ready",
-            location=location,
-            entry=entry,
-        )
-        if plan_requires_llm_canonical_adjudication(plan, location):
-            prep = prepare_location_adjudication(
-                session,
-                plan=plan,
-                location=location,
-                stylebook_id=stylebook_id,
-                model=model,
-                model_config_id=model_config_id,
-            )
-            if prep is not None:
-                llm_data = run_location_adjudication_llm(prep)
-                plan = resolve_location_adjudication_plan(plan, prepared=prep, llm_data=llm_data)
-        has_rec = apply_location_candidate_ai_review(session, location=location, plan=plan)
+        review = session.get(StylebookCandidateAiReview, review_id)
+        if review is None:
+            return
+        review.processed_count = processed_count
+        review.recommendation_count = recommendation_count
+        review.updated_at = datetime.now(UTC)
+        session.add(review)
         session.commit()
-        return has_rec
 
 
 def run_candidate_ai_review(
@@ -356,42 +544,53 @@ def run_candidate_ai_review(
     if run_one is None:
         raise ValueError(f"Unsupported candidate AI review entity_type: {entity_type}")
 
-    max_workers = canonical_adjudication_max_concurrent()
-    recommendation_count = 0
-    processed = 0
+    def _run_one_safe(candidate_id: int) -> tuple[int, bool]:
+        try:
+            return run_one(candidate_id)
+        except Exception:
+            logger.exception(
+                "candidate AI review failed for %s id=%s",
+                entity_type,
+                candidate_id,
+            )
+            return candidate_id, False
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [
-            pool.submit(copy_context().run, lambda cid=cid: run_one(cid)) for cid in candidate_ids
-        ]
-        for future in as_completed(futures):
-            _cid, has_rec = future.result()
-            processed += 1
+    max_workers = candidate_ai_review_max_concurrent()
+    recommendation_count = 0
+    processed_count = 0
+
+    if max_workers <= 1 or len(candidate_ids) <= 1:
+        for candidate_id in candidate_ids:
+            _cid, has_rec = _run_one_safe(candidate_id)
+            processed_count += 1
             if has_rec:
                 recommendation_count += 1
-            with Session(engine) as session:
-                review = session.get(StylebookCandidateAiReview, review_id)
-                if review is None:
-                    continue
-                review.processed_count = processed
-                review.recommendation_count = recommendation_count
-                review.updated_at = datetime.now(UTC)
-                session.add(review)
-                session.commit()
+            _persist_review_progress(
+                engine,
+                review_id=review_id,
+                processed_count=processed_count,
+                recommendation_count=recommendation_count,
+            )
+    else:
+        workers = min(max_workers, len(candidate_ids))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_id = {
+                pool.submit(copy_context().run, _run_one_safe, candidate_id): candidate_id
+                for candidate_id in candidate_ids
+            }
+            for future in as_completed(future_to_id):
+                _cid, has_rec = future.result()
+                processed_count += 1
+                if has_rec:
+                    recommendation_count += 1
+                _persist_review_progress(
+                    engine,
+                    review_id=review_id,
+                    processed_count=processed_count,
+                    recommendation_count=recommendation_count,
+                )
 
     _mark_candidate_ai_review_succeeded(engine, review_id)
 
 
-def list_open_candidate_ids_for_review(
-    session: Session,
-    *,
-    entity_type: CandidateEntityType,
-    project_id: int,
-) -> list[int]:
-    if entity_type == "person":
-        return _open_person_candidate_ids(session, project_id=project_id)
-    if entity_type == "organization":
-        return _open_organization_candidate_ids(session, project_id=project_id)
-    if entity_type == "location":
-        return _open_location_candidate_ids(session, project_id=project_id)
-    raise ValueError(f"Unsupported candidate AI review entity_type: {entity_type}")
+__all__ = ["list_open_candidate_ids_for_review", "run_candidate_ai_review"]

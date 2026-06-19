@@ -32,6 +32,7 @@ from backfield_entities.entities.person.policy import (
 )
 from backfield_entities.entities.person.review import (
     plan_includes_auto_waive_person_review,
+    plan_includes_defer_only_person_review,
     plan_includes_flag_person_review,
 )
 from backfield_entities.entities.person.types import (
@@ -363,11 +364,23 @@ def _canonical_suggestion_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any
         if from_adj is not None:
             return from_adj
 
-    if plan.decision == CanonicalPersistDecision.DEFER and (
-        plan_includes_flag_person_review(plan.resolution_reasons)
-        or (plan_has_ambiguous_person_canonical_match(plan) and adj is None)
-    ):
-        return None
+    if plan.decision == CanonicalPersistDecision.DEFER:
+        if any(
+            isinstance(r, dict) and str(r.get("code") or "") == "canonical_suggestion"
+            for r in plan.resolution_reasons
+        ):
+            return None
+        if plan_has_ambiguous_person_canonical_match(plan) and adj is None:
+            if plan_includes_defer_only_person_review(plan.resolution_reasons):
+                pass
+            else:
+                return None
+        elif (
+            plan_includes_flag_person_review(plan.resolution_reasons)
+            and adj is None
+            and not plan_includes_defer_only_person_review(plan.resolution_reasons)
+        ):
+            return None
     if (
         plan.decision == CanonicalPersistDecision.LINK_EXISTING
         and plan.existing_canonical_id is not None
@@ -385,8 +398,6 @@ def _canonical_suggestion_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any
             "suggested_action": "materialize_new",
         }
     if plan.decision == CanonicalPersistDecision.DEFER:
-        if plan_includes_auto_waive_person_review(plan.resolution_reasons):
-            return None
         return {
             "code": "canonical_suggestion",
             "source": "rules_plan",
@@ -443,11 +454,14 @@ def apply_candidate_ai_review_recommendation(
         for r in reasons
         if str(r.get("code") or "") not in ("canonical_suggestion", "canonical_adjudication")
     ]
+    has_suggestion = False
     for r in plan.resolution_reasons:
         if isinstance(r, dict):
-            reasons.append(dict(r))
+            row = dict(r)
+            reasons.append(row)
+            if str(row.get("code") or "") == "canonical_suggestion":
+                has_suggestion = True
     extra = _canonical_suggestion_from_plan(plan)
-    has_suggestion = False
     if extra is not None:
         suggestion = dict(extra)
         suggestion["source"] = CANDIDATE_AI_REVIEW_SOURCE

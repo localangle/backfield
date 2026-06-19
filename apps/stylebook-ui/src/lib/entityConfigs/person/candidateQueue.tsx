@@ -1,6 +1,7 @@
 import type { PersonCandidate } from "@/lib/api"
 import {
   acceptPersonCandidate,
+  clearPersonCandidateRecommendation,
   deferPersonCandidate,
   getCanonicalPerson,
   getPersonCandidateContext,
@@ -114,6 +115,9 @@ export const personCandidateQueueConfig: CandidateQueuePageConfig<PersonCandidat
     getContext: getPersonCandidateContext,
     defer: async (projectSlug, candidateId) => {
       await deferPersonCandidate(projectSlug, candidateId)
+    },
+    clearRecommendation: async (projectSlug, candidateId) => {
+      await clearPersonCandidateRecommendation(projectSlug, candidateId)
     },
     updateNote: async (projectSlug, candidateId, note) => {
       await updatePersonCandidateNote(projectSlug, candidateId, note)

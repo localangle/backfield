@@ -42,6 +42,7 @@ export type CandidateQueueApiAdapter<TCandidate extends QueueCandidateBase> = {
   getContext: (projectSlug: string, candidateId: number, limit: number) => Promise<CandidateContextResult>
 
   defer: (projectSlug: string, candidateId: number) => Promise<void>
+  clearRecommendation: (projectSlug: string, candidateId: number) => Promise<void>
   updateNote: (projectSlug: string, candidateId: number, note: string | null) => Promise<void>
   linkToCanonical: (candidateId: number, projectSlug: string, canonicalId: string) => Promise<void>
 

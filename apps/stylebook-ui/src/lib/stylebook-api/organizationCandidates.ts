@@ -113,6 +113,17 @@ export async function deferOrganizationCandidate(
   )
 }
 
+export async function clearOrganizationCandidateRecommendation(
+  projectSlug: string,
+  substrateOrganizationId: number,
+): Promise<{ message: string }> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  return stylebookJsonFetch<{ message: string }>(
+    `/v1/organizations/candidates/${substrateOrganizationId}/clear-recommendation?${params}`,
+    { method: "POST" },
+  )
+}
+
 export interface OrganizationCandidateContextItem {
   article_id: number
   article_headline?: string | null

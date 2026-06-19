@@ -125,6 +125,30 @@ def surname_inferred_from_relative(entry: dict[str, Any]) -> bool:
     return False
 
 
+def inferred_surname_from_review_message(message: str | None) -> bool:
+    """Legacy rows may carry inferred-surname context only in ``review_message``."""
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return "inferred surname" in text or "surname inferred" in text
+
+
+def person_inferred_surname_from_details(details: dict[str, Any]) -> bool:
+    if surname_inferred_from_relative(details):
+        return True
+    return inferred_surname_from_review_message(
+        details.get("review_message") if isinstance(details.get("review_message"), str) else None
+    )
+
+
+def review_reason_indicates_inferred_surname(reason: dict[str, Any]) -> bool:
+    if str(reason.get("code") or "") != REASON_FIRST_NAME_ONLY:
+        return False
+    return inferred_surname_from_review_message(
+        reason.get("message") if isinstance(reason.get("message"), str) else None
+    )
+
+
 def apply_inferred_surname_review_flag(
     entry: dict[str, Any],
     *,
@@ -247,3 +271,63 @@ def plan_includes_flag_person_review(
         if isinstance(r, dict) and is_flag_review_code(str(r.get("code") or "")):
             return True
     return False
+
+
+def plan_includes_defer_only_person_review(
+    plan_reasons: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+) -> bool:
+    for r in plan_reasons:
+        if not isinstance(r, dict):
+            continue
+        code = str(r.get("code") or "")
+        if code in AUTO_WAIVE_REASON_CODES:
+            return True
+        if code == REASON_FIRST_NAME_ONLY:
+            if isinstance(r, dict) and review_reason_indicates_inferred_surname(r):
+                continue
+            return True
+    return False
+
+
+def person_source_details(person: Any) -> dict[str, Any]:
+    raw = getattr(person, "source_details_json", None)
+    return raw if isinstance(raw, dict) else {}
+
+
+def person_review_reason_code_from_source(details: dict[str, Any]) -> str | None:
+    _handling, code, _message = review_context_from_source_details(details)
+    return code
+
+
+def person_surname_inferred_from_source(person: Any) -> bool:
+    return person_inferred_surname_from_details(person_source_details(person))
+
+
+def person_review_recommends_defer_only(
+    *,
+    reason_code: str | None,
+    source_details: dict[str, Any] | None = None,
+) -> bool:
+    """True when editors should defer (no link/create recommendation)."""
+    details = source_details if isinstance(source_details, dict) else {}
+    if person_inferred_surname_from_details(details):
+        return False
+    code = str(reason_code or "").strip()
+    if code in AUTO_WAIVE_REASON_CODES:
+        return True
+    return code == REASON_FIRST_NAME_ONLY
+
+
+def person_review_blocks_auto_materialize(
+    *,
+    reason_code: str | None,
+    source_details: dict[str, Any] | None = None,
+) -> bool:
+    """True when ingest must not auto-create a canonical (review queue may still suggest create)."""
+    details = source_details if isinstance(source_details, dict) else {}
+    if person_inferred_surname_from_details(details):
+        return True
+    code = str(reason_code or "").strip()
+    if code == REASON_STAGE_NAME_OR_ALIAS:
+        return True
+    return person_review_recommends_defer_only(reason_code=code, source_details=details)

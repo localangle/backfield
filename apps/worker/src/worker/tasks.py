@@ -51,6 +51,7 @@ from backfield_db import (
     StylebookCleanupAiReview,
 )
 from backfield_db.session import get_engine
+from backfield_entities.catalog.candidate_ai_review import list_open_candidate_ids_for_review
 from backfield_entities.catalog.full_bundle import export_stylebook_bundle, import_stylebook_bundle
 from backfield_entities.ingest.semantic_indexing.reindex_contract import SemanticReindexScope
 from backfield_entities.processed_item_article_link import (
@@ -78,10 +79,7 @@ from sqlmodel import Session, select
 from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
 from worker.semantic_indexing.reindex import run_semantic_reindex_for_scope
-from worker.substrate.candidates.ai_review import (
-    list_open_candidate_ids_for_review,
-    run_candidate_ai_review,
-)
+from worker.substrate.candidates.ai_review import run_candidate_ai_review
 from worker.substrate.cleanup.ai_review import (
     load_cluster_members,
     run_cleanup_review_clusters,

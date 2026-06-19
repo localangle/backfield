@@ -1,6 +1,7 @@
 import type { Candidate } from "@/lib/api"
 import {
   acceptCandidate,
+  clearLocationCandidateRecommendation,
   deferCandidate,
   getCandidateContext,
   getCanonicalLocation,
@@ -131,6 +132,9 @@ export const locationCandidateQueueConfig: CandidateQueuePageConfig<Candidate> =
     getContext: getCandidateContext,
     defer: async (projectSlug, candidateId) => {
       await deferCandidate(projectSlug, candidateId)
+    },
+    clearRecommendation: async (projectSlug, candidateId) => {
+      await clearLocationCandidateRecommendation(projectSlug, candidateId)
     },
     updateNote: async (projectSlug, candidateId, note) => {
       await updateCandidateNote(projectSlug, candidateId, note)

@@ -14,6 +14,9 @@ from backfield_db import (
     SubstrateOrganizationMention,
     SubstrateOrganizationMentionOccurrence,
 )
+from backfield_entities.canonical.candidate_review import (
+    strip_ai_recommendations_from_review_reasons,
+)
 from backfield_entities.canonical.link import (
     CANONICAL_LINK_LINKED,
     CANONICAL_LINK_PENDING,
@@ -633,6 +636,37 @@ def defer_candidate(
     session.add(organization)
     session.commit()
     return {"message": "deferred"}
+
+
+@router.post("/candidates/{substrate_organization_id}/clear-recommendation")
+def clear_candidate_recommendation(
+    substrate_organization_id: int,
+    project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> dict[str, str]:
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    _ = _require_stylebook_id(session, proj, stylebook_slug)
+
+    organization = session.get(SubstrateOrganization, substrate_organization_id)
+    if organization is None or int(organization.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Substrate organization not found")
+    if organization.stylebook_organization_canonical_id is not None:
+        raise HTTPException(status_code=409, detail="Organization is already linked to a canonical")
+    if organization.canonical_link_status != CANONICAL_LINK_PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail="Organization is not in the review queue (status must be pending)",
+        )
+
+    organization.canonical_review_reasons_json = strip_ai_recommendations_from_review_reasons(
+        organization.canonical_review_reasons_json
+    )
+    session.add(organization)
+    session.commit()
+    return {"message": "cleared"}
 
 
 @router.post("/candidates/{substrate_organization_id}/accept")

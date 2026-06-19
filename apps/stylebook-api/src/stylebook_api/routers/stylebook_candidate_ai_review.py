@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from backfield_auth.gate import require_project_access
 from backfield_db import BackfieldAiModelConfig, BackfieldProject, StylebookCandidateAiReview
+from backfield_entities.catalog.candidate_ai_review import count_open_candidates_for_review
 from celery import Celery
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -189,6 +190,11 @@ def start_candidate_ai_review(
         provider_model_id=body.provider_model_id.strip(),
         ai_model_config_id=body.ai_model_config_id,
         created_by_user_id=_created_by_user_id(auth),
+        candidate_count=count_open_candidates_for_review(
+            session,
+            entity_type=body.entity_type,
+            project_id=int(proj.id),  # type: ignore[arg-type]
+        ),
     )
     session.add(review)
     session.commit()

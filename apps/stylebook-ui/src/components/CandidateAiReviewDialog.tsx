@@ -104,7 +104,7 @@ export function CandidateAiReviewDialog({
           <DialogTitle>Review with AI</DialogTitle>
           <DialogDescription>
             Choose a model to review open queue items and suggest whether to link, create, or
-            defer each one. Recommendations appear on each row when the review finishes.
+            defer each one. Recommendations appear on rows as the review progresses.
           </DialogDescription>
         </DialogHeader>
         {loadingModels ? (

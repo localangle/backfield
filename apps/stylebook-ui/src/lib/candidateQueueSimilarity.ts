@@ -1,5 +1,7 @@
 /** Label similarity helpers for Stylebook candidate create + post-create link prompts. */
 
+import { suggestedRowAction } from "@/lib/candidateQueueSuggestions"
+
 export const CREATE_LINK_NUDGE_MIN_SCORE = 0.86
 
 export function normalizeLabelForCompare(value: string): string {
@@ -97,4 +99,67 @@ export function pickCreateLinkNudge(
   }
   if (best && best.score >= minScore) return best
   return null
+}
+
+/** Normalized key for comparing candidate display names within a queue page or batch. */
+export function candidateQueueNameKey(displayName: string): string {
+  return normalizeLabelForCompare(displayName)
+}
+
+export type DuplicateCreateNewCluster = {
+  nameKey: string
+  displayName: string
+  count: number
+}
+
+export type DuplicateCreateNewSummary = {
+  clusters: DuplicateCreateNewCluster[]
+  /** Names that appear more than once with a create-new suggestion. */
+  duplicateNameCount: number
+  /** Rows beyond the first per duplicate name (e.g. 3 rows for one name → 2 extra). */
+  totalExtraRows: number
+}
+
+/** Group open-queue rows that share a name and both suggest creating a new canonical. */
+export function duplicateCreateNewClusters<T>(
+  candidates: T[],
+  getDisplayName: (candidate: T) => string,
+): DuplicateCreateNewCluster[] {
+  const groups = new Map<string, { displayName: string; count: number }>()
+  for (const candidate of candidates) {
+    if (suggestedRowAction(candidate) !== "create_new") continue
+    const displayName = getDisplayName(candidate).trim()
+    const nameKey = candidateQueueNameKey(displayName)
+    if (!nameKey) continue
+    const existing = groups.get(nameKey)
+    if (existing) {
+      existing.count += 1
+    } else {
+      groups.set(nameKey, { displayName, count: 1 })
+    }
+  }
+  return [...groups.entries()]
+    .filter(([, group]) => group.count > 1)
+    .map(([nameKey, group]) => ({
+      nameKey,
+      displayName: group.displayName,
+      count: group.count,
+    }))
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        normalizeLabelForCompare(a.displayName).localeCompare(
+          normalizeLabelForCompare(b.displayName),
+        ),
+    )
+}
+
+export function duplicateCreateNewSummary<T>(
+  candidates: T[],
+  getDisplayName: (candidate: T) => string,
+): DuplicateCreateNewSummary {
+  const clusters = duplicateCreateNewClusters(candidates, getDisplayName)
+  const duplicateNameCount = clusters.length
+  const totalExtraRows = clusters.reduce((sum, cluster) => sum + cluster.count - 1, 0)
+  return { clusters, duplicateNameCount, totalExtraRows }
 }

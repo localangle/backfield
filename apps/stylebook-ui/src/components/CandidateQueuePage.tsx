@@ -29,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -49,6 +50,7 @@ import {
 } from "@/components/ui/table"
 import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
+import { candidateQueueNameKey } from "@/lib/candidateQueueSimilarity"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import {
   CandidateReviewReasons,
@@ -58,7 +60,7 @@ import {
   candidateQueueDataCellClass,
   resolveCandidateQueueColgroup,
 } from "@/lib/candidateQueueTableLayout"
-import { ChevronRight, Clock, Link2, Loader2, PlusCircle, StickyNote } from "lucide-react"
+import { ChevronRight, Clock, Link2, Loader2, PlusCircle, StickyNote, X } from "lucide-react"
 
 type CandidateQueuePageProps<TCandidate extends QueueCandidateBase> = {
   config: CandidateQueuePageConfig<TCandidate>
@@ -87,6 +89,9 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     listHasPrev,
     listTotalPages,
     candidates,
+    duplicateCreateNewOnPage,
+    duplicateCreateNewCountByNameKey,
+    getCandidateCreateDisplayName,
     status,
     setStatus,
     query,
@@ -97,6 +102,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     acceptingId,
     deferringId,
     linkingSuggestedId,
+    clearingRecommendationId,
     acceptingAiRecommendations,
     linkModalId,
     linkModalInitialCanonicalId,
@@ -113,6 +119,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     candidateNotes,
     toggleExpanded,
     handleDefer,
+    handleClearRecommendation,
     linkCandidateToSuggestedCanonical,
     acceptAiRecommendations,
     openCreateModal,
@@ -133,6 +140,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     entityType: config.aiReviewEntityType ?? "person",
     enabled: aiReviewEnabled,
     onReviewTerminal: () => void refreshListQuiet(),
+    onProgress: () => void refreshListQuiet(),
   })
 
   const LinkModal = config.linkModal
@@ -143,7 +151,17 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     acceptingAiRecommendations ||
     acceptingId !== null ||
     deferringId !== null ||
-    linkingSuggestedId !== null
+    linkingSuggestedId !== null ||
+    clearingRecommendationId !== null
+
+  const duplicateCreateNewBannerNames = duplicateCreateNewOnPage.clusters
+    .slice(0, 3)
+    .map((cluster) =>
+      cluster.count > 2
+        ? `${cluster.displayName} (${cluster.count})`
+        : cluster.displayName,
+    )
+    .join(", ")
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -275,6 +293,27 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
+          {status === "open" && duplicateCreateNewOnPage.duplicateNameCount > 0 ? (
+            <Alert>
+              <AlertDescription className="space-y-1">
+                <p>
+                  {duplicateCreateNewOnPage.duplicateNameCount === 1
+                    ? "One name appears more than once with a suggestion to create a new entry"
+                    : `${duplicateCreateNewOnPage.duplicateNameCount} names appear more than once with a suggestion to create a new entry`}
+                  {duplicateCreateNewBannerNames ? `: ${duplicateCreateNewBannerNames}` : ""}
+                  {duplicateCreateNewOnPage.duplicateNameCount > 3
+                    ? `, and ${duplicateCreateNewOnPage.duplicateNameCount - 3} more`
+                    : ""}
+                  .
+                </p>
+                <p className="text-muted-foreground">
+                  Accepting all recommendations creates one entry per name and links the others.
+                  That applies to the full filtered queue, not only this page.
+                </p>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           {status === "open" && listTotal > 0 ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
               {config.aiReviewEntityType ? (
@@ -289,15 +328,13 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                     Review with AI
                   </Button>
                   {candidateAiReview.review &&
-                  candidateAiReview.review.status !== "succeeded" &&
-                  candidateAiReview.review.status !== "failed" ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  (candidateAiReview.review.status === "queued" ||
+                    candidateAiReview.review.status === "running") ? (
+                    <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                      <span>
-                        AI review {candidateAiReview.review.processed_count}/
-                        {candidateAiReview.review.candidate_count}
-                      </span>
-                    </div>
+                      Reviewing ({candidateAiReview.review.processed_count}/
+                      {candidateAiReview.review.candidate_count})…
+                    </span>
                   ) : null}
                   {candidateAiReview.review?.status === "failed" ? (
                     <span className="text-sm text-destructive">
@@ -405,6 +442,14 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                       rowSug === "defer"
                         ? actionLabels.defer.titleSuggested
                         : actionLabels.defer.titleDefault
+                    const rowCreateNameKey =
+                      rowSug === "create_new"
+                        ? candidateQueueNameKey(getCandidateCreateDisplayName(c))
+                        : ""
+                    const rowDuplicateCount =
+                      rowCreateNameKey
+                        ? duplicateCreateNewCountByNameKey.get(rowCreateNameKey) ?? 0
+                        : 0
 
                     return (
                       <Fragment key={c.id}>
@@ -442,6 +487,15 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                 >
                                   {c.suggested_name || "—"}
                                 </span>
+                                {rowDuplicateCount > 1 ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="shrink-0 font-normal text-xs"
+                                    title={`${rowDuplicateCount} entries with this name on this page`}
+                                  >
+                                    ×{rowDuplicateCount} in queue
+                                  </Badge>
+                                ) : null}
                                 {c.note ? (
                                   <StickyNote
                                     className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -541,6 +595,29 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                                   ) : (
                                     <Clock className="h-4 w-4" aria-hidden />
+                                  )}
+                                </Button>
+                              ) : null}
+                              {rowSugLabel ? (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                                  title="Clear AI recommendation"
+                                  aria-label="Clear AI recommendation"
+                                  disabled={
+                                    acceptingId === c.id ||
+                                    deferringId === c.id ||
+                                    linkingSuggestedId === c.id ||
+                                    clearingRecommendationId === c.id
+                                  }
+                                  onClick={() => void handleClearRecommendation(c)}
+                                >
+                                  {clearingRecommendationId === c.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                                  ) : (
+                                    <X className="h-4 w-4" aria-hidden />
                                   )}
                                 </Button>
                               ) : null}
