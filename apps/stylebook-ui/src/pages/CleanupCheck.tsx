@@ -318,13 +318,14 @@ export default function CleanupCheck() {
 
   const applyAcceptedMergeProposal = useCallback(
     (proposal: CleanupAiProposal) => {
-      if (proposal.action !== "merge" || !proposal.target_canonical_id) return
+      const targetCanonicalId = proposal.target_canonical_id
+      if (proposal.action !== "merge" || !targetCanonicalId) return
       setClusterResults((prev) => {
         if (!prev) return prev
         let next = prev
         for (const memberId of proposal.member_ids) {
-          if (memberId === proposal.target_canonical_id) continue
-          next = applyMergeToClusterResults(next, memberId, proposal.target_canonical_id, 0)
+          if (memberId === targetCanonicalId) continue
+          next = applyMergeToClusterResults(next, memberId, targetCanonicalId, 0)
         }
         return next
       })

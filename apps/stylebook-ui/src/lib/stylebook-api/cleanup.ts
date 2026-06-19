@@ -1,5 +1,4 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
-import type { PaginatedCleanupLocationIssuesResponse } from "@/lib/stylebook-api/cleanup"
 
 export type CleanupCheckKind = "cluster" | "list"
 

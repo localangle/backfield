@@ -1,4 +1,7 @@
-import type { CandidateQueueSuggestionLabels } from "@/lib/entityConfigs/candidateQueueTypes"
+import type {
+  CandidateQueueSuggestionLabels,
+  QueueCandidateBase,
+} from "@/lib/entityConfigs/candidateQueueTypes"
 
 export type SuggestedRowAction = "link" | "create_new" | "defer" | null
 
