@@ -105,6 +105,15 @@ export {
   acceptCleanupAiProposal,
   rejectCleanupAiProposal,
 } from "@/lib/stylebook-api/cleanup"
+export {
+  type CandidateAiModel,
+  type CandidateAiReview,
+  type CandidateAiReviewEntityType,
+  listCandidateAiModels,
+  startCandidateAiReview,
+  getCandidateAiReview,
+  getLatestCandidateAiReview,
+} from "@/lib/stylebook-api/candidateAiReview"
 
 export {
   type AnalyzeCsvResponse,

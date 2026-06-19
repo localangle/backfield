@@ -47,6 +47,7 @@ function personCandidateDetailLine(c: PersonCandidate): string {
 
 export const personCandidateQueueConfig: CandidateQueuePageConfig<PersonCandidate> = {
   entitySlug: "people",
+  aiReviewEntityType: "person",
 
   copy: {
     pageTitle: "People candidates",

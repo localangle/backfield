@@ -65,6 +65,7 @@ const createModalTypeOptions = sortReviewQueueTypeFilterOptions([...PLACE_EXTRAC
 
 export const locationCandidateQueueConfig: CandidateQueuePageConfig<Candidate> = {
   entitySlug: "locations",
+  aiReviewEntityType: "location",
 
   copy: {
     pageTitle: "Location candidates",

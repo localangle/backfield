@@ -39,6 +39,7 @@ function OrganizationLinkModal({
 
 export const organizationCandidateQueueConfig: CandidateQueuePageConfig<OrganizationCandidate> = {
   entitySlug: "organizations",
+  aiReviewEntityType: "organization",
 
   copy: {
     pageTitle: "Organization candidates",

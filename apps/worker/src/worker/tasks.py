@@ -47,6 +47,7 @@ from backfield_db import (
     BackfieldProject,
     Stylebook,
     StylebookBundleJob,
+    StylebookCandidateAiReview,
     StylebookCleanupAiReview,
 )
 from backfield_db.session import get_engine
@@ -77,6 +78,10 @@ from sqlmodel import Session, select
 from worker.flags.replace_geography import clear_replace_article_geography_flags
 from worker.nodes.db_output import run_db_output
 from worker.semantic_indexing.reindex import run_semantic_reindex_for_scope
+from worker.substrate.candidates.ai_review import (
+    list_open_candidate_ids_for_review,
+    run_candidate_ai_review,
+)
 from worker.substrate.cleanup.ai_review import (
     load_cluster_members,
     run_cleanup_review_clusters,
@@ -1438,3 +1443,73 @@ def execute_cleanup_ai_review(review_id: str) -> None:
     except Exception as exc:
         logger.exception("execute_cleanup_ai_review failed")
         _fail_cleanup_ai_review(engine, review_id, str(exc))
+
+
+def _fail_candidate_ai_review(engine: Any, review_id: str, message: str) -> None:
+    with Session(engine) as session:
+        review = session.get(StylebookCandidateAiReview, review_id)
+        if review is None:
+            return
+        review.status = "failed"
+        review.error_message = message[:10000]
+        review.updated_at = datetime.now(UTC)
+        session.add(review)
+        session.commit()
+
+
+@celery_app.task(name="worker.tasks.execute_candidate_ai_review")
+def execute_candidate_ai_review(review_id: str) -> None:
+    """Run LLM recommendations for open candidate queue rows."""
+    engine = get_engine()
+    entity_type: str = ""
+    stylebook_id = 0
+    project_id = 0
+    model = "gpt-5-nano"
+    model_config_id: str | None = None
+    candidate_ids: list[int] = []
+    with Session(engine) as session:
+        review = session.get(StylebookCandidateAiReview, review_id)
+        if review is None:
+            return
+        if review.status != "queued":
+            return
+        stylebook = session.get(Stylebook, int(review.stylebook_id))
+        if stylebook is None:
+            _fail_candidate_ai_review(engine, review_id, "Stylebook not found")
+            return
+        entity_type = str(review.entity_type).strip()
+        stylebook_id = int(review.stylebook_id)
+        project_id = int(review.project_id)
+        model = (review.provider_model_id or "").strip() or "gpt-5-nano"
+        model_config_id = review.ai_model_config_id
+        try:
+            candidate_ids = list_open_candidate_ids_for_review(
+                session,
+                entity_type=entity_type,  # type: ignore[arg-type]
+                project_id=project_id,
+            )
+        except ValueError as exc:
+            _fail_candidate_ai_review(engine, review_id, str(exc))
+            return
+        review.status = "running"
+        review.candidate_count = len(candidate_ids)
+        review.processed_count = 0
+        review.recommendation_count = 0
+        review.updated_at = datetime.now(UTC)
+        session.add(review)
+        session.commit()
+
+    try:
+        run_candidate_ai_review(
+            engine,
+            review_id=review_id,
+            entity_type=entity_type,  # type: ignore[arg-type]
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            candidate_ids=candidate_ids,
+            model=model,
+            model_config_id=model_config_id,
+        )
+    except Exception as exc:
+        logger.exception("execute_candidate_ai_review failed")
+        _fail_candidate_ai_review(engine, review_id, str(exc))

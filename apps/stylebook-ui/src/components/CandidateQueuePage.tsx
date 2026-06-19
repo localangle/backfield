@@ -1,4 +1,4 @@
-import { Fragment } from "react"
+import { Fragment, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
@@ -12,6 +12,8 @@ import type {
   CandidateQueuePageConfig,
   QueueCandidateBase,
 } from "@/lib/entityConfigs/candidateQueueTypes"
+import { CandidateAiReviewDialog } from "@/components/CandidateAiReviewDialog"
+import { useCandidateAiReviewPolling } from "@/hooks/useCandidateAiReviewPolling"
 import { CandidateQueueCreatedToast } from "@/components/CandidateQueueCreatedToast"
 import { CandidateQueueLinkedToast } from "@/components/CandidateQueueLinkedToast"
 import { CandidateQueueInlineNote } from "@/components/CandidateQueueInlineNote"
@@ -122,6 +124,16 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     patchCreateDraft,
     refreshListQuiet,
   } = page
+
+  const aiReviewEnabled = Boolean(config.aiReviewEntityType && stylebookSlug && projectSlug)
+  const [aiReviewDialogOpen, setAiReviewDialogOpen] = useState(false)
+  const candidateAiReview = useCandidateAiReviewPolling({
+    stylebookSlug,
+    projectSlug,
+    entityType: config.aiReviewEntityType ?? "person",
+    enabled: aiReviewEnabled,
+    onReviewTerminal: () => void refreshListQuiet(),
+  })
 
   const LinkModal = config.linkModal
   const columnCount = config.columns.length + 2
@@ -264,7 +276,36 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
           {status === "open" && listTotal > 0 ? (
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {config.aiReviewEntityType ? (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={loading || rowActionsBusy || candidateAiReview.loading}
+                    onClick={() => setAiReviewDialogOpen(true)}
+                  >
+                    Review with AI
+                  </Button>
+                  {candidateAiReview.review &&
+                  candidateAiReview.review.status !== "succeeded" &&
+                  candidateAiReview.review.status !== "failed" ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                      <span>
+                        AI review {candidateAiReview.review.processed_count}/
+                        {candidateAiReview.review.candidate_count}
+                      </span>
+                    </div>
+                  ) : null}
+                  {candidateAiReview.review?.status === "failed" ? (
+                    <span className="text-sm text-destructive">
+                      {candidateAiReview.review.error_message ?? "AI review failed"}
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
@@ -672,6 +713,17 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
         includeType={config.copy.potentialLinks.includeType}
         includeAddress={config.copy.potentialLinks.includeAddress}
       />
+
+      {config.aiReviewEntityType ? (
+        <CandidateAiReviewDialog
+          open={aiReviewDialogOpen}
+          onOpenChange={setAiReviewDialogOpen}
+          stylebookSlug={stylebookSlug}
+          projectSlug={projectSlug}
+          entityType={config.aiReviewEntityType}
+          onReviewStarted={(reviewId) => void candidateAiReview.startTracking(reviewId)}
+        />
+      ) : null}
     </div>
   )
 }

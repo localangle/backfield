@@ -182,6 +182,12 @@ def _canonical_suggestion_payload(loc: SubstrateLocation) -> dict[str, Any] | No
             raw_c = adj.get("canonical_id")
             if raw_c is not None:
                 out["stylebook_location_canonical_id"] = str(raw_c).strip() or None
+        if out.get("suggested_action") is None:
+            outcome = str(adj.get("outcome") or "").strip()
+            if outcome == "link_existing" and out.get("stylebook_location_canonical_id"):
+                out["suggested_action"] = "link_existing"
+            elif outcome == "no_high_confidence_link":
+                out["suggested_action"] = "materialize_new"
     return out or None
 
 

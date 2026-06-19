@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from "react"
+import type { CandidateAiReviewEntityType } from "@/lib/stylebook-api/candidateAiReview"
 import type { LinkPickTableRow } from "@/components/LinkPickTable"
 
 /** Base candidate shape both entity types satisfy for queue behavior. */
@@ -135,6 +136,7 @@ export type CandidateQueueCreateDialogConfig<TCandidate extends QueueCandidateBa
 
 export type CandidateQueuePageConfig<TCandidate extends QueueCandidateBase> = {
   entitySlug: "locations" | "people" | "organizations"
+  aiReviewEntityType?: CandidateAiReviewEntityType
 
   copy: {
     pageTitle: string

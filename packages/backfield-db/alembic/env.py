@@ -35,6 +35,7 @@ from backfield_db.models import (  # noqa: F401
     StylebookBundleJob,
     StylebookCleanupAiProposal,
     StylebookCleanupAiReview,
+    StylebookCandidateAiReview,
     StylebookCleanupDismissal,
     StylebookMembership,
     StylebookConnection,
