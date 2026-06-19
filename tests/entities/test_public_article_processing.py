@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import uuid
 
+import pytest
 from backfield_db import (
     AgateGraph,
     AgateProcessedItem,
@@ -17,6 +20,7 @@ from backfield_db import (
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.public.article_processing import list_public_article_processing
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, SQLModel, create_engine, select
 
 
@@ -322,13 +326,6 @@ _MINIMAL_GRAPH_SPEC_JSON = json.dumps(
 
 def test_list_public_article_processing_handles_null_unicode_in_result_json() -> None:
     """Postgres jsonb text extraction rejects \\u0000; sanitized SQL must still match."""
-    import os
-    import uuid
-
-    import pytest
-    from sqlalchemy.exc import OperationalError
-    from backfield_db import BackfieldProject
-
     database_url = os.environ.get(
         "BACKFIELD_DATABASE_URL_DIRECT",
         os.environ.get(
