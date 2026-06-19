@@ -117,6 +117,7 @@ def call_llm(
     timeout: float = 300.0,
     *,
     model_config_id: Optional[str] = None,
+    allow_max_tokens_bump: bool = True,
 ) -> str:
     """
     Call an LLM with the given prompt and model with exponential backoff retries.
@@ -175,6 +176,7 @@ def call_llm(
             project_system_prompt=project_system_prompt,
             timeout=timeout,
             model_config_id=model_config_id,
+            allow_max_tokens_bump=allow_max_tokens_bump,
         )
 
     # Get model from environment if not specified

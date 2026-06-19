@@ -298,9 +298,19 @@ def run_via_agate_api() -> int:
                 None,
             )
             if starter is None:
-                raise RuntimeError(
-                    f"No graph named {STARTER_FLOW_GRAPH_DISPLAY_NAME!r} on project {project_id}. "
-                    "Set SMOKE_PLACE_GEOCODE_STACK_GRAPH_ID or bootstrap the starter flow."
+                from agate_runtime import starter_geocode_flow_graph_spec
+
+                canonical = starter_geocode_flow_graph_spec()
+                starter = assert_object(
+                    agate.post(
+                        "/graphs",
+                        json={
+                            "name": STARTER_FLOW_GRAPH_DISPLAY_NAME,
+                            "project_id": project_id,
+                            "spec": canonical.model_dump(mode="json"),
+                        },
+                    ),
+                    "create starter graph",
                 )
             graph_id = str(starter["id"])
             graph_name = str(starter.get("name", ""))

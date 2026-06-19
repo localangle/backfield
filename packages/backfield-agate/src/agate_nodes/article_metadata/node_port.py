@@ -219,12 +219,15 @@ class ArticleMetadataNode:
                 response_data,
                 allowed_categories=allowed_categories,
             )
-            output_data["article_metadata"] = {
+            metadata_block: dict[str, Any] = {
                 "meta_type": resolved_meta_type,
                 "category": parsed.category,
                 "rationale": parsed.rationale,
                 "confidence": parsed.confidence,
                 "prompt_preset": preset_id,
             }
+            if preset_id == "subject":
+                metadata_block["subject"] = parsed.category
+            output_data["article_metadata"] = metadata_block
 
         return ArticleMetadataOutput(**output_data)

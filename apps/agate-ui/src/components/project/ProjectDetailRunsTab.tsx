@@ -51,8 +51,11 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [runsData, graphsData] = await Promise.all([listRuns(), listGraphs()])
-      setRuns(runsData.filter((r) => r.project_id === projectId))
+      const [runsData, graphsData] = await Promise.all([
+        listRuns(projectId),
+        listGraphs(),
+      ])
+      setRuns(runsData)
       setGraphs(graphsData)
     } catch (error) {
       console.error('Failed to load runs:', error)
@@ -67,8 +70,8 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
 
   const handleRefresh = useCallback(async () => {
     try {
-      const runsData = await listRuns()
-      setRuns(runsData.filter((r) => r.project_id === projectId))
+      const runsData = await listRuns(projectId)
+      setRuns(runsData)
       onDataChanged?.()
     } catch (e) {
       console.error(e)
@@ -88,8 +91,8 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
     setCancellingRuns((prev) => new Set(prev).add(runId))
     try {
       await cancelRun(runId)
-      const runsData = await listRuns()
-      setRuns(runsData.filter((r) => r.project_id === projectId))
+      const runsData = await listRuns(projectId)
+      setRuns(runsData)
       onDataChanged?.()
     } catch (error) {
       console.error('Failed to cancel run:', error)
@@ -155,13 +158,9 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
         const statusMatch = selectedStatus === 'all' || run.status === selectedStatus
         return flowMatch && statusMatch
       })
-      .sort((a, b) => {
-        const order = { running: 0, pending: 1, completed: 2, completed_with_errors: 3 } as const
-        const ao = order[a.status as keyof typeof order] ?? 4
-        const bo = order[b.status as keyof typeof order] ?? 4
-        if (ao !== bo) return ao - bo
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      })
+      .sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
   }, [runs, selectedFlow, selectedStatus])
 
   if (loading) {

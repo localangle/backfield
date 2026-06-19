@@ -88,7 +88,7 @@ def _assert_starter_graph_matches_bootstrap(starter: dict[str, Any]) -> None:
     if current.name != canonical.name:
         raise RuntimeError(
             f"Starter flow spec.name expected {canonical.name!r}, got {current.name!r}. "
-            "Restart agate-api with BACKFIELD_LOCAL_BOOTSTRAP=1 so local bootstrap rewrites it."
+            "Restart agate-api or recreate the graph from starter_geocode_flow_graph_spec()."
         )
 
     want_nodes = {(n.id, n.type) for n in canonical.nodes}
@@ -97,7 +97,7 @@ def _assert_starter_graph_matches_bootstrap(starter: dict[str, Any]) -> None:
         raise RuntimeError(
             "Starter flow nodes do not match canonical bootstrap "
             f"(expected {sorted(want_nodes)!r}, have {sorted(have_nodes)!r}). "
-            "Restart agate-api with BACKFIELD_LOCAL_BOOTSTRAP=1."
+            "Recreate the graph from starter_geocode_flow_graph_spec()."
         )
 
     want_edges = {_edge_signature(e) for e in canonical.edges}
@@ -105,7 +105,7 @@ def _assert_starter_graph_matches_bootstrap(starter: dict[str, Any]) -> None:
     if have_edges != want_edges:
         raise RuntimeError(
             "Starter flow edges do not match canonical bootstrap. "
-            "Restart agate-api with BACKFIELD_LOCAL_BOOTSTRAP=1."
+            "Recreate the graph from starter_geocode_flow_graph_spec()."
         )
 
     if any(n.type == "Output" for n in current.nodes):
@@ -145,7 +145,7 @@ def _assert_golden_run_result(result: object) -> dict[str, Any]:
     return so
 
 
-def _find_starter_graph(
+def _ensure_starter_graph(
     agate_client: httpx.Client, project_id: int
 ) -> tuple[str, str, dict[str, Any]]:
     glist = assert_list(agate_client.get("/graphs"), "list graphs")
@@ -160,12 +160,17 @@ def _find_starter_graph(
         None,
     )
     if starter is None:
-        spec = starter_geocode_flow_graph_spec()
-        raise RuntimeError(
-            f"Smoke needs graph named {STARTER_FLOW_GRAPH_DISPLAY_NAME!r} "
-            f"on project id {project_id}. "
-            "Start the stack with BACKFIELD_LOCAL_BOOTSTRAP=1 (see docker-compose) "
-            f"or create it with spec name {spec.name!r}."
+        canonical = starter_geocode_flow_graph_spec()
+        starter = assert_object(
+            agate_client.post(
+                "/graphs",
+                json={
+                    "name": STARTER_FLOW_GRAPH_DISPLAY_NAME,
+                    "project_id": project_id,
+                    "spec": canonical.model_dump(mode="json"),
+                },
+            ),
+            "create starter graph",
         )
     _assert_starter_graph_matches_bootstrap(starter)
     return str(starter["id"]), STARTER_FLOW_GRAPH_DISPLAY_NAME, starter
@@ -314,7 +319,7 @@ def run_service_bearer_flow() -> int:
             )
 
         try:
-            graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
+            graph_id, graph_name, _starter = _ensure_starter_graph(agate_client, project_id)
 
             run = assert_object(
                 agate_client.post("/runs", json={"graph_id": graph_id}),
@@ -401,7 +406,7 @@ def run_session_flow() -> int:
         log("Smoke: Agate project list matches session scope.")
 
         try:
-            graph_id, graph_name, _starter = _find_starter_graph(agate_client, project_id)
+            graph_id, graph_name, _starter = _ensure_starter_graph(agate_client, project_id)
             log(f"Smoke: selected graph {graph_name!r} (id={graph_id}).")
 
             run = assert_object(

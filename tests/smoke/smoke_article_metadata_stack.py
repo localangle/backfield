@@ -45,13 +45,11 @@ SMOKE_PROJECT_SLUG = os.environ.get("SMOKE_PROJECT_SLUG", "general").strip()
 
 def _mock_article_metadata_json() -> str:
     return json.dumps(
-        [
-            {
-                "category": "local_government_politics",
-                "rationale": "City council vote on a neighborhood park.",
-                "confidence": 0.82,
-            }
-        ]
+        {
+            "subject": "government_action",
+            "rationale": "City council vote on a neighborhood park.",
+            "confidence": 0.82,
+        }
     )
 
 

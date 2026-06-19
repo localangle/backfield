@@ -602,6 +602,10 @@ async def consolidate_node(state: AgentState) -> AgentState:
             geocoding_result,
             location_text=location_text,
         )
+        llm_intersection_estimate = (
+            location_type in ("intersection_road", "intersection_highway")
+            and geocoding_result.geocoder == "intersection_llm_estimate"
+        )
         if region_mismatch:
             qa_point = _point_entry_without_geometry(
                 {
@@ -617,6 +621,14 @@ async def consolidate_node(state: AgentState) -> AgentState:
                 **point_entry,
                 "geocode_city_level_fallback": True,
                 "geocode_qa_code": "geocode_city_level_fallback",
+            }
+            _attach_router_audit(qa_point, state)
+            consolidated["places"]["needs_review"].append(qa_point)
+        elif llm_intersection_estimate:
+            qa_point = {
+                **point_entry,
+                "geocode_llm_intersection_estimate": True,
+                "geocode_qa_code": "llm_intersection_estimate",
             }
             _attach_router_audit(qa_point, state)
             consolidated["places"]["needs_review"].append(qa_point)

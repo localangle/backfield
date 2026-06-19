@@ -31,6 +31,11 @@ from backfield_entities.ingest.geocode_cache.sanity import (
 )
 from sqlmodel import Session, select
 
+from worker.substrate.canonical.llm_call_policy import (
+    ADJUDICATION_LLM_MAX_RETRIES,
+    ADJUDICATION_LLM_TIMEOUT_S,
+)
+
 
 @dataclass(frozen=True)
 class LocationAdjudicationPrepared:
@@ -221,7 +226,8 @@ def run_location_adjudication_llm(prepared: LocationAdjudicationPrepared) -> dic
             model=prepared.model,
             force_json=True,
             temperature=0.0,
-            max_tokens=800,
+            max_retries=ADJUDICATION_LLM_MAX_RETRIES,
+            timeout=ADJUDICATION_LLM_TIMEOUT_S,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             model_config_id=prepared.model_config_id,
         )

@@ -413,6 +413,52 @@ def test_accept_organization_candidate_link_existing_canonical(
         assert "existing org" in norm_aliases
 
 
+def test_link_deferred_organization_candidate_to_existing_canonical(
+    client: TestClient, stylebook_test_engine: Engine
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        ws = s.get(BackfieldWorkspace, int(proj.workspace_id))  # type: ignore[arg-type]
+        sb_id = int(ws.stylebook_id)
+        canon = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Deferred Target Org",
+            slug="deferred-target-org",
+            organization_type="company",
+            status="active",
+        )
+        s.add(canon)
+        s.commit()
+        s.refresh(canon)
+        cid = str(canon.id)
+        sid = _add_pending_organization(
+            s,
+            project_id=int(proj.id),
+            name="Deferred Link Org",
+            normalized_name="deferred link org",
+        )
+
+    defer = client.post(
+        f"/v1/organizations/candidates/{sid}/defer?project_slug=demo-proj",
+        headers=_service_headers(),
+    )
+    assert defer.status_code == 200
+
+    link = client.post(
+        f"/v1/organizations/{sid}/link-canonical?project_slug=demo-proj",
+        headers=_service_headers(),
+        json={"stylebook_organization_canonical_id": cid},
+    )
+    assert link.status_code == 200
+    assert link.json()["changed"] is True
+
+    with Session(stylebook_test_engine) as s:
+        row = s.get(SubstrateOrganization, sid)
+        assert row is not None
+        assert row.stylebook_organization_canonical_id == cid
+        assert row.canonical_link_status == CANONICAL_LINK_LINKED
+
+
 def test_stylebook_scoped_csv_organizations_import_requires_editor(
     member_client: TestClient,
 ) -> None:

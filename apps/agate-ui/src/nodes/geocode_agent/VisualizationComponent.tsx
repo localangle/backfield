@@ -39,9 +39,11 @@ const nodeMetadata = {
     "projectSlug": "",
     "evaluationModel": "",
     "geographicReasoningModel": "",
+    "geographicEstimationModel": "",
     "routerModel": "",
     "evaluationAiModelConfigId": null,
     "geographicReasoningAiModelConfigId": null,
+    "geographicEstimationAiModelConfigId": null,
     "routerAiModelConfigId": null,
     "useCacheLlmAdjudication": true,
     "useCacheLlmAdjudicationOnMissRecall": false

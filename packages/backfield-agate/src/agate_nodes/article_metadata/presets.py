@@ -11,6 +11,7 @@ _META_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 PromptPresetId = Literal[
     "subject",
+    "topic",
     "temporal_orientation",
     "format",
     "geographic_scope",
@@ -21,6 +22,7 @@ PromptPresetId = Literal[
 
 PRESET_IDS: tuple[str, ...] = (
     "subject",
+    "topic",
     "temporal_orientation",
     "format",
     "geographic_scope",
@@ -29,16 +31,17 @@ PRESET_IDS: tuple[str, ...] = (
     "custom",
 )
 
-MULTI_VALUE_PRESET_IDS: frozenset[str] = frozenset({"subject", "information_needs"})
+MULTI_VALUE_PRESET_IDS: frozenset[str] = frozenset({"topic", "information_needs"})
 MAX_MULTI_VALUE_COUNT = 3
 
 MULTI_VALUE_LIST_KEYS: dict[str, str] = {
-    "subject": "subjects",
+    "topic": "topics",
     "information_needs": "needs",
 }
 
 PRESET_LABELS: dict[str, str] = {
     "subject": "Subject",
+    "topic": "Topic",
     "temporal_orientation": "Timeframe",
     "format": "Format",
     "geographic_scope": "Scope",
@@ -96,6 +99,8 @@ def preset_prompt_relpath(preset_id: str) -> str | None:
 def preset_output_format_relpath(preset_id: str) -> str:
     if preset_id in MULTI_VALUE_PRESET_IDS:
         return "prompts/_output_format_subject.json"
+    if preset_id == "subject":
+        return "prompts/_output_format_primary_subject.json"
     return "prompts/_output_format.json"
 
 

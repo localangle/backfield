@@ -22,6 +22,8 @@ from stylebook_api.routers import (
     semantic_mention_search,
     stylebook_bundle_jobs,
     stylebook_canonicals,
+    stylebook_cleanup,
+    stylebook_cleanup_ai_review,
     stylebook_organization_canonicals,
     stylebook_permissions,
     stylebook_person_canonicals,
@@ -64,6 +66,8 @@ app.include_router(imports.stylebook_router)
 app.include_router(candidates.router)
 app.include_router(meta.router)
 app.include_router(stylebook_canonicals.router)
+app.include_router(stylebook_cleanup.router)
+app.include_router(stylebook_cleanup_ai_review.router)
 app.include_router(stylebook_person_canonicals.router)
 app.include_router(stylebook_organization_canonicals.router)
 app.include_router(stylebook_permissions.router)

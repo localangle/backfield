@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any
 
 from backfield_db import BackfieldAiCallRecord
+from backfield_db.session import get_engine
 from sqlmodel import Session
 
 from backfield_ai.constants import (
@@ -19,7 +20,6 @@ from backfield_ai.constants import (
 
 @dataclass(frozen=True)
 class LlmAttemptTrackingContext:
-    session: Session
     project_id: int
     run_id: str
     # Per-file S3/batch runs set this to ``agate_processed_item.id``; single-graph runs leave None.
@@ -102,5 +102,6 @@ def persist_llm_attempt(
         error_message=error_message,
     )
     with _PERSIST_LOCK:
-        ctx.session.add(row)
-        ctx.session.flush()
+        with Session(get_engine()) as session:
+            session.add(row)
+            session.commit()

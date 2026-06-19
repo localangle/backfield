@@ -1,4 +1,7 @@
-import type { CandidateQueueSuggestionLabels } from "@/lib/entityConfigs/candidateQueueTypes"
+import type {
+  CandidateQueueSuggestionLabels,
+  QueueCandidateBase,
+} from "@/lib/entityConfigs/candidateQueueTypes"
 
 export type SuggestedRowAction = "link" | "create_new" | "defer" | null
 
@@ -22,4 +25,10 @@ export function suggestedActionShortLabel(
   if (sug === "create_new") return labels.create_new
   if (sug === "defer") return labels.defer
   return null
+}
+
+export function candidatesWithSuggestedAction<T extends QueueCandidateBase>(
+  candidates: T[],
+): T[] {
+  return candidates.filter((candidate) => suggestedRowAction(candidate) !== null)
 }

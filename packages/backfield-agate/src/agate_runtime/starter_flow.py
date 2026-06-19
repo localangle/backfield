@@ -1,4 +1,4 @@
-"""Canonical starter graphs for local bootstrap and smoke."""
+"""Canonical starter graph specs for smoke tests and reference implementations."""
 
 from __future__ import annotations
 

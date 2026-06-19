@@ -230,10 +230,10 @@ class NaturalPlace(Area):
         try:
             response_text = call_llm(
                 prompt=prompt,
-                model=self._geographic_reasoning_litellm_model(),
+                model=self._geographic_estimation_litellm_model(),
                 openai_api_key=openai_api_key,
                 force_json=True,
-                model_config_id=self._geographic_reasoning_model_config_id(),
+                model_config_id=self._geographic_estimation_model_config_id(),
             )
             payload = json.loads(response_text)
         except Exception as exc:

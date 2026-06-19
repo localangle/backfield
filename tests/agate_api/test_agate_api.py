@@ -403,6 +403,144 @@ def test_project_graph_and_run_creation(monkeypatch, client: TestClient):
     assert len(list_response.json()) == 1
 
 
+def test_run_graph_spec_snapshot_and_flow_changed(monkeypatch, client: TestClient):
+    monkeypatch.setattr(runs.celery_app, "send_task", lambda *args, **kwargs: None)
+
+    project = client.post("/projects", json={"name": "Snap Project", "slug": "snap-proj"}).json()
+    base_spec = {
+        "name": "snap_flow",
+        "nodes": [
+            {
+                "id": "n1",
+                "type": "TextInput",
+                "params": {"text": "Austin, TX"},
+                "position": {"x": 0, "y": 0},
+            },
+            {
+                "id": "n2",
+                "type": "Output",
+                "params": {},
+                "position": {"x": 220, "y": 0},
+            },
+        ],
+        "edges": [
+            {
+                "source": "n1",
+                "target": "n2",
+                "sourceHandle": "text",
+                "targetHandle": "data",
+            }
+        ],
+    }
+    graph = client.post(
+        "/graphs",
+        json={"name": "Snap Flow", "project_id": project["id"], "spec": base_spec},
+    ).json()
+
+    run = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert run["graph_spec_snapshot_json"]
+    assert run["flow_changed_since_run"] is False
+
+    detail = client.get(f"/runs/{run['id']}").json()
+    assert detail["graph_spec_snapshot_json"] == run["graph_spec_snapshot_json"]
+    assert detail["flow_changed_since_run"] is False
+
+    changed_spec = {
+        **base_spec,
+        "nodes": [
+            {
+                "id": "n1",
+                "type": "TextInput",
+                "params": {"text": "Chicago, IL"},
+                "position": {"x": 0, "y": 0},
+            },
+            base_spec["nodes"][1],
+        ],
+    }
+    update = client.put(
+        f"/graphs/{graph['id']}",
+        json={"name": "Snap Flow", "project_id": project["id"], "spec": changed_spec},
+    )
+    assert update.status_code == 200
+
+    detail_after_change = client.get(f"/runs/{run['id']}").json()
+    assert detail_after_change["flow_changed_since_run"] is True
+
+
+def test_replay_run_uses_source_snapshot_not_live_graph(monkeypatch, client: TestClient):
+    sent: dict[str, object] = {}
+
+    def capture_send_task(name: str, args: list[str], queue: str) -> None:
+        sent["name"] = name
+        sent["args"] = args
+        sent["queue"] = queue
+
+    monkeypatch.setattr(runs.celery_app, "send_task", capture_send_task)
+
+    project = client.post(
+        "/projects",
+        json={"name": "Replay Project", "slug": "replay-proj"},
+    ).json()
+    base_spec = {
+        "name": "replay_flow",
+        "nodes": [
+            {
+                "id": "n1",
+                "type": "TextInput",
+                "params": {"text": "Austin, TX"},
+                "position": {"x": 0, "y": 0},
+            },
+            {
+                "id": "n2",
+                "type": "Output",
+                "params": {},
+                "position": {"x": 220, "y": 0},
+            },
+        ],
+        "edges": [
+            {
+                "source": "n1",
+                "target": "n2",
+                "sourceHandle": "text",
+                "targetHandle": "data",
+            }
+        ],
+    }
+    graph = client.post(
+        "/graphs",
+        json={"name": "Replay Flow", "project_id": project["id"], "spec": base_spec},
+    ).json()
+
+    source = client.post("/runs", json={"graph_id": graph["id"]}).json()
+    assert "Austin" in (source.get("graph_spec_snapshot_json") or "")
+
+    changed_spec = {
+        **base_spec,
+        "nodes": [
+            {
+                "id": "n1",
+                "type": "TextInput",
+                "params": {"text": "Chicago, IL"},
+                "position": {"x": 0, "y": 0},
+            },
+            base_spec["nodes"][1],
+        ],
+    }
+    update = client.put(
+        f"/graphs/{graph['id']}",
+        json={"name": "Replay Flow", "project_id": project["id"], "spec": changed_spec},
+    )
+    assert update.status_code == 200
+
+    replay = client.post(f"/runs/{source['id']}/replay")
+    assert replay.status_code == 200
+    new_run = replay.json()
+    assert "Austin" in (new_run.get("graph_spec_snapshot_json") or "")
+    assert "Chicago" not in (new_run.get("graph_spec_snapshot_json") or "")
+    assert sent.get("name") == "worker.tasks.execute_run_replay_setup"
+    assert sent.get("args") == [source["id"], new_run["id"]]
+
+
 def test_graph_description_round_trip(client: TestClient):
     project_response = client.post("/projects", json={"name": "Desc Project", "slug": "desc-proj"})
     assert project_response.status_code == 200

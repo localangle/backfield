@@ -12,7 +12,11 @@ from backfield_db import (
     StylebookOrganizationCanonical,
     SubstrateOrganization,
 )
-from backfield_entities.canonical.link import CANONICAL_LINK_LINKED, CANONICAL_LINK_PENDING
+from backfield_entities.canonical.link import (
+    CANONICAL_LINK_LINKED,
+    CANONICAL_LINK_PENDING,
+    CANONICAL_LINK_WAIVED,
+)
 from backfield_entities.canonical.plan_types import CanonicalPersistDecision
 from backfield_entities.entities.organization import (
     allocate_unique_organization_canonical_slug,
@@ -341,6 +345,42 @@ def test_link_substrate_to_canonical_atomic_is_idempotent() -> None:
             target_canonical_id=str(canon.id),
         )
         assert changed_again is False
+
+
+def test_link_substrate_to_canonical_atomic_allows_deferred() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed_stylebook(session)
+        canon = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Deferred Link Target",
+            slug="deferred-link-target",
+            organization_type="nonprofit",
+        )
+        session.add(canon)
+        session.commit()
+        organization = SubstrateOrganization(
+            project_id=pid,
+            name="Deferred Link Org",
+            normalized_name="deferred link org",
+            organization_type="nonprofit",
+            canonical_link_status=CANONICAL_LINK_WAIVED,
+        )
+        session.add(organization)
+        session.commit()
+        session.refresh(organization)
+
+        changed = link_substrate_to_canonical_atomic(
+            session,
+            stylebook_id=sb_id,
+            organization=organization,
+            target_canonical_id=str(canon.id),
+        )
+        assert changed is True
+        session.commit()
+        session.refresh(organization)
+        assert organization.stylebook_organization_canonical_id == str(canon.id)
+        assert organization.canonical_link_status == CANONICAL_LINK_LINKED
 
 
 def test_link_to_existing_canonical_records_alias_when_name_differs() -> None:

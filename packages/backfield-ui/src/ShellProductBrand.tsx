@@ -8,15 +8,15 @@ export interface ShellProductBrandProps {
   to: string
   /** Primary product name — large title (e.g. Agate, Stylebook). */
   productTitle: string
-  /** Optional mark before the title (e.g. Agate boxes icon, Stylebook book icon). */
+  /** Optional mark before the title (e.g. Agate layout-template icon, Stylebook book icon). */
   productMark?: ReactNode
-  /** Platform line under the title (e.g. Backfield Platform). */
+  /** Short product tagline under the title (e.g. Agate / Stylebook). */
   platformSubtitle: string
   className?: string
 }
 
 /**
- * Hub-style brand block: large product title + muted “Backfield Platform” line.
+ * Hub-style brand block: large product title + muted tagline.
  * Used by Agate UI and Stylebook UI for consistent top-bar labeling.
  */
 export function ShellProductBrand({

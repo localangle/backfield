@@ -255,7 +255,6 @@ def classify_connection_family(
             model=model,
             force_json=True,
             temperature=0.0,
-            max_tokens=1200,
             model_config_id=model_config_id,
         )
     except Exception as exc:
@@ -264,7 +263,6 @@ def classify_connection_family(
             from_entity_type,
             to_entity_type,
             exc,
-            exc_info=True,
         )
         _record_skip(counts, "llm_error")
         return FamilyInferenceResult(

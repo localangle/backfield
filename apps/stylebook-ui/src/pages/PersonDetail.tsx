@@ -18,6 +18,7 @@ import {
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
+import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -64,10 +65,8 @@ export default function PersonDetail() {
 
   const [person, setPerson] = useState<CanonicalPerson | null>(null)
   const [substrates, setSubstrates] = useState<LinkedPersonSubstrateItem[]>([])
-  const [mentions, setMentions] = useState<LinkedPersonMention[]>([])
   const [loading, setLoading] = useState(true)
   const [substratesLoading, setSubstratesLoading] = useState(false)
-  const [mentionsLoading, setMentionsLoading] = useState(false)
   const [editing, setEditing] = useState(false)
   const [label, setLabel] = useState("")
   const [title, setTitle] = useState("")
@@ -144,28 +143,42 @@ export default function PersonDetail() {
     [evidenceProjectSlug],
   )
 
-  const loadMentions = useCallback(
-    async (canonicalId: string, sbSlug: string, quiet = false) => {
-      if (!quiet) setMentionsLoading(true)
-      try {
-        const m = await getCanonicalPersonMentions(
-          canonicalId,
-          sbSlug,
-          500,
-          0,
-          undefined,
-          "desc",
-          evidenceProjectSlug || undefined,
-        )
-        setMentions(m.mentions)
-      } catch {
-        setMentions([])
-      } finally {
-        if (!quiet) setMentionsLoading(false)
-      }
-    },
-    [evidenceProjectSlug],
+  const fetchPersonMentionsPage = useCallback(
+    (
+      canonicalId: string,
+      sbSlug: string,
+      limit: number,
+      offset: number,
+      projectFilter?: string,
+    ) =>
+      getCanonicalPersonMentions(
+        canonicalId,
+        sbSlug,
+        limit,
+        offset,
+        undefined,
+        "desc",
+        projectFilter,
+      ),
+    [],
   )
+
+  const {
+    mentions,
+    mentionTotal,
+    mentionsPage,
+    setMentionsPage,
+    mentionsLoading,
+    refreshMentions,
+    clearMentions,
+    mentionsPerPage,
+  } = usePaginatedCanonicalMentions<LinkedPersonMention>({
+    canonicalId: id,
+    stylebookSlug,
+    projectFilterSlug: evidenceProjectSlug,
+    enabled: Boolean(id && stylebookSlug && !deleting && person?.id === id),
+    fetchPage: fetchPersonMentionsPage,
+  })
 
   const refreshCanonicalPage = useCallback(
     async (quiet = false) => {
@@ -173,13 +186,13 @@ export default function PersonDetail() {
       const found = await loadPerson(id, stylebookSlug, true)
       if (!found) {
         setSubstrates([])
-        setMentions([])
+        clearMentions()
         return
       }
       await loadSubstrates(id, stylebookSlug, quiet)
-      await loadMentions(id, stylebookSlug, quiet)
+      await refreshMentions(quiet)
     },
-    [id, stylebookSlug, deleting, loadPerson, loadSubstrates, loadMentions],
+    [id, stylebookSlug, deleting, loadPerson, loadSubstrates, refreshMentions, clearMentions],
   )
 
   useEffect(() => {
@@ -191,11 +204,6 @@ export default function PersonDetail() {
     if (!id || !stylebookSlug || deleting || person?.id !== id) return
     void loadSubstrates(id, stylebookSlug)
   }, [id, stylebookSlug, deleting, person, loadSubstrates])
-
-  useEffect(() => {
-    if (!id || !stylebookSlug || deleting || person?.id !== id) return
-    void loadMentions(id, stylebookSlug)
-  }, [id, stylebookSlug, deleting, person, loadMentions])
 
   const tableLoading = substratesLoading || mentionsLoading
 
@@ -279,6 +287,7 @@ export default function PersonDetail() {
     canonicalKey: `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`,
     enabled: Boolean(id && !deleting),
     mentions,
+    mentionTotal,
     mentionsLoading,
     substrates,
     substratesLoading,
@@ -463,6 +472,12 @@ export default function PersonDetail() {
         unlinkingId,
         onUnlink: (s) => void handleUnlinkSubstrate(s),
         onMove: setMoveSubstrate,
+        pagination: {
+          page: mentionsPage,
+          perPage: mentionsPerPage,
+          total: mentionTotal,
+          onPageChange: setMentionsPage,
+        },
       }}
       meta={
         person && stylebookSlug ? (

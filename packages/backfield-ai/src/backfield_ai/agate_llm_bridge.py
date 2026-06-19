@@ -68,6 +68,7 @@ def call_llm_tracked_sync(
     timeout: float,
     max_tokens: int | None = None,
     model_config_id: str | None = None,
+    allow_max_tokens_bump: bool = True,
 ) -> str:
     if not prompt:
         raise ValueError("Prompt cannot be empty")
@@ -83,12 +84,16 @@ def call_llm_tracked_sync(
     catalog_api_key: str | None = None
     catalog_api_base: str | None = None
     if track_ctx and mc_norm:
-        lm_model, catalog_api_key, catalog_api_base = resolve_llm_auth_for_model_config(
-            track_ctx.session,
-            project_id=track_ctx.project_id,
-            model_config_id=mc_norm,
-            fallback_litellm_model=lm_model,
-        )
+        from backfield_db.session import get_engine
+        from sqlmodel import Session
+
+        with Session(get_engine()) as session:
+            lm_model, catalog_api_key, catalog_api_base = resolve_llm_auth_for_model_config(
+                session,
+                project_id=track_ctx.project_id,
+                model_config_id=mc_norm,
+                fallback_litellm_model=lm_model,
+            )
 
     from agate_utils.llm import merge_system_messages, resolve_project_system_prompt
 
@@ -153,6 +158,7 @@ def call_llm_tracked_sync(
                 temperature=temp_arg,
                 timeout=float(timeout),
                 force_json_response=bool(force_json),
+                allow_max_tokens_bump=allow_max_tokens_bump,
             )
             snap = {"provider": result.provider, "provider_model_id": result.provider_model_id}
             persist_llm_attempt(
@@ -221,11 +227,8 @@ def call_llm_tracked_sync(
                 error_message=err_msg,
                 cost_estimate_source=r.cost_estimate_source,
             )
-            if attempt_idx < max_retries - 1:
-                wait_time = 2**attempt_idx
-                time.sleep(wait_time)
-            else:
-                raise Exception(f"LLM call failed after {max_retries} attempts: {exc}") from exc
+            # Deterministic reject (empty JSON, refusal): identical input fails again; do not retry.
+            raise Exception(f"LLM call failed: {exc}") from exc
         except Exception as exc:
             last_err = exc
             err_type = type(exc).__name__

@@ -15,6 +15,8 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
@@ -277,6 +279,129 @@ class StylebookBundleJob(SQLModel, table=True):
     )
 
 
+class StylebookCleanupDismissal(SQLModel, table=True):
+    """Editor dismissal of a cleanup issue (duplicate pair or list item)."""
+
+    __tablename__ = "stylebook_cleanup_dismissal"
+    __table_args__ = (
+        UniqueConstraint(
+            "stylebook_id",
+            "check_id",
+            "pair_key",
+            name="uq_stylebook_cleanup_dismissal_key",
+        ),
+        Index("ix_stylebook_cleanup_dismissal_stylebook_check", "stylebook_id", "check_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    check_id: str = Field(sa_column=Column(Text, nullable=False))
+    pair_key: str = Field(
+        sa_column=Column(Text, nullable=False),
+        description="Sorted canonical pair 'a|b' or single canonical id for list checks.",
+    )
+    created_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookCleanupAiReview(SQLModel, table=True):
+    """Background AI review run for duplicate-cluster cleanup checks."""
+
+    __tablename__ = "stylebook_cleanup_ai_review"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_cleanup_ai_review_stylebook_check",
+            "stylebook_id",
+            "check_id",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    check_id: str = Field(sa_column=Column(Text, nullable=False))
+    status: str = Field(
+        default="queued",
+        sa_column=Column(Text, nullable=False, server_default="queued"),
+    )
+    provider_model_id: str = Field(sa_column=Column(Text, nullable=False))
+    ai_model_config_id: str | None = Field(
+        default=None,
+        foreign_key="backfield_ai_model_config.id",
+        index=True,
+    )
+    cluster_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    processed_cluster_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False),
+    )
+    proposal_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class StylebookCleanupAiProposal(SQLModel, table=True):
+    """AI-suggested merge or keep-separate action for a duplicate cluster."""
+
+    __tablename__ = "stylebook_cleanup_ai_proposal"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_cleanup_ai_proposal_stylebook_check_status",
+            "stylebook_id",
+            "check_id",
+            "status",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    review_id: str = Field(foreign_key="stylebook_cleanup_ai_review.id", index=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    check_id: str = Field(sa_column=Column(Text, nullable=False))
+    cluster_id: str = Field(sa_column=Column(Text, nullable=False))
+    action: str = Field(sa_column=Column(Text, nullable=False))
+    target_canonical_id: str | None = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )
+    member_ids_json: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False),
+    )
+    confidence: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
+    rationale: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    status: str = Field(
+        default="pending",
+        sa_column=Column(Text, nullable=False, server_default="pending"),
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    resolved_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    resolved_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+
+
 class StylebookLocationCanonical(SQLModel, table=True):
     """Canonical location row within a Stylebook."""
 
@@ -318,6 +443,8 @@ class StylebookLocationCanonical(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    h3_cell: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    h3_resolution: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     country_code: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     subdivision_code: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     city_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
@@ -1087,6 +1214,8 @@ class SubstrateLocation(SQLModel, table=True):
             "project_id",
             "canonical_link_status",
         ),
+        Index("idx_substrate_location_project_h3_resolution", "project_id", "h3_resolution"),
+        Index("idx_substrate_location_project_h3_cell", "project_id", "h3_cell"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -1136,6 +1265,8 @@ class SubstrateLocation(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    h3_cell: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    h3_resolution: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     # GeocodeAgent structured router audit (from ``agate_geocode_router_audit``).
     geocode_router_audit_json: dict[str, Any] | list[Any] | None = Field(
         default=None,
@@ -1606,6 +1737,8 @@ class SubstrateLocationCache(SQLModel, table=True):
         ),
         Index("idx_substrate_location_cache_project_query_text", "project_id", "normalized_query"),
         Index("idx_substrate_location_cache_project_type", "project_id", "location_type"),
+        Index("idx_substrate_location_cache_project_h3_resolution", "project_id", "h3_resolution"),
+        Index("idx_substrate_location_cache_project_h3_cell", "project_id", "h3_cell"),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -1635,6 +1768,8 @@ class SubstrateLocationCache(SQLModel, table=True):
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
+    h3_cell: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    h3_resolution: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     response_payload_json: dict | None = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
@@ -1713,10 +1848,50 @@ class AgateProcessedItem(SQLModel, table=True):
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default=text("false")),
     )
+    started_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    #: Denormalized link for public article provenance and hub queries (set on persist).
+    substrate_article_id: int | None = Field(
+        default=None,
+        foreign_key="substrate_article.id",
+        index=True,
+    )
     created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
     updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
+class AgateNodeTiming(SQLModel, table=True):
+    """Per-node wall-clock timing for a processed item graph execution."""
+
+    __tablename__ = "agate_node_timing"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    run_id: str = Field(
+        sa_column=Column(
+            Text,
+            ForeignKey("agate_run.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    processed_item_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("agate_processed_item.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    node_id: str = Field(sa_column=Column(Text, nullable=False))
+    node_type: str = Field(sa_column=Column(Text, nullable=False))
+    elapsed_s: float = Field(sa_column=Column(Float, nullable=False))
+    created_at: datetime = Field(
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     )
 

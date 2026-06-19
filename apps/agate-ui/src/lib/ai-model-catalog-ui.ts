@@ -13,6 +13,9 @@ export const EMBEDDING_CAPABILITY = 'embedding'
 /** Core API / worker role for semantic document and query embeddings. */
 export const SEMANTIC_EMBEDDING_DEFAULT_ROLE = 'semantic.embedding'
 
+/** Core API role for HyDE hypothetical-document generation on semantic search. */
+export const SEMANTIC_HYDE_DEFAULT_ROLE = 'semantic.hyde'
+
 /** Curated embedding presets shipped by Core API (`CURATED_TEMPLATES`). */
 export const EMBEDDING_CURATED_PRESET_IDS = [
   'openai:text-embedding-3-small',

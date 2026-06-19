@@ -28,6 +28,7 @@ from worker.substrate.canonical.adjudication import (
 )
 from worker.substrate.canonical.parallel_llm import (
     canonical_adjudication_max_concurrent,
+    commit_session_before_session_free_llm,
     run_callables_parallel,
 )
 from worker.substrate.entities.location.mentions import (
@@ -251,6 +252,7 @@ class LocationPersistHandler:
                 )
 
         if pending_adjudication:
+            commit_session_before_session_free_llm(session)
             max_workers = canonical_adjudication_max_concurrent()
             llm_results = run_callables_parallel(
                 [
@@ -260,6 +262,14 @@ class LocationPersistHandler:
                 max_workers=max_workers,
             )
             for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
+                location_id = int(item.location.id)  # type: ignore[arg-type]
+                loc = session.get(SubstrateLocation, location_id)
+                if loc is None:
+                    logger.warning(
+                        "substrate_location id=%s missing after adjudication LLM; skipping apply",
+                        location_id,
+                    )
+                    continue
                 plan = resolve_location_adjudication_plan(
                     item.plan,
                     prepared=item.prepared,
@@ -268,7 +278,7 @@ class LocationPersistHandler:
                 _apply_location_plan_and_mention(
                     session,
                     ctx,
-                    location=item.location,
+                    location=loc,
                     bucket=item.bucket,
                     entry=item.entry,
                     plan=plan,

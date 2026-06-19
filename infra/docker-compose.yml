@@ -4,6 +4,11 @@ x-shared-env: &shared-env
   SERVICE_API_TOKEN: ${SERVICE_API_TOKEN:-backfield-dev}
   SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret}
 
+# Runtime DB traffic goes through PgBouncer; migrations/admin use BACKFIELD_DATABASE_URL_DIRECT.
+x-pooled-database-env: &pooled-database-env
+  BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@pgbouncer:5432/backfield
+  DATABASE_URL: postgresql+psycopg://postgres:postgres@pgbouncer:5432/backfield
+
 services:
   postgres:
     build:
@@ -23,6 +28,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:1.22.1-p0
+    environment:
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: backfield
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 20
+      MAX_DB_CONNECTIONS: 80
+      # Postgres 16 uses SCRAM; md5/any break pgbouncer -> server auth.
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U postgres || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7
@@ -44,18 +74,20 @@ services:
     ports:
       - "8003:8003"
     environment:
-      <<: *shared-env
+      <<: [*shared-env, *pooled-database-env]
       UI_ORIGIN: http://localhost:5175
       REDIS_URL: redis://redis:6379/0
-      # Same DB as agate-api/core-api; inside Compose use service hostname `postgres:5432`
-      # (not localhost:5433, which is only valid from the host machine).
-      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-2}
+      BACKFIELD_PG_STATEMENT_TIMEOUT_MS: ${BACKFIELD_PG_STATEMENT_TIMEOUT_MS:-30000}
+      BACKFIELD_PG_LOCK_TIMEOUT_MS: ${BACKFIELD_PG_LOCK_TIMEOUT_MS:-5000}
       # Same Fernet key as agate-api/worker/core-api (semantic search + catalog credential decrypt).
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
       # STYLEBOOK_BUNDLE_* comes from env_file (../.env); do not set empty ${...} here or it
       # overrides env_file when host-side interpolation is unset.
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -71,10 +103,12 @@ services:
     ports:
       - "8004:8004"
     environment:
-      <<: *shared-env
+      <<: [*shared-env, *pooled-database-env]
       UI_ORIGINS: http://localhost:5173,http://localhost:5175,http://localhost:8004
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
-      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-2}
+      BACKFIELD_PG_STATEMENT_TIMEOUT_MS: ${BACKFIELD_PG_STATEMENT_TIMEOUT_MS:-30000}
+      BACKFIELD_PG_LOCK_TIMEOUT_MS: ${BACKFIELD_PG_LOCK_TIMEOUT_MS:-5000}
       # Same Fernet key as agate-api/worker for org integration secrets + project secrets (must match across services).
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
     healthcheck:
@@ -90,6 +124,8 @@ services:
       retries: 12
       start_period: 40s
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       # Alembic runs in agate-api's entrypoint before uvicorn; core-api env bootstrap needs identity tables.
@@ -106,15 +142,19 @@ services:
     ports:
       - "8000:8000"
     environment:
-      <<: *shared-env
+      <<: [*shared-env, *pooled-database-env]
       UI_ORIGIN: http://localhost:5173
       REDIS_URL: redis://redis:6379/0
-      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      # Alembic and ensure_database connect directly (DDL / CREATE DATABASE bypass PgBouncer).
+      BACKFIELD_DATABASE_URL_DIRECT: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
+      BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-3}
+      BACKFIELD_SQLALCHEMY_MAX_OVERFLOW: ${BACKFIELD_SQLALCHEMY_MAX_OVERFLOW:-2}
+      BACKFIELD_PG_STATEMENT_TIMEOUT_MS: ${BACKFIELD_PG_STATEMENT_TIMEOUT_MS:-30000}
+      BACKFIELD_PG_LOCK_TIMEOUT_MS: ${BACKFIELD_PG_LOCK_TIMEOUT_MS:-5000}
       STYLEBOOK_API_URL: http://stylebook-api:8003
       # Dev-only Fernet key for encrypting backfield_project_secret; override in production.
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:-qhgUjRZ2WpPE9rP3viewNrKOmKQDvXbXzHCPxgrrZyI=}
-      # After migrations: sync .env API keys into General + create Starter flow graph.
+      # After migrations: sync .env LLM keys into General project secrets (no graphs).
       BACKFIELD_LOCAL_BOOTSTRAP: ${BACKFIELD_LOCAL_BOOTSTRAP:-1}
       # LLM / geocoder keys: set in repo-root .env (see .env.example); loaded via env_file above.
     healthcheck:
@@ -124,6 +164,8 @@ services:
       retries: 15
       start_period: 90s
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -146,15 +188,19 @@ services:
         "agate",
         "--concurrency",
         "${CELERY_WORKER_CONCURRENCY:-16}",
+        "--prefetch-multiplier",
+        "1",
+        "--max-tasks-per-child",
+        "${CELERY_MAX_TASKS_PER_CHILD:-1}",
+        "--max-memory-per-child",
+        "${CELERY_MAX_MEMORY_PER_CHILD_KB:-1048576}",
       ]
     env_file:
       - path: ../.env
         required: false
     environment:
-      <<: *shared-env
+      <<: [*shared-env, *pooled-database-env]
       REDIS_URL: redis://redis:6379/0
-      BACKFIELD_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/backfield
       # One SQLAlchemy pool per Celery child process; keep defaults small so many workers
       # do not exhaust Postgres max_connections alongside agate-api / core-api / stylebook-api.
       BACKFIELD_SQLALCHEMY_POOL_SIZE: ${BACKFIELD_SQLALCHEMY_POOL_SIZE:-2}
@@ -166,9 +212,13 @@ services:
       # LLM / geocoder keys: repo-root .env via env_file above.
       PROJECT_SLUG: ${PROJECT_SLUG:-}
       BACKFIELD_PARALLEL_GRAPH_LEVELS: ${BACKFIELD_PARALLEL_GRAPH_LEVELS:-1}
-      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-3600}
-      TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-4200}
+      OVERPASS_MAX_CONCURRENT: ${OVERPASS_MAX_CONCURRENT:-4}
+      OVERPASS_QUERY_STAGGER_S: ${OVERPASS_QUERY_STAGGER_S:-0.5}
+      TASK_SOFT_TIME_LIMIT: ${TASK_SOFT_TIME_LIMIT:-900}
+      TASK_HARD_TIME_LIMIT: ${TASK_HARD_TIME_LIMIT:-1080}
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:

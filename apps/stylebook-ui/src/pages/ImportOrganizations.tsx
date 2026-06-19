@@ -386,7 +386,7 @@ export default function ImportOrganizations() {
                 </AlertDescription>
               </Alert>
               <div className="overflow-x-auto rounded-md border max-h-[520px]">
-                <Table>
+                <Table className="table-fixed w-full min-w-[32rem]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12">#</TableHead>
@@ -401,8 +401,8 @@ export default function ImportOrganizations() {
                         <TableCell className="font-mono text-xs text-muted-foreground">
                           {preview.index + 1}
                         </TableCell>
-                        <TableCell>{preview.label}</TableCell>
-                        <TableCell>{preview.organization_type || "—"}</TableCell>
+                        <TableCell className="min-w-0 truncate">{preview.label}</TableCell>
+                        <TableCell className="min-w-0 truncate">{preview.organization_type || "—"}</TableCell>
                         <TableCell>
                           <Button
                             variant="ghost"

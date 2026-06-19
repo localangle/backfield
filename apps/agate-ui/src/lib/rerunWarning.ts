@@ -1,8 +1,8 @@
-/** Confirmation copy for re-runs that use the current saved flow. */
+/** Confirmation copy for re-runs that replay a run's pinned flow settings. */
 
 export const RERUN_WARNING_TITLE = 'Rerun item?'
 
-export const RUN_AGAIN_WARNING_TITLE = 'Rerun all items?'
+export const RUN_AGAIN_WARNING_TITLE = 'Replay run?'
 
 export type ReconciliationPolicy = 'add_only' | 'smart_merge' | 'replace'
 
@@ -36,7 +36,11 @@ export const reconciliationPolicyFromGraph = (graph: {
 const flowSentence = ({ flowName, policy }: FlowWarningOptions): string => {
   const quoted = flowName?.trim() ? `“${flowName.trim()}”` : 'this flow'
   const normalized = normalizeReconciliationPolicy(policy)
-  return `This will use the current saved version of ${quoted} with ${policyLabel(normalized)}.`
+  return (
+    `This will replay using the flow settings from when this run started` +
+    (quoted ? ` (${quoted})` : '') +
+    ` with ${policyLabel(normalized)}.`
+  )
 }
 
 const policySentence = (policy: ReconciliationPolicy): string => {
@@ -49,7 +53,8 @@ const policySentence = (policy: ReconciliationPolicy): string => {
   return 'It will update saved data from the flow while preserving changes made by editors.'
 }
 
-export const RUN_AGAIN_WARNING_BODY = flowSentence({ policy: 'smart_merge' }) + ' ' + policySentence('smart_merge')
+export const RUN_AGAIN_WARNING_BODY =
+  flowSentence({ policy: 'smart_merge' }) + ' ' + policySentence('smart_merge')
 
 export const runAgainWarningBody = (options: FlowWarningOptions = {}): string => {
   const policy = normalizeReconciliationPolicy(options.policy)

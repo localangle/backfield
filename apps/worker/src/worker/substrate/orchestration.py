@@ -125,6 +125,7 @@ def persist_from_consolidated(
     consolidated: dict[str, Any],
     db_output_params: dict[str, Any] | None = None,
     replace_machine_geography: bool = False,
+    processed_item_id: int | None = None,
 ) -> PersistResult:
     active_keys = _active_handler_keys(consolidated)
     if not _has_persistable_consolidated_content(consolidated):
@@ -139,6 +140,7 @@ def persist_from_consolidated(
         project_id=project_id,
         consolidated=consolidated,
         run_id=run_id,
+        processed_item_id=processed_item_id,
     )
     _sync_images(session, article_id=int(article.id), consolidated=consolidated)
 

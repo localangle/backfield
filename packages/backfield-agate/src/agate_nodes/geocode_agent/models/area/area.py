@@ -209,6 +209,20 @@ class Area(Location):
         s = str(raw).strip()
         return s or None
 
+    def _geographic_estimation_litellm_model(self) -> str:
+        raw = getattr(self, "_geographic_estimation_llm_model", None)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+        return self._geographic_reasoning_litellm_model()
+
+    def _geographic_estimation_model_config_id(self) -> str | None:
+        raw = getattr(self, "_geographic_estimation_ai_model_config_id", None)
+        if raw is not None:
+            s = str(raw).strip()
+            if s:
+                return s
+        return self._geographic_reasoning_model_config_id()
+
     def _evaluation_litellm_model(self) -> str:
         raw = getattr(self, "_evaluation_llm_model", None)
         if isinstance(raw, str) and raw.strip():

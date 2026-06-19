@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backfield_db import SubstrateLocation, SubstrateLocationCache
+from backfield_entities.geo.h3_index import derive_h3_index
 from backfield_entities.ingest.geocode_cache.fingerprint import (
     substrate_location_cache_query_fingerprint,
 )
@@ -177,6 +178,8 @@ def _upsert_location_cache(
     geometry_value: object | None,
     geometry_type_str: str | None,
     formatted_address: str | None,
+    h3_cell: str | None,
+    h3_resolution: int | None,
 ) -> None:
     normalized_query = _normalize_name(query_text)
     if not normalized_query:
@@ -230,6 +233,8 @@ def _upsert_location_cache(
                 geometry=geometry_value,
                 geometry_type=geometry_type_str,
                 geometry_json=geometry_json,
+                h3_cell=h3_cell,
+                h3_resolution=h3_resolution,
                 response_payload_json=payload,
             )
         )
@@ -245,6 +250,8 @@ def _upsert_location_cache(
         row.geometry = geometry_value or row.geometry
         row.geometry_type = geometry_type_str or row.geometry_type
         row.geometry_json = geometry_json or row.geometry_json
+        row.h3_cell = h3_cell or row.h3_cell
+        row.h3_resolution = h3_resolution if h3_resolution is not None else row.h3_resolution
         row.response_payload_json = payload
         row.updated_at = now
         session.add(row)
@@ -450,6 +457,15 @@ def _display_name_for_place_entry(entry: dict[str, Any]) -> str:
     return "Unknown location"
 
 
+def _h3_parts_from_geometry(
+    geometry_json: dict[str, Any] | None,
+) -> tuple[str | None, int | None]:
+    derived = derive_h3_index(geometry_json)
+    if derived is None:
+        return None, None
+    return derived.h3_cell, derived.h3_resolution
+
+
 def _geometry_parts_from_entry(
     session: Session, entry: dict[str, Any]
 ) -> tuple[dict[str, Any] | None, object | None, str | None]:
@@ -576,6 +592,8 @@ def _apply_substrate_location_merge(
     geometry_type_str: str | None,
     geometry_json: dict[str, Any] | None,
     geocode_router_audit_json: dict[str, Any] | None,
+    h3_cell: str | None,
+    h3_resolution: int | None,
 ) -> None:
     now = _utcnow()
     loc.name = display_name
@@ -593,6 +611,9 @@ def _apply_substrate_location_merge(
     loc.geometry = geometry_value or loc.geometry
     loc.geometry_type = geometry_type_str or loc.geometry_type
     loc.geometry_json = geometry_json or loc.geometry_json
+    if geometry_json is not None:
+        loc.h3_cell = h3_cell
+        loc.h3_resolution = h3_resolution
     # Latest ingest wins when the payload carries an audit dict (Advanced path).
     if geocode_router_audit_json is not None:
         loc.geocode_router_audit_json = geocode_router_audit_json
@@ -619,6 +640,7 @@ def _upsert_location(
 
     geocoded = entry.get("geocoded")
     geometry_json, geometry_value, geometry_type_str = _geometry_parts_from_entry(session, entry)
+    h3_cell, h3_resolution = _h3_parts_from_geometry(geometry_json)
     formatted_address = _formatted_address_from_entry(entry)
     geocode_type, geocode_result = _geocode_meta_from_entry(entry)
 
@@ -689,6 +711,8 @@ def _upsert_location(
             geometry=geometry_value,
             geometry_type=geometry_type_str,
             geometry_json=geometry_json,
+            h3_cell=h3_cell,
+            h3_resolution=h3_resolution,
             geocode_router_audit_json=router_audit,
         )
         try:
@@ -725,6 +749,8 @@ def _upsert_location(
                 geometry_type_str=geometry_type_str,
                 geometry_json=geometry_json,
                 geocode_router_audit_json=router_audit,
+                h3_cell=h3_cell,
+                h3_resolution=h3_resolution,
             )
             session.add(loc)
             session.flush()
@@ -742,6 +768,8 @@ def _upsert_location(
             geometry_value=geometry_value,
             geometry_type_str=geometry_type_str,
             formatted_address=formatted_address,
+            h3_cell=h3_cell,
+            h3_resolution=h3_resolution,
         )
         return LocationUpsertResult(location=loc, created=True, updated=False)
 
@@ -764,6 +792,8 @@ def _upsert_location(
         geometry_type_str=geometry_type_str,
         geometry_json=geometry_json,
         geocode_router_audit_json=router_audit,
+        h3_cell=h3_cell,
+        h3_resolution=h3_resolution,
     )
     session.add(loc)
     session.flush()
@@ -779,5 +809,7 @@ def _upsert_location(
         geometry_value=geometry_value,
         geometry_type_str=geometry_type_str,
         formatted_address=formatted_address,
+        h3_cell=h3_cell,
+        h3_resolution=h3_resolution,
     )
     return LocationUpsertResult(location=loc, created=False, updated=True)

@@ -45,8 +45,11 @@ def _normalize_metadata_item(raw: Any) -> dict[str, Any] | None:
     }
 
 
+_MULTI_VALUE_LIST_KEYS = ("topics", "subjects", "needs")
+
+
 def _multi_value_items_from_block(block: dict[str, Any]) -> list[dict[str, Any]]:
-    for list_key in ("subjects", "needs"):
+    for list_key in _MULTI_VALUE_LIST_KEYS:
         raw_items = block.get(list_key)
         if isinstance(raw_items, list):
             items: list[dict[str, Any]] = []
@@ -68,7 +71,7 @@ def _multi_value_items_from_block(block: dict[str, Any]) -> list[dict[str, Any]]
 
 
 def _block_has_multi_value_list(block: dict[str, Any]) -> bool:
-    return isinstance(block.get("subjects"), list) or isinstance(block.get("needs"), list)
+    return any(isinstance(block.get(list_key), list) for list_key in _MULTI_VALUE_LIST_KEYS)
 
 
 def _upsert_metadata_row(

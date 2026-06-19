@@ -25,30 +25,37 @@ from sqlmodel.pool import StaticPool
 
 
 @pytest.fixture
-def memory_session() -> Session:
+def memory_engine():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     BackfieldAiCallRecord.metadata.create_all(engine)
-    with Session(engine) as session:
+    return engine
+
+
+@pytest.fixture
+def memory_session(memory_engine) -> Session:
+    with Session(memory_engine) as session:
         yield session
 
 
 @patch("backfield_ai.embeddings.litellm.embedding")
 def test_embed_texts_sync_persists_call_record_when_tracked(
     mock_embedding: MagicMock,
+    memory_engine,
     memory_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("backfield_ai.tracking_context.get_engine", lambda: memory_engine)
     item0 = MagicMock(index=0, embedding=[0.1, 0.2])
     resp = MagicMock(data=[item0], usage=MagicMock(prompt_tokens=3, total_tokens=3))
     mock_embedding.return_value = resp
     monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.00001)
 
     tok = attach_llm_tracking_context(
-        LlmAttemptTrackingContext(session=memory_session, project_id=1, run_id="run-1"),
+        LlmAttemptTrackingContext(project_id=1, run_id="run-1"),
     )
     set_llm_tracking_current_node("db-out", "DBOutput")
     try:
@@ -101,11 +108,14 @@ def test_embed_texts_sync_skips_persist_without_tracking_context(
 @patch("backfield_ai.embeddings.litellm.embedding")
 def test_embed_texts_sync_persists_failed_provider_call(
     mock_embedding: MagicMock,
+    memory_engine,
     memory_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("backfield_ai.tracking_context.get_engine", lambda: memory_engine)
     mock_embedding.side_effect = RuntimeError("rate limited")
     tok = attach_llm_tracking_context(
-        LlmAttemptTrackingContext(session=memory_session, project_id=2, run_id="run-2"),
+        LlmAttemptTrackingContext(project_id=2, run_id="run-2"),
     )
     try:
         result = embed_texts_sync(

@@ -101,6 +101,15 @@ def _person_name_norm(person: SubstratePerson) -> str:
     return normalize_person_text(person.normalized_name or person.name)
 
 
+def alias_texts_for_canonical(
+    session: Session,
+    *,
+    canon_id: str,
+) -> list[str]:
+    """Non-suppressed alias display strings for a canonical person."""
+    return _alias_texts_for_canonical(session, canon_id=canon_id)
+
+
 def _alias_texts_for_canonical(
     session: Session,
     *,

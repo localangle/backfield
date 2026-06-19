@@ -170,6 +170,7 @@ def completion_text_sync(
     temperature: float | None,
     timeout: float,
     force_json_response: bool,
+    allow_max_tokens_bump: bool = True,
 ) -> LiteLLMCompletionResult:
     """Single LiteLLM completion (no Backfield-level retries here).
 
@@ -217,7 +218,12 @@ def completion_text_sync(
 
     # Large prompts + JSON mode can burn the whole completion budget with no visible text yet.
     # Only bump when we sent explicit max_tokens; else the provider already used its default.
-    if force_json_response and text == "" and finish == "length":
+    if (
+        allow_max_tokens_bump
+        and force_json_response
+        and text == ""
+        and finish == "length"
+    ):
         current = kwargs.get("max_tokens")
         if current is not None:
             current_cap = int(current)

@@ -15,11 +15,11 @@ description: Validate the Backfield golden path against a live stack. Use when r
 ## What The Smoke Covers
 
 - Agate API health; Stylebook API health; Core API health when using session mode
-- **General** project (slug `general`, overridable) and **Starter flow** graph present
+- **General** project (slug `general`, overridable) — smoke creates **Starter flow** via API when missing
 - With **`SMOKE_EMAIL` / `SMOKE_PASSWORD`**: Core login, **`GET /v1/me/workspaces`**, then Agate with **`session` cookie** (UI-shaped path)
 - Run enqueue on the `agate` queue for that graph; worker completion and terminal run status
-- Asserts **Starter flow** `spec` matches bootstrap (`starter_geocode_flow_graph_spec`: GeocodeAgent → DBOutput) and the run `result` includes **`stylebook_output`** with `success: true` (no `json_output` / `__outputKeysByNodeId`)
-- Does **not** delete General or the starter graph
+- Asserts **Starter flow** `spec` matches canonical (`starter_geocode_flow_graph_spec`: GeocodeAgent → DBOutput) and the run `result` includes **`stylebook_output`** with `success: true` (no `json_output` / `__outputKeysByNodeId`)
+- Does **not** delete General; smoke may leave the created starter graph in place unless you clean up manually
 
 ## When To Use It
 

@@ -151,3 +151,59 @@ def test_execute_s3_batch_setup_fanout_and_finalize(batch_engine, monkeypatch):
         assert "items" in summary
         assert summary.get("s3_batch", {}).get("valid_executed") == 1
         assert summary.get("graph_spec_json") == graph.spec_json
+
+
+def test_execute_run_replay_setup_clones_items(batch_engine, monkeypatch):
+    engine, graph_id = batch_engine
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "sk")
+
+    def _fake_s3() -> _FakeS3:
+        return _FakeS3()
+
+    monkeypatch.setattr(worker_tasks, "_s3_client_from_env", _fake_s3)
+
+    def _stub_execute_graph(spec, node_runners=None, *, before_each_node=None, **kwargs):  # noqa: ARG001
+        return {"s3_input": {"text": "stub"}}
+
+    monkeypatch.setattr(worker_tasks, "execute_graph", _stub_execute_graph)
+
+    with Session(engine) as session:
+        source = AgateRun(graph_id=graph_id, status="pending")
+        session.add(source)
+        session.commit()
+        session.refresh(source)
+        source_id = source.id
+
+    worker_tasks.execute_s3_batch_setup(source_id)
+
+    with Session(engine) as session:
+        source = session.get(AgateRun, source_id)
+        assert source is not None
+        source_items = session.exec(
+            select(AgateProcessedItem).where(AgateProcessedItem.run_id == source_id)
+        ).all()
+        replayable = [row for row in source_items if row.input_json and row.status != "skipped"]
+        assert replayable
+        expected_source_files = {row.source_file for row in replayable}
+
+        new_run = AgateRun(graph_id=graph_id, status="pending")
+        new_run.result_json = source.result_json
+        session.add(new_run)
+        session.commit()
+        session.refresh(new_run)
+        new_id = new_run.id
+
+    worker_tasks.execute_run_replay_setup(source_id, new_id)
+
+    with Session(engine) as session:
+        new_run = session.get(AgateRun, new_id)
+        assert new_run is not None
+        assert new_run.status == "succeeded"
+        cloned = session.exec(
+            select(AgateProcessedItem).where(AgateProcessedItem.run_id == new_id)
+        ).all()
+        assert len(cloned) == len(replayable)
+        assert {row.source_file for row in cloned} == expected_source_files
+        assert json.loads(new_run.result_json or "{}").get("graph_spec_json")

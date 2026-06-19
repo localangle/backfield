@@ -40,6 +40,7 @@ class SemanticMentionSearchIn(BaseModel):
     quote_status: QuoteStatusFilter = "any"
     limit: int = Field(default=20, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
+    use_hyde: bool = False
 
 
 class PersonSemanticMentionSearchIn(SemanticMentionSearchIn):
@@ -70,6 +71,10 @@ class SemanticMentionSearchOut(BaseModel):
     query: str
     embedding_model: str | None = None
     embedding_model_config_id: str | None = None
+    hyde_used: bool = False
+    hypothetical_document: str | None = None
+    hyde_model: str | None = None
+    hyde_model_config_id: str | None = None
     total: int
     limit: int
     offset: int
@@ -120,6 +125,10 @@ def _response_from_search(
         query=query,
         embedding_model=embedding.embedding_model,
         embedding_model_config_id=embedding.model_config_id,
+        hyde_used=embedding.hyde_used,
+        hypothetical_document=embedding.hypothetical_document,
+        hyde_model=embedding.hyde_model,
+        hyde_model_config_id=embedding.hyde_model_config_id,
         total=search_result.total,
         limit=limit,
         offset=offset,
@@ -158,6 +167,7 @@ def search_person_semantic_mentions_route(
             session,
             project_id=int(proj.id),
             query=body.query,
+            use_hyde=body.use_hyde,
         )
     except EmbeddingConfigurationError as exc:
         raise _embedding_http_error(exc) from exc
@@ -201,6 +211,7 @@ def search_location_semantic_mentions_route(
             session,
             project_id=int(proj.id),
             query=body.query,
+            use_hyde=body.use_hyde,
         )
     except EmbeddingConfigurationError as exc:
         raise _embedding_http_error(exc) from exc

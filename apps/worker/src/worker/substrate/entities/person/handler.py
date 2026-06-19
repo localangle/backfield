@@ -22,6 +22,7 @@ from sqlmodel import Session, col, select
 
 from worker.substrate.canonical.parallel_llm import (
     canonical_adjudication_max_concurrent,
+    commit_session_before_session_free_llm,
     run_callables_parallel,
 )
 from worker.substrate.entities.person.adjudication import (
@@ -31,6 +32,7 @@ from worker.substrate.entities.person.adjudication import (
     run_person_adjudication_llm,
 )
 from worker.substrate.entities.person.mentions import (
+    _mention_texts_from_entry,
     _upsert_mention_and_occurrence,
     dispose_orphan_substrates_after_retired_mentions,
     retire_stale_article_mentions_for_rerun,
@@ -217,6 +219,8 @@ class PersonPersistHandler:
                         stylebook_id=ctx.stylebook_id,
                         model=adj_model,
                         model_config_id=ctx.settings.adjudication_ai_model_config_id,
+                        article_text=ctx.article_text,
+                        mention_texts=_mention_texts_from_entry(entry),
                     )
                     if prepared is not None:
                         pending_adjudication.append(
@@ -265,6 +269,7 @@ class PersonPersistHandler:
                 )
 
         if pending_adjudication:
+            commit_session_before_session_free_llm(session)
             max_workers = canonical_adjudication_max_concurrent()
             llm_tasks = [
                 lambda p=item.prepared: run_person_adjudication_llm(p)
@@ -272,6 +277,14 @@ class PersonPersistHandler:
             ]
             llm_results = run_callables_parallel(llm_tasks, max_workers=max_workers)
             for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
+                person_id = int(item.person.id)  # type: ignore[arg-type]
+                person = session.get(SubstratePerson, person_id)
+                if person is None:
+                    logger.warning(
+                        "substrate_person id=%s missing after adjudication LLM; skipping apply",
+                        person_id,
+                    )
+                    continue
                 plan = resolve_person_adjudication_plan(
                     item.plan,
                     prepared=item.prepared,
@@ -280,7 +293,7 @@ class PersonPersistHandler:
                 _apply_person_plan_and_mention(
                     session,
                     ctx,
-                    person=item.person,
+                    person=person,
                     bucket=item.bucket,
                     entry=item.entry,
                     plan=plan,

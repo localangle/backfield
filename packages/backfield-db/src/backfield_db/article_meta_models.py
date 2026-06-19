@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Text
+from sqlalchemy import Column, DateTime, Float, Index, Text
 from sqlmodel import Field, SQLModel, UniqueConstraint, func
 
 
@@ -19,6 +19,7 @@ class SubstrateArticleMeta(SQLModel, table=True):
             "category",
             name="uq_substrate_article_meta_article_id_meta_type_category",
         ),
+        Index("ix_substrate_article_meta_type_category", "meta_type", "category"),
     )
 
     id: int | None = Field(default=None, primary_key=True)

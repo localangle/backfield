@@ -394,6 +394,7 @@ version = "0.1.0"
 source = { editable = "packages/backfield-entities" }
 dependencies = [
     { name = "backfield-db" },
+    { name = "h3" },
     { name = "number-parser" },
     { name = "pydantic" },
     { name = "sqlmodel" },
@@ -402,6 +403,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "backfield-db", editable = "packages/backfield-db" },
+    { name = "h3", specifier = ">=4.3.1" },
     { name = "number-parser", specifier = ">=0.3.2,<0.4" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "sqlmodel", specifier = ">=0.0.16" },

@@ -14,6 +14,7 @@ const authBase = () => import.meta.env.VITE_AUTH_API_BASE ?? ""
 interface AuthContextType {
   isAuthenticated: boolean
   username: string
+  organizationName: string | null
   /** `org_admin` in the current organization (same rule as Agate UI). */
   isOrgAdmin: boolean
   loading: boolean
@@ -28,12 +29,18 @@ function applyMe(
   setters: {
     setIsAuthenticated: (v: boolean) => void
     setUsername: (v: string) => void
+    setOrganizationName: (v: string | null) => void
     setIsOrgAdmin: (v: boolean) => void
   },
 ) {
   const ok = Boolean(data.authenticated && data.email)
   setters.setIsAuthenticated(ok)
   setters.setUsername(ok ? String(data.email) : "")
+  setters.setOrganizationName(
+    ok && data.organization_name != null && data.organization_name !== ""
+      ? String(data.organization_name)
+      : null,
+  )
   const role = ok ? (data.org_role ?? null) : null
   setters.setIsOrgAdmin(ok && role === "org_admin")
 }
@@ -41,16 +48,23 @@ function applyMe(
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [username, setUsername] = useState("")
+  const [organizationName, setOrganizationName] = useState<string | null>(null)
   const [isOrgAdmin, setIsOrgAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const checkAuth = useCallback(async () => {
     try {
       const data = await fetchMe()
-      applyMe(data, { setIsAuthenticated, setUsername, setIsOrgAdmin })
+      applyMe(data, {
+        setIsAuthenticated,
+        setUsername,
+        setOrganizationName,
+        setIsOrgAdmin,
+      })
     } catch {
       setIsAuthenticated(false)
       setUsername("")
+      setOrganizationName(null)
       setIsOrgAdmin(false)
     } finally {
       setLoading(false)
@@ -72,12 +86,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIsAuthenticated(false)
     setUsername("")
+    setOrganizationName(null)
     setIsOrgAdmin(false)
   }, [])
 
   const value: AuthContextType = {
     isAuthenticated,
     username,
+    organizationName,
     isOrgAdmin,
     loading,
     logout,

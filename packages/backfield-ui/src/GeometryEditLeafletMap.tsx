@@ -46,8 +46,10 @@ export type GeometryEditLeafletMapProps = {
   height?: number
   /** When true, map fills parent height (see ``LeafletMap`` ``fillHeight``). */
   fillHeight?: boolean
-  /** When true, enables edit handles/geocoder and disables auto fitBounds during drags. */
+  /** When true, enables edit handles and disables auto fitBounds during drags. */
   geometryEditing: boolean
+  /** Place search control (defaults to ``geometryEditing``). Disable for simple rectangle-only editors. */
+  geocoder?: boolean
   geometryDraft: Record<string, unknown> | null
   onGeometryDraftChange: (g: Record<string, unknown> | null) => void
   geometryAddMode: "point" | "rectangle" | null
@@ -84,6 +86,7 @@ export function GeometryEditLeafletMap({
   height = 420,
   fillHeight = false,
   geometryEditing,
+  geocoder,
   geometryDraft,
   onGeometryDraftChange,
   geometryAddMode,
@@ -132,7 +135,7 @@ export function GeometryEditLeafletMap({
       fillHeight={fillHeight}
       points={points}
       polygons={polygons}
-      geocoder={geometryEditing}
+      geocoder={geocoder ?? geometryEditing}
       showPopups={showPopups}
       // While editing, geometry updates constantly (drag/resize). Auto fitBounds would fight manual zoom.
       fitToData={!geometryEditing && !focusBounds}

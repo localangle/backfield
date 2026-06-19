@@ -15,12 +15,16 @@ Reconstruction of the Agate-style platform focused on **Agate** (visual pipeline
 | **Postgres** | 5433 | `agate_*` application tables (see [docs/DATABASE.md](docs/DATABASE.md)) |
 | **Redis** | 6379 | Celery broker |
 
-## Starter flow (bootstrapped graph)
+## Reference starter flow (not bootstrapped)
+
+The canonical **Starter flow** spec lives in code (`starter_geocode_flow_graph_spec`) for smoke tests and templates:
 
 1. **TextInput** — parameter text out (non-empty validation)  
 2. **PlaceExtract** — LLM extraction (ported from agate-ai-platform; needs `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` on the worker)  
 3. **GeocodeAgent** — LangGraph + external geocoders / LLM (ported; optional Stylebook cache)  
-4. **DBOutput** (Backfield Output in the palette) — persists consolidated upstream JSON into shared **`substrate_*`** tables (worker-local). The seeded graph wires **GeocodeAgent → DBOutput** directly; add **Output** (JSON Output) if you want a `consolidated` JSON view on the canvas.  
+4. **DBOutput** (Backfield Output in the palette) — persists consolidated upstream JSON into shared **`substrate_*`** tables (worker-local). Wire **GeocodeAgent → DBOutput** directly; add **Output** (JSON Output) if you want a `consolidated` JSON view on the canvas.  
+
+Create graphs in the Agate UI or from the **Geocode pipeline** template (`agate_template`, seeded by migration).
 
 ## Quick start
 
@@ -30,10 +34,10 @@ make bootstrap         # once: uv sync --all-packages (Python tooling + libs)
 make up                # Docker Compose (foreground; Ctrl+C stops all services)
 ```
 
-- Agate: http://localhost:5173 — home opens the **General** project; a **Starter flow** graph is created on first API boot when `BACKFIELD_LOCAL_BOOTSTRAP=1` (default in Compose).  
+- Agate: http://localhost:5173 — home opens the **General** project (empty until you create a flow).  
 - Stylebook UI: http://localhost:5175  
 
-`agate-api` runs `alembic upgrade head` on container start so migrations apply, then (when bootstrap is enabled) syncs API keys from the repo-root `.env` into encrypted **General** project secrets and ensures the starter graph exists.
+`agate-api` runs `alembic upgrade head` on container start so migrations apply, then (when bootstrap is enabled) syncs API keys from the repo-root `.env` into encrypted **General** project secrets.
 
 `make bootstrap` installs Python dependencies only; it does **not** seed the database (that happens when the stack starts).
 
@@ -81,6 +85,7 @@ If unset, Stylebook geocode accepts unauthenticated requests (dev only).
 - [AGENTS.md](AGENTS.md) — top-level operating guide for agent and human contributors  
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — package boundaries and runtime flow  
 - [docs/API.md](docs/API.md) — Agate API conventions and orchestration  
+- [docs/PUBLIC_API.md](docs/PUBLIC_API.md) — public `/public/v1` API design and rollout plan  
 - [docs/FRONTEND.md](docs/FRONTEND.md) — frontend conventions and node sync flow  
 - [docs/LAYOUT.md](docs/LAYOUT.md) — monorepo structure and naming  
 - [docs/DATABASE.md](docs/DATABASE.md) — schema ownership and redesign space  

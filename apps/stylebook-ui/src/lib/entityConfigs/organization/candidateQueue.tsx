@@ -14,6 +14,7 @@ import { OrganizationCanonicalLinkModal } from "@/components/OrganizationCanonic
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { CandidateQueueLinkModalProps, CandidateQueuePageConfig } from "@/lib/entityConfigs/candidateQueueTypes"
+import { truncateCellText } from "@/lib/candidateQueueTableLayout"
 
 function OrganizationLinkModal({
   substrateId,
@@ -143,9 +144,16 @@ export const organizationCandidateQueueConfig: CandidateQueuePageConfig<Organiza
     {
       id: "type",
       header: "Type",
-      render: (c) => (c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—"),
+      render: (c) => {
+        const label = c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—"
+        return truncateCellText(label, label !== "—" ? label : undefined)
+      },
     },
   ],
+
+  tableLayout: {
+    colgroup: [{ width: "52%" }, { width: "18%" }, { width: "11rem" }],
+  },
 
   mapFollowupRow: (c) => ({
     rowKey: c.id,

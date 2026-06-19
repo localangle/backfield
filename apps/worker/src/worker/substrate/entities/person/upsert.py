@@ -132,7 +132,6 @@ def _upsert_person(
     sort_key = _sort_key_from_entry(entry, display_name)
     fingerprint = person_identity_fingerprint(
         normalized_name=normalized,
-        title=title,
         affiliation=affiliation,
     )
 

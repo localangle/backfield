@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
 from typing import TypeVar
+
+from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -17,6 +22,12 @@ def canonical_adjudication_max_concurrent() -> int:
         return max(1, int(raw))
     except ValueError:
         return 8
+
+
+def commit_session_before_session_free_llm(session: Session) -> None:
+    """Release row locks before parallel LLM work that can take tens of seconds."""
+    session.commit()
+    logger.debug("Committed DBOutput persist transaction before session-free LLM batch")
 
 
 def run_callables_parallel(
@@ -39,4 +50,4 @@ def run_callables_parallel(
         for future in as_completed(future_to_index):
             index = future_to_index[future]
             ordered[index] = future.result()
-    return [item for item in ordered if item is not None]
+    return ordered

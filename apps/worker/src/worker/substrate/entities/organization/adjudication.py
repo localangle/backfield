@@ -31,6 +31,11 @@ from backfield_entities.entities.organization.types import (
 )
 from sqlmodel import Session, select
 
+from worker.substrate.canonical.llm_call_policy import (
+    ADJUDICATION_LLM_MAX_RETRIES,
+    ADJUDICATION_LLM_TIMEOUT_S,
+)
+
 
 @dataclass(frozen=True)
 class OrganizationAdjudicationPrepared:
@@ -126,16 +131,18 @@ def _canonical_ids_from_recall(plan: CanonicalPersistPlan) -> list[str]:
 
 def llm_suggest_organization_name_variants(
     *,
-    organization: SubstrateOrganization,
+    name: str,
+    normalized_name: str,
+    organization_type: str | None,
     model: str,
     model_config_id: str | None = None,
 ) -> tuple[str, ...]:
     """Return 0-2 alternate conventional names (acronym or expanded form) for recall."""
-    org_type = (organization.organization_type or "").strip() or "other"
+    org_type = (organization_type or "").strip() or "other"
     prompt = (
         "You help match news-article organization mentions to a Stylebook catalog.\n\n"
-        f"Substrate name: {organization.name!r}\n"
-        f"Normalized name: {organization.normalized_name!r}\n"
+        f"Substrate name: {name!r}\n"
+        f"Normalized name: {normalized_name!r}\n"
         f"Organization type: {org_type!r}\n\n"
         "Return JSON only: variant_names (array of 0-2 strings).\n"
         "Each variant must denote the SAME real-world institution as the substrate row, "
@@ -151,7 +158,8 @@ def llm_suggest_organization_name_variants(
             model=model,
             force_json=True,
             temperature=0.0,
-            max_tokens=400,
+            max_retries=ADJUDICATION_LLM_MAX_RETRIES,
+            timeout=ADJUDICATION_LLM_TIMEOUT_S,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             model_config_id=model_config_id,
         )
@@ -192,7 +200,9 @@ def enrich_materialize_plan_with_name_variant_recall(
     if not plan_is_materialize_new_canonical(plan):
         return plan
     variants = llm_suggest_organization_name_variants(
-        organization=organization,
+        name=str(organization.name),
+        normalized_name=str(organization.normalized_name),
+        organization_type=organization.organization_type,
         model=model,
         model_config_id=model_config_id,
     )
@@ -278,7 +288,8 @@ def run_organization_adjudication_llm(
             model=prepared.model,
             force_json=True,
             temperature=0.0,
-            max_tokens=800,
+            max_retries=ADJUDICATION_LLM_MAX_RETRIES,
+            timeout=ADJUDICATION_LLM_TIMEOUT_S,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             model_config_id=prepared.model_config_id,
         )

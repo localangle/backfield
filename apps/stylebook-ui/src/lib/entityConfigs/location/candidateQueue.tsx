@@ -15,6 +15,7 @@ import {
   placeExtractTypeLabel,
   sortReviewQueueTypeFilterOptions,
 } from "@/lib/place-extract-type-label"
+import { truncateCellText } from "@/lib/candidateQueueTableLayout"
 import { CanonicalLinkModal } from "@/components/CanonicalLinkModal"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -171,18 +172,17 @@ export const locationCandidateQueueConfig: CandidateQueuePageConfig<Candidate> =
       className: "min-w-0 overflow-hidden align-top",
       render: (c) => {
         const typeLabel = c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—"
-        return (
-          <span className="block truncate" title={typeLabel !== "—" ? typeLabel : undefined}>
-            {typeLabel}
-          </span>
-        )
+        return truncateCellText(typeLabel, typeLabel !== "—" ? typeLabel : undefined)
       },
     },
     {
       id: "address",
       header: "Address",
-      className: "min-w-0 max-w-xs truncate",
-      render: (c) => c.suggested_formatted_address || "—",
+      render: (c) =>
+        truncateCellText(
+          c.suggested_formatted_address || "—",
+          c.suggested_formatted_address || undefined,
+        ),
     },
     {
       id: "created",

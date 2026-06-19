@@ -29,7 +29,8 @@ from backfield_db import (
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select
+from sqlalchemy import case, func, or_
+from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -196,81 +197,101 @@ def create_project(
     return _project_to_out(session, p)
 
 
+class SlowestFlowOut(BaseModel):
+    graph_id: str
+    flow_name: str
+    avg_ms: float
+
+
+class TopFlowByCostOut(BaseModel):
+    graph_id: str
+    flow_name: str
+    avg_estimated_cost: Decimal
+
+
 class ProjectStatsOut(BaseModel):
     total_runs: int
     articles_processed: int
     runs_succeeded: int = 0
     runs_in_progress: int = 0
     runs_failed: int = 0
-    median_duration_ms_per_run: float | None = None
+    avg_duration_ms_per_run: float | None = None
     min_duration_ms_per_run: float | None = None
     max_duration_ms_per_run: float | None = None
-    median_duration_ms_per_item: float | None = None
-    median_estimated_ai_cost_per_run: Decimal | None = None
-    min_estimated_ai_cost_per_run: Decimal | None = None
-    max_estimated_ai_cost_per_run: Decimal | None = None
-    median_estimated_ai_cost_currency: str | None = None
-    median_estimated_ai_cost_incomplete: bool = False
+    avg_duration_ms_per_item: float | None = None
+    slowest_flows: list[SlowestFlowOut] = Field(default_factory=list)
+    avg_estimated_ai_cost_per_run: Decimal | None = None
+    top_flows_by_cost: list[TopFlowByCostOut] = Field(default_factory=list)
+    avg_estimated_ai_cost_currency: str | None = None
+    avg_estimated_ai_cost_incomplete: bool = False
 
 
-def _accumulate_ai_cost_rows(rows: list[BackfieldAiCallRecord]) -> tuple[Decimal, bool, str, int]:
-    total = Decimal("0")
-    incomplete = False
-    currency = "USD"
-    for row in rows:
-        currency = str(row.currency or "USD")
-        if row.estimated_cost is not None:
-            total += row.estimated_cost
-        else:
-            incomplete = True
-        if row.cost_estimate_incomplete:
-            incomplete = True
-    return total, incomplete, currency, len(rows)
-
-
-def _project_ai_cost_rows(
-    session: Session,
-    project_id: int,
-) -> list[BackfieldAiCallRecord]:
-    return list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.project_id == project_id)
-        ).all()
+def _ai_cost_incomplete_expr():
+    return or_(
+        BackfieldAiCallRecord.cost_estimate_incomplete.is_(True),
+        BackfieldAiCallRecord.estimated_cost.is_(None),
     )
 
 
-def _model_breakdown_from_ai_cost_rows(
-    rows: list[BackfieldAiCallRecord],
+def _ai_cost_incomplete_aggregate():
+    return func.max(
+        case(
+            (_ai_cost_incomplete_expr(), 1),
+            else_=0,
+        )
+    )
+
+
+def _project_ai_cost_totals(
+    session: Session,
+    project_id: int,
+) -> tuple[Decimal, bool, str, int]:
+    """Aggregate tracked LLM cost for a project in one DB round-trip."""
+    count, total, incomplete_flag, currency = session.exec(
+        select(
+            func.count(),
+            func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        ).where(BackfieldAiCallRecord.project_id == project_id)
+    ).one()
+    est = Decimal(str(total)) if total is not None else Decimal("0")
+    return est, bool(incomplete_flag), str(currency or "USD"), int(count or 0)
+
+
+def _project_ai_cost_model_breakdown(
+    session: Session,
+    project_id: int,
 ) -> list[AiCostModelBreakdown]:
-    by_model: dict[str, Decimal] = {}
-    for row in rows:
-        provider_model_id = row.provider_model_id
-        by_model[provider_model_id] = by_model.get(provider_model_id, Decimal("0")) + (
-            row.estimated_cost or Decimal("0")
+    cost_sum = func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0)
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.provider_model_id,
+            cost_sum,
         )
+        .where(BackfieldAiCallRecord.project_id == project_id)
+        .group_by(BackfieldAiCallRecord.provider_model_id)
+        .order_by(cost_sum.desc(), BackfieldAiCallRecord.provider_model_id)
+    ).all()
     return [
-        AiCostModelBreakdown(provider_model_id=model_id, estimated_total=estimated_total)
-        for model_id, estimated_total in sorted(
-            by_model.items(),
-            key=lambda item: (-item[1], item[0]),
+        AiCostModelBreakdown(
+            provider_model_id=str(provider_model_id),
+            estimated_total=Decimal(str(estimated_total)),
         )
+        for provider_model_id, estimated_total in rows
     ]
 
 
-def _rollup_project_ai_cost(session: Session, project_id: int) -> tuple[Decimal, bool, str, int]:
-    return _accumulate_ai_cost_rows(_project_ai_cost_rows(session, project_id))
-
-
-def _median_ms(durations_ms: list[float]) -> float | None:
+def _mean_ms(durations_ms: list[float]) -> float | None:
     if not durations_ms:
         return None
-    return float(statistics.median(durations_ms))
+    return float(statistics.mean(durations_ms))
 
 
-def _median_decimal(values: list[Decimal]) -> Decimal | None:
+def _mean_decimal(values: list[Decimal]) -> Decimal | None:
     if not values:
         return None
-    return Decimal(str(statistics.median([float(v) for v in values])))
+    return sum(values) / len(values)
 
 
 def _min_ms(durations_ms: list[float]) -> float | None:
@@ -297,31 +318,122 @@ def _max_decimal(values: list[Decimal]) -> Decimal | None:
     return max(values)
 
 
-def _median_terminal_processed_item_duration_ms(
+def _processed_item_duration_ms_expr():
+    return (
+        func.extract(
+            "epoch",
+            AgateProcessedItem.updated_at
+            - func.coalesce(AgateProcessedItem.started_at, AgateProcessedItem.created_at),
+        )
+        * 1000.0
+    )
+
+
+def _avg_terminal_processed_item_duration_ms(
     session: Session, succeeded_run_ids: list[str]
 ) -> float | None:
-    """Median wall time per ``agate_processed_item`` row (terminal statuses only).
+    """Mean wall time per ``agate_processed_item`` row (terminal statuses only).
 
     Returns ``None`` when there are no such rows (single-graph runs without batch items).
     """
     if not succeeded_run_ids:
         return None
-    rows = list(
-        session.exec(
-            select(AgateProcessedItem).where(
-                AgateProcessedItem.run_id.in_(succeeded_run_ids),
-            )
-        ).all()
+    filters = (
+        AgateProcessedItem.run_id.in_(succeeded_run_ids),
+        col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
     )
-    durs: list[float] = []
-    for row in rows:
-        if row.status not in _ITEM_TERMINAL_STATUSES:
-            continue
-        ms = (row.updated_at - row.created_at).total_seconds() * 1000
-        if ms < 0:
-            ms = 0.0
-        durs.append(ms)
-    return _median_ms(durs)
+    duration_ms = _processed_item_duration_ms_expr()
+    avg = session.exec(select(func.avg(duration_ms)).where(*filters)).one()
+    if avg is None:
+        return None
+    return max(float(avg), 0.0)
+
+
+def _run_wall_duration_ms_expr():
+    return func.extract("epoch", AgateRun.updated_at - AgateRun.created_at) * 1000.0
+
+
+def _slowest_flows_for_project(
+    session: Session,
+    graph_ids: list[str],
+    *,
+    limit: int = 5,
+) -> list[SlowestFlowOut]:
+    if not graph_ids:
+        return []
+    run_duration_ms = _run_wall_duration_ms_expr()
+    rows = session.exec(
+        select(
+            AgateGraph.id,
+            AgateGraph.name,
+            func.avg(run_duration_ms),
+        )
+        .join(AgateGraph, AgateGraph.id == AgateRun.graph_id)
+        .where(
+            AgateRun.graph_id.in_(graph_ids),
+            AgateRun.status == "succeeded",
+        )
+        .group_by(AgateGraph.id, AgateGraph.name)
+        .order_by(func.avg(run_duration_ms).desc())
+        .limit(limit)
+    ).all()
+    return [
+        SlowestFlowOut(
+            graph_id=str(graph_id),
+            flow_name=str(flow_name),
+            avg_ms=round(max(float(avg_ms), 0.0), 1),
+        )
+        for graph_id, flow_name, avg_ms in rows
+        if avg_ms is not None
+    ]
+
+
+def _top_flows_by_avg_ai_cost_for_project(
+    session: Session,
+    project_id: int,
+    graph_ids: list[str],
+    *,
+    limit: int = 5,
+) -> list[TopFlowByCostOut]:
+    if not graph_ids:
+        return []
+    per_run_cost = func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0)
+    per_run_subq = (
+        select(
+            BackfieldAiCallRecord.run_id.label("run_id"),
+            per_run_cost.label("total_cost"),
+        )
+        .where(BackfieldAiCallRecord.project_id == project_id)
+        .group_by(BackfieldAiCallRecord.run_id)
+        .subquery()
+    )
+    run_total = func.coalesce(per_run_subq.c.total_cost, 0)
+    rows = session.exec(
+        select(
+            AgateGraph.id,
+            AgateGraph.name,
+            func.avg(run_total),
+        )
+        .select_from(AgateRun)
+        .join(AgateGraph, AgateGraph.id == AgateRun.graph_id)
+        .outerjoin(per_run_subq, per_run_subq.c.run_id == AgateRun.id)
+        .where(
+            AgateRun.graph_id.in_(graph_ids),
+            AgateRun.status == "succeeded",
+        )
+        .group_by(AgateGraph.id, AgateGraph.name)
+        .order_by(func.avg(run_total).desc())
+        .limit(limit)
+    ).all()
+    return [
+        TopFlowByCostOut(
+            graph_id=str(graph_id),
+            flow_name=str(flow_name),
+            avg_estimated_cost=Decimal(str(avg_cost)),
+        )
+        for graph_id, flow_name, avg_cost in rows
+        if avg_cost is not None
+    ]
 
 
 def _per_run_ai_cost_totals(
@@ -335,42 +447,28 @@ def _per_run_ai_cost_totals(
     totals: dict[str, Decimal] = {rid: Decimal("0") for rid in run_ids}
     incomplete = False
     currency = "USD"
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(
-                BackfieldAiCallRecord.project_id == project_id,
-                BackfieldAiCallRecord.run_id.in_(list(run_ids)),
-            )
-        ).all()
-    )
-    for row in rows:
-        currency = str(row.currency or "USD")
-        rid = row.run_id
-        if rid not in totals:
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.run_id,
+            func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        )
+        .where(
+            BackfieldAiCallRecord.project_id == project_id,
+            BackfieldAiCallRecord.run_id.in_(list(run_ids)),
+        )
+        .group_by(BackfieldAiCallRecord.run_id)
+    ).all()
+    for run_id, total, incomplete_flag, row_currency in rows:
+        if run_id is None or run_id not in totals:
             continue
-        if row.estimated_cost is not None:
-            totals[rid] += row.estimated_cost
-        else:
-            incomplete = True
-        if row.cost_estimate_incomplete:
+        totals[run_id] = Decimal(str(total)) if total is not None else Decimal("0")
+        if row_currency:
+            currency = str(row_currency)
+        if incomplete_flag:
             incomplete = True
     return list(totals.values()), incomplete, currency
-
-
-def _rollup_project_ai_cost_for_run_ids(
-    session: Session, project_id: int, run_ids: frozenset[str]
-) -> tuple[Decimal, bool, str, int]:
-    if not run_ids:
-        return Decimal("0"), False, "USD", 0
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(
-                BackfieldAiCallRecord.project_id == project_id,
-                BackfieldAiCallRecord.run_id.in_(list(run_ids)),
-            )
-        ).all()
-    )
-    return _accumulate_ai_cost_rows(rows)
 
 
 def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
@@ -409,22 +507,22 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         if ms < 0:
             ms = 0.0
         dur_success.append(ms)
-    median_run_duration = _median_ms(dur_success)
+    avg_run_duration = _mean_ms(dur_success)
     min_run_duration = _min_ms(dur_success)
     max_run_duration = _max_ms(dur_success)
 
-    median_item_duration = _median_terminal_processed_item_duration_ms(session, succeeded_ids)
-    if median_item_duration is None:
-        median_item_duration = median_run_duration
+    avg_item_duration = _avg_terminal_processed_item_duration_ms(session, succeeded_ids)
+    if avg_item_duration is None:
+        avg_item_duration = avg_run_duration
 
     pid = int(p.id) if p.id is not None else 0
     succeeded_frozen = frozenset(succeeded_ids)
     per_run_costs, ai_incomplete, ai_currency = _per_run_ai_cost_totals(
         session, pid, succeeded_frozen
     )
-    median_ai = _median_decimal(per_run_costs)
-    min_ai = _min_decimal(per_run_costs)
-    max_ai = _max_decimal(per_run_costs)
+    avg_ai = _mean_decimal(per_run_costs)
+    slowest_flows = _slowest_flows_for_project(session, graph_ids)
+    top_flows_by_cost = _top_flows_by_avg_ai_cost_for_project(session, pid, graph_ids)
 
     return ProjectStatsOut(
         total_runs=total_runs,
@@ -432,15 +530,15 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         runs_succeeded=runs_succeeded,
         runs_in_progress=runs_in_progress,
         runs_failed=runs_failed,
-        median_duration_ms_per_run=median_run_duration,
+        avg_duration_ms_per_run=avg_run_duration,
         min_duration_ms_per_run=min_run_duration,
         max_duration_ms_per_run=max_run_duration,
-        median_duration_ms_per_item=median_item_duration,
-        median_estimated_ai_cost_per_run=median_ai,
-        min_estimated_ai_cost_per_run=min_ai,
-        max_estimated_ai_cost_per_run=max_ai,
-        median_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
-        median_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
+        avg_duration_ms_per_item=avg_item_duration,
+        slowest_flows=slowest_flows,
+        avg_estimated_ai_cost_per_run=avg_ai,
+        top_flows_by_cost=top_flows_by_cost,
+        avg_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
+        avg_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
     )
 
 
@@ -664,8 +762,7 @@ def get_project_estimated_ai_cost(
     if not p:
         raise HTTPException(404, "Project not found")
 
-    rows = _project_ai_cost_rows(session, project_id)
-    total, incomplete, currency, attempt_count = _accumulate_ai_cost_rows(rows)
+    total, incomplete, currency, attempt_count = _project_ai_cost_totals(session, project_id)
 
     return ProjectEstimatedAiCostOut(
         project_id=project_id,
@@ -673,5 +770,5 @@ def get_project_estimated_ai_cost(
         estimated_total=total,
         incomplete_estimate=incomplete,
         attempt_count=attempt_count,
-        model_breakdown=_model_breakdown_from_ai_cost_rows(rows),
+        model_breakdown=_project_ai_cost_model_breakdown(session, project_id),
     )

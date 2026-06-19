@@ -1,0 +1,1 @@
+"""Stylebook cleanup background helpers."""

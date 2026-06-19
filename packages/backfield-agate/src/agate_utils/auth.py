@@ -202,18 +202,11 @@ def require_project_access(
     # Query unified agate_core for project access (user_projects)
     if user_id:
         try:
-            from sqlalchemy import create_engine, text
+            from sqlalchemy import text
 
-            db_url = os.getenv(
-                "AGATE_DATABASE_URL",
-                os.getenv(
-                    "DATABASE_URL",
-                    "postgresql+psycopg://postgres:postgres@postgres:5432/agate_core",
-                ),
-            )
-            engine = create_engine(db_url, echo=False)
+            from backfield_db.session import get_engine
 
-            with engine.connect() as conn:
+            with get_engine().connect() as conn:
                 result = conn.execute(
                     text(
                         "SELECT 1 FROM user_projects WHERE user_id = :user_id "

@@ -4,6 +4,7 @@ from backfield_db.custom_record_models import SubstrateCustomRecord
 from backfield_db.image_embedding_models import SubstrateImageEmbedding
 from backfield_db.models import (
     AgateGraph,
+    AgateNodeTiming,
     AgateProcessedItem,
     AgateRun,
     AgateTemplate,
@@ -23,6 +24,9 @@ from backfield_db.models import (
     BackfieldWorkspaceMembership,
     Stylebook,
     StylebookBundleJob,
+    StylebookCleanupAiProposal,
+    StylebookCleanupAiReview,
+    StylebookCleanupDismissal,
     StylebookConnection,
     StylebookLocationAlias,
     StylebookLocationCanonical,
@@ -57,6 +61,7 @@ from backfield_db.session import get_engine, get_session_factory, get_session_ge
 
 __all__ = [
     "AgateGraph",
+    "AgateNodeTiming",
     "AgateProcessedItem",
     "AgateRun",
     "AgateTemplate",
@@ -76,6 +81,9 @@ __all__ = [
     "BackfieldWorkspaceMembership",
     "Stylebook",
     "StylebookBundleJob",
+    "StylebookCleanupAiProposal",
+    "StylebookCleanupAiReview",
+    "StylebookCleanupDismissal",
     "StylebookMembership",
     "StylebookConnection",
     "StylebookLocationAlias",

@@ -134,10 +134,10 @@ def test_extract_geographic_scope_categories() -> None:
     ]
 
 
-def test_extract_subject_categories() -> None:
+def test_extract_topic_categories() -> None:
     from agate_nodes.article_metadata.composer import load_package_file
 
-    prompt = load_package_file("prompts/presets/subject.md")
+    prompt = load_package_file("prompts/presets/topic.md")
     categories = extract_categories_from_prompt(prompt)
     assert "local_government_politics" in categories
     assert "pro_sports" in categories
@@ -145,20 +145,53 @@ def test_extract_subject_categories() -> None:
     assert len(categories) == 42
 
 
-def test_compose_subject_prompt_requests_json_array() -> None:
+def test_extract_subject_labels() -> None:
     from agate_nodes.article_metadata.composer import load_package_file
 
-    template = load_package_file("prompts/presets/subject.md")
+    prompt = load_package_file("prompts/presets/subject.md")
+    categories = extract_categories_from_prompt(prompt)
+    assert "crime_incident" in categories
+    assert "development_project" in categories
+    assert "other" in categories
+    assert len(categories) == 30
+
+
+def test_compose_topic_prompt_requests_json_array() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    template = load_package_file("prompts/presets/topic.md")
     flattened = {"text": "Council voted on zoning."}
     output_format = load_package_file("prompts/_output_format_subject.json")
     prompt, _categories = compose_article_metadata_prompt(
         prompt_template=template,
         flattened=flattened,
         output_format_json=output_format,
+        preset_id="topic",
+    )
+    assert 'JSON object with a "topics" key containing an array of 1 to 3 objects' in prompt
+    assert "Council voted on zoning." in prompt
+
+
+def test_compose_subject_prompt_reinforces_output_shape() -> None:
+    from agate_nodes.article_metadata.composer import load_package_file
+
+    template = load_package_file("prompts/presets/subject.md")
+    flattened = {"text": "City council approves apartment project."}
+    output_format = load_package_file("prompts/_output_format_primary_subject.json")
+    prompt, categories = compose_article_metadata_prompt(
+        prompt_template=template,
+        flattened=flattened,
+        output_format_json=output_format,
         preset_id="subject",
     )
-    assert "JSON object with a \"subjects\" key containing an array of 1 to 3 objects" in prompt
-    assert "Council voted on zoning." in prompt
+    assert (
+        "Return only valid JSON with exactly these keys: subject, rationale, confidence."
+        in prompt
+    )
+    assert prompt.index("City council approves apartment project.") < prompt.index(
+        "Return only valid JSON with exactly these keys: subject, rationale, confidence."
+    )
+    assert "development_project" in categories
 
 
 def test_compose_places_article_text_before_output_instructions() -> None:
@@ -171,6 +204,7 @@ def test_compose_places_article_text_before_output_instructions() -> None:
         prompt_template=template,
         flattened=flattened,
         output_format_json=output_format,
+        preset_id="user_need",
     )
     assert prompt.index("## Article text") < prompt.index("Council voted Tuesday.")
     assert prompt.index("Council voted Tuesday.") < prompt.index("Return only valid JSON")

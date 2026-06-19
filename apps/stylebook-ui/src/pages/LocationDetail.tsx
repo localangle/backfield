@@ -16,6 +16,7 @@ import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
 import { isStylebookApiNotFoundError } from "@/lib/stylebook-api/client"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { usePromptDeleteEmptyCanonical } from "@/lib/usePromptDeleteEmptyCanonical"
+import { usePaginatedCanonicalMentions } from "@/lib/usePaginatedCanonicalMentions"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { useAppMessage } from "@/components/AppMessageProvider"
@@ -61,7 +62,6 @@ export default function LocationDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [canonical, setCanonical] = useState<CanonicalLocation | null>(null)
-  const [mentions, setMentions] = useState<LinkedMention[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const evidenceProjectSlug = projectFilterSlug || ""
@@ -73,7 +73,6 @@ export default function LocationDetail() {
   const [deleting, setDeleting] = useState(false)
   const [substrates, setSubstrates] = useState<LinkedSubstrateItem[]>([])
   const [substratesLoading, setSubstratesLoading] = useState(false)
-  const [mentionsLoading, setMentionsLoading] = useState(false)
   const [moveSubstrate, setMoveSubstrate] = useState<LinkedSubstrateItem | null>(null)
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null)
   const [substrateGeometryOpen, setSubstrateGeometryOpen] = useState(false)
@@ -122,33 +121,42 @@ export default function LocationDetail() {
     void loadCanonical(id, stylebookSlug)
   }, [id, stylebookSlug, deleting, evidenceProjectSlug, loadCanonical])
 
-  const loadMentions = useCallback(
-    async (canonicalId: string, sbSlug: string, quiet = false) => {
-      if (!quiet) setMentionsLoading(true)
-      try {
-        const m = await getCanonicalLocationMentions(
-          canonicalId,
-          sbSlug,
-          500,
-          0,
-          undefined,
-          "desc",
-          evidenceProjectSlug || undefined,
-        )
-        setMentions(m.mentions)
-      } catch {
-        setMentions([])
-      } finally {
-        if (!quiet) setMentionsLoading(false)
-      }
-    },
-    [evidenceProjectSlug],
+  const fetchLocationMentionsPage = useCallback(
+    (
+      canonicalId: string,
+      sbSlug: string,
+      limit: number,
+      offset: number,
+      projectFilter?: string,
+    ) =>
+      getCanonicalLocationMentions(
+        canonicalId,
+        sbSlug,
+        limit,
+        offset,
+        undefined,
+        "desc",
+        projectFilter,
+      ),
+    [],
   )
 
-  useEffect(() => {
-    if (!id || !stylebookSlug || deleting || canonical?.id !== id) return
-    void loadMentions(id, stylebookSlug)
-  }, [id, stylebookSlug, deleting, canonical, loadMentions])
+  const {
+    mentions,
+    mentionTotal,
+    mentionsPage,
+    setMentionsPage,
+    mentionsLoading,
+    refreshMentions,
+    clearMentions,
+    mentionsPerPage,
+  } = usePaginatedCanonicalMentions<LinkedMention>({
+    canonicalId: id,
+    stylebookSlug,
+    projectFilterSlug: evidenceProjectSlug,
+    enabled: Boolean(id && stylebookSlug && !deleting && canonical?.id === id),
+    fetchPage: fetchLocationMentionsPage,
+  })
 
   const loadSubstrates = useCallback(
     async (canonicalId: string, sbSlug: string, quiet = false) => {
@@ -180,13 +188,13 @@ export default function LocationDetail() {
       const found = await loadCanonical(id, stylebookSlug, true)
       if (!found) {
         setSubstrates([])
-        setMentions([])
+        clearMentions()
         return
       }
       await loadSubstrates(id, stylebookSlug, quiet)
-      await loadMentions(id, stylebookSlug, quiet)
+      await refreshMentions(quiet)
     },
-    [id, stylebookSlug, deleting, loadCanonical, loadMentions, loadSubstrates],
+    [id, stylebookSlug, deleting, loadCanonical, refreshMentions, loadSubstrates, clearMentions],
   )
 
   const tableLoading = substratesLoading || mentionsLoading
@@ -232,7 +240,7 @@ export default function LocationDetail() {
       setEditing(false)
       await loadCanonical(canonicalId, stylebookSlug)
       await loadSubstrates(canonicalId, stylebookSlug)
-      await loadMentions(canonicalId, stylebookSlug)
+      await refreshMentions()
     } catch (e) {
       console.error(e)
       showError(e instanceof Error ? e.message : "Save failed")
@@ -263,6 +271,7 @@ export default function LocationDetail() {
     canonicalKey: `${stylebookSlug}:${evidenceProjectSlug}:${id ?? ""}`,
     enabled: Boolean(id && !deleting),
     mentions,
+    mentionTotal,
     mentionsLoading,
     substrates,
     substratesLoading,
@@ -425,6 +434,12 @@ export default function LocationDetail() {
         unlinkingId,
         onUnlink: (s) => void handleUnlinkSubstrate(s),
         onMove: setMoveSubstrate,
+        pagination: {
+          page: mentionsPage,
+          perPage: mentionsPerPage,
+          total: mentionTotal,
+          onPageChange: setMentionsPage,
+        },
       }}
       meta={
         canonical && stylebookSlug ? (

@@ -55,17 +55,19 @@ function formatCurrencySummary(
 
 function StatMinMaxRange({
   rows,
+  title = 'Range',
 }: {
-  rows: { label: string; value: string }[]
+  rows: { key?: string; label: string; value: string }[]
+  title?: string
 }) {
   if (rows.length === 0) return null
   return (
     <div className="mt-4 border-t border-border pt-3">
-      <p className="text-xs text-muted-foreground">Range</p>
+      <p className="text-xs text-muted-foreground">{title}</p>
       <div className="mt-2 space-y-2">
         {rows.map((row) => (
           <div
-            key={row.label}
+            key={row.key ?? row.label}
             className="flex items-center justify-between gap-3 text-sm"
           >
             <span className="min-w-0 text-muted-foreground">{row.label}</span>
@@ -102,14 +104,20 @@ export default function ProjectDetailPage() {
     if (!slug) return
     try {
       setError(null)
-      const [p, s] = await Promise.all([getProjectBySlug(slug), getProjectStatsBySlug(slug)])
+      const p = await getProjectBySlug(slug)
+      const [s, c] = await Promise.all([
+        getProjectStatsBySlug(slug),
+        getProjectEstimatedAiCost(p.id),
+      ])
       setProject(p)
       setStats(s)
+      setAiCost(c)
     } catch (e) {
       console.error(e)
       setError('Failed to load project')
       setProject(null)
       setStats(null)
+      setAiCost(null)
     }
   }, [slug])
 
@@ -239,25 +247,6 @@ export default function ProjectDetailPage() {
       panel.style.minHeight = ''
     }
   }, [workspaceTab])
-
-  useEffect(() => {
-    if (!project?.id) {
-      setAiCost(null)
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      try {
-        const c = await getProjectEstimatedAiCost(project.id)
-        if (!cancelled) setAiCost(c)
-      } catch {
-        if (!cancelled) setAiCost(null)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [project?.id])
 
   useEffect(() => {
     if (project?.workspace_id == null) {
@@ -424,20 +413,20 @@ export default function ProjectDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Median cost per run
+                Average cost per run
               </CardTitle>
             </CardHeader>
             <CardContent>
               {stats.runs_succeeded > 0 &&
-              stats.median_estimated_ai_cost_per_run != null &&
-              stats.median_estimated_ai_cost_currency ? (
+              stats.avg_estimated_ai_cost_per_run != null &&
+              stats.avg_estimated_ai_cost_currency ? (
                 <>
                   <p className="text-3xl font-semibold tabular-nums">
                     {formatCurrencySummary(
-                      stats.median_estimated_ai_cost_per_run,
-                      stats.median_estimated_ai_cost_currency || 'USD',
+                      stats.avg_estimated_ai_cost_per_run,
+                      stats.avg_estimated_ai_cost_currency || 'USD',
                     )}
-                    {stats.median_estimated_ai_cost_incomplete ? (
+                    {stats.avg_estimated_ai_cost_incomplete ? (
                       <span
                         className="text-amber-700 dark:text-amber-400 ml-1"
                         title="Some usage data was missing"
@@ -447,25 +436,17 @@ export default function ProjectDetailPage() {
                     ) : null}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">Among completed runs</p>
-                  {stats.min_estimated_ai_cost_per_run != null &&
-                  stats.max_estimated_ai_cost_per_run != null ? (
+                  {stats.top_flows_by_cost && stats.top_flows_by_cost.length > 0 ? (
                     <StatMinMaxRange
-                      rows={[
-                        {
-                          label: 'Min',
-                          value: formatCurrencySummary(
-                            stats.min_estimated_ai_cost_per_run,
-                            stats.median_estimated_ai_cost_currency || 'USD',
-                          ),
-                        },
-                        {
-                          label: 'Max',
-                          value: formatCurrencySummary(
-                            stats.max_estimated_ai_cost_per_run,
-                            stats.median_estimated_ai_cost_currency || 'USD',
-                          ),
-                        },
-                      ]}
+                      title="Flows"
+                      rows={stats.top_flows_by_cost.map((row) => ({
+                        key: row.graph_id,
+                        label: row.flow_name,
+                        value: formatCurrencySummary(
+                          row.avg_estimated_cost,
+                          stats.avg_estimated_ai_cost_currency || 'USD',
+                        ),
+                      }))}
                     />
                   ) : null}
                 </>
@@ -480,29 +461,24 @@ export default function ProjectDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Median time per run
+                Average time per run
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-semibold tabular-nums">
-                {formatDurationMs(stats.median_duration_ms_per_run)}
+                {formatDurationMs(stats.avg_duration_ms_per_run)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Wall time per completed run
               </p>
-              {stats.min_duration_ms_per_run != null &&
-              stats.max_duration_ms_per_run != null ? (
+              {stats.slowest_flows && stats.slowest_flows.length > 0 ? (
                 <StatMinMaxRange
-                  rows={[
-                    {
-                      label: 'Min',
-                      value: formatDurationMs(stats.min_duration_ms_per_run),
-                    },
-                    {
-                      label: 'Max',
-                      value: formatDurationMs(stats.max_duration_ms_per_run),
-                    },
-                  ]}
+                  title="Flows"
+                  rows={stats.slowest_flows.map((row) => ({
+                    key: row.graph_id,
+                    label: row.flow_name,
+                    value: formatDurationMs(row.avg_ms),
+                  }))}
                 />
               ) : null}
             </CardContent>

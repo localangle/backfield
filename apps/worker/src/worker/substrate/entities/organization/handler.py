@@ -28,6 +28,7 @@ from sqlmodel import Session, col, select
 
 from worker.substrate.canonical.parallel_llm import (
     canonical_adjudication_max_concurrent,
+    commit_session_before_session_free_llm,
     run_callables_parallel,
 )
 from worker.substrate.entities.organization.adjudication import (
@@ -363,25 +364,47 @@ class OrganizationPersistHandler:
                 )
 
         if pending_variant_recall and ai_assisted:
+            variant_specs = [
+                (
+                    item,
+                    str(item.organization.name),
+                    str(item.organization.normalized_name),
+                    item.organization.organization_type,
+                    int(item.organization.id),  # type: ignore[arg-type]
+                )
+                for item in pending_variant_recall
+            ]
+            commit_session_before_session_free_llm(session)
             max_workers = canonical_adjudication_max_concurrent()
             variant_results = run_callables_parallel(
                 [
-                    lambda org=item.organization: llm_suggest_organization_name_variants(
-                        organization=org,
+                    lambda spec=spec: llm_suggest_organization_name_variants(
+                        name=spec[1],
+                        normalized_name=spec[2],
+                        organization_type=spec[3],
                         model=adj_model,
                         model_config_id=ctx.settings.adjudication_ai_model_config_id,
                     )
-                    for item in pending_variant_recall
+                    for spec in variant_specs
                 ],
                 max_workers=max_workers,
             )
-            for item, variants in zip(pending_variant_recall, variant_results, strict=True):
+            for spec, variants in zip(variant_specs, variant_results, strict=True):
+                item = spec[0]
+                organization_id = spec[4]
+                organization = session.get(SubstrateOrganization, organization_id)
+                if organization is None:
+                    logger.warning(
+                        "substrate_organization id=%s missing after variant recall LLM; skipping",
+                        organization_id,
+                    )
+                    continue
                 plan = item.plan
                 if variants:
                     plan = replan_organization_canonical_after_name_variants(
                         session,
                         stylebook_id=int(ctx.stylebook_id),  # type: ignore[arg-type]
-                        organization=item.organization,
+                        organization=organization,
                         variant_names=variants,
                         organizations_bucket=item.bucket,
                         auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
@@ -391,7 +414,7 @@ class OrganizationPersistHandler:
                         session,
                         ctx,
                         work=_OrgCanonicalWork(
-                            organization=item.organization,
+                            organization=organization,
                             bucket=item.bucket,
                             entry=item.entry,
                             plan=plan,
@@ -403,13 +426,14 @@ class OrganizationPersistHandler:
                     _apply_organization_plan_and_mention(
                         session,
                         ctx,
-                        organization=item.organization,
+                        organization=organization,
                         bucket=item.bucket,
                         entry=item.entry,
                         plan=plan,
                     )
 
         if pending_adjudication:
+            commit_session_before_session_free_llm(session)
             max_workers = canonical_adjudication_max_concurrent()
             llm_results = run_callables_parallel(
                 [
@@ -419,6 +443,15 @@ class OrganizationPersistHandler:
                 max_workers=max_workers,
             )
             for item, llm_data in zip(pending_adjudication, llm_results, strict=True):
+                organization_id = int(item.organization.id)  # type: ignore[arg-type]
+                organization = session.get(SubstrateOrganization, organization_id)
+                if organization is None:
+                    logger.warning(
+                        "substrate_organization id=%s missing after adjudication LLM; "
+                        "skipping apply",
+                        organization_id,
+                    )
+                    continue
                 plan = resolve_organization_adjudication_plan(
                     item.plan,
                     prepared=item.prepared,
@@ -427,7 +460,7 @@ class OrganizationPersistHandler:
                 _apply_organization_plan_and_mention(
                     session,
                     ctx,
-                    organization=item.organization,
+                    organization=organization,
                     bucket=item.bucket,
                     entry=item.entry,
                     plan=plan,

@@ -33,6 +33,9 @@ from backfield_db.models import (  # noqa: F401
     BackfieldWorkspaceMembership,
     Stylebook,
     StylebookBundleJob,
+    StylebookCleanupAiProposal,
+    StylebookCleanupAiReview,
+    StylebookCleanupDismissal,
     StylebookMembership,
     StylebookConnection,
     StylebookLocationAlias,
@@ -65,8 +68,14 @@ target_metadata = SQLModel.metadata
 
 def get_url() -> str:
     return os.environ.get(
-        "BACKFIELD_DATABASE_URL",
-        os.environ.get("DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5433/backfield"),
+        "BACKFIELD_DATABASE_URL_DIRECT",
+        os.environ.get(
+            "BACKFIELD_DATABASE_URL",
+            os.environ.get(
+                "DATABASE_URL",
+                "postgresql+psycopg://postgres:postgres@localhost:5433/backfield",
+            ),
+        ),
     )
 
 

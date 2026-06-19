@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { CandidateQueueLinkModalProps, CandidateQueuePageConfig } from "@/lib/entityConfigs/candidateQueueTypes"
+import { truncateCellText } from "@/lib/candidateQueueTableLayout"
 
 function PersonLinkModal({
   substrateId,
@@ -151,21 +152,33 @@ export const personCandidateQueueConfig: CandidateQueuePageConfig<PersonCandidat
     {
       id: "type",
       header: "Type",
-      render: (c) => (c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—"),
+      render: (c) => {
+        const label = c.suggested_type ? placeExtractTypeLabel(c.suggested_type) : "—"
+        return truncateCellText(label, label !== "—" ? label : undefined)
+      },
     },
     {
       id: "title",
       header: "Title",
-      className: "truncate",
-      render: (c) => c.suggested_title || "—",
+      render: (c) => truncateCellText(c.suggested_title || "—", c.suggested_title || undefined),
     },
     {
       id: "affiliation",
       header: "Affiliation",
-      className: "truncate",
-      render: (c) => c.suggested_affiliation || "—",
+      render: (c) =>
+        truncateCellText(c.suggested_affiliation || "—", c.suggested_affiliation || undefined),
     },
   ],
+
+  tableLayout: {
+    colgroup: [
+      { width: "34%" },
+      { width: "12%" },
+      { width: "14%" },
+      { width: "15%" },
+      { width: "11rem" },
+    ],
+  },
 
   mapFollowupRow: (c) => ({
     rowKey: c.id,

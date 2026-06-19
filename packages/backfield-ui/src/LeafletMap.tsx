@@ -303,8 +303,12 @@ function MapGeocoderLifecycle() {
     }, 0)
     return () => {
       window.clearTimeout(tid)
-      cleanupRef.current?.()
+      const cleanup = cleanupRef.current
       cleanupRef.current = null
+      if (cleanup) {
+        // Defer unmount so we never tear down the geocoder root during React's commit phase.
+        window.setTimeout(() => cleanup(), 0)
+      }
     }
   }, [map])
   return null

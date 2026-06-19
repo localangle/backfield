@@ -52,7 +52,7 @@ def test_starter_custom_extract_flow_graph_spec_round_trip() -> None:
 
 
 def test_starter_flow_positions_match_bootstrapped_canonical() -> None:
-    """Positions match the Starter flow graph seeded by local bootstrap (exported UI layout)."""
+    """Positions match the canonical starter spec used by smoke harnesses."""
     spec = starter_geocode_flow_graph_spec()
     by_id = {n.id: n.position for n in spec.nodes}
     assert by_id["n1"] == {"x": 0.0, "y": 0.0}

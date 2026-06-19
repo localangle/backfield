@@ -87,6 +87,8 @@ def run_auto_connections_for_db_output(
             article_id=article_id,
             article_text=article_text,
         )
+        # Release the persist transaction before LLM classification (can take tens of seconds).
+        session.commit()
         family_results: list[FamilyInferenceResult] = []
         pending_edges: list[
             tuple[

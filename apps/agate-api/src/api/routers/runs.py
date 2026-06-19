@@ -10,7 +10,11 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from agate_nodes.s3_output.node import s3_output_payloads_in_run_output
-from agate_runtime.run_graph_spec import merge_run_result_payload
+from agate_runtime.run_graph_spec import (
+    GRAPH_SPEC_JSON_KEY,
+    merge_run_result_payload,
+    parse_run_result_payload,
+)
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
 from agate_runtime.single_item import build_single_item_input_from_graph_spec_json
 from api.deps import get_auth, get_session
@@ -33,6 +37,7 @@ from api.processed_item.custom_records_merge import (
 from backfield_auth.gate import require_project_access, visible_project_ids
 from backfield_db import (
     AgateGraph,
+    AgateNodeTiming,
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
@@ -61,8 +66,8 @@ from backfield_entities.ingest.semantic_indexing.processed_item import (
 from celery import Celery
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import asc, desc, update
-from sqlmodel import Session, select
+from sqlalchemy import case, delete, desc, func, or_, update
+from sqlmodel import Session, asc, col, select
 
 DEFAULT_AI_COST_CURRENCY = "USD"
 
@@ -113,9 +118,17 @@ class ProcessedItemOut(BaseModel):
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
+    started_at: datetime | None = None
+    duration_ms: float | None = None
     estimated_ai_cost: Decimal = Decimal("0")
     estimated_ai_cost_incomplete: bool = False
     estimated_ai_cost_currency: str = DEFAULT_AI_COST_CURRENCY
+
+
+class ProcessedItemNodeTimingOut(BaseModel):
+    node_id: str
+    node_type: str
+    elapsed_ms: float
 
 
 class ArticleContextOut(BaseModel):
@@ -236,6 +249,9 @@ class ProcessedItemDetailOut(BaseModel):
     error: str | None = None
     created_at: datetime
     updated_at: datetime
+    started_at: datetime | None = None
+    duration_ms: float | None = None
+    node_timings: list[ProcessedItemNodeTimingOut] = Field(default_factory=list)
     estimated_ai_cost: Decimal = Decimal("0")
     estimated_ai_cost_incomplete: bool = False
     estimated_ai_cost_currency: str = DEFAULT_AI_COST_CURRENCY
@@ -311,6 +327,66 @@ class RunOut(BaseModel):
     #: Sum of all tracked LLM costs for this run (whole-graph + per processed item).
     estimated_ai_cost_total: Decimal = Decimal("0")
     estimated_ai_cost_total_incomplete: bool = False
+    #: Flow spec pinned on ``result_json`` at run start (S3 batch setup or single-item create).
+    graph_spec_snapshot_json: str | None = None
+    #: ``True`` when live flow differs from ``graph_spec_snapshot_json``; ``None`` without snapshot.
+    flow_changed_since_run: bool | None = None
+
+
+def _run_graph_spec_snapshot_json(run: AgateRun) -> str | None:
+    snap = parse_run_result_payload(run.result_json).get(GRAPH_SPEC_JSON_KEY)
+    if isinstance(snap, str) and snap.strip():
+        return snap
+    return None
+
+
+def _flow_changed_since_run(session: Session, run: AgateRun) -> bool | None:
+    snapshot = _run_graph_spec_snapshot_json(run)
+    if snapshot is None:
+        return None
+    graph = session.get(AgateGraph, run.graph_id)
+    if graph is None:
+        return None
+    try:
+        return json.loads(snapshot) != json.loads(graph.spec_json)
+    except json.JSONDecodeError:
+        return snapshot.strip() != (graph.spec_json or "").strip()
+
+
+def _run_configuration_fields(
+    session: Session,
+    run: AgateRun,
+    *,
+    include_flow_changed: bool,
+) -> tuple[str | None, bool | None]:
+    snapshot = _run_graph_spec_snapshot_json(run)
+    flow_changed = _flow_changed_since_run(session, run) if include_flow_changed else None
+    return snapshot, flow_changed
+
+
+def _resolved_run_snapshot_json(session: Session, run: AgateRun) -> str:
+    snapshot = _run_graph_spec_snapshot_json(run)
+    if snapshot is not None:
+        return snapshot
+    graph = session.get(AgateGraph, run.graph_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Graph not found")
+    return graph.spec_json
+
+
+def _replayable_processed_items(session: Session, run_id: str) -> list[AgateProcessedItem]:
+    rows = list(
+        session.exec(
+            select(AgateProcessedItem)
+            .where(AgateProcessedItem.run_id == run_id)
+            .order_by(AgateProcessedItem.id)
+        ).all()
+    )
+    return [
+        row
+        for row in rows
+        if row.input_json and (row.status or "").strip().lower() != "skipped"
+    ]
 
 
 def _graph_project_id(session: Session, graph_id: str) -> int:
@@ -384,6 +460,22 @@ def _processed_item_connections(
     return ProcessedItemConnectionsOut.model_validate(summary)
 
 
+def _ai_cost_incomplete_expr():
+    return or_(
+        BackfieldAiCallRecord.cost_estimate_incomplete.is_(True),
+        BackfieldAiCallRecord.estimated_cost.is_(None),
+    )
+
+
+def _ai_cost_incomplete_aggregate():
+    return func.max(
+        case(
+            (_ai_cost_incomplete_expr(), 1),
+            else_=0,
+        )
+    )
+
+
 def _rollup_ai_costs_for_run(
     session: Session, run_id: str
 ) -> tuple[dict[int, tuple[Decimal, bool]], tuple[Decimal, bool], str]:
@@ -392,29 +484,30 @@ def _rollup_ai_costs_for_run(
     Returns ``(per_item_id -> (total, incomplete_flag), (null_item_total, incomplete), currency)``.
     Rows with ``processed_item_id IS NULL`` belong to the second tuple (whole-graph execution).
     """
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id == run_id)
-        ).all()
-    )
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.processed_item_id,
+            func.sum(func.coalesce(BackfieldAiCallRecord.estimated_cost, 0)),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        )
+        .where(BackfieldAiCallRecord.run_id == run_id)
+        .group_by(BackfieldAiCallRecord.processed_item_id)
+    ).all()
     by_item: dict[int, tuple[Decimal, bool]] = {}
     null_total = Decimal("0")
     null_inc = False
     currency = DEFAULT_AI_COST_CURRENCY
-    for row in rows:
-        if row.currency:
-            currency = str(row.currency)
-        raw_cost = row.estimated_cost
-        inc_piece = bool(row.cost_estimate_incomplete) or raw_cost is None
-        add_amt = raw_cost if raw_cost is not None else Decimal("0")
-        key_pi = row.processed_item_id
-        if key_pi is None:
-            null_total += add_amt
-            null_inc = null_inc or inc_piece
+    for processed_item_id, total, incomplete_flag, row_currency in rows:
+        if row_currency:
+            currency = str(row_currency)
+        est = Decimal(str(total)) if total is not None else Decimal("0")
+        inc = bool(incomplete_flag)
+        if processed_item_id is None:
+            null_total = est
+            null_inc = inc
         else:
-            iid = int(key_pi)
-            prev_sum, prev_inc = by_item.get(iid, (Decimal("0"), False))
-            by_item[iid] = (prev_sum + add_amt, prev_inc or inc_piece)
+            by_item[int(processed_item_id)] = (est, inc)
 
     return by_item, (null_total, null_inc), currency
 
@@ -451,24 +544,28 @@ def _total_ai_cost_from_call_rows(rows: list[BackfieldAiCallRecord]) -> tuple[De
 def _rollup_ai_cost_totals_for_run_ids(
     session: Session, run_ids: list[str]
 ) -> dict[str, tuple[Decimal, bool, str]]:
-    """Per-run sum of all ``BackfieldAiCallRecord`` rows (one DB round-trip)."""
+    """Per-run sum of all ``BackfieldAiCallRecord`` rows (one aggregated DB round-trip)."""
     if not run_ids:
         return {}
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.run_id.in_(run_ids))
-        ).all()
-    )
-    by_run: dict[str, list[BackfieldAiCallRecord]] = {}
-    for row in rows:
-        rid = row.run_id
-        if rid is None:
-            continue
-        by_run.setdefault(rid, []).append(row)
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.run_id,
+            func.sum(func.coalesce(BackfieldAiCallRecord.estimated_cost, 0)),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        )
+        .where(BackfieldAiCallRecord.run_id.in_(run_ids))
+        .group_by(BackfieldAiCallRecord.run_id)
+    ).all()
     out: dict[str, tuple[Decimal, bool, str]] = {}
-    for rid in run_ids:
-        chunk = by_run.get(rid, [])
-        out[rid] = _total_ai_cost_from_call_rows(chunk)
+    for run_id, total, incomplete_flag, row_currency in rows:
+        if run_id is None:
+            continue
+        currency = str(row_currency) if row_currency else DEFAULT_AI_COST_CURRENCY
+        est = Decimal(str(total)) if total is not None else Decimal("0")
+        out[str(run_id)] = (est, bool(incomplete_flag), currency)
+    for run_id in run_ids:
+        out.setdefault(run_id, (Decimal("0"), False, DEFAULT_AI_COST_CURRENCY))
     return out
 
 
@@ -504,6 +601,50 @@ def _preview_text(value: Any, *, max_words: int = 6) -> str | None:
     return f"{' '.join(words[:max_words])}…"
 
 
+def _processed_item_processing_duration_ms(row: AgateProcessedItem) -> float | None:
+    return _processed_item_processing_duration_ms_fields(
+        status=row.status,
+        started_at=row.started_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _processed_item_processing_duration_ms_fields(
+    *,
+    status: str,
+    started_at: datetime | None,
+    created_at: datetime,
+    updated_at: datetime,
+) -> float | None:
+    if status in ("pending", "running"):
+        return None
+    start = started_at or created_at
+    ms = (updated_at - start).total_seconds() * 1000
+    return max(0.0, ms)
+
+
+def _node_timings_for_processed_item(
+    session: Session,
+    processed_item_id: int,
+) -> list[ProcessedItemNodeTimingOut]:
+    rows = list(
+        session.exec(
+            select(AgateNodeTiming)
+            .where(AgateNodeTiming.processed_item_id == processed_item_id)
+            .order_by(col(AgateNodeTiming.elapsed_s).desc())
+        ).all()
+    )
+    return [
+        ProcessedItemNodeTimingOut(
+            node_id=str(row.node_id),
+            node_type=str(row.node_type),
+            elapsed_ms=round(float(row.elapsed_s) * 1000.0, 1),
+        )
+        for row in rows
+    ]
+
+
 def _processed_item_input_preview(input_json: str | None) -> str | None:
     if not input_json:
         return None
@@ -527,29 +668,54 @@ def _processed_items_for_run(
     cost_by_item: dict[int, tuple[Decimal, bool]],
     currency: str,
 ) -> list[ProcessedItemOut]:
-    rows = list(
-        session.exec(
-            select(AgateProcessedItem)
-            .where(AgateProcessedItem.run_id == run_id)
-            .order_by(asc(AgateProcessedItem.id))
-        ).all()
-    )
+    rows = session.exec(
+        select(
+            AgateProcessedItem.id,
+            AgateProcessedItem.run_id,
+            AgateProcessedItem.source_file,
+            AgateProcessedItem.input_json,
+            AgateProcessedItem.status,
+            AgateProcessedItem.error_message,
+            AgateProcessedItem.created_at,
+            AgateProcessedItem.updated_at,
+            AgateProcessedItem.started_at,
+        )
+        .where(AgateProcessedItem.run_id == run_id)
+        .order_by(asc(AgateProcessedItem.id))
+    ).all()
     out: list[ProcessedItemOut] = []
-    for row in rows:
-        if row.id is None:
+    for (
+        row_id,
+        row_run_id,
+        source_file,
+        input_json,
+        item_status,
+        error_message,
+        created_at,
+        updated_at,
+        started_at,
+    ) in rows:
+        if row_id is None:
             continue
-        iid = int(row.id)
+        iid = int(row_id)
         est, inc = cost_by_item.get(iid, (Decimal("0"), False))
         out.append(
             ProcessedItemOut(
                 id=iid,
-                run_id=row.run_id,
-                source_file=row.source_file,
-                input_preview=_processed_item_input_preview(row.input_json),
-                status=row.status,
-                error_message=row.error_message,
-                created_at=row.created_at,
-                updated_at=row.updated_at,
+                run_id=str(row_run_id),
+                source_file=source_file,
+                input_preview=_processed_item_input_preview(input_json),
+                status=item_status,
+                error_message=error_message,
+                created_at=created_at,
+                updated_at=updated_at,
+                started_at=started_at,
+                duration_ms=_processed_item_processing_duration_ms_fields(
+                    status=item_status,
+                    started_at=started_at,
+                    created_at=created_at,
+                    updated_at=updated_at,
+                ),
                 estimated_ai_cost=est,
                 estimated_ai_cost_incomplete=inc,
                 estimated_ai_cost_currency=currency,
@@ -609,21 +775,28 @@ def _processed_item_counts_for_run_ids(
 ) -> dict[str, tuple[int, int, int, int, int]]:
     if not run_ids:
         return {}
-    rows = list(
-        session.exec(select(AgateProcessedItem).where(AgateProcessedItem.run_id.in_(run_ids))).all()
-    )
+    rows = session.exec(
+        select(
+            AgateProcessedItem.run_id,
+            AgateProcessedItem.status,
+            func.count(),
+        )
+        .where(AgateProcessedItem.run_id.in_(run_ids))
+        .group_by(AgateProcessedItem.run_id, AgateProcessedItem.status)
+    ).all()
     counts: dict[str, list[int]] = {}
-    for row in rows:
-        bucket = counts.setdefault(row.run_id, [0, 0, 0, 0, 0])
-        bucket[0] += 1
-        if row.status == "pending":
-            bucket[1] += 1
-        elif row.status == "running":
-            bucket[2] += 1
-        elif row.status == "succeeded":
-            bucket[3] += 1
-        elif row.status in ("failed", "timed_out"):
-            bucket[4] += 1
+    for run_id, item_status, n in rows:
+        bucket = counts.setdefault(run_id, [0, 0, 0, 0, 0])
+        count = int(n)
+        bucket[0] += count
+        if item_status == "pending":
+            bucket[1] += count
+        elif item_status == "running":
+            bucket[2] += count
+        elif item_status == "succeeded":
+            bucket[3] += count
+        elif item_status in ("failed", "timed_out"):
+            bucket[4] += count
     return {run_id: tuple(bucket) for run_id, bucket in counts.items()}
 
 
@@ -649,6 +822,11 @@ def create_run(
 
     processed_items_out: list[ProcessedItemOut] = []
     if is_s3_batch:
+        run.result_json = merge_run_result_payload(None, graph_spec_json=g.spec_json)
+        run.updated_at = datetime.now(UTC)
+        session.add(run)
+        session.commit()
+        session.refresh(run)
         celery_app.send_task(
             "worker.tasks.execute_s3_batch_setup",
             args=[run.id],
@@ -702,6 +880,8 @@ def create_run(
                 error_message=item.error_message,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
+                started_at=item.started_at,
+                duration_ms=_processed_item_processing_duration_ms(item),
             )
         ]
         total_items, pending_items, running_items, succeeded_items, failed_items = (
@@ -712,6 +892,9 @@ def create_run(
             0,
         )
 
+    snapshot_json, flow_changed = _run_configuration_fields(
+        session, run, include_flow_changed=True
+    )
     return RunOut(
         id=run.id,
         graph_id=run.graph_id,
@@ -725,12 +908,79 @@ def create_run(
         succeeded_items=succeeded_items,
         failed_items=failed_items,
         processed_items=processed_items_out,
+        graph_spec_snapshot_json=snapshot_json,
+        flow_changed_since_run=flow_changed,
     )
+
+
+@router.post("/{run_id}/replay", response_model=RunOut)
+def replay_run(
+    run_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    """Create a new run that replays the source run's pinned flow settings and item inputs."""
+    source = session.get(AgateRun, run_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    pid = _graph_project_id(session, source.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+    graph = session.get(AgateGraph, source.graph_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Graph not found")
+
+    snapshot_json = _resolved_run_snapshot_json(session, source)
+    replayable = _replayable_processed_items(session, source.id)
+
+    new_run = AgateRun(
+        graph_id=source.graph_id,
+        status="pending",
+        replace_article_geography_on_persist=source.replace_article_geography_on_persist,
+    )
+    session.add(new_run)
+    session.commit()
+    session.refresh(new_run)
+
+    new_run.result_json = merge_run_result_payload(None, graph_spec_json=snapshot_json)
+    new_run.updated_at = datetime.now(UTC)
+    session.add(new_run)
+    session.commit()
+    session.refresh(new_run)
+
+    if not replayable and _is_synthetic_whole_graph_item_view(session, source.id, 1):
+        new_run.status = "running"
+        new_run.updated_at = datetime.now(UTC)
+        session.add(new_run)
+        session.commit()
+        session.refresh(new_run)
+        celery_app.send_task(
+            "worker.tasks.execute_agate_run",
+            args=[new_run.id],
+            queue=_celery_queue(),
+        )
+        return _serialize_run(session, new_run)
+
+    if not replayable:
+        session.delete(new_run)
+        session.commit()
+        raise HTTPException(
+            status_code=409,
+            detail="This run is still preparing or has no replayable items yet.",
+        )
+
+    celery_app.send_task(
+        "worker.tasks.execute_run_replay_setup",
+        args=[source.id, new_run.id],
+        queue=_celery_queue(),
+    )
+    return _serialize_run(session, new_run)
 
 
 @router.get("", response_model=list[RunOut])
 def list_runs(
     graph_id: str | None = None,
+    project_id: int | None = None,
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ):
@@ -739,9 +989,15 @@ def list_runs(
         if not g:
             raise HTTPException(404, "Graph not found")
         require_project_access(session, auth, int(g.project_id))
+    if project_id is not None:
+        require_project_access(session, auth, project_id)
     q = select(AgateRun).order_by(desc(AgateRun.created_at))
     if graph_id:
         q = q.where(AgateRun.graph_id == graph_id)
+    if project_id is not None:
+        q = q.join(AgateGraph, AgateRun.graph_id == AgateGraph.id).where(
+            AgateGraph.project_id == project_id
+        )
     rows = session.exec(q).all()
     visible = visible_project_ids(session, auth)
     if visible is not None:
@@ -764,6 +1020,7 @@ def list_runs(
         total_items, pending_items, running_items, succeeded_items, failed_items = (
             item_count_map.get(r.id) or _synthetic_whole_run_counts(session, r)
         )
+        snapshot_json = _run_graph_spec_snapshot_json(r)
         out.append(
             RunOut(
                 id=r.id,
@@ -782,6 +1039,7 @@ def list_runs(
                 whole_run_ai_cost_currency=cur,
                 estimated_ai_cost_total=total_est,
                 estimated_ai_cost_total_incomplete=total_inc,
+                graph_spec_snapshot_json=snapshot_json,
             )
         )
     return out
@@ -912,6 +1170,9 @@ def _detail_from_agate_processed_row(
         error=row.error_message,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        started_at=row.started_at,
+        duration_ms=_processed_item_processing_duration_ms(row),
+        node_timings=_node_timings_for_processed_item(session, int(rid)),
         estimated_ai_cost=estimated_ai_cost,
         estimated_ai_cost_incomplete=estimated_ai_cost_incomplete,
         estimated_ai_cost_currency=estimated_ai_cost_currency,
@@ -1879,9 +2140,12 @@ def rerun_run_processed_item(
         require_project_access(session, auth, pid)
 
     if _is_synthetic_whole_graph_item_view(session, run_id, item_id):
+        snapshot = _run_graph_spec_snapshot_json(r)
         r.status = "pending"
-        r.result_json = None
         r.error_message = None
+        r.result_json = (
+            merge_run_result_payload(None, graph_spec_json=snapshot) if snapshot else None
+        )
         r.updated_at = datetime.now(UTC)
         session.add(r)
         session.commit()
@@ -1908,12 +2172,17 @@ def rerun_run_processed_item(
         session.add(r)
 
     item.status = "pending"
+    item.started_at = None
     item.result_json = None
+    item.substrate_article_id = None
     item.error_message = None
     item.overlay_json = None
     item.reviewed_output_json = None
     item.overlay_version = 0
     item.updated_at = datetime.now(UTC)
+    session.exec(
+        delete(AgateNodeTiming).where(AgateNodeTiming.processed_item_id == int(item_id))
+    )
     session.add(item)
     session.commit()
     session.refresh(item)
@@ -2003,6 +2272,9 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
     total_items, pending_items, running_items, succeeded_items, failed_items = _run_item_counts(
         session, r, processed
     )
+    snapshot_json, flow_changed = _run_configuration_fields(
+        session, r, include_flow_changed=True
+    )
     return RunOut(
         id=r.id,
         graph_id=r.graph_id,
@@ -2023,6 +2295,8 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         whole_run_ai_cost_currency=wr_currency,
         estimated_ai_cost_total=total_est,
         estimated_ai_cost_total_incomplete=total_inc,
+        graph_spec_snapshot_json=snapshot_json,
+        flow_changed_since_run=flow_changed,
     )
 
 

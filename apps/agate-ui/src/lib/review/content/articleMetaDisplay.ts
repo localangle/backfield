@@ -11,6 +11,7 @@ export type ProcessedItemArticleMetaRow = {
 
 const META_TYPE_LABELS: Record<string, string> = {
   subject: 'Subject',
+  topic: 'Topic',
   temporal_orientation: 'Timeframe',
   format: 'Format',
   geographic_scope: 'Scope',

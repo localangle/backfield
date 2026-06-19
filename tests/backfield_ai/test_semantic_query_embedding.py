@@ -52,3 +52,57 @@ def test_embed_semantic_search_query_returns_vector(
 
     assert out.model_config_id == "emb-search-test"
     assert out.vector == [0.1, 0.2, 0.3]
+    assert out.hyde_used is False
+    mock_embed.assert_called_once()
+    assert mock_embed.call_args.kwargs["texts"] == ["downtown crime"]
+
+
+@patch("backfield_ai.query_embedding.embed_texts_for_model_config")
+@patch("backfield_ai.query_embedding.generate_hypothetical_document")
+@patch("backfield_ai.query_embedding.resolve_semantic_embedding_model_config_id")
+def test_embed_semantic_search_query_with_hyde_embeds_hypothetical_document(
+    mock_resolve: MagicMock,
+    mock_hyde: MagicMock,
+    mock_embed: MagicMock,
+) -> None:
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    mock_resolve.return_value = "emb-search-test"
+    mock_hyde.return_value = (
+        "City council debated the downtown budget late into the evening.",
+        "gen-hyde-test",
+        "openai/gpt-4o-mini",
+    )
+    mock_embed.return_value = LiteLLMEmbeddingBatchResult(
+        litellm_model="openai/text-embedding-3-small",
+        provider="openai",
+        provider_model_id="text-embedding-3-small",
+        dimensions=3,
+        items=[EmbeddingItemResult(index=0, vector=[0.4, 0.5, 0.6])],
+        prompt_tokens=1,
+        total_tokens=1,
+        estimated_cost=None,
+        currency="USD",
+        cost_estimate_incomplete=True,
+        cost_estimate_source="unavailable",
+        latency_ms=1,
+    )
+
+    with Session(engine) as session:
+        out = embed_semantic_search_query(
+            session,
+            project_id=1,
+            query="downtown budget",
+            use_hyde=True,
+        )
+
+    assert out.hyde_used is True
+    assert out.hypothetical_document == (
+        "City council debated the downtown budget late into the evening."
+    )
+    assert out.hyde_model_config_id == "gen-hyde-test"
+    assert out.hyde_model == "openai/gpt-4o-mini"
+    mock_embed.assert_called_once()
+    assert mock_embed.call_args.kwargs["texts"] == [
+        "City council debated the downtown budget late into the evening."
+    ]

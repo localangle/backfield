@@ -81,9 +81,11 @@ async def run_geocoding_agent(
     evaluation_llm_model: Optional[str] = None,
     router_llm_model: Optional[str] = None,
     geographic_reasoning_llm_model: Optional[str] = None,
+    geographic_estimation_llm_model: Optional[str] = None,
     evaluation_ai_model_config_id: Optional[str] = None,
     router_ai_model_config_id: Optional[str] = None,
     geographic_reasoning_ai_model_config_id: Optional[str] = None,
+    geographic_estimation_ai_model_config_id: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Run the geocoding agent workflow for a single location.
@@ -136,9 +138,11 @@ async def run_geocoding_agent(
         "evaluation_llm_model": evaluation_llm_model,
         "router_llm_model": router_llm_model,
         "geographic_reasoning_llm_model": geographic_reasoning_llm_model,
+        "geographic_estimation_llm_model": geographic_estimation_llm_model,
         "evaluation_ai_model_config_id": evaluation_ai_model_config_id,
         "router_ai_model_config_id": router_ai_model_config_id,
         "geographic_reasoning_ai_model_config_id": geographic_reasoning_ai_model_config_id,
+        "geographic_estimation_ai_model_config_id": geographic_estimation_ai_model_config_id,
     }
 
     # Run the agent
@@ -168,9 +172,11 @@ async def run_advanced_geocoding_agent(
     evaluation_llm_model: Optional[str] = None,
     router_llm_model: Optional[str] = None,
     geographic_reasoning_llm_model: Optional[str] = None,
+    geographic_estimation_llm_model: Optional[str] = None,
     evaluation_ai_model_config_id: Optional[str] = None,
     router_ai_model_config_id: Optional[str] = None,
     geographic_reasoning_ai_model_config_id: Optional[str] = None,
+    geographic_estimation_ai_model_config_id: Optional[str] = None,
 ) -> Optional[dict]:
     """Same IO as ``run_geocoding_agent`` but uses the Advanced graph (router + quieter INFO)."""
     agent = create_advanced_geocoding_agent()
@@ -200,9 +206,11 @@ async def run_advanced_geocoding_agent(
         "evaluation_llm_model": evaluation_llm_model,
         "router_llm_model": router_llm_model,
         "geographic_reasoning_llm_model": geographic_reasoning_llm_model,
+        "geographic_estimation_llm_model": geographic_estimation_llm_model,
         "evaluation_ai_model_config_id": evaluation_ai_model_config_id,
         "router_ai_model_config_id": router_ai_model_config_id,
         "geographic_reasoning_ai_model_config_id": geographic_reasoning_ai_model_config_id,
+        "geographic_estimation_ai_model_config_id": geographic_estimation_ai_model_config_id,
         "advanced_quiet_logs": True,
     }
     final_state = await agent.ainvoke(initial_state)

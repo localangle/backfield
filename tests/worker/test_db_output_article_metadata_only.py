@@ -26,7 +26,8 @@ def _engine():
 def _sample_metadata_block() -> dict:
     return {
         "meta_type": "subject",
-        "category": "local_government_politics",
+        "subject": "development_project",
+        "category": "development_project",
         "rationale": "The story focuses on a neighborhood zoning decision.",
         "confidence": 0.86,
         "prompt_preset": "subject",
@@ -108,5 +109,5 @@ def test_run_db_output_persists_article_metadata_without_extract_nodes() -> None
                 SubstrateArticleMeta.meta_type == "subject",
             )
         ).one()
-        assert row.category == "local_government_politics"
+        assert row.category == "development_project"
         assert row.source_run_id == "run-meta-db"

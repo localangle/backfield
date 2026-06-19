@@ -74,7 +74,8 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, headerContent }: LayoutProps) {
-  const { username, logout, isOrgAdmin } = useAuth()
+  const { username, logout, isOrgAdmin, organizationName } = useAuth()
+  const organizationLabel = organizationName?.trim() || "Backfield"
   const agateBase = agateUiOrigin()
   const location = useLocation()
   const params = useParams<{ stylebookSlug?: string }>()
@@ -343,7 +344,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
             to={indexPath}
             productMark={<StylebookProductMark />}
             productTitle="Stylebook"
-            platformSubtitle="Backfield Platform"
+            platformSubtitle="Manage entities and connections"
           />
           <div className="flex items-center gap-2 flex-wrap justify-end flex-1 min-w-0">
             {headerContent}
@@ -381,8 +382,8 @@ export default function Layout({ children, headerContent }: LayoutProps) {
           headerLeading={
             <NavLink
               to={indexPath}
-              title="Backfield"
-              aria-label="Backfield"
+              title={organizationLabel}
+              aria-label={organizationLabel}
               className={({ isActive }) =>
                 cn(
                   "flex min-w-0 flex-1 items-center rounded-md px-1 py-1 -ml-1",
@@ -392,7 +393,7 @@ export default function Layout({ children, headerContent }: LayoutProps) {
               }
             >
               <span className="truncate text-sm font-semibold tracking-tight text-foreground">
-                Backfield
+                {organizationLabel}
               </span>
             </NavLink>
           }

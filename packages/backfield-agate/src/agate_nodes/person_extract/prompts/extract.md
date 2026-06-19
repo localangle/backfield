@@ -173,16 +173,36 @@ The title should be the role/position alone (e.g., "Owner", "Mayor", "Spokespers
 
 The institution or organization tied to the title or role. Write affiliations **the way a newspaper would in AP style**: use the **fullest clear name** readers would recognize, not internal shorthand unless the story itself uses only that form.
 
-- **Athletes and sports teams:** when a team nickname or name appears directly before a player, coach, or role descriptor, treat it as that person's team affiliation even if the team is not the sentence subject. Expand to the conventional full team name when you can (`Philadelphia Phillies`, `Chicago Cubs`, `Boston Red Sox`).
-  - `"Phillies masher Kyle Schwarber"` → `name`: `Kyle Schwarber`, `affiliation`: `Philadelphia Phillies`, `type`: `athlete`
-  - `"former Yankees slugger Aaron Judge"` → `affiliation`: `New York Yankees`
-  - `"Cubs ace Shota Imanaga"` → `affiliation`: `Chicago Cubs`
-  - `"Brother Rice forward James Smith"` → `affiliation`: `Brother Rice boys basketball team` (school athletics pattern)
 - **Expand acronyms and nicknames** when you can confidently identify the full name from context: `ACLU` → `American Civil Liberties Union`; `CPS` → `Chicago Public Schools` when the story clearly means the school district.
 - **Sports teams and brands:** prefer the conventional full team or organization name (`Boston Red Sox`, not `Sox`; `Green Bay Packers`, not `Packers`) unless the article consistently uses a shorter form as the official style for that entity.
 - **Government and agencies:** use the formal or commonly published name (`U.S. Department of Homeland Security`, `Chicago Police Department`).
 - Do not repeat the person's job title in `affiliation`; keep role in `title` and organization in `affiliation`.
 - If no organization is stated or implied, use an empty string.
+
+#### Sports team affiliation (critical)
+
+For athletes, coaches, and sports officials, assign a team in `affiliation` **only when the text clearly ties that team to the person** — not because both appear in the same sentence or game recap.
+
+**Assign affiliation when:**
+- The team name appears **directly with the person** as their team: `"Phillies masher Kyle Schwarber"`, `"Cubs ace Shota Imanaga"`, `"Yankees manager Aaron Boone"`.
+- The story **explicitly states** the person plays for, manages, or represents that team (`Kyle Tucker of the Cubs`, `Pirates starter Paul Skenes`, `signed with the Mets`).
+- A **former or previous** team is explicitly marked: `"former Yankees slugger Aaron Judge"`, `"ex-Cub"`, `"traded from the Pirates"`, `"who left the White Sox"`.
+- High school / college athletics: `"Brother Rice forward James Smith"` → `Brother Rice boys basketball team`.
+
+**Do NOT assign affiliation when:**
+- The person is mentioned in a **game or matchup context** and the only team signal is the **opponent** or both teams in the paragraph. Example: `"The Cubs beat the Pirates 5-3. Kyle Tucker homered."` → Tucker is a Cub; **do not** assign `Pittsburgh Pirates` because the Pirates appear in the same passage.
+- The team is only the **subject of the game** (`the Cubs won`, `Pittsburgh's bullpen collapsed`) but the person is not described as belonging to that team.
+- You would have to **guess** which side the player is on from box-score proximity, city names, or who they hit against / pitched against.
+- The article names the person without any team link (`Tucker went 2-for-4` after a game headline that mentions multiple teams).
+
+**When unsure which team belongs to the person, leave `affiliation` as an empty string.** A missing affiliation is better than assigning the wrong team (especially the opponent). Editors and downstream linking can resolve team from context; incorrect opponent affiliation causes serious catalog errors.
+
+Examples:
+- `"Phillies masher Kyle Schwarber"` → `name`: `Kyle Schwarber`, `affiliation`: `Philadelphia Phillies`, `type`: `athlete`
+- `"former Yankees slugger Aaron Judge"` → `affiliation`: `New York Yankees`
+- `"Cubs ace Shota Imanaga"` → `affiliation`: `Chicago Cubs`
+- `"The Cubs topped the Pirates. Imanaga struck out eight."` → `name`: `Shota Imanaga`, `affiliation`: `` (empty unless Imanaga was already established as a Cub earlier in the text)
+- `"Brother Rice forward James Smith"` → `affiliation`: `Brother Rice boys basketball team`
 
 ### public_figure
 

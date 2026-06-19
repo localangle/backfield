@@ -132,15 +132,21 @@ def derive_person_sort_key(
 def person_identity_fingerprint(
     *,
     normalized_name: str,
-    title: str | None = None,
     affiliation: str | None = None,
 ) -> str:
-    """Project-scoped dedupe hash for substrate person rows."""
+    """Project-scoped dedupe hash for substrate person rows.
+
+    Uses accent-folded name (``person_match_key``) plus affiliation only.
+    Title/position is intentionally excluded — it is volatile per article and
+    is not used for canonical tier-1 strong match either.
+    """
     from backfield_entities.registry.entity_types import compute_identity_fingerprint
 
+    name_key = person_match_key(normalized_name)
+    if not name_key:
+        name_key = normalize_person_text(normalized_name)
     return compute_identity_fingerprint(
         "person",
-        normalized_name=normalized_name,
-        title=normalize_person_text(title),
+        normalized_name=name_key,
         affiliation=normalize_person_text(affiliation),
     )

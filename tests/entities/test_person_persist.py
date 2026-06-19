@@ -95,7 +95,6 @@ def test_materialize_new_canonical_and_link_mirrors_fields() -> None:
             person_type="politician",
             identity_fingerprint=person_identity_fingerprint(
                 normalized_name="john smith",
-                title="Mayor",
                 affiliation="City of Chicago",
             ),
             canonical_link_status=CANONICAL_LINK_PENDING,
@@ -179,24 +178,36 @@ def test_link_to_existing_canonical_records_alias_when_name_differs() -> None:
         assert "j. doe" in norms
 
 
-def test_person_identity_fingerprint_distinguishes_title_and_affiliation() -> None:
-    fp1 = person_identity_fingerprint(
+def test_person_identity_fingerprint_uses_accent_folded_name_and_affiliation() -> None:
+    fp_accent = person_identity_fingerprint(
+        normalized_name="josé garcía",
+        affiliation="Mets",
+    )
+    fp_plain = person_identity_fingerprint(
+        normalized_name="jose garcia",
+        affiliation="Mets",
+    )
+    assert fp_accent == fp_plain
+
+    fp_mets = person_identity_fingerprint(
+        normalized_name="joe smith",
+        affiliation="Mets",
+    )
+    fp_yanks = person_identity_fingerprint(
+        normalized_name="joe smith",
+        affiliation="Yankees",
+    )
+    assert fp_mets != fp_yanks
+
+    fp_mayor = person_identity_fingerprint(
         normalized_name="john smith",
-        title="Mayor",
         affiliation="Chicago",
     )
-    fp2 = person_identity_fingerprint(
+    fp_resident = person_identity_fingerprint(
         normalized_name="john smith",
-        title="Resident",
         affiliation="Chicago",
     )
-    fp3 = person_identity_fingerprint(
-        normalized_name="john smith",
-        title="Mayor",
-        affiliation="Chicago",
-    )
-    assert fp1 != fp2
-    assert fp1 == fp3
+    assert fp_mayor == fp_resident
 
 
 def test_decide_person_canonical_persist_plan_links_exact_identity() -> None:

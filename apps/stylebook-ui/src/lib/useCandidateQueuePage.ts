@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/api"
 import { pickCreateLinkNudge } from "@/lib/candidateQueueSimilarity"
+import { suggestedRowAction } from "@/lib/candidateQueueSuggestions"
 import { useCandidateQueueToasts } from "@/lib/useCandidateQueueToasts"
 import { useCandidateQueueInlineNote } from "@/lib/useCandidateQueueInlineNote"
 import type {
@@ -65,6 +66,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     label: string
   } | null>(null)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
+  const [acceptingAiRecommendations, setAcceptingAiRecommendations] = useState(false)
 
   const listTotalPages = useMemo(
     () => Math.max(1, Math.ceil(listTotal / REVIEW_QUEUE_PAGE_SIZE)),
@@ -155,6 +157,26 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       setError(e instanceof Error ? e.message : "Request failed")
     }
   }, [projectSlug, status, debouncedQuery, typeFilter, listPage, config.api, config.typeFilter])
+
+  const fetchAllFilteredCandidates = useCallback(async (): Promise<TCandidate[]> => {
+    if (!projectSlug) return []
+    const type_filter = config.typeFilter && typeFilter !== "all" ? typeFilter : undefined
+    const q = debouncedQuery.trim() || undefined
+    const all: TCandidate[] = []
+    let offset = 0
+    while (true) {
+      const res = await config.api.list(projectSlug, status, {
+        limit: REVIEW_QUEUE_PAGE_SIZE,
+        offset,
+        type_filter,
+        q,
+      })
+      all.push(...res.candidates)
+      if (!res.has_next) break
+      offset += REVIEW_QUEUE_PAGE_SIZE
+    }
+    return all
+  }, [projectSlug, status, debouncedQuery, typeFilter, config.api, config.typeFilter])
 
   const fetchOpenCandidatesForLabel = useCallback(
     async (label: string) => {
@@ -341,36 +363,105 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     queueToasts.created,
   ])
 
-  const linkCandidateToSuggestedCanonical = useCallback(
-    async (candidate: TCandidate) => {
-      if (!projectSlug) return
-      const cid = config.api.getSuggestedCanonicalId(candidate)
-      if (!cid) return
-      setLinkingSuggestedId(candidate.id)
+  const applySuggestedAction = useCallback(
+    async (candidate: TCandidate, options?: { silent?: boolean }): Promise<boolean> => {
+      if (!projectSlug) return false
+      const action = suggestedRowAction(candidate)
+      if (!action) return false
+
+      if (action === "link") {
+        const cid = config.api.getSuggestedCanonicalId(candidate)
+        if (!cid) return false
+        setLinkingSuggestedId(candidate.id)
+        setError(null)
+        try {
+          await config.api.linkToCanonical(candidate.id, projectSlug, cid)
+          if (!options?.silent) {
+            let canonLabel = cid
+            try {
+              canonLabel = await config.api.getCanonicalLabel(cid, stylebookSlug, projectSlug)
+            } catch {
+              // ignore; fall back to id
+            }
+            queueToasts.linked.show({
+              canonicalId: cid,
+              canonicalLabel: canonLabel,
+              candidateLabel:
+                (candidate.suggested_name ?? "").trim() ||
+                config.copy.candidateFallbackLabel(candidate.id),
+            })
+          }
+          return true
+        } catch (e) {
+          if (!options?.silent) {
+            setError(e instanceof Error ? e.message : "Link failed")
+          }
+          return false
+        } finally {
+          setLinkingSuggestedId(null)
+        }
+      }
+
+      if (action === "defer") {
+        setDeferringId(candidate.id)
+        setError(null)
+        try {
+          await config.api.defer(projectSlug, candidate.id)
+          return true
+        } catch (e) {
+          if (!options?.silent) {
+            setError(e instanceof Error ? e.message : "Defer failed")
+          }
+          return false
+        } finally {
+          setDeferringId(null)
+        }
+      }
+
+      const draft = config.createDialog.initDraft(candidate)
+      const validationError = config.createDialog.validate(draft)
+      if (validationError) return false
+      setAcceptingId(candidate.id)
       setError(null)
       try {
-        await config.api.linkToCanonical(candidate.id, projectSlug, cid)
-        let canonLabel = cid
-        try {
-          canonLabel = await config.api.getCanonicalLabel(cid, stylebookSlug, projectSlug)
-        } catch {
-          // ignore; fall back to id
+        const body = config.createDialog.buildAcceptBody(draft, candidate)
+        const acceptRes = await config.api.acceptCreateNew(projectSlug, candidate.id, body)
+        if (!options?.silent) {
+          const cid = acceptRes.canonicalId.trim()
+          if (!cid) {
+            setError(config.createDialog.acceptMissingIdError)
+            return false
+          }
+          const label = config.createDialog.getDraftLabelForNudge(draft).trim()
+          queueToasts.created.show({ canonicalLabel: label, canonicalId: cid })
         }
-        queueToasts.linked.show({
-          canonicalId: cid,
-          canonicalLabel: canonLabel,
-          candidateLabel:
-            (candidate.suggested_name ?? "").trim() ||
-            config.copy.candidateFallbackLabel(candidate.id),
-        })
-        await refreshListQuiet()
+        return true
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Link failed")
+        if (!options?.silent) {
+          setError(e instanceof Error ? e.message : "Accept failed")
+        }
+        return false
       } finally {
-        setLinkingSuggestedId(null)
+        setAcceptingId(null)
       }
     },
-    [projectSlug, stylebookSlug, config.api, config.copy, refreshListQuiet, queueToasts.linked],
+    [
+      projectSlug,
+      stylebookSlug,
+      config.api,
+      config.createDialog,
+      config.copy,
+      queueToasts.linked,
+      queueToasts.created,
+    ],
+  )
+
+  const linkCandidateToSuggestedCanonical = useCallback(
+    async (candidate: TCandidate) => {
+      await applySuggestedAction(candidate)
+      await refreshListQuiet()
+    },
+    [applySuggestedAction, refreshListQuiet],
   )
 
   const handleDefer = useCallback(
@@ -389,6 +480,33 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     },
     [projectSlug, config.api, refreshListQuiet],
   )
+
+  const acceptAiRecommendations = useCallback(async () => {
+    if (!projectSlug || status !== "open") return
+
+    setAcceptingAiRecommendations(true)
+    setError(null)
+    try {
+      const allCandidates = await fetchAllFilteredCandidates()
+      const targets = allCandidates.filter((candidate) => suggestedRowAction(candidate) !== null)
+      if (targets.length === 0) return
+
+      for (const candidate of targets) {
+        await applySuggestedAction(candidate, { silent: true })
+      }
+      await refreshListQuiet()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to accept AI recommendations")
+    } finally {
+      setAcceptingAiRecommendations(false)
+    }
+  }, [
+    projectSlug,
+    status,
+    fetchAllFilteredCandidates,
+    applySuggestedAction,
+    refreshListQuiet,
+  ])
 
   const toggleExpanded = useCallback(
     async (candidate: TCandidate) => {
@@ -465,6 +583,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     acceptingId,
     deferringId,
     linkingSuggestedId,
+    acceptingAiRecommendations,
     linkModalId,
     linkModalInitialCanonicalId,
     linkModalSearchQuery,
@@ -481,6 +600,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     toggleExpanded,
     handleDefer,
     linkCandidateToSuggestedCanonical,
+    acceptAiRecommendations,
     openCreateModal,
     closeCreateModal,
     submitCreateFromModal,

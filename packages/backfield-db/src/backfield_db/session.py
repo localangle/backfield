@@ -6,6 +6,7 @@ import os
 from collections.abc import Generator
 from typing import Any
 
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine, make_url
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -22,12 +23,33 @@ def get_database_url() -> str:
     )
 
 
+def get_database_url_direct() -> str:
+    """Direct Postgres URL for migrations/admin (bypasses PgBouncer when set)."""
+    direct = os.environ.get("BACKFIELD_DATABASE_URL_DIRECT", "").strip()
+    if direct:
+        return direct
+    return get_database_url()
+
+
+def _pg_timeout_ms_from_env(name: str) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        return max(0, int(raw.strip()))
+    except ValueError:
+        return None
+
+
 def _engine_connect_args(url: str) -> dict[str, Any]:
     connect_args: dict[str, Any] = {}
     try:
         parsed = make_url(url)
         if parsed.get_backend_name() == "sqlite":
             connect_args["check_same_thread"] = False
+        elif parsed.get_backend_name() == "postgresql":
+            # PgBouncer transaction pooling: disable psycopg3 server-side prepared statements.
+            connect_args["prepare_threshold"] = None
     except Exception:
         pass
     return connect_args
@@ -51,6 +73,21 @@ def _pool_kwargs_from_env() -> dict[str, int]:
     return out
 
 
+def _register_pg_timeout_listeners(engine: Engine) -> None:
+    """Apply API-only statement/lock timeouts per transaction (PgBouncer-safe)."""
+    stmt_ms = _pg_timeout_ms_from_env("BACKFIELD_PG_STATEMENT_TIMEOUT_MS")
+    lock_ms = _pg_timeout_ms_from_env("BACKFIELD_PG_LOCK_TIMEOUT_MS")
+    if stmt_ms is None and lock_ms is None:
+        return
+
+    @event.listens_for(engine, "after_begin")
+    def _set_local_timeouts(session, transaction, connection) -> None:  # noqa: ARG001
+        if stmt_ms is not None:
+            connection.execute(text(f"SET LOCAL statement_timeout = '{stmt_ms}ms'"))
+        if lock_ms is not None:
+            connection.execute(text(f"SET LOCAL lock_timeout = '{lock_ms}ms'"))
+
+
 def get_engine() -> Engine:
     """Process-wide SQLAlchemy engine (one pool per interpreter).
 
@@ -68,6 +105,11 @@ def get_engine() -> Engine:
             pool_pre_ping=True,
             **_pool_kwargs_from_env(),
         )
+        try:
+            if make_url(url).get_backend_name() == "postgresql":
+                _register_pg_timeout_listeners(_engine)
+        except Exception:
+            pass
     return _engine
 
 
