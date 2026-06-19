@@ -20,7 +20,9 @@ from backfield_entities.canonical.plan_types import (
 )
 from backfield_entities.entities.organization.policy import (
     AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH,
+    ORGANIZATION_CANONICAL_TYPE_MISMATCH,
     organization_may_materialize_canonical_after_recall,
+    plan_has_organization_canonical_type_mismatch,
     plan_is_materialize_new_canonical,
     replan_organization_canonical_after_name_variants,
 )
@@ -50,10 +52,20 @@ def _recall_context_for_adjudication(plan: CanonicalPersistPlan) -> dict[str, An
     for r in plan.resolution_reasons:
         if not isinstance(r, dict):
             continue
-        if str(r.get("code") or "") == AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH:
+        code = str(r.get("code") or "")
+        if code == AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH:
             ids = r.get("recall_canonical_ids")
             if isinstance(ids, list) and ids:
                 return r
+        if code == ORGANIZATION_CANONICAL_TYPE_MISMATCH:
+            ids = r.get("recall_canonical_ids")
+            if isinstance(ids, list) and ids:
+                return r
+            cid = r.get("canonical_id")
+            if cid is not None and str(cid).strip():
+                merged = dict(r)
+                merged["recall_canonical_ids"] = [str(cid).strip()]
+                return merged
     return None
 
 
@@ -239,6 +251,19 @@ def prepare_organization_adjudication(
         for cid, label, org_type, aliases in candidates
     )
     floor = ADJUDICATION_LINK_MIN_CONFIDENCE
+    type_mismatch = plan_has_organization_canonical_type_mismatch(plan)
+    if type_mismatch:
+        type_rules = (
+            "- The substrate row matched a catalog alias but organization_type differed; "
+            "cross-type link is allowed when the candidate is clearly the SAME institution.\n"
+            "- Set canonical_id to null when types indicate different entities with a similar "
+            "name or alias, or when uncertain.\n"
+        )
+    else:
+        type_rules = (
+            "- organization_type must agree; do not link across types even when names or aliases "
+            "look similar.\n"
+        )
     prompt = (
         "You decide whether exactly ONE canonical row denotes the SAME real-world organization "
         "as the substrate row (editorial identity in a news catalog), not a namesake.\n\n"
@@ -254,8 +279,7 @@ def prepare_organization_adjudication(
         "organization_type aligns (e.g. NBA / National Basketball Association). "
         "The same acronym can denote different institutions by type "
         "(e.g. CPS as school_district vs public_services / child protective).\n"
-        "- organization_type must agree; do not link across types even when names or aliases "
-        "look similar.\n"
+        f"{type_rules}"
         "- Set canonical_id to null when organization type, role, or context indicates a "
         "different entity with a similar name, or when you are not certain.\n"
         "- Prefer null (human review) over a stretched link between namesakes.\n"
@@ -367,7 +391,8 @@ def resolve_organization_adjudication_plan(
         return _reject_link()
 
     _cid, canon_label, canon_org_type, _aliases = candidate_row
-    if not _organization_type_matches_candidate(
+    allow_cross_type = plan_has_organization_canonical_type_mismatch(plan)
+    if not allow_cross_type and not _organization_type_matches_candidate(
         organization,
         canon_organization_type=canon_org_type,
     ):

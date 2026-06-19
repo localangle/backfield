@@ -36,6 +36,11 @@ from backfield_entities.entities.organization.policy import (
     decide_organization_canonical_persist_plan,
     plan_requires_llm_organization_canonical_adjudication,
 )
+from backfield_entities.entities.organization.review import (
+    organization_review_recommends_defer_only,
+    parse_organization_boundary_from_review_reasons,
+    plan_with_boundary_defer_override,
+)
 from backfield_entities.entities.person.persist import apply_candidate_ai_review_recommendation
 from backfield_entities.entities.person.policy import (
     decide_person_canonical_persist_plan,
@@ -309,6 +314,13 @@ def _prepare_organization_candidate_review(
             stylebook_id=stylebook_id,
             organization=organization,
         )
+        raw_reasons = organization.canonical_review_reasons_json
+        review_reasons: list[Any] = (
+            list(raw_reasons) if isinstance(raw_reasons, list) else []
+        )
+        boundary = parse_organization_boundary_from_review_reasons(review_reasons)
+        if organization_review_recommends_defer_only(review_reasons):
+            plan = plan_with_boundary_defer_override(plan, boundary=boundary or "")
         adjudication_prep: OrganizationAdjudicationPrepared | None = None
         if plan_requires_llm_organization_canonical_adjudication(plan, organization):
             adjudication_prep = prepare_organization_adjudication(

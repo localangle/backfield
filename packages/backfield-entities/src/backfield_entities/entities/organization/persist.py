@@ -29,6 +29,7 @@ from backfield_entities.entities.organization.catalog_provenance import (
 from backfield_entities.entities.organization.policy import (
     find_existing_organization_canonical_id_by_alias,
     plan_has_ambiguous_organization_canonical_match,
+    plan_has_organization_canonical_type_mismatch,
     rank_organization_canonical_recall_matches,
 )
 from backfield_entities.entities.organization.types import (
@@ -348,8 +349,10 @@ def _canonical_suggestion_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any
             return from_adj
 
     ambiguous = plan_has_ambiguous_organization_canonical_match(plan)
-    if plan.decision == CanonicalPersistDecision.DEFER and ambiguous and adj is None:
-        return None
+    type_mismatch = plan_has_organization_canonical_type_mismatch(plan)
+    if plan.decision == CanonicalPersistDecision.DEFER and adj is None:
+        if ambiguous or type_mismatch:
+            return None
     if (
         plan.decision == CanonicalPersistDecision.LINK_EXISTING
         and plan.existing_canonical_id is not None

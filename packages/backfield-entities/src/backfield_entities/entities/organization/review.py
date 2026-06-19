@@ -25,6 +25,17 @@ _BOUNDARY_SHORT_BY_VALUE: dict[str, str] = {
     "borderline_event_competition": "event_competition",
 }
 
+_BOUNDARY_VALUE_BY_SHORT: dict[str, str] = {
+    short: value for value, short in _BOUNDARY_SHORT_BY_VALUE.items()
+}
+
+DEFER_ONLY_ORGANIZATION_BOUNDARIES: frozenset[str] = frozenset(
+    {
+        "borderline_brand_platform",
+        "borderline_event_competition",
+    }
+)
+
 
 def normalize_organization_boundary(value: Any) -> str | None:
     if not isinstance(value, str):
@@ -43,6 +54,34 @@ def organization_boundary_short_name(boundary: str) -> str | None:
 
 def entry_has_borderline_organization_boundary(entry: dict[str, Any]) -> bool:
     return parse_organization_boundary_from_entry(entry) is not None
+
+
+def organization_boundary_recommends_defer_only(boundary: str | None) -> bool:
+    """Brand/platform and event/competition mentions should defer canonical linking."""
+    if not isinstance(boundary, str):
+        return False
+    return boundary.strip().lower() in DEFER_ONLY_ORGANIZATION_BOUNDARIES
+
+
+def parse_organization_boundary_from_review_reasons(
+    reasons: Any,
+) -> str | None:
+    """Read full boundary value from stored review reason dicts."""
+    if not isinstance(reasons, list):
+        return None
+    for item in reasons:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("code") or "") != BORDERLINE_ORGANIZATION_BOUNDARY_CODE:
+            continue
+        short = str(item.get("boundary") or "").strip()
+        return _BOUNDARY_VALUE_BY_SHORT.get(short)
+    return None
+
+
+def organization_review_recommends_defer_only(reasons: Any) -> bool:
+    boundary = parse_organization_boundary_from_review_reasons(reasons)
+    return organization_boundary_recommends_defer_only(boundary)
 
 
 def boundary_review_data_json(boundary: str) -> dict[str, str]:

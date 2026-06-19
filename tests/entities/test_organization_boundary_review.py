@@ -7,7 +7,10 @@ from backfield_entities.entities.organization.review import (
     BORDERLINE_ORGANIZATION_BOUNDARY_CODE,
     boundary_reason_dict,
     normalize_organization_boundary,
+    organization_boundary_recommends_defer_only,
+    organization_review_recommends_defer_only,
     parse_organization_boundary_from_entry,
+    parse_organization_boundary_from_review_reasons,
     plan_with_boundary_defer_override,
 )
 from backfield_entities.entities.organization.review_display import (
@@ -88,3 +91,23 @@ def test_borderline_organization_boundary_display_messages() -> None:
         == "Work or title mention; confirm this refers to an organization, "
         "not a creative work or publication title."
     )
+
+
+def test_organization_boundary_recommends_defer_only_for_brand_and_event() -> None:
+    assert organization_boundary_recommends_defer_only("borderline_brand_platform") is True
+    assert organization_boundary_recommends_defer_only("borderline_event_competition") is True
+    assert organization_boundary_recommends_defer_only("borderline_work_title") is False
+    assert organization_boundary_recommends_defer_only(None) is False
+
+
+def test_parse_organization_boundary_from_review_reasons() -> None:
+    reasons = [
+        boundary_reason_dict(boundary="borderline_event_competition"),
+        {"code": "canonical_suggestion", "suggested_action": "defer"},
+    ]
+    parsed = parse_organization_boundary_from_review_reasons(reasons)
+    assert parsed == "borderline_event_competition"
+    assert organization_review_recommends_defer_only(reasons) is True
+    assert organization_review_recommends_defer_only(
+        [boundary_reason_dict(boundary="borderline_work_title")]
+    ) is False

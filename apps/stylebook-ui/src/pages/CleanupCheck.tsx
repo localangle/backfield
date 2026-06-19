@@ -315,17 +315,6 @@ export default function CleanupCheck() {
   const handleDismissGeographyIssue = useCallback(
     async (canonicalId: string) => {
       if (!stylebookSlug || !config) return
-      const label =
-        listResults?.canonicals.find((canonical) => canonical.id === canonicalId)?.label ??
-        "this location"
-      const confirmed = await showConfirm(
-        `Remove "${label}" from this cleanup list? It may reappear if the underlying issue remains.`,
-        {
-          title: "Mark as reviewed?",
-          confirmLabel: "Mark reviewed",
-        },
-      )
-      if (!confirmed) return
       try {
         await dismissCleanupIssue({
           stylebookSlug,
@@ -341,7 +330,7 @@ export default function CleanupCheck() {
         )
       }
     },
-    [stylebookSlug, config, listResults, showConfirm, showError],
+    [stylebookSlug, config, showError],
   )
 
   const applyAcceptedMergeProposal = useCallback(
@@ -674,6 +663,8 @@ function GeographyIssuesList({
               <td className="px-4 py-3 min-w-0">
                 <Link
                   to={locationDetailHref(canonical.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="font-medium text-primary hover:underline block truncate"
                   title={canonical.label}
                 >

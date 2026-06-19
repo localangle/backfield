@@ -105,6 +105,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     linkingSuggestedId,
     clearingRecommendationId,
     acceptingAiRecommendations,
+    hasQueueRecommendations,
     linkModalId,
     linkModalInitialCanonicalId,
     linkModalSearchQuery,
@@ -181,7 +182,16 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     )
     .join(", ")
 
-  const showAiQueueActions = status === "open" && listTotal > 0
+  const showAiQueueActions = status === "open"
+  const queueEmpty = !loading && listTotal === 0
+  const acceptRecommendationsDisabled =
+    queueEmpty ||
+    !hasQueueRecommendations ||
+    loading ||
+    rowActionsBusy ||
+    aiReviewActive
+  const reviewWithAiDisabled =
+    queueEmpty || loading || rowActionsBusy || candidateAiReview.loading || stoppingAiReview
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -277,12 +287,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                       type="button"
                       size="sm"
                       variant={aiReviewActive ? "destructive" : "outline"}
-                      disabled={
-                        loading ||
-                        rowActionsBusy ||
-                        candidateAiReview.loading ||
-                        stoppingAiReview
-                      }
+                      disabled={!aiReviewActive && reviewWithAiDisabled}
                       onClick={() => void handleAiReviewButtonClick()}
                     >
                       {stoppingAiReview ? (
@@ -303,7 +308,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                   <Button
                     type="button"
                     size="sm"
-                    disabled={loading || rowActionsBusy}
+                    disabled={acceptRecommendationsDisabled}
                     onClick={() => void acceptAiRecommendations()}
                   >
                     {acceptingAiRecommendations ? (
@@ -312,7 +317,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                         Accepting recommendations…
                       </>
                     ) : (
-                      "Accept all AI recommendations"
+                      "Accept recommendations"
                     )}
                   </Button>
                 </div>

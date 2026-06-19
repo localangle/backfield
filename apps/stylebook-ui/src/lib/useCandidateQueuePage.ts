@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/api"
 import { pickCreateLinkNudge, candidateQueueNameKey, duplicateCreateNewSummary } from "@/lib/candidateQueueSimilarity"
-import { suggestedRowAction } from "@/lib/candidateQueueSuggestions"
+import { suggestedRowAction, candidatesWithSuggestedAction } from "@/lib/candidateQueueSuggestions"
 import { useCandidateQueueToasts } from "@/lib/useCandidateQueueToasts"
 import { useCandidateQueueInlineNote } from "@/lib/useCandidateQueueInlineNote"
 import type {
@@ -68,6 +68,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
   const [acceptingAiRecommendations, setAcceptingAiRecommendations] = useState(false)
   const [clearingRecommendationId, setClearingRecommendationId] = useState<number | null>(null)
+  const [queueRecommendationCount, setQueueRecommendationCount] = useState(0)
 
   const listTotalPages = useMemo(
     () => Math.max(1, Math.ceil(listTotal / REVIEW_QUEUE_PAGE_SIZE)),
@@ -291,6 +292,39 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       cancelled = true
     }
   }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen, config.api, config.typeFilter])
+
+  useEffect(() => {
+    if (!projectSlug || status !== "open" || listTotal === 0) {
+      setQueueRecommendationCount(0)
+      return
+    }
+    if (listTotal <= REVIEW_QUEUE_PAGE_SIZE) {
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const all = await fetchAllFilteredCandidates()
+        if (cancelled) return
+        setQueueRecommendationCount(candidatesWithSuggestedAction(all).length)
+      } catch {
+        if (!cancelled) setQueueRecommendationCount(0)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [projectSlug, status, listTotal, filterKey, fetchAllFilteredCandidates])
+
+  useEffect(() => {
+    if (!projectSlug || status !== "open" || listTotal === 0) {
+      return
+    }
+    if (listTotal > REVIEW_QUEUE_PAGE_SIZE) {
+      return
+    }
+    setQueueRecommendationCount(candidatesWithSuggestedAction(candidates).length)
+  }, [projectSlug, status, listTotal, candidates])
 
   const refreshCreateLinkNudge = useCallback(
     async (candidateId: number, draftLabel: string) => {
@@ -665,6 +699,8 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     linkingSuggestedId,
     clearingRecommendationId,
     acceptingAiRecommendations,
+    queueRecommendationCount,
+    hasQueueRecommendations: queueRecommendationCount > 0,
     linkModalId,
     linkModalInitialCanonicalId,
     linkModalSearchQuery,
