@@ -102,14 +102,20 @@ export default function ProjectDetailPage() {
     if (!slug) return
     try {
       setError(null)
-      const [p, s] = await Promise.all([getProjectBySlug(slug), getProjectStatsBySlug(slug)])
+      const p = await getProjectBySlug(slug)
+      const [s, c] = await Promise.all([
+        getProjectStatsBySlug(slug),
+        getProjectEstimatedAiCost(p.id),
+      ])
       setProject(p)
       setStats(s)
+      setAiCost(c)
     } catch (e) {
       console.error(e)
       setError('Failed to load project')
       setProject(null)
       setStats(null)
+      setAiCost(null)
     }
   }, [slug])
 
@@ -239,25 +245,6 @@ export default function ProjectDetailPage() {
       panel.style.minHeight = ''
     }
   }, [workspaceTab])
-
-  useEffect(() => {
-    if (!project?.id) {
-      setAiCost(null)
-      return
-    }
-    let cancelled = false
-    ;(async () => {
-      try {
-        const c = await getProjectEstimatedAiCost(project.id)
-        if (!cancelled) setAiCost(c)
-      } catch {
-        if (!cancelled) setAiCost(null)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [project?.id])
 
   useEffect(() => {
     if (project?.workspace_id == null) {

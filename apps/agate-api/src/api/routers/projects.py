@@ -30,7 +30,7 @@ from backfield_db import (
 from backfield_db.crypto import encrypt_secret, fernet_from_env
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlmodel import Session, col, select
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -221,52 +221,60 @@ class ProjectStatsOut(BaseModel):
     median_estimated_ai_cost_incomplete: bool = False
 
 
-def _accumulate_ai_cost_rows(rows: list[BackfieldAiCallRecord]) -> tuple[Decimal, bool, str, int]:
-    total = Decimal("0")
-    incomplete = False
-    currency = "USD"
-    for row in rows:
-        currency = str(row.currency or "USD")
-        if row.estimated_cost is not None:
-            total += row.estimated_cost
-        else:
-            incomplete = True
-        if row.cost_estimate_incomplete:
-            incomplete = True
-    return total, incomplete, currency, len(rows)
-
-
-def _project_ai_cost_rows(
-    session: Session,
-    project_id: int,
-) -> list[BackfieldAiCallRecord]:
-    return list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(BackfieldAiCallRecord.project_id == project_id)
-        ).all()
+def _ai_cost_incomplete_expr():
+    return or_(
+        BackfieldAiCallRecord.cost_estimate_incomplete.is_(True),
+        BackfieldAiCallRecord.estimated_cost.is_(None),
     )
 
 
-def _model_breakdown_from_ai_cost_rows(
-    rows: list[BackfieldAiCallRecord],
+def _ai_cost_incomplete_aggregate():
+    return func.max(
+        case(
+            (_ai_cost_incomplete_expr(), 1),
+            else_=0,
+        )
+    )
+
+
+def _project_ai_cost_totals(
+    session: Session,
+    project_id: int,
+) -> tuple[Decimal, bool, str, int]:
+    """Aggregate tracked LLM cost for a project in one DB round-trip."""
+    count, total, incomplete_flag, currency = session.exec(
+        select(
+            func.count(),
+            func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        ).where(BackfieldAiCallRecord.project_id == project_id)
+    ).one()
+    est = Decimal(str(total)) if total is not None else Decimal("0")
+    return est, bool(incomplete_flag), str(currency or "USD"), int(count or 0)
+
+
+def _project_ai_cost_model_breakdown(
+    session: Session,
+    project_id: int,
 ) -> list[AiCostModelBreakdown]:
-    by_model: dict[str, Decimal] = {}
-    for row in rows:
-        provider_model_id = row.provider_model_id
-        by_model[provider_model_id] = by_model.get(provider_model_id, Decimal("0")) + (
-            row.estimated_cost or Decimal("0")
+    cost_sum = func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0)
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.provider_model_id,
+            cost_sum,
         )
+        .where(BackfieldAiCallRecord.project_id == project_id)
+        .group_by(BackfieldAiCallRecord.provider_model_id)
+        .order_by(cost_sum.desc(), BackfieldAiCallRecord.provider_model_id)
+    ).all()
     return [
-        AiCostModelBreakdown(provider_model_id=model_id, estimated_total=estimated_total)
-        for model_id, estimated_total in sorted(
-            by_model.items(),
-            key=lambda item: (-item[1], item[0]),
+        AiCostModelBreakdown(
+            provider_model_id=str(provider_model_id),
+            estimated_total=Decimal(str(estimated_total)),
         )
+        for provider_model_id, estimated_total in rows
     ]
-
-
-def _rollup_project_ai_cost(session: Session, project_id: int) -> tuple[Decimal, bool, str, int]:
-    return _accumulate_ai_cost_rows(_project_ai_cost_rows(session, project_id))
 
 
 def _median_ms(durations_ms: list[float]) -> float | None:
@@ -305,6 +313,17 @@ def _max_decimal(values: list[Decimal]) -> Decimal | None:
     return max(values)
 
 
+def _processed_item_duration_ms_expr():
+    return (
+        func.extract(
+            "epoch",
+            AgateProcessedItem.updated_at
+            - func.coalesce(AgateProcessedItem.started_at, AgateProcessedItem.created_at),
+        )
+        * 1000.0
+    )
+
+
 def _median_terminal_processed_item_duration_ms(
     session: Session, succeeded_run_ids: list[str]
 ) -> float | None:
@@ -314,22 +333,22 @@ def _median_terminal_processed_item_duration_ms(
     """
     if not succeeded_run_ids:
         return None
-    rows = session.exec(
-        select(
-            AgateProcessedItem.started_at,
-            AgateProcessedItem.created_at,
-            AgateProcessedItem.updated_at,
-        ).where(
-            AgateProcessedItem.run_id.in_(succeeded_run_ids),
-            col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
-        )
-    ).all()
-    durs: list[float] = []
-    for started_at, created_at, updated_at in rows:
-        ms = (updated_at - (started_at or created_at)).total_seconds() * 1000
-        if ms < 0:
-            ms = 0.0
-        durs.append(ms)
+    filters = (
+        AgateProcessedItem.run_id.in_(succeeded_run_ids),
+        col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
+    )
+    duration_ms = _processed_item_duration_ms_expr()
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        median = session.exec(
+            select(func.percentile_cont(0.5).within_group(duration_ms)).where(*filters)
+        ).one()
+        if median is None:
+            return None
+        return max(float(median), 0.0)
+
+    rows = session.exec(select(duration_ms).where(*filters)).all()
+    durs = [max(float(ms), 0.0) for (ms,) in rows if ms is not None]
     return _median_ms(durs)
 
 
@@ -376,42 +395,28 @@ def _per_run_ai_cost_totals(
     totals: dict[str, Decimal] = {rid: Decimal("0") for rid in run_ids}
     incomplete = False
     currency = "USD"
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(
-                BackfieldAiCallRecord.project_id == project_id,
-                BackfieldAiCallRecord.run_id.in_(list(run_ids)),
-            )
-        ).all()
-    )
-    for row in rows:
-        currency = str(row.currency or "USD")
-        rid = row.run_id
-        if rid not in totals:
+    rows = session.exec(
+        select(
+            BackfieldAiCallRecord.run_id,
+            func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0),
+            _ai_cost_incomplete_aggregate(),
+            func.max(BackfieldAiCallRecord.currency),
+        )
+        .where(
+            BackfieldAiCallRecord.project_id == project_id,
+            BackfieldAiCallRecord.run_id.in_(list(run_ids)),
+        )
+        .group_by(BackfieldAiCallRecord.run_id)
+    ).all()
+    for run_id, total, incomplete_flag, row_currency in rows:
+        if run_id is None or run_id not in totals:
             continue
-        if row.estimated_cost is not None:
-            totals[rid] += row.estimated_cost
-        else:
-            incomplete = True
-        if row.cost_estimate_incomplete:
+        totals[run_id] = Decimal(str(total)) if total is not None else Decimal("0")
+        if row_currency:
+            currency = str(row_currency)
+        if incomplete_flag:
             incomplete = True
     return list(totals.values()), incomplete, currency
-
-
-def _rollup_project_ai_cost_for_run_ids(
-    session: Session, project_id: int, run_ids: frozenset[str]
-) -> tuple[Decimal, bool, str, int]:
-    if not run_ids:
-        return Decimal("0"), False, "USD", 0
-    rows = list(
-        session.exec(
-            select(BackfieldAiCallRecord).where(
-                BackfieldAiCallRecord.project_id == project_id,
-                BackfieldAiCallRecord.run_id.in_(list(run_ids)),
-            )
-        ).all()
-    )
-    return _accumulate_ai_cost_rows(rows)
 
 
 def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
@@ -707,8 +712,7 @@ def get_project_estimated_ai_cost(
     if not p:
         raise HTTPException(404, "Project not found")
 
-    rows = _project_ai_cost_rows(session, project_id)
-    total, incomplete, currency, attempt_count = _accumulate_ai_cost_rows(rows)
+    total, incomplete, currency, attempt_count = _project_ai_cost_totals(session, project_id)
 
     return ProjectEstimatedAiCostOut(
         project_id=project_id,
@@ -716,5 +720,5 @@ def get_project_estimated_ai_cost(
         estimated_total=total,
         incomplete_estimate=incomplete,
         attempt_count=attempt_count,
-        model_breakdown=_model_breakdown_from_ai_cost_rows(rows),
+        model_breakdown=_project_ai_cost_model_breakdown(session, project_id),
     )
