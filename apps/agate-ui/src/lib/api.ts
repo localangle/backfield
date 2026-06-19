@@ -57,9 +57,16 @@ export interface Project {
   workspace_stylebook_slug?: string | null
 }
 
-export interface SlowestNodeTypeStat {
-  node_type: string
+export interface SlowestFlowStat {
+  graph_id: string
+  flow_name: string
   avg_ms: number
+}
+
+export interface TopFlowByCostStat {
+  graph_id: string
+  flow_name: string
+  avg_estimated_cost: string | number
 }
 
 export interface ProjectStats {
@@ -71,17 +78,16 @@ export interface ProjectStats {
   runs_in_progress: number
   /** Runs with status ``failed`` (includes cancelled runs). */
   runs_failed: number
-  median_duration_ms_per_run: number | null
+  avg_duration_ms_per_run: number | null
   min_duration_ms_per_run?: number | null
   max_duration_ms_per_run?: number | null
-  median_duration_ms_per_item: number | null
-  slowest_node_types?: SlowestNodeTypeStat[]
-  /** Median tracked LLM spend per succeeded run. */
-  median_estimated_ai_cost_per_run?: string | number | null
-  min_estimated_ai_cost_per_run?: string | number | null
-  max_estimated_ai_cost_per_run?: string | number | null
-  median_estimated_ai_cost_currency?: string | null
-  median_estimated_ai_cost_incomplete?: boolean
+  avg_duration_ms_per_item: number | null
+  slowest_flows?: SlowestFlowStat[]
+  /** Mean tracked LLM spend per succeeded run. */
+  avg_estimated_ai_cost_per_run?: string | number | null
+  top_flows_by_cost?: TopFlowByCostStat[]
+  avg_estimated_ai_cost_currency?: string | null
+  avg_estimated_ai_cost_incomplete?: boolean
 }
 
 export interface Graph {

@@ -17,7 +17,6 @@ from backfield_auth.gate import (
 )
 from backfield_db import (
     AgateGraph,
-    AgateNodeTiming,
     AgateProcessedItem,
     AgateRun,
     BackfieldAiCallRecord,
@@ -198,9 +197,16 @@ def create_project(
     return _project_to_out(session, p)
 
 
-class SlowestNodeTypeOut(BaseModel):
-    node_type: str
+class SlowestFlowOut(BaseModel):
+    graph_id: str
+    flow_name: str
     avg_ms: float
+
+
+class TopFlowByCostOut(BaseModel):
+    graph_id: str
+    flow_name: str
+    avg_estimated_cost: Decimal
 
 
 class ProjectStatsOut(BaseModel):
@@ -209,16 +215,15 @@ class ProjectStatsOut(BaseModel):
     runs_succeeded: int = 0
     runs_in_progress: int = 0
     runs_failed: int = 0
-    median_duration_ms_per_run: float | None = None
+    avg_duration_ms_per_run: float | None = None
     min_duration_ms_per_run: float | None = None
     max_duration_ms_per_run: float | None = None
-    median_duration_ms_per_item: float | None = None
-    slowest_node_types: list[SlowestNodeTypeOut] = Field(default_factory=list)
-    median_estimated_ai_cost_per_run: Decimal | None = None
-    min_estimated_ai_cost_per_run: Decimal | None = None
-    max_estimated_ai_cost_per_run: Decimal | None = None
-    median_estimated_ai_cost_currency: str | None = None
-    median_estimated_ai_cost_incomplete: bool = False
+    avg_duration_ms_per_item: float | None = None
+    slowest_flows: list[SlowestFlowOut] = Field(default_factory=list)
+    avg_estimated_ai_cost_per_run: Decimal | None = None
+    top_flows_by_cost: list[TopFlowByCostOut] = Field(default_factory=list)
+    avg_estimated_ai_cost_currency: str | None = None
+    avg_estimated_ai_cost_incomplete: bool = False
 
 
 def _ai_cost_incomplete_expr():
@@ -277,16 +282,16 @@ def _project_ai_cost_model_breakdown(
     ]
 
 
-def _median_ms(durations_ms: list[float]) -> float | None:
+def _mean_ms(durations_ms: list[float]) -> float | None:
     if not durations_ms:
         return None
-    return float(statistics.median(durations_ms))
+    return float(statistics.mean(durations_ms))
 
 
-def _median_decimal(values: list[Decimal]) -> Decimal | None:
+def _mean_decimal(values: list[Decimal]) -> Decimal | None:
     if not values:
         return None
-    return Decimal(str(statistics.median([float(v) for v in values])))
+    return sum(values) / len(values)
 
 
 def _min_ms(durations_ms: list[float]) -> float | None:
@@ -324,10 +329,10 @@ def _processed_item_duration_ms_expr():
     )
 
 
-def _median_terminal_processed_item_duration_ms(
+def _avg_terminal_processed_item_duration_ms(
     session: Session, succeeded_run_ids: list[str]
 ) -> float | None:
-    """Median wall time per ``agate_processed_item`` row (terminal statuses only).
+    """Mean wall time per ``agate_processed_item`` row (terminal statuses only).
 
     Returns ``None`` when there are no such rows (single-graph runs without batch items).
     """
@@ -338,49 +343,96 @@ def _median_terminal_processed_item_duration_ms(
         col(AgateProcessedItem.status).in_(_ITEM_TERMINAL_STATUSES),
     )
     duration_ms = _processed_item_duration_ms_expr()
-    dialect = session.get_bind().dialect.name
-    if dialect == "postgresql":
-        median = session.exec(
-            select(func.percentile_cont(0.5).within_group(duration_ms)).where(*filters)
-        ).one()
-        if median is None:
-            return None
-        return max(float(median), 0.0)
-
-    rows = session.exec(select(duration_ms).where(*filters)).all()
-    durs = [max(float(ms), 0.0) for (ms,) in rows if ms is not None]
-    return _median_ms(durs)
+    avg = session.exec(select(func.avg(duration_ms)).where(*filters)).one()
+    if avg is None:
+        return None
+    return max(float(avg), 0.0)
 
 
-def _slowest_node_types_for_project(
+def _run_wall_duration_ms_expr():
+    return func.extract("epoch", AgateRun.updated_at - AgateRun.created_at) * 1000.0
+
+
+def _slowest_flows_for_project(
     session: Session,
     graph_ids: list[str],
     *,
     limit: int = 5,
-) -> list[SlowestNodeTypeOut]:
+) -> list[SlowestFlowOut]:
     if not graph_ids:
         return []
-    run_ids = list(
-        session.exec(select(AgateRun.id).where(AgateRun.graph_id.in_(graph_ids))).all()
-    )
-    if not run_ids:
-        return []
+    run_duration_ms = _run_wall_duration_ms_expr()
     rows = session.exec(
         select(
-            AgateNodeTiming.node_type,
-            func.avg(AgateNodeTiming.elapsed_s),
+            AgateGraph.id,
+            AgateGraph.name,
+            func.avg(run_duration_ms),
         )
-        .where(AgateNodeTiming.run_id.in_(run_ids))
-        .group_by(AgateNodeTiming.node_type)
-        .order_by(func.avg(AgateNodeTiming.elapsed_s).desc())
+        .join(AgateGraph, AgateGraph.id == AgateRun.graph_id)
+        .where(
+            AgateRun.graph_id.in_(graph_ids),
+            AgateRun.status == "succeeded",
+        )
+        .group_by(AgateGraph.id, AgateGraph.name)
+        .order_by(func.avg(run_duration_ms).desc())
         .limit(limit)
     ).all()
     return [
-        SlowestNodeTypeOut(
-            node_type=str(node_type),
-            avg_ms=round(float(avg_s) * 1000.0, 1),
+        SlowestFlowOut(
+            graph_id=str(graph_id),
+            flow_name=str(flow_name),
+            avg_ms=round(max(float(avg_ms), 0.0), 1),
         )
-        for node_type, avg_s in rows
+        for graph_id, flow_name, avg_ms in rows
+        if avg_ms is not None
+    ]
+
+
+def _top_flows_by_avg_ai_cost_for_project(
+    session: Session,
+    project_id: int,
+    graph_ids: list[str],
+    *,
+    limit: int = 5,
+) -> list[TopFlowByCostOut]:
+    if not graph_ids:
+        return []
+    per_run_cost = func.coalesce(func.sum(BackfieldAiCallRecord.estimated_cost), 0)
+    per_run_subq = (
+        select(
+            BackfieldAiCallRecord.run_id.label("run_id"),
+            per_run_cost.label("total_cost"),
+        )
+        .where(BackfieldAiCallRecord.project_id == project_id)
+        .group_by(BackfieldAiCallRecord.run_id)
+        .subquery()
+    )
+    run_total = func.coalesce(per_run_subq.c.total_cost, 0)
+    rows = session.exec(
+        select(
+            AgateGraph.id,
+            AgateGraph.name,
+            func.avg(run_total),
+        )
+        .select_from(AgateRun)
+        .join(AgateGraph, AgateGraph.id == AgateRun.graph_id)
+        .outerjoin(per_run_subq, per_run_subq.c.run_id == AgateRun.id)
+        .where(
+            AgateRun.graph_id.in_(graph_ids),
+            AgateRun.status == "succeeded",
+        )
+        .group_by(AgateGraph.id, AgateGraph.name)
+        .order_by(func.avg(run_total).desc())
+        .limit(limit)
+    ).all()
+    return [
+        TopFlowByCostOut(
+            graph_id=str(graph_id),
+            flow_name=str(flow_name),
+            avg_estimated_cost=Decimal(str(avg_cost)),
+        )
+        for graph_id, flow_name, avg_cost in rows
+        if avg_cost is not None
     ]
 
 
@@ -455,23 +507,22 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         if ms < 0:
             ms = 0.0
         dur_success.append(ms)
-    median_run_duration = _median_ms(dur_success)
+    avg_run_duration = _mean_ms(dur_success)
     min_run_duration = _min_ms(dur_success)
     max_run_duration = _max_ms(dur_success)
 
-    median_item_duration = _median_terminal_processed_item_duration_ms(session, succeeded_ids)
-    if median_item_duration is None:
-        median_item_duration = median_run_duration
+    avg_item_duration = _avg_terminal_processed_item_duration_ms(session, succeeded_ids)
+    if avg_item_duration is None:
+        avg_item_duration = avg_run_duration
 
     pid = int(p.id) if p.id is not None else 0
     succeeded_frozen = frozenset(succeeded_ids)
     per_run_costs, ai_incomplete, ai_currency = _per_run_ai_cost_totals(
         session, pid, succeeded_frozen
     )
-    median_ai = _median_decimal(per_run_costs)
-    min_ai = _min_decimal(per_run_costs)
-    max_ai = _max_decimal(per_run_costs)
-    slowest_nodes = _slowest_node_types_for_project(session, graph_ids)
+    avg_ai = _mean_decimal(per_run_costs)
+    slowest_flows = _slowest_flows_for_project(session, graph_ids)
+    top_flows_by_cost = _top_flows_by_avg_ai_cost_for_project(session, pid, graph_ids)
 
     return ProjectStatsOut(
         total_runs=total_runs,
@@ -479,16 +530,15 @@ def _project_stats(session: Session, p: BackfieldProject) -> ProjectStatsOut:
         runs_succeeded=runs_succeeded,
         runs_in_progress=runs_in_progress,
         runs_failed=runs_failed,
-        median_duration_ms_per_run=median_run_duration,
+        avg_duration_ms_per_run=avg_run_duration,
         min_duration_ms_per_run=min_run_duration,
         max_duration_ms_per_run=max_run_duration,
-        median_duration_ms_per_item=median_item_duration,
-        slowest_node_types=slowest_nodes,
-        median_estimated_ai_cost_per_run=median_ai,
-        min_estimated_ai_cost_per_run=min_ai,
-        max_estimated_ai_cost_per_run=max_ai,
-        median_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
-        median_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
+        avg_duration_ms_per_item=avg_item_duration,
+        slowest_flows=slowest_flows,
+        avg_estimated_ai_cost_per_run=avg_ai,
+        top_flows_by_cost=top_flows_by_cost,
+        avg_estimated_ai_cost_currency=ai_currency if runs_succeeded > 0 else None,
+        avg_estimated_ai_cost_incomplete=ai_incomplete if runs_succeeded > 0 else False,
     )
 
 

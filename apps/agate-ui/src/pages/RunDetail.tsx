@@ -417,7 +417,7 @@ export default function RunDetail() {
             <h1 className="text-2xl font-bold leading-tight sm:text-3xl">
               Run • {formatRunTitleDate(run.created_at)}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               Flow:{' '}
               <Link
                 to={`/flow/${encodeURIComponent(run.graph_id)}`}
@@ -425,13 +425,12 @@ export default function RunDetail() {
               >
                 {flowName}
               </Link>
+              {flowChangedSinceRunStart ? (
+                <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+                  Flow changed since this run
+                </span>
+              ) : null}
             </p>
-            {flowChangedSinceRunStart ? (
-              <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-                This flow has changed since this run. Settings shown below reflect what was used when
-                the run started.
-              </p>
-            ) : null}
             {s3InputSource ? (
               <p className="mt-1 text-sm text-muted-foreground">
                 S3 source{s3FromRunSnapshot ? ' at run time' : ''}:{' '}

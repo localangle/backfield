@@ -158,13 +158,9 @@ const ProjectDetailRunsTab = forwardRef<ProjectDetailRunsTabHandle, ProjectDetai
         const statusMatch = selectedStatus === 'all' || run.status === selectedStatus
         return flowMatch && statusMatch
       })
-      .sort((a, b) => {
-        const order = { running: 0, pending: 1, completed: 2, completed_with_errors: 3 } as const
-        const ao = order[a.status as keyof typeof order] ?? 4
-        const bo = order[b.status as keyof typeof order] ?? 4
-        if (ao !== bo) return ao - bo
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      })
+      .sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      )
   }, [runs, selectedFlow, selectedStatus])
 
   if (loading) {
