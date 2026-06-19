@@ -9,7 +9,7 @@ import {
   getRun,
   getGraph,
   getProject,
-  createRun,
+  replayRun,
   cancelRun,
   rerunProcessedItem,
   getRunEstimatedAiCost,
@@ -36,7 +36,12 @@ import {
   isRunPreparingItems,
   PREPARING_ITEMS_SOURCE_LABEL,
 } from '@/lib/runPreparingItems'
-import { s3InputSourceFromGraphSpec } from '@/lib/s3InputSource'
+import {
+  flowChangedSinceRun,
+  graphSpecSnapshotJsonFromRun,
+  resolveRunGraphSpecForDisplay,
+  s3InputSourceForRun,
+} from '@/lib/runGraphSpec'
 import { ArrowLeft, ArrowRight, Download, CheckCircle, XCircle, Clock, Loader2, AlertTriangle, FileText, Play, StopCircle, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -147,27 +152,25 @@ export default function RunDetail() {
   }
 
   async function handleRunAgain() {
-    if (!run || !graph) return
+    if (!run || !graph || !runId) return
 
-    const policy = reconciliationPolicyFromGraph(graph)
+    const snapshotJson = graphSpecSnapshotJsonFromRun(run)
+    const { spec: runTimeSpec } = resolveRunGraphSpecForDisplay(snapshotJson, graph?.spec)
+    const policy = reconciliationPolicyFromGraph({ spec: runTimeSpec ?? undefined })
     const ok = await showConfirm(runAgainWarningBody({ flowName: graph.name, policy }), {
       title: RUN_AGAIN_WARNING_TITLE,
-      confirmLabel: 'Run again',
+      confirmLabel: 'Replay run',
       destructive: policy === 'replace',
     })
     if (!ok) return
 
     try {
       setRunningAgain(true)
-      // Input lives on the saved flow spec; refresh so preview/state match what the API will use.
-      const latestGraph = await getGraph(run.graph_id)
-      setGraph(latestGraph)
-      const newRun = await createRun(run.graph_id)
-      // Navigate to the new run detail page
+      const newRun = await replayRun(runId)
       navigate(`/runs/${newRun.id}`)
     } catch (error) {
-      console.error('Failed to run again:', error)
-      // You could add a toast notification here if you have a toast system
+      console.error('Failed to replay run:', error)
+      showError('Failed to replay run. Please try again.')
     } finally {
       setRunningAgain(false)
     }
@@ -235,7 +238,9 @@ export default function RunDetail() {
     if (!runId || selectedItems.size === 0) return
 
     const count = selectedItems.size
-    const policy = reconciliationPolicyFromGraph(graph)
+    const snapshotJson = run ? graphSpecSnapshotJsonFromRun(run) : null
+    const { spec: runTimeSpec } = resolveRunGraphSpecForDisplay(snapshotJson, graph?.spec)
+    const policy = reconciliationPolicyFromGraph({ spec: runTimeSpec ?? undefined })
     const ok = await showConfirm(rerunWarningBody(count, { flowName: graph?.name, policy }), {
       title: rerunWarningTitle(count),
       confirmLabel: count === 1 ? 'Rerun' : `Rerun ${count} items`,
@@ -330,7 +335,14 @@ export default function RunDetail() {
     return null
   })()
 
-  const s3InputSource = s3InputSourceFromGraphSpec(graph?.spec)
+  const snapshotJson = run ? graphSpecSnapshotJsonFromRun(run) : null
+  const { source: s3InputSource, usedSnapshot: s3FromRunSnapshot } = s3InputSourceForRun(
+    snapshotJson,
+    graph?.spec,
+  )
+  const flowChangedSinceRunStart =
+    run &&
+    flowChangedSinceRun(snapshotJson, graph?.spec ? JSON.stringify(graph.spec) : null, run.flow_changed_since_run)
 
   if (loading) {
     return (
@@ -414,9 +426,15 @@ export default function RunDetail() {
                 {flowName}
               </Link>
             </p>
+            {flowChangedSinceRunStart ? (
+              <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
+                This flow has changed since this run. Settings shown below reflect what was used when
+                the run started.
+              </p>
+            ) : null}
             {s3InputSource ? (
               <p className="mt-1 text-sm text-muted-foreground">
-                S3 source:{' '}
+                S3 source{s3FromRunSnapshot ? ' at run time' : ''}:{' '}
                 <span className="font-mono text-xs" title={s3InputSource.uri}>
                   {s3InputSource.uri}
                 </span>
@@ -445,7 +463,7 @@ export default function RunDetail() {
           )}
           {hasAPIInput ? (
             <div 
-              title="API-triggered flows cannot be run again manually. Use the API endpoint to trigger a new run."
+              title="API-triggered flows cannot be replayed manually. Use the API endpoint to trigger a new run."
               className="inline-block"
             >
               <Button 
@@ -454,7 +472,7 @@ export default function RunDetail() {
                 className="flex items-center gap-2"
               >
                 <Play className="h-4 w-4" />
-                Run Again
+                Replay run
               </Button>
             </div>
           ) : (
@@ -468,7 +486,7 @@ export default function RunDetail() {
               ) : (
                 <Play className="h-4 w-4" />
               )}
-              {runningAgain ? 'Running...' : 'Run Again'}
+              {runningAgain ? 'Replaying...' : 'Replay run'}
             </Button>
           )}
         </div>

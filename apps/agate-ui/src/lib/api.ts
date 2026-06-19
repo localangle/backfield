@@ -222,6 +222,10 @@ export interface Run {
   /** Sum of tracked LLM spend for this run (when provided by the API). */
   estimated_ai_cost_total?: number
   estimated_ai_cost_total_incomplete?: boolean
+  /** Pinned flow spec JSON captured when the run started (when available). */
+  graph_spec_snapshot_json?: string | null
+  /** True when the saved flow differs from the pinned snapshot; null when no snapshot exists. */
+  flow_changed_since_run?: boolean | null
 }
 
 export interface ApiKey {
@@ -319,6 +323,8 @@ interface RawRun {
   whole_run_ai_cost_currency?: string | null
   estimated_ai_cost_total?: string | number | null
   estimated_ai_cost_total_incomplete?: boolean
+  graph_spec_snapshot_json?: string | null
+  flow_changed_since_run?: boolean | null
 }
 
 function _parseCostAmount(v: unknown): number {
@@ -512,6 +518,12 @@ function normalizeRun(raw: RawRun): Run {
           estimated_ai_cost_total_incomplete: Boolean(raw.estimated_ai_cost_total_incomplete),
         }
       : {}),
+    ...(raw.graph_spec_snapshot_json != null
+      ? { graph_spec_snapshot_json: raw.graph_spec_snapshot_json }
+      : {}),
+    ...(raw.flow_changed_since_run === true || raw.flow_changed_since_run === false
+      ? { flow_changed_since_run: raw.flow_changed_since_run }
+      : {}),
   }
 }
 
@@ -589,6 +601,13 @@ export async function createRun(graphId: string | number, data: RunCreate = {}):
   const raw = (await fetchAPI('/runs', {
     method: 'POST',
     body: JSON.stringify(body),
+  })) as RawRun
+  return normalizeRun(raw)
+}
+
+export async function replayRun(runId: string): Promise<Run> {
+  const raw = (await fetchAPI(`/runs/${runId}/replay`, {
+    method: 'POST',
   })) as RawRun
   return normalizeRun(raw)
 }

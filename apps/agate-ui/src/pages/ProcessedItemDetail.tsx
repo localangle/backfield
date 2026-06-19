@@ -30,6 +30,10 @@ import {
   reconciliationPolicyFromGraph,
   rerunWarningBody,
 } from '@/lib/rerunWarning'
+import {
+  graphSpecSnapshotJsonFromRun,
+  resolveRunGraphSpecForDisplay,
+} from '@/lib/runGraphSpec'
 import { isProcessedItemReviewLocked } from '@/lib/review/processedItemReviewLock'
 import {
   Download,
@@ -604,7 +608,12 @@ export default function ProcessedItemDetail() {
               }
               onClick={async () => {
                 if (!runId || !itemId) return
-                const policy = reconciliationPolicyFromGraph(graph)
+                const snapshotJson = run ? graphSpecSnapshotJsonFromRun(run) : null
+                const { spec: runTimeSpec } = resolveRunGraphSpecForDisplay(
+                  snapshotJson,
+                  graph?.spec,
+                )
+                const policy = reconciliationPolicyFromGraph({ spec: runTimeSpec ?? undefined })
                 const ok = await showConfirm(rerunWarningBody(1, { flowName: graph?.name, policy }), {
                   title: RERUN_WARNING_TITLE,
                   confirmLabel: 'Rerun',

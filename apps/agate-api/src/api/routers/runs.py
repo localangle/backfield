@@ -10,7 +10,11 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from agate_nodes.s3_output.node import s3_output_payloads_in_run_output
-from agate_runtime.run_graph_spec import merge_run_result_payload
+from agate_runtime.run_graph_spec import (
+    GRAPH_SPEC_JSON_KEY,
+    merge_run_result_payload,
+    parse_run_result_payload,
+)
 from agate_runtime.s3_batch import graph_spec_json_contains_s3_input
 from agate_runtime.single_item import build_single_item_input_from_graph_spec_json
 from api.deps import get_auth, get_session
@@ -323,6 +327,66 @@ class RunOut(BaseModel):
     #: Sum of all tracked LLM costs for this run (whole-graph + per processed item).
     estimated_ai_cost_total: Decimal = Decimal("0")
     estimated_ai_cost_total_incomplete: bool = False
+    #: Flow spec pinned on ``result_json`` at run start (S3 batch setup or single-item create).
+    graph_spec_snapshot_json: str | None = None
+    #: ``True`` when live flow differs from ``graph_spec_snapshot_json``; ``None`` without snapshot.
+    flow_changed_since_run: bool | None = None
+
+
+def _run_graph_spec_snapshot_json(run: AgateRun) -> str | None:
+    snap = parse_run_result_payload(run.result_json).get(GRAPH_SPEC_JSON_KEY)
+    if isinstance(snap, str) and snap.strip():
+        return snap
+    return None
+
+
+def _flow_changed_since_run(session: Session, run: AgateRun) -> bool | None:
+    snapshot = _run_graph_spec_snapshot_json(run)
+    if snapshot is None:
+        return None
+    graph = session.get(AgateGraph, run.graph_id)
+    if graph is None:
+        return None
+    try:
+        return json.loads(snapshot) != json.loads(graph.spec_json)
+    except json.JSONDecodeError:
+        return snapshot.strip() != (graph.spec_json or "").strip()
+
+
+def _run_configuration_fields(
+    session: Session,
+    run: AgateRun,
+    *,
+    include_flow_changed: bool,
+) -> tuple[str | None, bool | None]:
+    snapshot = _run_graph_spec_snapshot_json(run)
+    flow_changed = _flow_changed_since_run(session, run) if include_flow_changed else None
+    return snapshot, flow_changed
+
+
+def _resolved_run_snapshot_json(session: Session, run: AgateRun) -> str:
+    snapshot = _run_graph_spec_snapshot_json(run)
+    if snapshot is not None:
+        return snapshot
+    graph = session.get(AgateGraph, run.graph_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Graph not found")
+    return graph.spec_json
+
+
+def _replayable_processed_items(session: Session, run_id: str) -> list[AgateProcessedItem]:
+    rows = list(
+        session.exec(
+            select(AgateProcessedItem)
+            .where(AgateProcessedItem.run_id == run_id)
+            .order_by(AgateProcessedItem.id)
+        ).all()
+    )
+    return [
+        row
+        for row in rows
+        if row.input_json and (row.status or "").strip().lower() != "skipped"
+    ]
 
 
 def _graph_project_id(session: Session, graph_id: str) -> int:
@@ -758,6 +822,11 @@ def create_run(
 
     processed_items_out: list[ProcessedItemOut] = []
     if is_s3_batch:
+        run.result_json = merge_run_result_payload(None, graph_spec_json=g.spec_json)
+        run.updated_at = datetime.now(UTC)
+        session.add(run)
+        session.commit()
+        session.refresh(run)
         celery_app.send_task(
             "worker.tasks.execute_s3_batch_setup",
             args=[run.id],
@@ -823,6 +892,9 @@ def create_run(
             0,
         )
 
+    snapshot_json, flow_changed = _run_configuration_fields(
+        session, run, include_flow_changed=True
+    )
     return RunOut(
         id=run.id,
         graph_id=run.graph_id,
@@ -836,7 +908,73 @@ def create_run(
         succeeded_items=succeeded_items,
         failed_items=failed_items,
         processed_items=processed_items_out,
+        graph_spec_snapshot_json=snapshot_json,
+        flow_changed_since_run=flow_changed,
     )
+
+
+@router.post("/{run_id}/replay", response_model=RunOut)
+def replay_run(
+    run_id: str,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+):
+    """Create a new run that replays the source run's pinned flow settings and item inputs."""
+    source = session.get(AgateRun, run_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    pid = _graph_project_id(session, source.graph_id)
+    if pid:
+        require_project_access(session, auth, pid)
+    graph = session.get(AgateGraph, source.graph_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Graph not found")
+
+    snapshot_json = _resolved_run_snapshot_json(session, source)
+    replayable = _replayable_processed_items(session, source.id)
+
+    new_run = AgateRun(
+        graph_id=source.graph_id,
+        status="pending",
+        replace_article_geography_on_persist=source.replace_article_geography_on_persist,
+    )
+    session.add(new_run)
+    session.commit()
+    session.refresh(new_run)
+
+    new_run.result_json = merge_run_result_payload(None, graph_spec_json=snapshot_json)
+    new_run.updated_at = datetime.now(UTC)
+    session.add(new_run)
+    session.commit()
+    session.refresh(new_run)
+
+    if not replayable and _is_synthetic_whole_graph_item_view(session, source.id, 1):
+        new_run.status = "running"
+        new_run.updated_at = datetime.now(UTC)
+        session.add(new_run)
+        session.commit()
+        session.refresh(new_run)
+        celery_app.send_task(
+            "worker.tasks.execute_agate_run",
+            args=[new_run.id],
+            queue=_celery_queue(),
+        )
+        return _serialize_run(session, new_run)
+
+    if not replayable:
+        session.delete(new_run)
+        session.commit()
+        raise HTTPException(
+            status_code=409,
+            detail="This run is still preparing or has no replayable items yet.",
+        )
+
+    celery_app.send_task(
+        "worker.tasks.execute_run_replay_setup",
+        args=[source.id, new_run.id],
+        queue=_celery_queue(),
+    )
+    return _serialize_run(session, new_run)
 
 
 @router.get("", response_model=list[RunOut])
@@ -882,6 +1020,7 @@ def list_runs(
         total_items, pending_items, running_items, succeeded_items, failed_items = (
             item_count_map.get(r.id) or _synthetic_whole_run_counts(session, r)
         )
+        snapshot_json = _run_graph_spec_snapshot_json(r)
         out.append(
             RunOut(
                 id=r.id,
@@ -900,6 +1039,7 @@ def list_runs(
                 whole_run_ai_cost_currency=cur,
                 estimated_ai_cost_total=total_est,
                 estimated_ai_cost_total_incomplete=total_inc,
+                graph_spec_snapshot_json=snapshot_json,
             )
         )
     return out
@@ -2000,9 +2140,12 @@ def rerun_run_processed_item(
         require_project_access(session, auth, pid)
 
     if _is_synthetic_whole_graph_item_view(session, run_id, item_id):
+        snapshot = _run_graph_spec_snapshot_json(r)
         r.status = "pending"
-        r.result_json = None
         r.error_message = None
+        r.result_json = (
+            merge_run_result_payload(None, graph_spec_json=snapshot) if snapshot else None
+        )
         r.updated_at = datetime.now(UTC)
         session.add(r)
         session.commit()
@@ -2129,6 +2272,9 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
     total_items, pending_items, running_items, succeeded_items, failed_items = _run_item_counts(
         session, r, processed
     )
+    snapshot_json, flow_changed = _run_configuration_fields(
+        session, r, include_flow_changed=True
+    )
     return RunOut(
         id=r.id,
         graph_id=r.graph_id,
@@ -2149,6 +2295,8 @@ def _serialize_run(session: Session, r: AgateRun) -> RunOut:
         whole_run_ai_cost_currency=wr_currency,
         estimated_ai_cost_total=total_est,
         estimated_ai_cost_total_incomplete=total_inc,
+        graph_spec_snapshot_json=snapshot_json,
+        flow_changed_since_run=flow_changed,
     )
 
 

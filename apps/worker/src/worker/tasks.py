@@ -21,7 +21,12 @@ from agate_nodes.s3_output.node import (
 from agate_runtime import GraphSpec, execute_graph
 from agate_runtime.nodes import NODE_RUNNERS
 from agate_runtime.nodes.json_input import json_input_output_from_dict
-from agate_runtime.run_graph_spec import merge_run_result_payload, resolve_run_graph_spec_json
+from agate_runtime.run_graph_spec import (
+    GRAPH_SPEC_JSON_KEY,
+    merge_run_result_payload,
+    parse_run_result_payload,
+    resolve_run_graph_spec_json,
+)
 from agate_runtime.s3_batch import (
     list_json_keys_under_prefix,
     parse_s3_text_json_document,
@@ -397,7 +402,12 @@ def execute_agate_run(run_id: str) -> None:
         graph = session.get(AgateGraph, run.graph_id)
         if not graph:
             return
-        spec = GraphSpec.model_validate_json(graph.spec_json)
+        spec = GraphSpec.model_validate_json(
+            resolve_run_graph_spec_json(
+                run_result_json=run.result_json,
+                graph_spec_json=graph.spec_json,
+            )
+        )
         overlay = merge_project_and_org_llm_api_keys(session, graph.project_id)
         replace_geography = bool(run.replace_article_geography_on_persist)
         project_system_prompt = _load_project_system_prompt(session, graph.project_id)
@@ -651,6 +661,89 @@ def execute_s3_batch_setup(run_id: str) -> None:
                     run_fail.updated_at = datetime.now(UTC)
                     session3.add(run_fail)
                     session3.commit()
+
+
+@celery_app.task(name="worker.tasks.execute_run_replay_setup")
+def execute_run_replay_setup(source_run_id: str, new_run_id: str) -> None:
+    """Clone replayable processed items from a source run and re-queue them on a new run."""
+    engine = get_engine()
+    with Session(engine) as session:
+        source = session.get(AgateRun, source_run_id)
+        new_run = session.get(AgateRun, new_run_id)
+        if source is None or new_run is None:
+            return
+        if new_run.status != "pending":
+            return
+
+        source_items = list(
+            session.exec(
+                select(AgateProcessedItem)
+                .where(AgateProcessedItem.run_id == source_run_id)
+                .order_by(AgateProcessedItem.id)
+            ).all()
+        )
+        replay_rows = [
+            row
+            for row in source_items
+            if row.input_json and (row.status or "").strip().lower() != "skipped"
+        ]
+        if not replay_rows:
+            new_run.status = "failed"
+            new_run.error_message = "No replayable items found on the source run."
+            new_run.updated_at = datetime.now(UTC)
+            session.add(new_run)
+            session.commit()
+            return
+
+        source_payload = parse_run_result_payload(source.result_json)
+        merge_updates: dict[str, Any] = {}
+        s3_batch = source_payload.get("s3_batch")
+        if isinstance(s3_batch, dict):
+            merge_updates["s3_batch"] = s3_batch
+        snap = source_payload.get(GRAPH_SPEC_JSON_KEY)
+        if isinstance(snap, str) and snap.strip():
+            merge_updates[GRAPH_SPEC_JSON_KEY] = snap
+
+        new_run.status = "running"
+        new_run.updated_at = datetime.now(UTC)
+        new_run.result_json = merge_run_result_payload(new_run.result_json, **merge_updates)
+        session.add(new_run)
+
+        pending_ids: list[int] = []
+        for row in replay_rows:
+            clone = AgateProcessedItem(
+                run_id=new_run_id,
+                source_file=row.source_file,
+                input_json=row.input_json,
+                status="pending",
+            )
+            session.add(clone)
+            session.flush()
+            if clone.id is not None:
+                pending_ids.append(int(clone.id))
+
+        session.commit()
+
+        if not pending_ids:
+            new_run_fail = session.get(AgateRun, new_run_id)
+            if new_run_fail is not None:
+                new_run_fail.status = "failed"
+                new_run_fail.error_message = "Replay setup produced no processed items."
+                new_run_fail.updated_at = datetime.now(UTC)
+                session.add(new_run_fail)
+                session.commit()
+            return
+
+        logger.info(
+            "execute_run_replay_setup: queueing chord of %d execute_processed_item task(s) "
+            "for replay run %s (source %s)",
+            len(pending_ids),
+            new_run_id,
+            source_run_id,
+        )
+        _queue = os.environ.get("CELERY_QUEUE", "agate")
+        header = group(execute_processed_item.s(item_id) for item_id in pending_ids)
+        chord(header, finalize_s3_parent_run.s(new_run_id)).apply_async(queue=_queue)
 
 
 @celery_app.task(
