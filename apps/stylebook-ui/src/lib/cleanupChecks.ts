@@ -30,6 +30,14 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
     entityType: "location",
   },
   {
+    id: "mismatched-locations",
+    title: "Possibly mismatched places",
+    description:
+      "Places with linked mentions whose names look unlike this record. Open each record to review the link.",
+    kind: "list",
+    entityType: "location",
+  },
+  {
     id: "duplicate-people",
     title: "Possible duplicate people",
     description:

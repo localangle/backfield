@@ -36,7 +36,8 @@ class CleanupNameMismatchIssueRow:
     id: str
     slug: str
     label: str
-    entity_type: Literal["person", "organization"]
+    entity_type: Literal["person", "organization", "location"]
     status: str
     mismatched_linked_count: int
     mismatched_examples: list[str]
+    location_type: str | None = None

@@ -77,12 +77,54 @@ def address_requests_street_resolution(addr_line: str) -> bool:
     return len(s) >= 10
 
 
-def _place_name_token(components: dict[str, Any] | None) -> str:
+def _place_name_token(
+    components: dict[str, Any] | None,
+    location_text: str = "",
+) -> str:
     c = components if isinstance(components, dict) else {}
     place = c.get("place")
     if isinstance(place, dict):
-        return str(place.get("name") or "").strip().lower()
-    return str(place or "").strip().lower()
+        name = str(place.get("name") or "").strip().lower()
+        if name:
+            return name
+    raw = str(place or "").strip().lower()
+    if raw:
+        return raw
+    first = str(location_text or "").split(",")[0]
+    key = _compare_key(normalize_substrate_cache_query(first))
+    tokens = [t for t in key.split() if t]
+    if tokens and tokens[0] in _DIRECTION_PREFIX:
+        tokens = tokens[1:]
+    return " ".join(tokens)
+
+
+def _meaningful_place_name_tokens(token: str) -> list[str]:
+    return [t for t in (token or "").split() if len(t) >= 2]
+
+
+_POI_TOKEN_CANONICAL_TYPES: frozenset[str] = frozenset(
+    {
+        "city",
+        "town",
+        "village",
+        "place",
+        "point",
+        "neighborhood",
+        "address",
+        "region_state",
+        "region_national",
+        "county",
+        "political_district",
+    }
+)
+_POI_TOKEN_STRICT_CONTAINER_TYPES: frozenset[str] = frozenset(
+    {
+        "region_state",
+        "region_national",
+        "county",
+        "political_district",
+    }
+)
 
 
 def _label_contains_token(label: str, token: str) -> bool:
@@ -229,7 +271,7 @@ def cache_hit_sane_for_substrate(
         addr_line = address_line_from_components(components, location_text)
         if not address_requests_street_resolution(addr_line):
             return True
-        poi = _place_name_token(components)
+        poi = _place_name_token(components, location_text)
         if canon_lt in _POI_LIKE_CANONICAL_TYPES:
             if len(poi) >= 2 and _label_contains_token(label_blob, poi):
                 return True
@@ -276,15 +318,11 @@ def cache_hit_sane_for_substrate(
         return False
 
     if substrate_lt in ("place", "point"):
-        token = _place_name_token(components)
-        if len(token) >= 2 and canon_lt in (
-            "city",
-            "town",
-            "village",
-            "place",
-            "point",
-            "neighborhood",
-        ):
+        token = _place_name_token(components, location_text)
+        if len(token) >= 2 and canon_lt in _POI_TOKEN_CANONICAL_TYPES:
+            if canon_lt in _POI_TOKEN_STRICT_CONTAINER_TYPES:
+                if len(_meaningful_place_name_tokens(token)) < 2:
+                    return True
             if not _label_contains_token(label_blob, token):
                 return False
         return True

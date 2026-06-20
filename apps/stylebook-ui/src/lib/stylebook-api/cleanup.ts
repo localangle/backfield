@@ -91,6 +91,7 @@ export interface CleanupMismatchIssue {
   updated_at: string
   person_type?: string | null
   organization_type?: string | null
+  location_type?: string | null
   title?: string | null
   affiliation?: string | null
   mismatched_linked_count: number
@@ -245,6 +246,14 @@ export async function getMismatchedOrganizations(
   )
 }
 
+export async function getMismatchedLocations(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupMismatchIssuesResponse> {
+  return stylebookJsonFetch<PaginatedCleanupMismatchIssuesResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "mismatched-locations")}?${paginatedListQuery(params)}`,
+  )
+}
+
 export async function getCleanupCheckResults(
   params: GetCleanupCheckResultsParams,
 ): Promise<
@@ -263,6 +272,8 @@ export async function getCleanupCheckResults(
       return getMismatchedPeople(params)
     case "mismatched-organizations":
       return getMismatchedOrganizations(params)
+    case "mismatched-locations":
+      return getMismatchedLocations(params)
     default:
       throw new Error(`Unknown cleanup check: ${params.checkId}`)
   }

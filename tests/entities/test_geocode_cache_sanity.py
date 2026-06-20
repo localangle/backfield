@@ -305,3 +305,63 @@ def test_street_allows_same_street_with_different_neighborhood_tail() -> None:
         )
         is True
     )
+
+
+def test_place_blocks_address_canonical_without_venue_name() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="Gene's Bistro, Chicago, IL",
+            components={"place": {"name": "Gene's Bistro"}, "city": "Chicago"},
+            match_label="500 N Franklin St, Chicago, IL",
+            match_formatted_address="500 N Franklin St, Chicago, IL",
+            match_location_type="address",
+            match_geometry_type="Point",
+        )
+        is False
+    )
+
+
+def test_place_allows_address_canonical_when_venue_name_present() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="Gene's Bistro, Chicago, IL",
+            components={"place": {"name": "Gene's Bistro"}, "city": "Chicago"},
+            match_label="Gene's Bistro, Chicago, IL",
+            match_formatted_address="Gene's Bistro, Chicago, IL",
+            match_location_type="address",
+            match_geometry_type="Point",
+        )
+        is True
+    )
+
+
+def test_place_blocks_region_state_when_poi_name_absent() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="Kingdom Home, Eastern Uganda, Uganda",
+            components={"place": {"name": "Kingdom Home"}},
+            match_label="Eastern Uganda",
+            match_formatted_address="Eastern Uganda",
+            match_location_type="region_state",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )
+
+
+def test_place_token_fallback_uses_location_text_when_components_empty() -> None:
+    assert (
+        cache_hit_sane_for_substrate(
+            substrate_location_type="place",
+            location_text="Kingdom Home, Eastern Uganda, Uganda",
+            components={},
+            match_label="Eastern Uganda",
+            match_formatted_address="Eastern Uganda",
+            match_location_type="region_state",
+            match_geometry_type="Polygon",
+        )
+        is False
+    )

@@ -672,7 +672,9 @@ function MismatchedLinksList({
   const emptyLabel =
     entityType === "person"
       ? "No people with possibly mismatched links in this stylebook."
-      : "No organizations with possibly mismatched links in this stylebook."
+      : entityType === "organization"
+        ? "No organizations with possibly mismatched links in this stylebook."
+        : "No places with possibly mismatched links in this stylebook."
 
   if (canonicals.length === 0) {
     return <p className="text-muted-foreground py-8 text-center">{emptyLabel}</p>
@@ -684,6 +686,9 @@ function MismatchedLinksList({
     }
     if (entityType === "organization" && canonical.organization_type) {
       return placeExtractTypeLabel(canonical.organization_type)
+    }
+    if (entityType === "location" && canonical.location_type) {
+      return placeExtractTypeLabel(canonical.location_type)
     }
     return "—"
   }

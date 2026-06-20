@@ -488,6 +488,83 @@ def test_organization_name_mismatch_finder_sqlite() -> None:
         assert "Acme Corporation" in rows[0].mismatched_examples
 
 
+def test_location_name_mismatch_finder_sqlite() -> None:
+    from backfield_entities.quality.dismissals import dismiss_canonical_issue
+    from backfield_entities.quality.finders.location_name_mismatch import (
+        count_location_name_mismatches,
+        list_location_name_mismatches,
+    )
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, org_id = _make_stylebook(session)
+        project = BackfieldProject(organization_id=org_id, name="Demo", slug="demo")
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
+        canon = StylebookLocationCanonical(
+            stylebook_id=stylebook_id,
+            slug="chicago-avenue",
+            label="Chicago Avenue, Near North Side, Chicago, IL",
+            location_type="street_road",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+
+        session.add(
+            SubstrateLocation(
+                project_id=int(project.id),
+                name="62nd Street, Chicago, IL",
+                normalized_name="62nd street, chicago, il",
+                location_type="street_road",
+                identity_fingerprint="fp-location-mismatch",
+                stylebook_location_canonical_id=str(canon.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        )
+        session.commit()
+
+        assert (
+            count_location_name_mismatches(
+                session,
+                stylebook_id=stylebook_id,
+                organization_id=org_id,
+            )
+            == 1
+        )
+        rows, total = list_location_name_mismatches(
+            session,
+            stylebook_id=stylebook_id,
+            organization_id=org_id,
+            limit=10,
+            offset=0,
+        )
+        assert total == 1
+        assert rows[0].label == "Chicago Avenue, Near North Side, Chicago, IL"
+        assert rows[0].mismatched_linked_count == 1
+        assert "62nd Street, Chicago, IL" in rows[0].mismatched_examples
+
+        dismiss_canonical_issue(
+            session,
+            stylebook_id=stylebook_id,
+            check_id="mismatched-locations",
+            canonical_id=str(canon.id),
+            created_by_user_id=None,
+        )
+        session.commit()
+        assert (
+            count_location_name_mismatches(
+                session,
+                stylebook_id=stylebook_id,
+                organization_id=org_id,
+            )
+            == 0
+        )
+
+
 def test_exact_duplicate_organization_apostrophe_normalization_sqlite() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)

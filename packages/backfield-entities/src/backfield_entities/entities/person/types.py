@@ -129,6 +129,25 @@ def derive_person_sort_key(
     return None
 
 
+_PERSON_GENERATIONAL_SUFFIX_TOKENS: frozenset[str] = frozenset(
+    {"jr", "sr", "ii", "iii", "iv", "junior", "senior"}
+)
+
+
+def person_generational_suffix_key(normalized_name: str) -> str:
+    """Terminal generational suffix token when present (``jr``, ``iii``, etc.)."""
+    key = person_match_key(normalized_name)
+    if not key:
+        return ""
+    tokens = key.split()
+    if not tokens:
+        return ""
+    last = tokens[-1]
+    if last in _PERSON_GENERATIONAL_SUFFIX_TOKENS:
+        return last
+    return ""
+
+
 def person_identity_fingerprint(
     *,
     normalized_name: str,
@@ -136,17 +155,20 @@ def person_identity_fingerprint(
 ) -> str:
     """Project-scoped dedupe hash for substrate person rows.
 
-    Uses accent-folded name (``person_match_key``) plus affiliation only.
-    Title/position is intentionally excluded — it is volatile per article and
-    is not used for canonical tier-1 strong match either.
+    Uses accent-folded name (``person_match_key``) plus affiliation and optional
+    generational suffix (``Jr.`` vs ``III``). Title/position is intentionally
+    excluded — it is volatile per article and is not used for canonical tier-1
+    strong match either.
     """
     from backfield_entities.registry.entity_types import compute_identity_fingerprint
 
     name_key = person_match_key(normalized_name)
     if not name_key:
         name_key = normalize_person_text(normalized_name)
+    suffix_key = person_generational_suffix_key(normalized_name)
     return compute_identity_fingerprint(
         "person",
         normalized_name=name_key,
         affiliation=normalize_person_text(affiliation),
+        generational_suffix=suffix_key,
     )
