@@ -798,6 +798,17 @@ def test_candidate_ai_review_start(
                 litellm_model="gpt-5-nano",
             )
         )
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        editor = s.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "editor@example.com")
+        ).one()
+        s.add(
+            BackfieldProjectMembership(
+                project_id=int(proj.id),
+                user_id=int(editor.id),  # type: ignore[arg-type]
+                role="editor",
+            )
+        )
         s.commit()
 
     models = editor_client.get("/v1/stylebooks/default/candidates/ai-models")
