@@ -780,7 +780,10 @@ def test_import_csv_people_duplicate_labels_create_two(
         assert len(slugs) == 2
 
 
-def test_candidate_ai_review_start(editor_client: TestClient, stylebook_test_engine: Engine) -> None:
+def test_candidate_ai_review_start(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
     with Session(stylebook_test_engine) as s:
         org = s.exec(select(BackfieldOrganization)).one()
         s.add(

@@ -1,4 +1,6 @@
-from backfield_entities.canonical.candidate_review import strip_ai_recommendations_from_review_reasons
+from backfield_entities.canonical.candidate_review import (
+    strip_ai_recommendations_from_review_reasons,
+)
 
 
 def test_strip_ai_recommendations_keeps_review_context() -> None:

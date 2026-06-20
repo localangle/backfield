@@ -6,6 +6,8 @@ from backfield_db import (
     StylebookLocationCanonical,
     SubstrateLocation,
 )
+from sqlmodel import Session, col, select
+
 from backfield_entities.canonical.jurisdiction import place_extract_components_from_entry
 from backfield_entities.canonical.link import CANONICAL_LINK_LINKED
 from backfield_entities.entities.location.link_identity import location_link_is_obvious_mismatch
@@ -17,7 +19,6 @@ from backfield_entities.quality.finders._name_mismatch_common import (
     organization_project_ids,
 )
 from backfield_entities.quality.types import CleanupNameMismatchIssueRow
-from sqlmodel import Session, col, select
 
 
 def _aggregate_location_mismatches(
