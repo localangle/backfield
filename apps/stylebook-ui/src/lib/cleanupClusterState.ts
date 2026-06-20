@@ -163,10 +163,10 @@ export function applyKeepSeparateProposalToClusterResults(
   }
 }
 
-export function applyDismissCanonicalToListResults<T extends { id: string }>(
-  results: { canonicals: T[]; total: number },
-  canonicalId: string,
-): { canonicals: T[]; total: number } {
+export function applyDismissCanonicalToListResults<
+  T extends { id: string },
+  R extends { canonicals: T[]; total: number },
+>(results: R, canonicalId: string): R {
   const canonicals = results.canonicals.filter((canonical) => canonical.id !== canonicalId)
   const removed = canonicals.length < results.canonicals.length
   return {

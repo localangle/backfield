@@ -1,6 +1,7 @@
 /** Label similarity helpers for Stylebook candidate create + post-create link prompts. */
 
 import { suggestedRowAction } from "@/lib/candidateQueueSuggestions"
+import type { QueueCandidateBase } from "@/lib/entityConfigs/candidateQueueTypes"
 
 export const CREATE_LINK_NUDGE_MIN_SCORE = 0.86
 
@@ -121,7 +122,7 @@ export type DuplicateCreateNewSummary = {
 }
 
 /** Group open-queue rows that share a name and both suggest creating a new canonical. */
-export function duplicateCreateNewClusters<T>(
+export function duplicateCreateNewClusters<T extends QueueCandidateBase>(
   candidates: T[],
   getDisplayName: (candidate: T) => string,
 ): DuplicateCreateNewCluster[] {
@@ -154,7 +155,7 @@ export function duplicateCreateNewClusters<T>(
     )
 }
 
-export function duplicateCreateNewSummary<T>(
+export function duplicateCreateNewSummary<T extends QueueCandidateBase>(
   candidates: T[],
   getDisplayName: (candidate: T) => string,
 ): DuplicateCreateNewSummary {
