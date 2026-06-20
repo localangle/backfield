@@ -55,7 +55,18 @@ from backfield_entities.quality.finders.location_geography_issues import (
     count_location_geography_issues,
     list_location_geography_issues,
 )
-from backfield_entities.quality.types import CleanupLocationGeographyIssueRow
+from backfield_entities.quality.finders.organization_name_mismatch import (
+    count_organization_name_mismatches,
+    list_organization_name_mismatches,
+)
+from backfield_entities.quality.finders.person_name_mismatch import (
+    count_person_name_mismatches,
+    list_person_name_mismatches,
+)
+from backfield_entities.quality.types import (
+    CleanupLocationGeographyIssueRow,
+    CleanupNameMismatchIssueRow,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session
@@ -141,6 +152,34 @@ class PaginatedCleanupLocationsResponse(BaseModel):
     has_prev: bool
 
 
+class CleanupPersonMismatchIssueOut(CanonicalPersonResponse):
+    mismatched_linked_count: int = 0
+    mismatched_examples: list[str] = Field(default_factory=list)
+
+
+class CleanupOrganizationMismatchIssueOut(CanonicalOrganizationResponse):
+    mismatched_linked_count: int = 0
+    mismatched_examples: list[str] = Field(default_factory=list)
+
+
+class PaginatedCleanupPersonMismatchResponse(BaseModel):
+    canonicals: list[CleanupPersonMismatchIssueOut]
+    total: int
+    page: int
+    per_page: int
+    has_next: bool
+    has_prev: bool
+
+
+class PaginatedCleanupOrganizationMismatchResponse(BaseModel):
+    canonicals: list[CleanupOrganizationMismatchIssueOut]
+    total: int
+    page: int
+    per_page: int
+    has_next: bool
+    has_prev: bool
+
+
 class MergeCleanupCanonicalBody(BaseModel):
     target_canonical_id: str = Field(min_length=1)
 
@@ -206,6 +245,18 @@ def _count_for_check(
         )
     if check_id == "missing-geometry-locations":
         return count_location_geography_issues(
+            session,
+            stylebook_id=stylebook_id,
+            organization_id=organization_id,
+        )
+    if check_id == "mismatched-people":
+        return count_person_name_mismatches(
+            session,
+            stylebook_id=stylebook_id,
+            organization_id=organization_id,
+        )
+    if check_id == "mismatched-organizations":
+        return count_organization_name_mismatches(
             session,
             stylebook_id=stylebook_id,
             organization_id=organization_id,
@@ -326,6 +377,66 @@ def _organization_responses_with_counts(
                 row,
                 linked_substrate_count=lc.get(cid, 0),
                 mention_count=mc.get(cid, 0),
+            )
+        )
+    return out
+
+
+def _person_mismatch_responses_with_counts(
+    session: Session,
+    *,
+    project_ids: list[int],
+    rows_by_id: dict[str, StylebookPersonCanonical],
+    items: list[CleanupNameMismatchIssueRow],
+) -> list[CleanupPersonMismatchIssueOut]:
+    canonical_ids = [item.id for item in items]
+    base_rows = _person_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        canonical_ids=canonical_ids,
+    )
+    by_id = {row.id: row for row in base_rows}
+    out: list[CleanupPersonMismatchIssueOut] = []
+    for item in items:
+        base = by_id.get(item.id)
+        if base is None:
+            continue
+        out.append(
+            CleanupPersonMismatchIssueOut(
+                **base.model_dump(),
+                mismatched_linked_count=int(item.mismatched_linked_count),
+                mismatched_examples=list(item.mismatched_examples),
+            )
+        )
+    return out
+
+
+def _organization_mismatch_responses_with_counts(
+    session: Session,
+    *,
+    project_ids: list[int],
+    rows_by_id: dict[str, StylebookOrganizationCanonical],
+    items: list[CleanupNameMismatchIssueRow],
+) -> list[CleanupOrganizationMismatchIssueOut]:
+    canonical_ids = [item.id for item in items]
+    base_rows = _organization_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        canonical_ids=canonical_ids,
+    )
+    by_id = {row.id: row for row in base_rows}
+    out: list[CleanupOrganizationMismatchIssueOut] = []
+    for item in items:
+        base = by_id.get(item.id)
+        if base is None:
+            continue
+        out.append(
+            CleanupOrganizationMismatchIssueOut(
+                **base.model_dump(),
+                mismatched_linked_count=int(item.mismatched_linked_count),
+                mismatched_examples=list(item.mismatched_examples),
             )
         )
     return out
@@ -657,6 +768,118 @@ def list_missing_geometry_location_check(
     )
     page = offset // limit + 1 if limit else 1
     return PaginatedCleanupLocationsResponse(
+        canonicals=canonicals,
+        total=total,
+        page=page,
+        per_page=limit,
+        has_next=offset + len(canonicals) < total,
+        has_prev=offset > 0,
+    )
+
+
+@router.get(
+    "/{stylebook_slug}/cleanup/checks/mismatched-people",
+    response_model=PaginatedCleanupPersonMismatchResponse,
+)
+def list_mismatched_people_check(
+    stylebook_slug: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope linked/mention counts.",
+    ),
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedCleanupPersonMismatchResponse:
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=int(sb.organization_id),
+    )
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    items, total = list_person_name_mismatches(
+        session,
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        limit=limit,
+        offset=offset,
+    )
+    cids = [item.id for item in items]
+    rows_by_id = {
+        cid: row
+        for cid in cids
+        if (row := session.get(StylebookPersonCanonical, cid)) is not None
+    }
+    canonicals = _person_mismatch_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        items=items,
+    )
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupPersonMismatchResponse(
+        canonicals=canonicals,
+        total=total,
+        page=page,
+        per_page=limit,
+        has_next=offset + len(canonicals) < total,
+        has_prev=offset > 0,
+    )
+
+
+@router.get(
+    "/{stylebook_slug}/cleanup/checks/mismatched-organizations",
+    response_model=PaginatedCleanupOrganizationMismatchResponse,
+)
+def list_mismatched_organizations_check(
+    stylebook_slug: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope linked/mention counts.",
+    ),
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedCleanupOrganizationMismatchResponse:
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=int(sb.organization_id),
+    )
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    items, total = list_organization_name_mismatches(
+        session,
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        limit=limit,
+        offset=offset,
+    )
+    cids = [item.id for item in items]
+    rows_by_id = {
+        cid: row
+        for cid in cids
+        if (row := session.get(StylebookOrganizationCanonical, cid)) is not None
+    }
+    canonicals = _organization_mismatch_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        items=items,
+    )
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupOrganizationMismatchResponse(
         canonicals=canonicals,
         total=total,
         page=page,

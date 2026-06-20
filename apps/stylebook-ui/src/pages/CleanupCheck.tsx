@@ -41,8 +41,11 @@ import {
   rejectCleanupAiProposal,
   type CleanupAiProposal,
   type CleanupLocationIssue,
+  type CleanupMismatchIssue,
   type PaginatedDuplicateClustersResponse,
+  type PaginatedCleanupListResults,
   type PaginatedCleanupLocationIssuesResponse,
+  type PaginatedCleanupMismatchIssuesResponse,
 } from "@/lib/api"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
@@ -107,8 +110,7 @@ export default function CleanupCheck() {
   const [page, setPage] = useState(1)
   const [clusterResults, setClusterResults] =
     useState<PaginatedDuplicateClustersResponse | null>(null)
-  const [listResults, setListResults] =
-    useState<PaginatedCleanupLocationIssuesResponse | null>(null)
+  const [listResults, setListResults] = useState<PaginatedCleanupListResults | null>(null)
   const clusterStableIdByMemberRef = useRef<Map<string, string>>(new Map())
   const nextClusterStableIdRef = useRef(0)
   const dismissedCleanupPairsRef = useRef<Set<string>>(new Set())
@@ -180,7 +182,7 @@ export default function CleanupCheck() {
         })
         setListResults(null)
       } else {
-        setListResults(response as PaginatedCleanupLocationIssuesResponse)
+        setListResults(response as PaginatedCleanupListResults)
         setClusterResults(null)
       }
     } catch (error) {
@@ -312,7 +314,7 @@ export default function CleanupCheck() {
     [stylebookSlug, config, showConfirm, showError],
   )
 
-  const handleDismissGeographyIssue = useCallback(
+  const handleDismissListIssue = useCallback(
     async (canonicalId: string) => {
       if (!stylebookSlug || !config) return
       try {
@@ -326,7 +328,7 @@ export default function CleanupCheck() {
         )
       } catch (error) {
         showError(
-          error instanceof Error ? error.message : "Failed to dismiss geography issue",
+          error instanceof Error ? error.message : "Failed to dismiss issue",
         )
       }
     },
@@ -581,12 +583,20 @@ export default function CleanupCheck() {
           onAcceptAiProposal={canEdit ? handleAcceptAiProposal : undefined}
           onRejectAiProposal={canEdit ? handleRejectAiProposal : undefined}
         />
-      ) : (
+      ) : config.id === "missing-geometry-locations" ? (
         <GeographyIssuesList
-          canonicals={listResults?.canonicals ?? []}
+          canonicals={(listResults as PaginatedCleanupLocationIssuesResponse | null)?.canonicals ?? []}
           locationDetailHref={detailHref}
           canEdit={canEdit}
-          onDismiss={canEdit ? handleDismissGeographyIssue : undefined}
+          onDismiss={canEdit ? handleDismissListIssue : undefined}
+        />
+      ) : (
+        <MismatchedLinksList
+          canonicals={(listResults as PaginatedCleanupMismatchIssuesResponse | null)?.canonicals ?? []}
+          entityType={entityType}
+          detailHref={detailHref}
+          canEdit={canEdit}
+          onDismiss={canEdit ? handleDismissListIssue : undefined}
         />
       )}
 
@@ -599,9 +609,141 @@ export default function CleanupCheck() {
           hasNext={pagination.hasNext}
           hasPrev={pagination.hasPrev}
           onPageChange={setPage}
-          itemLabel={config.kind === "cluster" ? "clusters" : "locations"}
+          itemLabel={
+            config.kind === "cluster"
+              ? "clusters"
+              : entityType === "location"
+                ? "locations"
+                : entityType === "person"
+                  ? "people"
+                  : "organizations"
+          }
         />
       ) : null}
+    </div>
+  )
+}
+
+function mismatchExamplesLabel(examples: string[], count: number): string {
+  const shown = examples.filter(Boolean)
+  if (shown.length === 0) {
+    return count === 1 ? "1 mismatched link" : `${count} mismatched links`
+  }
+  const suffix =
+    count > shown.length ? ` (+${count - shown.length} more)` : ""
+  return `${shown.join("; ")}${suffix}`
+}
+
+function MismatchedLinksList({
+  canonicals,
+  entityType,
+  detailHref,
+  canEdit = false,
+  onDismiss,
+}: {
+  canonicals: CleanupMismatchIssue[]
+  entityType: CleanupEntityType
+  detailHref: (canonicalId: string) => string
+  canEdit?: boolean
+  onDismiss?: (canonicalId: string) => void | Promise<void>
+}) {
+  const emptyLabel =
+    entityType === "person"
+      ? "No people with possibly mismatched links in this stylebook."
+      : "No organizations with possibly mismatched links in this stylebook."
+
+  if (canonicals.length === 0) {
+    return <p className="text-muted-foreground py-8 text-center">{emptyLabel}</p>
+  }
+
+  const typeLabel = (canonical: CleanupMismatchIssue): string => {
+    if (entityType === "person" && canonical.person_type) {
+      return placeExtractTypeLabel(canonical.person_type)
+    }
+    if (entityType === "organization" && canonical.organization_type) {
+      return placeExtractTypeLabel(canonical.organization_type)
+    }
+    return "—"
+  }
+
+  return (
+    <div className="rounded-lg border overflow-x-auto">
+      <table className="w-full table-fixed text-sm min-w-[44rem]">
+        <colgroup>
+          <col style={{ width: "24%" }} />
+          <col style={{ width: "26%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "8%" }} />
+          {canEdit && onDismiss ? <col style={{ width: "12%" }} /> : null}
+        </colgroup>
+        <thead className="bg-muted/50 text-left">
+          <tr>
+            <th className="px-4 py-3 font-medium min-w-0">Name</th>
+            <th className="px-4 py-3 font-medium min-w-0">Example mismatched links</th>
+            <th className="px-4 py-3 font-medium min-w-0">Type</th>
+            <th className="px-4 py-3 font-medium min-w-0">Status</th>
+            <th className="px-4 py-3 font-medium text-right">Linked</th>
+            <th className="px-4 py-3 font-medium text-right">Mentions</th>
+            {canEdit && onDismiss ? (
+              <th className="px-4 py-3 font-medium text-right">Action</th>
+            ) : null}
+          </tr>
+        </thead>
+        <tbody>
+          {canonicals.map((canonical) => {
+            const examplesText = mismatchExamplesLabel(
+              canonical.mismatched_examples ?? [],
+              canonical.mismatched_linked_count ?? 0,
+            )
+            return (
+              <tr key={canonical.id} className="border-t hover:bg-muted/30">
+                <td className="px-4 py-3 min-w-0">
+                  <Link
+                    to={detailHref(canonical.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline block truncate"
+                    title={canonical.label}
+                  >
+                    {canonical.label}
+                  </Link>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate" title={examplesText}>
+                    {examplesText}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate">{typeLabel(canonical)}</span>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate">{canonical.status}</span>
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {canonical.linked_substrate_count ?? 0}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {canonical.mention_count ?? 0}
+                </td>
+                {canEdit && onDismiss ? (
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void onDismiss(canonical.id)}
+                    >
+                      Mark reviewed
+                    </Button>
+                  </td>
+                ) : null}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

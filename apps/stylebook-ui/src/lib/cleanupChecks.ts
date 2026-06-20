@@ -40,11 +40,27 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
     entityType: "person",
   },
   {
+    id: "mismatched-people",
+    title: "Possibly mismatched people",
+    description:
+      "People with linked mentions whose names look unlike this record. Open each record to review the link.",
+    kind: "list",
+    entityType: "person",
+  },
+  {
     id: "duplicate-organizations",
     title: "Possible duplicate organizations",
     description:
       "Same or very similar organization names. Open each record to compare and relink evidence.",
     kind: "cluster",
+    entityType: "organization",
+  },
+  {
+    id: "mismatched-organizations",
+    title: "Possibly mismatched organizations",
+    description:
+      "Organizations with linked mentions whose names look unlike this record. Open each record to review the link.",
+    kind: "list",
     entityType: "organization",
   },
 ]

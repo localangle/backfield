@@ -52,6 +52,16 @@ PERSON_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
         entity_type="person",
         kind="cluster",
     ),
+    CleanupCheckDef(
+        id="mismatched-people",
+        title="Possibly mismatched people",
+        description=(
+            "People with linked mentions whose names look unlike this record. "
+            "Open each record to review the link."
+        ),
+        entity_type="person",
+        kind="list",
+    ),
 )
 
 ORGANIZATION_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
@@ -64,6 +74,16 @@ ORGANIZATION_CLEANUP_CHECKS: tuple[CleanupCheckDef, ...] = (
         ),
         entity_type="organization",
         kind="cluster",
+    ),
+    CleanupCheckDef(
+        id="mismatched-organizations",
+        title="Possibly mismatched organizations",
+        description=(
+            "Organizations with linked mentions whose names look unlike this record. "
+            "Open each record to review the link."
+        ),
+        entity_type="organization",
+        kind="list",
     ),
 )
 

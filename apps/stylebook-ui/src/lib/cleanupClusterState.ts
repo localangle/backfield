@@ -163,10 +163,10 @@ export function applyKeepSeparateProposalToClusterResults(
   }
 }
 
-export function applyDismissCanonicalToListResults(
-  results: PaginatedCleanupLocationIssuesResponse,
+export function applyDismissCanonicalToListResults<T extends { id: string }>(
+  results: { canonicals: T[]; total: number },
   canonicalId: string,
-): PaginatedCleanupLocationIssuesResponse {
+): { canonicals: T[]; total: number } {
   const canonicals = results.canonicals.filter((canonical) => canonical.id !== canonicalId)
   const removed = canonicals.length < results.canonicals.length
   return {

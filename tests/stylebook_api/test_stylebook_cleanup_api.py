@@ -198,13 +198,17 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
         "duplicate-locations",
         "missing-geometry-locations",
         "duplicate-people",
+        "mismatched-people",
         "duplicate-organizations",
+        "mismatched-organizations",
     }
     by_id = {check["id"]: check["count"] for check in body["checks"]}
     assert by_id["duplicate-locations"] == 2
     assert by_id["duplicate-people"] == 1
     assert by_id["duplicate-organizations"] == 1
     assert by_id["missing-geometry-locations"] == 6
+    assert by_id["mismatched-people"] == 0
+    assert by_id["mismatched-organizations"] == 0
     assert body["total_open"] == sum(by_id.values())
 
 
@@ -567,6 +571,147 @@ def test_dismiss_missing_geometry_location(cleanup_client: tuple[TestClient, Eng
     assert after.json()["total"] == before_total - 1
     labels = {item["label"] for item in after.json()["canonicals"]}
     assert "No map pin here" not in labels
+
+
+def test_mismatched_people_check(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        org = session.exec(select(BackfieldOrganization)).one()
+        sb = session.exec(select(Stylebook)).one()
+        project = BackfieldProject(organization_id=int(org.id), name="Demo", slug="demo")
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        canon = StylebookPersonCanonical(
+            stylebook_id=int(sb.id),
+            slug="jane-doe",
+            label="Jane Doe",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        session.add(
+            SubstratePerson(
+                project_id=int(project.id),
+                name="John Smith",
+                normalized_name="john-smith",
+                person_type="individual",
+                identity_fingerprint="fp-mismatch-person",
+                stylebook_person_canonical_id=str(canon.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        )
+        session.commit()
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["mismatched-people"] == 1
+
+    response = client.get("/v1/stylebooks/default/cleanup/checks/mismatched-people")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    row = body["canonicals"][0]
+    assert row["label"] == "Jane Doe"
+    assert row["mismatched_linked_count"] == 1
+    assert "John Smith" in row["mismatched_examples"]
+
+
+def test_dismiss_mismatched_person(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        org = session.exec(select(BackfieldOrganization)).one()
+        sb = session.exec(select(Stylebook)).one()
+        project = BackfieldProject(organization_id=int(org.id), name="Demo", slug="demo")
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        canon = StylebookPersonCanonical(
+            stylebook_id=int(sb.id),
+            slug="jane-doe-dismiss",
+            label="Jane Doe",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        canonical_id = str(canon.id)
+        session.add(
+            SubstratePerson(
+                project_id=int(project.id),
+                name="John Smith",
+                normalized_name="john-smith",
+                person_type="individual",
+                identity_fingerprint="fp-mismatch-person-dismiss",
+                stylebook_person_canonical_id=canonical_id,
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        )
+        session.commit()
+
+    before = client.get("/v1/stylebooks/default/cleanup/checks/mismatched-people")
+    assert before.status_code == 200
+    assert before.json()["total"] >= 1
+
+    dismiss = client.post(
+        "/v1/stylebooks/default/cleanup/dismissals",
+        json={
+            "check_id": "mismatched-people",
+            "canonical_id": canonical_id,
+        },
+    )
+    assert dismiss.status_code == 200
+
+    after = client.get("/v1/stylebooks/default/cleanup/checks/mismatched-people")
+    assert after.status_code == 200
+    assert after.json()["total"] == before.json()["total"] - 1
+    labels = {item["label"] for item in after.json()["canonicals"]}
+    assert "Jane Doe" not in labels
+
+
+def test_mismatched_organizations_check(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, engine = cleanup_client
+    with Session(engine) as session:
+        org = session.exec(select(BackfieldOrganization)).one()
+        sb = session.exec(select(Stylebook)).one()
+        project = BackfieldProject(organization_id=int(org.id), name="Demo", slug="demo-org")
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+        canon = StylebookOrganizationCanonical(
+            stylebook_id=int(sb.id),
+            slug="globex",
+            label="Globex Industries",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        session.add(
+            SubstrateOrganization(
+                project_id=int(project.id),
+                name="Acme Corporation",
+                normalized_name="acme-corporation",
+                organization_type="company",
+                identity_fingerprint="fp-mismatch-org",
+                stylebook_organization_canonical_id=str(canon.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        )
+        session.commit()
+
+    checks = client.get("/v1/stylebooks/default/cleanup/checks")
+    assert checks.status_code == 200
+    by_id = {check["id"]: check["count"] for check in checks.json()["checks"]}
+    assert by_id["mismatched-organizations"] == 1
+
+    response = client.get("/v1/stylebooks/default/cleanup/checks/mismatched-organizations")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    row = body["canonicals"][0]
+    assert row["label"] == "Globex Industries"
+    assert row["mismatched_linked_count"] == 1
+    assert "Acme Corporation" in row["mismatched_examples"]
 
 
 def test_cleanup_ai_review_start_and_proposal_accept(

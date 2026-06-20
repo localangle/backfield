@@ -344,6 +344,150 @@ def test_fuzzy_duplicate_organization_clustering_sqlite() -> None:
         assert len(clusters[0]) == 2
 
 
+def test_person_name_mismatch_finder_sqlite() -> None:
+    from backfield_db import (
+        BackfieldProject,
+        StylebookPersonCanonical,
+        SubstratePerson,
+    )
+    from backfield_entities.quality.dismissals import dismiss_canonical_issue
+    from backfield_entities.quality.finders.person_name_mismatch import (
+        count_person_name_mismatches,
+        list_person_name_mismatches,
+    )
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, org_id = _make_stylebook(session)
+        project = BackfieldProject(organization_id=org_id, name="Demo", slug="demo")
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
+        canon = StylebookPersonCanonical(
+            stylebook_id=stylebook_id,
+            slug="jane-doe",
+            label="Jane Doe",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+
+        session.add(
+            SubstratePerson(
+                project_id=int(project.id),
+                name="John Smith",
+                normalized_name="john-smith",
+                person_type="individual",
+                identity_fingerprint="fp-person-mismatch",
+                stylebook_person_canonical_id=str(canon.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        )
+        session.commit()
+
+        assert (
+            count_person_name_mismatches(
+                session,
+                stylebook_id=stylebook_id,
+                organization_id=org_id,
+            )
+            == 1
+        )
+        rows, total = list_person_name_mismatches(
+            session,
+            stylebook_id=stylebook_id,
+            organization_id=org_id,
+            limit=10,
+            offset=0,
+        )
+        assert total == 1
+        assert rows[0].label == "Jane Doe"
+        assert rows[0].mismatched_linked_count == 1
+        assert "John Smith" in rows[0].mismatched_examples
+
+        dismiss_canonical_issue(
+            session,
+            stylebook_id=stylebook_id,
+            check_id="mismatched-people",
+            canonical_id=str(canon.id),
+            created_by_user_id=None,
+        )
+        session.commit()
+        assert (
+            count_person_name_mismatches(
+                session,
+                stylebook_id=stylebook_id,
+                organization_id=org_id,
+            )
+            == 0
+        )
+
+
+def test_organization_name_mismatch_finder_sqlite() -> None:
+    from backfield_db import (
+        BackfieldProject,
+        StylebookOrganizationCanonical,
+        SubstrateOrganization,
+    )
+    from backfield_entities.quality.finders.organization_name_mismatch import (
+        count_organization_name_mismatches,
+        list_organization_name_mismatches,
+    )
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, org_id = _make_stylebook(session)
+        project = BackfieldProject(organization_id=org_id, name="Demo", slug="demo")
+        session.add(project)
+        session.commit()
+        session.refresh(project)
+
+        canon = StylebookOrganizationCanonical(
+            stylebook_id=stylebook_id,
+            slug="globex",
+            label="Globex Industries",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+
+        session.add(
+            SubstrateOrganization(
+                project_id=int(project.id),
+                name="Acme Corporation",
+                normalized_name="acme-corporation",
+                organization_type="company",
+                identity_fingerprint="fp-org-mismatch",
+                stylebook_organization_canonical_id=str(canon.id),
+                canonical_link_status=CANONICAL_LINK_LINKED,
+            )
+        )
+        session.commit()
+
+        assert (
+            count_organization_name_mismatches(
+                session,
+                stylebook_id=stylebook_id,
+                organization_id=org_id,
+            )
+            == 1
+        )
+        rows, total = list_organization_name_mismatches(
+            session,
+            stylebook_id=stylebook_id,
+            organization_id=org_id,
+            limit=10,
+            offset=0,
+        )
+        assert total == 1
+        assert rows[0].label == "Globex Industries"
+        assert rows[0].mismatched_linked_count == 1
+        assert "Acme Corporation" in rows[0].mismatched_examples
+
+
 def test_exact_duplicate_organization_apostrophe_normalization_sqlite() -> None:
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(engine)

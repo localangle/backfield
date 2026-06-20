@@ -75,6 +75,36 @@ export interface PaginatedCleanupLocationIssuesResponse {
   has_prev: boolean
 }
 
+export interface CleanupMismatchIssue {
+  id: string
+  slug: string
+  label: string
+  status: string
+  linked_substrate_count: number
+  mention_count: number
+  created_at: string
+  updated_at: string
+  person_type?: string | null
+  organization_type?: string | null
+  title?: string | null
+  affiliation?: string | null
+  mismatched_linked_count: number
+  mismatched_examples: string[]
+}
+
+export interface PaginatedCleanupMismatchIssuesResponse {
+  canonicals: CleanupMismatchIssue[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
+}
+
+export type PaginatedCleanupListResults =
+  | PaginatedCleanupLocationIssuesResponse
+  | PaginatedCleanupMismatchIssuesResponse
+
 export interface ListCleanupChecksParams {
   stylebookSlug: string
   project?: string
@@ -155,9 +185,37 @@ export async function getMissingGeometryLocations(
   )
 }
 
+function paginatedListQuery(params: GetCleanupCheckResultsParams): string {
+  const q = new URLSearchParams()
+  if (params.project) q.set("project", params.project)
+  const page = params.page ?? 1
+  const perPage = params.perPage ?? 25
+  q.set("limit", String(perPage))
+  q.set("offset", String((page - 1) * perPage))
+  return q.toString()
+}
+
+export async function getMismatchedPeople(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupMismatchIssuesResponse> {
+  return stylebookJsonFetch<PaginatedCleanupMismatchIssuesResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "mismatched-people")}?${paginatedListQuery(params)}`,
+  )
+}
+
+export async function getMismatchedOrganizations(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupMismatchIssuesResponse> {
+  return stylebookJsonFetch<PaginatedCleanupMismatchIssuesResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "mismatched-organizations")}?${paginatedListQuery(params)}`,
+  )
+}
+
 export async function getCleanupCheckResults(
   params: GetCleanupCheckResultsParams,
-): Promise<PaginatedDuplicateClustersResponse | PaginatedCleanupLocationIssuesResponse> {
+): Promise<
+  PaginatedDuplicateClustersResponse | PaginatedCleanupListResults
+> {
   switch (params.checkId) {
     case "duplicate-locations":
       return getDuplicateLocationClusters(params)
@@ -167,6 +225,10 @@ export async function getCleanupCheckResults(
       return getDuplicateOrganizationClusters(params)
     case "missing-geometry-locations":
       return getMissingGeometryLocations(params)
+    case "mismatched-people":
+      return getMismatchedPeople(params)
+    case "mismatched-organizations":
+      return getMismatchedOrganizations(params)
     default:
       throw new Error(`Unknown cleanup check: ${params.checkId}`)
   }
