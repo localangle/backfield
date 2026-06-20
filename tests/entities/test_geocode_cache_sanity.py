@@ -198,7 +198,7 @@ def test_intersection_blocks_unrelated_street_road_canonical() -> None:
     )
 
 
-def test_intersection_allows_street_road_canonical_when_one_arm_matches() -> None:
+def test_intersection_blocks_street_road_canonical_even_when_arm_matches() -> None:
     assert (
         cache_hit_sane_for_substrate(
             substrate_location_type="intersection_road",
@@ -209,7 +209,7 @@ def test_intersection_allows_street_road_canonical_when_one_arm_matches() -> Non
             match_location_type="street_road",
             match_geometry_type="LineString",
         )
-        is True
+        is False
     )
 
 

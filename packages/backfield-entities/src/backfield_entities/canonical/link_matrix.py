@@ -56,11 +56,13 @@ _DENY_AUTOLINK_TYPE_PAIRS: frozenset[frozenset[str]] = frozenset(
         frozenset({"town", "region_state"}),
         frozenset({"village", "region_state"}),
         frozenset({"address", "neighborhood"}),
-        # Intersections must not collapse onto POI identity.
+        # Intersections must not collapse onto POI identity or a single street corridor.
         frozenset({"intersection_road", "place"}),
         frozenset({"intersection_road", "point"}),
         frozenset({"intersection_highway", "place"}),
         frozenset({"intersection_highway", "point"}),
+        frozenset({"intersection_road", "street_road"}),
+        frozenset({"intersection_highway", "street_road"}),
         # Street-level extracts must not collapse onto municipality or macro admin canonicals.
         frozenset({"address", "city"}),
         frozenset({"address", "town"}),
