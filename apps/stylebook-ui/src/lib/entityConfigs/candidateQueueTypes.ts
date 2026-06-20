@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from "react"
+import type { CandidateAiReviewEntityType } from "@/lib/stylebook-api/candidateAiReview"
 import type { LinkPickTableRow } from "@/components/LinkPickTable"
 
 /** Base candidate shape both entity types satisfy for queue behavior. */
@@ -41,6 +42,7 @@ export type CandidateQueueApiAdapter<TCandidate extends QueueCandidateBase> = {
   getContext: (projectSlug: string, candidateId: number, limit: number) => Promise<CandidateContextResult>
 
   defer: (projectSlug: string, candidateId: number) => Promise<void>
+  clearRecommendation: (projectSlug: string, candidateId: number) => Promise<void>
   updateNote: (projectSlug: string, candidateId: number, note: string | null) => Promise<void>
   linkToCanonical: (candidateId: number, projectSlug: string, canonicalId: string) => Promise<void>
 
@@ -135,6 +137,7 @@ export type CandidateQueueCreateDialogConfig<TCandidate extends QueueCandidateBa
 
 export type CandidateQueuePageConfig<TCandidate extends QueueCandidateBase> = {
   entitySlug: "locations" | "people" | "organizations"
+  aiReviewEntityType?: CandidateAiReviewEntityType
 
   copy: {
     pageTitle: string

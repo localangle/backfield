@@ -1,7 +1,5 @@
-/**
- * Frontend registry for Stylebook cleanup checks (hub navigation + copy).
- * Counts come from the API; ids must match backfield_entities.quality.checks.
- */
+import type { LucideIcon } from "lucide-react"
+import { Building2, MapPin, Users } from "lucide-react"
 
 export type CleanupCheckKind = "cluster" | "list"
 export type CleanupEntityType = "location" | "person" | "organization"
@@ -14,10 +12,14 @@ export interface CleanupCheckConfig {
   entityType: CleanupEntityType
 }
 
+// Presentation config for the cleanup hub and per-check pages. The backend
+// registry (packages/backfield-entities/.../quality/checks.py) is the source of
+// truth for which checks exist and their counts; keep `id`, `kind`, and
+// `entityType` in sync with the matching CleanupCheckDef there.
 export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   {
     id: "duplicate-locations",
-    title: "Possible duplicate locations",
+    title: "Potential duplicate locations",
     description:
       "Same or very similar location names. Open each record to compare and relink evidence.",
     kind: "cluster",
@@ -25,32 +27,66 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   },
   {
     id: "missing-geometry-locations",
-    title: "Missing or potentially incorrect geographies",
+    title: "Potential missing or incorrect geographies",
     description:
       "Records with no map geography, or linked places far from the catalog location. Open each record to review.",
     kind: "list",
     entityType: "location",
   },
   {
+    id: "mismatched-locations",
+    title: "Potential mismatched places",
+    description:
+      "Places with linked mentions whose names look unlike this record. Open each record to review the link.",
+    kind: "list",
+    entityType: "location",
+  },
+  {
     id: "duplicate-people",
-    title: "Possible duplicate people",
+    title: "Potential duplicate people",
     description:
       "Same or very similar person names. Open each record to compare and relink evidence.",
     kind: "cluster",
     entityType: "person",
   },
   {
+    id: "mismatched-people",
+    title: "Potential mismatched people",
+    description:
+      "People with linked mentions whose names look unlike this record. Open each record to review the link.",
+    kind: "list",
+    entityType: "person",
+  },
+  {
     id: "duplicate-organizations",
-    title: "Possible duplicate organizations",
+    title: "Potential duplicate organizations",
     description:
       "Same or very similar organization names. Open each record to compare and relink evidence.",
     kind: "cluster",
+    entityType: "organization",
+  },
+  {
+    id: "mismatched-organizations",
+    title: "Potential mismatched organizations",
+    description:
+      "Organizations with linked mentions whose names look unlike this record. Open each record to review the link.",
+    kind: "list",
     entityType: "organization",
   },
 ]
 
 export function cleanupCheckConfigById(checkId: string): CleanupCheckConfig | undefined {
   return CLEANUP_CHECK_CONFIGS.find((check) => check.id === checkId)
+}
+
+const CLEANUP_ENTITY_ICONS: Record<CleanupEntityType, LucideIcon> = {
+  location: MapPin,
+  person: Users,
+  organization: Building2,
+}
+
+export function cleanupEntityIcon(entityType: CleanupEntityType): LucideIcon {
+  return CLEANUP_ENTITY_ICONS[entityType]
 }
 
 export function cleanupLinkedRecordLabel(entityType: CleanupEntityType): string {

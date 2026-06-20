@@ -14,6 +14,9 @@ from backfield_db import (
     SubstrateLocationMention,
     SubstrateLocationMentionOccurrence,
 )
+from backfield_entities.canonical.candidate_review import (
+    strip_ai_recommendations_from_review_reasons,
+)
 from backfield_entities.canonical.jurisdiction import (
     place_extract_components_from_entry,
     stylebook_district_fields_from_components,
@@ -182,6 +185,12 @@ def _canonical_suggestion_payload(loc: SubstrateLocation) -> dict[str, Any] | No
             raw_c = adj.get("canonical_id")
             if raw_c is not None:
                 out["stylebook_location_canonical_id"] = str(raw_c).strip() or None
+        if out.get("suggested_action") is None:
+            outcome = str(adj.get("outcome") or "").strip()
+            if outcome == "link_existing" and out.get("stylebook_location_canonical_id"):
+                out["suggested_action"] = "link_existing"
+            elif outcome == "no_high_confidence_link":
+                out["suggested_action"] = "materialize_new"
     return out or None
 
 
@@ -672,6 +681,37 @@ def defer_candidate(
     session.add(loc)
     session.commit()
     return {"message": "deferred"}
+
+
+@router.post("/candidates/{substrate_location_id}/clear-recommendation")
+def clear_candidate_recommendation(
+    substrate_location_id: int,
+    project_slug: str = Query(...),
+    stylebook_slug: StylebookSlugQuery = None,
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> dict[str, str]:
+    proj = _project_by_slug(session, project_slug)
+    require_project_access(session, auth, int(proj.id))
+    _ = _require_stylebook_id(session, proj, stylebook_slug)
+
+    loc = session.get(SubstrateLocation, substrate_location_id)
+    if loc is None or int(loc.project_id) != int(proj.id):
+        raise HTTPException(status_code=404, detail="Substrate location not found")
+    if loc.stylebook_location_canonical_id is not None:
+        raise HTTPException(status_code=409, detail="Location is already linked to a canonical")
+    if loc.canonical_link_status != CANONICAL_LINK_PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail="Location is not in the review queue (status must be pending)",
+        )
+
+    loc.canonical_review_reasons_json = strip_ai_recommendations_from_review_reasons(
+        loc.canonical_review_reasons_json
+    )
+    session.add(loc)
+    session.commit()
+    return {"message": "cleared"}
 
 
 @router.post("/candidates/{substrate_location_id}/accept")

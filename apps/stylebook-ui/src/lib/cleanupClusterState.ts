@@ -5,6 +5,21 @@ import type {
   PaginatedDuplicateClustersResponse,
 } from "@/lib/stylebook-api/cleanup"
 
+export function pairKeyForIds(leftId: string, rightId: string): string {
+  return leftId < rightId ? `${leftId}|${rightId}` : `${rightId}|${leftId}`
+}
+
+function allClusterPairKeys(memberIds: string[]): string[] {
+  const sorted = [...memberIds].sort()
+  const keys: string[] = []
+  for (let index = 0; index < sorted.length; index += 1) {
+    for (let other = index + 1; other < sorted.length; other += 1) {
+      keys.push(pairKeyForIds(sorted[index], sorted[other]))
+    }
+  }
+  return keys
+}
+
 export function assignStableClusterIds(
   clusters: DuplicateCluster[],
   stableIdByMember: Map<string, string>,
@@ -115,10 +130,43 @@ export function applyDismissClusterToResults(
   }
 }
 
-export function applyDismissCanonicalToListResults(
-  results: PaginatedCleanupLocationIssuesResponse,
-  canonicalId: string,
-): PaginatedCleanupLocationIssuesResponse {
+/** Optimistic list update after accepting a keep-separate AI proposal (pair dismissal). */
+export function applyKeepSeparateProposalToClusterResults(
+  results: PaginatedDuplicateClustersResponse,
+  proposal: { member_ids: string[] },
+  dismissedPairKeys: Set<string>,
+): PaginatedDuplicateClustersResponse {
+  if (proposal.member_ids.length !== 2) {
+    return results
+  }
+  dismissedPairKeys.add(pairKeyForIds(proposal.member_ids[0], proposal.member_ids[1]))
+
+  const clusters: DuplicateCluster[] = []
+  let removed = 0
+  for (const cluster of results.clusters) {
+    const memberIds = cluster.canonicals.map((canonical) => canonical.id)
+    const touchesCluster = proposal.member_ids.every((memberId) => memberIds.includes(memberId))
+    const allPairsDismissed = allClusterPairKeys(memberIds).every((key) =>
+      dismissedPairKeys.has(key),
+    )
+    if (touchesCluster && allPairsDismissed) {
+      removed += 1
+      continue
+    }
+    clusters.push(cluster)
+  }
+
+  return {
+    ...results,
+    clusters,
+    total: removed > 0 ? Math.max(0, results.total - removed) : results.total,
+  }
+}
+
+export function applyDismissCanonicalToListResults<
+  T extends { id: string },
+  R extends { canonicals: T[]; total: number },
+>(results: R, canonicalId: string): R {
   const canonicals = results.canonicals.filter((canonical) => canonical.id !== canonicalId)
   const removed = canonicals.length < results.canonicals.length
   return {

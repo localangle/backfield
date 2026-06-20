@@ -118,6 +118,17 @@ export async function deferPersonCandidate(
   )
 }
 
+export async function clearPersonCandidateRecommendation(
+  projectSlug: string,
+  substratePersonId: number,
+): Promise<{ message: string }> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  return stylebookJsonFetch<{ message: string }>(
+    `/v1/people/candidates/${substratePersonId}/clear-recommendation?${params}`,
+    { method: "POST" },
+  )
+}
+
 export interface PersonCandidateContextItem {
   article_id: number
   article_headline?: string | null

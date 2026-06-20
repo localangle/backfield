@@ -28,16 +28,23 @@ export default function Pagination({
   className = '',
   itemLabel = 'candidates',
 }: PaginationProps) {
-  if (totalPages <= 1) return null
+  const safeTotal =
+    typeof total === "number" && Number.isFinite(total) ? Math.max(0, total) : 0
+  const safeTotalPages =
+    typeof totalPages === "number" && Number.isFinite(totalPages)
+      ? Math.max(1, totalPages)
+      : Math.max(1, Math.ceil(safeTotal / perPage) || 1)
 
-  const label = total === 1 ? itemLabel.slice(0, -1) : itemLabel  // Remove 's' for singular
+  if (safeTotalPages <= 1) return null
+
+  const label = safeTotal === 1 ? itemLabel.slice(0, -1) : itemLabel
 
   return (
     <div className={`flex items-center justify-between ${className}`}>
       <div className="text-sm text-muted-foreground">
-        Showing {((page - 1) * perPage) + 1} to{' '}
-        {Math.min(page * perPage, total)} of{' '}
-        {total} {label}
+        Showing {((page - 1) * perPage) + 1} to{" "}
+        {Math.min(page * perPage, safeTotal)} of{" "}
+        {safeTotal} {label}
       </div>
       <div className="flex items-center gap-2">
         <Button
@@ -50,7 +57,7 @@ export default function Pagination({
           Previous
         </Button>
         <div className="text-sm text-muted-foreground">
-          Page {page} of {totalPages}
+          Page {page} of {safeTotalPages}
         </div>
         <Button
           variant="outline"

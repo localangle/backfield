@@ -61,6 +61,8 @@ def test_link_pair_denies_address_to_city() -> None:
         ("neighborhood", "place", False),
         ("intersection_road", "place", False),
         ("intersection_highway", "point", False),
+        ("intersection_road", "street_road", False),
+        ("intersection_highway", "street_road", False),
         ("place", "place", True),
         ("neighborhood", "neighborhood", True),
         ("city", "place", False),

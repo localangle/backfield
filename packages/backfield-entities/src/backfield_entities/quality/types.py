@@ -29,3 +29,15 @@ class CleanupLocationGeographyIssueRow:
     status: str
     issue: LocationGeographyIssueKind
     distant_linked_count: int = 0
+
+
+@dataclass(frozen=True)
+class CleanupNameMismatchIssueRow:
+    id: str
+    slug: str
+    label: str
+    entity_type: Literal["person", "organization", "location"]
+    status: str
+    mismatched_linked_count: int
+    mismatched_examples: list[str]
+    location_type: str | None = None

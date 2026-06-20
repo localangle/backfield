@@ -29,6 +29,7 @@ _DEFAULT_CODE_MESSAGES: dict[str, str] = {
     "child": "Identified as a child",
     "animal": "Identified as an animal",
     "stage_name_or_alias": "Stage name or alias — confirm full identity before linking",
+    "pseudonym": "Descriptive pseudonym — defer linking until a legal identity is known",
     "first_name_only": "First name only — confirm full identity before linking",
     "private_place_or_residence": "Private place or residence",
     "road_span_not_canonicalized": "Road spans are not auto-canonicalized",

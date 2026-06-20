@@ -24,6 +24,21 @@ def canonical_adjudication_max_concurrent() -> int:
         return 8
 
 
+def candidate_ai_review_max_concurrent() -> int:
+    """Parallel LLM workers for bulk candidate queue review.
+
+    Default caps below ``CANONICAL_ADJUDICATION_MAX_CONCURRENT`` so brief post-LLM
+    writes and progress updates stay within the worker's small SQLAlchemy pool.
+    """
+    raw = os.getenv("CANDIDATE_AI_REVIEW_MAX_CONCURRENT")
+    if raw is not None and raw.strip() != "":
+        try:
+            return max(1, int(raw.strip()))
+        except ValueError:
+            pass
+    return min(canonical_adjudication_max_concurrent(), 3)
+
+
 def commit_session_before_session_free_llm(session: Session) -> None:
     """Release row locks before parallel LLM work that can take tens of seconds."""
     session.commit()

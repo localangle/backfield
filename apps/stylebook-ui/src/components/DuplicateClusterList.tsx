@@ -258,6 +258,8 @@ export function DuplicateClusterList({
                   <div className="flex-1 min-w-0">
                     <Link
                       to={detailHref(canonical.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="font-medium text-primary hover:underline"
                       onClick={(event) => event.stopPropagation()}
                     >

@@ -21,6 +21,7 @@ from backfield_entities.entities.organization.policy import (
     replan_organization_canonical_after_name_variants,
 )
 from backfield_entities.entities.organization.review import (
+    organization_boundary_recommends_defer_only,
     parse_organization_boundary_from_entry,
     plan_with_boundary_defer_override,
 )
@@ -265,7 +266,7 @@ class OrganizationPersistHandler:
                     auto_apply_canonicalization=ctx.settings.auto_apply_canonicalization,
                 )
                 boundary = parse_organization_boundary_from_entry(entry)
-                if boundary is not None:
+                if boundary is not None and organization_boundary_recommends_defer_only(boundary):
                     plan = plan_with_boundary_defer_override(plan, boundary=boundary)
                     apply_canonical_persist_plan_review_only(
                         session,

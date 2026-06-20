@@ -210,6 +210,12 @@ def test_person_identity_fingerprint_uses_accent_folded_name_and_affiliation() -
     assert fp_mayor == fp_resident
 
 
+def test_person_identity_fingerprint_splits_generational_suffixes() -> None:
+    fp_jr = person_identity_fingerprint(normalized_name="emil jones jr")
+    fp_iii = person_identity_fingerprint(normalized_name="emil jones iii")
+    assert fp_jr != fp_iii
+
+
 def test_decide_person_canonical_persist_plan_links_exact_identity() -> None:
     engine = _engine()
     with Session(engine) as session:

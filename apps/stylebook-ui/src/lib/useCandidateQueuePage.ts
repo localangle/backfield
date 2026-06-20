@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/api"
-import { pickCreateLinkNudge } from "@/lib/candidateQueueSimilarity"
-import { suggestedRowAction } from "@/lib/candidateQueueSuggestions"
+import { pickCreateLinkNudge, candidateQueueNameKey, duplicateCreateNewSummary } from "@/lib/candidateQueueSimilarity"
+import { suggestedRowAction, candidatesWithSuggestedAction } from "@/lib/candidateQueueSuggestions"
 import { useCandidateQueueToasts } from "@/lib/useCandidateQueueToasts"
 import { useCandidateQueueInlineNote } from "@/lib/useCandidateQueueInlineNote"
 import type {
@@ -67,6 +67,8 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
   } | null>(null)
   const [linkingSuggestedId, setLinkingSuggestedId] = useState<number | null>(null)
   const [acceptingAiRecommendations, setAcceptingAiRecommendations] = useState(false)
+  const [clearingRecommendationId, setClearingRecommendationId] = useState<number | null>(null)
+  const [queueRecommendationCount, setQueueRecommendationCount] = useState(0)
 
   const listTotalPages = useMemo(
     () => Math.max(1, Math.ceil(listTotal / REVIEW_QUEUE_PAGE_SIZE)),
@@ -77,6 +79,28 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     () => (config.typeFilter ? config.typeFilter.labelTypeOptions(types) : []),
     [config.typeFilter, types],
   )
+
+  const getCandidateCreateDisplayName = useCallback(
+    (candidate: TCandidate): string => {
+      const draft = config.createDialog.initDraft(candidate)
+      const fromDraft = config.createDialog.getDraftLabelForNudge(draft).trim()
+      return fromDraft || (candidate.suggested_name ?? "").trim()
+    },
+    [config.createDialog],
+  )
+
+  const duplicateCreateNewOnPage = useMemo(
+    () => duplicateCreateNewSummary(candidates, getCandidateCreateDisplayName),
+    [candidates, getCandidateCreateDisplayName],
+  )
+
+  const duplicateCreateNewCountByNameKey = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const cluster of duplicateCreateNewOnPage.clusters) {
+      counts.set(cluster.nameKey, cluster.count)
+    }
+    return counts
+  }, [duplicateCreateNewOnPage])
 
   const createModalCandidate = useMemo(
     () => (createModalId === null ? undefined : candidates.find((x) => x.id === createModalId)),
@@ -269,6 +293,39 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     }
   }, [projectSlug, status, debouncedQuery, typeFilter, listPage, listFetchGen, config.api, config.typeFilter])
 
+  useEffect(() => {
+    if (!projectSlug || status !== "open" || listTotal === 0) {
+      setQueueRecommendationCount(0)
+      return
+    }
+    if (listTotal <= REVIEW_QUEUE_PAGE_SIZE) {
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        const all = await fetchAllFilteredCandidates()
+        if (cancelled) return
+        setQueueRecommendationCount(candidatesWithSuggestedAction(all).length)
+      } catch {
+        if (!cancelled) setQueueRecommendationCount(0)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [projectSlug, status, listTotal, filterKey, fetchAllFilteredCandidates])
+
+  useEffect(() => {
+    if (!projectSlug || status !== "open" || listTotal === 0) {
+      return
+    }
+    if (listTotal > REVIEW_QUEUE_PAGE_SIZE) {
+      return
+    }
+    setQueueRecommendationCount(candidatesWithSuggestedAction(candidates).length)
+  }, [projectSlug, status, listTotal, candidates])
+
   const refreshCreateLinkNudge = useCallback(
     async (candidateId: number, draftLabel: string) => {
       if (!projectSlug) return
@@ -364,7 +421,10 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
   ])
 
   const applySuggestedAction = useCallback(
-    async (candidate: TCandidate, options?: { silent?: boolean }): Promise<boolean> => {
+    async (
+      candidate: TCandidate,
+      options?: { silent?: boolean; batchCreatedByNameKey?: Map<string, string> },
+    ): Promise<boolean> => {
       if (!projectSlug) return false
       const action = suggestedRowAction(candidate)
       if (!action) return false
@@ -421,13 +481,45 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       const draft = config.createDialog.initDraft(candidate)
       const validationError = config.createDialog.validate(draft)
       if (validationError) return false
+
+      const createDisplayName = getCandidateCreateDisplayName(candidate)
+      const createNameKey = candidateQueueNameKey(createDisplayName)
+      if (
+        options?.batchCreatedByNameKey &&
+        createNameKey &&
+        options.batchCreatedByNameKey.has(createNameKey)
+      ) {
+        const cid = options.batchCreatedByNameKey.get(createNameKey)!
+        setLinkingSuggestedId(candidate.id)
+        setError(null)
+        try {
+          await config.api.linkToCanonical(candidate.id, projectSlug, cid)
+          return true
+        } catch (e) {
+          if (!options?.silent) {
+            setError(e instanceof Error ? e.message : "Link failed")
+          }
+          return false
+        } finally {
+          setLinkingSuggestedId(null)
+        }
+      }
+
       setAcceptingId(candidate.id)
       setError(null)
       try {
         const body = config.createDialog.buildAcceptBody(draft, candidate)
         const acceptRes = await config.api.acceptCreateNew(projectSlug, candidate.id, body)
+        const cid = acceptRes.canonicalId.trim()
+        if (
+          options?.batchCreatedByNameKey &&
+          createNameKey &&
+          cid &&
+          !options.batchCreatedByNameKey.has(createNameKey)
+        ) {
+          options.batchCreatedByNameKey.set(createNameKey, cid)
+        }
         if (!options?.silent) {
-          const cid = acceptRes.canonicalId.trim()
           if (!cid) {
             setError(config.createDialog.acceptMissingIdError)
             return false
@@ -451,6 +543,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       config.api,
       config.createDialog,
       config.copy,
+      getCandidateCreateDisplayName,
       queueToasts.linked,
       queueToasts.created,
     ],
@@ -481,6 +574,23 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     [projectSlug, config.api, refreshListQuiet],
   )
 
+  const handleClearRecommendation = useCallback(
+    async (candidate: TCandidate) => {
+      if (!projectSlug) return
+      setClearingRecommendationId(candidate.id)
+      setError(null)
+      try {
+        await config.api.clearRecommendation(projectSlug, candidate.id)
+        await refreshListQuiet()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to clear recommendation")
+      } finally {
+        setClearingRecommendationId(null)
+      }
+    },
+    [projectSlug, config.api, refreshListQuiet],
+  )
+
   const acceptAiRecommendations = useCallback(async () => {
     if (!projectSlug || status !== "open") return
 
@@ -491,8 +601,9 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
       const targets = allCandidates.filter((candidate) => suggestedRowAction(candidate) !== null)
       if (targets.length === 0) return
 
+      const batchCreatedByNameKey = new Map<string, string>()
       for (const candidate of targets) {
-        await applySuggestedAction(candidate, { silent: true })
+        await applySuggestedAction(candidate, { silent: true, batchCreatedByNameKey })
       }
       await refreshListQuiet()
     } catch (e) {
@@ -573,6 +684,9 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     listHasPrev,
     listTotalPages,
     candidates,
+    duplicateCreateNewOnPage,
+    duplicateCreateNewCountByNameKey,
+    getCandidateCreateDisplayName,
     status,
     setStatus,
     query,
@@ -583,7 +697,10 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     acceptingId,
     deferringId,
     linkingSuggestedId,
+    clearingRecommendationId,
     acceptingAiRecommendations,
+    queueRecommendationCount,
+    hasQueueRecommendations: queueRecommendationCount > 0,
     linkModalId,
     linkModalInitialCanonicalId,
     linkModalSearchQuery,
@@ -599,6 +716,7 @@ export function useCandidateQueuePage<TCandidate extends QueueCandidateBase>(
     candidateNotes,
     toggleExpanded,
     handleDefer,
+    handleClearRecommendation,
     linkCandidateToSuggestedCanonical,
     acceptAiRecommendations,
     openCreateModal,

@@ -45,6 +45,9 @@ def _escape_ilike_metacharacters(s: str) -> str:
 connections_router = APIRouter(tags=["connections"])
 locations_connections_router = APIRouter(prefix="/v1", tags=["connections"])
 
+CONNECTIONS_DEFAULT_LIMIT = 10
+CONNECTIONS_MAX_LIMIT = 500
+
 
 class ConnectionResponse(BaseModel):
     id: int
@@ -61,6 +64,9 @@ class ConnectionResponse(BaseModel):
 
 class ConnectionListResponse(BaseModel):
     connections: list[ConnectionResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class CreateConnectionRequest(BaseModel):
@@ -135,7 +141,10 @@ def _list_connections_for_entity(
     entity_type: str,
     entity_id: str,
     catalog_stylebook_id: int | None = None,
-) -> list[ConnectionResponse]:
+    *,
+    limit: int = CONNECTIONS_DEFAULT_LIMIT,
+    offset: int = 0,
+) -> ConnectionListResponse:
     conns = session.exec(
         select(StylebookConnection)
         .where(
@@ -153,7 +162,7 @@ def _list_connections_for_entity(
         )
         .order_by(StylebookConnection.created_at)
     ).all()
-    return [
+    rows = [
         _connection_response_from_row(
             session,
             project_id=project_id,
@@ -162,6 +171,14 @@ def _list_connections_for_entity(
         )
         for c in conns
     ]
+    total = len(rows)
+    page = rows[offset : offset + limit]
+    return ConnectionListResponse(
+        connections=page,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def _stylebook_project_ids(session: Session, *, organization_id: int) -> list[int]:
@@ -234,7 +251,9 @@ def _list_stylebook_connections_for_entity(
     entity_id: str,
     catalog_stylebook_id: int,
     display_project_id: int,
-) -> list[ConnectionResponse]:
+    limit: int = CONNECTIONS_DEFAULT_LIMIT,
+    offset: int = 0,
+) -> ConnectionListResponse:
     conns = session.exec(
         select(StylebookConnection)
         .where(
@@ -260,15 +279,22 @@ def _list_stylebook_connections_for_entity(
             continue
         seen.add(key)
         deduped.append(conn)
-    return [
-        _connection_response_from_row(
-            session,
-            project_id=display_project_id,
-            conn=c,
-            catalog_stylebook_id=catalog_stylebook_id,
-        )
-        for c in deduped
-    ]
+    total = len(deduped)
+    page_rows = deduped[offset : offset + limit]
+    return ConnectionListResponse(
+        connections=[
+            _connection_response_from_row(
+                session,
+                project_id=display_project_id,
+                conn=c,
+                catalog_stylebook_id=catalog_stylebook_id,
+            )
+            for c in page_rows
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def _matching_stylebook_connection_rows(
@@ -321,6 +347,8 @@ def list_location_connections(
     location_id: UUID,
     project_slug: str = Query(...),
     stylebook_slug: StylebookSlugQuery = None,
+    limit: int = Query(CONNECTIONS_DEFAULT_LIMIT, ge=1, le=CONNECTIONS_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> ConnectionListResponse:
@@ -329,10 +357,15 @@ def list_location_connections(
     sb_id = _require_stylebook_id(session, proj, stylebook_slug)
     loc_key = str(location_id)
     validate_canonical_exists(session, int(proj.id), "location", location_id, sb_id)
-    rows = _list_connections_for_entity(
-        session, int(proj.id), "location", loc_key, sb_id
+    return _list_connections_for_entity(
+        session,
+        int(proj.id),
+        "location",
+        loc_key,
+        sb_id,
+        limit=limit,
+        offset=offset,
     )
-    return ConnectionListResponse(connections=rows)
 
 
 @locations_connections_router.post(
@@ -497,6 +530,8 @@ def list_stylebook_connection_natures(
 def list_stylebook_location_connections(
     stylebook_slug: str,
     location_id: UUID,
+    limit: int = Query(CONNECTIONS_DEFAULT_LIMIT, ge=1, le=CONNECTIONS_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> ConnectionListResponse:
@@ -510,16 +545,19 @@ def list_stylebook_location_connections(
     )
     project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     if not project_ids:
-        return ConnectionListResponse(connections=[])
-    rows = _list_stylebook_connections_for_entity(
+        return ConnectionListResponse(
+            connections=[], total=0, limit=limit, offset=offset
+        )
+    return _list_stylebook_connections_for_entity(
         session,
         project_ids=project_ids,
         entity_type="location",
         entity_id=str(location_id),
         catalog_stylebook_id=int(sb.id),
         display_project_id=project_ids[0],
+        limit=limit,
+        offset=offset,
     )
-    return ConnectionListResponse(connections=rows)
 
 
 @locations_connections_router.get(
@@ -529,6 +567,8 @@ def list_stylebook_location_connections(
 def list_stylebook_person_connections(
     stylebook_slug: str,
     person_id: UUID,
+    limit: int = Query(CONNECTIONS_DEFAULT_LIMIT, ge=1, le=CONNECTIONS_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> ConnectionListResponse:
@@ -542,16 +582,19 @@ def list_stylebook_person_connections(
     )
     project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     if not project_ids:
-        return ConnectionListResponse(connections=[])
-    rows = _list_stylebook_connections_for_entity(
+        return ConnectionListResponse(
+            connections=[], total=0, limit=limit, offset=offset
+        )
+    return _list_stylebook_connections_for_entity(
         session,
         project_ids=project_ids,
         entity_type="person",
         entity_id=str(person_id),
         catalog_stylebook_id=int(sb.id),
         display_project_id=project_ids[0],
+        limit=limit,
+        offset=offset,
     )
-    return ConnectionListResponse(connections=rows)
 
 
 @locations_connections_router.get(
@@ -561,6 +604,8 @@ def list_stylebook_person_connections(
 def list_stylebook_organization_connections(
     stylebook_slug: str,
     organization_id: UUID,
+    limit: int = Query(CONNECTIONS_DEFAULT_LIMIT, ge=1, le=CONNECTIONS_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> ConnectionListResponse:
@@ -574,16 +619,19 @@ def list_stylebook_organization_connections(
     )
     project_ids = _stylebook_project_ids(session, organization_id=int(sb.organization_id))
     if not project_ids:
-        return ConnectionListResponse(connections=[])
-    rows = _list_stylebook_connections_for_entity(
+        return ConnectionListResponse(
+            connections=[], total=0, limit=limit, offset=offset
+        )
+    return _list_stylebook_connections_for_entity(
         session,
         project_ids=project_ids,
         entity_type="organization",
         entity_id=str(organization_id),
         catalog_stylebook_id=int(sb.id),
         display_project_id=project_ids[0],
+        limit=limit,
+        offset=offset,
     )
-    return ConnectionListResponse(connections=rows)
 
 
 @locations_connections_router.post(

@@ -26,9 +26,6 @@ from worker.substrate.canonical.llm_call_policy import (
     ADJUDICATION_LLM_TIMEOUT_S,
 )
 
-_SPORTS_PERSON_TYPES = frozenset(
-    {"athlete", "coach", "sports_official", "sports_executive"}
-)
 _ARTICLE_SNIPPET_MAX_LEN = 480
 
 
@@ -39,14 +36,6 @@ class PersonAdjudicationPrepared:
     model_config_id: str | None
     candidates: tuple[tuple[str, str, str | None, str | None], ...]
     prompt: str
-
-
-def person_adjudication_defer_instead_of_materialize(person: SubstratePerson) -> bool:
-    """Recurring public figures / athletes defer on declined link instead of minting a canonical."""
-    if bool(person.public_figure):
-        return True
-    person_type = str(person.person_type or "").strip().lower()
-    return person_type in _SPORTS_PERSON_TYPES
 
 
 def _recall_context_for_adjudication(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
@@ -275,11 +264,6 @@ def resolve_person_adjudication_plan(
         }
         merged = tuple(list(plan.resolution_reasons) + [extra])
         if person_may_materialize_canonical_after_recall(person):
-            if person_adjudication_defer_instead_of_materialize(person):
-                return CanonicalPersistPlan(
-                    decision=CanonicalPersistDecision.DEFER,
-                    resolution_reasons=merged,
-                )
             return CanonicalPersistPlan(
                 decision=CanonicalPersistDecision.MATERIALIZE_NEW,
                 resolution_reasons=merged,

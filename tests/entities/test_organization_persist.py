@@ -208,6 +208,13 @@ def test_decide_organization_defers_when_type_differs_on_alias() -> None:
         assert plan.decision == CanonicalPersistDecision.DEFER
         codes = [str(r.get("code")) for r in plan.resolution_reasons if isinstance(r, dict)]
         assert "organization_canonical_type_mismatch" in codes
+        mismatch = next(
+            r
+            for r in plan.resolution_reasons
+            if isinstance(r, dict) and r.get("code") == "organization_canonical_type_mismatch"
+        )
+        assert isinstance(mismatch.get("recall_canonical_ids"), list)
+        assert str(canon.id) in mismatch["recall_canonical_ids"]
 
 
 def test_decide_organization_defers_on_ambiguous_strong_matches() -> None:

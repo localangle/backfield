@@ -149,6 +149,17 @@ export async function deferCandidate(
   )
 }
 
+export async function clearLocationCandidateRecommendation(
+  projectSlug: string,
+  substrateLocationId: number,
+): Promise<{ message: string }> {
+  const params = new URLSearchParams({ project_slug: projectSlug })
+  return stylebookJsonFetch<{ message: string }>(
+    `/v1/candidates/${substrateLocationId}/clear-recommendation?${params}`,
+    { method: "POST" },
+  )
+}
+
 export interface CandidateContextItem {
   article_id: number
   article_headline?: string | null

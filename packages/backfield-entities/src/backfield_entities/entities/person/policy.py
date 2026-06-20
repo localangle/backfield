@@ -17,9 +17,14 @@ from backfield_entities.entities.person.recall import (
     retrieve_person_canonical_candidates,
 )
 from backfield_entities.entities.person.review import (
+    REASON_PSEUDONYM,
     REVIEW_HANDLING_AUTO_DEFER,
-    REVIEW_HANDLING_FLAG,
     default_review_message,
+    person_name_is_descriptive_pseudonym,
+    person_review_blocks_auto_materialize,
+    person_review_reason_code_from_source,
+    person_review_recommends_defer_only,
+    person_source_details,
     review_context_from_source_details,
     review_reason_dict,
 )
@@ -190,15 +195,66 @@ def _pick_link_canonical_id(
     return None
 
 
-def _review_defer_plan(person: SubstratePerson) -> CanonicalPersistPlan | None:
-    details = person.source_details_json if isinstance(person.source_details_json, dict) else {}
+def _defer_review_reason_for_person(
+    person: SubstratePerson,
+    *,
+    code: str | None,
+    message: str | None,
+) -> tuple[str | None, str | None]:
+    name = str(person.name or person.normalized_name or "").strip()
+    if name and person_name_is_descriptive_pseudonym(
+        person_name=name,
+        reason_code=code,
+        source_details=person_source_details(person),
+    ):
+        return REASON_PSEUDONYM, message or default_review_message(REASON_PSEUDONYM)
+    return code, message
+
+
+def _defer_plan_for_review_only_cases(person: SubstratePerson) -> CanonicalPersistPlan | None:
+    """Defer without recall/adjudication (pseudonym, first-name-only, child, animal)."""
+    details = person_source_details(person)
     handling, code, message = review_context_from_source_details(details)
-    if handling not in (REVIEW_HANDLING_AUTO_DEFER, REVIEW_HANDLING_FLAG) or not code:
+    person_name = str(person.name or person.normalized_name or "")
+    if handling not in (REVIEW_HANDLING_AUTO_DEFER,) and not person_review_recommends_defer_only(
+        reason_code=code,
+        source_details=details,
+        person_name=person_name,
+    ):
+        return None
+    code, message = _defer_review_reason_for_person(person, code=code, message=message)
+    if not code:
         return None
     msg = message or default_review_message(code)
     return CanonicalPersistPlan(
         decision=CanonicalPersistDecision.DEFER,
         resolution_reasons=(review_reason_dict(code=code, message=msg),),
+    )
+
+
+def _defer_plan_blocking_auto_materialize(
+    person: SubstratePerson,
+    *,
+    extra_reasons: tuple[dict[str, Any], ...] = (),
+) -> CanonicalPersistPlan:
+    """Pending queue row that must not auto-materialize but may suggest create."""
+    details = person_source_details(person)
+    _handling, code, message = review_context_from_source_details(details)
+    reasons: list[dict[str, Any]] = list(extra_reasons)
+    if code:
+        reasons.append(
+            review_reason_dict(code=code, message=message or default_review_message(code))
+        )
+    reasons.append(
+        {
+            "code": "canonical_suggestion",
+            "source": "rules_plan",
+            "suggested_action": "materialize_new",
+        }
+    )
+    return CanonicalPersistPlan(
+        decision=CanonicalPersistDecision.DEFER,
+        resolution_reasons=tuple(reasons),
     )
 
 
@@ -238,10 +294,17 @@ def plan_requires_llm_person_canonical_adjudication(
 def person_may_materialize_canonical_after_recall(person: SubstratePerson) -> bool:
     """True when ``MATERIALIZE_NEW`` is allowed after LLM declines linking recalled canonicals.
 
-    Mirrors location ``substrate_may_materialize_canonical_after_recall``: blocked when
-    PersonExtract review routing would defer (flag/auto-defer), or when identity text is empty.
+    Blocked for PersonExtract review routes that require human confirmation before creating
+    a canonical (stage names, inferred surnames, first-name-only, child, animal).
     """
-    if _review_defer_plan(person) is not None:
+    details = person_source_details(person)
+    code = person_review_reason_code_from_source(details)
+    person_name = str(person.name or person.normalized_name or "")
+    if person_review_blocks_auto_materialize(
+        reason_code=code,
+        source_details=details,
+        person_name=person_name,
+    ):
         return False
     if not normalize_person_text(person.normalized_name or person.name):
         return False
@@ -263,10 +326,13 @@ def decide_person_canonical_persist_plan(
     """
     _ = people_bucket
     _ = auto_apply_canonicalization
-    review_plan = _review_defer_plan(person)
+    review_plan = _defer_plan_for_review_only_cases(person)
     if review_plan is not None:
         return review_plan
 
+    details = person_source_details(person)
+    review_code = person_review_reason_code_from_source(details)
+    person_name = str(person.name or person.normalized_name or "")
     strong_matches = _strong_identity_canonical_ids(
         session, stylebook_id=stylebook_id, person=person
     )
@@ -294,6 +360,12 @@ def decide_person_canonical_persist_plan(
         limit=PERSON_RECALL_DEFAULT_LIMIT,
     )
     if not recall:
+        if person_review_blocks_auto_materialize(
+            reason_code=review_code,
+            source_details=details,
+            person_name=person_name,
+        ):
+            return _defer_plan_blocking_auto_materialize(person)
         return CanonicalPersistPlan(
             decision=CanonicalPersistDecision.MATERIALIZE_NEW,
             resolution_reasons=({"code": "materialized_new_canonical"},),

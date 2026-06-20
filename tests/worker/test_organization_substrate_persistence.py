@@ -52,7 +52,7 @@ def test_registered_organizations_handler() -> None:
     assert handler.consolidated_key == "organizations"
 
 
-def test_persist_borderline_organization_sets_review_and_pending_queue() -> None:
+def test_persist_borderline_work_title_mention_flags_review_without_forced_defer() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
     body = "Dear Abby advised the reader to seek counseling."
@@ -105,6 +105,53 @@ def test_persist_borderline_organization_sets_review_and_pending_queue() -> None
         orgs = session.exec(select(SubstrateOrganization)).all()
         assert len(orgs) == 1
         organization = orgs[0]
+        assert organization.stylebook_organization_canonical_id is not None
+
+        mentions = session.exec(select(SubstrateOrganizationMention)).all()
+        assert len(mentions) == 1
+        assert mentions[0].needs_review is True
+        assert mentions[0].review_data_json == {
+            "organization_boundary": "borderline_work_title",
+        }
+
+
+def test_persist_borderline_brand_platform_defers_canonical_link() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    body = "She sent a message on Twitter about the incident."
+
+    with Session(engine) as session:
+        project_id = _bootstrap_project(session, org_slug="org-brand", project_slug="proj-brand")
+        session.add(AgateRun(id="run-brand", graph_id="graph-brand", status="pending"))
+        session.commit()
+
+        persist_from_consolidated(
+            session,
+            project_id=project_id,
+            graph_id="graph-brand",
+            run_id="run-brand",
+            consolidated={
+                "text": body,
+                "url": "https://example.com/twitter-brand",
+                "organizations": [
+                    {
+                        "name": "Twitter",
+                        "type": "media",
+                        "organization_boundary": "borderline_brand_platform",
+                        "role_in_story": "Platform used to communicate",
+                        "nature": "actor",
+                        "mentions": [{"text": body, "quote": False}],
+                    }
+                ],
+            },
+            db_output_params={"auto_apply_canonicalization": True},
+        )
+        session.commit()
+
+    with Session(engine) as session:
+        orgs = session.exec(select(SubstrateOrganization)).all()
+        assert len(orgs) == 1
+        organization = orgs[0]
         assert organization.canonical_link_status == CANONICAL_LINK_PENDING
         reasons = organization.canonical_review_reasons_json
         assert isinstance(reasons, list)
@@ -115,13 +162,6 @@ def test_persist_borderline_organization_sets_review_and_pending_queue() -> None
             r for r in reasons if isinstance(r, dict) and r.get("code") == "canonical_suggestion"
         )
         assert suggestion.get("suggested_action") == "defer"
-
-        mentions = session.exec(select(SubstrateOrganizationMention)).all()
-        assert len(mentions) == 1
-        assert mentions[0].needs_review is True
-        assert mentions[0].review_data_json == {
-            "organization_boundary": "borderline_work_title",
-        }
 
 
 def test_persist_organizations_writes_substrate_mention_occurrence() -> None:

@@ -267,8 +267,8 @@ def test_adjudicate_ambiguous_person_materialize_when_llm_rejects_link(monkeypat
         assert adj.get("canonical_id") is None
 
 
-def test_adjudicate_ambiguous_person_athlete_defers_when_llm_rejects_link(monkeypatch) -> None:
-    """Athletes defer on declined link instead of minting a duplicate canonical."""
+def test_adjudicate_ambiguous_person_athlete_materializes_on_llm_reject(monkeypatch) -> None:
+    """Athletes materialize a new canonical when the LLM declines linking recalled rows."""
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
 
@@ -332,7 +332,9 @@ def test_adjudicate_ambiguous_person_athlete_defers_when_llm_rejects_link(monkey
             mention_texts=["Luisangel Acuña"],
         )
 
-        assert out.decision == CanonicalPersistDecision.DEFER
+        assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+        adj = next(r for r in out.resolution_reasons if r.get("code") == "canonical_adjudication")
+        assert adj.get("outcome") == "no_high_confidence_link"
 
 
 def test_prepare_person_adjudication_includes_athlete_context(monkeypatch) -> None:

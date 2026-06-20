@@ -27,7 +27,11 @@ from backfield_entities.entities.person.merge import (
 from backfield_entities.entities.person.merge import (
     merge_person_canonical_into,
 )
-from backfield_entities.quality.checks import STYLEBOOK_CLEANUP_CHECKS, cleanup_check_by_id
+from backfield_entities.quality.checks import (
+    STYLEBOOK_CLEANUP_CHECKS,
+    CleanupCountContext,
+    cleanup_check_by_id,
+)
 from backfield_entities.quality.dismissals import (
     dismiss_canonical_issue,
     dismiss_cluster_members,
@@ -35,27 +39,35 @@ from backfield_entities.quality.dismissals import (
 from backfield_entities.quality.finders.duplicate_locations import (
     DEFAULT_FULL_SIMILARITY_THRESHOLD,
     DEFAULT_HEAD_SIMILARITY_THRESHOLD,
-    count_duplicate_location_clusters,
     paginate_duplicate_location_clusters,
 )
 from backfield_entities.quality.finders.duplicate_locations import (
     cluster_display_label as location_cluster_display_label,
 )
 from backfield_entities.quality.finders.duplicate_organizations import (
-    count_duplicate_organization_clusters,
     organization_cluster_display_label,
     paginate_duplicate_organization_clusters,
 )
 from backfield_entities.quality.finders.duplicate_people import (
-    count_duplicate_person_clusters,
     paginate_duplicate_person_clusters,
     person_cluster_display_label,
 )
 from backfield_entities.quality.finders.location_geography_issues import (
-    count_location_geography_issues,
     list_location_geography_issues,
 )
-from backfield_entities.quality.types import CleanupLocationGeographyIssueRow
+from backfield_entities.quality.finders.location_name_mismatch import (
+    list_location_name_mismatches,
+)
+from backfield_entities.quality.finders.organization_name_mismatch import (
+    list_organization_name_mismatches,
+)
+from backfield_entities.quality.finders.person_name_mismatch import (
+    list_person_name_mismatches,
+)
+from backfield_entities.quality.types import (
+    CleanupLocationGeographyIssueRow,
+    CleanupNameMismatchIssueRow,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session
@@ -141,6 +153,48 @@ class PaginatedCleanupLocationsResponse(BaseModel):
     has_prev: bool
 
 
+class CleanupPersonMismatchIssueOut(CanonicalPersonResponse):
+    mismatched_linked_count: int = 0
+    mismatched_examples: list[str] = Field(default_factory=list)
+
+
+class CleanupOrganizationMismatchIssueOut(CanonicalOrganizationResponse):
+    mismatched_linked_count: int = 0
+    mismatched_examples: list[str] = Field(default_factory=list)
+
+
+class CleanupLocationMismatchIssueOut(CanonicalLocationResponse):
+    mismatched_linked_count: int = 0
+    mismatched_examples: list[str] = Field(default_factory=list)
+
+
+class PaginatedCleanupPersonMismatchResponse(BaseModel):
+    canonicals: list[CleanupPersonMismatchIssueOut]
+    total: int
+    page: int
+    per_page: int
+    has_next: bool
+    has_prev: bool
+
+
+class PaginatedCleanupOrganizationMismatchResponse(BaseModel):
+    canonicals: list[CleanupOrganizationMismatchIssueOut]
+    total: int
+    page: int
+    per_page: int
+    has_next: bool
+    has_prev: bool
+
+
+class PaginatedCleanupLocationMismatchResponse(BaseModel):
+    canonicals: list[CleanupLocationMismatchIssueOut]
+    total: int
+    page: int
+    per_page: int
+    has_next: bool
+    has_prev: bool
+
+
 class MergeCleanupCanonicalBody(BaseModel):
     target_canonical_id: str = Field(min_length=1)
 
@@ -174,43 +228,6 @@ def _created_by_user_id(auth: dict[str, Any]) -> int | None:
     if auth.get("type") != "session" or auth.get("user") is None:
         return None
     return int(auth["user"].id)  # type: ignore[union-attr]
-
-
-def _count_for_check(
-    session: Session,
-    *,
-    stylebook_id: int,
-    organization_id: int,
-    check_id: str,
-    full_threshold: float,
-    head_threshold: float,
-) -> int:
-    if check_id == "duplicate-locations":
-        return count_duplicate_location_clusters(
-            session,
-            stylebook_id=stylebook_id,
-            full_threshold=full_threshold,
-            head_threshold=head_threshold,
-        )
-    if check_id == "duplicate-people":
-        return count_duplicate_person_clusters(
-            session,
-            stylebook_id=stylebook_id,
-            full_threshold=full_threshold,
-        )
-    if check_id == "duplicate-organizations":
-        return count_duplicate_organization_clusters(
-            session,
-            stylebook_id=stylebook_id,
-            full_threshold=full_threshold,
-        )
-    if check_id == "missing-geometry-locations":
-        return count_location_geography_issues(
-            session,
-            stylebook_id=stylebook_id,
-            organization_id=organization_id,
-        )
-    return 0
 
 
 def _canonical_responses_with_counts(
@@ -331,6 +348,96 @@ def _organization_responses_with_counts(
     return out
 
 
+def _person_mismatch_responses_with_counts(
+    session: Session,
+    *,
+    project_ids: list[int],
+    rows_by_id: dict[str, StylebookPersonCanonical],
+    items: list[CleanupNameMismatchIssueRow],
+) -> list[CleanupPersonMismatchIssueOut]:
+    canonical_ids = [item.id for item in items]
+    base_rows = _person_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        canonical_ids=canonical_ids,
+    )
+    by_id = {row.id: row for row in base_rows}
+    out: list[CleanupPersonMismatchIssueOut] = []
+    for item in items:
+        base = by_id.get(item.id)
+        if base is None:
+            continue
+        out.append(
+            CleanupPersonMismatchIssueOut(
+                **base.model_dump(),
+                mismatched_linked_count=int(item.mismatched_linked_count),
+                mismatched_examples=list(item.mismatched_examples),
+            )
+        )
+    return out
+
+
+def _organization_mismatch_responses_with_counts(
+    session: Session,
+    *,
+    project_ids: list[int],
+    rows_by_id: dict[str, StylebookOrganizationCanonical],
+    items: list[CleanupNameMismatchIssueRow],
+) -> list[CleanupOrganizationMismatchIssueOut]:
+    canonical_ids = [item.id for item in items]
+    base_rows = _organization_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        canonical_ids=canonical_ids,
+    )
+    by_id = {row.id: row for row in base_rows}
+    out: list[CleanupOrganizationMismatchIssueOut] = []
+    for item in items:
+        base = by_id.get(item.id)
+        if base is None:
+            continue
+        out.append(
+            CleanupOrganizationMismatchIssueOut(
+                **base.model_dump(),
+                mismatched_linked_count=int(item.mismatched_linked_count),
+                mismatched_examples=list(item.mismatched_examples),
+            )
+        )
+    return out
+
+
+def _location_mismatch_responses_with_counts(
+    session: Session,
+    *,
+    project_ids: list[int],
+    rows_by_id: dict[str, StylebookLocationCanonical],
+    items: list[CleanupNameMismatchIssueRow],
+) -> list[CleanupLocationMismatchIssueOut]:
+    canonical_ids = [item.id for item in items]
+    base_rows = _canonical_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        canonical_ids=canonical_ids,
+    )
+    by_id = {row.id: row for row in base_rows}
+    out: list[CleanupLocationMismatchIssueOut] = []
+    for item in items:
+        base = by_id.get(item.id)
+        if base is None:
+            continue
+        out.append(
+            CleanupLocationMismatchIssueOut(
+                **base.model_dump(),
+                mismatched_linked_count=int(item.mismatched_linked_count),
+                mismatched_examples=list(item.mismatched_examples),
+            )
+        )
+    return out
+
+
 def _paginated_cluster_page(limit: int, offset: int) -> int:
     return offset // limit + 1 if limit else 1
 
@@ -353,6 +460,10 @@ def list_cleanup_checks(
             "to avoid suffix-only matches."
         ),
     ),
+    check_id: str | None = Query(
+        None,
+        description="When set, compute and return only this cleanup check.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> CleanupChecksResponse:
@@ -361,17 +472,22 @@ def list_cleanup_checks(
         raise HTTPException(status_code=404, detail="Stylebook not found")
     stylebook_id = int(sb.id)
     organization_id = int(sb.organization_id)
+    checks_to_list = STYLEBOOK_CLEANUP_CHECKS
+    if check_id is not None:
+        selected = cleanup_check_by_id(check_id.strip())
+        if selected is None:
+            raise HTTPException(status_code=404, detail=f"Unknown cleanup check: {check_id}")
+        checks_to_list = (selected,)
+    count_ctx = CleanupCountContext(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
     checks_out: list[CleanupCheckOut] = []
     total_open = 0
-    for check in STYLEBOOK_CLEANUP_CHECKS:
-        count = _count_for_check(
-            session,
-            stylebook_id=stylebook_id,
-            organization_id=organization_id,
-            check_id=check.id,
-            full_threshold=similarity_threshold,
-            head_threshold=head_similarity_threshold,
-        )
+    for check in checks_to_list:
+        count = check.count(session, count_ctx)
         total_open += count
         checks_out.append(
             CleanupCheckOut(
@@ -657,6 +773,174 @@ def list_missing_geometry_location_check(
     )
     page = offset // limit + 1 if limit else 1
     return PaginatedCleanupLocationsResponse(
+        canonicals=canonicals,
+        total=total,
+        page=page,
+        per_page=limit,
+        has_next=offset + len(canonicals) < total,
+        has_prev=offset > 0,
+    )
+
+
+@router.get(
+    "/{stylebook_slug}/cleanup/checks/mismatched-people",
+    response_model=PaginatedCleanupPersonMismatchResponse,
+)
+def list_mismatched_people_check(
+    stylebook_slug: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope linked/mention counts.",
+    ),
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedCleanupPersonMismatchResponse:
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=int(sb.organization_id),
+    )
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    items, total = list_person_name_mismatches(
+        session,
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        limit=limit,
+        offset=offset,
+    )
+    cids = [item.id for item in items]
+    rows_by_id = {
+        cid: row
+        for cid in cids
+        if (row := session.get(StylebookPersonCanonical, cid)) is not None
+    }
+    canonicals = _person_mismatch_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        items=items,
+    )
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupPersonMismatchResponse(
+        canonicals=canonicals,
+        total=total,
+        page=page,
+        per_page=limit,
+        has_next=offset + len(canonicals) < total,
+        has_prev=offset > 0,
+    )
+
+
+@router.get(
+    "/{stylebook_slug}/cleanup/checks/mismatched-organizations",
+    response_model=PaginatedCleanupOrganizationMismatchResponse,
+)
+def list_mismatched_organizations_check(
+    stylebook_slug: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope linked/mention counts.",
+    ),
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedCleanupOrganizationMismatchResponse:
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=int(sb.organization_id),
+    )
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    items, total = list_organization_name_mismatches(
+        session,
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        limit=limit,
+        offset=offset,
+    )
+    cids = [item.id for item in items]
+    rows_by_id = {
+        cid: row
+        for cid in cids
+        if (row := session.get(StylebookOrganizationCanonical, cid)) is not None
+    }
+    canonicals = _organization_mismatch_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        items=items,
+    )
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupOrganizationMismatchResponse(
+        canonicals=canonicals,
+        total=total,
+        page=page,
+        per_page=limit,
+        has_next=offset + len(canonicals) < total,
+        has_prev=offset > 0,
+    )
+
+
+@router.get(
+    "/{stylebook_slug}/cleanup/checks/mismatched-locations",
+    response_model=PaginatedCleanupLocationMismatchResponse,
+)
+def list_mismatched_locations_check(
+    stylebook_slug: str,
+    project: str | None = Query(
+        None,
+        description="Optional project slug to scope linked/mention counts.",
+    ),
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    session: Session = Depends(get_session),
+    auth: dict[str, Any] = Depends(get_auth),
+) -> PaginatedCleanupLocationMismatchResponse:
+    sb = require_stylebook_by_slug_in_auth_org(session, auth=auth, stylebook_slug=stylebook_slug)
+    if sb.id is None:
+        raise HTTPException(status_code=404, detail="Stylebook not found")
+    project_ids = optional_project_filter_to_ids(
+        session,
+        auth=auth,
+        project_slug=project,
+        organization_id=int(sb.organization_id),
+    )
+    stylebook_id = int(sb.id)
+    organization_id = int(sb.organization_id)
+    items, total = list_location_name_mismatches(
+        session,
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        limit=limit,
+        offset=offset,
+    )
+    cids = [item.id for item in items]
+    rows_by_id = {
+        cid: row
+        for cid in cids
+        if (row := session.get(StylebookLocationCanonical, cid)) is not None
+    }
+    canonicals = _location_mismatch_responses_with_counts(
+        session,
+        project_ids=project_ids,
+        rows_by_id=rows_by_id,
+        items=items,
+    )
+    page = offset // limit + 1 if limit else 1
+    return PaginatedCleanupLocationMismatchResponse(
         canonicals=canonicals,
         total=total,
         page=page,

@@ -6,11 +6,14 @@ from typing import Any
 
 import pytest
 from backfield_db import (
+    BackfieldAiModelConfig,
+    BackfieldOrganization,
     BackfieldProject,
     BackfieldProjectMembership,
     BackfieldUser,
     BackfieldWorkspace,
     Stylebook,
+    StylebookCandidateAiReview,
     StylebookConnection,
     StylebookLocationCanonical,
     StylebookPersonAlias,
@@ -775,3 +778,85 @@ def test_import_csv_people_duplicate_labels_create_two(
         assert len(people) == 2
         slugs = {p.slug for p in people}
         assert len(slugs) == 2
+
+
+def test_candidate_ai_review_start(
+    editor_client: TestClient,
+    stylebook_test_engine: Engine,
+) -> None:
+    with Session(stylebook_test_engine) as s:
+        org = s.exec(select(BackfieldOrganization)).one()
+        s.add(
+            BackfieldAiModelConfig(
+                organization_id=int(org.id),
+                name="Candidate review model",
+                provider="openai",
+                provider_model_id="gpt-5-nano",
+                model_kind="chat",
+                status="active",
+                capabilities_json=["text", "json"],
+                litellm_model="gpt-5-nano",
+            )
+        )
+        proj = s.exec(select(BackfieldProject).where(BackfieldProject.slug == "demo-proj")).one()
+        editor = s.exec(
+            select(BackfieldUser).where(BackfieldUser.email == "editor@example.com")
+        ).one()
+        s.add(
+            BackfieldProjectMembership(
+                project_id=int(proj.id),
+                user_id=int(editor.id),  # type: ignore[arg-type]
+                role="editor",
+            )
+        )
+        s.commit()
+
+    models = editor_client.get("/v1/stylebooks/default/candidates/ai-models")
+    assert models.status_code == 200
+    assert len(models.json()["models"]) == 1
+
+    with pytest.MonkeyPatch.context() as mp:
+        sent: list[str] = []
+        mp.setattr(
+            "stylebook_api.routers.stylebook_candidate_ai_review.celery_app.send_task",
+            lambda name, args, queue: sent.append(str(args[0])),
+        )
+        start = editor_client.post(
+            "/v1/stylebooks/default/candidates/ai-review",
+            json={
+                "entity_type": "person",
+                "project_slug": "demo-proj",
+                "provider_model_id": "gpt-5-nano",
+                "ai_model_config_id": models.json()["models"][0]["id"],
+            },
+        )
+    assert start.status_code == 200
+    body = start.json()
+    assert body["status"] == "queued"
+    assert body["entity_type"] == "person"
+    assert sent == [body["id"]]
+
+    latest = editor_client.get(
+        "/v1/stylebooks/default/candidates/ai-review/latest"
+        "?entity_type=person&project_slug=demo-proj"
+    )
+    assert latest.status_code == 200
+    assert latest.json()["id"] == body["id"]
+
+    with Session(stylebook_test_engine) as s:
+        review = s.get(StylebookCandidateAiReview, body["id"])
+        assert review is not None
+        review.status = "running"
+        s.add(review)
+        s.commit()
+
+    cancel = editor_client.post(
+        f"/v1/stylebooks/default/candidates/ai-review/{body['id']}/cancel",
+    )
+    assert cancel.status_code == 200
+    assert cancel.json()["status"] == "cancelled"
+
+    cancel_again = editor_client.post(
+        f"/v1/stylebooks/default/candidates/ai-review/{body['id']}/cancel",
+    )
+    assert cancel_again.status_code == 400

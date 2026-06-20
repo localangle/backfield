@@ -8,10 +8,9 @@ import json
 import sys
 from typing import Any
 
-from sqlmodel import Session, col, func, select
-
 from backfield_db import AgateGraph, StylebookLocationAlias, StylebookLocationCanonical
 from backfield_db.session import get_engine
+from sqlmodel import Session, col, func, select
 
 
 def _geocode_nodes(spec: dict[str, Any]) -> list[dict[str, Any]]:

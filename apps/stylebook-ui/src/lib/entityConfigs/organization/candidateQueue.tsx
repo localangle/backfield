@@ -1,6 +1,7 @@
 import type { OrganizationCandidate } from "@/lib/api"
 import {
   acceptOrganizationCandidate,
+  clearOrganizationCandidateRecommendation,
   deferOrganizationCandidate,
   getCanonicalOrganization,
   getOrganizationCandidateContext,
@@ -39,6 +40,7 @@ function OrganizationLinkModal({
 
 export const organizationCandidateQueueConfig: CandidateQueuePageConfig<OrganizationCandidate> = {
   entitySlug: "organizations",
+  aiReviewEntityType: "organization",
 
   copy: {
     pageTitle: "Organization candidates",
@@ -105,6 +107,9 @@ export const organizationCandidateQueueConfig: CandidateQueuePageConfig<Organiza
     getContext: getOrganizationCandidateContext,
     defer: async (projectSlug, candidateId) => {
       await deferOrganizationCandidate(projectSlug, candidateId)
+    },
+    clearRecommendation: async (projectSlug, candidateId) => {
+      await clearOrganizationCandidateRecommendation(projectSlug, candidateId)
     },
     updateNote: async (projectSlug, candidateId, note) => {
       await updateOrganizationCandidateNote(projectSlug, candidateId, note)

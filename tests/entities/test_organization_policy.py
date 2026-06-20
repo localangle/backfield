@@ -15,6 +15,7 @@ from backfield_entities.canonical.plan_types import (
     CanonicalPersistPlan,
 )
 from backfield_entities.entities.organization import AMBIGUOUS_ORGANIZATION_CANONICAL_MATCH
+from backfield_entities.entities.organization.policy import ORGANIZATION_CANONICAL_TYPE_MISMATCH
 from sqlmodel import Session, SQLModel, create_engine
 from worker.substrate.entities.organization.adjudication import (
     adjudicate_ambiguous_organization_plan_with_llm,
@@ -166,3 +167,65 @@ def test_adjudicate_ambiguous_organization_materializes_when_llm_rejects_link(
             model="gpt-4o-mini",
         )
         assert out.decision == CanonicalPersistDecision.MATERIALIZE_NEW
+
+
+def test_adjudicate_type_mismatch_links_cross_type_when_llm_confident(monkeypatch) -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        sb_id, pid = _seed(session)
+        canon = StylebookOrganizationCanonical(
+            stylebook_id=sb_id,
+            label="Chicago",
+            slug="chicago-city",
+            organization_type="government",
+        )
+        session.add(canon)
+        session.commit()
+        session.refresh(canon)
+        canon_id = str(canon.id)
+
+        organization = SubstrateOrganization(
+            project_id=pid,
+            name="Chicago",
+            normalized_name="chicago",
+            organization_type="sports_team",
+            identity_fingerprint="fp-org-type-mismatch",
+        )
+        session.add(organization)
+        session.commit()
+        session.refresh(organization)
+
+        plan = CanonicalPersistPlan(
+            decision=CanonicalPersistDecision.DEFER,
+            resolution_reasons=(
+                {
+                    "code": ORGANIZATION_CANONICAL_TYPE_MISMATCH,
+                    "canonical_id": canon_id,
+                    "recall_canonical_ids": [canon_id],
+                    "substrate_type": "sports_team",
+                    "canonical_type": "government",
+                },
+            ),
+        )
+
+        def _fake_llm(*_a, **_k) -> str:
+            conf = ADJUDICATION_LINK_MIN_CONFIDENCE
+            return (
+                f'{{"canonical_id": "{canon_id}", "confidence": {conf}, '
+                f'"rationale": "Same city government despite sports_team label."}}'
+            )
+
+        monkeypatch.setattr(
+            "worker.substrate.entities.organization.adjudication.call_llm",
+            _fake_llm,
+        )
+
+        out = adjudicate_ambiguous_organization_plan_with_llm(
+            session,
+            plan=plan,
+            organization=organization,
+            stylebook_id=sb_id,
+            model="gpt-4o-mini",
+        )
+        assert out.decision == CanonicalPersistDecision.LINK_EXISTING
+        assert out.existing_canonical_id == canon_id

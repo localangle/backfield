@@ -23,6 +23,7 @@ from backfield_entities.canonical.slug import (
     allocate_unique_canonical_slug,
     flush_new_canonical_with_slug_retry,
 )
+from backfield_entities.entities.location.policy import plan_has_ambiguous_canonical_match
 from backfield_entities.geo.h3_index import apply_h3_fields
 
 
@@ -325,8 +326,49 @@ def _resolution_includes_private_place_or_residence(plan: CanonicalPersistPlan) 
     return False
 
 
+def _adjudication_item_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
+    for r in plan.resolution_reasons:
+        if isinstance(r, dict) and str(r.get("code") or "") == "canonical_adjudication":
+            return dict(r)
+    return None
+
+
+def _canonical_suggestion_from_adjudication(
+    adj: dict[str, Any],
+    *,
+    source: str = "canonical_adjudication",
+) -> dict[str, Any] | None:
+    outcome = str(adj.get("outcome") or "").strip()
+    src = str(adj.get("source") or source)
+    if outcome == "link_existing":
+        cid = adj.get("canonical_id")
+        if cid is not None and str(cid).strip():
+            return {
+                "code": "canonical_suggestion",
+                "source": src,
+                "suggested_action": "link_existing",
+                "stylebook_location_canonical_id": str(cid).strip(),
+            }
+    if outcome == "no_high_confidence_link":
+        return {
+            "code": "canonical_suggestion",
+            "source": src,
+            "suggested_action": "materialize_new",
+        }
+    return None
+
+
 def _canonical_suggestion_from_rules_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
     """Structured hint for Stylebook review UI when auto-apply is off."""
+    adj = _adjudication_item_from_plan(plan)
+    if adj is not None:
+        from_adj = _canonical_suggestion_from_adjudication(adj)
+        if from_adj is not None:
+            return from_adj
+    if plan.decision == CanonicalPersistDecision.DEFER and (
+        plan_has_ambiguous_canonical_match(plan) and adj is None
+    ):
+        return None
     if (
         plan.decision == CanonicalPersistDecision.LINK_EXISTING
         and plan.existing_canonical_id is not None
@@ -373,6 +415,45 @@ def apply_canonical_persist_plan_review_only(
     session.add(location)
 
 
+CANDIDATE_AI_REVIEW_SOURCE = "candidate_ai_review"
+
+
+def apply_candidate_ai_review_recommendation(
+    session: Session,
+    *,
+    location: SubstrateLocation,
+    plan: CanonicalPersistPlan,
+) -> bool:
+    if str(location.canonical_link_status) != CANONICAL_LINK_PENDING:
+        return False
+    if location.stylebook_location_canonical_id is not None:
+        return False
+    raw = location.canonical_review_reasons_json
+    reasons: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        reasons = [dict(r) for r in raw if isinstance(r, dict)]
+    elif isinstance(raw, dict):
+        reasons = [dict(raw)]
+    reasons = [
+        r
+        for r in reasons
+        if str(r.get("code") or "") not in ("canonical_suggestion", "canonical_adjudication")
+    ]
+    for r in plan.resolution_reasons:
+        if isinstance(r, dict):
+            reasons.append(dict(r))
+    extra = _canonical_suggestion_from_rules_plan(plan)
+    has_suggestion = False
+    if extra is not None:
+        suggestion = dict(extra)
+        suggestion["source"] = CANDIDATE_AI_REVIEW_SOURCE
+        reasons.append(suggestion)
+        has_suggestion = True
+    location.canonical_review_reasons_json = reasons
+    session.add(location)
+    return has_suggestion
+
+
 def apply_canonical_persist_plan(
     session: Session,
     *,
@@ -385,6 +466,12 @@ def apply_canonical_persist_plan(
 ) -> None:
     """Apply policy outcome: defer (pending, no Stylebook rows), link, or materialize."""
     reasons = [dict(r) for r in plan.resolution_reasons]
+    has_suggestion = any(
+        isinstance(r, dict) and str(r.get("code") or "") == "canonical_suggestion" for r in reasons
+    )
+    extra = _canonical_suggestion_from_rules_plan(plan)
+    if extra is not None and not has_suggestion:
+        reasons.append(extra)
     if plan.decision == CanonicalPersistDecision.DEFER:
         if auto_apply_canonicalization and _resolution_includes_private_place_or_residence(plan):
             location.canonical_link_status = CANONICAL_LINK_WAIVED

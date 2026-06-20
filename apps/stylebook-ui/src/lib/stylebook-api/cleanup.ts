@@ -1,4 +1,9 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
+import {
+  cleanupLastRunStorageKey,
+  saveCleanupCheckRun,
+  type CleanupCheckRunRecord,
+} from "@/lib/cleanupHubLastRun"
 
 export type CleanupCheckKind = "cluster" | "list"
 
@@ -75,9 +80,41 @@ export interface PaginatedCleanupLocationIssuesResponse {
   has_prev: boolean
 }
 
+export interface CleanupMismatchIssue {
+  id: string
+  slug: string
+  label: string
+  status: string
+  linked_substrate_count: number
+  mention_count: number
+  created_at: string
+  updated_at: string
+  person_type?: string | null
+  organization_type?: string | null
+  location_type?: string | null
+  title?: string | null
+  affiliation?: string | null
+  mismatched_linked_count: number
+  mismatched_examples: string[]
+}
+
+export interface PaginatedCleanupMismatchIssuesResponse {
+  canonicals: CleanupMismatchIssue[]
+  total: number
+  page: number
+  per_page: number
+  has_next: boolean
+  has_prev: boolean
+}
+
+export type PaginatedCleanupListResults =
+  | PaginatedCleanupLocationIssuesResponse
+  | PaginatedCleanupMismatchIssuesResponse
+
 export interface ListCleanupChecksParams {
   stylebookSlug: string
   project?: string
+  checkId?: string
 }
 
 export interface GetCleanupCheckResultsParams {
@@ -111,10 +148,38 @@ export async function listCleanupChecks(
 ): Promise<CleanupChecksResponse> {
   const q = new URLSearchParams()
   if (params.project) q.set("project", params.project)
+  if (params.checkId) q.set("check_id", params.checkId)
   const suffix = q.toString() ? `?${q.toString()}` : ""
   return stylebookJsonFetch<CleanupChecksResponse>(
     `${cleanupChecksPath(params.stylebookSlug)}${suffix}`,
   )
+}
+
+export async function runCleanupCheckCount(
+  params: ListCleanupChecksParams & { checkId: string },
+): Promise<CleanupCheck> {
+  const response = await listCleanupChecks(params)
+  const check = response.checks.find((row) => row.id === params.checkId)
+  if (!check) {
+    throw new Error(`Cleanup check not found: ${params.checkId}`)
+  }
+  return check
+}
+
+/** Re-fetch a check count and persist it for the Checks hub (same scope as manual Run). */
+export async function refreshPersistedCleanupCheckCount(params: {
+  stylebookSlug: string
+  checkId: string
+  project?: string
+}): Promise<CleanupCheckRunRecord> {
+  const result = await runCleanupCheckCount(params)
+  const storageKey = cleanupLastRunStorageKey(params.stylebookSlug, params.project)
+  const record: CleanupCheckRunRecord = {
+    ranAtIso: new Date().toISOString(),
+    count: result.count,
+  }
+  saveCleanupCheckRun(storageKey, params.checkId, record)
+  return record
 }
 
 export async function getDuplicateLocationClusters(
@@ -155,9 +220,45 @@ export async function getMissingGeometryLocations(
   )
 }
 
+function paginatedListQuery(params: GetCleanupCheckResultsParams): string {
+  const q = new URLSearchParams()
+  if (params.project) q.set("project", params.project)
+  const page = params.page ?? 1
+  const perPage = params.perPage ?? 25
+  q.set("limit", String(perPage))
+  q.set("offset", String((page - 1) * perPage))
+  return q.toString()
+}
+
+export async function getMismatchedPeople(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupMismatchIssuesResponse> {
+  return stylebookJsonFetch<PaginatedCleanupMismatchIssuesResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "mismatched-people")}?${paginatedListQuery(params)}`,
+  )
+}
+
+export async function getMismatchedOrganizations(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupMismatchIssuesResponse> {
+  return stylebookJsonFetch<PaginatedCleanupMismatchIssuesResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "mismatched-organizations")}?${paginatedListQuery(params)}`,
+  )
+}
+
+export async function getMismatchedLocations(
+  params: GetCleanupCheckResultsParams,
+): Promise<PaginatedCleanupMismatchIssuesResponse> {
+  return stylebookJsonFetch<PaginatedCleanupMismatchIssuesResponse>(
+    `${cleanupCheckResultsPath(params.stylebookSlug, "mismatched-locations")}?${paginatedListQuery(params)}`,
+  )
+}
+
 export async function getCleanupCheckResults(
   params: GetCleanupCheckResultsParams,
-): Promise<PaginatedDuplicateClustersResponse | PaginatedCleanupLocationIssuesResponse> {
+): Promise<
+  PaginatedDuplicateClustersResponse | PaginatedCleanupListResults
+> {
   switch (params.checkId) {
     case "duplicate-locations":
       return getDuplicateLocationClusters(params)
@@ -167,6 +268,12 @@ export async function getCleanupCheckResults(
       return getDuplicateOrganizationClusters(params)
     case "missing-geometry-locations":
       return getMissingGeometryLocations(params)
+    case "mismatched-people":
+      return getMismatchedPeople(params)
+    case "mismatched-organizations":
+      return getMismatchedOrganizations(params)
+    case "mismatched-locations":
+      return getMismatchedLocations(params)
     default:
       throw new Error(`Unknown cleanup check: ${params.checkId}`)
   }
@@ -408,6 +515,16 @@ export async function getLatestCleanupAiReview(
   const q = new URLSearchParams({ check_id: checkId })
   return stylebookJsonFetch<CleanupAiReview | null>(
     `${cleanupAiReviewPath(stylebookSlug)}/latest?${q.toString()}`,
+  )
+}
+
+export async function cancelCleanupAiReview(
+  stylebookSlug: string,
+  reviewId: string,
+): Promise<CleanupAiReview> {
+  return stylebookJsonFetch<CleanupAiReview>(
+    `${cleanupAiReviewPath(stylebookSlug, reviewId)}/cancel`,
+    { method: "POST" },
   )
 }
 

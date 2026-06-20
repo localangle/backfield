@@ -26,6 +26,7 @@ from backfield_entities.entities.person.persist import upsert_alias_for_canonica
 from sqlmodel import Session, SQLModel, create_engine, select
 from worker.substrate import persist_from_consolidated
 from worker.substrate.canonical.parallel_llm import (
+    candidate_ai_review_max_concurrent,
     canonical_adjudication_max_concurrent,
     run_callables_parallel,
 )
@@ -43,6 +44,17 @@ def test_canonical_adjudication_max_concurrent_respects_env(monkeypatch) -> None
     assert canonical_adjudication_max_concurrent() == 3
     monkeypatch.setenv("CANONICAL_ADJUDICATION_MAX_CONCURRENT", "0")
     assert canonical_adjudication_max_concurrent() == 1
+
+
+def test_candidate_ai_review_max_concurrent_defaults_below_adjudication(monkeypatch) -> None:
+    monkeypatch.delenv("CANDIDATE_AI_REVIEW_MAX_CONCURRENT", raising=False)
+    monkeypatch.setenv("CANONICAL_ADJUDICATION_MAX_CONCURRENT", "8")
+    assert candidate_ai_review_max_concurrent() == 3
+
+
+def test_candidate_ai_review_max_concurrent_respects_env(monkeypatch) -> None:
+    monkeypatch.setenv("CANDIDATE_AI_REVIEW_MAX_CONCURRENT", "5")
+    assert candidate_ai_review_max_concurrent() == 5
 
 
 def test_run_callables_parallel_serial_when_max_workers_one() -> None:

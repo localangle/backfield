@@ -152,12 +152,13 @@ def _strong_identity_canonical_ids(
     return matches
 
 
-def _alias_type_mismatch_defer_plan(
+def _alias_type_mismatch_adjudication_plan(
     session: Session,
     *,
     stylebook_id: int,
     organization: SubstrateOrganization,
 ) -> CanonicalPersistPlan | None:
+    """Name hits a catalog alias but organization_type differs — defer for LLM link/create."""
     norm = normalize_organization_text(organization.normalized_name or organization.name)
     if not norm:
         return None
@@ -179,6 +180,7 @@ def _alias_type_mismatch_defer_plan(
         return None
     if not type_mismatched:
         return None
+    recall_ids = [cid for cid, _ in type_mismatched]
     cid, canon = type_mismatched[0]
     return CanonicalPersistPlan(
         decision=CanonicalPersistDecision.DEFER,
@@ -186,6 +188,7 @@ def _alias_type_mismatch_defer_plan(
             {
                 "code": ORGANIZATION_CANONICAL_TYPE_MISMATCH,
                 "canonical_id": cid,
+                "recall_canonical_ids": recall_ids,
                 "substrate_type": normalize_organization_type(organization.organization_type),
                 "canonical_type": normalize_organization_type(canon.organization_type),
             },
@@ -234,12 +237,22 @@ def plan_has_ambiguous_organization_canonical_match(plan: CanonicalPersistPlan) 
     return False
 
 
+def plan_has_organization_canonical_type_mismatch(plan: CanonicalPersistPlan) -> bool:
+    for r in plan.resolution_reasons:
+        code = str(r.get("code") or "") if isinstance(r, dict) else ""
+        if code == ORGANIZATION_CANONICAL_TYPE_MISMATCH:
+            return True
+    return False
+
+
 def plan_requires_llm_organization_canonical_adjudication(
     plan: CanonicalPersistPlan,
     organization: SubstrateOrganization,
 ) -> bool:
     _ = organization
-    return plan_has_ambiguous_organization_canonical_match(plan)
+    return plan_has_ambiguous_organization_canonical_match(
+        plan
+    ) or plan_has_organization_canonical_type_mismatch(plan)
 
 
 def plan_is_materialize_new_canonical(plan: CanonicalPersistPlan) -> bool:
@@ -324,7 +337,7 @@ def decide_organization_canonical_persist_plan(
     _ = organizations_bucket
     _ = auto_apply_canonicalization
 
-    type_mismatch = _alias_type_mismatch_defer_plan(
+    type_mismatch = _alias_type_mismatch_adjudication_plan(
         session,
         stylebook_id=stylebook_id,
         organization=organization,

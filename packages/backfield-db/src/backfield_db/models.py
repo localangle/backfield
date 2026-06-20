@@ -402,6 +402,50 @@ class StylebookCleanupAiProposal(SQLModel, table=True):
     )
 
 
+class StylebookCandidateAiReview(SQLModel, table=True):
+    """Background AI review run for candidate queue rows (link / create recommendations)."""
+
+    __tablename__ = "stylebook_candidate_ai_review"
+    __table_args__ = (
+        Index(
+            "ix_stylebook_candidate_ai_review_stylebook_project_entity",
+            "stylebook_id",
+            "project_id",
+            "entity_type",
+        ),
+    )
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    stylebook_id: int = Field(foreign_key="stylebook.id", index=True)
+    project_id: int = Field(foreign_key="backfield_project.id", index=True)
+    entity_type: str = Field(sa_column=Column(Text, nullable=False))
+    status: str = Field(
+        default="queued",
+        sa_column=Column(Text, nullable=False, server_default="queued"),
+    )
+    provider_model_id: str = Field(sa_column=Column(Text, nullable=False))
+    ai_model_config_id: str | None = Field(
+        default=None,
+        foreign_key="backfield_ai_model_config.id",
+        index=True,
+    )
+    candidate_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    processed_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    recommendation_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_by_user_id: int | None = Field(
+        default=None,
+        foreign_key="backfield_user.id",
+        index=True,
+    )
+    created_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    )
+
+
 class StylebookLocationCanonical(SQLModel, table=True):
     """Canonical location row within a Stylebook."""
 

@@ -267,13 +267,14 @@ For each extracted person, set review fields so Stylebook can route the candidat
 |-----------|-------------------|----------------------|--------------------------|
 | Child (minor) | `auto_defer` | `child` | Identified as a child |
 | Animal (named pet, etc.) | `auto_defer` | `animal` | Identified as an animal |
-| Stage name, nickname, or alias without a clear legal/full name (e.g. "Prince", "Hurting Heart in Georgia") | `flag_review` | `stage_name_or_alias` | Short explanation |
+| Stage name, nickname, or alias without a clear legal/full name (e.g. "Prince") | `flag_review` | `stage_name_or_alias` | Short explanation |
+| Descriptive pseudonym or anonymous-source label (e.g. "TRUTH-TELLER IN ARKANSAS", "Hurting Heart in Georgia") | `flag_review` | `pseudonym` | Short explanation |
 | First name only in the article (no surname or full name elsewhere) | `flag_review` | `first_name_only` | Short explanation |
 | Surname inferred from a family reference (relative named with first name only in text) | `flag_review` | `first_name_only` | Note which relative established the surname (e.g. Rocky Wirtz → Peter Wirtz) |
 | Normal named person with full identity | `none` | omit or empty | omit |
 
 - Use `auto_defer` only for **children** and **animals** (these are auto-removed from the linking queue when auto-apply is on).
-- Use `flag_review` for **aliases**, **first-name-only** mentions, and **inferred surnames from family references** — they stay in the **open** queue for editors; do not use `auto_defer` for those.
+- Use `flag_review` for **aliases**, **pseudonyms**, **first-name-only** mentions, and **inferred surnames from family references** — they stay in the **open** queue for editors; do not use `auto_defer` for those.
 - When `review_handling` is `none`, omit `review_reason_code` and `review_message` (or use empty strings).
 
 ## Output Format
@@ -292,7 +293,7 @@ Each person object **must** include:
 - `nature_secondary_tags`: array of strings (same vocabulary; often empty)
 - `mentions`: array of objects, each with `"text"` (string) and `"quote"` (boolean)
 - `review_handling`: string — `none`, `flag_review`, or `auto_defer` (see Review routing above)
-- `review_reason_code`: string — when handling is not `none`: `child`, `animal`, `stage_name_or_alias`, or `first_name_only`
+- `review_reason_code`: string — when handling is not `none`: `child`, `animal`, `stage_name_or_alias`, `pseudonym`, or `first_name_only`
 - `review_message`: string — short editor-facing explanation when handling is not `none`
 - `surname_inferred_from_relative`: boolean — `true` when `name` includes a surname inferred from a family reference (see **Surnames from family references**); omit or `false` otherwise
 

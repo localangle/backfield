@@ -166,6 +166,9 @@ def test_policy_defers_cps_when_type_mismatches_child_protective() -> None:
         assert plan.decision == CanonicalPersistDecision.DEFER
         assert plan.resolution_reasons[0]["code"] == ORGANIZATION_CANONICAL_TYPE_MISMATCH
         assert plan.resolution_reasons[0]["canonical_id"] == str(canon.id)
+        recall_ids = plan.resolution_reasons[0].get("recall_canonical_ids")
+        assert isinstance(recall_ids, list)
+        assert str(canon.id) in recall_ids
 
 
 def test_policy_picks_matching_cps_when_two_share_acronym_alias() -> None:

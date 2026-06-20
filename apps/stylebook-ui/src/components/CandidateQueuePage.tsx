@@ -1,4 +1,4 @@
-import { Fragment } from "react"
+import { Fragment, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
@@ -12,6 +12,8 @@ import type {
   CandidateQueuePageConfig,
   QueueCandidateBase,
 } from "@/lib/entityConfigs/candidateQueueTypes"
+import { CandidateAiReviewDialog } from "@/components/CandidateAiReviewDialog"
+import { useCandidateAiReviewPolling } from "@/hooks/useCandidateAiReviewPolling"
 import { CandidateQueueCreatedToast } from "@/components/CandidateQueueCreatedToast"
 import { CandidateQueueLinkedToast } from "@/components/CandidateQueueLinkedToast"
 import { CandidateQueueInlineNote } from "@/components/CandidateQueueInlineNote"
@@ -27,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -47,6 +50,8 @@ import {
 } from "@/components/ui/table"
 import Pagination from "@/components/Pagination"
 import { cn } from "@/lib/utils"
+import { candidateQueueNameKey } from "@/lib/candidateQueueSimilarity"
+import { isActiveReviewStatus } from "@/lib/cleanupAiReview"
 import { Breadcrumbs } from "@/components/Breadcrumbs"
 import {
   CandidateReviewReasons,
@@ -56,7 +61,7 @@ import {
   candidateQueueDataCellClass,
   resolveCandidateQueueColgroup,
 } from "@/lib/candidateQueueTableLayout"
-import { ChevronRight, Clock, Link2, Loader2, PlusCircle, StickyNote } from "lucide-react"
+import { ChevronRight, Clock, Link2, Loader2, PlusCircle, Sparkles, StickyNote, X } from "lucide-react"
 
 type CandidateQueuePageProps<TCandidate extends QueueCandidateBase> = {
   config: CandidateQueuePageConfig<TCandidate>
@@ -85,6 +90,9 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     listHasPrev,
     listTotalPages,
     candidates,
+    duplicateCreateNewOnPage,
+    duplicateCreateNewCountByNameKey,
+    getCandidateCreateDisplayName,
     status,
     setStatus,
     query,
@@ -95,7 +103,9 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     acceptingId,
     deferringId,
     linkingSuggestedId,
+    clearingRecommendationId,
     acceptingAiRecommendations,
+    hasQueueRecommendations,
     linkModalId,
     linkModalInitialCanonicalId,
     linkModalSearchQuery,
@@ -111,6 +121,7 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     candidateNotes,
     toggleExpanded,
     handleDefer,
+    handleClearRecommendation,
     linkCandidateToSuggestedCanonical,
     acceptAiRecommendations,
     openCreateModal,
@@ -123,6 +134,34 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     refreshListQuiet,
   } = page
 
+  const aiReviewEnabled = Boolean(config.aiReviewEntityType && stylebookSlug && projectSlug)
+  const [aiReviewDialogOpen, setAiReviewDialogOpen] = useState(false)
+  const [stoppingAiReview, setStoppingAiReview] = useState(false)
+  const candidateAiReview = useCandidateAiReviewPolling({
+    stylebookSlug,
+    projectSlug,
+    entityType: config.aiReviewEntityType ?? "person",
+    enabled: aiReviewEnabled,
+    onReviewTerminal: () => void refreshListQuiet(),
+    onProgress: () => void refreshListQuiet(),
+  })
+  const aiReviewActive = Boolean(
+    candidateAiReview.review && isActiveReviewStatus(candidateAiReview.review.status),
+  )
+
+  async function handleAiReviewButtonClick() {
+    if (aiReviewActive) {
+      setStoppingAiReview(true)
+      try {
+        await candidateAiReview.stopReview()
+      } finally {
+        setStoppingAiReview(false)
+      }
+      return
+    }
+    setAiReviewDialogOpen(true)
+  }
+
   const LinkModal = config.linkModal
   const columnCount = config.columns.length + 2
   const tableColgroup = resolveCandidateQueueColgroup(columnCount, config.tableLayout)
@@ -131,7 +170,28 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
     acceptingAiRecommendations ||
     acceptingId !== null ||
     deferringId !== null ||
-    linkingSuggestedId !== null
+    linkingSuggestedId !== null ||
+    clearingRecommendationId !== null
+
+  const duplicateCreateNewBannerNames = duplicateCreateNewOnPage.clusters
+    .slice(0, 3)
+    .map((cluster) =>
+      cluster.count > 2
+        ? `${cluster.displayName} (${cluster.count})`
+        : cluster.displayName,
+    )
+    .join(", ")
+
+  const showAiQueueActions = status === "open"
+  const queueEmpty = !loading && listTotal === 0
+  const acceptRecommendationsDisabled =
+    queueEmpty ||
+    !hasQueueRecommendations ||
+    loading ||
+    rowActionsBusy ||
+    aiReviewActive
+  const reviewWithAiDisabled =
+    queueEmpty || loading || rowActionsBusy || candidateAiReview.loading || stoppingAiReview
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -213,9 +273,73 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Review queue</CardTitle>
-          <CardDescription>{config.copy.reviewQueueDescription}</CardDescription>
+        <CardHeader className="space-y-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-1 min-w-0">
+              <CardTitle>Review queue</CardTitle>
+              <CardDescription>{config.copy.reviewQueueDescription}</CardDescription>
+            </div>
+            {showAiQueueActions ? (
+              <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {config.aiReviewEntityType ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={aiReviewActive ? "destructive" : "outline"}
+                      disabled={!aiReviewActive && reviewWithAiDisabled}
+                      onClick={() => void handleAiReviewButtonClick()}
+                    >
+                      {stoppingAiReview ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Stopping…
+                        </>
+                      ) : aiReviewActive ? (
+                        "Stop"
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4 mr-2" />
+                          Review with AI
+                        </>
+                      )}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={acceptRecommendationsDisabled}
+                    onClick={() => void acceptAiRecommendations()}
+                  >
+                    {acceptingAiRecommendations ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Accepting recommendations…
+                      </>
+                    ) : (
+                      "Accept recommendations"
+                    )}
+                  </Button>
+                </div>
+                {config.aiReviewEntityType && aiReviewActive ? (
+                  <p className="text-sm text-muted-foreground inline-flex items-center gap-2 sm:justify-end">
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    Reviewing ({candidateAiReview.review?.processed_count ?? 0}/
+                    {candidateAiReview.review?.candidate_count ?? 0})…
+                  </p>
+                ) : null}
+                {config.aiReviewEntityType &&
+                candidateAiReview.review?.status === "cancelled" ? (
+                  <p className="text-sm text-muted-foreground sm:text-right">Review stopped</p>
+                ) : null}
+                {config.aiReviewEntityType && candidateAiReview.review?.status === "failed" ? (
+                  <p className="text-sm text-destructive sm:text-right">
+                    {candidateAiReview.review.error_message ?? "AI review failed"}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -263,24 +387,25 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-          {status === "open" && listTotal > 0 ? (
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-                disabled={loading || rowActionsBusy}
-                onClick={() => void acceptAiRecommendations()}
-              >
-                {acceptingAiRecommendations ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Accepting recommendations…
-                  </>
-                ) : (
-                  "Accept all AI recommendations"
-                )}
-              </Button>
-            </div>
+          {status === "open" && duplicateCreateNewOnPage.duplicateNameCount > 0 ? (
+            <Alert>
+              <AlertDescription className="space-y-1">
+                <p>
+                  {duplicateCreateNewOnPage.duplicateNameCount === 1
+                    ? "One name appears more than once with a suggestion to create a new entry"
+                    : `${duplicateCreateNewOnPage.duplicateNameCount} names appear more than once with a suggestion to create a new entry`}
+                  {duplicateCreateNewBannerNames ? `: ${duplicateCreateNewBannerNames}` : ""}
+                  {duplicateCreateNewOnPage.duplicateNameCount > 3
+                    ? `, and ${duplicateCreateNewOnPage.duplicateNameCount - 3} more`
+                    : ""}
+                  .
+                </p>
+                <p className="text-muted-foreground">
+                  Accepting all recommendations creates one entry per name and links the others.
+                  That applies to the full filtered queue, not only this page.
+                </p>
+              </AlertDescription>
+            </Alert>
           ) : null}
 
           <div className="rounded-md border">
@@ -364,6 +489,14 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                       rowSug === "defer"
                         ? actionLabels.defer.titleSuggested
                         : actionLabels.defer.titleDefault
+                    const rowCreateNameKey =
+                      rowSug === "create_new"
+                        ? candidateQueueNameKey(getCandidateCreateDisplayName(c))
+                        : ""
+                    const rowDuplicateCount =
+                      rowCreateNameKey
+                        ? duplicateCreateNewCountByNameKey.get(rowCreateNameKey) ?? 0
+                        : 0
 
                     return (
                       <Fragment key={c.id}>
@@ -401,6 +534,15 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                 >
                                   {c.suggested_name || "—"}
                                 </span>
+                                {rowDuplicateCount > 1 ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="shrink-0 font-normal text-xs"
+                                    title={`${rowDuplicateCount} entries with this name on this page`}
+                                  >
+                                    ×{rowDuplicateCount} in queue
+                                  </Badge>
+                                ) : null}
                                 {c.note ? (
                                   <StickyNote
                                     className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
@@ -500,6 +642,29 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
                                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                                   ) : (
                                     <Clock className="h-4 w-4" aria-hidden />
+                                  )}
+                                </Button>
+                              ) : null}
+                              {rowSugLabel ? (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                                  title="Clear AI recommendation"
+                                  aria-label="Clear AI recommendation"
+                                  disabled={
+                                    acceptingId === c.id ||
+                                    deferringId === c.id ||
+                                    linkingSuggestedId === c.id ||
+                                    clearingRecommendationId === c.id
+                                  }
+                                  onClick={() => void handleClearRecommendation(c)}
+                                >
+                                  {clearingRecommendationId === c.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                                  ) : (
+                                    <X className="h-4 w-4" aria-hidden />
                                   )}
                                 </Button>
                               ) : null}
@@ -672,6 +837,17 @@ export function CandidateQueuePage<TCandidate extends QueueCandidateBase>({
         includeType={config.copy.potentialLinks.includeType}
         includeAddress={config.copy.potentialLinks.includeAddress}
       />
+
+      {config.aiReviewEntityType ? (
+        <CandidateAiReviewDialog
+          open={aiReviewDialogOpen}
+          onOpenChange={setAiReviewDialogOpen}
+          stylebookSlug={stylebookSlug}
+          projectSlug={projectSlug}
+          entityType={config.aiReviewEntityType}
+          onReviewStarted={(reviewId) => void candidateAiReview.startTracking(reviewId)}
+        />
+      ) : null}
     </div>
   )
 }

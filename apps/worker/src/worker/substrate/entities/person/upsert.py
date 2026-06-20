@@ -12,6 +12,7 @@ from backfield_entities.entities.person.review import (
 )
 from backfield_entities.entities.person.review import (
     finalize_review_fields_from_entry,
+    surname_inferred_from_relative,
 )
 from backfield_entities.entities.person.types import (
     derive_person_sort_key,
@@ -147,6 +148,8 @@ def _upsert_person(
             if review_fields.get(k) is not None
         },
     }
+    if surname_inferred_from_relative(entry):
+        details["surname_inferred_from_relative"] = True
     raw_entry_id = entry.get("id") or entry.get("mention_id")
     if raw_entry_id is not None and str(raw_entry_id).strip():
         details["raw_entry_id"] = str(raw_entry_id).strip()

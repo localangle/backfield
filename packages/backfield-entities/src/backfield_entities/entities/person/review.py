@@ -14,17 +14,19 @@ REVIEW_HANDLING_AUTO_DEFER: ReviewHandling = "auto_defer"
 REASON_CHILD = "child"
 REASON_ANIMAL = "animal"
 REASON_STAGE_NAME_OR_ALIAS = "stage_name_or_alias"
+REASON_PSEUDONYM = "pseudonym"
 REASON_FIRST_NAME_ONLY = "first_name_only"
 
 AUTO_WAIVE_REASON_CODES: frozenset[str] = frozenset({REASON_CHILD, REASON_ANIMAL})
 FLAG_REVIEW_REASON_CODES: frozenset[str] = frozenset(
-    {REASON_STAGE_NAME_OR_ALIAS, REASON_FIRST_NAME_ONLY}
+    {REASON_STAGE_NAME_OR_ALIAS, REASON_PSEUDONYM, REASON_FIRST_NAME_ONLY}
 )
 
 _DEFAULT_MESSAGES: dict[str, str] = {
     REASON_CHILD: "Identified as a child",
     REASON_ANIMAL: "Identified as an animal",
     REASON_STAGE_NAME_OR_ALIAS: "Stage name or alias — confirm full identity before linking",
+    REASON_PSEUDONYM: "Descriptive pseudonym — defer linking until a legal identity is known",
     REASON_FIRST_NAME_ONLY: "First name only — confirm full identity before linking",
 }
 
@@ -38,6 +40,14 @@ _VALID_HANDLING: frozenset[str] = frozenset(
 _VALID_REASON_CODES: frozenset[str] = AUTO_WAIVE_REASON_CODES | FLAG_REVIEW_REASON_CODES
 
 _FIRST_NAME_ONLY_RE = re.compile(r"^[A-Z][a-z]{1,}$")
+_PSEUDONYM_IN_PLACE_RE = re.compile(
+    r"^(?P<descriptor>.+?)\s+in\s+(?P<place>[A-Za-z][\w\s\-.'']+)$",
+    re.IGNORECASE,
+)
+_DESCRIPTIVE_PSEUDONYM_WORD_RE = re.compile(
+    r"(ing|er|or|ist|ian|heart|voice|teller|whistle|source)$",
+    re.IGNORECASE,
+)
 
 
 def default_review_message(code: str) -> str:
@@ -115,6 +125,50 @@ def looks_like_first_name_only_token(name: str) -> bool:
     return _FIRST_NAME_ONLY_RE.fullmatch(token) is not None
 
 
+def _descriptor_words_look_descriptive(descriptor: str) -> bool:
+    for part in re.split(r"[\s\-]+", descriptor):
+        token = part.strip()
+        if token and _DESCRIPTIVE_PSEUDONYM_WORD_RE.search(token):
+            return True
+    return False
+
+
+def looks_like_descriptive_pseudonym(name: str) -> bool:
+    """Heuristic: anonymous-source style names such as ``TRUTH-TELLER IN ARKANSAS``."""
+    token = name.strip()
+    if not token:
+        return False
+    match = _PSEUDONYM_IN_PLACE_RE.match(token)
+    if match is None:
+        return False
+    descriptor = match.group("descriptor").strip()
+    if not descriptor:
+        return False
+    if "-" in descriptor:
+        return True
+    if descriptor.isupper():
+        return True
+    words = descriptor.split()
+    if len(words) >= 3:
+        return True
+    return _descriptor_words_look_descriptive(descriptor)
+
+
+def person_name_is_descriptive_pseudonym(
+    *,
+    person_name: str,
+    reason_code: str | None = None,
+    source_details: dict[str, Any] | None = None,
+) -> bool:
+    code = str(reason_code or "").strip()
+    details = source_details if isinstance(source_details, dict) else {}
+    if code == REASON_PSEUDONYM:
+        return True
+    if str(details.get("review_reason_code") or "").strip() == REASON_PSEUDONYM:
+        return True
+    return looks_like_descriptive_pseudonym(person_name)
+
+
 def surname_inferred_from_relative(entry: dict[str, Any]) -> bool:
     """True when PersonExtract inferred a shared surname from a family reference."""
     val = entry.get("surname_inferred_from_relative")
@@ -123,6 +177,30 @@ def surname_inferred_from_relative(entry: dict[str, Any]) -> bool:
     if isinstance(val, str) and val.strip().lower() in {"true", "yes", "1"}:
         return True
     return False
+
+
+def inferred_surname_from_review_message(message: str | None) -> bool:
+    """Legacy rows may carry inferred-surname context only in ``review_message``."""
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return "inferred surname" in text or "surname inferred" in text
+
+
+def person_inferred_surname_from_details(details: dict[str, Any]) -> bool:
+    if surname_inferred_from_relative(details):
+        return True
+    return inferred_surname_from_review_message(
+        details.get("review_message") if isinstance(details.get("review_message"), str) else None
+    )
+
+
+def review_reason_indicates_inferred_surname(reason: dict[str, Any]) -> bool:
+    if str(reason.get("code") or "") != REASON_FIRST_NAME_ONLY:
+        return False
+    return inferred_surname_from_review_message(
+        reason.get("message") if isinstance(reason.get("message"), str) else None
+    )
 
 
 def apply_inferred_surname_review_flag(
@@ -141,6 +219,27 @@ def apply_inferred_surname_review_flag(
         REVIEW_HANDLING_FLAG,
         REASON_FIRST_NAME_ONLY,
         message or _INFERRED_SURNAME_REVIEW_MESSAGE,
+    )
+
+
+def apply_pseudonym_review_override(
+    name: str,
+    *,
+    handling: ReviewHandling,
+    reason_code: str | None,
+    message: str | None,
+) -> tuple[ReviewHandling, str | None, str | None]:
+    """Route descriptive pseudonyms to defer (not stage-name link/create review)."""
+    if reason_code in AUTO_WAIVE_REASON_CODES:
+        return handling, reason_code, message
+    if reason_code == REASON_FIRST_NAME_ONLY:
+        return handling, reason_code, message
+    if not looks_like_descriptive_pseudonym(name):
+        return handling, reason_code, message
+    return (
+        REVIEW_HANDLING_FLAG,
+        REASON_PSEUDONYM,
+        message or default_review_message(REASON_PSEUDONYM),
     )
 
 
@@ -175,6 +274,13 @@ def finalize_review_fields_from_entry(entry: dict[str, Any]) -> dict[str, Any]:
         reason_code=code,
         message=message,
     )
+    if name:
+        handling, code, message = apply_pseudonym_review_override(
+            name,
+            handling=handling,
+            reason_code=code,
+            message=message,
+        )
     if name:
         handling, code, message = apply_deterministic_review_overrides(
             name,
@@ -247,3 +353,89 @@ def plan_includes_flag_person_review(
         if isinstance(r, dict) and is_flag_review_code(str(r.get("code") or "")):
             return True
     return False
+
+
+def plan_includes_defer_only_person_review(
+    plan_reasons: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+) -> bool:
+    for r in plan_reasons:
+        if not isinstance(r, dict):
+            continue
+        code = str(r.get("code") or "")
+        if code in AUTO_WAIVE_REASON_CODES:
+            return True
+        if code == REASON_PSEUDONYM:
+            return True
+        if code == REASON_FIRST_NAME_ONLY:
+            if isinstance(r, dict) and review_reason_indicates_inferred_surname(r):
+                continue
+            return True
+    return False
+
+
+def person_source_details(person: Any) -> dict[str, Any]:
+    raw = getattr(person, "source_details_json", None)
+    return raw if isinstance(raw, dict) else {}
+
+
+def person_review_reason_code_from_source(details: dict[str, Any]) -> str | None:
+    _handling, code, _message = review_context_from_source_details(details)
+    return code
+
+
+def person_surname_inferred_from_source(person: Any) -> bool:
+    return person_inferred_surname_from_details(person_source_details(person))
+
+
+def person_review_recommends_defer_only(
+    *,
+    reason_code: str | None,
+    source_details: dict[str, Any] | None = None,
+    person_name: str | None = None,
+) -> bool:
+    """True when editors should defer (no link/create recommendation)."""
+    details = source_details if isinstance(source_details, dict) else {}
+    if person_inferred_surname_from_details(details):
+        return False
+    name = (person_name or "").strip()
+    if not name and isinstance(details.get("name"), str):
+        name = str(details.get("name")).strip()
+    if name and person_name_is_descriptive_pseudonym(
+        person_name=name,
+        reason_code=reason_code,
+        source_details=details,
+    ):
+        return True
+    code = str(reason_code or "").strip()
+    if code in AUTO_WAIVE_REASON_CODES:
+        return True
+    if code == REASON_PSEUDONYM:
+        return True
+    return code == REASON_FIRST_NAME_ONLY
+
+
+def person_review_blocks_auto_materialize(
+    *,
+    reason_code: str | None,
+    source_details: dict[str, Any] | None = None,
+    person_name: str | None = None,
+) -> bool:
+    """True when ingest must not auto-create a canonical (review queue may still suggest create)."""
+    details = source_details if isinstance(source_details, dict) else {}
+    if person_inferred_surname_from_details(details):
+        return True
+    name = (person_name or "").strip()
+    if name and person_name_is_descriptive_pseudonym(
+        person_name=name,
+        reason_code=reason_code,
+        source_details=details,
+    ):
+        return True
+    code = str(reason_code or "").strip()
+    if code == REASON_STAGE_NAME_OR_ALIAS:
+        return True
+    return person_review_recommends_defer_only(
+        reason_code=code,
+        source_details=details,
+        person_name=person_name,
+    )

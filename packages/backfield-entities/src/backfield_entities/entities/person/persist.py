@@ -32,6 +32,7 @@ from backfield_entities.entities.person.policy import (
 )
 from backfield_entities.entities.person.review import (
     plan_includes_auto_waive_person_review,
+    plan_includes_defer_only_person_review,
     plan_includes_flag_person_review,
 )
 from backfield_entities.entities.person.types import (
@@ -324,12 +325,62 @@ def materialize_new_canonical_and_link(
     )
 
 
+def _adjudication_item_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
+    for r in plan.resolution_reasons:
+        if isinstance(r, dict) and str(r.get("code") or "") == "canonical_adjudication":
+            return dict(r)
+    return None
+
+
+def _canonical_suggestion_from_adjudication(
+    adj: dict[str, Any],
+    *,
+    source: str = "canonical_adjudication",
+) -> dict[str, Any] | None:
+    outcome = str(adj.get("outcome") or "").strip()
+    src = str(adj.get("source") or source)
+    if outcome == "link_existing":
+        cid = adj.get("canonical_id")
+        if cid is not None and str(cid).strip():
+            return {
+                "code": "canonical_suggestion",
+                "source": src,
+                "suggested_action": "link_existing",
+                "stylebook_person_canonical_id": str(cid).strip(),
+            }
+    if outcome == "no_high_confidence_link":
+        return {
+            "code": "canonical_suggestion",
+            "source": src,
+            "suggested_action": "materialize_new",
+        }
+    return None
+
+
 def _canonical_suggestion_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any] | None:
-    if plan.decision == CanonicalPersistDecision.DEFER and (
-        plan_includes_flag_person_review(plan.resolution_reasons)
-        or plan_has_ambiguous_person_canonical_match(plan)
-    ):
-        return None
+    adj = _adjudication_item_from_plan(plan)
+    if adj is not None:
+        from_adj = _canonical_suggestion_from_adjudication(adj)
+        if from_adj is not None:
+            return from_adj
+
+    if plan.decision == CanonicalPersistDecision.DEFER:
+        if any(
+            isinstance(r, dict) and str(r.get("code") or "") == "canonical_suggestion"
+            for r in plan.resolution_reasons
+        ):
+            return None
+        if plan_has_ambiguous_person_canonical_match(plan) and adj is None:
+            if plan_includes_defer_only_person_review(plan.resolution_reasons):
+                pass
+            else:
+                return None
+        elif (
+            plan_includes_flag_person_review(plan.resolution_reasons)
+            and adj is None
+            and not plan_includes_defer_only_person_review(plan.resolution_reasons)
+        ):
+            return None
     if (
         plan.decision == CanonicalPersistDecision.LINK_EXISTING
         and plan.existing_canonical_id is not None
@@ -347,8 +398,6 @@ def _canonical_suggestion_from_plan(plan: CanonicalPersistPlan) -> dict[str, Any
             "suggested_action": "materialize_new",
         }
     if plan.decision == CanonicalPersistDecision.DEFER:
-        if plan_includes_auto_waive_person_review(plan.resolution_reasons):
-            return None
         return {
             "code": "canonical_suggestion",
             "source": "rules_plan",
@@ -368,13 +417,59 @@ def apply_canonical_persist_plan_review_only(
     _ = stylebook_id
     _ = people_bucket
     reasons: list[dict[str, Any]] = [dict(r) for r in plan.resolution_reasons]
+    has_suggestion = any(
+        isinstance(r, dict) and str(r.get("code") or "") == "canonical_suggestion" for r in reasons
+    )
     extra = _canonical_suggestion_from_plan(plan)
-    if extra is not None:
+    if extra is not None and not has_suggestion:
         reasons.append(extra)
     person.stylebook_person_canonical_id = None
     person.canonical_link_status = CANONICAL_LINK_PENDING
     person.canonical_review_reasons_json = reasons
     session.add(person)
+
+
+CANDIDATE_AI_REVIEW_SOURCE = "candidate_ai_review"
+
+
+def apply_candidate_ai_review_recommendation(
+    session: Session,
+    *,
+    person: SubstratePerson,
+    plan: CanonicalPersistPlan,
+) -> bool:
+    """Write link/create/defer recommendation onto a pending queue row without linking."""
+    if str(person.canonical_link_status) != CANONICAL_LINK_PENDING:
+        return False
+    if person.stylebook_person_canonical_id is not None:
+        return False
+    raw = person.canonical_review_reasons_json
+    reasons: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        reasons = [dict(r) for r in raw if isinstance(r, dict)]
+    elif isinstance(raw, dict):
+        reasons = [dict(raw)]
+    reasons = [
+        r
+        for r in reasons
+        if str(r.get("code") or "") not in ("canonical_suggestion", "canonical_adjudication")
+    ]
+    has_suggestion = False
+    for r in plan.resolution_reasons:
+        if isinstance(r, dict):
+            row = dict(r)
+            reasons.append(row)
+            if str(row.get("code") or "") == "canonical_suggestion":
+                has_suggestion = True
+    extra = _canonical_suggestion_from_plan(plan)
+    if extra is not None:
+        suggestion = dict(extra)
+        suggestion["source"] = CANDIDATE_AI_REVIEW_SOURCE
+        reasons.append(suggestion)
+        has_suggestion = True
+    person.canonical_review_reasons_json = reasons
+    session.add(person)
+    return has_suggestion
 
 
 def apply_canonical_persist_plan(
@@ -390,6 +485,12 @@ def apply_canonical_persist_plan(
     _ = people_bucket
     _ = auto_apply_canonicalization
     reasons = [dict(r) for r in plan.resolution_reasons]
+    has_suggestion = any(
+        isinstance(r, dict) and str(r.get("code") or "") == "canonical_suggestion" for r in reasons
+    )
+    extra = _canonical_suggestion_from_plan(plan)
+    if extra is not None and not has_suggestion:
+        reasons.append(extra)
     if plan.decision == CanonicalPersistDecision.DEFER:
         person.stylebook_person_canonical_id = None
         if auto_apply_canonicalization and plan_includes_auto_waive_person_review(

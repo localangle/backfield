@@ -10,7 +10,7 @@ import { useAppMessage } from "@/components/AppMessageProvider"
 import { Loader2, Sparkles } from "lucide-react"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { useScopeBreadcrumbRoot } from "@/lib/breadcrumbs"
-import { CLEANUP_AI_HIGH_CONFIDENCE_THRESHOLD } from "@/lib/cleanupAiReview"
+import { CLEANUP_AI_HIGH_CONFIDENCE_THRESHOLD, isActiveReviewStatus } from "@/lib/cleanupAiReview"
 import { useCleanupAiReviewPolling } from "@/hooks/useCleanupAiReviewPolling"
 import {
   cleanupCheckConfigById,
@@ -23,8 +23,10 @@ import {
   applyDeleteEmptyToClusterResults,
   applyDismissCanonicalToListResults,
   applyDismissClusterToResults,
+  applyKeepSeparateProposalToClusterResults,
   applyMergeToClusterResults,
   assignStableClusterIds,
+  pairKeyForIds,
 } from "@/lib/cleanupClusterState"
 import {
   deleteEmptyCleanupLocationCanonical,
@@ -37,10 +39,14 @@ import {
   mergeCleanupPersonCanonical,
   acceptCleanupAiProposal,
   rejectCleanupAiProposal,
+  refreshPersistedCleanupCheckCount,
   type CleanupAiProposal,
   type CleanupLocationIssue,
+  type CleanupMismatchIssue,
   type PaginatedDuplicateClustersResponse,
+  type PaginatedCleanupListResults,
   type PaginatedCleanupLocationIssuesResponse,
+  type PaginatedCleanupMismatchIssuesResponse,
 } from "@/lib/api"
 import { useCanEditStylebook } from "@/lib/stylebookEditContext"
 import { placeExtractTypeLabel } from "@/lib/place-extract-type-label"
@@ -92,7 +98,7 @@ function entitySingular(entityType: CleanupEntityType): string {
 export default function CleanupCheck() {
   const { checkId = "" } = useParams<{ checkId: string }>()
   const config = cleanupCheckConfigById(checkId)
-  const { showConfirm, showError, showMessage } = useAppMessage()
+  const { showConfirm, showError } = useAppMessage()
   const canEdit = useCanEditStylebook()
   const {
     stylebookSlug,
@@ -105,23 +111,39 @@ export default function CleanupCheck() {
   const [page, setPage] = useState(1)
   const [clusterResults, setClusterResults] =
     useState<PaginatedDuplicateClustersResponse | null>(null)
-  const [listResults, setListResults] =
-    useState<PaginatedCleanupLocationIssuesResponse | null>(null)
+  const [listResults, setListResults] = useState<PaginatedCleanupListResults | null>(null)
   const clusterStableIdByMemberRef = useRef<Map<string, string>>(new Map())
   const nextClusterStableIdRef = useRef(0)
+  const dismissedCleanupPairsRef = useRef<Set<string>>(new Set())
   const [aiDialogOpen, setAiDialogOpen] = useState(false)
+  const [stoppingAiReview, setStoppingAiReview] = useState(false)
   const isClusterCheck = config?.kind === "cluster"
 
   const {
     review: aiReview,
     proposals: aiProposals,
     startTracking: startAiReviewTracking,
+    stopReview: stopAiReview,
     removeProposal: removeAiProposal,
   } = useCleanupAiReviewPolling({
     stylebookSlug,
     checkId: config?.id ?? "",
     enabled: Boolean(stylebookSlug && isClusterCheck),
   })
+  const aiReviewActive = Boolean(aiReview && isActiveReviewStatus(aiReview.status))
+
+  async function handleAiReviewButtonClick() {
+    if (aiReviewActive) {
+      setStoppingAiReview(true)
+      try {
+        await stopAiReview()
+      } finally {
+        setStoppingAiReview(false)
+      }
+      return
+    }
+    setAiDialogOpen(true)
+  }
 
   const entityType = config?.entityType ?? "location"
   const linkedRecordLabel = cleanupLinkedRecordLabel(entityType)
@@ -132,6 +154,19 @@ export default function CleanupCheck() {
       cleanupEntityDetailPath(catalogBasePath, entityType, canonicalId, catalogScopeSuffix),
     [catalogBasePath, catalogScopeSuffix, entityType],
   )
+
+  const refreshHubCheckCount = useCallback(async () => {
+    if (!stylebookSlug || !config) return
+    try {
+      await refreshPersistedCleanupCheckCount({
+        stylebookSlug,
+        checkId: config.id,
+        project: projectFilterSlug || undefined,
+      })
+    } catch {
+      // Hub refreshes on next visit; ignore background sync failures.
+    }
+  }, [stylebookSlug, config, projectFilterSlug])
 
   useEffect(() => {
     setPage(1)
@@ -149,6 +184,7 @@ export default function CleanupCheck() {
         perPage: PER_PAGE,
       })
       if (config.kind === "cluster") {
+        dismissedCleanupPairsRef.current.clear()
         const paginated = response as PaginatedDuplicateClustersResponse
         setClusterResults({
           ...paginated,
@@ -160,7 +196,7 @@ export default function CleanupCheck() {
         })
         setListResults(null)
       } else {
-        setListResults(response as PaginatedCleanupLocationIssuesResponse)
+        setListResults(response as PaginatedCleanupListResults)
         setClusterResults(null)
       }
     } catch (error) {
@@ -210,6 +246,7 @@ export default function CleanupCheck() {
             ? applyMergeToClusterResults(prev, sourceId, targetId, result.relinked_substrate_count)
             : prev,
         )
+        void refreshHubCheckCount()
       } catch (error) {
         showError(
           error instanceof Error
@@ -226,6 +263,7 @@ export default function CleanupCheck() {
       findCanonicalLabel,
       showConfirm,
       showError,
+      refreshHubCheckCount,
     ],
   )
 
@@ -244,6 +282,7 @@ export default function CleanupCheck() {
         setClusterResults((prev) =>
           prev ? applyDeleteEmptyToClusterResults(prev, canonicalId) : prev,
         )
+        void refreshHubCheckCount()
       } catch (error) {
         showError(
           error instanceof Error
@@ -252,7 +291,7 @@ export default function CleanupCheck() {
         )
       }
     },
-    [stylebookSlug, entityType, findCanonicalLabel, showConfirm, showError],
+    [stylebookSlug, entityType, findCanonicalLabel, showConfirm, showError, refreshHubCheckCount],
   )
 
   const handleDismissCluster = useCallback(
@@ -266,6 +305,14 @@ export default function CleanupCheck() {
         },
       )
       if (!confirmed) return
+      const sortedMemberIds = [...memberIds].sort()
+      for (let index = 0; index < sortedMemberIds.length; index += 1) {
+        for (let other = index + 1; other < sortedMemberIds.length; other += 1) {
+          dismissedCleanupPairsRef.current.add(
+            pairKeyForIds(sortedMemberIds[index], sortedMemberIds[other]),
+          )
+        }
+      }
       try {
         await dismissCleanupIssue({
           stylebookSlug,
@@ -275,29 +322,19 @@ export default function CleanupCheck() {
         setClusterResults((prev) =>
           prev ? applyDismissClusterToResults(prev, clusterId) : prev,
         )
+        void refreshHubCheckCount()
       } catch (error) {
         showError(
           error instanceof Error ? error.message : "Failed to dismiss duplicate group",
         )
       }
     },
-    [stylebookSlug, config, showConfirm, showError],
+    [stylebookSlug, config, showConfirm, showError, refreshHubCheckCount],
   )
 
-  const handleDismissGeographyIssue = useCallback(
+  const handleDismissListIssue = useCallback(
     async (canonicalId: string) => {
       if (!stylebookSlug || !config) return
-      const label =
-        listResults?.canonicals.find((canonical) => canonical.id === canonicalId)?.label ??
-        "this location"
-      const confirmed = await showConfirm(
-        `Remove "${label}" from this cleanup list? It may reappear if the underlying issue remains.`,
-        {
-          title: "Mark as reviewed?",
-          confirmLabel: "Mark reviewed",
-        },
-      )
-      if (!confirmed) return
       try {
         await dismissCleanupIssue({
           stylebookSlug,
@@ -307,13 +344,14 @@ export default function CleanupCheck() {
         setListResults((prev) =>
           prev ? applyDismissCanonicalToListResults(prev, canonicalId) : prev,
         )
+        void refreshHubCheckCount()
       } catch (error) {
         showError(
-          error instanceof Error ? error.message : "Failed to dismiss geography issue",
+          error instanceof Error ? error.message : "Failed to dismiss issue",
         )
       }
     },
-    [stylebookSlug, config, listResults, showConfirm, showError],
+    [stylebookSlug, config, showError, refreshHubCheckCount],
   )
 
   const applyAcceptedMergeProposal = useCallback(
@@ -333,6 +371,19 @@ export default function CleanupCheck() {
     [],
   )
 
+  const applyAcceptedKeepSeparateProposal = useCallback((proposal: CleanupAiProposal) => {
+    if (proposal.action !== "keep_separate") return
+    setClusterResults((prev) =>
+      prev
+        ? applyKeepSeparateProposalToClusterResults(
+            prev,
+            proposal,
+            dismissedCleanupPairsRef.current,
+          )
+        : prev,
+    )
+  }, [])
+
   const handleAcceptAiProposal = useCallback(
     async (proposal: CleanupAiProposal) => {
       if (!stylebookSlug) return
@@ -341,17 +392,27 @@ export default function CleanupCheck() {
           stylebookSlug,
           proposalId: proposal.id,
         })
-        if (result.status === "stale") {
-          showError(result.message)
-        } else if (proposal.action === "merge") {
-          applyAcceptedMergeProposal(proposal)
+        if (result.status === "applied") {
+          if (proposal.action === "merge") {
+            applyAcceptedMergeProposal(proposal)
+          } else if (proposal.action === "keep_separate") {
+            applyAcceptedKeepSeparateProposal(proposal)
+          }
+          void refreshHubCheckCount()
         }
         removeAiProposal(proposal.id)
       } catch (error) {
         showError(error instanceof Error ? error.message : "Failed to accept AI suggestion")
       }
     },
-    [stylebookSlug, showError, applyAcceptedMergeProposal, removeAiProposal],
+    [
+      stylebookSlug,
+      showError,
+      applyAcceptedMergeProposal,
+      applyAcceptedKeepSeparateProposal,
+      removeAiProposal,
+      refreshHubCheckCount,
+    ],
   )
 
   const handleRejectAiProposal = useCallback(
@@ -383,30 +444,33 @@ export default function CleanupCheck() {
           stylebookSlug,
           proposalId: proposal.id,
         })
-        if (result.status === "applied" && proposal.action === "merge") {
-          applyAcceptedMergeProposal(proposal)
-        } else if (result.status === "stale") {
-          showError(result.message)
+        if (result.status === "applied") {
+          if (proposal.action === "merge") {
+            applyAcceptedMergeProposal(proposal)
+          } else if (proposal.action === "keep_separate") {
+            applyAcceptedKeepSeparateProposal(proposal)
+          }
         }
         removeAiProposal(proposal.id)
       } catch {
         // Continue with remaining proposals.
       }
     }
+    void refreshHubCheckCount()
   }, [
     stylebookSlug,
     highConfidenceProposals,
-    showError,
     applyAcceptedMergeProposal,
+    applyAcceptedKeepSeparateProposal,
     removeAiProposal,
+    refreshHubCheckCount,
   ])
 
   const handleReviewStarted = useCallback(
     (reviewId: string) => {
       void startAiReviewTracking(reviewId)
-      showMessage("AI review started. Suggestions will appear when it finishes.")
     },
-    [startAiReviewTracking, showMessage],
+    [startAiReviewTracking],
   )
 
   const pagination = useMemo(() => {
@@ -428,6 +492,11 @@ export default function CleanupCheck() {
     }
     return { page: 1, total: 0, hasNext: false, hasPrev: false }
   }, [clusterResults, listResults])
+
+  const showAiReviewControls =
+    canEdit &&
+    isClusterCheck &&
+    (loading || pagination.total > 0 || aiReviewActive)
 
   if (!config) {
     return (
@@ -451,7 +520,7 @@ export default function CleanupCheck() {
         <Breadcrumbs
           items={[
             { label: crumbRoot.label, to: `${catalogBasePath}${catalogScopeSuffix}` },
-            { label: "Cleanup", to: cleanupHubPath },
+            { label: "Checks", to: cleanupHubPath },
             { label: config.title },
           ]}
           className="mb-3"
@@ -462,17 +531,37 @@ export default function CleanupCheck() {
 
       <StylebookHomeTabs />
 
-      {canEdit && isClusterCheck ? (
+      {showAiReviewControls ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => setAiDialogOpen(true)}>
-            <Sparkles className="h-4 w-4 mr-2" />
-            Review with AI
+          <Button
+            type="button"
+            variant={aiReviewActive ? "destructive" : "outline"}
+            disabled={stoppingAiReview}
+            onClick={() => void handleAiReviewButtonClick()}
+          >
+            {stoppingAiReview ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Stopping…
+              </>
+            ) : aiReviewActive ? (
+              "Stop"
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Review with AI
+              </>
+            )}
           </Button>
-          {aiReview && (aiReview.status === "queued" || aiReview.status === "running") ? (
+          {aiReviewActive ? (
             <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Reviewing clusters ({aiReview.processed_cluster_count}/{aiReview.cluster_count})…
+              Reviewing clusters ({aiReview?.processed_cluster_count ?? 0}/
+              {aiReview?.cluster_count ?? 0})…
             </span>
+          ) : null}
+          {aiReview?.status === "cancelled" ? (
+            <span className="text-sm text-muted-foreground">Review stopped</span>
           ) : null}
           {aiReview?.status === "failed" ? (
             <span className="text-sm text-destructive">
@@ -487,7 +576,7 @@ export default function CleanupCheck() {
         </div>
       ) : null}
 
-      {canEdit && isClusterCheck ? (
+      {showAiReviewControls ? (
         <CleanupAiReviewDialog
           open={aiDialogOpen}
           onOpenChange={setAiDialogOpen}
@@ -516,12 +605,20 @@ export default function CleanupCheck() {
           onAcceptAiProposal={canEdit ? handleAcceptAiProposal : undefined}
           onRejectAiProposal={canEdit ? handleRejectAiProposal : undefined}
         />
-      ) : (
+      ) : config.id === "missing-geometry-locations" ? (
         <GeographyIssuesList
-          canonicals={listResults?.canonicals ?? []}
+          canonicals={(listResults as PaginatedCleanupLocationIssuesResponse | null)?.canonicals ?? []}
           locationDetailHref={detailHref}
           canEdit={canEdit}
-          onDismiss={canEdit ? handleDismissGeographyIssue : undefined}
+          onDismiss={canEdit ? handleDismissListIssue : undefined}
+        />
+      ) : (
+        <MismatchedLinksList
+          canonicals={(listResults as PaginatedCleanupMismatchIssuesResponse | null)?.canonicals ?? []}
+          entityType={entityType}
+          detailHref={detailHref}
+          canEdit={canEdit}
+          onDismiss={canEdit ? handleDismissListIssue : undefined}
         />
       )}
 
@@ -534,9 +631,146 @@ export default function CleanupCheck() {
           hasNext={pagination.hasNext}
           hasPrev={pagination.hasPrev}
           onPageChange={setPage}
-          itemLabel={config.kind === "cluster" ? "clusters" : "locations"}
+          itemLabel={
+            config.kind === "cluster"
+              ? "clusters"
+              : entityType === "location"
+                ? "locations"
+                : entityType === "person"
+                  ? "people"
+                  : "organizations"
+          }
         />
       ) : null}
+    </div>
+  )
+}
+
+function mismatchExamplesLabel(examples: string[], count: number): string {
+  const shown = examples.filter(Boolean)
+  if (shown.length === 0) {
+    return count === 1 ? "1 mismatched link" : `${count} mismatched links`
+  }
+  const suffix =
+    count > shown.length ? ` (+${count - shown.length} more)` : ""
+  return `${shown.join("; ")}${suffix}`
+}
+
+function MismatchedLinksList({
+  canonicals,
+  entityType,
+  detailHref,
+  canEdit = false,
+  onDismiss,
+}: {
+  canonicals: CleanupMismatchIssue[]
+  entityType: CleanupEntityType
+  detailHref: (canonicalId: string) => string
+  canEdit?: boolean
+  onDismiss?: (canonicalId: string) => void | Promise<void>
+}) {
+  const emptyLabel =
+    entityType === "person"
+      ? "No people with potential mismatched links in this stylebook."
+      : entityType === "organization"
+        ? "No organizations with potential mismatched links in this stylebook."
+        : "No places with potential mismatched links in this stylebook."
+
+  if (canonicals.length === 0) {
+    return <p className="text-muted-foreground py-8 text-center">{emptyLabel}</p>
+  }
+
+  const typeLabel = (canonical: CleanupMismatchIssue): string => {
+    if (entityType === "person" && canonical.person_type) {
+      return placeExtractTypeLabel(canonical.person_type)
+    }
+    if (entityType === "organization" && canonical.organization_type) {
+      return placeExtractTypeLabel(canonical.organization_type)
+    }
+    if (entityType === "location" && canonical.location_type) {
+      return placeExtractTypeLabel(canonical.location_type)
+    }
+    return "—"
+  }
+
+  return (
+    <div className="rounded-lg border overflow-x-auto">
+      <table className="w-full table-fixed text-sm min-w-[44rem]">
+        <colgroup>
+          <col style={{ width: "24%" }} />
+          <col style={{ width: "26%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "8%" }} />
+          {canEdit && onDismiss ? <col style={{ width: "12%" }} /> : null}
+        </colgroup>
+        <thead className="bg-muted/50 text-left">
+          <tr>
+            <th className="px-4 py-3 font-medium min-w-0">Name</th>
+            <th className="px-4 py-3 font-medium min-w-0">Example mismatched links</th>
+            <th className="px-4 py-3 font-medium min-w-0">Type</th>
+            <th className="px-4 py-3 font-medium min-w-0">Status</th>
+            <th className="px-4 py-3 font-medium text-right">Linked</th>
+            <th className="px-4 py-3 font-medium text-right">Mentions</th>
+            {canEdit && onDismiss ? (
+              <th className="px-4 py-3 font-medium text-right">Action</th>
+            ) : null}
+          </tr>
+        </thead>
+        <tbody>
+          {canonicals.map((canonical) => {
+            const examplesText = mismatchExamplesLabel(
+              canonical.mismatched_examples ?? [],
+              canonical.mismatched_linked_count ?? 0,
+            )
+            return (
+              <tr key={canonical.id} className="border-t hover:bg-muted/30">
+                <td className="px-4 py-3 min-w-0">
+                  <Link
+                    to={detailHref(canonical.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline block truncate"
+                    title={canonical.label}
+                  >
+                    {canonical.label}
+                  </Link>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate" title={examplesText}>
+                    {examplesText}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate">{typeLabel(canonical)}</span>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground min-w-0">
+                  <span className="block truncate">{canonical.status}</span>
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {canonical.linked_substrate_count ?? 0}
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {canonical.mention_count ?? 0}
+                </td>
+                {canEdit && onDismiss ? (
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void onDismiss(canonical.id)}
+                    >
+                      Mark reviewed
+                    </Button>
+                  </td>
+                ) : null}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -562,7 +796,7 @@ function GeographyIssuesList({
   if (canonicals.length === 0) {
     return (
       <p className="text-muted-foreground py-8 text-center">
-        No locations with missing or potentially incorrect geographies in this stylebook.
+        No locations with potential missing or incorrect geographies in this stylebook.
       </p>
     )
   }
@@ -598,6 +832,8 @@ function GeographyIssuesList({
               <td className="px-4 py-3 min-w-0">
                 <Link
                   to={locationDetailHref(canonical.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="font-medium text-primary hover:underline block truncate"
                   title={canonical.label}
                 >
