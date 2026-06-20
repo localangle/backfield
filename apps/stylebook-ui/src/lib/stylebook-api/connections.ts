@@ -23,6 +23,30 @@ export interface ConnectionListResponse {
 export const CONNECTIONS_PER_PAGE = 10
 export const CONNECTIONS_GRAPH_FETCH_LIMIT = 500
 
+/** Coerce list payloads so pagination never receives NaN from legacy API responses. */
+export function normalizeConnectionListResponse(
+  raw: Partial<ConnectionListResponse> & { connections?: Connection[] },
+  requested?: { limit?: number; offset?: number },
+): ConnectionListResponse {
+  const connections = Array.isArray(raw.connections) ? raw.connections : []
+  const limit =
+    typeof raw.limit === "number" && Number.isFinite(raw.limit)
+      ? raw.limit
+      : (requested?.limit ?? CONNECTIONS_PER_PAGE)
+  const offset =
+    typeof raw.offset === "number" && Number.isFinite(raw.offset)
+      ? raw.offset
+      : (requested?.offset ?? 0)
+  let total =
+    typeof raw.total === "number" && Number.isFinite(raw.total) ? raw.total : undefined
+  if (total === undefined) {
+    // Legacy responses return the full connection set without pagination metadata.
+    total =
+      connections.length < limit ? offset + connections.length : Math.max(connections.length, offset + limit)
+  }
+  return { connections, total, limit, offset }
+}
+
 function connectionsQuery(limit?: number, offset?: number): string {
   const params = new URLSearchParams()
   if (limit != null) params.set("limit", String(limit))
@@ -104,9 +128,10 @@ export async function listStylebookConnectionsForLocation(
   locationCanonicalId: string,
   options?: { limit?: number; offset?: number },
 ): Promise<ConnectionListResponse> {
-  return stylebookJsonFetch<ConnectionListResponse>(
+  const raw = await stylebookJsonFetch<ConnectionListResponse>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections${connectionsQuery(options?.limit, options?.offset)}`,
   )
+  return normalizeConnectionListResponse(raw, options)
 }
 
 export async function listStylebookConnectionsForPerson(
@@ -114,9 +139,10 @@ export async function listStylebookConnectionsForPerson(
   personCanonicalId: string,
   options?: { limit?: number; offset?: number },
 ): Promise<ConnectionListResponse> {
-  return stylebookJsonFetch<ConnectionListResponse>(
+  const raw = await stylebookJsonFetch<ConnectionListResponse>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections${connectionsQuery(options?.limit, options?.offset)}`,
   )
+  return normalizeConnectionListResponse(raw, options)
 }
 
 export async function listStylebookConnectionsForOrganization(
@@ -124,9 +150,10 @@ export async function listStylebookConnectionsForOrganization(
   organizationCanonicalId: string,
   options?: { limit?: number; offset?: number },
 ): Promise<ConnectionListResponse> {
-  return stylebookJsonFetch<ConnectionListResponse>(
+  const raw = await stylebookJsonFetch<ConnectionListResponse>(
     `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections${connectionsQuery(options?.limit, options?.offset)}`,
   )
+  return normalizeConnectionListResponse(raw, options)
 }
 
 export async function createStylebookConnectionForLocation(
