@@ -671,10 +671,10 @@ function MismatchedLinksList({
 }) {
   const emptyLabel =
     entityType === "person"
-      ? "No people with possibly mismatched links in this stylebook."
+      ? "No people with potential mismatched links in this stylebook."
       : entityType === "organization"
-        ? "No organizations with possibly mismatched links in this stylebook."
-        : "No places with possibly mismatched links in this stylebook."
+        ? "No organizations with potential mismatched links in this stylebook."
+        : "No places with potential mismatched links in this stylebook."
 
   if (canonicals.length === 0) {
     return <p className="text-muted-foreground py-8 text-center">{emptyLabel}</p>
@@ -796,7 +796,7 @@ function GeographyIssuesList({
   if (canonicals.length === 0) {
     return (
       <p className="text-muted-foreground py-8 text-center">
-        No locations with missing or potentially incorrect geographies in this stylebook.
+        No locations with potential missing or incorrect geographies in this stylebook.
       </p>
     )
   }

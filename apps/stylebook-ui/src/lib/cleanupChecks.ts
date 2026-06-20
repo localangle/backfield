@@ -12,10 +12,14 @@ export interface CleanupCheckConfig {
   entityType: CleanupEntityType
 }
 
+// Presentation config for the cleanup hub and per-check pages. The backend
+// registry (packages/backfield-entities/.../quality/checks.py) is the source of
+// truth for which checks exist and their counts; keep `id`, `kind`, and
+// `entityType` in sync with the matching CleanupCheckDef there.
 export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   {
     id: "duplicate-locations",
-    title: "Possible duplicate locations",
+    title: "Potential duplicate locations",
     description:
       "Same or very similar location names. Open each record to compare and relink evidence.",
     kind: "cluster",
@@ -23,7 +27,7 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   },
   {
     id: "missing-geometry-locations",
-    title: "Missing or potentially incorrect geographies",
+    title: "Potential missing or incorrect geographies",
     description:
       "Records with no map geography, or linked places far from the catalog location. Open each record to review.",
     kind: "list",
@@ -31,7 +35,7 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   },
   {
     id: "mismatched-locations",
-    title: "Possibly mismatched places",
+    title: "Potential mismatched places",
     description:
       "Places with linked mentions whose names look unlike this record. Open each record to review the link.",
     kind: "list",
@@ -39,7 +43,7 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   },
   {
     id: "duplicate-people",
-    title: "Possible duplicate people",
+    title: "Potential duplicate people",
     description:
       "Same or very similar person names. Open each record to compare and relink evidence.",
     kind: "cluster",
@@ -47,7 +51,7 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   },
   {
     id: "mismatched-people",
-    title: "Possibly mismatched people",
+    title: "Potential mismatched people",
     description:
       "People with linked mentions whose names look unlike this record. Open each record to review the link.",
     kind: "list",
@@ -55,7 +59,7 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   },
   {
     id: "duplicate-organizations",
-    title: "Possible duplicate organizations",
+    title: "Potential duplicate organizations",
     description:
       "Same or very similar organization names. Open each record to compare and relink evidence.",
     kind: "cluster",
@@ -63,7 +67,7 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
   },
   {
     id: "mismatched-organizations",
-    title: "Possibly mismatched organizations",
+    title: "Potential mismatched organizations",
     description:
       "Organizations with linked mentions whose names look unlike this record. Open each record to review the link.",
     kind: "list",

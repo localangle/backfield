@@ -197,6 +197,7 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     assert ids == {
         "duplicate-locations",
         "missing-geometry-locations",
+        "mismatched-locations",
         "duplicate-people",
         "mismatched-people",
         "duplicate-organizations",
@@ -207,6 +208,7 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     assert by_id["duplicate-people"] == 1
     assert by_id["duplicate-organizations"] == 1
     assert by_id["missing-geometry-locations"] == 6
+    assert by_id["mismatched-locations"] == 0
     assert by_id["mismatched-people"] == 0
     assert by_id["mismatched-organizations"] == 0
     assert body["total_open"] == sum(by_id.values())

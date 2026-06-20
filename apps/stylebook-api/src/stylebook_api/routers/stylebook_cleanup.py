@@ -27,7 +27,11 @@ from backfield_entities.entities.person.merge import (
 from backfield_entities.entities.person.merge import (
     merge_person_canonical_into,
 )
-from backfield_entities.quality.checks import STYLEBOOK_CLEANUP_CHECKS, cleanup_check_by_id
+from backfield_entities.quality.checks import (
+    STYLEBOOK_CLEANUP_CHECKS,
+    CleanupCountContext,
+    cleanup_check_by_id,
+)
 from backfield_entities.quality.dismissals import (
     dismiss_canonical_issue,
     dismiss_cluster_members,
@@ -35,36 +39,29 @@ from backfield_entities.quality.dismissals import (
 from backfield_entities.quality.finders.duplicate_locations import (
     DEFAULT_FULL_SIMILARITY_THRESHOLD,
     DEFAULT_HEAD_SIMILARITY_THRESHOLD,
-    count_duplicate_location_clusters,
     paginate_duplicate_location_clusters,
 )
 from backfield_entities.quality.finders.duplicate_locations import (
     cluster_display_label as location_cluster_display_label,
 )
 from backfield_entities.quality.finders.duplicate_organizations import (
-    count_duplicate_organization_clusters,
     organization_cluster_display_label,
     paginate_duplicate_organization_clusters,
 )
 from backfield_entities.quality.finders.duplicate_people import (
-    count_duplicate_person_clusters,
     paginate_duplicate_person_clusters,
     person_cluster_display_label,
 )
 from backfield_entities.quality.finders.location_geography_issues import (
-    count_location_geography_issues,
     list_location_geography_issues,
 )
 from backfield_entities.quality.finders.location_name_mismatch import (
-    count_location_name_mismatches,
     list_location_name_mismatches,
 )
 from backfield_entities.quality.finders.organization_name_mismatch import (
-    count_organization_name_mismatches,
     list_organization_name_mismatches,
 )
 from backfield_entities.quality.finders.person_name_mismatch import (
-    count_person_name_mismatches,
     list_person_name_mismatches,
 )
 from backfield_entities.quality.types import (
@@ -231,61 +228,6 @@ def _created_by_user_id(auth: dict[str, Any]) -> int | None:
     if auth.get("type") != "session" or auth.get("user") is None:
         return None
     return int(auth["user"].id)  # type: ignore[union-attr]
-
-
-def _count_for_check(
-    session: Session,
-    *,
-    stylebook_id: int,
-    organization_id: int,
-    check_id: str,
-    full_threshold: float,
-    head_threshold: float,
-) -> int:
-    if check_id == "duplicate-locations":
-        return count_duplicate_location_clusters(
-            session,
-            stylebook_id=stylebook_id,
-            full_threshold=full_threshold,
-            head_threshold=head_threshold,
-        )
-    if check_id == "duplicate-people":
-        return count_duplicate_person_clusters(
-            session,
-            stylebook_id=stylebook_id,
-            full_threshold=full_threshold,
-        )
-    if check_id == "duplicate-organizations":
-        return count_duplicate_organization_clusters(
-            session,
-            stylebook_id=stylebook_id,
-            full_threshold=full_threshold,
-        )
-    if check_id == "missing-geometry-locations":
-        return count_location_geography_issues(
-            session,
-            stylebook_id=stylebook_id,
-            organization_id=organization_id,
-        )
-    if check_id == "mismatched-people":
-        return count_person_name_mismatches(
-            session,
-            stylebook_id=stylebook_id,
-            organization_id=organization_id,
-        )
-    if check_id == "mismatched-organizations":
-        return count_organization_name_mismatches(
-            session,
-            stylebook_id=stylebook_id,
-            organization_id=organization_id,
-        )
-    if check_id == "mismatched-locations":
-        return count_location_name_mismatches(
-            session,
-            stylebook_id=stylebook_id,
-            organization_id=organization_id,
-        )
-    return 0
 
 
 def _canonical_responses_with_counts(
@@ -536,17 +478,16 @@ def list_cleanup_checks(
         if selected is None:
             raise HTTPException(status_code=404, detail=f"Unknown cleanup check: {check_id}")
         checks_to_list = (selected,)
+    count_ctx = CleanupCountContext(
+        stylebook_id=stylebook_id,
+        organization_id=organization_id,
+        full_threshold=similarity_threshold,
+        head_threshold=head_similarity_threshold,
+    )
     checks_out: list[CleanupCheckOut] = []
     total_open = 0
     for check in checks_to_list:
-        count = _count_for_check(
-            session,
-            stylebook_id=stylebook_id,
-            organization_id=organization_id,
-            check_id=check.id,
-            full_threshold=similarity_threshold,
-            head_threshold=head_similarity_threshold,
-        )
+        count = check.count(session, count_ctx)
         total_open += count
         checks_out.append(
             CleanupCheckOut(
