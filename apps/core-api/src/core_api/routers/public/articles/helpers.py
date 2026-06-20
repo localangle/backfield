@@ -70,6 +70,37 @@ def parse_has_mentions(value: str | None) -> str | None:
     return normalized
 
 
+def resolve_public_article_metadata_query_filters(
+    *,
+    section: str | None = None,
+    meta_type: str | None = None,
+    meta_category: str | None = None,
+    exclude_meta_type: str | None = None,
+    exclude_meta_category: str | None = None,
+) -> tuple[str | None, str | None, str | None, str | None]:
+    """Apply ``section`` sugar and return normalized metadata filter fields."""
+    from backfield_entities.public.articles import (
+        PublicArticleSearchParams,
+        resolve_public_article_search_params,
+    )
+
+    resolved = resolve_public_article_search_params(
+        PublicArticleSearchParams(
+            section=section,
+            meta_type=meta_type,
+            meta_category=meta_category,
+            exclude_meta_type=exclude_meta_type,
+            exclude_meta_category=exclude_meta_category,
+        )
+    )
+    return (
+        resolved.meta_type,
+        resolved.meta_category,
+        resolved.exclude_meta_type,
+        resolved.exclude_meta_category,
+    )
+
+
 def parse_bbox(value: str | None) -> tuple[float, float, float, float]:
     if value is None or not value.strip():
         raise HTTPException(

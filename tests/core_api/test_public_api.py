@@ -511,6 +511,43 @@ def test_public_article_geo_cells(public_client: TestClient) -> None:
     assert invalid.status_code == 400
 
 
+def test_public_article_geo_cells_metadata_and_date_filters(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    matched = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells",
+        headers=headers,
+        params={
+            "bbox": "-88,41,-87,42",
+            "section": "local_government_politics",
+            "pub_date_from": "2024-03-01",
+            "pub_date_to": "2024-03-31",
+        },
+    )
+    assert matched.status_code == 200
+    assert matched.json()["cells"][0]["article_count"] == 1
+
+    wrong_section = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells",
+        headers=headers,
+        params={"bbox": "-88,41,-87,42", "section": "sports"},
+    )
+    assert wrong_section.status_code == 200
+    assert wrong_section.json()["cells"] == []
+
+    out_of_range = public_client.get(
+        "/public/v1/projects/general/articles/geo-cells",
+        headers=headers,
+        params={
+            "bbox": "-88,41,-87,42",
+            "pub_date_from": "2025-01-01",
+            "pub_date_to": "2025-12-31",
+        },
+    )
+    assert out_of_range.status_code == 200
+    assert out_of_range.json()["cells"] == []
+
+
 def test_public_article_geo_cell_detail(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

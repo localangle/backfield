@@ -341,6 +341,7 @@ Only locations with populated `h3_cell` and `h3_resolution` contribute.
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 
@@ -417,6 +418,7 @@ Matching uses the same H3 rollup predicate as `geo-cells`, so `pagination.total`
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
@@ -503,6 +505,7 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
 | `external_source` | string | — | Include articles from this external source (case-insensitive) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |

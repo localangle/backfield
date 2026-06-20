@@ -13,7 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from core_api.deps import get_session
-from core_api.routers.public.articles.helpers import parse_bbox, parse_optional_date
+from core_api.routers.public.articles.helpers import (
+    parse_bbox,
+    parse_optional_date,
+    resolve_public_article_metadata_query_filters,
+)
 from core_api.routers.public.deps import get_public_project
 
 router = APIRouter()
@@ -52,8 +56,18 @@ def aggregate_project_articles_by_geo_cells(
         None,
         description="With exclude_meta_type, exclude articles with this metadata category",
     ),
-    pub_date_from: str | None = Query(None),
-    pub_date_to: str | None = Query(None),
+    section: str | None = Query(
+        None,
+        description="Include articles with this subject metadata category (editorial section)",
+    ),
+    pub_date_from: str | None = Query(
+        None,
+        description="ISO date YYYY-MM-DD, inclusive lower bound on article pub_date",
+    ),
+    pub_date_to: str | None = Query(
+        None,
+        description="ISO date YYYY-MM-DD, inclusive upper bound on article pub_date",
+    ),
 ) -> PublicArticleGeoCellsResult:
     """Return H3 cells with distinct-article counts for location mentions in a bounding box."""
     min_lng, min_lat, max_lng, max_lat = parse_bbox(bbox)
@@ -63,6 +77,18 @@ def aggregate_project_articles_by_geo_cells(
             detail="bbox must have min_lng < max_lng and min_lat < max_lat.",
         )
 
+    (
+        resolved_meta_type,
+        resolved_meta_category,
+        resolved_exclude_meta_type,
+        resolved_exclude_meta_category,
+    ) = resolve_public_article_metadata_query_filters(
+            section=section,
+            meta_type=meta_type,
+            meta_category=meta_category,
+            exclude_meta_type=exclude_meta_type,
+            exclude_meta_category=exclude_meta_category,
+        )
     params = PublicArticleGeoCellsParams(
         min_lng=min_lng,
         min_lat=min_lat,
@@ -71,10 +97,10 @@ def aggregate_project_articles_by_geo_cells(
         resolution=resolution,
         location_type=location_type,
         nature=nature,
-        meta_type=meta_type,
-        meta_category=meta_category,
-        exclude_meta_type=exclude_meta_type,
-        exclude_meta_category=exclude_meta_category,
+        meta_type=resolved_meta_type,
+        meta_category=resolved_meta_category,
+        exclude_meta_type=resolved_exclude_meta_type,
+        exclude_meta_category=resolved_exclude_meta_category,
         pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
     )

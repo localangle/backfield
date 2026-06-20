@@ -28,6 +28,7 @@ Use POST so large `cells[]` arrays are not limited by URL length.
 | `meta_category` | string | no | With `meta_type`, include this category |
 | `exclude_meta_type` | string | no | Exclude articles with this metadata type |
 | `exclude_meta_category` | string | no | With `exclude_meta_type`, exclude this category |
+| `section` | string | no | Include articles with this topic metadata category (editorial section sugar) |
 | `external_source` | string | no | Include articles from this external source (case-insensitive) |
 | `pub_date_from` | string | no | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | no | ISO date `YYYY-MM-DD`, inclusive upper bound |

@@ -490,3 +490,71 @@ def test_metadata_filter_narrows_cells() -> None:
 
     assert included.cells[0].article_count == 1
     assert excluded.cells == []
+
+
+def test_pub_date_filter_narrows_cells() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id = _seed_project(session)
+        in_range = SubstrateArticle(
+            project_id=project_id,
+            headline="March story",
+            text="Body",
+            pub_date=date(2024, 3, 15),
+        )
+        out_of_range = SubstrateArticle(
+            project_id=project_id,
+            headline="April story",
+            text="Body",
+            pub_date=date(2024, 4, 1),
+        )
+        session.add(in_range)
+        session.add(out_of_range)
+        session.commit()
+        session.refresh(in_range)
+        session.refresh(out_of_range)
+        in_range_id = int(in_range.id)  # type: ignore[arg-type]
+        out_of_range_id = int(out_of_range.id)  # type: ignore[arg-type]
+        _add_location_mention(
+            session,
+            project_id=project_id,
+            article_id=in_range_id,
+            label="City Hall",
+            geometry_json=CHICAGO_POINT,
+        )
+        _add_location_mention(
+            session,
+            project_id=project_id,
+            article_id=out_of_range_id,
+            label="City Hall",
+            geometry_json=NEARBY_POINT,
+        )
+
+        included = aggregate_article_geo_cells(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoCellsParams(
+                min_lng=-88.0,
+                min_lat=41.0,
+                max_lng=-87.0,
+                max_lat=42.0,
+                pub_date_from=date(2024, 3, 1),
+                pub_date_to=date(2024, 3, 31),
+            ),
+        )
+        no_match = aggregate_article_geo_cells(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoCellsParams(
+                min_lng=-88.0,
+                min_lat=41.0,
+                max_lng=-87.0,
+                max_lat=42.0,
+                pub_date_from=date(2025, 1, 1),
+                pub_date_to=date(2025, 12, 31),
+            ),
+        )
+
+    assert included.cells[0].article_count == 1
+    assert no_match.cells == []
