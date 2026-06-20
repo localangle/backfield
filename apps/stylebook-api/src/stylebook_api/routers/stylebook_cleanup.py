@@ -464,6 +464,10 @@ def list_cleanup_checks(
             "to avoid suffix-only matches."
         ),
     ),
+    check_id: str | None = Query(
+        None,
+        description="When set, compute and return only this cleanup check.",
+    ),
     session: Session = Depends(get_session),
     auth: dict[str, Any] = Depends(get_auth),
 ) -> CleanupChecksResponse:
@@ -472,9 +476,15 @@ def list_cleanup_checks(
         raise HTTPException(status_code=404, detail="Stylebook not found")
     stylebook_id = int(sb.id)
     organization_id = int(sb.organization_id)
+    checks_to_list = STYLEBOOK_CLEANUP_CHECKS
+    if check_id is not None:
+        selected = cleanup_check_by_id(check_id.strip())
+        if selected is None:
+            raise HTTPException(status_code=404, detail=f"Unknown cleanup check: {check_id}")
+        checks_to_list = (selected,)
     checks_out: list[CleanupCheckOut] = []
     total_open = 0
-    for check in STYLEBOOK_CLEANUP_CHECKS:
+    for check in checks_to_list:
         count = _count_for_check(
             session,
             stylebook_id=stylebook_id,

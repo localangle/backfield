@@ -212,6 +212,17 @@ def test_list_cleanup_checks(cleanup_client: tuple[TestClient, Engine]) -> None:
     assert body["total_open"] == sum(by_id.values())
 
 
+def test_list_cleanup_checks_single_check_id(cleanup_client: tuple[TestClient, Engine]) -> None:
+    client, _engine = cleanup_client
+    r = client.get("/v1/stylebooks/default/cleanup/checks?check_id=duplicate-people")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["checks"]) == 1
+    assert body["checks"][0]["id"] == "duplicate-people"
+    assert body["checks"][0]["count"] == 1
+    assert body["total_open"] == 1
+
+
 def test_duplicate_location_clusters(cleanup_client: tuple[TestClient, Engine]) -> None:
     client, _engine = cleanup_client
     r = client.get("/v1/stylebooks/default/cleanup/checks/duplicate-locations?limit=10")

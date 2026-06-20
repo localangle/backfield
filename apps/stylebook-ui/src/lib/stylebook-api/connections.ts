@@ -15,6 +15,20 @@ export interface Connection {
 
 export interface ConnectionListResponse {
   connections: Connection[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export const CONNECTIONS_PER_PAGE = 10
+export const CONNECTIONS_GRAPH_FETCH_LIMIT = 500
+
+function connectionsQuery(limit?: number, offset?: number): string {
+  const params = new URLSearchParams()
+  if (limit != null) params.set("limit", String(limit))
+  if (offset != null) params.set("offset", String(offset))
+  const q = params.toString()
+  return q ? `?${q}` : ""
 }
 
 export async function listConnectionNatures(
@@ -88,27 +102,30 @@ export async function listStylebookConnectionNatures(
 export async function listStylebookConnectionsForLocation(
   stylebookSlug: string,
   locationCanonicalId: string,
+  options?: { limit?: number; offset?: number },
 ): Promise<ConnectionListResponse> {
   return stylebookJsonFetch<ConnectionListResponse>(
-    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-locations/${encodeURIComponent(locationCanonicalId)}/connections${connectionsQuery(options?.limit, options?.offset)}`,
   )
 }
 
 export async function listStylebookConnectionsForPerson(
   stylebookSlug: string,
   personCanonicalId: string,
+  options?: { limit?: number; offset?: number },
 ): Promise<ConnectionListResponse> {
   return stylebookJsonFetch<ConnectionListResponse>(
-    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-people/${encodeURIComponent(personCanonicalId)}/connections${connectionsQuery(options?.limit, options?.offset)}`,
   )
 }
 
 export async function listStylebookConnectionsForOrganization(
   stylebookSlug: string,
   organizationCanonicalId: string,
+  options?: { limit?: number; offset?: number },
 ): Promise<ConnectionListResponse> {
   return stylebookJsonFetch<ConnectionListResponse>(
-    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections`,
+    `/v1/stylebooks/${encodeURIComponent(stylebookSlug)}/canonical-organizations/${encodeURIComponent(organizationCanonicalId)}/connections${connectionsQuery(options?.limit, options?.offset)}`,
   )
 }
 

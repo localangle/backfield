@@ -1,4 +1,9 @@
 import { stylebookJsonFetch } from "@/lib/stylebook-api/client"
+import {
+  cleanupLastRunStorageKey,
+  saveCleanupCheckRun,
+  type CleanupCheckRunRecord,
+} from "@/lib/cleanupHubLastRun"
 
 export type CleanupCheckKind = "cluster" | "list"
 
@@ -108,6 +113,7 @@ export type PaginatedCleanupListResults =
 export interface ListCleanupChecksParams {
   stylebookSlug: string
   project?: string
+  checkId?: string
 }
 
 export interface GetCleanupCheckResultsParams {
@@ -141,10 +147,38 @@ export async function listCleanupChecks(
 ): Promise<CleanupChecksResponse> {
   const q = new URLSearchParams()
   if (params.project) q.set("project", params.project)
+  if (params.checkId) q.set("check_id", params.checkId)
   const suffix = q.toString() ? `?${q.toString()}` : ""
   return stylebookJsonFetch<CleanupChecksResponse>(
     `${cleanupChecksPath(params.stylebookSlug)}${suffix}`,
   )
+}
+
+export async function runCleanupCheckCount(
+  params: ListCleanupChecksParams & { checkId: string },
+): Promise<CleanupCheck> {
+  const response = await listCleanupChecks(params)
+  const check = response.checks.find((row) => row.id === params.checkId)
+  if (!check) {
+    throw new Error(`Cleanup check not found: ${params.checkId}`)
+  }
+  return check
+}
+
+/** Re-fetch a check count and persist it for the Checks hub (same scope as manual Run). */
+export async function refreshPersistedCleanupCheckCount(params: {
+  stylebookSlug: string
+  checkId: string
+  project?: string
+}): Promise<CleanupCheckRunRecord> {
+  const result = await runCleanupCheckCount(params)
+  const storageKey = cleanupLastRunStorageKey(params.stylebookSlug, params.project)
+  const record: CleanupCheckRunRecord = {
+    ranAtIso: new Date().toISOString(),
+    count: result.count,
+  }
+  saveCleanupCheckRun(storageKey, params.checkId, record)
+  return record
 }
 
 export async function getDuplicateLocationClusters(

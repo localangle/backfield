@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react"
 import { useAppMessage } from "@/components/AppMessageProvider"
 import type { Connection } from "@/lib/stylebook-api/connections"
 import {
+  CONNECTIONS_GRAPH_FETCH_LIMIT,
+  CONNECTIONS_PER_PAGE,
   listStylebookConnectionsForLocation,
   listStylebookConnectionsForOrganization,
   listStylebookConnectionsForPerson,
@@ -37,6 +39,7 @@ import WorkSelector from "@/components/WorkSelector"
 import ConnectionEvidenceBlock from "@/components/ConnectionEvidenceBlock"
 import ConnectionsGraph from "@/components/ConnectionsGraph"
 import NatureAutocomplete from "@/components/NatureAutocomplete"
+import Pagination from "@/components/Pagination"
 import type { EntityType as ConnectionsEntityType } from "@/lib/entityTypes"
 import { useProjectCatalogScope } from "@/lib/catalogNavigation"
 import { fetchProjects, type Project } from "@/lib/stylebook-api/projects"
@@ -79,6 +82,11 @@ export default function ConnectionsSection({
   const { catalogScopeSuffix, catalogBasePath, projectScopeSlug } = useProjectCatalogScope()
   const { showError } = useAppMessage()
   const [connections, setConnections] = useState<Connection[]>([])
+  const [connectionsTotal, setConnectionsTotal] = useState(0)
+  const [connectionsPage, setConnectionsPage] = useState(1)
+  const [graphConnections, setGraphConnections] = useState<Connection[] | null>(null)
+  const [graphLoading, setGraphLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<"list" | "graph">("list")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
@@ -116,33 +124,95 @@ export default function ConnectionsSection({
     }
   }, [])
 
-  const fetchConnections = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  const fetchConnectionsPage = useCallback(
+    async (pageNum: number) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const canonicalId = String(entityId)
+        const offset = (pageNum - 1) * CONNECTIONS_PER_PAGE
+        const options = { limit: CONNECTIONS_PER_PAGE, offset }
+        let res: Awaited<ReturnType<typeof listStylebookConnectionsForLocation>>
+        if (entityType === "location") {
+          res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, options)
+        } else if (entityType === "person") {
+          res = await listStylebookConnectionsForPerson(stylebookSlug, canonicalId, options)
+        } else if (entityType === "organization") {
+          res = await listStylebookConnectionsForOrganization(
+            stylebookSlug,
+            canonicalId,
+            options,
+          )
+        } else {
+          setConnections([])
+          setConnectionsTotal(0)
+          return
+        }
+        setConnections(res.connections)
+        setConnectionsTotal(res.total)
+        const totalPages = Math.max(1, Math.ceil(res.total / CONNECTIONS_PER_PAGE))
+        if (pageNum > totalPages && res.total > 0) {
+          setConnectionsPage(totalPages)
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load connections')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [entityType, entityId, stylebookSlug],
+  )
+
+  const fetchGraphConnections = useCallback(async () => {
+    setGraphLoading(true)
     try {
       const canonicalId = String(entityId)
+      const options = { limit: CONNECTIONS_GRAPH_FETCH_LIMIT, offset: 0 }
+      let res: Awaited<ReturnType<typeof listStylebookConnectionsForLocation>>
       if (entityType === "location") {
-        const res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId)
-        setConnections(res.connections)
+        res = await listStylebookConnectionsForLocation(stylebookSlug, canonicalId, options)
       } else if (entityType === "person") {
-        const res = await listStylebookConnectionsForPerson(stylebookSlug, canonicalId)
-        setConnections(res.connections)
+        res = await listStylebookConnectionsForPerson(stylebookSlug, canonicalId, options)
       } else if (entityType === "organization") {
-        const res = await listStylebookConnectionsForOrganization(stylebookSlug, canonicalId)
-        setConnections(res.connections)
+        res = await listStylebookConnectionsForOrganization(
+          stylebookSlug,
+          canonicalId,
+          options,
+        )
       } else {
-        setConnections([])
+        setGraphConnections([])
+        return
       }
+      setGraphConnections(res.connections)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load connections')
+      showError(e instanceof Error ? e.message : "Failed to load connection graph")
+      setGraphConnections([])
     } finally {
-      setLoading(false)
+      setGraphLoading(false)
     }
+  }, [entityType, entityId, stylebookSlug, showError])
+
+  useEffect(() => {
+    setConnectionsPage(1)
+    setGraphConnections(null)
   }, [entityType, entityId, stylebookSlug])
 
   useEffect(() => {
-    fetchConnections()
-  }, [fetchConnections])
+    void fetchConnectionsPage(connectionsPage)
+  }, [connectionsPage, fetchConnectionsPage])
+
+  useEffect(() => {
+    if (activeTab !== "graph" || graphConnections !== null) return
+    void fetchGraphConnections()
+  }, [activeTab, graphConnections, fetchGraphConnections])
+
+  const refreshConnections = useCallback(() => {
+    setGraphConnections(null)
+    void fetchConnectionsPage(connectionsPage)
+    if (activeTab === "graph") {
+      void fetchGraphConnections()
+    }
+  }, [activeTab, connectionsPage, fetchConnectionsPage, fetchGraphConnections])
 
   // Nature typeahead for add form
   useEffect(() => {
@@ -193,7 +263,7 @@ export default function ConnectionsSection({
         throw new Error("Connections cannot be added from this entity type yet.")
       }
       setAddOpen(false)
-      fetchConnections()
+      refreshConnections()
     } catch (e) {
       showError(e instanceof Error ? e.message : "Failed to create connection")
     } finally {
@@ -237,7 +307,7 @@ export default function ConnectionsSection({
         throw new Error("Connections cannot be edited from this entity type yet.")
       }
       setEditConnection(null)
-      fetchConnections()
+      refreshConnections()
     } catch (e) {
       showError(e instanceof Error ? e.message : "Failed to update connection")
     } finally {
@@ -272,7 +342,7 @@ export default function ConnectionsSection({
         throw new Error("Connections cannot be deleted from this entity type yet.")
       }
       setDeleteConnection(null)
-      fetchConnections()
+      refreshConnections()
     } catch (e) {
       showError(e instanceof Error ? e.message : "Failed to delete connection")
     } finally {
@@ -287,6 +357,10 @@ export default function ConnectionsSection({
   const otherType = (conn: Connection): EntityType =>
     (isFrom(conn) ? conn.to_entity_type : conn.from_entity_type) as EntityType
   const otherId = (conn: Connection) => (isFrom(conn) ? conn.to_entity_id : conn.from_entity_id)
+  const connectionsTotalPages = Math.max(
+    1,
+    Math.ceil(connectionsTotal / CONNECTIONS_PER_PAGE),
+  )
 
   return (
     <>
@@ -311,12 +385,18 @@ export default function ConnectionsSection({
           </div>
         </CardHeader>
         <CardContent>
-          {loading && <div className="text-center py-4">Loading connections...</div>}
+          {loading && connectionsTotal === 0 && !error && (
+            <div className="text-center py-4">Loading connections...</div>
+          )}
           {error && (
             <div className="text-center py-4 text-destructive">{error}</div>
           )}
-          {!loading && !error && (
-            <Tabs defaultValue="list" className="w-full">
+          {!error && (connectionsTotal > 0 || !loading) && (
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as "list" | "graph")}
+              className="w-full"
+            >
               <TabsList>
                 <TabsTrigger value="list">
                   <List className="h-4 w-4 mr-2" />
@@ -328,9 +408,10 @@ export default function ConnectionsSection({
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="list" className="mt-4">
-                {connections.length === 0 ? (
+                {connectionsTotal === 0 ? (
                   <div className="text-center py-4 text-muted-foreground">No connections yet.</div>
                 ) : (
+                  <>
                   <Table>
               <TableHeader>
                 <TableRow>
@@ -410,15 +491,33 @@ export default function ConnectionsSection({
                 ))}
               </TableBody>
             </Table>
+                  <Pagination
+                    className="mt-4"
+                    page={connectionsPage}
+                    perPage={CONNECTIONS_PER_PAGE}
+                    total={connectionsTotal}
+                    totalPages={connectionsTotalPages}
+                    hasNext={connectionsPage < connectionsTotalPages}
+                    hasPrev={connectionsPage > 1}
+                    onPageChange={setConnectionsPage}
+                    itemLabel="connections"
+                  />
+                  </>
                 )}
               </TabsContent>
               <TabsContent value="graph" className="mt-4">
+                {graphLoading ? (
+                  <div className="text-center py-4 text-muted-foreground">
+                    Loading graph...
+                  </div>
+                ) : (
                 <ConnectionsGraph
                   entityType={entityType}
                   entityId={entityId}
                   entityDisplayName={entityDisplayName}
-                  connections={connections}
+                  connections={graphConnections ?? []}
                 />
+                )}
               </TabsContent>
             </Tabs>
           )}

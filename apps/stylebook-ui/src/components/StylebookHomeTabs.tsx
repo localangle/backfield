@@ -20,7 +20,7 @@ export function StylebookHomeTabs() {
         Entities
       </NavLink>
       <NavLink to={cleanupPath} className={tabClass}>
-        Cleanup
+        Checks
       </NavLink>
     </nav>
   )

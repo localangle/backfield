@@ -36,10 +36,13 @@ _CONTAINER_CANONICAL_TYPES: frozenset[str] = frozenset(
 _INTERSECTION_SUBSTRATE_TYPES: frozenset[str] = frozenset(
     {"intersection_road", "intersection_highway"}
 )
+_STREET_SUBSTRATE_TYPES: frozenset[str] = frozenset({"street_road"})
 _POI_LIKE_CANONICAL_TYPES: frozenset[str] = frozenset({"place", "point", "neighborhood"})
 
 _HOUSE_NUMBER_RE = re.compile(r"\d")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_INTERSECTION_AND_RE = re.compile(r"\s+(?:and|&)\s+", re.IGNORECASE)
+_DIRECTION_PREFIX = frozenset({"n", "north", "s", "south", "e", "east", "w", "west"})
 
 
 def autolink_fine_substrate_to_container_canonical_denied(
@@ -117,6 +120,89 @@ def _address_fragment_in_labels(
     return False
 
 
+def _street_name_head_tokens(text: str) -> list[str]:
+    """Tokens of the street-name segment before the first comma (ordinals preserved).
+
+    The street name (``62nd Street``, ``Archer Avenue``) is the part that actually
+    distinguishes one street from another; the trailing ``…, Chicago, IL`` tail and any
+    neighborhood annotation are dropped so they cannot mask a mismatch.
+    """
+    first = str(text or "").split(",")[0]
+    key = _compare_key(normalize_substrate_cache_query(first))
+    return [t for t in key.split() if t]
+
+
+def _street_heads_compatible(substrate_head: list[str], candidate_head: list[str]) -> bool:
+    """True when one street-name head is a token-prefix of the other (token-equal counts).
+
+    Token-prefix comparison keeps ``62nd Street`` from matching ``162nd Street`` while still
+    treating ``Chicago Avenue`` and ``Chicago Avenue`` as the same street regardless of the
+    neighborhood / city tail that was already stripped by :func:`_street_name_head_tokens`.
+    """
+    if not substrate_head or not candidate_head:
+        return False
+    shorter, longer = sorted((substrate_head, candidate_head), key=len)
+    return longer[: len(shorter)] == shorter
+
+
+def _intersection_arm_heads(text: str) -> list[list[str]]:
+    """Token heads for each street arm of an intersection (text before the first comma)."""
+    first = str(text or "").split(",")[0]
+    key = _compare_key(normalize_substrate_cache_query(first))
+    if not key:
+        return []
+    arms = _INTERSECTION_AND_RE.split(key)
+    out: list[list[str]] = []
+    for arm in arms:
+        tokens = [t for t in arm.split() if t]
+        if not tokens:
+            continue
+        if tokens[0] in _DIRECTION_PREFIX:
+            tokens = tokens[1:]
+        if tokens:
+            out.append(tokens)
+    return out
+
+
+def _intersection_matches_street_labels(
+    arms: list[list[str]],
+    labels: tuple[str, ...],
+) -> bool:
+    """True when at least one intersection arm matches a candidate street-name head."""
+    for raw in labels:
+        canon_head = _street_name_head_tokens(raw)
+        if not canon_head:
+            continue
+        for arm in arms:
+            if _street_heads_compatible(arm, canon_head):
+                return True
+    return False
+
+
+def _intersection_all_arms_compatible(
+    substrate_arms: list[list[str]],
+    candidate_arms: list[list[str]],
+) -> bool:
+    """True when every substrate arm has a compatible arm on the candidate."""
+    if not substrate_arms or not candidate_arms:
+        return False
+    for sub_arm in substrate_arms:
+        if not any(_street_heads_compatible(sub_arm, cand_arm) for cand_arm in candidate_arms):
+            return False
+    return True
+
+
+def _intersection_matches_intersection_labels(
+    substrate_arms: list[list[str]],
+    labels: tuple[str, ...],
+) -> bool:
+    for raw in labels:
+        cand_arms = _intersection_arm_heads(raw)
+        if cand_arms and _intersection_all_arms_compatible(substrate_arms, cand_arms):
+            return True
+    return False
+
+
 def _house_number_in_labels(addr_line: str, *, labels: tuple[str, ...]) -> bool:
     """When the address line has digits, require a digit in at least one label."""
     if not _HOUSE_NUMBER_RE.search(addr_line or ""):
@@ -183,7 +269,30 @@ def cache_hit_sane_for_substrate(
         if canon_lt in _CONTAINER_CANONICAL_TYPES | _POI_LIKE_CANONICAL_TYPES:
             if not _address_fragment_in_labels(line, labels=labels):
                 return False
+        else:
+            arms = _intersection_arm_heads(line)
+            if arms:
+                if canon_lt == "street_road":
+                    if not _intersection_matches_street_labels(arms, labels):
+                        return False
+                elif canon_lt in _INTERSECTION_SUBSTRATE_TYPES:
+                    if not _intersection_matches_intersection_labels(arms, labels):
+                        return False
         return True
+
+    if substrate_lt in _STREET_SUBSTRATE_TYPES:
+        # Street identity lives in the street name itself. Loose scoring under-weights it
+        # (``62nd``/``111th`` both reduce to a short token; ``<X> Avenue, Chicago, IL`` all
+        # share the city/state tail), so require the substrate street name to match the
+        # candidate's. This blocks unrelated streets from autolinking or inheriting a wrong
+        # canonical via a poisoned ingest alias.
+        sub_head = _street_name_head_tokens(location_text)
+        if not sub_head:
+            return True
+        for raw in labels:
+            if _street_heads_compatible(sub_head, _street_name_head_tokens(raw)):
+                return True
+        return False
 
     if substrate_lt in ("place", "point"):
         token = _place_name_token(components)

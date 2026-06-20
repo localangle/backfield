@@ -79,6 +79,8 @@ export {
   getDuplicateOrganizationClusters,
   getMissingGeometryLocations,
   listCleanupChecks,
+  runCleanupCheckCount,
+  refreshPersistedCleanupCheckCount,
   mergeCleanupLocationCanonical,
   mergeCleanupPersonCanonical,
   mergeCleanupOrganizationCanonical,

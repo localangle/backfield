@@ -1,7 +1,5 @@
-/**
- * Frontend registry for Stylebook cleanup checks (hub navigation + copy).
- * Counts come from the API; ids must match backfield_entities.quality.checks.
- */
+import type { LucideIcon } from "lucide-react"
+import { Building2, MapPin, Users } from "lucide-react"
 
 export type CleanupCheckKind = "cluster" | "list"
 export type CleanupEntityType = "location" | "person" | "organization"
@@ -67,6 +65,16 @@ export const CLEANUP_CHECK_CONFIGS: CleanupCheckConfig[] = [
 
 export function cleanupCheckConfigById(checkId: string): CleanupCheckConfig | undefined {
   return CLEANUP_CHECK_CONFIGS.find((check) => check.id === checkId)
+}
+
+const CLEANUP_ENTITY_ICONS: Record<CleanupEntityType, LucideIcon> = {
+  location: MapPin,
+  person: Users,
+  organization: Building2,
+}
+
+export function cleanupEntityIcon(entityType: CleanupEntityType): LucideIcon {
+  return CLEANUP_ENTITY_ICONS[entityType]
 }
 
 export function cleanupLinkedRecordLabel(entityType: CleanupEntityType): string {

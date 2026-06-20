@@ -39,6 +39,7 @@ import {
   mergeCleanupPersonCanonical,
   acceptCleanupAiProposal,
   rejectCleanupAiProposal,
+  refreshPersistedCleanupCheckCount,
   type CleanupAiProposal,
   type CleanupLocationIssue,
   type CleanupMismatchIssue,
@@ -97,7 +98,7 @@ function entitySingular(entityType: CleanupEntityType): string {
 export default function CleanupCheck() {
   const { checkId = "" } = useParams<{ checkId: string }>()
   const config = cleanupCheckConfigById(checkId)
-  const { showConfirm, showError, showMessage } = useAppMessage()
+  const { showConfirm, showError } = useAppMessage()
   const canEdit = useCanEditStylebook()
   const {
     stylebookSlug,
@@ -153,6 +154,19 @@ export default function CleanupCheck() {
       cleanupEntityDetailPath(catalogBasePath, entityType, canonicalId, catalogScopeSuffix),
     [catalogBasePath, catalogScopeSuffix, entityType],
   )
+
+  const refreshHubCheckCount = useCallback(async () => {
+    if (!stylebookSlug || !config) return
+    try {
+      await refreshPersistedCleanupCheckCount({
+        stylebookSlug,
+        checkId: config.id,
+        project: projectFilterSlug || undefined,
+      })
+    } catch {
+      // Hub refreshes on next visit; ignore background sync failures.
+    }
+  }, [stylebookSlug, config, projectFilterSlug])
 
   useEffect(() => {
     setPage(1)
@@ -232,6 +246,7 @@ export default function CleanupCheck() {
             ? applyMergeToClusterResults(prev, sourceId, targetId, result.relinked_substrate_count)
             : prev,
         )
+        void refreshHubCheckCount()
       } catch (error) {
         showError(
           error instanceof Error
@@ -248,6 +263,7 @@ export default function CleanupCheck() {
       findCanonicalLabel,
       showConfirm,
       showError,
+      refreshHubCheckCount,
     ],
   )
 
@@ -266,6 +282,7 @@ export default function CleanupCheck() {
         setClusterResults((prev) =>
           prev ? applyDeleteEmptyToClusterResults(prev, canonicalId) : prev,
         )
+        void refreshHubCheckCount()
       } catch (error) {
         showError(
           error instanceof Error
@@ -274,7 +291,7 @@ export default function CleanupCheck() {
         )
       }
     },
-    [stylebookSlug, entityType, findCanonicalLabel, showConfirm, showError],
+    [stylebookSlug, entityType, findCanonicalLabel, showConfirm, showError, refreshHubCheckCount],
   )
 
   const handleDismissCluster = useCallback(
@@ -305,13 +322,14 @@ export default function CleanupCheck() {
         setClusterResults((prev) =>
           prev ? applyDismissClusterToResults(prev, clusterId) : prev,
         )
+        void refreshHubCheckCount()
       } catch (error) {
         showError(
           error instanceof Error ? error.message : "Failed to dismiss duplicate group",
         )
       }
     },
-    [stylebookSlug, config, showConfirm, showError],
+    [stylebookSlug, config, showConfirm, showError, refreshHubCheckCount],
   )
 
   const handleDismissListIssue = useCallback(
@@ -326,13 +344,14 @@ export default function CleanupCheck() {
         setListResults((prev) =>
           prev ? applyDismissCanonicalToListResults(prev, canonicalId) : prev,
         )
+        void refreshHubCheckCount()
       } catch (error) {
         showError(
           error instanceof Error ? error.message : "Failed to dismiss issue",
         )
       }
     },
-    [stylebookSlug, config, showError],
+    [stylebookSlug, config, showError, refreshHubCheckCount],
   )
 
   const applyAcceptedMergeProposal = useCallback(
@@ -373,14 +392,13 @@ export default function CleanupCheck() {
           stylebookSlug,
           proposalId: proposal.id,
         })
-        if (result.status === "stale") {
-          showError(result.message)
-        } else if (result.status === "applied") {
+        if (result.status === "applied") {
           if (proposal.action === "merge") {
             applyAcceptedMergeProposal(proposal)
           } else if (proposal.action === "keep_separate") {
             applyAcceptedKeepSeparateProposal(proposal)
           }
+          void refreshHubCheckCount()
         }
         removeAiProposal(proposal.id)
       } catch (error) {
@@ -393,6 +411,7 @@ export default function CleanupCheck() {
       applyAcceptedMergeProposal,
       applyAcceptedKeepSeparateProposal,
       removeAiProposal,
+      refreshHubCheckCount,
     ],
   )
 
@@ -431,29 +450,27 @@ export default function CleanupCheck() {
           } else if (proposal.action === "keep_separate") {
             applyAcceptedKeepSeparateProposal(proposal)
           }
-        } else if (result.status === "stale") {
-          showError(result.message)
         }
         removeAiProposal(proposal.id)
       } catch {
         // Continue with remaining proposals.
       }
     }
+    void refreshHubCheckCount()
   }, [
     stylebookSlug,
     highConfidenceProposals,
-    showError,
     applyAcceptedMergeProposal,
     applyAcceptedKeepSeparateProposal,
     removeAiProposal,
+    refreshHubCheckCount,
   ])
 
   const handleReviewStarted = useCallback(
     (reviewId: string) => {
       void startAiReviewTracking(reviewId)
-      showMessage("AI review started. Suggestions will appear when it finishes.")
     },
-    [startAiReviewTracking, showMessage],
+    [startAiReviewTracking],
   )
 
   const pagination = useMemo(() => {
@@ -475,6 +492,11 @@ export default function CleanupCheck() {
     }
     return { page: 1, total: 0, hasNext: false, hasPrev: false }
   }, [clusterResults, listResults])
+
+  const showAiReviewControls =
+    canEdit &&
+    isClusterCheck &&
+    (loading || pagination.total > 0 || aiReviewActive)
 
   if (!config) {
     return (
@@ -498,7 +520,7 @@ export default function CleanupCheck() {
         <Breadcrumbs
           items={[
             { label: crumbRoot.label, to: `${catalogBasePath}${catalogScopeSuffix}` },
-            { label: "Cleanup", to: cleanupHubPath },
+            { label: "Checks", to: cleanupHubPath },
             { label: config.title },
           ]}
           className="mb-3"
@@ -509,7 +531,7 @@ export default function CleanupCheck() {
 
       <StylebookHomeTabs />
 
-      {canEdit && isClusterCheck ? (
+      {showAiReviewControls ? (
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
@@ -554,7 +576,7 @@ export default function CleanupCheck() {
         </div>
       ) : null}
 
-      {canEdit && isClusterCheck ? (
+      {showAiReviewControls ? (
         <CleanupAiReviewDialog
           open={aiDialogOpen}
           onOpenChange={setAiDialogOpen}
