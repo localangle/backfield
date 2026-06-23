@@ -83,12 +83,18 @@ def _extract_message_content_text(message: Any) -> str:
                     continue
                 tx = block.get("text")
                 if isinstance(tx, str) and tx.strip():
-                    if btype in ("text", "output_text", None):
-                        parts.append(tx)
-                elif isinstance(block.get("output_text"), str):
-                    parts.append(block["output_text"])
-                elif isinstance(block.get("output_text"), dict):
-                    inner = block["output_text"].get("text")
+                    parts.append(tx)
+                    continue
+                content_val = block.get("content")
+                if isinstance(content_val, str) and content_val.strip():
+                    parts.append(content_val)
+                    continue
+                output_text = block.get("output_text")
+                if isinstance(output_text, str) and output_text.strip():
+                    parts.append(output_text)
+                    continue
+                if isinstance(output_text, dict):
+                    inner = output_text.get("text")
                     if isinstance(inner, str) and inner.strip():
                         parts.append(inner)
             else:
@@ -186,6 +192,36 @@ def _litellm_completion_temperature(
     return temperature
 
 
+def _gpt5_reasoning_effort_for_simple_completion(litellm_model: str) -> str | None:
+    """Use the lowest supported reasoning setting so short completions emit visible text."""
+    model_id = _provider_model_id_from_litellm(litellm_model)
+    if not model_id.startswith("gpt-5"):
+        return None
+    try:
+        from litellm.llms.openai.chat.gpt_5_transformation import OpenAIGPT5Config
+
+        cfg = OpenAIGPT5Config()
+        if not cfg.is_model_gpt_5_model(litellm_model):
+            return None
+        if cfg._supports_reasoning_effort_level(litellm_model, "none"):
+            return "none"
+        if cfg._supports_reasoning_effort_level(litellm_model, "minimal"):
+            return "minimal"
+    except Exception:
+        logger.debug(
+            "Could not resolve GPT-5 reasoning_effort for %s",
+            litellm_model,
+            exc_info=True,
+        )
+    return None
+
+
+def _apply_gpt5_litellm_kwargs(litellm_model: str, kwargs: dict[str, Any]) -> None:
+    effort = _gpt5_reasoning_effort_for_simple_completion(litellm_model)
+    if effort is not None and "reasoning_effort" not in kwargs:
+        kwargs["reasoning_effort"] = effort
+
+
 def completion_text_sync(
     *,
     litellm_model: str,
@@ -218,6 +254,7 @@ def completion_text_sync(
     effective_temperature = _litellm_completion_temperature(litellm_model, temperature)
     if effective_temperature is not None:
         kwargs["temperature"] = effective_temperature
+    _apply_gpt5_litellm_kwargs(litellm_model, kwargs)
     if force_json_response and _litellm_json_object_response_format_supported(litellm_model):
         kwargs["response_format"] = {"type": "json_object"}
 
@@ -243,11 +280,10 @@ def completion_text_sync(
             result=partial,
         )
 
-    # Large prompts + JSON mode can burn the whole completion budget with no visible text yet.
-    # Only bump when we sent explicit max_tokens; else the provider already used its default.
+    # Reasoning models can exhaust max_completion_tokens on hidden reasoning before any
+    # visible assistant text is emitted. Retry once with a larger cap when that happens.
     if (
         allow_max_tokens_bump
-        and force_json_response
         and text == ""
         and finish == "length"
     ):
@@ -257,7 +293,7 @@ def completion_text_sync(
             bumped = min(max(current_cap * 2, 8192), _MAX_OUTPUT_RETRY_CEILING)
             if bumped > current_cap:
                 logger.info(
-                    "LiteLLM empty JSON + finish_reason=length; retry max_tokens=%s (was %s)",
+                    "LiteLLM empty output + finish_reason=length; retry max_tokens=%s (was %s)",
                     bumped,
                     current_cap,
                 )

@@ -36,13 +36,21 @@ def generate_hypothetical_document(
             {"role": "system", "content": _HYDE_SYSTEM_MESSAGE},
             {"role": "user", "content": f"Search query:\n{text}\n\nHypothetical article passage:"},
         ],
-        max_tokens=512,
+        max_tokens=2048,
         temperature=0.2,
         force_json_response=False,
     )
     passage = result.text.strip()
     if not passage:
-        raise EmbeddingConfigurationError("HyDE generation returned empty text.")
+        model_label = (
+            f"{result.provider}/{result.provider_model_id}"
+            if result.provider and result.provider != "unknown"
+            else result.provider_model_id
+        )
+        raise EmbeddingConfigurationError(
+            "HyDE generation returned empty text "
+            f"(model={model_label!r}). Try another generative default or retry.",
+        )
     if result.provider and result.provider != "unknown":
         hyde_litellm_model = f"{result.provider}/{result.provider_model_id}"
     else:

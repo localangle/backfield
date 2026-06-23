@@ -82,6 +82,54 @@ def test_completion_text_sync_omits_temperature_for_gpt5(
     )
 
     assert "temperature" not in captured
+    assert captured.get("reasoning_effort") == "minimal"
+
+
+def test_completion_text_sync_retries_empty_output_on_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    class EmptyMsg:
+        content = ""
+        refusal = None
+
+    class OkMsg:
+        content = "Generated passage."
+        refusal = None
+
+    class Choice:
+        def __init__(self, message: object, finish_reason: str) -> None:
+            self.message = message
+            self.finish_reason = finish_reason
+
+    class Resp:
+        def __init__(self, message: object, finish_reason: str) -> None:
+            self.choices = [Choice(message, finish_reason)]
+            self.usage = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+    def fake_completion(**kwargs: object) -> Resp:
+        calls.append(dict(kwargs))
+        if len(calls) == 1:
+            return Resp(EmptyMsg(), "length")
+        return Resp(OkMsg(), "stop")
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    result = completion_text_sync(
+        litellm_model="gpt-4o-mini",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=512,
+        temperature=0.2,
+        timeout=30.0,
+        force_json_response=False,
+    )
+
+    assert result.text == "Generated passage."
+    assert len(calls) == 2
+    assert calls[1]["max_tokens"] == 8192
 
 
 def test_extract_plain_string() -> None:
@@ -100,6 +148,21 @@ def test_extract_list_text_blocks() -> None:
 def test_extract_list_output_text_blocks() -> None:
     msg = _Msg([{"type": "output_text", "text": "[ ]"}])
     assert _extract_message_content_text(msg) == "[ ]"
+
+
+def test_extract_nonstandard_block_type_with_text() -> None:
+    msg = _Msg(
+        [
+            {"type": "reasoning", "text": "internal chain of thought..."},
+            {"type": "output", "text": "Council members debated the stadium plan."},
+        ],
+    )
+    assert _extract_message_content_text(msg) == "Council members debated the stadium plan."
+
+
+def test_extract_content_field_on_block() -> None:
+    msg = _Msg([{"type": "message", "content": "Short news passage."}])
+    assert _extract_message_content_text(msg) == "Short news passage."
 
 
 def test_extract_object_blocks_with_text_attr() -> None:
