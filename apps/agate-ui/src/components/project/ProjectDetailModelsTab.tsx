@@ -23,6 +23,7 @@ import {
   type ProjectEffectiveAiModelRow,
 } from '@/lib/core-api'
 import {
+  GENERATIVE_DEFAULT_ROLE,
   modelKindLabel,
   normalizeModelKind,
   SEMANTIC_EMBEDDING_DEFAULT_ROLE,
@@ -52,14 +53,23 @@ interface ProjectDetailModelsTabProps {
   projectId: number
 }
 
+interface DefaultToggleOptions {
+  defaultModelId: string | null
+  soleEnabledId: string | null
+  onSetDefault: (modelConfigId: string) => void
+  lockDefaultMessage: string
+}
+
 export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModelsTabProps) {
   const { showError, showConfirm, showMessage } = useAppMessage()
   const [rows, setRows] = useState<ProjectEffectiveAiModelRow[]>([])
   const [semanticDefaultModelId, setSemanticDefaultModelId] = useState<string | null>(null)
+  const [generativeDefaultModelId, setGenerativeDefaultModelId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [listError, setListError] = useState<string | null>(null)
   const [busyModelId, setBusyModelId] = useState<string | null>(null)
-  const autoDefaultInFlight = useRef(false)
+  const embeddingAutoDefaultInFlight = useRef(false)
+  const generativeAutoDefaultInFlight = useRef(false)
 
   const [credentialDialog, setCredentialDialog] = useState<ProjectEffectiveAiModelRow | null>(null)
   const [credentialKey, setCredentialKey] = useState('')
@@ -67,6 +77,12 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
   const [credentialSaving, setCredentialSaving] = useState(false)
 
   const partitioned = useMemo(() => partitionProjectModelsByKind(rows), [rows])
+  const enabledGenerativeIds = useMemo(
+    () => partitioned.generative.enabled.map((r) => r.id),
+    [partitioned.generative.enabled],
+  )
+  const soleEnabledGenerativeId =
+    enabledGenerativeIds.length === 1 ? enabledGenerativeIds[0] : null
   const enabledEmbeddingIds = useMemo(
     () => partitioned.embedding.enabled.map((r) => r.id),
     [partitioned.embedding.enabled],
@@ -85,10 +101,13 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
       setRows(data)
       const semantic = defaults.find((d) => d.role === SEMANTIC_EMBEDDING_DEFAULT_ROLE)
       setSemanticDefaultModelId(semantic?.model_config_id ?? null)
+      const generative = defaults.find((d) => d.role === GENERATIVE_DEFAULT_ROLE)
+      setGenerativeDefaultModelId(generative?.model_config_id ?? null)
     } catch (e) {
       console.error(e)
       setRows([])
       setSemanticDefaultModelId(null)
+      setGenerativeDefaultModelId(null)
       setListError('Could not load models for this project.')
     } finally {
       setLoading(false)
@@ -120,13 +139,30 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
     [projectId, showError],
   )
 
+  const setGenerativeDefault = useCallback(
+    async (modelConfigId: string) => {
+      try {
+        setBusyModelId(modelConfigId)
+        await putProjectAiModelDefaultRole(projectId, GENERATIVE_DEFAULT_ROLE, modelConfigId)
+        setGenerativeDefaultModelId(modelConfigId)
+        dispatchProjectAiModelsChanged(projectId)
+      } catch (e) {
+        console.error(e)
+        showError('We could not set the generative default. Try again.')
+      } finally {
+        setBusyModelId(null)
+      }
+    },
+    [projectId, showError],
+  )
+
   const maybeAutoAssignSoleEmbeddingDefault = useCallback(
     async (enabledEmbeddings: ProjectEffectiveAiModelRow[], currentDefaultId: string | null) => {
       if (enabledEmbeddings.length !== 1) return
       const soleId = enabledEmbeddings[0].id
       if (!soleId || soleId === currentDefaultId) return
-      if (autoDefaultInFlight.current) return
-      autoDefaultInFlight.current = true
+      if (embeddingAutoDefaultInFlight.current) return
+      embeddingAutoDefaultInFlight.current = true
       try {
         await putProjectAiModelDefaultRole(
           projectId,
@@ -138,7 +174,27 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
       } catch (e) {
         console.error(e)
       } finally {
-        autoDefaultInFlight.current = false
+        embeddingAutoDefaultInFlight.current = false
+      }
+    },
+    [projectId],
+  )
+
+  const maybeAutoAssignSoleGenerativeDefault = useCallback(
+    async (enabledGenerative: ProjectEffectiveAiModelRow[], currentDefaultId: string | null) => {
+      if (enabledGenerative.length !== 1) return
+      const soleId = enabledGenerative[0].id
+      if (!soleId || soleId === currentDefaultId) return
+      if (generativeAutoDefaultInFlight.current) return
+      generativeAutoDefaultInFlight.current = true
+      try {
+        await putProjectAiModelDefaultRole(projectId, GENERATIVE_DEFAULT_ROLE, soleId)
+        setGenerativeDefaultModelId(soleId)
+        dispatchProjectAiModelsChanged(projectId)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        generativeAutoDefaultInFlight.current = false
       }
     },
     [projectId],
@@ -157,6 +213,19 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
     maybeAutoAssignSoleEmbeddingDefault,
   ])
 
+  useEffect(() => {
+    if (loading) return
+    void maybeAutoAssignSoleGenerativeDefault(
+      partitioned.generative.enabled,
+      generativeDefaultModelId,
+    )
+  }, [
+    loading,
+    partitioned.generative.enabled,
+    generativeDefaultModelId,
+    maybeAutoAssignSoleGenerativeDefault,
+  ])
+
   const setBusy = (id: string | null) => setBusyModelId(id)
 
   const handleToggleEnabled = async (row: ProjectEffectiveAiModelRow, next: boolean) => {
@@ -171,10 +240,14 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           r.project_enabled &&
           normalizeModelKind(r.model_kind) === 'embedding',
       )
-      await maybeAutoAssignSoleEmbeddingDefault(
-        enabledEmbeddings,
-        semanticDefaultModelId,
+      const enabledGenerative = nextRows.filter(
+        (r) =>
+          r.status === 'active' &&
+          r.project_enabled &&
+          normalizeModelKind(r.model_kind) === 'generative',
       )
+      await maybeAutoAssignSoleEmbeddingDefault(enabledEmbeddings, semanticDefaultModelId)
+      await maybeAutoAssignSoleGenerativeDefault(enabledGenerative, generativeDefaultModelId)
       dispatchProjectAiModelsChanged(projectId)
     } catch (e) {
       console.error(e)
@@ -247,16 +320,13 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
     }
   }
 
-  const renderModelRow = (
-    row: ProjectEffectiveAiModelRow,
-    options?: { showSemanticDefaultToggle?: boolean },
-  ) => {
+  const renderModelRow = (row: ProjectEffectiveAiModelRow, defaultToggle?: DefaultToggleOptions) => {
     const busy = busyModelId === row.id
     const override = row.project_credential_override_configured ?? false
-    const isDefault = semanticDefaultModelId === row.id
+    const isDefault = defaultToggle ? defaultToggle.defaultModelId === row.id : false
     const lockDefaultOn =
-      options?.showSemanticDefaultToggle === true &&
-      soleEnabledEmbeddingId === row.id &&
+      defaultToggle !== undefined &&
+      defaultToggle.soleEnabledId === row.id &&
       isDefault
 
     return (
@@ -273,7 +343,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Badge variant="outline">{modelKindLabel(normalizeModelKind(row.model_kind))}</Badge>
-            {isDefault && options?.showSemanticDefaultToggle ? (
+            {isDefault && defaultToggle ? (
               <Badge variant="secondary">Default</Badge>
             ) : null}
             {override ? <OverriddenBadge /> : <Badge variant="success">Configured</Badge>}
@@ -298,7 +368,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
             </Label>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
-            {options?.showSemanticDefaultToggle && row.project_enabled ? (
+            {defaultToggle && row.project_enabled ? (
               <Button
                 type="button"
                 size="sm"
@@ -309,7 +379,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
                 disabled={busy || isDefault}
                 aria-pressed={isDefault}
                 onClick={() => {
-                  if (!isDefault) void setSemanticDefault(row.id)
+                  if (!isDefault) defaultToggle.onSetDefault(row.id)
                 }}
               >
                 Default
@@ -338,7 +408,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           </div>
         </div>
         {lockDefaultOn ? (
-          <p className="text-xs text-muted-foreground">Only embedding model enabled for this project.</p>
+          <p className="text-xs text-muted-foreground">{defaultToggle.lockDefaultMessage}</p>
         ) : null}
       </div>
     )
@@ -349,7 +419,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
     description: string,
     enabled: ProjectEffectiveAiModelRow[],
     disabled: ProjectEffectiveAiModelRow[],
-    options?: { showSemanticDefaultToggle?: boolean },
+    defaultToggle?: DefaultToggleOptions,
   ) => (
     <section className="space-y-4" aria-labelledby={`${title}-heading`}>
       <div className="space-y-1">
@@ -366,7 +436,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           {enabled.length === 0 ? (
             <p className="text-sm text-muted-foreground">No models enabled in this section.</p>
           ) : (
-            enabled.map((row) => renderModelRow(row, options))
+            enabled.map((row) => renderModelRow(row, defaultToggle))
           )}
         </div>
         <div className="space-y-0 border-t border-border pt-6">
@@ -376,7 +446,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           {disabled.length === 0 ? (
             <p className="text-sm text-muted-foreground">None.</p>
           ) : (
-            disabled.map((row) => renderModelRow(row, options))
+            disabled.map((row) => renderModelRow(row, defaultToggle))
           )}
         </div>
       </div>
@@ -391,8 +461,8 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
   return (
     <div className="w-full min-w-0 space-y-6">
       <p className="text-sm text-muted-foreground">
-        Turn models on or off for this project. Embedding models power semantic search when Backfield
-        Output has semantic search enabled.
+        Turn models on or off for this project. Choose defaults for generative and embedding models
+        used by flows and semantic search.
       </p>
 
       <Card className="w-full">
@@ -400,7 +470,7 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
           <CardTitle className="text-base">Project models</CardTitle>
           <CardDescription>
             Organization admins manage the catalog under Settings → Models. Enable models here and
-            choose which embedding model is the project default for semantic search.
+            choose project defaults for generative and embedding models.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-10">
@@ -421,9 +491,17 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
               {hasGenerative
                 ? renderKindSection(
                     'Generative',
-                    'Language and vision models used in flow nodes such as extraction and geocoding.',
+                    'Language and vision models used in flow nodes and headless features such as semantic search HyDE.',
                     partitioned.generative.enabled,
                     partitioned.generative.disabled,
+                    {
+                      defaultModelId: generativeDefaultModelId,
+                      soleEnabledId: soleEnabledGenerativeId,
+                      onSetDefault: (id) => {
+                        void setGenerativeDefault(id)
+                      },
+                      lockDefaultMessage: 'Only generative model enabled for this project.',
+                    },
                   )
                 : null}
               {hasGenerative && hasEmbedding ? (
@@ -435,7 +513,14 @@ export default function ProjectDetailModelsTab({ projectId }: ProjectDetailModel
                     'Vector models for semantic search across saved mentions. One enabled model is used automatically when it is the only choice.',
                     partitioned.embedding.enabled,
                     partitioned.embedding.disabled,
-                    { showSemanticDefaultToggle: true },
+                    {
+                      defaultModelId: semanticDefaultModelId,
+                      soleEnabledId: soleEnabledEmbeddingId,
+                      onSetDefault: (id) => {
+                        void setSemanticDefault(id)
+                      },
+                      lockDefaultMessage: 'Only embedding model enabled for this project.',
+                    },
                   )
                 : null}
             </>

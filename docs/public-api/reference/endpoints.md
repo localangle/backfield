@@ -327,7 +327,7 @@ Return metadata rows for one article plus a deduplicated list of **`meta_types`*
 
 ### Functionality
 
-Natural-language article search over **`substrate_article_embedding`** rows. Embeds the request `query` with the project/org default **`semantic.embedding`** model, then ranks matching embedded articles by cosine similarity. When **`use_hyde`** is `true`, a generative model (`semantic.hyde` default, or the sole enabled generative model) writes a hypothetical news passage from the query; that passage is embedded and used for ranking instead of the raw query. Articles without an embedding row are omitted (not an error). Keyword search remains on **`GET …/articles/search`**.
+Natural-language article search over **`substrate_article_embedding`** rows. Embeds the request `query` with the project/org default **`semantic.embedding`** model, then ranks matching embedded articles by cosine similarity. When **`use_hyde`** is `true`, a generative model (`generative.default`, or the sole enabled generative model) writes a hypothetical news passage from the query; that passage is embedded and used for ranking instead of the raw query. Articles without an embedding row are omitted (not an error). Keyword search remains on **`GET …/articles/search`**.
 
 ### Path parameters
 
@@ -350,6 +350,9 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
 | `use_hyde` | boolean | `false` | Generate a hypothetical news passage from the query, embed it, and search against that (HyDE) |
+| `include` | array of string | `[]` | Repeatable include token. Supported: `counts` (same extras as `GET …/articles/search`) |
+
+Each **`items[]`** row uses the same article list shape as keyword search (`id`, `headline`, `url`, `author`, `pub_date`, `source`, `preview`, `metadata`, optional `embedded`/`counts` via `include`) plus **`score`** (cosine similarity).
 
 ### Response `200`
 
@@ -366,9 +369,26 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
     {
       "id": 1,
       "headline": "City council votes on budget",
-      "score": 0.82,
-      "preview": null,
-      "metadata": []
+      "url": "https://example.com/budget",
+      "author": "Jane Doe",
+      "pub_date": "2024-03-01",
+      "source": { "id": "example.com", "name": "example.com" },
+      "preview": "City council approved the downtown budget after…",
+      "metadata": [
+        {
+          "meta_type": "subject",
+          "category": "local_government_politics",
+          "confidence": 0.92
+        }
+      ],
+      "embedded": true,
+      "counts": {
+        "mentions": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+        "entities": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+        "images": 1,
+        "custom_records": { "contracts": 1 }
+      },
+      "score": 0.82
     }
   ],
   "pagination": {
@@ -385,7 +405,7 @@ Results are ordered by **`score`** descending, then `pub_date` descending, then 
 
 | Status | When |
 |--------|------|
-| `400` | Invalid `pub_date_from` or `pub_date_to` format, or invalid `meta` clause |
+| `400` | Invalid `pub_date_from` or `pub_date_to` format, invalid `meta` clause, or unknown `include` token |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |

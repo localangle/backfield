@@ -1,9 +1,10 @@
-"""Resolve semantic.embedding and semantic.hyde default model roles."""
+"""Resolve semantic.embedding and generative.default default model roles."""
 
 from __future__ import annotations
 
 import pytest
 from backfield_ai.constants import (
+    AI_DEFAULT_ROLE_GENERATIVE_DEFAULT,
     AI_DEFAULT_ROLE_SEMANTIC_EMBEDDING,
     AI_DEFAULT_ROLE_SEMANTIC_HYDE,
     AI_MODEL_KIND_EMBEDDING,
@@ -11,6 +12,7 @@ from backfield_ai.constants import (
 )
 from backfield_ai.embeddings import EmbeddingConfigurationError
 from backfield_ai.model_resolve import (
+    resolve_generative_default_model_config_id,
     resolve_semantic_embedding_model_config_id,
     resolve_semantic_hyde_model_config_id,
     semantic_embedding_configured,
@@ -299,25 +301,66 @@ def test_resolve_semantic_embedding_after_default_re_enabled() -> None:
         assert semantic_embedding_configured(session, project_id) is True
 
 
-def test_resolve_semantic_hyde_model_prefers_project_default() -> None:
+def test_resolve_generative_default_prefers_project_default() -> None:
     engine = _engine()
     with Session(engine) as session:
-        org = BackfieldOrganization(name="Org", slug="org-hyde-res")
+        org = BackfieldOrganization(name="Org", slug="org-gen-res")
         session.add(org)
         session.commit()
         session.refresh(org)
         org_id = int(org.id)  # type: ignore[arg-type]
         cfg = BackfieldAiModelConfig(
-            id="gen-hyde-project",
+            id="gen-project-default",
             organization_id=org_id,
-            name="HyDE",
+            name="Generative",
             provider="openai",
             provider_model_id="gpt-4o-mini",
             model_kind=AI_MODEL_KIND_GENERATIVE,
             capabilities_json=["text"],
         )
         session.add(cfg)
-        proj = BackfieldProject(name="P", slug="p-hyde", organization_id=org_id)
+        proj = BackfieldProject(name="P", slug="p-gen-res", organization_id=org_id)
+        session.add(proj)
+        session.commit()
+        session.refresh(proj)
+        project_id = int(proj.id)  # type: ignore[arg-type]
+        session.add(
+            BackfieldAiDefaultModelRole(
+                project_id=project_id,
+                organization_id=None,
+                role=AI_DEFAULT_ROLE_GENERATIVE_DEFAULT,
+                model_config_id="gen-project-default",
+            )
+        )
+        session.commit()
+
+        assert (
+            resolve_generative_default_model_config_id(session, project_id) == "gen-project-default"
+        )
+        assert (
+            resolve_semantic_hyde_model_config_id(session, project_id) == "gen-project-default"
+        )
+
+
+def test_resolve_generative_default_falls_back_to_legacy_semantic_hyde_role() -> None:
+    engine = _engine()
+    with Session(engine) as session:
+        org = BackfieldOrganization(name="Org", slug="org-hyde-legacy")
+        session.add(org)
+        session.commit()
+        session.refresh(org)
+        org_id = int(org.id)  # type: ignore[arg-type]
+        cfg = BackfieldAiModelConfig(
+            id="gen-hyde-legacy",
+            organization_id=org_id,
+            name="HyDE legacy",
+            provider="openai",
+            provider_model_id="gpt-4o-mini",
+            model_kind=AI_MODEL_KIND_GENERATIVE,
+            capabilities_json=["text"],
+        )
+        session.add(cfg)
+        proj = BackfieldProject(name="P", slug="p-hyde-legacy", organization_id=org_id)
         session.add(proj)
         session.commit()
         session.refresh(proj)
@@ -327,17 +370,17 @@ def test_resolve_semantic_hyde_model_prefers_project_default() -> None:
                 project_id=project_id,
                 organization_id=None,
                 role=AI_DEFAULT_ROLE_SEMANTIC_HYDE,
-                model_config_id="gen-hyde-project",
+                model_config_id="gen-hyde-legacy",
             )
         )
         session.commit()
 
         assert (
-            resolve_semantic_hyde_model_config_id(session, project_id) == "gen-hyde-project"
+            resolve_generative_default_model_config_id(session, project_id) == "gen-hyde-legacy"
         )
 
 
-def test_resolve_semantic_hyde_uses_sole_enabled_generative_when_no_default() -> None:
+def test_resolve_generative_default_uses_sole_enabled_generative_when_no_default() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(name="Org", slug="org-hyde-sole")
@@ -361,10 +404,10 @@ def test_resolve_semantic_hyde_uses_sole_enabled_generative_when_no_default() ->
         session.refresh(proj)
         project_id = int(proj.id)  # type: ignore[arg-type]
 
-        assert resolve_semantic_hyde_model_config_id(session, project_id) == "gen-hyde-sole"
+        assert resolve_generative_default_model_config_id(session, project_id) == "gen-hyde-sole"
 
 
-def test_resolve_semantic_hyde_missing_raises() -> None:
+def test_resolve_generative_default_missing_raises() -> None:
     engine = _engine()
     with Session(engine) as session:
         org = BackfieldOrganization(name="Org", slug="org-hyde-miss")
@@ -381,4 +424,4 @@ def test_resolve_semantic_hyde_missing_raises() -> None:
         session.refresh(proj)
 
         with pytest.raises(EmbeddingConfigurationError, match="No generative model configured"):
-            resolve_semantic_hyde_model_config_id(session, int(proj.id))
+            resolve_generative_default_model_config_id(session, int(proj.id))

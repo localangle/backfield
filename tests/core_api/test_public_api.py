@@ -422,8 +422,39 @@ def test_public_article_semantic_search(
     body = r.json()
     assert body["embedding_model_config_id"] == "emb-test"
     assert body["pagination"]["total"] == 1
-    assert body["items"][0]["headline"] == "City council votes on budget"
-    assert body["items"][0]["score"] > 0
+    item = body["items"][0]
+    assert item["headline"] == "City council votes on budget"
+    assert item["score"] > 0
+    assert item["preview"]
+    assert item["metadata"]
+    assert item.get("counts") is None
+    assert item.get("embedded") is None
+
+
+@patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")
+def test_public_article_semantic_search_include_counts(
+    mock_embed: MagicMock,
+    public_client: TestClient,
+) -> None:
+    mock_embed.return_value = SemanticQueryEmbedding(
+        vector=[1.0, 0.0],
+        model_config_id="emb-test",
+        embedding_model="openai/text-embedding-3-small",
+        embedding_dimensions=2,
+    )
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.post(
+        "/public/v1/projects/general/articles/semantic-search",
+        headers=headers,
+        json={"query": "city budget debate", "include": ["counts"]},
+    )
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["embedded"] is True
+    assert item["counts"]["mentions"]["total"] == 3
+    assert item["counts"]["entities"]["total"] == 3
+    assert item["score"] > 0
 
 
 @patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")

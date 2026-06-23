@@ -5,6 +5,7 @@ from __future__ import annotations
 from backfield_ai.embeddings import EmbeddingConfigurationError
 from backfield_ai.query_embedding import SemanticQueryEmbedding, embed_semantic_search_query
 from backfield_db import BackfieldProject
+from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.article_semantic_search import (
     PublicArticleSemanticSearchItemOut,
     PublicArticleSemanticSearchParams,
@@ -16,7 +17,9 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
+    INCLUDE_PARAM_DESCRIPTION,
     META_PARAM_DESCRIPTION,
+    parse_article_includes,
     parse_meta_clauses,
     parse_optional_date,
 )
@@ -56,6 +59,7 @@ class PublicArticleSemanticSearchIn(BaseModel):
             "and search article embeddings against it (HyDE)"
         ),
     )
+    include: list[str] = Field(default_factory=list, description=INCLUDE_PARAM_DESCRIPTION)
 
 
 class PublicArticleSemanticSearchOut(BaseModel):
@@ -89,6 +93,7 @@ def search_project_articles_semantic(
 ) -> PublicArticleSemanticSearchOut:
     """Search project articles by semantic similarity when embeddings exist."""
     query = body.query.strip()
+    includes = parse_article_includes(body.include)
     try:
         embedding: SemanticQueryEmbedding = embed_semantic_search_query(
             session,
@@ -118,6 +123,8 @@ def search_project_articles_semantic(
         embedding_provider_model_id=_provider_model_id(embedding.embedding_model),
         params=params,
     )
+    if "counts" in includes:
+        enrich_articles_with_counts(session, items)
     return PublicArticleSemanticSearchOut(
         query=query,
         embedding_model=embedding.embedding_model,

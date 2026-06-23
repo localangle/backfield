@@ -7,6 +7,7 @@ import pytest
 from backfield_ai.completion import (
     LiteLLMCompletionRejectedError,
     _extract_message_content_text,
+    _litellm_completion_temperature,
     _litellm_json_object_response_format_supported,
     completion_text_sync,
 )
@@ -30,6 +31,57 @@ class _Msg:
 )
 def test_litellm_json_mode_flag(model: str, expected: bool) -> None:
     assert _litellm_json_object_response_format_supported(model) is expected
+
+
+@pytest.mark.parametrize(
+    ("model", "temperature", "expected"),
+    [
+        ("gpt-5-nano", 0.2, None),
+        ("openai/gpt-5-mini", 0.2, None),
+        ("gpt-4o-mini", 0.2, 0.2),
+        ("anthropic/claude-sonnet-4-5-20250929", 0.2, 0.2),
+        ("gpt-5-nano", None, None),
+    ],
+)
+def test_litellm_completion_temperature(model: str, temperature: float | None, expected) -> None:
+    assert _litellm_completion_temperature(model, temperature) == expected
+
+
+def test_completion_text_sync_omits_temperature_for_gpt5(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class Msg:
+        content = "ok"
+        refusal = None
+
+    class Choice:
+        finish_reason = "stop"
+        message = Msg()
+
+    class Resp:
+        choices = [Choice()]
+        usage = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+    def fake_completion(**kwargs: object) -> Resp:
+        captured.update(kwargs)
+        return Resp()
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm, "completion_cost", lambda **_kw: 0.0)
+
+    completion_text_sync(
+        litellm_model="openai/gpt-5-nano",
+        messages=[{"role": "user", "content": "hi"}],
+        api_key="sk-test",
+        max_tokens=32,
+        temperature=0.2,
+        timeout=30.0,
+        force_json_response=False,
+    )
+
+    assert "temperature" not in captured
 
 
 def test_extract_plain_string() -> None:
