@@ -57,10 +57,68 @@ class PublicArticleGeoSearchParams:
     offset: int = 0
 
 
-class PublicArticleGeoSearchItemOut(BaseModel):
-    article: PublicArticleOut
-    matching_locations: list[PublicArticleLocationOut] = Field(default_factory=list)
+class PublicGeoBboxOut(BaseModel):
+    min_lng: float
+    min_lat: float
+    max_lng: float
+    max_lat: float
+
+
+class PublicArticleGeoSearchQueryOut(BaseModel):
+    """Echo of geographic search filters applied to a list response."""
+
     search_mode: Literal["point", "bbox"]
+    center_lng: float | None = None
+    center_lat: float | None = None
+    radius_miles: float | None = None
+    bbox: PublicGeoBboxOut | None = None
+    location_type: str | None = None
+    nature: str | None = None
+    meta_type: str | None = None
+    meta_category: str | None = None
+    exclude_meta_type: str | None = None
+    exclude_meta_category: str | None = None
+    pub_date_from: date | None = None
+    pub_date_to: date | None = None
+
+
+def public_article_geo_search_query_out(
+    params: PublicArticleGeoSearchParams,
+) -> PublicArticleGeoSearchQueryOut:
+    """Build the query echo object from geographic search params."""
+    bbox: PublicGeoBboxOut | None = None
+    if params.mode is PublicArticleGeoSearchMode.bbox:
+        assert params.min_lng is not None
+        assert params.min_lat is not None
+        assert params.max_lng is not None
+        assert params.max_lat is not None
+        bbox = PublicGeoBboxOut(
+            min_lng=params.min_lng,
+            min_lat=params.min_lat,
+            max_lng=params.max_lng,
+            max_lat=params.max_lat,
+        )
+    return PublicArticleGeoSearchQueryOut(
+        search_mode=params.mode.value,
+        center_lng=params.center_lng if params.mode is PublicArticleGeoSearchMode.point else None,
+        center_lat=params.center_lat if params.mode is PublicArticleGeoSearchMode.point else None,
+        radius_miles=params.radius_miles
+        if params.mode is PublicArticleGeoSearchMode.point
+        else None,
+        bbox=bbox,
+        location_type=(params.location_type or "").strip() or None,
+        nature=(params.nature or "").strip() or None,
+        meta_type=params.meta_type,
+        meta_category=params.meta_category,
+        exclude_meta_type=params.exclude_meta_type,
+        exclude_meta_category=params.exclude_meta_category,
+        pub_date_from=params.pub_date_from,
+        pub_date_to=params.pub_date_to,
+    )
+
+
+class PublicArticleGeoSearchItemOut(PublicArticleOut):
+    matching_locations: list[PublicArticleLocationOut] = Field(default_factory=list)
 
 
 def _point_coordinates(geometry_json: dict | None) -> tuple[float, float] | None:
@@ -354,7 +412,6 @@ def search_public_articles_by_geo(
     meta_by_id = _meta_rows_for_articles(session, page_article_ids)
     locations_by_mention_id = location_mentions_out_by_ids(session, all_mention_ids)
 
-    mode: Literal["point", "bbox"] = params.mode.value
     items: list[PublicArticleGeoSearchItemOut] = []
     for article_id, mention_ids in page:
         article = articles.get(article_id)
@@ -365,12 +422,11 @@ def search_public_articles_by_geo(
         ]
         items.append(
             PublicArticleGeoSearchItemOut(
-                article=_article_to_public_out(
+                **_article_to_public_out(
                     article,
                     metadata=meta_by_id.get(article_id, []),
-                ),
+                ).model_dump(),
                 matching_locations=matching_locations,
-                search_mode=mode,
             )
         )
     return items, total

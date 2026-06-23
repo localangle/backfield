@@ -148,7 +148,7 @@ Articles are first-class public resources (`substrate_article` + related meta). 
 
 Do **not** use open-ended `?include=locations,people,custom_records,images` on detail—payload size, pagination, and caching differ too much per slice. Use **sub-routes** for heavy slices.
 
-The only supported `include` token today is **`counts`**: a lightweight summary (mention totals by type, distinct canonical entity totals by type, image count, custom-record counts, and whether the article itself is semantically embedded). Request it on **`GET …/articles/search`** or **`GET …/articles/{article_id}`** when you need availability signals without loading mention rows or full sub-route payloads.
+The only supported `include` token today is **`counts`**: a lightweight summary (mention totals by type, distinct canonical entity totals by type, image count, custom-record counts, and whether the article itself is semantically embedded). Request it on **`GET …/articles/search`**, **`GET …/articles/geo-search`**, **`POST …/articles/semantic-search`**, or **`GET …/articles/{article_id}`** when you need availability signals without loading mention rows or full sub-route payloads.
 
 ### Detail (`GET …/articles/{article_id}`)
 
@@ -229,6 +229,9 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - `section` — shorthand for `meta=topic:<value>`
 - `pub_date_from`, `pub_date_to` — ISO dates (`YYYY-MM-DD`)
 - Standard pagination
+
+**Keyword search (`GET …/articles/search`):** response echoes effective query filters (`q`, metadata, author, source, dates, etc.) at the top level, then paginated **`items[]`** in the standard article list shape. Optional **`include=counts`**.
+
 **Semantic search (`POST …/articles/semantic-search`):**
 
 - `query` — natural-language search text (required JSON body field)
@@ -245,7 +248,9 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - **Point mode:** `center_lng`, `center_lat`, `radius_miles` — articles with at least one location mention whose geometry falls within the radius
 - **Bbox mode:** `bbox=min_lng,min_lat,max_lng,max_lat` — articles with location mentions inside the box
 - Optional `location_type`, `nature`, metadata, and date filters (same as keyword search)
-- Returns each matching article with **`matching_locations`** (the location mentions that satisfied the geo filter)
+- Response echoes the geographic query (`search_mode`, point/bbox coordinates, filters) plus paginated **`items[]`**
+- Each item uses the same article list shape as keyword search plus **`matching_locations`** (the location mentions that satisfied the geo filter)
+- Optional **`include=counts`** for hub totals and `embedded` (same as keyword search)
 
 **Geo cells (`GET …/articles/geo-cells`):**
 

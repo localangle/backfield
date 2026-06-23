@@ -102,12 +102,11 @@ def test_search_public_articles_by_geo_point_radius() -> None:
 
     assert total == 1
     assert len(items) == 1
-    assert items[0].article.headline == "Downtown bridge vote"
+    assert items[0].headline == "Downtown bridge vote"
     assert len(items[0].matching_locations) == 1
     assert items[0].matching_locations[0].label == "City Hall"
     assert items[0].matching_locations[0].h3_cell
     assert items[0].matching_locations[0].h3_resolution == 11
-    assert items[0].search_mode == "point"
 
 
 def test_search_public_articles_by_geo_bbox() -> None:
@@ -128,8 +127,7 @@ def test_search_public_articles_by_geo_bbox() -> None:
         )
 
     assert total == 1
-    assert items[0].article.headline == "Downtown bridge vote"
-    assert items[0].search_mode == "bbox"
+    assert items[0].headline == "Downtown bridge vote"
 
 
 def test_search_public_articles_by_geo_nature_filter() -> None:
@@ -150,7 +148,7 @@ def test_search_public_articles_by_geo_nature_filter() -> None:
         )
 
     assert total == 1
-    assert items[0].article.headline == "Downtown bridge vote"
+    assert items[0].headline == "Downtown bridge vote"
     assert items[0].matching_locations[0].nature == "primary"
 
     with Session(engine) as session:

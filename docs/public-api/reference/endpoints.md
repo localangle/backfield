@@ -138,8 +138,20 @@ Discover filter values: `GET …/articles/metadata/types`, `GET …/articles/met
 
 ### Response `200`
 
+Echoes the effective query filters at the top level, then `items` and `pagination`:
+
 ```json
 {
+  "q": "budget",
+  "meta_type": null,
+  "meta_category": null,
+  "exclude_meta_type": null,
+  "exclude_meta_category": null,
+  "author": null,
+  "external_source": null,
+  "has_mentions": null,
+  "pub_date_from": null,
+  "pub_date_to": null,
   "items": [
     {
       "id": 1,
@@ -453,19 +465,37 @@ Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). A
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
+| `include` | string | — | Repeatable include token. Supported: `counts` (same extras as keyword search) |
+
 ### Response `200`
+
+Echoes the geographic query at the top level. Each **`items[]`** row uses the same article list shape as keyword search plus **`matching_locations`**.
 
 ```json
 {
+  "search_mode": "point",
+  "center_lng": -87.6,
+  "center_lat": 41.8,
+  "radius_miles": 5,
+  "bbox": null,
+  "location_type": null,
+  "nature": null,
+  "meta_type": null,
+  "meta_category": null,
+  "exclude_meta_type": null,
+  "exclude_meta_category": null,
+  "pub_date_from": null,
+  "pub_date_to": null,
   "items": [
     {
-      "search_mode": "point",
-      "article": {
-        "id": 1,
-        "headline": "City council votes on budget",
-        "preview": null,
-        "metadata": []
-      },
+      "id": 1,
+      "headline": "City council votes on budget",
+      "url": "https://example.com/budget",
+      "author": "Jane Doe",
+      "pub_date": "2024-03-01",
+      "source": { "id": "example.com", "name": "example.com" },
+      "preview": null,
+      "metadata": [],
       "matching_locations": [
         {
           "mention_id": 10,
@@ -492,7 +522,7 @@ Results are ordered by article `pub_date` descending (nulls last), then `id` des
 
 | Status | When |
 |--------|------|
-| `400` | Invalid geo parameters, mixed point+bbox modes, invalid dates, or invalid `meta` clause |
+| `400` | Invalid geo parameters, mixed point+bbox modes, invalid dates, invalid `meta` clause, or unknown `include` token |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |

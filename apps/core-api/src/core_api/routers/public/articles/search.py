@@ -5,8 +5,9 @@ from __future__ import annotations
 from backfield_db import BackfieldProject
 from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.articles import (
-    PublicArticleOut,
     PublicArticleSearchParams,
+    public_article_search_query_out,
+    resolve_public_article_search_params,
     search_public_articles,
 )
 from fastapi import APIRouter, Depends, Query
@@ -21,13 +22,14 @@ from core_api.routers.public.articles.helpers import (
     parse_meta_clauses,
     parse_optional_date,
 )
+from core_api.routers.public.articles.responses import PublicArticleSearchOut
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.schemas import PaginatedResponse, PaginationOut
+from core_api.routers.public.schemas import PaginationOut
 
 router = APIRouter()
 
 
-@router.get("/search", response_model=PaginatedResponse[PublicArticleOut])
+@router.get("/search", response_model=PublicArticleSearchOut)
 def search_project_articles(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
@@ -75,25 +77,27 @@ def search_project_articles(
     offset: int = Query(0, ge=0),
     include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
     meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
-) -> PaginatedResponse[PublicArticleOut]:
+) -> PublicArticleSearchOut:
     """Search project articles by keyword, metadata tags, and publication date."""
     outlet = external_source or source
     includes = parse_article_includes(include)
-    params = PublicArticleSearchParams(
-        q=q,
-        meta_type=meta_type,
-        meta_category=meta_category,
-        exclude_meta_type=exclude_meta_type,
-        exclude_meta_category=exclude_meta_category,
-        section=section,
-        meta_clauses=parse_meta_clauses(meta),
-        author=author,
-        external_source=outlet,
-        has_mentions=parse_has_mentions(has_mentions),
-        pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
-        pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
-        limit=limit,
-        offset=offset,
+    params = resolve_public_article_search_params(
+        PublicArticleSearchParams(
+            q=q,
+            meta_type=meta_type,
+            meta_category=meta_category,
+            exclude_meta_type=exclude_meta_type,
+            exclude_meta_category=exclude_meta_category,
+            section=section,
+            meta_clauses=parse_meta_clauses(meta),
+            author=author,
+            external_source=outlet,
+            has_mentions=parse_has_mentions(has_mentions),
+            pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
+            pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
+            limit=limit,
+            offset=offset,
+        )
     )
     items, total = search_public_articles(
         session,
@@ -102,7 +106,9 @@ def search_project_articles(
     )
     if "counts" in includes:
         enrich_articles_with_counts(session, items)
-    return PaginatedResponse(
+    query = public_article_search_query_out(params)
+    return PublicArticleSearchOut(
+        **query.model_dump(),
         items=items,
         pagination=PaginationOut(limit=limit, offset=offset, total=total),
     )

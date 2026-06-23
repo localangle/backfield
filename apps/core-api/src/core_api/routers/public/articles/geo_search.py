@@ -4,28 +4,32 @@ from __future__ import annotations
 
 from backfield_db import BackfieldProject
 from backfield_entities.public.article_geo_search import (
-    PublicArticleGeoSearchItemOut,
     PublicArticleGeoSearchMode,
     PublicArticleGeoSearchParams,
+    public_article_geo_search_query_out,
     search_public_articles_by_geo,
 )
+from backfield_entities.public.article_hub import enrich_articles_with_counts
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
+    INCLUDE_PARAM_DESCRIPTION,
     META_PARAM_DESCRIPTION,
+    parse_article_includes,
     parse_bbox,
     parse_optional_date,
     resolve_article_metadata_filters,
 )
+from core_api.routers.public.articles.responses import PublicArticleGeoSearchOut
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.schemas import PaginatedResponse, PaginationOut
+from core_api.routers.public.schemas import PaginationOut
 
 router = APIRouter()
 
 
-@router.get("/geo-search", response_model=PaginatedResponse[PublicArticleGeoSearchItemOut])
+@router.get("/geo-search", response_model=PublicArticleGeoSearchOut)
 def search_project_articles_by_geo(
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
@@ -75,8 +79,10 @@ def search_project_articles_by_geo(
     ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-) -> PaginatedResponse[PublicArticleGeoSearchItemOut]:
+    include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
+) -> PublicArticleGeoSearchOut:
     """Find articles with location mentions near a point or inside a bounding box."""
+    includes = parse_article_includes(include)
     has_center = center_lng is not None and center_lat is not None
     has_bbox = bbox is not None and bbox.strip() != ""
     if has_center and has_bbox:
@@ -156,7 +162,11 @@ def search_project_articles_by_geo(
         project_id=int(project.id),  # type: ignore[arg-type]
         params=params,
     )
-    return PaginatedResponse(
+    if "counts" in includes:
+        enrich_articles_with_counts(session, items)
+    query = public_article_geo_search_query_out(params)
+    return PublicArticleGeoSearchOut(
+        **query.model_dump(),
         items=items,
         pagination=PaginationOut(limit=limit, offset=offset, total=total),
     )

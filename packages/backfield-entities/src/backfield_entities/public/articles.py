@@ -77,6 +77,40 @@ class PublicArticleSearchParams:
     offset: int = 0
 
 
+class PublicArticleSearchQueryOut(BaseModel):
+    """Echo of keyword search filters applied to a list response."""
+
+    q: str | None = None
+    meta_type: str | None = None
+    meta_category: str | None = None
+    exclude_meta_type: str | None = None
+    exclude_meta_category: str | None = None
+    author: str | None = None
+    external_source: str | None = None
+    has_mentions: str | None = None
+    pub_date_from: date | None = None
+    pub_date_to: date | None = None
+
+
+def public_article_search_query_out(
+    params: PublicArticleSearchParams,
+) -> PublicArticleSearchQueryOut:
+    """Build the query echo object from resolved search params."""
+    q = (params.q or "").strip()
+    return PublicArticleSearchQueryOut(
+        q=q or None,
+        meta_type=params.meta_type,
+        meta_category=params.meta_category,
+        exclude_meta_type=params.exclude_meta_type,
+        exclude_meta_category=params.exclude_meta_category,
+        author=(params.author or "").strip() or None,
+        external_source=(params.external_source or "").strip() or None,
+        has_mentions=(params.has_mentions or "").strip() or None,
+        pub_date_from=params.pub_date_from,
+        pub_date_to=params.pub_date_to,
+    )
+
+
 def article_preview(text: str, *, max_len: int = PUBLIC_ARTICLE_PREVIEW_MAX_LEN) -> str:
     stripped = text.strip()
     if len(stripped) <= max_len:
