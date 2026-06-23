@@ -342,6 +342,11 @@ def test_public_project_metadata(public_client: TestClient) -> None:
     assert body["id"] == 1
     assert body["stylebook_slug"] == "default"
     assert body["stylebook_name"]
+    assert body["stats"] == {
+        "articles": {"total": 2, "embedded": 1},
+        "mentions": {"total": 3, "embedded": 0},
+        "images": {"total": 1, "embedded": 0},
+    }
 
 
 def test_public_project_unknown_slug(public_client: TestClient) -> None:
@@ -773,7 +778,7 @@ def test_public_article_search_facets_and_filters(public_client: TestClient) -> 
     assert item["headline"] == "City council votes on budget"
     assert item["source"]["id"] == "example.com"
     assert item["metadata"][0]["category"] == "local_government_politics"
-    assert "counts" not in item
+    assert item.get("counts") is None
 
 
 def test_public_article_search_invalid_date(public_client: TestClient) -> None:
@@ -808,7 +813,72 @@ def test_public_article_detail(public_client: TestClient) -> None:
     assert body["preview"]
     assert body["metadata"][0]["category"] == "local_government_politics"
     assert "processing" not in body
-    assert "counts" not in body
+    assert body.get("counts") is None
+    assert isinstance(body["images"], list)
+    assert len(body["images"]) == 1
+    assert body["images"][0]["image_id"] == "img-1"
+
+
+def test_public_article_detail_include_counts(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    article_id = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "budget"},
+    ).json()["items"][0]["id"]
+    r = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}",
+        headers=headers,
+        params={"include": "counts"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["embedded"] is True
+    assert body["counts"] == {
+        "mentions": {
+            "locations": 1,
+            "people": 1,
+            "organizations": 1,
+            "total": 3,
+        },
+        "entities": {
+            "locations": 1,
+            "people": 1,
+            "organizations": 1,
+            "total": 3,
+        },
+        "images": 1,
+        "custom_records": {"contracts": 1},
+    }
+    assert len(body["images"]) == 1
+
+
+def test_public_article_search_include_counts(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "budget", "include": "counts"},
+    )
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["embedded"] is True
+    assert item["counts"]["mentions"]["total"] == 3
+    assert item["counts"]["entities"]["total"] == 3
+    assert item.get("images") is None
+
+
+def test_public_article_include_invalid_token(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"include": "locations"},
+    )
+    assert r.status_code == 400
 
 
 def test_public_article_detail_not_found(public_client: TestClient) -> None:

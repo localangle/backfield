@@ -8,6 +8,7 @@ from backfield_db import (
     StylebookLocationCanonical,
     StylebookOrganizationCanonical,
     StylebookPersonCanonical,
+    SubstrateArticleEmbedding,
     SubstrateCustomRecord,
     SubstrateImage,
     SubstrateLocation,
@@ -43,16 +44,21 @@ class PublicCanonicalSummaryOut(BaseModel):
     stylebook_slug: str | None = None
 
 
-class PublicArticleEntityCountsOut(BaseModel):
+class PublicArticleTypeCountsOut(BaseModel):
     locations: int = 0
     people: int = 0
     organizations: int = 0
+    total: int = 0
 
 
 class PublicArticleCountsOut(BaseModel):
-    entity_counts: PublicArticleEntityCountsOut
-    custom_record_counts: dict[str, int] = Field(default_factory=dict)
-    image_count: int = 0
+    mentions: PublicArticleTypeCountsOut
+    entities: PublicArticleTypeCountsOut
+    images: int = 0
+    custom_records: dict[str, int] = Field(default_factory=dict)
+
+
+PUBLIC_ARTICLE_INLINE_IMAGES_CAP = 10
 
 
 class PublicArticleMentionOut(BaseModel):
@@ -153,6 +159,62 @@ def _canonical_summary(
     )
 
 
+def _type_counts(*, locations: int, people: int, organizations: int) -> PublicArticleTypeCountsOut:
+    return PublicArticleTypeCountsOut(
+        locations=locations,
+        people=people,
+        organizations=organizations,
+        total=locations + people + organizations,
+    )
+
+
+def _distinct_canonical_location_count(session: Session, *, article_id: int) -> int:
+    value = session.exec(
+        select(func.count(func.distinct(SubstrateLocation.stylebook_location_canonical_id)))
+        .select_from(SubstrateLocationMention)
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(
+            SubstrateLocationMention.article_id == article_id,
+            SubstrateLocationMention.deleted == False,  # noqa: E712
+            col(SubstrateLocation.stylebook_location_canonical_id).isnot(None),
+        )
+    ).one()
+    return int(value or 0)
+
+
+def _distinct_canonical_person_count(session: Session, *, article_id: int) -> int:
+    value = session.exec(
+        select(func.count(func.distinct(SubstratePerson.stylebook_person_canonical_id)))
+        .select_from(SubstratePersonMention)
+        .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+        .where(
+            SubstratePersonMention.article_id == article_id,
+            SubstratePersonMention.deleted == False,  # noqa: E712
+            col(SubstratePerson.stylebook_person_canonical_id).isnot(None),
+        )
+    ).one()
+    return int(value or 0)
+
+
+def _distinct_canonical_organization_count(session: Session, *, article_id: int) -> int:
+    value = session.exec(
+        select(
+            func.count(func.distinct(SubstrateOrganization.stylebook_organization_canonical_id))
+        )
+        .select_from(SubstrateOrganizationMention)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
+        )
+        .where(
+            SubstrateOrganizationMention.article_id == article_id,
+            SubstrateOrganizationMention.deleted == False,  # noqa: E712
+            col(SubstrateOrganization.stylebook_organization_canonical_id).isnot(None),
+        )
+    ).one()
+    return int(value or 0)
+
+
 def article_hub_counts(session: Session, *, article_id: int) -> PublicArticleCountsOut:
     location_count = session.exec(
         select(func.count())
@@ -191,14 +253,25 @@ def article_hub_counts(session: Session, *, article_id: int) -> PublicArticleCou
     ).all()
     custom_record_counts = {str(record_type): int(count) for record_type, count in record_rows}
 
+    location_entities = _distinct_canonical_location_count(session, article_id=article_id)
+    person_entities = _distinct_canonical_person_count(session, article_id=article_id)
+    organization_entities = _distinct_canonical_organization_count(
+        session, article_id=article_id
+    )
+
     return PublicArticleCountsOut(
-        entity_counts=PublicArticleEntityCountsOut(
+        mentions=_type_counts(
             locations=int(location_count),
             people=int(person_count),
             organizations=int(organization_count),
         ),
-        custom_record_counts=custom_record_counts,
-        image_count=int(image_count),
+        entities=_type_counts(
+            locations=location_entities,
+            people=person_entities,
+            organizations=organization_entities,
+        ),
+        images=int(image_count),
+        custom_records=custom_record_counts,
     )
 
 
@@ -233,6 +306,53 @@ def article_hub_counts_batch(
         )
         .group_by(SubstrateOrganizationMention.article_id)
     ).all()
+    location_entity_rows = session.exec(
+        select(
+            SubstrateLocationMention.article_id,
+            func.count(func.distinct(SubstrateLocation.stylebook_location_canonical_id)),
+        )
+        .select_from(SubstrateLocationMention)
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(
+            col(SubstrateLocationMention.article_id).in_(article_ids),
+            SubstrateLocationMention.deleted == False,  # noqa: E712
+            col(SubstrateLocation.stylebook_location_canonical_id).isnot(None),
+        )
+        .group_by(SubstrateLocationMention.article_id)
+    ).all()
+    person_entity_rows = session.exec(
+        select(
+            SubstratePersonMention.article_id,
+            func.count(func.distinct(SubstratePerson.stylebook_person_canonical_id)),
+        )
+        .select_from(SubstratePersonMention)
+        .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+        .where(
+            col(SubstratePersonMention.article_id).in_(article_ids),
+            SubstratePersonMention.deleted == False,  # noqa: E712
+            col(SubstratePerson.stylebook_person_canonical_id).isnot(None),
+        )
+        .group_by(SubstratePersonMention.article_id)
+    ).all()
+    organization_entity_rows = session.exec(
+        select(
+            SubstrateOrganizationMention.article_id,
+            func.count(
+                func.distinct(SubstrateOrganization.stylebook_organization_canonical_id)
+            ),
+        )
+        .select_from(SubstrateOrganizationMention)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
+        )
+        .where(
+            col(SubstrateOrganizationMention.article_id).in_(article_ids),
+            SubstrateOrganizationMention.deleted == False,  # noqa: E712
+            col(SubstrateOrganization.stylebook_organization_canonical_id).isnot(None),
+        )
+        .group_by(SubstrateOrganizationMention.article_id)
+    ).all()
     image_rows = session.exec(
         select(SubstrateImage.article_id, func.count())
         .where(col(SubstrateImage.article_id).in_(article_ids))
@@ -251,6 +371,11 @@ def article_hub_counts_batch(
     locations_by_article = {int(aid): int(count) for aid, count in location_rows}
     people_by_article = {int(aid): int(count) for aid, count in person_rows}
     organizations_by_article = {int(aid): int(count) for aid, count in organization_rows}
+    location_entities_by_article = {int(aid): int(count) for aid, count in location_entity_rows}
+    person_entities_by_article = {int(aid): int(count) for aid, count in person_entity_rows}
+    organization_entities_by_article = {
+        int(aid): int(count) for aid, count in organization_entity_rows
+    }
     images_by_article = {int(aid): int(count) for aid, count in image_rows}
     records_by_article: dict[int, dict[str, int]] = {}
     for article_id, record_type, count in record_rows:
@@ -260,15 +385,61 @@ def article_hub_counts_batch(
     out: dict[int, PublicArticleCountsOut] = {}
     for article_id in article_ids:
         out[article_id] = PublicArticleCountsOut(
-            entity_counts=PublicArticleEntityCountsOut(
+            mentions=_type_counts(
                 locations=locations_by_article.get(article_id, 0),
                 people=people_by_article.get(article_id, 0),
                 organizations=organizations_by_article.get(article_id, 0),
             ),
-            custom_record_counts=records_by_article.get(article_id, {}),
-            image_count=images_by_article.get(article_id, 0),
+            entities=_type_counts(
+                locations=location_entities_by_article.get(article_id, 0),
+                people=person_entities_by_article.get(article_id, 0),
+                organizations=organization_entities_by_article.get(article_id, 0),
+            ),
+            images=images_by_article.get(article_id, 0),
+            custom_records=records_by_article.get(article_id, {}),
         )
     return out
+
+
+def article_is_embedded(session: Session, *, article_id: int) -> bool:
+    row = session.exec(
+        select(SubstrateArticleEmbedding.article_id)
+        .where(
+            SubstrateArticleEmbedding.article_id == article_id,
+            col(SubstrateArticleEmbedding.embedding).isnot(None),
+        )
+        .limit(1)
+    ).first()
+    return row is not None
+
+
+def articles_embedded_batch(session: Session, article_ids: list[int]) -> set[int]:
+    if not article_ids:
+        return set()
+    rows = session.exec(
+        select(SubstrateArticleEmbedding.article_id).where(
+            col(SubstrateArticleEmbedding.article_id).in_(article_ids),
+            col(SubstrateArticleEmbedding.embedding).isnot(None),
+        )
+    ).all()
+    return {int(article_id) for article_id in rows}
+
+
+def enrich_articles_with_counts(session: Session, articles: list) -> None:
+    """Attach ``counts`` and ``embedded`` to article output rows (in place)."""
+    if not articles:
+        return
+    from backfield_entities.public.articles import PublicArticleOut
+
+    article_ids = [int(article.id) for article in articles]
+    counts_by_id = article_hub_counts_batch(session, article_ids)
+    embedded_ids = articles_embedded_batch(session, article_ids)
+    for article in articles:
+        if not isinstance(article, PublicArticleOut):
+            continue
+        aid = int(article.id)
+        article.counts = counts_by_id.get(aid)
+        article.embedded = aid in embedded_ids
 
 
 def _mention_union_stmt(
@@ -842,3 +1013,14 @@ def list_article_images(
         for row in rows
     ]
     return items, total
+
+
+def inline_article_images(
+    session: Session,
+    *,
+    article_id: int,
+    cap: int = PUBLIC_ARTICLE_INLINE_IMAGES_CAP,
+) -> list[PublicArticleImageOut]:
+    """Return up to ``cap`` images for inline detail responses."""
+    items, _ = list_article_images(session, article_id=article_id, limit=cap, offset=0)
+    return items

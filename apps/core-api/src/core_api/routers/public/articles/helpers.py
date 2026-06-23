@@ -33,6 +33,31 @@ META_PARAM_DESCRIPTION = (
     "Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause."
 )
 
+ALLOWED_ARTICLE_INCLUDES = frozenset({"counts"})
+
+INCLUDE_PARAM_DESCRIPTION = (
+    "Repeatable include token for optional article extras. "
+    "Supported: counts (mention and canonical entity totals, image count, "
+    "custom records, embedded flag)."
+)
+
+
+def parse_article_includes(include: list[str]) -> set[str]:
+    """Validate repeatable ``include`` tokens for article list/detail routes."""
+    if not include:
+        return set()
+    tokens = {token.strip().lower() for token in include if token.strip()}
+    if not tokens:
+        return set()
+    unknown = tokens - ALLOWED_ARTICLE_INCLUDES
+    if unknown:
+        allowed = ", ".join(sorted(ALLOWED_ARTICLE_INCLUDES))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown include token(s): {', '.join(sorted(unknown))}. Supported: {allowed}.",
+        )
+    return tokens
+
 
 def parse_meta_clauses(meta: list[str]) -> tuple[ArticleMetaClause, ...]:
     """Parse repeatable ``meta`` query tokens into metadata filter clauses."""

@@ -148,6 +148,8 @@ Articles are first-class public resources (`substrate_article` + related meta). 
 
 Do **not** use open-ended `?include=locations,people,custom_records,images` on detail—payload size, pagination, and caching differ too much per slice. Use **sub-routes** for heavy slices.
 
+The only supported `include` token today is **`counts`**: a lightweight summary (mention totals by type, distinct canonical entity totals by type, image count, custom-record counts, and whether the article itself is semantically embedded). Request it on **`GET …/articles/search`** or **`GET …/articles/{article_id}`** when you need availability signals without loading mention rows or full sub-route payloads.
+
 ### Detail (`GET …/articles/{article_id}`)
 
 **Core fields (v1):**
@@ -155,13 +157,22 @@ Do **not** use open-ended `?include=locations,people,custom_records,images` on d
 - `id`, `headline`, `url`, `author`, `pub_date`, `source` (`id`, `name`)
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
 - Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
+- **`images`**: up to 10 inline image rows (`id`, `image_id`, `url`, `caption`); use `GET …/images` when you need pagination or the full set
 
-**Query:** `include_preview` (default `true`).
+**Query:** `include_preview` (default `true`); `include=counts` (optional; adds `counts` and `embedded`).
+
+**Optional `counts` block** (when `include=counts`):
+
+- `mentions`: non-deleted mention row totals by type (`locations`, `people`, `organizations`, `total`)
+- `entities`: distinct Stylebook canonical totals by type (uncanonicalized mentions excluded)
+- `images`: total image count for the article
+- `custom_records`: map of record type → count
+- `embedded`: `true` when the article has a populated `substrate_article_embedding` row
 
 ### Excluded from detail
 
 - Full **`text`** / body
-- Mention rows, geometry, custom record payloads, image payloads (use sub-routes)
+- Mention rows, geometry, custom record payloads (use sub-routes)
 - Internal overlay state and other Agate execution internals unless a support contract requires them
 
 ### Article sub-routes (primary pattern for rich context)
@@ -430,7 +441,7 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 - [x] Add `core_api/routers/public/` package mounted at **`/public/v1`**
 - [x] Project API key dependency (reuse `backfield_auth.gate` project key path)
 - [x] Shared helpers: pagination envelope, project + stylebook resolution, OpenAPI tags
-- [x] `GET /public/v1/projects/{project_slug}` — minimal project metadata (name, slug)
+- [x] `GET /public/v1/projects/{project_slug}` — project metadata (name, slug, Stylebook) plus substrate summary stats (articles, mentions, images, semantic indexing counts)
 - [x] Running endpoint registry: **`docs/public-api/reference/endpoints.md`**
 - [ ] Decide storage for **`public_run_enabled`** on graphs
 - [x] Scaffold `docs/public-api/reference/README.md` and `capability-matrix.md`

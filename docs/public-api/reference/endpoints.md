@@ -45,7 +45,21 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
   "name": "General",
   "slug": "general",
   "stylebook_slug": "default",
-  "stylebook_name": "Default Stylebook"
+  "stylebook_name": "Default Stylebook",
+  "stats": {
+    "articles": {
+      "total": 1,
+      "embedded": 1
+    },
+    "mentions": {
+      "total": 3,
+      "embedded": 0
+    },
+    "images": {
+      "total": 1,
+      "embedded": 0
+    }
+  }
 }
 ```
 
@@ -56,6 +70,13 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
 | `slug` | string | URL slug |
 | `stylebook_slug` | string \| null | Effective Stylebook slug for this project, when resolvable |
 | `stylebook_name` | string \| null | Effective Stylebook display name |
+| `stats` | object | Substrate summary counts for non-deleted articles in the project |
+| `stats.articles.total` | integer | Non-deleted articles |
+| `stats.articles.embedded` | integer | Articles with a populated `substrate_article_embedding` row |
+| `stats.mentions.total` | integer | Non-deleted location, person, and organization mention aggregates |
+| `stats.mentions.embedded` | integer | Distinct mentions with a ready semantic document embedding (searchable) |
+| `stats.images.total` | integer | Images attached to non-deleted articles |
+| `stats.images.embedded` | integer | Images with a populated `substrate_image_embedding` row |
 
 ### Errors
 
@@ -104,6 +125,7 @@ Advanced metadata filtering uses the repeatable `meta` parameter (see examples b
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
 | `include_preview` | boolean | `false` | Include truncated text preview (max 280 characters) |
+| `include` | string | — | Repeatable include token. Supported: `counts` (mention and canonical entity totals, image count, custom records, `embedded` flag) |
 
 **Advanced `meta` example** — news stories that are backward-looking or evergreen, about pro sports, but not obituaries:
 
@@ -134,7 +156,14 @@ Discover filter values: `GET …/articles/metadata/types`, `GET …/articles/met
           "category": "local_government_politics",
           "confidence": 0.92
         }
-      ]
+      ],
+      "embedded": true,
+      "counts": {
+        "mentions": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+        "entities": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+        "images": 1,
+        "custom_records": { "contracts": 1 }
+      }
     }
   ],
   "pagination": {
@@ -151,7 +180,7 @@ Results are ordered by `pub_date` descending (nulls last), then `id` descending.
 
 | Status | When |
 |--------|------|
-| `400` | Invalid `pub_date_from` or `pub_date_to` format |
+| `400` | Invalid `pub_date_from` or `pub_date_to` format; unknown `include` token |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
@@ -720,7 +749,7 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
 
 ### Functionality
 
-Return one article by id. Does **not** include full body text. Includes metadata tags and optional short preview.
+Return one article by id. Does **not** include full body text. Includes metadata tags, optional short preview, and up to 10 inline images. Optional `include=counts` adds mention/canonical totals and the article `embedded` flag.
 
 ### Path parameters
 
@@ -734,10 +763,11 @@ Return one article by id. Does **not** include full body text. Includes metadata
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `include_preview` | boolean | `true` | Include truncated text preview (max 280 characters) |
+| `include` | string | — | Repeatable include token. Supported: `counts` (mention and canonical entity totals, image count, custom records, `embedded` flag) |
 
 ### Response `200`
 
-Same article object shape as search `items[]`:
+Same article object shape as search `items[]`, plus inline `images` (up to 10 rows). `counts` and `embedded` appear only when `include=counts`.
 
 ```json
 {
@@ -754,7 +784,22 @@ Same article object shape as search `items[]`:
       "category": "local_government_politics",
       "confidence": 0.92
     }
-  ]
+  ],
+  "images": [
+    {
+      "id": 10,
+      "image_id": "img-1",
+      "url": "https://example.com/photo.jpg",
+      "caption": "Council chamber"
+    }
+  ],
+  "embedded": true,
+  "counts": {
+    "mentions": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+    "entities": { "locations": 1, "people": 1, "organizations": 1, "total": 3 },
+    "images": 1,
+    "custom_records": { "contracts": 1 }
+  }
 }
 ```
 
@@ -762,6 +807,7 @@ Same article object shape as search `items[]`:
 
 | Status | When |
 |--------|------|
+| `400` | Unknown `include` token |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown project, unknown article, or article not in project |

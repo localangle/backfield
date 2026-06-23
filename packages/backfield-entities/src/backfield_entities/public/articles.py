@@ -17,6 +17,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, literal, or_
 from sqlmodel import Session, col, select
 
+from backfield_entities.public.article_hub import (
+    PublicArticleCountsOut,
+    PublicArticleImageOut,
+)
 from backfield_entities.public.keyword_query import article_keyword_tsquery
 
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
@@ -43,6 +47,9 @@ class PublicArticleOut(BaseModel):
     source: PublicArticleSourceOut | None = None
     preview: str | None = None
     metadata: list[PublicArticleMetaOut] = Field(default_factory=list)
+    embedded: bool | None = None
+    counts: PublicArticleCountsOut | None = None
+    images: list[PublicArticleImageOut] | None = None
 
 
 @dataclass(frozen=True)

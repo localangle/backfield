@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from backfield_db import BackfieldProject, Stylebook
 from backfield_entities.catalog.resolve import resolve_effective_stylebook_id_for_project
+from backfield_entities.public.project_stats import (
+    PublicProjectSummaryStatsOut,
+    get_public_project_summary_stats,
+)
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -20,6 +24,7 @@ class PublicProjectOut(BaseModel):
     slug: str
     stylebook_slug: str | None = None
     stylebook_name: str | None = None
+    stats: PublicProjectSummaryStatsOut
 
 
 def _stylebook_fields_for_project(
@@ -42,10 +47,12 @@ def get_public_project_metadata(
 ) -> PublicProjectOut:
     """Return minimal project metadata for a public API consumer."""
     stylebook_slug, stylebook_name = _stylebook_fields_for_project(session, project)
+    project_id = int(project.id)  # type: ignore[arg-type]
     return PublicProjectOut(
-        id=int(project.id),  # type: ignore[arg-type]
+        id=project_id,
         name=project.name,
         slug=project.slug,
         stylebook_slug=stylebook_slug,
         stylebook_name=stylebook_name,
+        stats=get_public_project_summary_stats(session, project_id=project_id),
     )

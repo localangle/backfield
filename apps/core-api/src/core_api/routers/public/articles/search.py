@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from backfield_db import BackfieldProject
+from backfield_entities.public.article_hub import enrich_articles_with_counts
 from backfield_entities.public.articles import (
     PublicArticleOut,
     PublicArticleSearchParams,
@@ -13,7 +14,9 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
+    INCLUDE_PARAM_DESCRIPTION,
     META_PARAM_DESCRIPTION,
+    parse_article_includes,
     parse_has_mentions,
     parse_meta_clauses,
     parse_optional_date,
@@ -74,10 +77,12 @@ def search_project_articles(
         False,
         description="Include a short text preview (max 280 characters) per article",
     ),
+    include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
     meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
 ) -> PaginatedResponse[PublicArticleOut]:
     """Search project articles by keyword, metadata tags, and publication date."""
     outlet = external_source or source
+    includes = parse_article_includes(include)
     params = PublicArticleSearchParams(
         q=q,
         meta_type=meta_type,
@@ -100,6 +105,8 @@ def search_project_articles(
         project_id=int(project.id),  # type: ignore[arg-type]
         params=params,
     )
+    if "counts" in includes:
+        enrich_articles_with_counts(session, items)
     return PaginatedResponse(
         items=items,
         pagination=PaginationOut(limit=limit, offset=offset, total=total),
