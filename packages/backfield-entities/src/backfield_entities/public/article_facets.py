@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from backfield_db import SubstrateArticle, SubstrateArticleMeta
+from backfield_db import SubstrateArticle
 from pydantic import BaseModel
 from sqlmodel import Session, select
+
+from backfield_entities.public.article_metadata import distinct_meta_categories
 
 
 class PublicArticleFacetsOut(BaseModel):
@@ -35,27 +37,6 @@ def _distinct_article_field(
     return [str(value).strip() for value in rows if str(value).strip()]
 
 
-def _distinct_meta_categories(
-    session: Session,
-    *,
-    project_id: int,
-    meta_type: str,
-) -> list[str]:
-    rows = session.exec(
-        select(SubstrateArticleMeta.category)
-        .join(SubstrateArticle, SubstrateArticle.id == SubstrateArticleMeta.article_id)
-        .where(
-            SubstrateArticle.project_id == project_id,
-            SubstrateArticle.deleted == False,  # noqa: E712
-            SubstrateArticleMeta.meta_type == meta_type,
-            SubstrateArticleMeta.category != "",
-        )
-        .distinct()
-        .order_by(SubstrateArticleMeta.category)
-    ).all()
-    return [str(value).strip() for value in rows if str(value).strip()]
-
-
 def get_public_article_facets(session: Session, *, project_id: int) -> PublicArticleFacetsOut:
     """Return distinct authors, sources, and metadata categories for filter dropdowns."""
     return PublicArticleFacetsOut(
@@ -69,17 +50,17 @@ def get_public_article_facets(session: Session, *, project_id: int) -> PublicArt
             project_id=project_id,
             column=SubstrateArticle.external_source,
         ),
-        format_categories=_distinct_meta_categories(
+        format_categories=distinct_meta_categories(
             session,
             project_id=project_id,
             meta_type="format",
         ),
-        topic_categories=_distinct_meta_categories(
+        topic_categories=distinct_meta_categories(
             session,
             project_id=project_id,
             meta_type="topic",
         ),
-        subject_categories=_distinct_meta_categories(
+        subject_categories=distinct_meta_categories(
             session,
             project_id=project_id,
             meta_type="subject",

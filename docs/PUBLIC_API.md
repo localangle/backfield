@@ -152,7 +152,7 @@ Do **not** use open-ended `?include=locations,people,custom_records,images` on d
 
 **Core fields (v1):**
 
-- `id`, `headline`, `url`, `author`, `pub_date`, `external_source`, `external_id`, `entry_id`
+- `id`, `headline`, `url`, `author`, `pub_date`, `source_name`
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
 - **`processing`**: Agate runs that touched the article (`run_id`, optional `processed_item_id`, `domains`), aggregated from article provenance, metadata/custom-record `source_run_id`, matching `agate_processed_item` rows, and DBOutput `stylebook_output` persist summaries when available
 - Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
@@ -182,6 +182,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `…/mentions` | Paginated mention evidence across entity types |
+| `GET` | `…/metadata` | Metadata rows and distinct types for this article |
 | `GET` | `…/locations` | Geography-focused: places in the story with canonical + geometry where available |
 | `GET` | `…/custom-records` | Custom Extract rows for this article |
 | `GET` | `…/images` | Images attached to the article (`substrate_image`) |
@@ -209,6 +210,9 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `…/articles/search` | Keyword search + metadata filters + date range |
+| `GET` | `…/articles/facets` | Distinct authors, sources, and preset metadata categories for filter dropdowns |
+| `GET` | `…/articles/metadata/types` | Distinct metadata types attached to articles in the project |
+| `GET` | `…/articles/metadata/types/{meta_type}/values` | Distinct category values for one metadata type |
 | `POST` | `…/articles/semantic-search` | Natural-language search over embedded articles |
 | `GET` | `…/articles/geo-search` | Articles with location mentions near a point or in a bbox |
 | `GET` | `…/articles/geo-cells` | H3 hex cells with distinct-article counts for a bbox (map coverage) |

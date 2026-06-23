@@ -329,7 +329,6 @@ def search_public_articles_in_cells(
                     article,
                     metadata=meta_by_id.get(article_id, []),
                     include_preview=params.include_preview,
-                    include_provenance=False,
                 ),
                 matching_locations=matching_locations,
                 matched_cells=matched_cells,

@@ -15,6 +15,7 @@ from core_api.routers.public.articles import (
     images,
     locations,
     mentions,
+    metadata,
     organizations,
     people,
     search,
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/projects/{project_slug}/articles", tags=["public-art
 # Register static paths before parameterized routes.
 router.include_router(search.router)
 router.include_router(facets.router)
+router.include_router(metadata.router)
 router.include_router(semantic_search.router)
 router.include_router(geo_search.router)
 router.include_router(geo_cells.router)

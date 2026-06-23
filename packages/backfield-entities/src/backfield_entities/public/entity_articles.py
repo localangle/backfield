@@ -85,7 +85,6 @@ def paginate_public_articles_from_mention_pairs(
                 article,
                 metadata=meta_by_id.get(article_id, []),
                 include_preview=include_preview,
-                include_provenance=False,
             )
         )
     return items, total

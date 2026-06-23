@@ -9,6 +9,10 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Mode | Status | Notes |
 |------|--------|-------|
 | Keyword search | ✅ | `GET …/articles/search` |
+| Search facets | ✅ | `GET …/articles/facets` (authors, sources, preset metadata categories) |
+| Metadata types | ✅ | `GET …/articles/metadata/types` |
+| Metadata values | ✅ | `GET …/articles/metadata/types/{meta_type}/values` |
+| Article metadata | ✅ | `GET …/articles/{id}/metadata` |
 | Semantic search | ✅ | `POST …/articles/semantic-search` (requires `substrate_article_embedding`; optional HyDE via `use_hyde`) |
 | Geo search | ✅ | `GET …/articles/geo-search` (point+radius or bbox; location mentions) |
 | Geo cells (hex coverage) | ✅ | `GET …/articles/geo-cells` (bbox; distinct-article counts per H3 cell) |

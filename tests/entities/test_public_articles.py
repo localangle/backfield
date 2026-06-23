@@ -271,7 +271,7 @@ def test_search_public_articles_filters_author_section_and_mentions() -> None:
         )
         assert total == 1
         assert items[0].source_name == "Daily Herald"
-        assert items[0].section == "local_government_politics"
+        assert items[0].metadata[0].category == "local_government_politics"
 
         items, total = search_public_articles(
             session,

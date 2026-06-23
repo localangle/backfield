@@ -366,7 +366,6 @@ def search_public_articles_by_geo(
                     article,
                     metadata=meta_by_id.get(article_id, []),
                     include_preview=params.include_preview,
-                    include_provenance=False,
                 ),
                 matching_locations=matching_locations,
                 search_mode=mode,

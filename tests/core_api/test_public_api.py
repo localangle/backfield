@@ -700,6 +700,51 @@ def test_public_article_search_exclude_metadata_filter(public_client: TestClient
     assert body["items"][0]["headline"] == "Other headline"
 
 
+def test_public_article_metadata_endpoints(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    types = public_client.get(
+        "/public/v1/projects/general/articles/metadata/types",
+        headers=headers,
+    )
+    assert types.status_code == 200
+    assert types.json()["meta_types"] == ["topic"]
+
+    values = public_client.get(
+        "/public/v1/projects/general/articles/metadata/types/topic/values",
+        headers=headers,
+    )
+    assert values.status_code == 200
+    assert values.json() == {
+        "meta_type": "topic",
+        "values": ["local_government_politics"],
+    }
+
+    listed = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "budget"},
+    ).json()
+    article_id = listed["items"][0]["id"]
+
+    metadata = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}/metadata",
+        headers=headers,
+    )
+    assert metadata.status_code == 200
+    body = metadata.json()
+    assert body["article_id"] == article_id
+    assert body["meta_types"] == ["topic"]
+    assert body["metadata"][0]["category"] == "local_government_politics"
+
+    missing = public_client.get(
+        "/public/v1/projects/general/articles/99999/metadata",
+        headers=headers,
+    )
+    assert missing.status_code == 404
+
+
 def test_public_article_search_facets_and_counts(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}
@@ -728,7 +773,7 @@ def test_public_article_search_facets_and_counts(public_client: TestClient) -> N
     item = search.json()["items"][0]
     assert item["headline"] == "City council votes on budget"
     assert item["source_name"] == "example.com"
-    assert item["section"] == "local_government_politics"
+    assert item["metadata"][0]["category"] == "local_government_politics"
     assert item["counts"]["entity_counts"]["locations"] == 1
 
 

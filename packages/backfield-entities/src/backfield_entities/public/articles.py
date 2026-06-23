@@ -43,11 +43,7 @@ class PublicArticleOut(BaseModel):
     url: str | None = None
     author: str | None = None
     pub_date: date | None = None
-    external_source: str | None = None
     source_name: str | None = None
-    section: str | None = None
-    external_id: str | None = None
-    entry_id: str | None = None
     preview: str | None = None
     metadata: list[PublicArticleMetaOut] = Field(default_factory=list)
     counts: PublicArticleCountsOut | None = None
@@ -120,13 +116,6 @@ def article_source_name(*, external_source: str | None, url: str | None) -> str 
     return None
 
 
-def article_section(metadata: list[PublicArticleMetaOut]) -> str | None:
-    for row in metadata:
-        if row.meta_type == "topic" and row.category.strip():
-            return row.category.strip()
-    return None
-
-
 def resolve_public_article_search_params(
     params: PublicArticleSearchParams,
 ) -> PublicArticleSearchParams:
@@ -147,7 +136,6 @@ def _article_to_public_out(
     *,
     metadata: list[PublicArticleMetaOut],
     include_preview: bool,
-    include_provenance: bool,
     counts: PublicArticleCountsOut | None = None,
     processing: list[PublicArticleProcessingEntryOut] | None = None,
 ) -> PublicArticleOut:
@@ -156,18 +144,13 @@ def _article_to_public_out(
         external_source=article.external_source,
         url=article.url,
     )
-    section = article_section(metadata)
     return PublicArticleOut(
         id=int(article.id),  # type: ignore[arg-type]
         headline=article.headline,
         url=article.url,
         author=article.author,
         pub_date=article.pub_date,
-        external_source=article.external_source if include_provenance else None,
         source_name=source_name,
-        section=section,
-        external_id=article.external_id if include_provenance else None,
-        entry_id=article.entry_id if include_provenance else None,
         preview=preview,
         metadata=metadata,
         counts=counts,
@@ -352,7 +335,6 @@ def search_public_articles(
             article,
             metadata=meta_by_id.get(int(article.id), []),  # type: ignore[arg-type]
             include_preview=params.include_preview,
-            include_provenance=False,
             counts=counts_by_id.get(int(article.id)) if params.include_counts else None,  # type: ignore[arg-type]
         )
         for article in articles
@@ -391,7 +373,6 @@ def get_public_article(
         article,
         metadata=meta_by_id.get(int(article.id), []),
         include_preview=include_preview,
-        include_provenance=True,
         counts=counts,
         processing=processing,
     )

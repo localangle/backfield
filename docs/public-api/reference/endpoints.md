@@ -112,9 +112,7 @@ Search non-deleted articles in a project by keyword (headline, body text, or URL
       "url": "https://example.com/budget",
       "author": "Jane Doe",
       "pub_date": "2024-03-01",
-      "external_source": null,
-      "external_id": null,
-      "entry_id": null,
+      "source_name": "example.com",
       "preview": null,
       "metadata": [
         {
@@ -143,6 +141,136 @@ Results are ordered by `pub_date` descending (nulls last), then `id` descending.
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/facets`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/facets.py`](../../../apps/core-api/src/core_api/routers/public/articles/facets.py) — `get_project_article_facets` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_facets.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_facets.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return distinct authors, external sources, and preset metadata category lists (`format`, `topic`, `subject`) for search filter dropdowns.
+
+### Response `200`
+
+```json
+{
+  "authors": ["Jane Doe"],
+  "external_sources": ["Daily Herald"],
+  "format_categories": ["news_story"],
+  "topic_categories": ["local_government_politics"],
+  "subject_categories": []
+}
+```
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/metadata/types`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/metadata.py`](../../../apps/core-api/src/core_api/routers/public/articles/metadata.py) — `list_project_article_metadata_types` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_metadata.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_metadata.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return distinct **`meta_type`** values present on **`substrate_article_meta`** rows for non-deleted articles in the project. Use to discover which metadata dimensions exist before building filters or UI pickers.
+
+### Response `200`
+
+```json
+{
+  "meta_types": ["format", "subject", "topic"]
+}
+```
+
+Values are sorted alphabetically.
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/metadata/types/{meta_type}/values`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/metadata.py`](../../../apps/core-api/src/core_api/routers/public/articles/metadata.py) — `list_project_article_metadata_values` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_metadata.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_metadata.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return distinct **`category`** values (the stored metadata value) for one **`meta_type`** in the project. Returns an empty `values` array when the type is valid but unused.
+
+### Path parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `meta_type` | string | yes | Metadata type slug (e.g. `topic`, `subject`, `format`) |
+
+### Response `200`
+
+```json
+{
+  "meta_type": "topic",
+  "values": ["local_government_politics", "public_safety_crime"]
+}
+```
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | Empty `meta_type` |
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/articles/{article_id}/metadata`
+
+| | |
+|---|---|
+| **Status** | Shipped |
+| **Module** | [`apps/core-api/src/core_api/routers/public/articles/metadata.py`](../../../apps/core-api/src/core_api/routers/public/articles/metadata.py) — `get_project_article_metadata` |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/article_metadata.py`](../../../packages/backfield-entities/src/backfield_entities/public/article_metadata.py) |
+| **Auth** | Project API key required |
+
+### Functionality
+
+Return metadata rows for one article plus a deduplicated list of **`meta_types`** present on that article. Lighter than article detail when the client only needs classification tags.
+
+### Response `200`
+
+```json
+{
+  "article_id": 1,
+  "meta_types": ["topic"],
+  "metadata": [
+    {
+      "meta_type": "topic",
+      "category": "local_government_politics",
+      "confidence": 0.92
+    }
+  ]
+}
+```
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `401` | Missing or invalid API key |
+| `403` | API key not valid for this project |
+| `404` | Unknown `project_slug` or article not in project |
 
 ---
 
@@ -590,7 +718,7 @@ Return one article by id. Does **not** include full body text. Includes metadata
 
 ### Response `200`
 
-Same article object shape as search `items[]`, with `external_source`, `external_id`, and `entry_id` populated when present. Includes **`processing`**: distinct Agate **`run_id`** values (and **`processed_item_id`** when known) gathered from the article row, metadata/custom-record provenance, and matching `agate_processed_item` rows. Each entry also includes **`domains`** (what was processed, e.g. `places`, `metadata`). When `include=counts`, adds a `counts` object:
+Same article object shape as search `items[]`. Includes **`processing`**: distinct Agate **`run_id`** values (and **`processed_item_id`** when known) gathered from the article row, metadata/custom-record provenance, and matching `agate_processed_item` rows. Each entry also includes **`domains`** (what was processed, e.g. `places`, `metadata`). When `include=counts`, adds a `counts` object:
 
 ```json
 {
@@ -965,7 +1093,6 @@ Paginated distinct articles mentioning a canonical person in the project. Ordere
       "author": "Jane Doe",
       "pub_date": "2024-03-01",
       "source_name": "example.com",
-      "section": "local_government_politics",
       "metadata": []
     }
   ],

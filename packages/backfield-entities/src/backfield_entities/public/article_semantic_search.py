@@ -138,7 +138,6 @@ def search_public_articles_semantic(
                 article,
                 metadata=meta_by_id.get(int(article.id), []),  # type: ignore[arg-type]
                 include_preview=params.include_preview,
-                include_provenance=False,
             ).model_dump(),
             score=score,
         )
