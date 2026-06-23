@@ -17,15 +17,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, literal, or_
 from sqlmodel import Session, col, select
 
-from backfield_entities.public.article_hub import (
-    PublicArticleCountsOut,
-    article_hub_counts,
-    article_hub_counts_batch,
-)
-from backfield_entities.public.article_processing import (
-    PublicArticleProcessingEntryOut,
-    list_public_article_processing,
-)
 from backfield_entities.public.keyword_query import article_keyword_tsquery
 
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
@@ -46,8 +37,6 @@ class PublicArticleOut(BaseModel):
     source_name: str | None = None
     preview: str | None = None
     metadata: list[PublicArticleMetaOut] = Field(default_factory=list)
-    counts: PublicArticleCountsOut | None = None
-    processing: list[PublicArticleProcessingEntryOut] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -66,7 +55,6 @@ class PublicArticleSearchParams:
     limit: int = 25
     offset: int = 0
     include_preview: bool = False
-    include_counts: bool = False
 
 
 def article_preview(text: str, *, max_len: int = PUBLIC_ARTICLE_PREVIEW_MAX_LEN) -> str:
@@ -136,8 +124,6 @@ def _article_to_public_out(
     *,
     metadata: list[PublicArticleMetaOut],
     include_preview: bool,
-    counts: PublicArticleCountsOut | None = None,
-    processing: list[PublicArticleProcessingEntryOut] | None = None,
 ) -> PublicArticleOut:
     preview = article_preview(article.text) if include_preview else None
     source_name = article_source_name(
@@ -153,8 +139,6 @@ def _article_to_public_out(
         source_name=source_name,
         preview=preview,
         metadata=metadata,
-        counts=counts,
-        processing=processing or [],
     )
 
 
@@ -326,16 +310,12 @@ def search_public_articles(
     articles = list(session.exec(stmt).all())
     article_ids = [int(a.id) for a in articles if a.id is not None]
     meta_by_id = _meta_rows_for_articles(session, article_ids)
-    counts_by_id = (
-        article_hub_counts_batch(session, article_ids) if params.include_counts else {}
-    )
 
     items = [
         _article_to_public_out(
             article,
             metadata=meta_by_id.get(int(article.id), []),  # type: ignore[arg-type]
             include_preview=params.include_preview,
-            counts=counts_by_id.get(int(article.id)) if params.include_counts else None,  # type: ignore[arg-type]
         )
         for article in articles
     ]
@@ -348,7 +328,6 @@ def get_public_article(
     project_id: int,
     article_id: int,
     include_preview: bool = True,
-    include_counts: bool = False,
 ) -> PublicArticleOut | None:
     article = session.exec(
         select(SubstrateArticle).where(
@@ -360,19 +339,8 @@ def get_public_article(
     if article is None or article.id is None:
         return None
     meta_by_id = _meta_rows_for_articles(session, [int(article.id)])
-    counts = None
-    if include_counts:
-        counts = article_hub_counts(session, article_id=int(article.id))
-    processing = list_public_article_processing(
-        session,
-        project_id=project_id,
-        article_id=int(article.id),
-        article=article,
-    )
     return _article_to_public_out(
         article,
         metadata=meta_by_id.get(int(article.id), []),
         include_preview=include_preview,
-        counts=counts,
-        processing=processing,
     )

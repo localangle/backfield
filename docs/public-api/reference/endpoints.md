@@ -714,31 +714,27 @@ Return one article by id. Does **not** include full body text. Includes metadata
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `include_preview` | boolean | `true` | Include truncated text preview (max 280 characters) |
-| `include` | string | — | Optional embeds: `counts` (entity, custom-record, and image counts) |
 
 ### Response `200`
 
-Same article object shape as search `items[]`. Includes **`processing`**: distinct Agate **`run_id`** values (and **`processed_item_id`** when known) gathered from the article row, metadata/custom-record provenance, and matching `agate_processed_item` rows. Each entry also includes **`domains`** (what was processed, e.g. `places`, `metadata`). When `include=counts`, adds a `counts` object:
+Same article object shape as search `items[]`:
 
 ```json
 {
-  "processing": [
+  "id": 1,
+  "headline": "City council votes on budget",
+  "url": "https://example.com/budget",
+  "author": "Jane Doe",
+  "pub_date": "2024-03-01",
+  "source_name": "example.com",
+  "preview": "City council voted Thursday on…",
+  "metadata": [
     {
-      "run_id": "550e8400-e29b-41d4-a716-446655440000",
-      "processed_item_id": 42,
-      "domains": ["places", "people", "metadata"]
-    },
-    {
-      "run_id": "660e8400-e29b-41d4-a716-446655440001",
-      "processed_item_id": null,
-      "domains": ["custom_records"]
+      "meta_type": "topic",
+      "category": "local_government_politics",
+      "confidence": 0.92
     }
-  ],
-  "counts": {
-    "entity_counts": { "locations": 1, "people": 1, "organizations": 0 },
-    "custom_record_counts": { "contracts": 2 },
-    "image_count": 1
-  }
+  ]
 }
 ```
 
@@ -763,7 +759,7 @@ Same article object shape as search `items[]`. Includes **`processing`**: distin
 
 ### Functionality
 
-Paginated mention evidence for one article across location, person, and organization entities. Unified index ordered by mention `created_at` descending.
+All mention evidence for one article across location, person, and organization entities. Unified index ordered by mention `created_at` descending. Not paginated.
 
 ### Query parameters
 
@@ -771,12 +767,34 @@ Paginated mention evidence for one article across location, person, and organiza
 |------|------|---------|-------------|
 | `entity_type` | string | — | Filter: `location`, `person`, or `organization` |
 | `nature` | string | — | Filter to mentions with this editorial `nature` (exact match) |
-| `limit` | integer | `25` | Page size (1–100) |
-| `offset` | integer | `0` | Offset for pagination |
+| `quote` | boolean | — | When `true`, return only mentions whose evidence is a quote |
 
 ### Response `200`
 
-Paginated list of mention objects with `entity_type`, `mention_id`, `substrate_entity_id`, `label`, optional `canonical`, and optional `evidence` (mention/quote spans).
+JSON array of mention objects with `entity_type`, `label`, optional `nature`, optional `role_in_story`, optional `canonical`, and optional `evidence`:
+
+```json
+[
+  {
+    "entity_type": "location",
+    "label": "Chicago, IL",
+    "nature": "secondary",
+    "role_in_story": "Chicago is referenced as the site of a court challenge…",
+    "canonical": {
+      "id": "107e8980-2ecf-4b40-90c5-9dff18ff54b8",
+      "slug": "chicago-il",
+      "label": "Chicago, IL",
+      "stylebook_slug": "cpm-stylebook"
+    },
+    "evidence": {
+      "mention_text": "Budget leaders weren't yet counting on revenue…",
+      "quote": false,
+      "start_char": 460,
+      "end_char": 732
+    }
+  }
+]
+```
 
 ---
 

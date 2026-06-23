@@ -93,7 +93,7 @@ After the `succeeded` commit in `_finalize_s3_parent_run` and the `execute_agate
 ```
 
 - **Stable schema, explicit nulls** (don't omit absent fields) so the client's "overwrite vs ignore" rule is unambiguous.
-- **`processing[]`** reuses the full run-history list (`list_public_article_processing`) so the client sees every flow that contributed without receiving multiple contradictory payloads.
+- **`processing[]`** reuses the full run-history list (`list_public_article_processing`) so the client sees every flow that contributed without receiving multiple contradictory payloads. This block is **not** on the public read API article object; it is planned for outbound webhook payloads only.
 - **Webhook security:** sign the body with the per-target secret (e.g. `X-Backfield-Signature: sha256=…`).
 
 ## Reliability notes
@@ -107,7 +107,7 @@ After the `succeeded` commit in `_finalize_s3_parent_run` and the `execute_agate
 ## Precedent in the codebase
 
 - **S3Output** (`packages/backfield-agate/src/agate_nodes/s3_output/node.py`) already does state-sync per article: one current file per article, `_delete_stale_outputs_for_article` removes stale versions by `article_id` + `update_key`. It also has a re-sync task (`sync_processed_item_s3_output`). Webhook/SQS delivery should mirror its choices (state-sync, article-keyed, re-syncable) rather than inventing append/event semantics.
-- **`list_public_article_processing`** (`backfield_entities/public/article_processing.py`) returns the full set of runs that touched an article (project-scoped processed-item scan), which is the source for the `processing[]` block.
+- **`list_public_article_processing`** (`backfield_entities/public/article_processing.py`) returns the full set of runs that touched an article (project-scoped processed-item scan), intended for outbound **`processing[]`** blocks—not the public read API article object.
 
 ## Open decisions (resolve at implementation)
 

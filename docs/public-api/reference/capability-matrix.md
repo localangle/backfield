@@ -19,8 +19,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Geo cell drill-down | ✅ | `GET …/articles/geo-cells/{h3_cell}` (articles + in-cell location mentions) |
 | Batch geo cell drill-down | ✅ | `POST …/articles/geo-cells/query` (many cells; deduplicated articles + `matched_cells`) |
 | Detail | ✅ | No full body; optional preview |
-| Detail counts embed | ✅ | `include=counts` on detail |
-| Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type` filter |
+| Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type`, `nature`, `quote` filters |
 | Locations (hub) | ✅ | `GET …/articles/{id}/locations` — map-oriented |
 | Images (hub) | ✅ | `GET …/articles/{id}/images` |
 | Metadata filters | ✅ | On search: include/exclude `meta_type` + category, date range |

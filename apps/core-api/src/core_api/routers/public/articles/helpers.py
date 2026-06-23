@@ -23,12 +23,6 @@ def parse_optional_date(value: str | None, *, param_name: str) -> date | None:
         ) from exc
 
 
-def parse_include(include: str | None) -> set[str]:
-    if not include or not include.strip():
-        return set()
-    return {part.strip().lower() for part in include.split(",") if part.strip()}
-
-
 def require_article(
     session: Session,
     project: BackfieldProject,

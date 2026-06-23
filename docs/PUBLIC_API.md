@@ -141,12 +141,12 @@ Articles are first-class public resources (`substrate_article` + related meta). 
 
 | Layer | Pattern | Use when |
 |-------|---------|----------|
-| **Detail** | `GET …/articles/{article_id}` | Headline, metadata, preview; optional cheap **`include=counts`** |
+| **Detail** | `GET …/articles/{article_id}` | Headline, metadata, optional preview |
 | **Sub-routes** | `GET …/articles/{article_id}/<slice>` | Heavy or paginated data: mentions, locations, custom records, images |
 | **Entity-centric** | `GET …/people/{id}/mentions`, etc. | Starting from a canonical, not a story |
 | **Bundle (later)** | `GET …/articles/{article_id}/bundle?sections=…` | Optional one-round-trip aggregator; not the primary contract |
 
-Do **not** use open-ended `?include=locations,people,custom_records,images` on detail—payload size, pagination, and caching differ too much per slice. Reserve `include` on detail for **small** embeds only (`counts`).
+Do **not** use open-ended `?include=locations,people,custom_records,images` on detail—payload size, pagination, and caching differ too much per slice. Use **sub-routes** for heavy slices.
 
 ### Detail (`GET …/articles/{article_id}`)
 
@@ -154,20 +154,9 @@ Do **not** use open-ended `?include=locations,people,custom_records,images` on d
 
 - `id`, `headline`, `url`, `author`, `pub_date`, `source_name`
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
-- **`processing`**: Agate runs that touched the article (`run_id`, optional `processed_item_id`, `domains`), aggregated from article provenance, metadata/custom-record `source_run_id`, matching `agate_processed_item` rows, and DBOutput `stylebook_output` persist summaries when available
 - Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
 
 **Query:** `include_preview` (default `true`).
-
-**Optional embed:** `include=counts` adds cheap aggregates without loading evidence:
-
-```json
-{
-  "entity_counts": { "locations": 4, "people": 2, "organizations": 1 },
-  "custom_record_counts": { "contracts": 3 },
-  "image_count": 2
-}
-```
 
 ### Excluded from detail
 
@@ -181,7 +170,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `…/mentions` | Paginated mention evidence across entity types |
+| `GET` | `…/mentions` | All mention evidence across entity types for one article |
 | `GET` | `…/metadata` | Metadata rows and distinct types for this article |
 | `GET` | `…/locations` | Geography-focused: places in the story with canonical + geometry where available |
 | `GET` | `…/custom-records` | Custom Extract rows for this article |
@@ -189,9 +178,9 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 
 **`GET …/mentions`** — unified index for “who/what is mentioned?”
 
-- Query: `entity_type` optional filter (`location`, `person`, `organization`)
-- Each row: entity type, substrate/canonical ids, label, mention text/quote spans, optional canonical summary
-- Paginated; does not return full article body
+- Query: `entity_type` optional filter (`location`, `person`, `organization`); `nature` exact match; `quote=true` for quoted evidence only
+- Each row: entity type, label, optional `nature` / `role_in_story`, optional canonical summary, optional evidence (`mention_text`, `quote`, character offsets)
+- Returns all matching mentions (not paginated); does not return full article body
 
 **`GET …/locations`** — map-oriented view (may overlap mentions but different shape)
 
@@ -462,8 +451,7 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 
 **Goal:** Rich article context via sub-routes (not combinatorial `include` on detail).
 
-- [x] `include=counts` on `GET …/articles/{article_id}`
-- [x] `GET …/articles/{article_id}/mentions` — paginated; optional `entity_type`
+- [x] `GET …/articles/{article_id}/mentions` — all mentions; optional `entity_type`, `nature`, `quote`
 - [x] `GET …/articles/{article_id}/locations` — geography / map-oriented shape
 - [x] `GET …/articles/{article_id}/images`
 - [x] Registry entries in **`endpoints.md`** for each shipped sub-route
@@ -569,4 +557,4 @@ Update as phases complete. **Shipped** / **Planned** / **N/A**.
 
 **Resolved (Phase 2):** article preview uses **280 characters** max (`PUBLIC_ARTICLE_PREVIEW_MAX_LEN` in `backfield_entities.public.articles`).
 
-**Resolved (article hub):** use **lean detail + paginated sub-routes** (`/mentions`, `/locations`, `/custom-records`, `/images`); optional `include=counts` on detail only; optional `/bundle` later—not combinatorial `include` for heavy slices.
+**Resolved (article hub):** use **lean detail + paginated sub-routes** (`/mentions`, `/locations`, `/custom-records`, `/images`); optional `/bundle` later—not combinatorial `include` for heavy slices.

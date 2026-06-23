@@ -22,9 +22,13 @@ from sqlalchemy import func, literal, union_all
 from sqlmodel import Session, col, select
 
 from backfield_entities.public.mention_evidence import (
+    PublicArticleMentionEvidenceOut,
     PublicMentionEvidenceOut,
+    location_article_mention_evidence_by_mention_id,
     location_evidence_by_mention_id,
+    organization_article_mention_evidence_by_mention_id,
     organization_evidence_by_mention_id,
+    person_article_mention_evidence_by_mention_id,
     person_evidence_by_mention_id,
 )
 from backfield_entities.public.stylebook_scope import stylebook_slugs_by_id
@@ -53,13 +57,11 @@ class PublicArticleCountsOut(BaseModel):
 
 class PublicArticleMentionOut(BaseModel):
     entity_type: PublicEntityMentionType
-    mention_id: int
-    substrate_entity_id: int
     label: str
     nature: str | None = None
     role_in_story: str | None = None
     canonical: PublicCanonicalSummaryOut | None = None
-    evidence: PublicMentionEvidenceOut | None = None
+    evidence: PublicArticleMentionEvidenceOut | None = None
 
 
 class PublicArticleLocationOut(BaseModel):
@@ -344,7 +346,7 @@ def _hydrate_location_mentions(
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
     stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
-    evidence = location_evidence_by_mention_id(session, mention_ids)
+    evidence = location_article_mention_evidence_by_mention_id(session, mention_ids)
     out: list[PublicArticleMentionOut] = []
     for mid in mention_ids:
         pair = by_id.get(mid)
@@ -358,8 +360,6 @@ def _hydrate_location_mentions(
         out.append(
             PublicArticleMentionOut(
                 entity_type="location",
-                mention_id=mid,
-                substrate_entity_id=int(loc.id),  # type: ignore[arg-type]
                 label=str(loc.name),
                 nature=mention.nature,
                 role_in_story=mention.role_in_story,
@@ -393,7 +393,7 @@ def _hydrate_person_mentions(
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
     stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
-    evidence = person_evidence_by_mention_id(session, mention_ids)
+    evidence = person_article_mention_evidence_by_mention_id(session, mention_ids)
     out: list[PublicArticleMentionOut] = []
     for mid in mention_ids:
         pair = by_id.get(mid)
@@ -407,8 +407,6 @@ def _hydrate_person_mentions(
         out.append(
             PublicArticleMentionOut(
                 entity_type="person",
-                mention_id=mid,
-                substrate_entity_id=int(person.id),  # type: ignore[arg-type]
                 label=str(person.name),
                 nature=mention.nature,
                 role_in_story=mention.role_in_story,
@@ -447,7 +445,7 @@ def _hydrate_organization_mentions(
         ).all()
         canonicals = {str(row.id): row for row in canon_rows}
     stylebook_slugs = _canonical_stylebook_slugs(session, canonicals)
-    evidence = organization_evidence_by_mention_id(session, mention_ids)
+    evidence = organization_article_mention_evidence_by_mention_id(session, mention_ids)
     out: list[PublicArticleMentionOut] = []
     for mid in mention_ids:
         pair = by_id.get(mid)
@@ -461,8 +459,6 @@ def _hydrate_organization_mentions(
         out.append(
             PublicArticleMentionOut(
                 entity_type="organization",
-                mention_id=mid,
-                substrate_entity_id=int(org.id),  # type: ignore[arg-type]
                 label=str(org.name),
                 nature=mention.nature,
                 role_in_story=mention.role_in_story,
@@ -484,12 +480,24 @@ def _hydrate_mentions(
         order.append((entity_type, mention_id))
 
     hydrated: dict[tuple[str, int], PublicArticleMentionOut] = {}
-    for row in _hydrate_location_mentions(session, by_type["location"]):
-        hydrated[("location", row.mention_id)] = row
-    for row in _hydrate_person_mentions(session, by_type["person"]):
-        hydrated[("person", row.mention_id)] = row
-    for row in _hydrate_organization_mentions(session, by_type["organization"]):
-        hydrated[("organization", row.mention_id)] = row
+    for mid, row in zip(
+        by_type["location"],
+        _hydrate_location_mentions(session, by_type["location"]),
+        strict=True,
+    ):
+        hydrated[("location", mid)] = row
+    for mid, row in zip(
+        by_type["person"],
+        _hydrate_person_mentions(session, by_type["person"]),
+        strict=True,
+    ):
+        hydrated[("person", mid)] = row
+    for mid, row in zip(
+        by_type["organization"],
+        _hydrate_organization_mentions(session, by_type["organization"]),
+        strict=True,
+    ):
+        hydrated[("organization", mid)] = row
 
     return [hydrated[key] for key in order if key in hydrated]
 
@@ -500,22 +508,20 @@ def list_article_mentions(
     article_id: int,
     entity_type: PublicEntityMentionType | None,
     nature: str | None = None,
-    limit: int,
-    offset: int,
-) -> tuple[list[PublicArticleMentionOut], int]:
+    quotes_only: bool = False,
+) -> list[PublicArticleMentionOut]:
     union_stmt = _mention_union_stmt(article_id, entity_type, nature=nature)
     if union_stmt is None:
-        return [], 0
+        return []
     subq = union_stmt.subquery()
-    total = int(session.exec(select(func.count()).select_from(subq)).one())
     page_rows = session.exec(
-        select(subq.c.entity_type, subq.c.mention_id)
-        .order_by(col(subq.c.created_at).desc())
-        .limit(limit)
-        .offset(offset)
+        select(subq.c.entity_type, subq.c.mention_id).order_by(col(subq.c.created_at).desc())
     ).all()
     typed_rows = [(str(entity_type), int(mention_id)) for entity_type, mention_id in page_rows]
-    return _hydrate_mentions(session, typed_rows), total
+    items = _hydrate_mentions(session, typed_rows)
+    if quotes_only:
+        items = [item for item in items if item.evidence is not None and item.evidence.quote]
+    return items
 
 
 def location_mentions_out_by_ids(

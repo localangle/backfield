@@ -14,7 +14,6 @@ from sqlmodel import Session
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
     parse_has_mentions,
-    parse_include,
     parse_optional_date,
 )
 from core_api.routers.public.deps import get_public_project
@@ -73,13 +72,8 @@ def search_project_articles(
         False,
         description="Include a short text preview (max 280 characters) per article",
     ),
-    include: str | None = Query(
-        None,
-        description="Optional embeds: counts",
-    ),
 ) -> PaginatedResponse[PublicArticleOut]:
     """Search project articles by keyword, metadata tags, and publication date."""
-    include_flags = parse_include(include)
     outlet = external_source or source
     params = PublicArticleSearchParams(
         q=q,
@@ -96,7 +90,6 @@ def search_project_articles(
         limit=limit,
         offset=offset,
         include_preview=include_preview,
-        include_counts="counts" in include_flags,
     )
     items, total = search_public_articles(
         session,

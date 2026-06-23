@@ -13,12 +13,11 @@ from sqlmodel import Session
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import parse_entity_type, require_article
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.schemas import PaginatedResponse, PaginationOut
 
 router = APIRouter()
 
 
-@router.get("/{article_id}/mentions", response_model=PaginatedResponse[PublicArticleMentionOut])
+@router.get("/{article_id}/mentions", response_model=list[PublicArticleMentionOut])
 def list_project_article_mentions(
     article_id: int,
     project: BackfieldProject = Depends(get_public_project),
@@ -31,21 +30,18 @@ def list_project_article_mentions(
         None,
         description="Filter to mentions with this editorial nature (e.g. primary, subject, actor)",
     ),
-    limit: int = Query(25, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> PaginatedResponse[PublicArticleMentionOut]:
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
+    ),
+) -> list[PublicArticleMentionOut]:
     """List mention evidence for one article across entity types."""
     require_article(session, project, article_id)
     parsed_type = parse_entity_type(entity_type)
-    items, total = list_article_mentions(
+    return list_article_mentions(
         session,
         article_id=article_id,
         entity_type=parsed_type,
         nature=nature,
-        limit=limit,
-        offset=offset,
-    )
-    return PaginatedResponse(
-        items=items,
-        pagination=PaginationOut(limit=limit, offset=offset, total=total),
+        quotes_only=quote is True,
     )

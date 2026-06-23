@@ -745,7 +745,7 @@ def test_public_article_metadata_endpoints(public_client: TestClient) -> None:
     assert missing.status_code == 404
 
 
-def test_public_article_search_facets_and_counts(public_client: TestClient) -> None:
+def test_public_article_search_facets_and_filters(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}
 
@@ -766,7 +766,6 @@ def test_public_article_search_facets_and_counts(public_client: TestClient) -> N
             "author": "Jane Doe",
             "section": "local_government_politics",
             "has_mentions": "location",
-            "include": "counts",
         },
     )
     assert search.status_code == 200
@@ -774,7 +773,7 @@ def test_public_article_search_facets_and_counts(public_client: TestClient) -> N
     assert item["headline"] == "City council votes on budget"
     assert item["source_name"] == "example.com"
     assert item["metadata"][0]["category"] == "local_government_politics"
-    assert item["counts"]["entity_counts"]["locations"] == 1
+    assert "counts" not in item
 
 
 def test_public_article_search_invalid_date(public_client: TestClient) -> None:
@@ -808,7 +807,8 @@ def test_public_article_detail(public_client: TestClient) -> None:
     assert "text" not in body
     assert body["preview"]
     assert body["metadata"][0]["category"] == "local_government_politics"
-    assert body["processing"] == []
+    assert "processing" not in body
+    assert "counts" not in body
 
 
 def test_public_article_detail_not_found(public_client: TestClient) -> None:
@@ -818,29 +818,6 @@ def test_public_article_detail_not_found(public_client: TestClient) -> None:
         headers={"Authorization": f"Bearer {raw_key}"},
     )
     assert r.status_code == 404
-
-
-def test_public_article_detail_include_counts(public_client: TestClient) -> None:
-    raw_key = _create_project_api_key(public_client)
-    headers = {"Authorization": f"Bearer {raw_key}"}
-    listed = public_client.get(
-        "/public/v1/projects/general/articles/search",
-        headers=headers,
-        params={"q": "budget"},
-    ).json()
-    article_id = listed["items"][0]["id"]
-    r = public_client.get(
-        f"/public/v1/projects/general/articles/{article_id}",
-        headers=headers,
-        params={"include": "counts"},
-    )
-    assert r.status_code == 200
-    counts = r.json()["counts"]
-    assert counts["entity_counts"]["locations"] == 1
-    assert counts["entity_counts"]["people"] == 1
-    assert counts["entity_counts"]["organizations"] == 1
-    assert counts["custom_record_counts"]["contracts"] == 1
-    assert counts["image_count"] == 1
 
 
 def test_public_article_mentions(public_client: TestClient) -> None:
@@ -857,9 +834,11 @@ def test_public_article_mentions(public_client: TestClient) -> None:
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["pagination"]["total"] == 3
-    types = {item["entity_type"] for item in body["items"]}
+    assert len(body) == 3
+    types = {item["entity_type"] for item in body}
     assert types == {"location", "person", "organization"}
+    assert "mention_id" not in body[0]
+    assert "substrate_entity_id" not in body[0]
 
 
 def test_public_article_mentions_entity_type_filter(public_client: TestClient) -> None:
@@ -872,9 +851,12 @@ def test_public_article_mentions_entity_type_filter(public_client: TestClient) -
         params={"entity_type": "location"},
     )
     assert r.status_code == 200
-    assert r.json()["pagination"]["total"] == 1
-    assert r.json()["items"][0]["label"] == "City Hall"
-    assert r.json()["items"][0]["evidence"]["mention_text"] == "City Hall"
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["label"] == "City Hall"
+    assert body[0]["evidence"]["mention_text"] == "debate downtown"
+    assert body[0]["evidence"]["quote"] is True
+    assert "quote_text" not in body[0]["evidence"]
 
 
 def test_public_article_mentions_nature_filter(public_client: TestClient) -> None:
@@ -887,7 +869,7 @@ def test_public_article_mentions_nature_filter(public_client: TestClient) -> Non
         headers=headers,
     )
     assert all_mentions.status_code == 200
-    assert all_mentions.json()["pagination"]["total"] == 3
+    assert len(all_mentions.json()) == 3
 
     subject_only = public_client.get(
         f"/public/v1/projects/general/articles/{article_id}/mentions",
@@ -896,9 +878,9 @@ def test_public_article_mentions_nature_filter(public_client: TestClient) -> Non
     )
     assert subject_only.status_code == 200
     body = subject_only.json()
-    assert body["pagination"]["total"] == 1
-    assert body["items"][0]["entity_type"] == "person"
-    assert body["items"][0]["nature"] == "subject"
+    assert len(body) == 1
+    assert body[0]["entity_type"] == "person"
+    assert body[0]["nature"] == "subject"
 
     primary_location = public_client.get(
         f"/public/v1/projects/general/articles/{article_id}/mentions",
@@ -906,8 +888,23 @@ def test_public_article_mentions_nature_filter(public_client: TestClient) -> Non
         params={"entity_type": "location", "nature": "primary"},
     )
     assert primary_location.status_code == 200
-    assert primary_location.json()["pagination"]["total"] == 1
-    assert primary_location.json()["items"][0]["nature"] == "primary"
+    assert len(primary_location.json()) == 1
+    assert primary_location.json()[0]["nature"] == "primary"
+
+
+def test_public_article_mentions_quote_filter(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/1/mentions",
+        headers=headers,
+        params={"quote": "true"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["entity_type"] == "location"
+    assert body[0]["evidence"]["quote"] is True
 
 
 def test_public_article_locations(public_client: TestClient) -> None:
