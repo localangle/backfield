@@ -152,7 +152,7 @@ Do **not** use open-ended `?include=locations,people,custom_records,images` on d
 
 **Core fields (v1):**
 
-- `id`, `headline`, `url`, `author`, `pub_date`, `source_name`
+- `id`, `headline`, `url`, `author`, `pub_date`, `source` (`id`, `name`)
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
 - Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
 
@@ -212,8 +212,10 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 **Search parameters:**
 
 - `q` — keyword (headline, body text, URL); on PostgreSQL, full-text search with web-style syntax: quoted phrases (`"city council"`), `OR`, and `-` exclusions; unquoted terms are ANDed
-- `meta_type`, `meta_category` — include articles matching `substrate_article_meta`
-- `exclude_meta_type`, `exclude_meta_category` — exclude articles with matching metadata rows
+- `meta_type`, `meta_category` — include articles matching `substrate_article_meta` (single clause; legacy)
+- `exclude_meta_type`, `exclude_meta_category` — exclude articles with matching metadata rows (legacy)
+- `meta` — repeatable advanced metadata clause (AND across clauses). Forms: `type`, `type:category`, `type:cat1|cat2` (OR within type), `!type` or `!type:category` (negation). Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause.
+- `section` — shorthand for `meta=topic:<value>`
 - `pub_date_from`, `pub_date_to` — ISO dates (`YYYY-MM-DD`)
 - Standard pagination
 - `include_preview` (default `false` on search)

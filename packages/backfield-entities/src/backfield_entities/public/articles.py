@@ -20,6 +20,7 @@ from sqlmodel import Session, col, select
 from backfield_entities.public.keyword_query import article_keyword_tsquery
 
 PUBLIC_ARTICLE_PREVIEW_MAX_LEN = 280
+_INTERNAL_ARTICLE_SOURCE_ID = "backfield_text_fingerprint"
 
 
 class PublicArticleMetaOut(BaseModel):
@@ -28,15 +29,27 @@ class PublicArticleMetaOut(BaseModel):
     confidence: float
 
 
+class PublicArticleSourceOut(BaseModel):
+    id: str
+    name: str
+
+
 class PublicArticleOut(BaseModel):
     id: int
     headline: str
     url: str | None = None
     author: str | None = None
     pub_date: date | None = None
-    source_name: str | None = None
+    source: PublicArticleSourceOut | None = None
     preview: str | None = None
     metadata: list[PublicArticleMetaOut] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ArticleMetaClause:
+    meta_type: str
+    categories: tuple[str, ...] = ()
+    negate: bool = False
 
 
 @dataclass(frozen=True)
@@ -47,6 +60,7 @@ class PublicArticleSearchParams:
     exclude_meta_type: str | None = None
     exclude_meta_category: str | None = None
     section: str | None = None
+    meta_clauses: tuple[ArticleMetaClause, ...] = ()
     author: str | None = None
     external_source: str | None = None
     has_mentions: str | None = None
@@ -93,14 +107,20 @@ def _meta_rows_for_articles(
     return out
 
 
-def article_source_name(*, external_source: str | None, url: str | None) -> str | None:
-    if external_source and external_source.strip():
-        return external_source.strip()
+def article_public_source(
+    *,
+    external_source: str | None,
+    url: str | None,
+) -> PublicArticleSourceOut | None:
+    source_id = (external_source or "").strip()
+    if source_id and source_id != _INTERNAL_ARTICLE_SOURCE_ID:
+        return PublicArticleSourceOut(id=source_id, name=source_id)
     if url and url.strip():
         parsed = urlparse(url.strip())
         hostname = parsed.hostname or ""
         if hostname:
-            return hostname.removeprefix("www.")
+            host = hostname.removeprefix("www.")
+            return PublicArticleSourceOut(id=host, name=host)
     return None
 
 
@@ -126,7 +146,7 @@ def _article_to_public_out(
     include_preview: bool,
 ) -> PublicArticleOut:
     preview = article_preview(article.text) if include_preview else None
-    source_name = article_source_name(
+    source = article_public_source(
         external_source=article.external_source,
         url=article.url,
     )
@@ -136,7 +156,7 @@ def _article_to_public_out(
         url=article.url,
         author=article.author,
         pub_date=article.pub_date,
-        source_name=source_name,
+        source=source,
         preview=preview,
         metadata=metadata,
     )
@@ -201,6 +221,7 @@ def _apply_public_article_list_filters(
     meta_category: str | None,
     exclude_meta_type: str | None = None,
     exclude_meta_category: str | None = None,
+    meta_clauses: tuple[ArticleMetaClause, ...] = (),
     author: str | None = None,
     external_source: str | None = None,
     has_mentions: str | None = None,
@@ -263,6 +284,17 @@ def _apply_public_article_list_filters(
             )
         stmt = stmt.where(~col(SubstrateArticle.id).in_(exclude_stmt))
 
+    for clause in meta_clauses:
+        meta_stmt = select(SubstrateArticleMeta.article_id).where(
+            SubstrateArticleMeta.meta_type == clause.meta_type
+        )
+        if clause.categories:
+            meta_stmt = meta_stmt.where(col(SubstrateArticleMeta.category).in_(clause.categories))
+        if clause.negate:
+            stmt = stmt.where(~col(SubstrateArticle.id).in_(meta_stmt))
+        else:
+            stmt = stmt.where(col(SubstrateArticle.id).in_(meta_stmt))
+
     return stmt
 
 
@@ -286,6 +318,7 @@ def search_public_articles(
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
         exclude_meta_category=params.exclude_meta_category,
+        meta_clauses=params.meta_clauses,
         author=params.author,
         external_source=params.external_source,
         has_mentions=params.has_mentions,

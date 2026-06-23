@@ -80,6 +80,8 @@ Returns minimal project metadata for the given slug. Resolves the effective Styl
 
 Search non-deleted articles in a project by keyword (headline, body text, or URL), metadata tags, and publication date. Returns a paginated list without full body text. On PostgreSQL, `q` uses full-text search (`websearch_to_tsquery`) over headline + body + URL with web-style phrase, `OR`, and `-` exclusion syntax (not semantic embeddings). Non-PostgreSQL test dialects fall back to case-insensitive substring match on the full `q` string.
 
+Advanced metadata filtering uses the repeatable `meta` parameter (see examples below). Legacy `meta_type` / `exclude_*` params remain supported and AND together with `meta` clauses.
+
 ### Path parameters
 
 | Name | Type | Required | Description |
@@ -91,15 +93,27 @@ Search non-deleted articles in a project by keyword (headline, body text, or URL
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `q` | string | — | Keyword match on headline, body text, or URL. PostgreSQL: `"phrase"`, `term1 OR term2`, `-exclude`, implicit AND between terms |
-| `meta_type` | string | — | Include articles with a metadata row of this type |
+| `meta_type` | string | — | Include articles with a metadata row of this type (legacy single clause) |
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `meta` | string | — | Repeatable metadata filter clause (AND across clauses). Forms: `type`, `type:category`, `type:cat1\|cat2` (OR within type), `!type` or `!type:category` (negation). Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause. |
+| `section` | string | — | Shorthand for `meta=topic:<value>` |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
 | `include_preview` | boolean | `false` | Include truncated text preview (max 280 characters) |
+
+**Advanced `meta` example** — news stories that are backward-looking or evergreen, about pro sports, but not obituaries:
+
+```http
+GET …/articles/search?meta=news_story&meta=temporal_orientation:backward|evergreen&meta=topic:pro_sports&meta=!topic:obituaries
+```
+
+(URL-encode `|` as `%7C` in clients.)
+
+Discover filter values: `GET …/articles/metadata/types`, `GET …/articles/metadata/types/{meta_type}/values`, `GET …/articles/facets`.
 
 ### Response `200`
 
@@ -112,7 +126,7 @@ Search non-deleted articles in a project by keyword (headline, body text, or URL
       "url": "https://example.com/budget",
       "author": "Jane Doe",
       "pub_date": "2024-03-01",
-      "source_name": "example.com",
+      "source": { "id": "example.com", "name": "example.com" },
       "preview": null,
       "metadata": [
         {
@@ -726,7 +740,7 @@ Same article object shape as search `items[]`:
   "url": "https://example.com/budget",
   "author": "Jane Doe",
   "pub_date": "2024-03-01",
-  "source_name": "example.com",
+  "source": { "id": "example.com", "name": "example.com" },
   "preview": "City council voted Thursday on…",
   "metadata": [
     {
@@ -1110,7 +1124,7 @@ Paginated distinct articles mentioning a canonical person in the project. Ordere
       "url": "https://example.com/budget",
       "author": "Jane Doe",
       "pub_date": "2024-03-01",
-      "source_name": "example.com",
+      "source": { "id": "example.com", "name": "example.com" },
       "metadata": []
     }
   ],

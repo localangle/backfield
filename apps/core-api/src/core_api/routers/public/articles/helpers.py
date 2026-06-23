@@ -7,6 +7,7 @@ from datetime import date
 from backfield_db import BackfieldProject
 from backfield_entities.public.article_hub import PublicEntityMentionType
 from backfield_entities.public.article_scope import get_public_article_row
+from backfield_entities.public.articles import ArticleMetaClause
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
@@ -21,6 +22,84 @@ def parse_optional_date(value: str | None, *, param_name: str) -> date | None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid {param_name}. Use YYYY-MM-DD.",
         ) from exc
+
+
+MAX_META_CLAUSES = 25
+MAX_META_CATEGORIES_PER_CLAUSE = 50
+
+
+def parse_meta_clauses(meta: list[str]) -> tuple[ArticleMetaClause, ...]:
+    """Parse repeatable ``meta`` query tokens into metadata filter clauses."""
+    if not meta:
+        return ()
+    if len(meta) > MAX_META_CLAUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many meta clauses. Maximum is {MAX_META_CLAUSES}.",
+        )
+
+    clauses: list[ArticleMetaClause] = []
+    for raw_token in meta:
+        token = raw_token.strip()
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid meta clause: empty token.",
+            )
+        negate = False
+        if token.startswith("!"):
+            negate = True
+            token = token[1:].strip()
+            if not token:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid meta clause: missing type after '!'.",
+                )
+        if ":" in token:
+            meta_type, categories_raw = token.split(":", 1)
+            meta_type = meta_type.strip()
+            if not meta_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid meta clause: empty metadata type.",
+                )
+            if not categories_raw.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid meta clause for type '{meta_type}': missing category.",
+                )
+            seen: set[str] = set()
+            categories: list[str] = []
+            for part in categories_raw.split("|"):
+                category = part.strip()
+                if not category:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid meta clause for type '{meta_type}': empty category.",
+                    )
+                if category not in seen:
+                    seen.add(category)
+                    categories.append(category)
+            if len(categories) > MAX_META_CATEGORIES_PER_CLAUSE:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Too many categories in meta clause for type '{meta_type}'. "
+                        f"Maximum is {MAX_META_CATEGORIES_PER_CLAUSE}."
+                    ),
+                )
+            clauses.append(
+                ArticleMetaClause(
+                    meta_type=meta_type,
+                    categories=tuple(categories),
+                    negate=negate,
+                )
+            )
+        else:
+            clauses.append(
+                ArticleMetaClause(meta_type=token, categories=(), negate=negate)
+            )
+    return tuple(clauses)
 
 
 def require_article(
