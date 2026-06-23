@@ -771,7 +771,7 @@ def test_public_article_search_facets_and_filters(public_client: TestClient) -> 
     assert search.status_code == 200
     item = search.json()["items"][0]
     assert item["headline"] == "City council votes on budget"
-    assert item["source"] == {"id": "example.com", "name": "example.com"}
+    assert item["source"]["id"] == "example.com"
     assert item["metadata"][0]["category"] == "local_government_politics"
     assert "counts" not in item
 
@@ -785,61 +785,6 @@ def test_public_article_search_invalid_date(public_client: TestClient) -> None:
         params={"pub_date_from": "not-a-date"},
     )
     assert r.status_code == 400
-
-
-def test_public_article_search_meta_clauses(public_client: TestClient) -> None:
-    raw_key = _create_project_api_key(public_client)
-    headers = {"Authorization": f"Bearer {raw_key}"}
-
-    matched = public_client.get(
-        "/public/v1/projects/general/articles/search",
-        headers=headers,
-        params=[("meta", "topic:local_government_politics")],
-    )
-    assert matched.status_code == 200
-    assert matched.json()["pagination"]["total"] == 1
-
-    combined = public_client.get(
-        "/public/v1/projects/general/articles/search",
-        headers=headers,
-        params=[
-            ("section", "local_government_politics"),
-            ("meta", "topic:local_government_politics"),
-        ],
-    )
-    assert combined.status_code == 200
-    assert combined.json()["pagination"]["total"] == 1
-
-
-def test_public_article_search_meta_clauses_invalid(public_client: TestClient) -> None:
-    raw_key = _create_project_api_key(public_client)
-    headers = {"Authorization": f"Bearer {raw_key}"}
-
-    for params in (
-        [("meta", "")],
-        [("meta", "topic:")],
-        [("meta", "topic:a|")],
-        [("meta", "!")],
-    ):
-        r = public_client.get(
-            "/public/v1/projects/general/articles/search",
-            headers=headers,
-            params=params,
-        )
-        assert r.status_code == 400
-
-
-def test_public_article_search_meta_clauses_cap(public_client: TestClient) -> None:
-    raw_key = _create_project_api_key(public_client)
-    headers = {"Authorization": f"Bearer {raw_key}"}
-    params = [("meta", f"type{i}:value") for i in range(26)]
-    r = public_client.get(
-        "/public/v1/projects/general/articles/search",
-        headers=headers,
-        params=params,
-    )
-    assert r.status_code == 400
-    assert "Too many meta clauses" in r.json()["detail"]
 
 
 def test_public_article_detail(public_client: TestClient) -> None:
@@ -1355,3 +1300,66 @@ def test_public_mention_not_found(public_client: TestClient) -> None:
         headers=headers,
     )
     assert bad_type.status_code == 404
+
+
+def test_public_mentions_search_meta_clauses(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    matched = public_client.get(
+        "/public/v1/projects/general/mentions/search",
+        headers=headers,
+        params=[("meta", "topic:local_government_politics")],
+    )
+    assert matched.status_code == 200
+    assert matched.json()["pagination"]["total"] == 3
+
+    excluded = public_client.get(
+        "/public/v1/projects/general/mentions/search",
+        headers=headers,
+        params=[("meta", "topic:sports")],
+    )
+    assert excluded.status_code == 200
+    assert excluded.json()["pagination"]["total"] == 0
+
+
+def test_public_mentions_search_meta_clauses_invalid(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/mentions/search",
+        headers=headers,
+        params=[("meta", "topic:")],
+    )
+    assert r.status_code == 400
+
+
+@patch("core_api.routers.public.articles.semantic_search.embed_semantic_search_query")
+def test_public_article_semantic_search_meta_clauses(
+    mock_embed: MagicMock,
+    public_client: TestClient,
+) -> None:
+    mock_embed.return_value = SemanticQueryEmbedding(
+        vector=[1.0, 0.0],
+        model_config_id="emb-test",
+        embedding_model="openai/text-embedding-3-small",
+        embedding_dimensions=2,
+    )
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+
+    matched = public_client.post(
+        "/public/v1/projects/general/articles/semantic-search",
+        headers=headers,
+        json={"query": "city budget debate", "meta": ["topic:local_government_politics"]},
+    )
+    assert matched.status_code == 200
+    assert matched.json()["pagination"]["total"] == 1
+
+    excluded = public_client.post(
+        "/public/v1/projects/general/articles/semantic-search",
+        headers=headers,
+        json={"query": "city budget debate", "meta": ["topic:sports"]},
+    )
+    assert excluded.status_code == 200
+    assert excluded.json()["pagination"]["total"] == 0

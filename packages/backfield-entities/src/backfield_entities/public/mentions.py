@@ -30,7 +30,7 @@ from backfield_entities.public.article_hub import (
     _canonical_stylebook_slugs,
     _canonical_summary,
 )
-from backfield_entities.public.articles import _apply_public_article_list_filters
+from backfield_entities.public.articles import ArticleMetaClause, _apply_public_article_list_filters
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     PublicMentionOccurrenceOut,
@@ -109,6 +109,7 @@ class PublicMentionSearchParams:
     meta_category: str | None = None
     exclude_meta_type: str | None = None
     exclude_meta_category: str | None = None
+    meta_clauses: tuple[ArticleMetaClause, ...] = ()
     location_type: str | None = None
     person_type: str | None = None
     organization_type: str | None = None
@@ -169,6 +170,7 @@ def _apply_article_filters_to_mention_arm(stmt, params: PublicMentionSearchParam
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
         exclude_meta_category=params.exclude_meta_category,
+        meta_clauses=params.meta_clauses,
         author=params.author,
         external_source=params.external_source,
         has_mentions=None,

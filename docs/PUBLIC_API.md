@@ -209,12 +209,12 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 | `POST` | `…/articles/geo-cells/query` | Batch drill-down for many hexes (deduplicated articles + `matched_cells`) |
 | `GET` | `…/articles/{article_id}` | Article detail |
 
-**Search parameters:**
+**Search parameters** (shared across article keyword search, semantic search, geo search, geo cells, and project-wide mention search):
 
-- `q` — keyword (headline, body text, URL); on PostgreSQL, full-text search with web-style syntax: quoted phrases (`"city council"`), `OR`, and `-` exclusions; unquoted terms are ANDed
+- `q` — keyword (headline, body text, URL); on PostgreSQL, full-text search with web-style syntax: quoted phrases (`"city council"`), `OR`, and `-` exclusions; unquoted terms are ANDed (**keyword search only**)
 - `meta_type`, `meta_category` — include articles matching `substrate_article_meta` (single clause; legacy)
 - `exclude_meta_type`, `exclude_meta_category` — exclude articles with matching metadata rows (legacy)
-- `meta` — repeatable advanced metadata clause (AND across clauses). Forms: `type`, `type:category`, `type:cat1|cat2` (OR within type), `!type` or `!type:category` (negation). Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause.
+- `meta` — advanced metadata clauses (AND across clauses). On **GET** routes, repeat the query param; on **POST** routes (`semantic-search`, `geo-cells/query`), pass a JSON string array. Forms: `type`, `type:category`, `type:cat1|cat2` (OR within type), `!type` or `!type:category` (negation). Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause.
 - `section` — shorthand for `meta=topic:<value>`
 - `pub_date_from`, `pub_date_to` — ISO dates (`YYYY-MM-DD`)
 - Standard pagination

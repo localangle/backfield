@@ -16,6 +16,7 @@ from backfield_entities.public.article_hub import (
     location_mentions_out_by_ids,
 )
 from backfield_entities.public.articles import (
+    ArticleMetaClause,
     PublicArticleOut,
     _apply_public_article_list_filters,
     _article_to_public_out,
@@ -31,6 +32,7 @@ class PublicArticleGeoMentionFilters:
     meta_category: str | None = None
     exclude_meta_type: str | None = None
     exclude_meta_category: str | None = None
+    meta_clauses: tuple[ArticleMetaClause, ...] = ()
     external_source: str | None = None
     pub_date_from: date | None = None
     pub_date_to: date | None = None
@@ -45,6 +47,7 @@ class PublicArticleGeoCellDetailParams:
     meta_category: str | None = None
     exclude_meta_type: str | None = None
     exclude_meta_category: str | None = None
+    meta_clauses: tuple[ArticleMetaClause, ...] = ()
     pub_date_from: date | None = None
     pub_date_to: date | None = None
     limit: int = 25
@@ -95,6 +98,7 @@ def mention_filters_from_detail_params(
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
         exclude_meta_category=params.exclude_meta_category,
+        meta_clauses=params.meta_clauses,
         pub_date_from=params.pub_date_from,
         pub_date_to=params.pub_date_to,
     )
@@ -135,6 +139,7 @@ def filter_allowed_article_ids(
         meta_category=filters.meta_category,
         exclude_meta_type=filters.exclude_meta_type,
         exclude_meta_category=filters.exclude_meta_category,
+        meta_clauses=filters.meta_clauses,
         external_source=filters.external_source,
         pub_date_from=filters.pub_date_from,
         pub_date_to=filters.pub_date_to,

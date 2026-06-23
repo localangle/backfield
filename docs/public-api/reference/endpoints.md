@@ -316,6 +316,7 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `meta` | array of string | `[]` | Advanced metadata filter clauses (same grammar as `GET …/articles/search`; AND across clauses) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
@@ -357,7 +358,7 @@ Results are ordered by **`score`** descending, then `pub_date` descending, then 
 
 | Status | When |
 |--------|------|
-| `400` | Invalid `pub_date_from` or `pub_date_to` format |
+| `400` | Invalid `pub_date_from` or `pub_date_to` format, or invalid `meta` clause |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
@@ -399,6 +400,8 @@ Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). A
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
+| `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
+| `meta` | string | — | Repeatable metadata filter clause (same grammar as `GET …/articles/search`; AND across clauses) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
@@ -444,7 +447,7 @@ Results are ordered by article `pub_date` descending (nulls last), then `id` des
 
 | Status | When |
 |--------|------|
-| `400` | Invalid geo parameters, mixed point+bbox modes, or invalid dates |
+| `400` | Invalid geo parameters, mixed point+bbox modes, invalid dates, or invalid `meta` clause |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
@@ -484,6 +487,7 @@ Only locations with populated `h3_cell` and `h3_resolution` contribute.
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
 | `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
+| `meta` | string | — | Repeatable metadata filter clause (same grammar as `GET …/articles/search`; AND across clauses) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 
@@ -517,7 +521,7 @@ Cells are ordered by `article_count` descending, then `h3_cell` ascending.
 
 | Status | When |
 |--------|------|
-| `400` | Invalid bbox, inverted bbox bounds, or invalid dates |
+| `400` | Invalid bbox, inverted bbox bounds, invalid dates, or invalid `meta` clause |
 | `401` | Missing or invalid API key |
 | `403` | API key not valid for this project |
 | `404` | Unknown `project_slug` |
@@ -561,6 +565,7 @@ Matching uses the same H3 rollup predicate as `geo-cells`, so `pagination.total`
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
 | `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
+| `meta` | string | — | Repeatable metadata filter clause (same grammar as `GET …/articles/search`; AND across clauses) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
@@ -648,6 +653,7 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
 | `exclude_meta_type` | string | — | Exclude articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude articles with this category value |
 | `section` | string | — | Include articles with this topic metadata category (editorial section sugar) |
+| `meta` | array of string | `[]` | Advanced metadata filter clauses (same grammar as `GET …/articles/search`; AND across clauses) |
 | `external_source` | string | — | Include articles from this external source (case-insensitive) |
 | `pub_date_from` | string | — | ISO date `YYYY-MM-DD`, inclusive lower bound |
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
@@ -1513,6 +1519,7 @@ Unified, project-scoped mention search across location, person, and organization
 | `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
 | `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
 | `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `meta` | string | — | Repeatable metadata filter clause on parent articles (same grammar as `GET …/articles/search`; AND across clauses) |
 | `location_type` | string | — | Filter location mentions by location type |
 | `person_type` | string | — | Filter person mentions by person type |
 | `organization_type` | string | — | Filter organization mentions by organization type |

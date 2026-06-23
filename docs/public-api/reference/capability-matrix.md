@@ -22,7 +22,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type`, `nature`, `quote` filters |
 | Locations (hub) | ✅ | `GET …/articles/{id}/locations` — map-oriented |
 | Images (hub) | ✅ | `GET …/articles/{id}/images` |
-| Metadata filters | ✅ | On search: legacy `meta_type` / exclude params; repeatable `meta` clauses (AND, OR-within-type, negation) |
+| Metadata filters | ✅ | Legacy `meta_type` / exclude params plus repeatable `meta` clauses on keyword search, semantic search, geo search, geo cells (+ drill-down/batch), and mention search |
 | Geo filters (search) | ✅ | `GET …/articles/geo-search` |
 | Bundle (convenience) | ❌ | Not v1; optional later |
 
@@ -80,7 +80,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Keyword search | ✅ | `GET …/mentions/search` — unified across entity types |
 | Facets | ✅ | `GET …/mentions/facets` — entity types, natures, type values |
 | Detail | ✅ | `GET …/mentions/{entity_type}/{mention_id}` — all occurrences |
-| Article/metadata filters | ✅ | On search: author, source, section, meta include/exclude, date range |
+| Article/metadata filters | ✅ | On search: author, source, section, legacy meta include/exclude, repeatable `meta` clauses, date range |
 | Semantic search | 🚧 | Phase 5 (per-type `…/{type}/semantic-search`) |
 | Geo search | 🚧 | Phase 6 |
 

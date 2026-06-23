@@ -17,8 +17,9 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
+    META_PARAM_DESCRIPTION,
     parse_optional_date,
-    resolve_public_article_metadata_query_filters,
+    resolve_article_metadata_filters,
 )
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.schemas import PaginationOut
@@ -57,6 +58,7 @@ class PublicArticleGeoCellsBatchIn(BaseModel):
         default=None,
         description="Include articles with this subject metadata category (editorial section)",
     )
+    meta: list[str] = Field(default_factory=list, description=META_PARAM_DESCRIPTION)
     external_source: str | None = Field(
         default=None,
         description="Include articles from this external source (case-insensitive)",
@@ -90,13 +92,15 @@ def query_project_articles_in_geo_cells(
         resolved_meta_category,
         resolved_exclude_meta_type,
         resolved_exclude_meta_category,
-    ) = resolve_public_article_metadata_query_filters(
-            section=body.section,
-            meta_type=body.meta_type,
-            meta_category=body.meta_category,
-            exclude_meta_type=body.exclude_meta_type,
-            exclude_meta_category=body.exclude_meta_category,
-        )
+        meta_clauses,
+    ) = resolve_article_metadata_filters(
+        section=body.section,
+        meta_type=body.meta_type,
+        meta_category=body.meta_category,
+        exclude_meta_type=body.exclude_meta_type,
+        exclude_meta_category=body.exclude_meta_category,
+        meta=body.meta,
+    )
     params = PublicArticleGeoCellsBatchParams(
         cells=tuple(body.cells),
         resolution=body.resolution,
@@ -106,6 +110,7 @@ def query_project_articles_in_geo_cells(
         meta_category=resolved_meta_category,
         exclude_meta_type=resolved_exclude_meta_type,
         exclude_meta_category=resolved_exclude_meta_category,
+        meta_clauses=meta_clauses,
         external_source=body.external_source,
         pub_date_from=parse_optional_date(body.pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(body.pub_date_to, param_name="pub_date_to"),

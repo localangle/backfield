@@ -27,6 +27,12 @@ def parse_optional_date(value: str | None, *, param_name: str) -> date | None:
 MAX_META_CLAUSES = 25
 MAX_META_CATEGORIES_PER_CLAUSE = 50
 
+META_PARAM_DESCRIPTION = (
+    "Repeatable metadata filter clause (AND across clauses). "
+    "Forms: type, type:category, type:cat1|cat2 (OR within type), !type or !type:category. "
+    "Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause."
+)
+
 
 def parse_meta_clauses(meta: list[str]) -> tuple[ArticleMetaClause, ...]:
     """Parse repeatable ``meta`` query tokens into metadata filter clauses."""
@@ -171,6 +177,38 @@ def resolve_public_article_metadata_query_filters(
         resolved.meta_category,
         resolved.exclude_meta_type,
         resolved.exclude_meta_category,
+    )
+
+
+def resolve_article_metadata_filters(
+    *,
+    section: str | None = None,
+    meta_type: str | None = None,
+    meta_category: str | None = None,
+    exclude_meta_type: str | None = None,
+    exclude_meta_category: str | None = None,
+    meta: list[str] | None = None,
+) -> tuple[str | None, str | None, str | None, str | None, tuple[ArticleMetaClause, ...]]:
+    """Apply ``section`` sugar, parse ``meta`` clauses, and return normalized metadata filters."""
+    (
+        resolved_meta_type,
+        resolved_meta_category,
+        resolved_exclude_meta_type,
+        resolved_exclude_meta_category,
+    ) = resolve_public_article_metadata_query_filters(
+        section=section,
+        meta_type=meta_type,
+        meta_category=meta_category,
+        exclude_meta_type=exclude_meta_type,
+        exclude_meta_category=exclude_meta_category,
+    )
+    meta_clauses = parse_meta_clauses(meta or [])
+    return (
+        resolved_meta_type,
+        resolved_meta_category,
+        resolved_exclude_meta_type,
+        resolved_exclude_meta_category,
+        meta_clauses,
     )
 
 

@@ -15,7 +15,11 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from core_api.deps import get_session
-from core_api.routers.public.articles.helpers import parse_optional_date
+from core_api.routers.public.articles.helpers import (
+    META_PARAM_DESCRIPTION,
+    parse_meta_clauses,
+    parse_optional_date,
+)
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.schemas import PaginationOut
 
@@ -40,6 +44,7 @@ class PublicArticleSemanticSearchIn(BaseModel):
         default=None,
         description="With exclude_meta_type, exclude articles with this metadata category",
     )
+    meta: list[str] = Field(default_factory=list, description=META_PARAM_DESCRIPTION)
     pub_date_from: str | None = None
     pub_date_to: str | None = None
     limit: int = Field(default=25, ge=1, le=100)
@@ -103,6 +108,7 @@ def search_project_articles_semantic(
         meta_category=body.meta_category,
         exclude_meta_type=body.exclude_meta_type,
         exclude_meta_category=body.exclude_meta_category,
+        meta_clauses=parse_meta_clauses(body.meta),
         pub_date_from=parse_optional_date(body.pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(body.pub_date_to, param_name="pub_date_to"),
         limit=body.limit,

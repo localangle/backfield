@@ -23,6 +23,7 @@ from backfield_entities.public.article_hub import (
     location_mentions_out_by_ids,
 )
 from backfield_entities.public.articles import (
+    ArticleMetaClause,
     PublicArticleOut,
     _article_to_public_out,
     _meta_rows_for_articles,
@@ -45,6 +46,7 @@ class PublicArticleGeoCellsBatchParams:
     meta_category: str | None = None
     exclude_meta_type: str | None = None
     exclude_meta_category: str | None = None
+    meta_clauses: tuple[ArticleMetaClause, ...] = ()
     external_source: str | None = None
     pub_date_from: date | None = None
     pub_date_to: date | None = None
@@ -109,6 +111,7 @@ def _mention_filters(params: PublicArticleGeoCellsBatchParams) -> PublicArticleG
         meta_category=params.meta_category,
         exclude_meta_type=params.exclude_meta_type,
         exclude_meta_category=params.exclude_meta_category,
+        meta_clauses=params.meta_clauses,
         external_source=params.external_source,
         pub_date_from=params.pub_date_from,
         pub_date_to=params.pub_date_to,

@@ -22,6 +22,7 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
+from backfield_entities.public.articles import ArticleMetaClause
 from backfield_entities.public.mentions import (
     PublicMentionSearchParams,
     get_public_mention,
@@ -231,6 +232,36 @@ def test_search_public_mentions_filters_by_author_and_section() -> None:
         )
         assert total == 3
         assert len(items) == 3
+
+
+def test_search_public_mentions_filters_by_meta_clauses() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, _, _, _, _ = _seed_mentions(session)
+
+        _, total = search_public_mentions(
+            session,
+            project_id=project_id,
+            params=PublicMentionSearchParams(
+                meta_clauses=(
+                    ArticleMetaClause(
+                        meta_type="topic",
+                        categories=("local_government_politics",),
+                    ),
+                ),
+            ),
+        )
+        assert total == 3
+
+        _, total = search_public_mentions(
+            session,
+            project_id=project_id,
+            params=PublicMentionSearchParams(
+                meta_clauses=(ArticleMetaClause(meta_type="topic", categories=("sports",)),),
+            ),
+        )
+        assert total == 0
 
 
 def test_search_public_mentions_filters_by_has_canonical_and_q() -> None:

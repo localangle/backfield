@@ -13,6 +13,7 @@ from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
+    META_PARAM_DESCRIPTION,
     parse_has_mentions,
     parse_meta_clauses,
     parse_optional_date,
@@ -73,13 +74,7 @@ def search_project_articles(
         False,
         description="Include a short text preview (max 280 characters) per article",
     ),
-    meta: list[str] = Query(
-        default=[],
-        description=(
-            "Repeatable metadata filter clause (AND across clauses). "
-            "Forms: type, type:category, type:cat1|cat2 (OR within type), !type or !type:category."
-        ),
-    ),
+    meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
 ) -> PaginatedResponse[PublicArticleOut]:
     """Search project articles by keyword, metadata tags, and publication date."""
     outlet = external_source or source
