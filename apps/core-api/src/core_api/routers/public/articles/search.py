@@ -73,10 +73,6 @@ def search_project_articles(
     pub_date_to: str | None = Query(None),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    include_preview: bool = Query(
-        False,
-        description="Include a short text preview (max 280 characters) per article",
-    ),
     include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
     meta: list[str] = Query(default=[], description=META_PARAM_DESCRIPTION),
 ) -> PaginatedResponse[PublicArticleOut]:
@@ -98,7 +94,6 @@ def search_project_articles(
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     items, total = search_public_articles(
         session,

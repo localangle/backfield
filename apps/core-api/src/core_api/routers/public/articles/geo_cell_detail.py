@@ -72,10 +72,6 @@ def list_project_articles_in_geo_cell(
     ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    include_preview: bool = Query(
-        False,
-        description="Include a short text preview (max 280 characters) per article",
-    ),
 ) -> PublicArticleGeoCellDetailResponse:
     """Return articles and in-cell location mentions for one H3 coverage cell."""
     normalized_cell = h3_cell.strip()
@@ -112,7 +108,6 @@ def list_project_articles_in_geo_cell(
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     result = search_public_articles_in_cell(
         session,

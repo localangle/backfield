@@ -444,7 +444,6 @@ def list_public_person_articles(
     limit: int = 25,
     offset: int = 0,
     nature: str | None = None,
-    include_preview: bool = False,
 ) -> tuple[list[PublicArticleOut], int] | None:
     canon = get_public_person_canonical(session, stylebook_id=stylebook_id, person_id=person_id)
     if canon is None:
@@ -465,6 +464,5 @@ def list_public_person_articles(
         pairs=pairs,
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     return items, total

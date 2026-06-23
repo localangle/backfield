@@ -26,10 +26,6 @@ def get_project_article(
     article_id: int,
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
-    include_preview: bool = Query(
-        True,
-        description="Include a short text preview (max 280 characters)",
-    ),
     include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
 ) -> PublicArticleOut:
     """Return one article by id (no full body text)."""
@@ -38,7 +34,6 @@ def get_project_article(
         session,
         project_id=int(project.id),  # type: ignore[arg-type]
         article_id=article_id,
-        include_preview=include_preview,
     )
     if article is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")

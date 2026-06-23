@@ -393,7 +393,6 @@ def list_public_location_articles(
     limit: int = 25,
     offset: int = 0,
     nature: str | None = None,
-    include_preview: bool = False,
 ) -> tuple[list[PublicArticleOut], int] | None:
     canon = get_public_location_canonical(
         session,
@@ -418,6 +417,5 @@ def list_public_location_articles(
         pairs=pairs,
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     return items, total

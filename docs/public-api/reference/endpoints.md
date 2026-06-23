@@ -124,7 +124,6 @@ Advanced metadata filtering uses the repeatable `meta` parameter (see examples b
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview (max 280 characters) |
 | `include` | string | — | Repeatable include token. Supported: `counts` (mention and canonical entity totals, image count, custom records, `embedded` flag) |
 
 **Advanced `meta` example** — news stories that are backward-looking or evergreen, about pro sports, but not obituaries:
@@ -350,7 +349,6 @@ Natural-language article search over **`substrate_article_embedding`** rows. Emb
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview (max 280 characters) |
 | `use_hyde` | boolean | `false` | Generate a hypothetical news passage from the query, embed it, and search against that (HyDE) |
 
 ### Response `200`
@@ -435,8 +433,6 @@ Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). A
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview per article |
-
 ### Response `200`
 
 ```json
@@ -599,8 +595,6 @@ Matching uses the same H3 rollup predicate as `geo-cells`, so `pagination.total`
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview per article |
-
 Forward the same filters active on the coverage request so counts stay consistent.
 
 ### Response `200`
@@ -688,8 +682,6 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
 | `pub_date_to` | string | — | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include truncated text preview per article |
-
 ### Response `200`
 
 ```json
@@ -762,7 +754,6 @@ Return one article by id. Does **not** include full body text. Includes metadata
 
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
-| `include_preview` | boolean | `true` | Include truncated text preview (max 280 characters) |
 | `include` | string | — | Repeatable include token. Supported: `counts` (mention and canonical entity totals, image count, custom records, `embedded` flag) |
 
 ### Response `200`
@@ -1161,8 +1152,6 @@ Paginated distinct articles mentioning a canonical person in the project. Ordere
 | `nature` | string | — | Filter to articles with a mention of this editorial `nature` |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
-| `include_preview` | boolean | `false` | Include a short text preview (max 280 characters) per article |
-
 ### Response `200`
 
 ```json

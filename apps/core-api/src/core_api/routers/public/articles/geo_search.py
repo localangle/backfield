@@ -75,10 +75,6 @@ def search_project_articles_by_geo(
     ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    include_preview: bool = Query(
-        False,
-        description="Include a short text preview (max 280 characters) per article",
-    ),
 ) -> PaginatedResponse[PublicArticleGeoSearchItemOut]:
     """Find articles with location mentions near a point or inside a bounding box."""
     has_center = center_lng is not None and center_lat is not None
@@ -130,7 +126,6 @@ def search_project_articles_by_geo(
             pub_date_to=pub_date_to_parsed,
             limit=limit,
             offset=offset,
-            include_preview=include_preview,
         )
     else:
         if center_lng is None or center_lat is None or radius_miles is None:
@@ -154,7 +149,6 @@ def search_project_articles_by_geo(
             pub_date_to=pub_date_to_parsed,
             limit=limit,
             offset=offset,
-            include_preview=include_preview,
         )
 
     items, total = search_public_articles_by_geo(

@@ -54,7 +54,6 @@ def paginate_public_articles_from_mention_pairs(
     pairs: list[tuple[int, int]],
     limit: int,
     offset: int,
-    include_preview: bool = False,
 ) -> tuple[list[PublicArticleOut], int]:
     page, total = group_and_page_articles_by_mention_pairs(
         session,
@@ -84,7 +83,6 @@ def paginate_public_articles_from_mention_pairs(
             _article_to_public_out(
                 article,
                 metadata=meta_by_id.get(article_id, []),
-                include_preview=include_preview,
             )
         )
     return items, total

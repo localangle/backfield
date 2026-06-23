@@ -34,8 +34,6 @@ Use POST so large `cells[]` arrays are not limited by URL length.
 | `pub_date_to` | string | no | ISO date `YYYY-MM-DD`, inclusive upper bound |
 | `limit` | integer | no | Page size (1–100, default 25) |
 | `offset` | integer | no | Offset for pagination (default 0) |
-| `include_preview` | boolean | no | Include truncated text preview per article (default false) |
-
 Example:
 
 ```json
@@ -45,7 +43,6 @@ Example:
   "meta_type": "subject",
   "meta_category": "public_safety_crime",
   "pub_date_from": "2024-01-01",
-  "include_preview": true,
   "limit": 100,
   "offset": 0
 }

@@ -38,7 +38,6 @@ class PublicArticleSemanticSearchParams:
     pub_date_to: date | None = None
     limit: int = 25
     offset: int = 0
-    include_preview: bool = False
 
 
 def _embedding_rows_for_project(
@@ -140,7 +139,6 @@ def search_public_articles_semantic(
             **_article_to_public_out(
                 article,
                 metadata=meta_by_id.get(int(article.id), []),  # type: ignore[arg-type]
-                include_preview=params.include_preview,
             ).model_dump(),
             score=score,
         )

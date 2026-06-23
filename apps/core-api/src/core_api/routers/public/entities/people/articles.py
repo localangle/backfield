@@ -38,10 +38,6 @@ def list_project_person_articles(
     ),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    include_preview: bool = Query(
-        False,
-        description="Include a short text preview (max 280 characters) per article",
-    ),
 ) -> PublicPersonArticlesOut:
     """Return paginated articles mentioning a canonical person in this project."""
     stylebook_id, project_id = resolve_public_people_scope(session, project)
@@ -54,7 +50,6 @@ def list_project_person_articles(
         nature=nature,
         limit=limit,
         offset=offset,
-        include_preview=include_preview,
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")

@@ -49,10 +49,6 @@ class PublicArticleSemanticSearchIn(BaseModel):
     pub_date_to: str | None = None
     limit: int = Field(default=25, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
-    include_preview: bool = Field(
-        default=False,
-        description="Include a short text preview (max 280 characters) per article",
-    )
     use_hyde: bool = Field(
         default=False,
         description=(
@@ -113,7 +109,6 @@ def search_project_articles_semantic(
         pub_date_to=parse_optional_date(body.pub_date_to, param_name="pub_date_to"),
         limit=body.limit,
         offset=body.offset,
-        include_preview=body.include_preview,
     )
     items, total = search_public_articles_semantic(
         session,

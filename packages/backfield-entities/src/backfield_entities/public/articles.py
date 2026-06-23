@@ -75,7 +75,6 @@ class PublicArticleSearchParams:
     pub_date_to: date | None = None
     limit: int = 25
     offset: int = 0
-    include_preview: bool = False
 
 
 def article_preview(text: str, *, max_len: int = PUBLIC_ARTICLE_PREVIEW_MAX_LEN) -> str:
@@ -150,9 +149,8 @@ def _article_to_public_out(
     article: SubstrateArticle,
     *,
     metadata: list[PublicArticleMetaOut],
-    include_preview: bool,
 ) -> PublicArticleOut:
-    preview = article_preview(article.text) if include_preview else None
+    preview = article_preview(article.text)
     source = article_public_source(
         external_source=article.external_source,
         url=article.url,
@@ -355,7 +353,6 @@ def search_public_articles(
         _article_to_public_out(
             article,
             metadata=meta_by_id.get(int(article.id), []),  # type: ignore[arg-type]
-            include_preview=params.include_preview,
         )
         for article in articles
     ]
@@ -367,7 +364,6 @@ def get_public_article(
     *,
     project_id: int,
     article_id: int,
-    include_preview: bool = True,
 ) -> PublicArticleOut | None:
     article = session.exec(
         select(SubstrateArticle).where(
@@ -382,5 +378,4 @@ def get_public_article(
     return _article_to_public_out(
         article,
         metadata=meta_by_id.get(int(article.id), []),
-        include_preview=include_preview,
     )

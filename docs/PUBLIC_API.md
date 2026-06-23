@@ -156,10 +156,10 @@ The only supported `include` token today is **`counts`**: a lightweight summary 
 
 - `id`, `headline`, `url`, `author`, `pub_date`, `source` (`id`, `name`)
 - **`metadata`**: tags from `substrate_article_meta` (`meta_type`, `category`, `confidence`, …)
-- Optional **`preview`**: short truncated snippet (max 280 characters; not full body)
+- Optional **`preview`**: short truncated snippet (max 280 characters; not full body; always included)
 - **`images`**: up to 10 inline image rows (`id`, `image_id`, `url`, `caption`); use `GET …/images` when you need pagination or the full set
 
-**Query:** `include_preview` (default `true`); `include=counts` (optional; adds `counts` and `embedded`).
+**Query:** `include=counts` (optional; adds `counts` and `embedded`).
 
 **Optional `counts` block** (when `include=counts`):
 
@@ -229,8 +229,6 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 - `section` — shorthand for `meta=topic:<value>`
 - `pub_date_from`, `pub_date_to` — ISO dates (`YYYY-MM-DD`)
 - Standard pagination
-- `include_preview` (default `false` on search)
-
 **Semantic search (`POST …/articles/semantic-search`):**
 
 - `query` — natural-language search text (required JSON body field)

@@ -52,7 +52,6 @@ class PublicArticleGeoCellsBatchParams:
     pub_date_to: date | None = None
     limit: int = 25
     offset: int = 0
-    include_preview: bool = False
 
 
 class PublicArticleGeoCellTotalOut(BaseModel):
@@ -331,7 +330,6 @@ def search_public_articles_in_cells(
                 article=_article_to_public_out(
                     article,
                     metadata=meta_by_id.get(article_id, []),
-                    include_preview=params.include_preview,
                 ),
                 matching_locations=matching_locations,
                 matched_cells=matched_cells,

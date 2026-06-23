@@ -603,7 +603,6 @@ def test_public_article_geo_cells_batch(public_client: TestClient) -> None:
         json={
             "cells": [cell_id],
             "resolution": resolution,
-            "include_preview": False,
             "limit": 100,
             "offset": 0,
         },
