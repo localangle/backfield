@@ -453,6 +453,8 @@ def list_public_organization_articles(
     limit: int = 25,
     offset: int = 0,
     nature: str | None = None,
+    pub_date_from: date | None = None,
+    pub_date_to: date | None = None,
 ) -> tuple[list[PublicArticleOut], int] | None:
     canon = get_public_organization_canonical(
         session,
@@ -471,6 +473,8 @@ def list_public_organization_articles(
         canonical_id=str(canon.id),
         project_id=project_id,
         nature=nature,
+        pub_date_from=pub_date_from,
+        pub_date_to=pub_date_to,
     )
     items, total = paginate_public_articles_from_mention_pairs(
         session,

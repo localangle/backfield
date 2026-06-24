@@ -1246,6 +1246,8 @@ Paginated distinct articles mentioning a canonical person in the project. Ordere
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `nature` | string | — | Filter to articles with a mention of this editorial `nature` |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
 ### Response `200`

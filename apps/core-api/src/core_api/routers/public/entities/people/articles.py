@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from core_api.deps import get_session
+from core_api.routers.public.articles.helpers import parse_optional_date
 from core_api.routers.public.deps import get_public_project
 from core_api.routers.public.entities.people.helpers import (
     parse_person_id,
@@ -36,6 +37,8 @@ def list_project_person_articles(
         None,
         description="Filter to articles with a mention of this editorial nature",
     ),
+    pub_date_from: str | None = Query(None),
+    pub_date_to: str | None = Query(None),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> PublicPersonArticlesOut:
@@ -48,6 +51,8 @@ def list_project_person_articles(
         project_id=project_id,
         person_id=parsed_id,
         nature=nature,
+        pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
+        pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
         limit=limit,
         offset=offset,
     )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from backfield_db import SubstrateArticle
 from sqlmodel import Session, col, select
 
@@ -23,6 +25,8 @@ def collect_mention_article_pairs(
     canonical_id: str,
     project_id: int,
     nature: str | None = None,
+    pub_date_from: date | None = None,
+    pub_date_to: date | None = None,
 ) -> list[tuple[int, int]]:
     filters = [
         entity_canonical_col == canonical_id,
@@ -34,6 +38,10 @@ def collect_mention_article_pairs(
     nature_value = (nature or "").strip()
     if nature_value:
         filters.append(mention_model.nature == nature_value)
+    if pub_date_from is not None:
+        filters.append(col(SubstrateArticle.pub_date) >= pub_date_from)
+    if pub_date_to is not None:
+        filters.append(col(SubstrateArticle.pub_date) <= pub_date_to)
 
     rows = session.exec(
         select(mention_model.id, mention_model.article_id)

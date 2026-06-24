@@ -239,6 +239,55 @@ def test_list_public_person_articles() -> None:
         assert len(filtered) == 1
 
 
+def test_list_public_person_articles_filters_by_pub_date() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, mayor_id = _seed_people(session)
+        older = SubstrateArticle(
+            project_id=project_id,
+            headline="Older story",
+            text="Body",
+            pub_date=date(2024, 1, 1),
+        )
+        session.add(older)
+        session.commit()
+        session.refresh(older)
+        person = session.exec(
+            select(SubstratePerson).where(
+                SubstratePerson.stylebook_person_canonical_id == mayor_id
+            )
+        ).one()
+        session.add(
+            SubstratePersonMention(
+                article_id=int(older.id),  # type: ignore[arg-type]
+                person_id=int(person.id),  # type: ignore[arg-type]
+                nature="subject",
+            )
+        )
+        session.commit()
+
+        all_result = list_public_person_articles(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+        )
+        assert all_result is not None
+        assert all_result[1] == 2
+
+        filtered = list_public_person_articles(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            pub_date_from=date(2024, 3, 1),
+        )
+        assert filtered is not None
+        assert filtered[1] == 1
+        assert filtered[0][0].headline == "Budget vote"
+
+
 def test_list_public_entity_connections_for_person() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

@@ -1245,6 +1245,14 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
     assert abody["pagination"]["total"] == 1
     assert abody["items"][0]["headline"] == "City council votes on budget"
 
+    filtered_articles = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/articles",
+        headers=headers,
+        params={"pub_date_from": "2025-01-01"},
+    )
+    assert filtered_articles.status_code == 200
+    assert filtered_articles.json()["pagination"]["total"] == 0
+
     connections = public_client.get(
         f"/public/v1/projects/general/people/{person_id}/connections",
         headers=headers,
@@ -1385,6 +1393,14 @@ def test_public_organizations_list_and_search(public_client: TestClient) -> None
     assert articles.status_code == 200
     assert articles.json()["pagination"]["total"] == 1
     assert articles.json()["items"][0]["headline"] == "City council votes on budget"
+
+    filtered_articles = public_client.get(
+        f"/public/v1/projects/general/organizations/{organization_id}/articles",
+        headers=headers,
+        params={"pub_date_to": "2024-01-01"},
+    )
+    assert filtered_articles.status_code == 200
+    assert filtered_articles.json()["pagination"]["total"] == 0
 
     connections = public_client.get(
         f"/public/v1/projects/general/organizations/{organization_id}/connections",
