@@ -29,6 +29,7 @@ from backfield_entities.public.locations import (
     list_public_location_mentions,
     search_public_locations,
 )
+from backfield_entities.public.mention_filters import PublicEntityMentionListParams
 from backfield_entities.public.stylebook_scope import list_public_location_type_values
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -239,7 +240,7 @@ def test_list_public_location_mentions_filters_by_quote() -> None:
             stylebook_id=stylebook_id,
             project_id=project_id,
             location_id=city_hall_id,
-            quotes_only=True,
+            params=PublicEntityMentionListParams(quotes_only=True),
         )
         assert quoted is not None
         items, total = quoted

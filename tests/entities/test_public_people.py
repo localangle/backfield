@@ -16,6 +16,7 @@ from backfield_db import (
 )
 from backfield_entities.catalog.bootstrap import ensure_default_stylebook_for_organization
 from backfield_entities.public.connections import list_public_entity_connections
+from backfield_entities.public.mention_filters import PublicEntityMentionListParams
 from backfield_entities.public.people import (
     PublicPersonSearchParams,
     get_public_person,
@@ -66,6 +67,7 @@ def _seed_people(session: Session) -> tuple[int, int, str]:
         project_id=project_id,
         headline="Budget vote",
         text="Body",
+        author="Jane Reporter",
         pub_date=date(2024, 3, 1),
     )
     session.add(article)
@@ -159,6 +161,53 @@ def test_get_public_person_and_mentions() -> None:
         assert items[0].nature == "subject"
 
 
+def test_list_public_person_mentions_filters_by_nature_and_author() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        stylebook_id, project_id, mayor_id = _seed_people(session)
+
+        by_nature = list_public_person_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            params=PublicEntityMentionListParams(nature="subject"),
+        )
+        assert by_nature is not None
+        assert by_nature[1] == 1
+
+        no_match = list_public_person_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            params=PublicEntityMentionListParams(nature="actor"),
+        )
+        assert no_match is not None
+        assert no_match[1] == 0
+
+        by_author = list_public_person_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            params=PublicEntityMentionListParams(author="Jane Reporter"),
+        )
+        assert by_author is not None
+        assert by_author[1] == 1
+
+        wrong_author = list_public_person_mentions(
+            session,
+            stylebook_id=stylebook_id,
+            project_id=project_id,
+            person_id=mayor_id,
+            params=PublicEntityMentionListParams(author="Other Reporter"),
+        )
+        assert wrong_author is not None
+        assert wrong_author[1] == 0
+
+
 def test_list_public_person_articles() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)
@@ -175,7 +224,7 @@ def test_list_public_person_articles() -> None:
         items, total = result
         assert total == 1
         assert items[0].headline == "Budget vote"
-        assert items[0].author is None
+        assert items[0].author == "Jane Reporter"
 
         filtered_result = list_public_person_articles(
             session,

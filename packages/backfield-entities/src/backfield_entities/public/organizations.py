@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
-from typing import Literal
 
 from backfield_db import (
     StylebookOrganizationCanonical,
@@ -26,8 +25,11 @@ from backfield_entities.public.entity_articles import (
 )
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
-    maybe_quotes_only_mention_filters,
     organization_evidence_by_mention_id,
+)
+from backfield_entities.public.mention_filters import (
+    PublicEntityMentionListParams,
+    apply_entity_mention_list_filters,
 )
 from backfield_entities.public.stylebook_scope import (
     get_public_organization_canonical,
@@ -302,12 +304,9 @@ def list_public_organization_mentions(
     stylebook_id: int,
     project_id: int,
     organization_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    sort: Literal["article", "created_at"] = "created_at",
-    sort_direction: Literal["asc", "desc"] = "desc",
-    quotes_only: bool = False,
+    params: PublicEntityMentionListParams | None = None,
 ) -> tuple[list[PublicOrganizationMentionOut], int] | None:
+    list_params = params or PublicEntityMentionListParams()
     canon = get_public_organization_canonical(
         session,
         stylebook_id=stylebook_id,
@@ -323,49 +322,57 @@ def list_public_organization_mentions(
         SubstrateArticle.project_id == project_id,
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
-    base_where.extend(
-        maybe_quotes_only_mention_filters(
-            SubstrateOrganizationMention.id,
-            occurrence_model=SubstrateOrganizationMentionOccurrence,
-            mention_fk_column="organization_mention_id",
-            quotes_only=quotes_only,
-        )
-    )
 
-    total = int(
-        session.scalar(
-            select(func.count())
-            .select_from(SubstrateOrganizationMention)
-            .join(SubstrateArticle, SubstrateArticle.id == SubstrateOrganizationMention.article_id)
-            .join(
-                SubstrateOrganization,
-                SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
-            )
-            .where(*base_where)
+    count_stmt = (
+        select(func.count())
+        .select_from(SubstrateOrganizationMention)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstrateOrganizationMention.article_id)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
         )
-        or 0
+        .where(*base_where)
     )
+    count_stmt = apply_entity_mention_list_filters(
+        count_stmt,
+        params=list_params,
+        mention_nature_col=SubstrateOrganizationMention.nature,
+        mention_id_col=SubstrateOrganizationMention.id,
+        occurrence_model=SubstrateOrganizationMentionOccurrence,
+        mention_fk_column="organization_mention_id",
+    )
+    total = int(session.scalar(count_stmt) or 0)
 
-    descending = sort_direction != "asc"
-    if sort == "article":
+    descending = list_params.sort_direction != "asc"
+    if list_params.sort == "article":
         headline_sort = col(SubstrateArticle.headline)
         order_by = headline_sort.desc() if descending else headline_sort.asc()
     else:
         ts = col(SubstrateOrganizationMention.updated_at)
         order_by = ts.desc() if descending else ts.asc()
 
+    select_stmt = (
+        select(SubstrateOrganizationMention, SubstrateArticle, SubstrateOrganization)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstrateOrganizationMention.article_id)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
+        )
+        .where(*base_where)
+    )
+    select_stmt = apply_entity_mention_list_filters(
+        select_stmt,
+        params=list_params,
+        mention_nature_col=SubstrateOrganizationMention.nature,
+        mention_id_col=SubstrateOrganizationMention.id,
+        occurrence_model=SubstrateOrganizationMentionOccurrence,
+        mention_fk_column="organization_mention_id",
+    )
     triples = list(
         session.exec(
-            select(SubstrateOrganizationMention, SubstrateArticle, SubstrateOrganization)
-            .join(SubstrateArticle, SubstrateArticle.id == SubstrateOrganizationMention.article_id)
-            .join(
-                SubstrateOrganization,
-                SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
-            )
-            .where(*base_where)
-            .order_by(order_by)
-            .offset(offset)
-            .limit(limit)
+            select_stmt.order_by(order_by)
+            .offset(list_params.offset)
+            .limit(list_params.limit)
         ).all()
     )
     mention_ids = [int(m.id) for m, _, _ in triples if m.id is not None]  # type: ignore[union-attr]

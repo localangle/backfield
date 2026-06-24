@@ -1223,6 +1223,7 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
     mbody = mentions.json()
     assert mbody["label"] == "Jane Doe"
     assert mbody["pagination"]["total"] == 1
+    assert mbody["pagination"]["limit"] == 25
     assert mbody["items"][0]["article"]["headline"] == "City council votes on budget"
     assert mbody["items"][0]["nature"] == "subject"
 
@@ -1253,6 +1254,45 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
     assert len(conns) == 2
     assert any(c["nature"] == "works_at" for c in conns)
     assert any(c["nature"] == "employs" for c in conns)
+
+
+def test_public_entity_mentions_filters(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    listed = public_client.get("/public/v1/projects/general/people", headers=headers)
+    assert listed.status_code == 200
+    person_id = listed.json()["items"][0]["id"]
+
+    by_nature = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/mentions",
+        headers=headers,
+        params={"nature": "subject"},
+    )
+    assert by_nature.status_code == 200
+    assert by_nature.json()["pagination"]["total"] == 1
+
+    no_nature = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/mentions",
+        headers=headers,
+        params={"nature": "actor"},
+    )
+    assert no_nature.status_code == 200
+    assert no_nature.json()["pagination"]["total"] == 0
+
+    by_author = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/mentions",
+        headers=headers,
+        params={"author": "Jane Doe"},
+    )
+    assert by_author.status_code == 200
+    assert by_author.json()["pagination"]["total"] == 1
+
+    default_limit = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/mentions",
+        headers=headers,
+    )
+    assert default_limit.status_code == 200
+    assert default_limit.json()["pagination"]["limit"] == 25
 
 
 def test_public_person_not_found(public_client: TestClient) -> None:

@@ -321,7 +321,7 @@ Public responses expose the **resolved editorial view**: Stylebook canonical fie
 | `GET` | `…/{type}/search` | Keyword / filter search |
 | `GET` | `…/{type}/types` | Distinct type values for filters (people in v1) |
 | `GET` | `…/{type}/{id}` | Canonical detail |
-| `GET` | `…/{type}/{id}/mentions` | Paginated mention evidence; optional `quote=true` |
+| `GET` | `…/{type}/{id}/mentions` | Paginated mention evidence; same article/mention filters as `…/mentions/search`, plus `sort` / `sort_direction` |
 | `GET` | `…/{type}/{id}/articles` | Paginated articles mentioning the canonical |
 | `GET` | `…/{type}/{id}/connections` | Stylebook connections |
 | `POST` | `…/{type}/semantic-search` | Natural-language mention search |

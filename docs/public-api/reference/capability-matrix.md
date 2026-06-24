@@ -43,7 +43,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Geo search | ✅ | `GET …/locations/geo-search` (canonical geometry; point+radius or bbox) |
 | Type facets | ✅ | `GET …/locations/types` |
 | Detail | ✅ | UUID canonical id; includes geometry |
-| Mentions | ✅ | `GET …/locations/{id}/mentions` |
+| Mentions | ✅ | `GET …/locations/{id}/mentions` — article/mention filters + `sort`, `sort_direction`, `quote` |
 | Articles | ✅ | `GET …/locations/{id}/articles` |
 | Connections | ✅ | `GET …/locations/{id}/connections` |
 | Semantic search | 🚧 | Phase 5 |
@@ -55,7 +55,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Keyword search | ✅ | `GET …/people` and `GET …/people/search` |
 | Type facets | ✅ | `GET …/people/types` |
 | Detail | ✅ | UUID canonical id |
-| Mentions | ✅ | `GET …/people/{id}/mentions` |
+| Mentions | ✅ | `GET …/people/{id}/mentions` — article/mention filters + `sort`, `sort_direction`, `quote` |
 | Articles | ✅ | `GET …/people/{id}/articles` |
 | Connections | ✅ | `GET …/people/{id}/connections` |
 | Semantic search | 🚧 | Phase 5 |
@@ -68,7 +68,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Keyword search | ✅ | `GET …/organizations` and `GET …/organizations/search` |
 | Type facets | ✅ | `GET …/organizations/types` |
 | Detail | ✅ | UUID canonical id |
-| Mentions | ✅ | `GET …/organizations/{id}/mentions` |
+| Mentions | ✅ | `GET …/organizations/{id}/mentions` — article/mention filters + `sort`, `sort_direction`, `quote` |
 | Articles | ✅ | `GET …/organizations/{id}/articles` |
 | Connections | ✅ | `GET …/organizations/{id}/connections` |
 | Semantic search | 🚧 | Phase 5 |

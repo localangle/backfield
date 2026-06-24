@@ -1148,9 +1148,23 @@ Paginated mention evidence for one canonical person, scoped to the project. Incl
 |------|------|---------|-------------|
 | `sort` | string | `created_at` | `created_at` or `article` (headline) |
 | `sort_direction` | string | `desc` | `asc` or `desc` |
+| `nature` | string | — | Filter by mention nature (exact match) |
+| `author` | string | — | Filter by article byline (case-insensitive exact match) |
+| `external_source` | string | — | Filter by publication/outlet name |
+| `source` | string | — | Deprecated alias for `external_source` |
+| `section` | string | — | Include mentions in articles with this subject metadata category |
+| `meta_type` | string | — | Include mentions in articles with this metadata type |
+| `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
+| `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `meta` | string | — | Repeatable metadata filter clause on parent articles (same grammar as `GET …/articles/search`; AND across clauses) |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
 | `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
-| `limit` | integer | `50` | Page size (1–100) |
+| `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
+
+Article-level filters match `GET …/mentions/search`. Entity mention endpoints additionally support `sort` and `sort_direction`.
 
 ### Response `200`
 
@@ -1176,7 +1190,7 @@ Paginated mention evidence for one canonical person, scoped to the project. Incl
       "evidence": { "mention_text": "Jane Doe", "quote": false, "start_char": null, "end_char": null }
     }
   ],
-  "pagination": { "limit": 50, "offset": 0, "total": 1 }
+  "pagination": { "limit": 25, "offset": 0, "total": 1 }
 }
 ```
 
@@ -1379,9 +1393,23 @@ Paginated mention evidence for one canonical organization, scoped to the project
 |------|------|---------|-------------|
 | `sort` | string | `created_at` | `created_at` or `article` (headline) |
 | `sort_direction` | string | `desc` | `asc` or `desc` |
+| `nature` | string | — | Filter by mention nature (exact match) |
+| `author` | string | — | Filter by article byline (case-insensitive exact match) |
+| `external_source` | string | — | Filter by publication/outlet name |
+| `source` | string | — | Deprecated alias for `external_source` |
+| `section` | string | — | Include mentions in articles with this subject metadata category |
+| `meta_type` | string | — | Include mentions in articles with this metadata type |
+| `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
+| `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `meta` | string | — | Repeatable metadata filter clause on parent articles (same grammar as `GET …/articles/search`; AND across clauses) |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
 | `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
-| `limit` | integer | `50` | Page size (1–100) |
+| `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
+
+Article-level filters match `GET …/mentions/search`. Entity mention endpoints additionally support `sort` and `sort_direction`.
 
 ### Response `200`
 
@@ -1405,7 +1433,7 @@ Paginated mention evidence for one canonical organization, scoped to the project
       "evidence": { "mention_text": "City Council", "quote": false, "start_char": null, "end_char": null }
     }
   ],
-  "pagination": { "limit": 50, "offset": 0, "total": 1 }
+  "pagination": { "limit": 25, "offset": 0, "total": 1 }
 }
 ```
 
@@ -1555,7 +1583,29 @@ Single location object (same fields as list items).
 
 ## GET `/public/v1/projects/{project_slug}/locations/{location_id}/mentions`
 
-Paginated mention evidence for one canonical location in the project. Supports `sort` (`created_at` or `article`), `sort_direction`, and `quote=true` to limit to mentions whose first evidence occurrence is quoted.
+Paginated mention evidence for one canonical location in the project. Supports the same article-level and mention filters as `GET …/mentions/search`, plus entity-specific `sort` (`created_at` or `article`) and `sort_direction`.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `sort` | string | `created_at` | `created_at` or `article` (headline) |
+| `sort_direction` | string | `desc` | `asc` or `desc` |
+| `nature` | string | — | Filter by mention nature (exact match) |
+| `author` | string | — | Filter by article byline (case-insensitive exact match) |
+| `external_source` | string | — | Filter by publication/outlet name |
+| `source` | string | — | Deprecated alias for `external_source` |
+| `section` | string | — | Include mentions in articles with this subject metadata category |
+| `meta_type` | string | — | Include mentions in articles with this metadata type |
+| `meta_category` | string | — | With `meta_type`, include mentions in articles with this category |
+| `exclude_meta_type` | string | — | Exclude mentions in articles with a metadata row of this type |
+| `exclude_meta_category` | string | — | With `exclude_meta_type`, exclude mentions in articles with this category |
+| `meta` | string | — | Repeatable metadata filter clause on parent articles (same grammar as `GET …/articles/search`; AND across clauses) |
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
+| `limit` | integer | `25` | Page size (1–100) |
+| `offset` | integer | `0` | Offset for pagination |
 
 ---
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
-from typing import Literal
 
 from backfield_db import (
     StylebookPersonCanonical,
@@ -26,8 +25,11 @@ from backfield_entities.public.entity_articles import (
 )
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
-    maybe_quotes_only_mention_filters,
     person_evidence_by_mention_id,
+)
+from backfield_entities.public.mention_filters import (
+    PublicEntityMentionListParams,
+    apply_entity_mention_list_filters,
 )
 from backfield_entities.public.stylebook_scope import (
     get_public_person_canonical,
@@ -361,12 +363,9 @@ def list_public_person_mentions(
     stylebook_id: int,
     project_id: int,
     person_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    sort: Literal["article", "created_at"] = "created_at",
-    sort_direction: Literal["asc", "desc"] = "desc",
-    quotes_only: bool = False,
+    params: PublicEntityMentionListParams | None = None,
 ) -> tuple[list[PublicPersonMentionOut], int] | None:
+    list_params = params or PublicEntityMentionListParams()
     canon = get_public_person_canonical(session, stylebook_id=stylebook_id, person_id=person_id)
     if canon is None:
         return None
@@ -378,43 +377,51 @@ def list_public_person_mentions(
         SubstrateArticle.project_id == project_id,
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
-    base_where.extend(
-        maybe_quotes_only_mention_filters(
-            SubstratePersonMention.id,
-            occurrence_model=SubstratePersonMentionOccurrence,
-            mention_fk_column="person_mention_id",
-            quotes_only=quotes_only,
-        )
-    )
 
-    total = int(
-        session.scalar(
-            select(func.count())
-            .select_from(SubstratePersonMention)
-            .join(SubstrateArticle, SubstrateArticle.id == SubstratePersonMention.article_id)
-            .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
-            .where(*base_where)
-        )
-        or 0
+    count_stmt = (
+        select(func.count())
+        .select_from(SubstratePersonMention)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstratePersonMention.article_id)
+        .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+        .where(*base_where)
     )
+    count_stmt = apply_entity_mention_list_filters(
+        count_stmt,
+        params=list_params,
+        mention_nature_col=SubstratePersonMention.nature,
+        mention_id_col=SubstratePersonMention.id,
+        occurrence_model=SubstratePersonMentionOccurrence,
+        mention_fk_column="person_mention_id",
+    )
+    total = int(session.scalar(count_stmt) or 0)
 
-    descending = sort_direction != "asc"
-    if sort == "article":
+    descending = list_params.sort_direction != "asc"
+    if list_params.sort == "article":
         headline_sort = col(SubstrateArticle.headline)
         order_by = headline_sort.desc() if descending else headline_sort.asc()
     else:
         ts = col(SubstratePersonMention.updated_at)
         order_by = ts.desc() if descending else ts.asc()
 
+    select_stmt = (
+        select(SubstratePersonMention, SubstrateArticle, SubstratePerson)
+        .join(SubstrateArticle, SubstrateArticle.id == SubstratePersonMention.article_id)
+        .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
+        .where(*base_where)
+    )
+    select_stmt = apply_entity_mention_list_filters(
+        select_stmt,
+        params=list_params,
+        mention_nature_col=SubstratePersonMention.nature,
+        mention_id_col=SubstratePersonMention.id,
+        occurrence_model=SubstratePersonMentionOccurrence,
+        mention_fk_column="person_mention_id",
+    )
     triples = list(
         session.exec(
-            select(SubstratePersonMention, SubstrateArticle, SubstratePerson)
-            .join(SubstrateArticle, SubstrateArticle.id == SubstratePersonMention.article_id)
-            .join(SubstratePerson, SubstratePerson.id == SubstratePersonMention.person_id)
-            .where(*base_where)
-            .order_by(order_by)
-            .offset(offset)
-            .limit(limit)
+            select_stmt.order_by(order_by)
+            .offset(list_params.offset)
+            .limit(list_params.limit)
         ).all()
     )
     mention_ids = [int(m.id) for m, _, _ in triples if m.id is not None]  # type: ignore[union-attr]
