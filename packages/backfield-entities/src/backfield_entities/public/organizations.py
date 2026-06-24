@@ -23,6 +23,7 @@ from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
 )
+from backfield_entities.public.entity_counts import PublicEntityCountsOut
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     organization_evidence_by_mention_id,
@@ -56,7 +57,7 @@ class PublicOrganizationOut(BaseModel):
     label: str
     stylebook_slug: str | None = None
     organization_type: str | None = None
-    mention_count: int = 0
+    counts: PublicEntityCountsOut = PublicEntityCountsOut()
 
 
 class PublicOrganizationMentionArticleOut(BaseModel):
@@ -91,6 +92,7 @@ def _organization_to_public_out(
     canon: StylebookOrganizationCanonical,
     *,
     mention_count: int = 0,
+    story_count: int = 0,
     stylebook_slug: str | None = None,
 ) -> PublicOrganizationOut:
     return PublicOrganizationOut(
@@ -99,7 +101,7 @@ def _organization_to_public_out(
         label=str(canon.label),
         stylebook_slug=stylebook_slug,
         organization_type=canon.organization_type,
-        mention_count=mention_count,
+        counts=PublicEntityCountsOut(mentions=mention_count, stories=story_count),
     )
 
 
@@ -115,6 +117,34 @@ def _mention_counts_by_canonical(
         select(
             SubstrateOrganization.stylebook_organization_canonical_id,
             func.count(col(SubstrateOrganizationMention.id)),
+        )
+        .select_from(SubstrateOrganizationMention)
+        .join(
+            SubstrateOrganization,
+            SubstrateOrganization.id == SubstrateOrganizationMention.organization_id,
+        )
+        .where(
+            SubstrateOrganization.project_id == project_id,
+            col(SubstrateOrganization.stylebook_organization_canonical_id).in_(canonical_ids),
+            SubstrateOrganizationMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstrateOrganization.stylebook_organization_canonical_id)
+    ).all()
+    return {str(cid): int(cnt) for cid, cnt in rows if cid is not None}
+
+
+def _story_counts_by_canonical(
+    session: Session,
+    *,
+    project_id: int,
+    canonical_ids: list[str],
+) -> dict[str, int]:
+    if not canonical_ids:
+        return {}
+    rows = session.exec(
+        select(
+            SubstrateOrganization.stylebook_organization_canonical_id,
+            func.count(func.distinct(SubstrateOrganizationMention.article_id)),
         )
         .select_from(SubstrateOrganizationMention)
         .join(
@@ -259,11 +289,17 @@ def search_public_organizations(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=canonical_ids,
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _organization_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
         )
         for row in rows
@@ -290,10 +326,16 @@ def get_public_organization(
         project_id=project_id,
         canonical_ids=[str(canon.id)],
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=[str(canon.id)],
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     return _organization_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
+        story_count=story_counts.get(str(canon.id), 0),
         stylebook_slug=stylebook_slug,
     )
 

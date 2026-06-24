@@ -1191,7 +1191,7 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
     assert body["pagination"]["total"] == 1
     person = body["items"][0]
     assert person["label"] == "Jane Doe"
-    assert person["mention_count"] == 1
+    assert person["counts"]["mentions"] == 1
     assert person["stylebook_slug"] == "default"
     person_id = person["id"]
 
@@ -1315,7 +1315,7 @@ def test_public_organizations_list_and_search(public_client: TestClient) -> None
     assert body["pagination"]["total"] == 1
     organization = body["items"][0]
     assert organization["label"] == "City Council"
-    assert organization["mention_count"] == 1
+    assert organization["counts"]["mentions"] == 1
     organization_id = organization["id"]
 
     searched = public_client.get(
@@ -1388,7 +1388,7 @@ def test_public_locations_list_search_and_geo(public_client: TestClient) -> None
     assert body["pagination"]["total"] == 1
     location = body["items"][0]
     assert location["label"] == "City Hall"
-    assert location["mention_count"] == 1
+    assert location["counts"]["mentions"] == 1
     assert location["geometry_json"]["type"] == "Point"
     location_id = location["id"]
 

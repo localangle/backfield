@@ -20,6 +20,7 @@ from backfield_entities.public.locations import (
     PublicLocationSearchParams,
     _location_to_public_out,
     _mention_counts_by_canonical,
+    _story_counts_by_canonical,
     location_filters,
 )
 from backfield_entities.public.stylebook_scope import stylebook_slugs_by_id
@@ -265,11 +266,17 @@ def search_public_locations_by_geo(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=canonical_ids,
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _location_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
         )
         for row in page_rows

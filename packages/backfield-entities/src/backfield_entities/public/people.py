@@ -23,6 +23,7 @@ from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
 )
+from backfield_entities.public.entity_counts import PublicEntityCountsOut
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     person_evidence_by_mention_id,
@@ -72,8 +73,7 @@ class PublicPersonOut(BaseModel):
     affiliation: str | None = None
     public_figure: bool = False
     person_type: str | None = None
-    mention_count: int = 0
-    story_count: int = 0
+    counts: PublicEntityCountsOut = PublicEntityCountsOut()
 
 
 class PublicPersonMentionArticleOut(BaseModel):
@@ -125,8 +125,7 @@ def _person_to_public_out(
         affiliation=canon.affiliation,
         public_figure=bool(canon.public_figure),
         person_type=canon.person_type,
-        mention_count=mention_count,
-        story_count=story_count,
+        counts=PublicEntityCountsOut(mentions=mention_count, stories=story_count),
     )
 
 
@@ -316,11 +315,17 @@ def search_public_people(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=canonical_ids,
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _person_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
         )
         for row in rows

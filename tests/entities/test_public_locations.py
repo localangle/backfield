@@ -133,7 +133,7 @@ def test_search_public_locations_filters_by_name_and_type() -> None:
         )
         assert total == 1
         assert items[0].id == city_hall_id
-        assert items[0].mention_count == 1
+        assert items[0].counts.mentions == 1
         assert items[0].geometry_json is not None
 
         items, total = search_public_locations(

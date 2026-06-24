@@ -104,7 +104,7 @@ def test_search_public_organizations_filters_by_name_and_type() -> None:
         )
         assert total == 1
         assert items[0].id == council_id
-        assert items[0].mention_count == 1
+        assert items[0].counts.mentions == 1
 
         items, total = search_public_organizations(
             session,

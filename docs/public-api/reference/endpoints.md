@@ -1062,7 +1062,7 @@ List active canonical people in the project's Stylebook. Supports the same filte
       "affiliation": "City Hall",
       "public_figure": true,
       "person_type": "elected_official",
-      "mention_count": 3
+      "counts": { "mentions": 3, "stories": 2 }
     }
   ],
   "pagination": { "limit": 25, "offset": 0, "total": 1 }
@@ -1120,7 +1120,7 @@ Distinct person type values for filter dropdowns (union of catalog defaults and 
 
 ### Response `200`
 
-Single person object (same fields as list items, plus **`story_count`**: distinct articles with at least one mention in this project). Use **`GET …/people/{person_id}/articles`** for a deduped story list; **`GET …/people/{person_id}/mentions`** returns passage-level mention rows and may list the same article more than once.
+Single person object (same fields as list items). **`counts.stories`** is the number of distinct articles with at least one mention in this project. Use **`GET …/people/{person_id}/articles`** for a deduped story list; **`GET …/people/{person_id}/mentions`** returns passage-level mention rows and may list the same article more than once.
 
 ### Errors
 
@@ -1307,7 +1307,7 @@ List active canonical organizations in the project's Stylebook. Supports the sam
       "slug": "city-council",
       "label": "City Council",
       "organization_type": "government",
-      "mention_count": 3
+      "counts": { "mentions": 3, "stories": 2 }
     }
   ],
   "pagination": { "limit": 25, "offset": 0, "total": 1 }
@@ -1560,7 +1560,7 @@ Point mode results are ordered by distance from the center. Provide either point
       "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
       "h3_cell": "872664c1bffffff",
       "h3_resolution": 11,
-      "mention_count": 3
+      "counts": { "mentions": 3, "stories": 2 }
     }
   ],
   "pagination": { "limit": 25, "offset": 0, "total": 1 }

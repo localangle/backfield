@@ -110,7 +110,7 @@ def test_search_public_people_filters_by_name_and_affiliation() -> None:
         )
         assert total == 1
         assert items[0].id == mayor_id
-        assert items[0].mention_count == 1
+        assert items[0].counts.mentions == 1
 
         items, total = search_public_people(
             session,
@@ -145,8 +145,8 @@ def test_get_public_person_and_mentions() -> None:
         assert person is not None
         assert person.title == "Mayor"
         assert person.stylebook_slug == "default"
-        assert person.mention_count == 1
-        assert person.story_count == 1
+        assert person.counts.mentions == 1
+        assert person.counts.stories == 1
 
         result = list_public_person_mentions(
             session,
@@ -305,8 +305,8 @@ def test_get_public_person_story_count_distinct_from_mention_count() -> None:
             person_id=mayor_id,
         )
         assert detail is not None
-        assert detail.mention_count == 2
-        assert detail.story_count == 1
+        assert detail.counts.mentions == 2
+        assert detail.counts.stories == 1
 
 
 def test_list_public_person_type_values() -> None:

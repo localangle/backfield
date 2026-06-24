@@ -24,6 +24,7 @@ from backfield_entities.public.entity_articles import (
     collect_mention_article_pairs,
     paginate_public_articles_from_mention_pairs,
 )
+from backfield_entities.public.entity_counts import PublicEntityCountsOut
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     location_evidence_by_mention_id,
@@ -58,7 +59,7 @@ class PublicLocationOut(BaseModel):
     geometry_json: dict[str, Any] | None = None
     h3_cell: str | None = None
     h3_resolution: int | None = None
-    mention_count: int = 0
+    counts: PublicEntityCountsOut = PublicEntityCountsOut()
 
 
 class PublicLocationMentionArticleOut(BaseModel):
@@ -94,6 +95,7 @@ def _location_to_public_out(
     canon: StylebookLocationCanonical,
     *,
     mention_count: int = 0,
+    story_count: int = 0,
     stylebook_slug: str | None = None,
 ) -> PublicLocationOut:
     return PublicLocationOut(
@@ -107,7 +109,7 @@ def _location_to_public_out(
         geometry_json=canon.geometry_json,
         h3_cell=canon.h3_cell,
         h3_resolution=canon.h3_resolution,
-        mention_count=mention_count,
+        counts=PublicEntityCountsOut(mentions=mention_count, stories=story_count),
     )
 
 
@@ -123,6 +125,31 @@ def _mention_counts_by_canonical(
         select(
             SubstrateLocation.stylebook_location_canonical_id,
             func.count(col(SubstrateLocationMention.id)),
+        )
+        .select_from(SubstrateLocationMention)
+        .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
+        .where(
+            SubstrateLocation.project_id == project_id,
+            col(SubstrateLocation.stylebook_location_canonical_id).in_(canonical_ids),
+            SubstrateLocationMention.deleted == False,  # noqa: E712
+        )
+        .group_by(SubstrateLocation.stylebook_location_canonical_id)
+    ).all()
+    return {str(cid): int(cnt) for cid, cnt in rows if cid is not None}
+
+
+def _story_counts_by_canonical(
+    session: Session,
+    *,
+    project_id: int,
+    canonical_ids: list[str],
+) -> dict[str, int]:
+    if not canonical_ids:
+        return {}
+    rows = session.exec(
+        select(
+            SubstrateLocation.stylebook_location_canonical_id,
+            func.count(func.distinct(SubstrateLocationMention.article_id)),
         )
         .select_from(SubstrateLocationMention)
         .join(SubstrateLocation, SubstrateLocation.id == SubstrateLocationMention.location_id)
@@ -265,11 +292,17 @@ def search_public_locations(
         project_id=project_id,
         canonical_ids=canonical_ids,
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=canonical_ids,
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     items = [
         _location_to_public_out(
             row,
             mention_count=mention_counts.get(str(row.id), 0),
+            story_count=story_counts.get(str(row.id), 0),
             stylebook_slug=stylebook_slug,
         )
         for row in rows
@@ -296,10 +329,16 @@ def get_public_location(
         project_id=project_id,
         canonical_ids=[str(canon.id)],
     )
+    story_counts = _story_counts_by_canonical(
+        session,
+        project_id=project_id,
+        canonical_ids=[str(canon.id)],
+    )
     stylebook_slug = stylebook_slugs_by_id(session, {stylebook_id}).get(stylebook_id)
     return _location_to_public_out(
         canon,
         mention_count=mention_counts.get(str(canon.id), 0),
+        story_count=story_counts.get(str(canon.id), 0),
         stylebook_slug=stylebook_slug,
     )
 
