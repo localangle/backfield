@@ -12,6 +12,7 @@ from backfield_db import (
     SubstrateArticle,
     SubstrateLocation,
     SubstrateLocationMention,
+    SubstrateLocationMentionOccurrence,
 )
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal, or_
@@ -26,6 +27,7 @@ from backfield_entities.public.entity_articles import (
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     location_evidence_by_mention_id,
+    maybe_quotes_only_mention_filters,
 )
 from backfield_entities.public.stylebook_scope import (
     get_public_location_canonical,
@@ -309,6 +311,7 @@ def list_public_location_mentions(
     offset: int = 0,
     sort: Literal["article", "created_at"] = "created_at",
     sort_direction: Literal["asc", "desc"] = "desc",
+    quotes_only: bool = False,
 ) -> tuple[list[PublicLocationMentionOut], int] | None:
     canon = get_public_location_canonical(
         session,
@@ -325,6 +328,14 @@ def list_public_location_mentions(
         SubstrateArticle.project_id == project_id,
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
+    base_where.extend(
+        maybe_quotes_only_mention_filters(
+            SubstrateLocationMention.id,
+            occurrence_model=SubstrateLocationMentionOccurrence,
+            mention_fk_column="location_mention_id",
+            quotes_only=quotes_only,
+        )
+    )
 
     total = int(
         session.scalar(

@@ -39,6 +39,10 @@ def list_project_person_mentions(
     session: Session = Depends(get_session),
     sort: Literal["article", "created_at"] = Query("created_at"),
     sort_direction: Literal["asc", "desc"] = Query("desc"),
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
+    ),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> PublicPersonMentionsOut:
@@ -54,6 +58,7 @@ def list_project_person_mentions(
         offset=offset,
         sort=sort,
         sort_direction=sort_direction,
+        quotes_only=quote is True,
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")

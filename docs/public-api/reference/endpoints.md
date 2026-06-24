@@ -1148,6 +1148,7 @@ Paginated mention evidence for one canonical person, scoped to the project. Incl
 |------|------|---------|-------------|
 | `sort` | string | `created_at` | `created_at` or `article` (headline) |
 | `sort_direction` | string | `desc` | `asc` or `desc` |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
 | `limit` | integer | `50` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
 
@@ -1378,6 +1379,7 @@ Paginated mention evidence for one canonical organization, scoped to the project
 |------|------|---------|-------------|
 | `sort` | string | `created_at` | `created_at` or `article` (headline) |
 | `sort_direction` | string | `desc` | `asc` or `desc` |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
 | `limit` | integer | `50` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
 
@@ -1553,7 +1555,7 @@ Single location object (same fields as list items).
 
 ## GET `/public/v1/projects/{project_slug}/locations/{location_id}/mentions`
 
-Paginated mention evidence for one canonical location in the project. Supports `sort` (`created_at` or `article`) and `sort_direction`.
+Paginated mention evidence for one canonical location in the project. Supports `sort` (`created_at` or `article`), `sort_direction`, and `quote=true` to limit to mentions whose first evidence occurrence is quoted.
 
 ---
 
@@ -1606,6 +1608,7 @@ Unified, project-scoped mention search across location, person, and organization
 | `person_type` | string | — | Filter person mentions by person type |
 | `organization_type` | string | — | Filter organization mentions by organization type |
 | `public_figure` | boolean | — | Filter person mentions by public figure flag |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
 | `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
 | `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
 | `limit` | integer | `25` | Page size (1–100) |

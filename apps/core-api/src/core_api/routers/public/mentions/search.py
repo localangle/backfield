@@ -85,6 +85,10 @@ def search_project_mentions(
         None,
         description="Filter person mentions by public figure flag",
     ),
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
+    ),
     pub_date_from: str | None = Query(None),
     pub_date_to: str | None = Query(None),
     limit: int = Query(25, ge=1, le=100),
@@ -109,6 +113,7 @@ def search_project_mentions(
         person_type=person_type,
         organization_type=organization_type,
         public_figure=public_figure,
+        quotes_only=quote is True,
         pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
         pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
         limit=limit,

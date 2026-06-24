@@ -35,6 +35,7 @@ from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
     PublicMentionOccurrenceOut,
     location_evidence_by_mention_id,
+    maybe_quotes_only_mention_filters,
     occurrences_by_mention_id,
     organization_evidence_by_mention_id,
     person_evidence_by_mention_id,
@@ -114,6 +115,7 @@ class PublicMentionSearchParams:
     person_type: str | None = None
     organization_type: str | None = None
     public_figure: bool | None = None
+    quotes_only: bool = False
     pub_date_from: date | None = None
     pub_date_to: date | None = None
     limit: int = 25
@@ -219,6 +221,14 @@ def _location_mention_arm(
         canonical_col=SubstrateLocation.stylebook_location_canonical_id,
         has_canonical=params.has_canonical,
     )
+    if params.quotes_only:
+        for clause in maybe_quotes_only_mention_filters(
+            SubstrateLocationMention.id,
+            occurrence_model=SubstrateLocationMentionOccurrence,
+            mention_fk_column="location_mention_id",
+            quotes_only=True,
+        ):
+            stmt = stmt.where(clause)
     return stmt
 
 
@@ -264,6 +274,14 @@ def _person_mention_arm(
         canonical_col=SubstratePerson.stylebook_person_canonical_id,
         has_canonical=params.has_canonical,
     )
+    if params.quotes_only:
+        for clause in maybe_quotes_only_mention_filters(
+            SubstratePersonMention.id,
+            occurrence_model=SubstratePersonMentionOccurrence,
+            mention_fk_column="person_mention_id",
+            quotes_only=True,
+        ):
+            stmt = stmt.where(clause)
     return stmt
 
 
@@ -310,6 +328,14 @@ def _organization_mention_arm(
         canonical_col=SubstrateOrganization.stylebook_organization_canonical_id,
         has_canonical=params.has_canonical,
     )
+    if params.quotes_only:
+        for clause in maybe_quotes_only_mention_filters(
+            SubstrateOrganizationMention.id,
+            occurrence_model=SubstrateOrganizationMentionOccurrence,
+            mention_fk_column="organization_mention_id",
+            quotes_only=True,
+        ):
+            stmt = stmt.where(clause)
     return stmt
 
 

@@ -196,6 +196,25 @@ def test_search_public_mentions_returns_all_types() -> None:
         assert all(item.article.headline == "Budget vote" for item in items)
 
 
+def test_search_public_mentions_filters_by_quote() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id, location_mid, _, _, _ = _seed_mentions(session)
+
+        items, total = search_public_mentions(
+            session,
+            project_id=project_id,
+            params=PublicMentionSearchParams(quotes_only=True),
+        )
+        assert total == 1
+        assert len(items) == 1
+        assert items[0].mention_id == location_mid
+        assert items[0].entity_type == "location"
+        assert items[0].evidence is not None
+        assert items[0].evidence.quote_text == "debate"
+
+
 def test_search_public_mentions_filters_by_entity_type_and_nature() -> None:
     engine = create_engine("sqlite://", echo=False)
     SQLModel.metadata.create_all(engine)

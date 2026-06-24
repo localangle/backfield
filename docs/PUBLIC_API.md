@@ -296,7 +296,7 @@ All paths are under `…/projects/{project_slug}/mentions/…`. Returns **404** 
 | `GET` | `…/mentions/facets` | Distinct entity types, natures, and type values for filter dropdowns |
 | `GET` | `…/mentions/{entity_type}/{mention_id}` | Single mention with full occurrence evidence and article context |
 
-**Search parameters** mirror article search where applicable (`author`, `external_source`, `section`, metadata include/exclude, `pub_date_from`/`pub_date_to`), plus mention-specific filters: `entity_type`, `q` (entity name), `nature`, `has_canonical`, `location_type`, `person_type`, `organization_type`, `public_figure`.
+**Search parameters** mirror article search where applicable (`author`, `external_source`, `section`, metadata include/exclude, `pub_date_from`/`pub_date_to`), plus mention-specific filters: `entity_type`, `q` (entity name), `nature`, `has_canonical`, `quote` (quoted first occurrence only), `location_type`, `person_type`, `organization_type`, `public_figure`.
 
 Results are ordered by article `pub_date` descending (nulls last), then mention id descending. Search rows include first-occurrence evidence; detail returns all non-suppressed occurrences.
 
@@ -321,7 +321,7 @@ Public responses expose the **resolved editorial view**: Stylebook canonical fie
 | `GET` | `…/{type}/search` | Keyword / filter search |
 | `GET` | `…/{type}/types` | Distinct type values for filters (people in v1) |
 | `GET` | `…/{type}/{id}` | Canonical detail |
-| `GET` | `…/{type}/{id}/mentions` | Paginated mention evidence |
+| `GET` | `…/{type}/{id}/mentions` | Paginated mention evidence; optional `quote=true` |
 | `GET` | `…/{type}/{id}/articles` | Paginated articles mentioning the canonical |
 | `GET` | `…/{type}/{id}/connections` | Stylebook connections |
 | `POST` | `…/{type}/semantic-search` | Natural-language mention search |

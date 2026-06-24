@@ -12,6 +12,7 @@ from backfield_db import (
     SubstrateArticle,
     SubstrateOrganization,
     SubstrateOrganizationMention,
+    SubstrateOrganizationMentionOccurrence,
 )
 from pydantic import BaseModel
 from sqlalchemy import case, exists, literal
@@ -25,6 +26,7 @@ from backfield_entities.public.entity_articles import (
 )
 from backfield_entities.public.mention_evidence import (
     PublicMentionEvidenceOut,
+    maybe_quotes_only_mention_filters,
     organization_evidence_by_mention_id,
 )
 from backfield_entities.public.stylebook_scope import (
@@ -304,6 +306,7 @@ def list_public_organization_mentions(
     offset: int = 0,
     sort: Literal["article", "created_at"] = "created_at",
     sort_direction: Literal["asc", "desc"] = "desc",
+    quotes_only: bool = False,
 ) -> tuple[list[PublicOrganizationMentionOut], int] | None:
     canon = get_public_organization_canonical(
         session,
@@ -320,6 +323,14 @@ def list_public_organization_mentions(
         SubstrateArticle.project_id == project_id,
         SubstrateArticle.deleted == False,  # noqa: E712
     ]
+    base_where.extend(
+        maybe_quotes_only_mention_filters(
+            SubstrateOrganizationMention.id,
+            occurrence_model=SubstrateOrganizationMentionOccurrence,
+            mention_fk_column="organization_mention_id",
+            quotes_only=quotes_only,
+        )
+    )
 
     total = int(
         session.scalar(

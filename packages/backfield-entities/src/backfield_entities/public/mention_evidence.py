@@ -8,6 +8,7 @@ from backfield_db import (
     SubstratePersonMentionOccurrence,
 )
 from pydantic import BaseModel
+from sqlalchemy import String, and_, cast, exists, func, literal, or_
 from sqlmodel import Session, col, select
 
 
@@ -42,6 +43,66 @@ def _occurrence_is_quote(
         return True
     labels = labels_json or []
     return any(str(label).strip().lower() == "quote" for label in labels)
+
+
+def _occurrence_is_quote_sql(occurrence_model) -> object:
+    quote_text_present = and_(
+        occurrence_model.quote_text.isnot(None),
+        func.length(func.trim(occurrence_model.quote_text)) > 0,
+    )
+    labels_has_quote = func.lower(cast(occurrence_model.labels_json, String)).like('%"quote"%')
+    return or_(quote_text_present, labels_has_quote)
+
+
+def mention_has_quoted_first_occurrence(
+    mention_id_col,
+    *,
+    occurrence_model,
+    mention_fk_column: str,
+) -> object:
+    """SQL EXISTS: the mention's first non-suppressed occurrence is quoted."""
+    fk_col = getattr(occurrence_model, mention_fk_column)
+    first_occ_id = (
+        select(occurrence_model.id)
+        .where(
+            fk_col == mention_id_col,
+            occurrence_model.suppressed == False,  # noqa: E712
+        )
+        .order_by(
+            col(occurrence_model.occurrence_order).asc().nulls_last(),
+            col(occurrence_model.id),
+        )
+        .limit(1)
+        .correlate_except(occurrence_model)
+        .scalar_subquery()
+    )
+    return exists(
+        select(literal(1))
+        .select_from(occurrence_model)
+        .where(
+            occurrence_model.id == first_occ_id,
+            _occurrence_is_quote_sql(occurrence_model),
+        )
+    )
+
+
+def maybe_quotes_only_mention_filters(
+    mention_id_col,
+    *,
+    occurrence_model,
+    mention_fk_column: str,
+    quotes_only: bool,
+) -> list[object]:
+    """Return SQL WHERE fragments limiting to mentions with quoted first occurrence."""
+    if not quotes_only:
+        return []
+    return [
+        mention_has_quoted_first_occurrence(
+            mention_id_col,
+            occurrence_model=occurrence_model,
+            mention_fk_column=mention_fk_column,
+        )
+    ]
 
 
 def _article_evidence_from_occurrence(

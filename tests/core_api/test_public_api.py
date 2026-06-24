@@ -1226,6 +1226,14 @@ def test_public_people_list_and_search(public_client: TestClient) -> None:
     assert mbody["items"][0]["article"]["headline"] == "City council votes on budget"
     assert mbody["items"][0]["nature"] == "subject"
 
+    quoted = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/mentions",
+        headers=headers,
+        params={"quote": "true"},
+    )
+    assert quoted.status_code == 200
+    assert quoted.json()["pagination"]["total"] == 0
+
     articles = public_client.get(
         f"/public/v1/projects/general/people/{person_id}/articles",
         headers=headers,
@@ -1388,6 +1396,15 @@ def test_public_locations_list_search_and_geo(public_client: TestClient) -> None
     assert mbody["pagination"]["total"] == 1
     assert mbody["items"][0]["nature"] == "primary"
 
+    quoted = public_client.get(
+        f"/public/v1/projects/general/locations/{location_id}/mentions",
+        headers=headers,
+        params={"quote": "true"},
+    )
+    assert quoted.status_code == 200
+    assert quoted.json()["pagination"]["total"] == 1
+    assert quoted.json()["items"][0]["evidence"]["quote_text"] == "debate downtown"
+
     articles = public_client.get(
         f"/public/v1/projects/general/locations/{location_id}/articles",
         headers=headers,
@@ -1467,6 +1484,22 @@ def test_public_mentions_search_facets_and_detail(public_client: TestClient) -> 
     assert detail.json()["label"] == "Jane Doe"
     assert detail.json()["occurrences"]
     assert detail.json()["canonical"]["label"] == "Jane Doe"
+
+
+def test_public_mentions_search_quote_filter(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/mentions/search",
+        headers=headers,
+        params={"quote": "true"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pagination"]["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["entity_type"] == "location"
+    assert body["items"][0]["evidence"]["quote_text"] == "debate downtown"
 
 
 def test_public_mention_not_found(public_client: TestClient) -> None:
