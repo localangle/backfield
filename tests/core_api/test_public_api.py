@@ -1403,7 +1403,9 @@ def test_public_locations_list_search_and_geo(public_client: TestClient) -> None
     )
     assert quoted.status_code == 200
     assert quoted.json()["pagination"]["total"] == 1
-    assert quoted.json()["items"][0]["evidence"]["quote_text"] == "debate downtown"
+    assert quoted.json()["items"][0]["evidence"]["mention_text"] == "debate downtown"
+    assert quoted.json()["items"][0]["evidence"]["quote"] is True
+    assert "quote_text" not in quoted.json()["items"][0]["evidence"]
 
     articles = public_client.get(
         f"/public/v1/projects/general/locations/{location_id}/articles",
@@ -1499,7 +1501,9 @@ def test_public_mentions_search_quote_filter(public_client: TestClient) -> None:
     assert body["pagination"]["total"] == 1
     assert len(body["items"]) == 1
     assert body["items"][0]["entity_type"] == "location"
-    assert body["items"][0]["evidence"]["quote_text"] == "debate downtown"
+    assert body["items"][0]["evidence"]["mention_text"] == "debate downtown"
+    assert body["items"][0]["evidence"]["quote"] is True
+    assert "quote_text" not in body["items"][0]["evidence"]
 
 
 def test_public_mention_not_found(public_client: TestClient) -> None:

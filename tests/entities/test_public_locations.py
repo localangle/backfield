@@ -245,7 +245,8 @@ def test_list_public_location_mentions_filters_by_quote() -> None:
         items, total = quoted
         assert total == 1
         assert items[0].evidence is not None
-        assert items[0].evidence.quote_text == "debate at City Hall"
+        assert items[0].evidence.mention_text == "debate at City Hall"
+        assert items[0].evidence.quote is True
 
 
 def test_list_public_location_articles() -> None:

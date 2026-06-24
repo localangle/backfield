@@ -298,7 +298,7 @@ All paths are under `…/projects/{project_slug}/mentions/…`. Returns **404** 
 
 **Search parameters** mirror article search where applicable (`author`, `external_source`, `section`, metadata include/exclude, `pub_date_from`/`pub_date_to`), plus mention-specific filters: `entity_type`, `q` (entity name), `nature`, `has_canonical`, `quote` (quoted first occurrence only), `location_type`, `person_type`, `organization_type`, `public_figure`.
 
-Results are ordered by article `pub_date` descending (nulls last), then mention id descending. Search rows include first-occurrence evidence; detail returns all non-suppressed occurrences.
+Results are ordered by article `pub_date` descending (nulls last), then mention id descending. Search rows include first-occurrence evidence; detail returns all non-suppressed occurrences. Evidence uses a single shape everywhere: `mention_text` (quote passage when quoted, otherwise matched mention text), `quote` (boolean), and optional character offsets.
 
 ---
 

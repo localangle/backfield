@@ -14,21 +14,18 @@ from sqlmodel import Session, col, select
 
 class PublicMentionEvidenceOut(BaseModel):
     mention_text: str | None = None
-    quote_text: str | None = None
-    start_char: int | None = None
-    end_char: int | None = None
-
-
-class PublicArticleMentionEvidenceOut(BaseModel):
-    mention_text: str | None = None
     quote: bool = False
     start_char: int | None = None
     end_char: int | None = None
 
 
+# Alias kept for article-hub imports; same public evidence shape everywhere.
+PublicArticleMentionEvidenceOut = PublicMentionEvidenceOut
+
+
 class PublicMentionOccurrenceOut(BaseModel):
     mention_text: str | None = None
-    quote_text: str | None = None
+    quote: bool = False
     start_char: int | None = None
     end_char: int | None = None
     occurrence_order: int | None = None
@@ -105,14 +102,14 @@ def maybe_quotes_only_mention_filters(
     ]
 
 
-def _article_evidence_from_occurrence(
+def _evidence_from_occurrence(
     occ: SubstrateLocationMentionOccurrence
     | SubstratePersonMentionOccurrence
     | SubstrateOrganizationMentionOccurrence,
-) -> PublicArticleMentionEvidenceOut:
+) -> PublicMentionEvidenceOut:
     raw_mention = (occ.mention_text or "").strip()
     raw_quote = (occ.quote_text or "").strip() if occ.quote_text else ""
-    return PublicArticleMentionEvidenceOut(
+    return PublicMentionEvidenceOut(
         mention_text=raw_quote or raw_mention or None,
         quote=_occurrence_is_quote(quote_text=occ.quote_text, labels_json=occ.labels_json),
         start_char=occ.start_char,
@@ -120,42 +117,7 @@ def _article_evidence_from_occurrence(
     )
 
 
-def _first_article_evidence_by_mention_id(
-    session: Session,
-    *,
-    mention_ids: list[int],
-    occurrence_model: type[
-        SubstrateLocationMentionOccurrence
-        | SubstratePersonMentionOccurrence
-        | SubstrateOrganizationMentionOccurrence
-    ],
-    mention_id_column: str,
-) -> dict[int, PublicArticleMentionEvidenceOut]:
-    if not mention_ids:
-        return {}
-    mention_col = getattr(occurrence_model, mention_id_column)
-    rows = session.exec(
-        select(occurrence_model)
-        .where(
-            col(mention_col).in_(mention_ids),
-            occurrence_model.suppressed == False,  # noqa: E712
-        )
-        .order_by(
-            col(mention_col),
-            col(occurrence_model.occurrence_order).asc().nulls_last(),
-            col(occurrence_model.id),
-        )
-    ).all()
-    out: dict[int, PublicArticleMentionEvidenceOut] = {}
-    for occ in rows:
-        mid = int(getattr(occ, mention_id_column))
-        if mid in out:
-            continue
-        out[mid] = _article_evidence_from_occurrence(occ)
-    return out
-
-
-def _first_occurrence_by_mention_id(
+def _first_evidence_by_mention_id(
     session: Session,
     *,
     mention_ids: list[int],
@@ -186,21 +148,14 @@ def _first_occurrence_by_mention_id(
         mid = int(getattr(occ, mention_id_column))
         if mid in out:
             continue
-        mention_text = (occ.mention_text or "").strip() or None
-        quote_text = (occ.quote_text or "").strip() if occ.quote_text else None
-        out[mid] = PublicMentionEvidenceOut(
-            mention_text=mention_text,
-            quote_text=quote_text,
-            start_char=occ.start_char,
-            end_char=occ.end_char,
-        )
+        out[mid] = _evidence_from_occurrence(occ)
     return out
 
 
 def location_evidence_by_mention_id(
     session: Session, mention_ids: list[int]
 ) -> dict[int, PublicMentionEvidenceOut]:
-    return _first_occurrence_by_mention_id(
+    return _first_evidence_by_mention_id(
         session,
         mention_ids=mention_ids,
         occurrence_model=SubstrateLocationMentionOccurrence,
@@ -211,7 +166,7 @@ def location_evidence_by_mention_id(
 def person_evidence_by_mention_id(
     session: Session, mention_ids: list[int]
 ) -> dict[int, PublicMentionEvidenceOut]:
-    return _first_occurrence_by_mention_id(
+    return _first_evidence_by_mention_id(
         session,
         mention_ids=mention_ids,
         occurrence_model=SubstratePersonMentionOccurrence,
@@ -222,7 +177,7 @@ def person_evidence_by_mention_id(
 def organization_evidence_by_mention_id(
     session: Session, mention_ids: list[int]
 ) -> dict[int, PublicMentionEvidenceOut]:
-    return _first_occurrence_by_mention_id(
+    return _first_evidence_by_mention_id(
         session,
         mention_ids=mention_ids,
         occurrence_model=SubstrateOrganizationMentionOccurrence,
@@ -232,35 +187,20 @@ def organization_evidence_by_mention_id(
 
 def location_article_mention_evidence_by_mention_id(
     session: Session, mention_ids: list[int]
-) -> dict[int, PublicArticleMentionEvidenceOut]:
-    return _first_article_evidence_by_mention_id(
-        session,
-        mention_ids=mention_ids,
-        occurrence_model=SubstrateLocationMentionOccurrence,
-        mention_id_column="location_mention_id",
-    )
+) -> dict[int, PublicMentionEvidenceOut]:
+    return location_evidence_by_mention_id(session, mention_ids)
 
 
 def person_article_mention_evidence_by_mention_id(
     session: Session, mention_ids: list[int]
-) -> dict[int, PublicArticleMentionEvidenceOut]:
-    return _first_article_evidence_by_mention_id(
-        session,
-        mention_ids=mention_ids,
-        occurrence_model=SubstratePersonMentionOccurrence,
-        mention_id_column="person_mention_id",
-    )
+) -> dict[int, PublicMentionEvidenceOut]:
+    return person_evidence_by_mention_id(session, mention_ids)
 
 
 def organization_article_mention_evidence_by_mention_id(
     session: Session, mention_ids: list[int]
-) -> dict[int, PublicArticleMentionEvidenceOut]:
-    return _first_article_evidence_by_mention_id(
-        session,
-        mention_ids=mention_ids,
-        occurrence_model=SubstrateOrganizationMentionOccurrence,
-        mention_id_column="organization_mention_id",
-    )
+) -> dict[int, PublicMentionEvidenceOut]:
+    return organization_evidence_by_mention_id(session, mention_ids)
 
 
 def _occurrence_to_out(
@@ -268,13 +208,12 @@ def _occurrence_to_out(
     | SubstratePersonMentionOccurrence
     | SubstrateOrganizationMentionOccurrence,
 ) -> PublicMentionOccurrenceOut:
-    mention_text = (occ.mention_text or "").strip() or None
-    quote_text = (occ.quote_text or "").strip() if occ.quote_text else None
+    evidence = _evidence_from_occurrence(occ)
     return PublicMentionOccurrenceOut(
-        mention_text=mention_text,
-        quote_text=quote_text,
-        start_char=occ.start_char,
-        end_char=occ.end_char,
+        mention_text=evidence.mention_text,
+        quote=evidence.quote,
+        start_char=evidence.start_char,
+        end_char=evidence.end_char,
         occurrence_order=occ.occurrence_order,
     )
 

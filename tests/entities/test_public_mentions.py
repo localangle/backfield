@@ -212,7 +212,8 @@ def test_search_public_mentions_filters_by_quote() -> None:
         assert items[0].mention_id == location_mid
         assert items[0].entity_type == "location"
         assert items[0].evidence is not None
-        assert items[0].evidence.quote_text == "debate"
+        assert items[0].evidence.mention_text == "debate"
+    assert items[0].evidence.quote is True
 
 
 def test_search_public_mentions_filters_by_entity_type_and_nature() -> None:

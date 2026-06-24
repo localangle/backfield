@@ -1173,7 +1173,7 @@ Paginated mention evidence for one canonical person, scoped to the project. Incl
       "affiliation": "City Hall",
       "nature": "subject",
       "role_in_story": null,
-      "evidence": { "mention_text": "Jane Doe", "quote_text": null }
+      "evidence": { "mention_text": "Jane Doe", "quote": false, "start_char": null, "end_char": null }
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "total": 1 }
@@ -1402,7 +1402,7 @@ Paginated mention evidence for one canonical organization, scoped to the project
       "organization_type": "government",
       "nature": "actor",
       "role_in_story": null,
-      "evidence": { "mention_text": "City Council", "quote_text": null }
+      "evidence": { "mention_text": "City Council", "quote": false, "start_char": null, "end_char": null }
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "total": 1 }
@@ -1637,7 +1637,7 @@ Results are ordered by article `pub_date` descending (nulls last), then mention 
         "label": "Jane Doe",
         "stylebook_slug": "default"
       },
-      "evidence": { "mention_text": "Jane Doe", "quote_text": null, "start_char": null, "end_char": null },
+      "evidence": { "mention_text": "Jane Doe", "quote": false, "start_char": null, "end_char": null },
       "article": { "id": 1, "headline": "City council votes on budget", "url": "https://example.com/budget", "pub_date": "2024-03-01" }
     }
   ],
