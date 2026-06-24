@@ -72,7 +72,6 @@ class PublicArticleMentionOut(BaseModel):
 
 class PublicArticleLocationOut(BaseModel):
     mention_id: int
-    substrate_location_id: int
     label: str
     location_type: str | None = None
     formatted_address: str | None = None
@@ -95,7 +94,6 @@ class PublicArticleImageOut(BaseModel):
 
 class PublicArticlePersonOut(BaseModel):
     mention_id: int
-    substrate_person_id: int
     label: str
     title: str | None = None
     affiliation: str | None = None
@@ -109,7 +107,6 @@ class PublicArticlePersonOut(BaseModel):
 
 class PublicArticleOrganizationOut(BaseModel):
     mention_id: int
-    substrate_organization_id: int
     label: str
     organization_type: str | None = None
     canonical: PublicCanonicalSummaryOut | None = None
@@ -732,7 +729,6 @@ def location_mentions_out_by_ids(
             canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out[mid] = PublicArticleLocationOut(
             mention_id=mid,
-            substrate_location_id=int(loc.id),  # type: ignore[arg-type]
             label=str(loc.name),
             location_type=loc.location_type,
             formatted_address=loc.formatted_address,
@@ -818,7 +814,6 @@ def person_mentions_out_by_ids(
             canon = _canonical_summary(canonicals[str(canon_id)], stylebook_slugs=stylebook_slugs)
         out[mid] = PublicArticlePersonOut(
             mention_id=mid,
-            substrate_person_id=int(person.id),  # type: ignore[arg-type]
             label=str(person.name),
             title=person.title,
             affiliation=person.affiliation,
@@ -907,7 +902,6 @@ def organization_mentions_out_by_ids(
             organization_type = organization_type or canon_row.organization_type
         out[mid] = PublicArticleOrganizationOut(
             mention_id=mid,
-            substrate_organization_id=int(org.id),  # type: ignore[arg-type]
             label=str(org.name),
             organization_type=organization_type,
             canonical=canon,

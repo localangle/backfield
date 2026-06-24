@@ -514,6 +514,7 @@ def test_public_article_geo_search_by_point(public_client: TestClient) -> None:
     assert body["items"][0]["headline"] == "City council votes on budget"
     assert len(body["items"][0]["matching_locations"]) == 1
     assert body["items"][0]["matching_locations"][0]["label"] == "City Hall"
+    assert "substrate_location_id" not in body["items"][0]["matching_locations"][0]
     assert "article" not in body["items"][0]
 
 
@@ -894,6 +895,40 @@ def test_public_article_detail(public_client: TestClient) -> None:
     assert body["images"][0]["image_id"] == "img-1"
 
 
+def test_public_article_detail_include_text(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    article_id = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"q": "budget"},
+    ).json()["items"][0]["id"]
+    r = public_client.get(
+        f"/public/v1/projects/general/articles/{article_id}",
+        headers=headers,
+        params={"include": "text"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "text" in body
+    assert body["preview"]
+    assert body["text"] == (
+        "The council approved the budget after a long debate downtown."
+    )
+    assert body.get("counts") is None
+
+
+def test_public_article_search_rejects_include_text(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    r = public_client.get(
+        "/public/v1/projects/general/articles/search",
+        headers=headers,
+        params={"include": "text"},
+    )
+    assert r.status_code == 400
+
+
 def test_public_article_detail_include_counts(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}
@@ -1063,6 +1098,7 @@ def test_public_article_locations(public_client: TestClient) -> None:
     item = r.json()["items"][0]
     assert item["label"] == "City Hall"
     assert item["geometry_json"]["type"] == "Point"
+    assert "substrate_location_id" not in item
 
 
 def test_public_article_images(public_client: TestClient) -> None:
@@ -1093,6 +1129,7 @@ def test_public_article_people(public_client: TestClient) -> None:
     assert person["nature"] == "subject"
     assert person["canonical"]["slug"] == "jane-doe"
     assert person["canonical"]["stylebook_slug"] == "default"
+    assert "substrate_person_id" not in person
 
     filtered = public_client.get(
         "/public/v1/projects/general/articles/1/people",
@@ -1117,6 +1154,7 @@ def test_public_article_organizations(public_client: TestClient) -> None:
     assert org["label"] == "City Council"
     assert org["nature"] == "actor"
     assert org["organization_type"] == "government"
+    assert "substrate_organization_id" not in org
 
 
 def test_public_article_custom_records(public_client: TestClient) -> None:

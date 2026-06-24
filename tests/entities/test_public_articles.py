@@ -174,7 +174,18 @@ def test_search_public_articles_filters_metadata_and_dates() -> None:
         )
         assert detail is not None
         assert detail.preview == "Body one"
+        assert detail.text is None
         assert detail.metadata[0].meta_type == "topic"
+
+        detail_with_text = get_public_article(
+            session,
+            project_id=project_id,
+            article_id=int(a1.id),  # type: ignore[arg-type]
+            include_text=True,
+        )
+        assert detail_with_text is not None
+        assert detail_with_text.preview == "Body one"
+        assert detail_with_text.text == "Body one"
 
 
 def test_search_public_articles_excludes_metadata() -> None:

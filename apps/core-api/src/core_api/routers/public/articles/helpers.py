@@ -33,7 +33,8 @@ META_PARAM_DESCRIPTION = (
     "Repeat a type to require all listed categories. Max 25 clauses; max 50 categories per clause."
 )
 
-ALLOWED_ARTICLE_INCLUDES = frozenset({"counts"})
+ALLOWED_ARTICLE_LIST_INCLUDES = frozenset({"counts"})
+ALLOWED_ARTICLE_DETAIL_INCLUDES = frozenset({"counts", "text"})
 
 INCLUDE_PARAM_DESCRIPTION = (
     "Repeatable include token for optional article extras. "
@@ -41,20 +42,33 @@ INCLUDE_PARAM_DESCRIPTION = (
     "custom records, embedded flag)."
 )
 
+INCLUDE_DETAIL_PARAM_DESCRIPTION = (
+    "Repeatable include token for optional article extras. "
+    "Supported: counts (mention and canonical entity totals, image count, "
+    "custom records, embedded flag); text (full article body in addition to preview)."
+)
 
-def parse_article_includes(include: list[str]) -> set[str]:
+
+def parse_article_includes(
+    include: list[str],
+    *,
+    allowed: frozenset[str] = ALLOWED_ARTICLE_LIST_INCLUDES,
+) -> set[str]:
     """Validate repeatable ``include`` tokens for article list/detail routes."""
     if not include:
         return set()
     tokens = {token.strip().lower() for token in include if token.strip()}
     if not tokens:
         return set()
-    unknown = tokens - ALLOWED_ARTICLE_INCLUDES
+    unknown = tokens - allowed
     if unknown:
-        allowed = ", ".join(sorted(ALLOWED_ARTICLE_INCLUDES))
+        allowed_list = ", ".join(sorted(allowed))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown include token(s): {', '.join(sorted(unknown))}. Supported: {allowed}.",
+            detail=(
+                f"Unknown include token(s): {', '.join(sorted(unknown))}. "
+                f"Supported: {allowed_list}."
+            ),
         )
     return tokens
 

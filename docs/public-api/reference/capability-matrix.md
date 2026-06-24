@@ -18,7 +18,7 @@ Legend: ✅ Shipped · 🚧 Planned · ➖ Not applicable · ❌ Not planned (v1
 | Geo cells (hex coverage) | ✅ | `GET …/articles/geo-cells` (bbox; distinct-article counts per H3 cell) |
 | Geo cell drill-down | ✅ | `GET …/articles/geo-cells/{h3_cell}` (articles + in-cell location mentions) |
 | Batch geo cell drill-down | ✅ | `POST …/articles/geo-cells/query` (many cells; deduplicated articles + `matched_cells`) |
-| Detail | ✅ | No full body; optional preview; inline images (≤10); optional `include=counts` |
+| Detail | ✅ | Preview always; optional `include=text` for full body; inline images (≤10); optional `include=counts` |
 | Article counts (`include=counts`) | ✅ | Mention totals, distinct canonical totals, image/custom-record counts, `embedded` on search + detail |
 | Mentions (hub) | ✅ | `GET …/articles/{id}/mentions`; `entity_type`, `nature`, `quote` filters |
 | Locations (hub) | ✅ | `GET …/articles/{id}/locations` — map-oriented |

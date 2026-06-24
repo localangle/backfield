@@ -52,6 +52,12 @@ class PublicArticleOut(BaseModel):
     images: list[PublicArticleImageOut] | None = None
 
 
+class PublicArticleDetailOut(PublicArticleOut):
+    """Article detail response; ``text`` is populated only when ``include=text``."""
+
+    text: str | None = None
+
+
 @dataclass(frozen=True)
 class ArticleMetaClause:
     meta_type: str
@@ -398,7 +404,8 @@ def get_public_article(
     *,
     project_id: int,
     article_id: int,
-) -> PublicArticleOut | None:
+    include_text: bool = False,
+) -> PublicArticleDetailOut | None:
     article = session.exec(
         select(SubstrateArticle).where(
             SubstrateArticle.id == article_id,
@@ -409,7 +416,11 @@ def get_public_article(
     if article is None or article.id is None:
         return None
     meta_by_id = _meta_rows_for_articles(session, [int(article.id)])
-    return _article_to_public_out(
+    base = _article_to_public_out(
         article,
         metadata=meta_by_id.get(int(article.id), []),
     )
+    detail = PublicArticleDetailOut.model_validate(base.model_dump())
+    if include_text:
+        detail.text = article.text
+    return detail

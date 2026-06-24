@@ -499,7 +499,6 @@ Echoes the geographic query at the top level. Each **`items[]`** row uses the sa
       "matching_locations": [
         {
           "mention_id": 10,
-          "substrate_location_id": 4,
           "label": "City Hall",
           "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
           "h3_cell": "872664c1bffffff",
@@ -664,7 +663,6 @@ Forward the same filters active on the coverage request so counts stay consisten
       "matching_locations": [
         {
           "mention_id": 10,
-          "substrate_location_id": 4,
           "label": "City Hall",
           "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
           "h3_cell": "892664c1a97ffff",
@@ -748,7 +746,6 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
       "matching_locations": [
         {
           "mention_id": 10,
-          "substrate_location_id": 4,
           "label": "City Hall",
           "geometry_json": { "type": "Point", "coordinates": [-87.6, 41.8] },
           "h3_cell": "892664c1a97ffff",
@@ -791,7 +788,7 @@ Return **articles** and **in-cell location mentions** for **many H3 cells** in o
 
 ### Functionality
 
-Return one article by id. Does **not** include full body text. Includes metadata tags, optional short preview, and up to 10 inline images. Optional `include=counts` adds mention/canonical totals and the article `embedded` flag.
+Return one article by id. Includes metadata tags, a short preview, and up to 10 inline images. Optional `include=counts` adds mention/canonical totals and the article `embedded` flag. Optional `include=text` adds the full article body in `text` (in addition to `preview`).
 
 ### Path parameters
 
@@ -804,11 +801,11 @@ Return one article by id. Does **not** include full body text. Includes metadata
 
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
-| `include` | string | — | Repeatable include token. Supported: `counts` (mention and canonical entity totals, image count, custom records, `embedded` flag) |
+| `include` | string | — | Repeatable include token. Supported: `counts` (mention and canonical entity totals, image count, custom records, `embedded` flag); `text` (full article body) |
 
 ### Response `200`
 
-Same article object shape as search `items[]`, plus inline `images` (up to 10 rows). `counts` and `embedded` appear only when `include=counts`.
+Same article object shape as search `items[]`, plus inline `images` (up to 10 rows). `counts` and `embedded` appear only when `include=counts`. `text` appears only when `include=text` (alongside the always-included `preview`).
 
 ```json
 {

@@ -148,7 +148,9 @@ Articles are first-class public resources (`substrate_article` + related meta). 
 
 Do **not** use open-ended `?include=locations,people,custom_records,images` on detail—payload size, pagination, and caching differ too much per slice. Use **sub-routes** for heavy slices.
 
-The only supported `include` token today is **`counts`**: a lightweight summary (mention totals by type, distinct canonical entity totals by type, image count, custom-record counts, and whether the article itself is semantically embedded). Request it on **`GET …/articles/search`**, **`GET …/articles/geo-search`**, **`POST …/articles/semantic-search`**, or **`GET …/articles/{article_id}`** when you need availability signals without loading mention rows or full sub-route payloads.
+The only supported `include` tokens on list routes are **`counts`**: a lightweight summary (mention totals by type, distinct canonical entity totals by type, image count, custom-record counts, and whether the article itself is semantically embedded). Request it on **`GET …/articles/search`**, **`GET …/articles/geo-search`**, or **`POST …/articles/semantic-search`** when you need availability signals without loading mention rows or full sub-route payloads.
+
+On **`GET …/articles/{article_id}`**, supported `include` tokens are **`counts`** (same summary as list routes) and **`text`** (full article body in addition to the always-included preview).
 
 ### Detail (`GET …/articles/{article_id}`)
 
@@ -159,7 +161,7 @@ The only supported `include` token today is **`counts`**: a lightweight summary 
 - Optional **`preview`**: short truncated snippet (max 280 characters; not full body; always included)
 - **`images`**: up to 10 inline image rows (`id`, `image_id`, `url`, `caption`); use `GET …/images` when you need pagination or the full set
 
-**Query:** `include=counts` (optional; adds `counts` and `embedded`).
+**Query:** `include=counts` (optional; adds `counts` and `embedded`); `include=text` (optional; adds full body in `text` alongside `preview`).
 
 **Optional `counts` block** (when `include=counts`):
 
@@ -458,7 +460,7 @@ Work on branch **`feat/api-surface`** (or child branches per phase). Update this
 **Goal:** Prove substrate queries and documentation shape.
 
 - [x] `GET …/articles/search` — keyword, meta filters, date range
-- [x] `GET …/articles/{article_id}` — detail without full body; optional preview
+- [x] `GET …/articles/{article_id}` — detail with preview; optional `include=text` for full body
 - [x] Registry entries in **`docs/public-api/reference/endpoints.md`**
 - [x] Indexes: existing `substrate_article` / `substrate_article_meta` indexes cover v1 filters
 

@@ -7,13 +7,14 @@ from backfield_entities.public.article_hub import (
     enrich_articles_with_counts,
     inline_article_images,
 )
-from backfield_entities.public.articles import PublicArticleOut, get_public_article
+from backfield_entities.public.articles import PublicArticleDetailOut, get_public_article
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from core_api.deps import get_session
 from core_api.routers.public.articles.helpers import (
-    INCLUDE_PARAM_DESCRIPTION,
+    ALLOWED_ARTICLE_DETAIL_INCLUDES,
+    INCLUDE_DETAIL_PARAM_DESCRIPTION,
     parse_article_includes,
 )
 from core_api.routers.public.deps import get_public_project
@@ -21,19 +22,24 @@ from core_api.routers.public.deps import get_public_project
 router = APIRouter()
 
 
-@router.get("/{article_id}", response_model=PublicArticleOut)
+@router.get(
+    "/{article_id}",
+    response_model=PublicArticleDetailOut,
+    response_model_exclude_unset=True,
+)
 def get_project_article(
     article_id: int,
     project: BackfieldProject = Depends(get_public_project),
     session: Session = Depends(get_session),
-    include: list[str] = Query(default=[], description=INCLUDE_PARAM_DESCRIPTION),
-) -> PublicArticleOut:
-    """Return one article by id (no full body text)."""
-    includes = parse_article_includes(include)
+    include: list[str] = Query(default=[], description=INCLUDE_DETAIL_PARAM_DESCRIPTION),
+) -> PublicArticleDetailOut:
+    """Return one article by id (preview by default; optional full body via include=text)."""
+    includes = parse_article_includes(include, allowed=ALLOWED_ARTICLE_DETAIL_INCLUDES)
     article = get_public_article(
         session,
         project_id=int(project.id),  # type: ignore[arg-type]
         article_id=article_id,
+        include_text="text" in includes,
     )
     if article is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
