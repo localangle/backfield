@@ -510,6 +510,7 @@ def test_public_article_geo_search_by_point(public_client: TestClient) -> None:
     assert body["center_lng"] == -87.6
     assert body["center_lat"] == 41.8
     assert body["radius_miles"] == 5
+    assert body["location_types"] == []
     assert body["items"][0]["headline"] == "City council votes on budget"
     assert len(body["items"][0]["matching_locations"]) == 1
     assert body["items"][0]["matching_locations"][0]["label"] == "City Hall"
@@ -683,6 +684,45 @@ def test_public_article_geo_search_nature_filter(public_client: TestClient) -> N
     )
     assert r.status_code == 200
     assert r.json()["pagination"]["total"] == 0
+
+
+def test_public_article_geo_search_location_types_or(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    base = {
+        "center_lng": -87.6,
+        "center_lat": 41.8,
+        "radius_miles": 5,
+    }
+
+    matched = public_client.get(
+        "/public/v1/projects/general/articles/geo-search",
+        headers=headers,
+        params={**base, "location_type": "place"},
+    )
+    assert matched.status_code == 200
+    body = matched.json()
+    assert body["location_types"] == ["place"]
+    assert body["pagination"]["total"] == 1
+
+    no_match = public_client.get(
+        "/public/v1/projects/general/articles/geo-search",
+        headers=headers,
+        params={**base, "location_type": "address"},
+    )
+    assert no_match.status_code == 200
+    assert no_match.json()["location_types"] == ["address"]
+    assert no_match.json()["pagination"]["total"] == 0
+
+    either = public_client.get(
+        "/public/v1/projects/general/articles/geo-search",
+        headers=headers,
+        params=[(k, v) for k, v in base.items()]
+        + [("location_type", "place"), ("location_type", "address")],
+    )
+    assert either.status_code == 200
+    assert either.json()["location_types"] == ["place", "address"]
+    assert either.json()["pagination"]["total"] == 1
 
 
 def test_public_article_search_keyword(public_client: TestClient) -> None:

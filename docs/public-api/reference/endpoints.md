@@ -453,7 +453,7 @@ Geometry comes from **`substrate_location.geometry`** (PostGIS on PostgreSQL). A
 | `center_lat` | number | — | Center latitude (point mode) |
 | `radius_miles` | number | — | Radius in miles (required with center coordinates) |
 | `bbox` | string | — | Bounding box `min_lng,min_lat,max_lng,max_lat` (bbox mode) |
-| `location_type` | string | — | Filter matching locations by substrate `location_type` |
+| `location_type` | string | — | Repeatable location type filter (OR). Include articles with a matching mention of any listed substrate `location_type` |
 | `nature` | string | — | Filter matching location mentions by editorial `nature` (e.g. `primary`, `secondary`) |
 | `meta_type` | string | — | Include articles with a metadata row of this type |
 | `meta_category` | string | — | With `meta_type`, include articles with this category value |
@@ -478,7 +478,7 @@ Echoes the geographic query at the top level. Each **`items[]`** row uses the sa
   "center_lat": 41.8,
   "radius_miles": 5,
   "bbox": null,
-  "location_type": null,
+  "location_types": [],
   "nature": null,
   "meta_type": null,
   "meta_category": null,

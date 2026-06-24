@@ -44,7 +44,7 @@ class PublicArticleGeoSearchParams:
     min_lat: float | None = None
     max_lng: float | None = None
     max_lat: float | None = None
-    location_type: str | None = None
+    location_types: tuple[str, ...] = ()
     nature: str | None = None
     meta_type: str | None = None
     meta_category: str | None = None
@@ -72,7 +72,7 @@ class PublicArticleGeoSearchQueryOut(BaseModel):
     center_lat: float | None = None
     radius_miles: float | None = None
     bbox: PublicGeoBboxOut | None = None
-    location_type: str | None = None
+    location_types: list[str] = Field(default_factory=list)
     nature: str | None = None
     meta_type: str | None = None
     meta_category: str | None = None
@@ -106,7 +106,7 @@ def public_article_geo_search_query_out(
         if params.mode is PublicArticleGeoSearchMode.point
         else None,
         bbox=bbox,
-        location_type=(params.location_type or "").strip() or None,
+        location_types=list(params.location_types),
         nature=(params.nature or "").strip() or None,
         meta_type=params.meta_type,
         meta_category=params.meta_category,
@@ -166,6 +166,18 @@ def _sqlite_geometry_matches(
     return params.min_lng <= lng <= params.max_lng and params.min_lat <= lat <= params.max_lat
 
 
+def _postgres_location_types_filter(
+    location_types: tuple[str, ...],
+    bind: dict[str, object],
+) -> str:
+    if not location_types:
+        return ""
+    placeholders = ", ".join(f":location_type_{index}" for index in range(len(location_types)))
+    for index, value in enumerate(location_types):
+        bind[f"location_type_{index}"] = value
+    return f"AND sl.location_type IN ({placeholders})"
+
+
 def _postgres_matching_pairs(
     session: Session,
     *,
@@ -173,10 +185,7 @@ def _postgres_matching_pairs(
     params: PublicArticleGeoSearchParams,
 ) -> list[tuple[int, int]]:
     bind: dict[str, object] = {"project_id": project_id}
-    location_type_filter = ""
-    if (params.location_type or "").strip():
-        bind["location_type"] = params.location_type.strip()
-        location_type_filter = "AND sl.location_type = :location_type"
+    location_type_filter = _postgres_location_types_filter(params.location_types, bind)
     nature_filter = ""
     if (params.nature or "").strip():
         bind["nature"] = params.nature.strip()
@@ -290,9 +299,8 @@ def _sqlite_matching_pairs(
         pub_date_from=params.pub_date_from,
         pub_date_to=params.pub_date_to,
     )
-    location_type = (params.location_type or "").strip()
-    if location_type:
-        stmt = stmt.where(SubstrateLocation.location_type == location_type)
+    if params.location_types:
+        stmt = stmt.where(col(SubstrateLocation.location_type).in_(params.location_types))
     nature = (params.nature or "").strip()
     if nature:
         stmt = stmt.where(SubstrateLocationMention.nature == nature)

@@ -17,7 +17,7 @@ from backfield_entities.public.article_geo_search import (
     PublicArticleGeoSearchParams,
     search_public_articles_by_geo,
 )
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 
 def _seed_geo_articles(session: Session) -> int:
@@ -166,3 +166,89 @@ def test_search_public_articles_by_geo_nature_filter() -> None:
 
     assert total == 0
     assert items == []
+
+
+def test_search_public_articles_by_geo_location_types_or() -> None:
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        project_id = _seed_geo_articles(session)
+        near = session.exec(
+            select(SubstrateArticle).where(SubstrateArticle.headline == "Downtown bridge vote")
+        ).one()
+        address_loc = SubstrateLocation(
+            project_id=project_id,
+            name="City Hall entrance",
+            normalized_name="city hall entrance",
+            location_type="address",
+            formatted_address="City Hall entrance",
+            geometry_type="Point",
+            geometry_json={"type": "Point", "coordinates": [-87.6, 41.8]},
+        )
+        session.add(address_loc)
+        session.commit()
+        session.refresh(address_loc)
+        session.add(
+            SubstrateLocationMention(
+                article_id=int(near.id),  # type: ignore[arg-type]
+                location_id=int(address_loc.id),  # type: ignore[arg-type]
+                nature="primary",
+            )
+        )
+        session.commit()
+
+        by_place, _ = search_public_articles_by_geo(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoSearchParams(
+                mode=PublicArticleGeoSearchMode.point,
+                center_lng=-87.6,
+                center_lat=41.8,
+                radius_miles=5.0,
+                location_types=("place",),
+            ),
+        )
+        by_address, _ = search_public_articles_by_geo(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoSearchParams(
+                mode=PublicArticleGeoSearchMode.point,
+                center_lng=-87.6,
+                center_lat=41.8,
+                radius_miles=5.0,
+                location_types=("address",),
+            ),
+        )
+        by_either, _ = search_public_articles_by_geo(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoSearchParams(
+                mode=PublicArticleGeoSearchMode.point,
+                center_lng=-87.6,
+                center_lat=41.8,
+                radius_miles=5.0,
+                location_types=("place", "address"),
+            ),
+        )
+        by_city, total = search_public_articles_by_geo(
+            session,
+            project_id=project_id,
+            params=PublicArticleGeoSearchParams(
+                mode=PublicArticleGeoSearchMode.point,
+                center_lng=-87.6,
+                center_lat=41.8,
+                radius_miles=5.0,
+                location_types=("city",),
+            ),
+        )
+
+    assert len(by_place) == 1
+    assert len(by_place[0].matching_locations) == 1
+    assert by_place[0].matching_locations[0].location_type == "place"
+    assert len(by_address) == 1
+    assert len(by_address[0].matching_locations) == 1
+    assert by_address[0].matching_locations[0].location_type == "address"
+    assert len(by_either) == 1
+    assert len(by_either[0].matching_locations) == 2
+    assert total == 0
+    assert by_city == []

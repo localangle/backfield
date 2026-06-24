@@ -247,7 +247,7 @@ All paths are under `…/projects/{project_slug}/articles/{article_id}/…`. Sha
 
 - **Point mode:** `center_lng`, `center_lat`, `radius_miles` — articles with at least one location mention whose geometry falls within the radius
 - **Bbox mode:** `bbox=min_lng,min_lat,max_lng,max_lat` — articles with location mentions inside the box
-- Optional `location_type`, `nature`, metadata, and date filters (same as keyword search)
+- Optional repeatable `location_type` (OR — match any listed type), `nature`, metadata, and date filters (same as keyword search)
 - Response echoes the geographic query (`search_mode`, point/bbox coordinates, filters) plus paginated **`items[]`**
 - Each item uses the same article list shape as keyword search plus **`matching_locations`** (the location mentions that satisfied the geo filter)
 - Optional **`include=counts`** for hub totals and `embedded` (same as keyword search)

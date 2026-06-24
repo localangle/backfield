@@ -19,6 +19,7 @@ from core_api.routers.public.articles.helpers import (
     META_PARAM_DESCRIPTION,
     parse_article_includes,
     parse_bbox,
+    parse_location_types,
     parse_optional_date,
     resolve_article_metadata_filters,
 )
@@ -44,7 +45,13 @@ def search_project_articles_by_geo(
         None,
         description="Bounding box as min_lng,min_lat,max_lng,max_lat",
     ),
-    location_type: str | None = Query(None, description="Filter matching locations by type"),
+    location_type: list[str] = Query(
+        default=[],
+        description=(
+            "Repeatable location type filter (OR). Include articles with a matching "
+            "mention of any listed substrate location_type."
+        ),
+    ),
     nature: str | None = Query(
         None,
         description=(
@@ -112,6 +119,7 @@ def search_project_articles_by_geo(
     )
     pub_date_from_parsed = parse_optional_date(pub_date_from, param_name="pub_date_from")
     pub_date_to_parsed = parse_optional_date(pub_date_to, param_name="pub_date_to")
+    location_types = parse_location_types(location_type)
 
     if has_bbox:
         min_lng, min_lat, max_lng, max_lat = parse_bbox(bbox)
@@ -121,7 +129,7 @@ def search_project_articles_by_geo(
             min_lat=min_lat,
             max_lng=max_lng,
             max_lat=max_lat,
-            location_type=location_type,
+            location_types=location_types,
             nature=nature,
             meta_type=resolved_meta_type,
             meta_category=resolved_meta_category,
@@ -144,7 +152,7 @@ def search_project_articles_by_geo(
             center_lng=center_lng,
             center_lat=center_lat,
             radius_miles=radius_miles,
-            location_type=location_type,
+            location_types=location_types,
             nature=nature,
             meta_type=resolved_meta_type,
             meta_category=resolved_meta_category,

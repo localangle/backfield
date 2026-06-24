@@ -237,6 +237,33 @@ def resolve_article_metadata_filters(
     )
 
 
+MAX_LOCATION_TYPES = 25
+
+
+def parse_location_types(values: list[str]) -> tuple[str, ...]:
+    """Parse repeatable ``location_type`` tokens (OR semantics)."""
+    if not values:
+        return ()
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in values:
+        token = raw.strip()
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid location_type: empty token.",
+            )
+        if token not in seen:
+            seen.add(token)
+            out.append(token)
+    if len(out) > MAX_LOCATION_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many location_type values. Maximum is {MAX_LOCATION_TYPES}.",
+        )
+    return tuple(out)
+
+
 def parse_bbox(value: str | None) -> tuple[float, float, float, float]:
     if value is None or not value.strip():
         raise HTTPException(
