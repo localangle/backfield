@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Literal
 
 from backfield_db import BackfieldProject
+from backfield_entities.public.mention_timeline import (
+    PublicEntityMentionTimelineItemOut,
+    list_public_organization_mention_timeline,
+)
 from backfield_entities.public.organizations import (
     PublicOrganizationMentionOut,
     get_public_organization,
@@ -21,7 +25,10 @@ from core_api.routers.public.articles.helpers import (
     parse_optional_date,
 )
 from core_api.routers.public.deps import get_public_project
-from core_api.routers.public.entities.mention_helpers import build_entity_mention_list_params
+from core_api.routers.public.entities.mention_helpers import (
+    build_entity_mention_list_params,
+    build_entity_mention_timeline_params,
+)
 from core_api.routers.public.entities.organizations.helpers import (
     parse_organization_id,
     resolve_public_organizations_scope,
@@ -36,6 +43,58 @@ class PublicOrganizationMentionsOut(BaseModel):
     label: str
     items: list[PublicOrganizationMentionOut]
     pagination: PaginationOut
+
+
+class PublicOrganizationMentionTimelineOut(BaseModel):
+    organization_id: str
+    label: str
+    items: list[PublicEntityMentionTimelineItemOut]
+
+
+@router.get(
+    "/{organization_id}/mentions/timeline",
+    response_model=PublicOrganizationMentionTimelineOut,
+)
+def list_project_organization_mention_timeline(
+    organization_id: str,
+    project: BackfieldProject = Depends(get_public_project),
+    session: Session = Depends(get_session),
+    pub_date_from: str | None = Query(None),
+    pub_date_to: str | None = Query(None),
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
+    ),
+) -> PublicOrganizationMentionTimelineOut:
+    """Return mention counts grouped by article publication date for one organization."""
+    stylebook_id, project_id = resolve_public_organizations_scope(session, project)
+    parsed_id = parse_organization_id(organization_id)
+    params = build_entity_mention_timeline_params(
+        pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
+        pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
+        quotes_only=quote is True,
+    )
+    items = list_public_organization_mention_timeline(
+        session,
+        stylebook_id=stylebook_id,
+        project_id=project_id,
+        organization_id=parsed_id,
+        params=params,
+    )
+    if items is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    organization = get_public_organization(
+        session,
+        stylebook_id=stylebook_id,
+        project_id=project_id,
+        organization_id=parsed_id,
+    )
+    assert organization is not None
+    return PublicOrganizationMentionTimelineOut(
+        organization_id=organization.id,
+        label=organization.label,
+        items=items,
+    )
 
 
 @router.get("/{organization_id}/mentions", response_model=PublicOrganizationMentionsOut)

@@ -1196,6 +1196,40 @@ Article-level filters match `GET …/mentions/search`. Entity mention endpoints 
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/people/{person_id}/mentions/timeline`
+
+| | |
+|---|---|
+| **Status** | Shipped (Phase 4) |
+| **Module** | [`apps/core-api/src/core_api/routers/public/entities/people/mentions.py`](../../../apps/core-api/src/core_api/routers/public/entities/people/mentions.py) |
+| **Query layer** | [`packages/backfield-entities/src/backfield_entities/public/mention_timeline.py`](../../../packages/backfield-entities/src/backfield_entities/public/mention_timeline.py) |
+| **Auth** | Project API key required |
+
+Mention counts grouped by article publication date for one canonical person. Ordered chronologically by `pub_date`. Articles without a publication date are omitted.
+
+### Query parameters
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `pub_date_from` | string | — | `YYYY-MM-DD`; article publication date lower bound |
+| `pub_date_to` | string | — | `YYYY-MM-DD`; article publication date upper bound |
+| `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
+
+### Response `200`
+
+```json
+{
+  "person_id": "550e8400-e29b-41d4-a716-446655440000",
+  "label": "Jane Doe",
+  "items": [
+    { "pub_date": "2024-02-01", "mention_count": 1 },
+    { "pub_date": "2024-03-01", "mention_count": 2 }
+  ]
+}
+```
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/people/{person_id}/articles`
 
 | | |
@@ -1439,6 +1473,12 @@ Article-level filters match `GET …/mentions/search`. Entity mention endpoints 
 
 ---
 
+## GET `/public/v1/projects/{project_slug}/organizations/{organization_id}/mentions/timeline`
+
+Mention counts grouped by article publication date for one canonical organization. Same query parameters and response shape as the people mention timeline (`organization_id` instead of `person_id`).
+
+---
+
 ## GET `/public/v1/projects/{project_slug}/organizations/{organization_id}/articles`
 
 | | |
@@ -1606,6 +1646,12 @@ Paginated mention evidence for one canonical location in the project. Supports t
 | `quote` | boolean | — | When true, return only mentions whose first evidence occurrence is quoted |
 | `limit` | integer | `25` | Page size (1–100) |
 | `offset` | integer | `0` | Offset for pagination |
+
+---
+
+## GET `/public/v1/projects/{project_slug}/locations/{location_id}/mentions/timeline`
+
+Mention counts grouped by article publication date for one canonical location. Same query parameters and response shape as the people mention timeline (`location_id` instead of `person_id`).
 
 ---
 

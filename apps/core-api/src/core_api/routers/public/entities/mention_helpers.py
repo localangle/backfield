@@ -7,6 +7,7 @@ from typing import Literal
 
 from backfield_entities.public.articles import ArticleMetaClause
 from backfield_entities.public.mention_filters import PublicEntityMentionListParams
+from backfield_entities.public.mention_timeline import PublicEntityMentionTimelineParams
 
 
 def build_entity_mention_list_params(
@@ -51,4 +52,17 @@ def build_entity_mention_list_params(
         sort_direction=sort_direction,
         limit=limit,
         offset=offset,
+    )
+
+
+def build_entity_mention_timeline_params(
+    *,
+    pub_date_from: date | None,
+    pub_date_to: date | None,
+    quotes_only: bool,
+) -> PublicEntityMentionTimelineParams:
+    return PublicEntityMentionTimelineParams(
+        pub_date_from=pub_date_from,
+        pub_date_to=pub_date_to,
+        quotes_only=quotes_only,
     )

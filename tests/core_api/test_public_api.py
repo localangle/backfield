@@ -1295,6 +1295,33 @@ def test_public_entity_mentions_filters(public_client: TestClient) -> None:
     assert default_limit.json()["pagination"]["limit"] == 25
 
 
+def test_public_entity_mention_timeline(public_client: TestClient) -> None:
+    raw_key = _create_project_api_key(public_client)
+    headers = {"Authorization": f"Bearer {raw_key}"}
+    listed = public_client.get("/public/v1/projects/general/people", headers=headers)
+    assert listed.status_code == 200
+    person_id = listed.json()["items"][0]["id"]
+
+    timeline = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/mentions/timeline",
+        headers=headers,
+    )
+    assert timeline.status_code == 200
+    body = timeline.json()
+    assert body["label"] == "Jane Doe"
+    assert len(body["items"]) == 1
+    assert body["items"][0]["pub_date"] == "2024-03-01"
+    assert body["items"][0]["mention_count"] == 1
+
+    filtered = public_client.get(
+        f"/public/v1/projects/general/people/{person_id}/mentions/timeline",
+        headers=headers,
+        params={"pub_date_from": "2025-01-01"},
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["items"] == []
+
+
 def test_public_person_not_found(public_client: TestClient) -> None:
     raw_key = _create_project_api_key(public_client)
     headers = {"Authorization": f"Bearer {raw_key}"}

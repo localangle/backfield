@@ -10,6 +10,10 @@ from backfield_entities.public.locations import (
     get_public_location,
     list_public_location_mentions,
 )
+from backfield_entities.public.mention_timeline import (
+    PublicEntityMentionTimelineItemOut,
+    list_public_location_mention_timeline,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -25,7 +29,10 @@ from core_api.routers.public.entities.locations.helpers import (
     parse_location_id,
     resolve_public_locations_scope,
 )
-from core_api.routers.public.entities.mention_helpers import build_entity_mention_list_params
+from core_api.routers.public.entities.mention_helpers import (
+    build_entity_mention_list_params,
+    build_entity_mention_timeline_params,
+)
 from core_api.routers.public.schemas import PaginationOut
 
 router = APIRouter()
@@ -36,6 +43,55 @@ class PublicLocationMentionsOut(BaseModel):
     label: str
     items: list[PublicLocationMentionOut]
     pagination: PaginationOut
+
+
+class PublicLocationMentionTimelineOut(BaseModel):
+    location_id: str
+    label: str
+    items: list[PublicEntityMentionTimelineItemOut]
+
+
+@router.get("/{location_id}/mentions/timeline", response_model=PublicLocationMentionTimelineOut)
+def list_project_location_mention_timeline(
+    location_id: str,
+    project: BackfieldProject = Depends(get_public_project),
+    session: Session = Depends(get_session),
+    pub_date_from: str | None = Query(None),
+    pub_date_to: str | None = Query(None),
+    quote: bool | None = Query(
+        None,
+        description="When true, return only mentions with quoted evidence",
+    ),
+) -> PublicLocationMentionTimelineOut:
+    """Return mention counts grouped by article publication date for one location."""
+    stylebook_id, project_id = resolve_public_locations_scope(session, project)
+    parsed_id = parse_location_id(location_id)
+    params = build_entity_mention_timeline_params(
+        pub_date_from=parse_optional_date(pub_date_from, param_name="pub_date_from"),
+        pub_date_to=parse_optional_date(pub_date_to, param_name="pub_date_to"),
+        quotes_only=quote is True,
+    )
+    items = list_public_location_mention_timeline(
+        session,
+        stylebook_id=stylebook_id,
+        project_id=project_id,
+        location_id=parsed_id,
+        params=params,
+    )
+    if items is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Location not found")
+    location = get_public_location(
+        session,
+        stylebook_id=stylebook_id,
+        project_id=project_id,
+        location_id=parsed_id,
+    )
+    assert location is not None
+    return PublicLocationMentionTimelineOut(
+        location_id=location.id,
+        label=location.label,
+        items=items,
+    )
 
 
 @router.get("/{location_id}/mentions", response_model=PublicLocationMentionsOut)
